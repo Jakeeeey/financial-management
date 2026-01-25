@@ -2,6 +2,15 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+Run the following commands in the project root:
+npm install
+
+npx shadcn@latest init
+
+npx shadcn@latest add --all
+
+
+
 First, run the development server:
 
 ```bash
@@ -11,7 +20,7 @@ yarn dev
 # or
 pnpm dev
 # or
-bun dev
+bun dev bun
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
