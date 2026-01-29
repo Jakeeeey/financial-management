@@ -13,7 +13,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { NavUser } from "../_components/nav-user"
 
 // ✅ Wire the module you asked for
-// import { DisbursementModule } from "@/modules/financial-management/treasury/disbursement"
+//  import { DisbursementModule } from "@/modules/financial-management/treasury/disbursement"
 
 const headerUser = {
     name: "Jake Dave M. De Guzman",
