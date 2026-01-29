@@ -32,108 +32,13 @@ const data = {
             isActive: true,
         },
         {
-            title: "Supplier Management",
-            url: "#",
+            title: "Asset Management",
+            url: "fm/asset-management",
             icon: SquareTerminal,
             isActive: true,
-            items: [{ title: "Purchase Order", url: "/scm/supplier-management/purchase-order" }],
+            // items: [{ title: "Purchase Order", url: "/scm/supplier-management/purchase-order" }],
         },
-        {
-            title: "Warehouse Management",
-            url: "#",
-            icon: Bot,
-            items: [
-                { title: "Warehouse Unit Conversion", url: "/scm/warehouse-management/warehouse-unit-conversion" },
-                { title: "Stock Transfer", url: "/scm/warehouse-management/stock-transfer" },
-                { title: "Consolidation", url: "/scm/warehouse-management/consolidation" },
-            ],
-        },
-        {
-            title: "Fleet Management",
-            url: "#",
-            icon: BookOpen,
-            items: [
-                { title: "Vehicle Management", url: "#" },
-                { title: "Driver Management", url: "#" },
-                { title: "Trip and Dispatch Management", url: "#" },
-                { title: "Logistics and Deliveries", url: "#" },
-                { title: "Fleet Inventory", url: "#" },
-            ],
-        },
-        {
-            title: "Item & Master Data Management",
-            url: "#",
-            icon: BookOpen,
-            items: [
-                { title: "Raw Materials", url: "/scm/item-master-data-management/raw-materials" },
-            ],
-        },
-        {
-            title: "Receiving & Put-Away",
-            url: "#",
-            icon: BookOpen,
-            items: [
-                { title: "Receiving", url: "/scm/receiving-put-away/receiving" },
-            ],
-        },
-        {
-            title: "Inventory Management",
-            url: "#",
-            icon: BookOpen,
-            items: [
-                { title: "Inventory Controls", url: "/scm/inventory-management/inventory-controls" },
-                { title: "Physical Inventory", url: "/scm/inventory-management/physical-inventory" },
-            ],
-        },
-        {
-            title: "Order Fulfillment & Distribution",
-            url: "#",
-            icon: BookOpen,
-            items: [
-                { title: "Sales Order", url: "/scm/order-fulfillment-distribution/sales-order" },
-                { title: "Sales Transaction", url: "/scm/order-fulfillment-distribution/sales-transaction" },
-                { title: "Site Sales", url: "/scm/order-fulfillment-distribution/site-sales" },
-            ],
-        },
-        {
-            title: "Returns & Revers Logistics",
-            url: "#",
-            icon: BookOpen,
-            items: [
-                { title: "Sales Return", url: "/scm/returns-reverse-logistics/sales-return" },
-                { title: "Bad Order Transfer", url: "/scm/returns-reverse-logistics/bad-order-stock-transfer" },
-                { title: "Returns to Supplier", url: "/scm/returns-reverse-logistics/returns-to-supplier" },
-            ],
-        },
-        {
-            title: "Traceability & Compliance",
-            url: "#",
-            icon: BookOpen,
-            items: [
-                { title: "Audit Inventory", url: "/scm/traceability-compliance/audit-inventory" },
-                { title: "Post Delivery Audit", url: "/scm/traceability-compliance/post-delivery-audit" },
-                { title: "Product Ledger", url: "/scm/traceability-compliance/product-ledger" },
-            ],
-        },
-        {
-            title: "Reporting & KPIs",
-            url: "#",
-            icon: Settings2,
-            items: [
-                { title: "Inventory Reports", url: "/scm/reporting-kpi/inventory-reports" },
-                { title: "Sales Report", url: "/scm/reporting-kpi/sales-report" },
-                { title: "PO Summary", url: "/scm/reporting-kpi/po-summary" },
-                { title: "Bad Product Summary", url: "/scm/reporting-kpi/bad-product-summary" },
-            ],
-        },
-        {
-            title: "Controls & KPIs",
-            url: "#",
-            icon: Settings2,
-            items: [
-                { title: "Inventory Controls", url: "/scm/controls-security/invetory-controls" },
-            ],
-        },
+
     ],
 }
 
