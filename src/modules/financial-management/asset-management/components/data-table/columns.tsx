@@ -3,7 +3,15 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { AssetTableData } from "../../types";
-import { date } from "zod";
+import { formatPHP, getDepreciatedValue } from "../../utils/lib";
+import { useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export const columns: ColumnDef<AssetTableData>[] = [
   {
@@ -92,13 +100,45 @@ export const columns: ColumnDef<AssetTableData>[] = [
     },
   },
   {
-    accessorKey: "total",
-    header: "Total Value",
+    accessorKey: "total_value",
+    header: "Projected Value",
     cell: ({ row }) => {
-      const total = row.getValue("total") as number;
+      const [viewDate, setViewDate] = useState<Date>(new Date());
+      const asset = row.original;
+
+      const projectedValue = getDepreciatedValue(
+        Number(asset.cost_per_item) * Number(asset.quantity),
+        Number(asset.life_span),
+        new Date(asset.date_acquired).getTime(),
+        viewDate,
+      );
+
       return (
-        <div className="font-mono font-semibold">
-          ₱{total.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+        <div className="flex items-center gap-2">
+          <span className="font-mono font-medium text-primary whitespace-nowrap">
+            {formatPHP(projectedValue)}
+          </span>
+
+          <Select
+            onValueChange={(val) => {
+              const newDate = new Date();
+              if (val === "1d") newDate.setDate(newDate.getDate() + 1);
+              if (val === "1m") newDate.setMonth(newDate.getMonth() + 1);
+              if (val === "1y") newDate.setFullYear(newDate.getFullYear() + 1);
+              setViewDate(newDate);
+            }}
+          >
+            <SelectTrigger className="h-7 w-fit p-0 border-none bg-transparent hover:bg-muted transition-colors flex justify-center">
+              <SelectValue placeholder="" />
+            </SelectTrigger>
+
+            <SelectContent align="end">
+              <SelectItem value="now">Current</SelectItem>
+              <SelectItem value="1d">In 1 Day</SelectItem>
+              <SelectItem value="1m">In 1 Month</SelectItem>
+              <SelectItem value="1y">In 1 Year</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       );
     },

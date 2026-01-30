@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react"; // Added for state management
+import * as React from "react";
 import {
   ColumnDef,
   flexRender,
@@ -23,13 +23,15 @@ import { DataTablePagination } from "./table-pagination";
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
+  // FIX: Added tableMeta to the interface
+  tableMeta?: any;
 }
 
 export function AssetDataTable<TData, TValue>({
   columns,
   data,
+  tableMeta, // FIX: Destructure here
 }: DataTableProps<TData, TValue>) {
-  // 2. Optional: Define initial state (e.g., 5 rows per page instead of 10)
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
     pageSize: 10,
@@ -42,6 +44,8 @@ export function AssetDataTable<TData, TValue>({
     getPaginationRowModel: getPaginationRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onPaginationChange: setPagination,
+    // FIX: Pass tableMeta into the internal meta state
+    meta: tableMeta,
     state: {
       pagination,
     },
@@ -49,18 +53,13 @@ export function AssetDataTable<TData, TValue>({
 
   return (
     <div className="space-y-4">
-      {" "}
-      {/* Added spacing between table and pagination */}
       <div className="rounded-md border">
         <Table>
           <TableHeader className="bg-muted/50">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead
-                    key={header.id}
-                    className="font-semibold text-foreground"
-                  >
+                  <TableHead key={header.id} className="font-semibold">
                     {header.isPlaceholder
                       ? null
                       : flexRender(
@@ -75,10 +74,7 @@ export function AssetDataTable<TData, TValue>({
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  className="hover:bg-muted/30 transition-colors"
-                >
+                <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(
@@ -95,9 +91,7 @@ export function AssetDataTable<TData, TValue>({
                   colSpan={columns.length}
                   className="h-24 text-center"
                 >
-                  <div className="flex flex-col items-center justify-center text-muted-foreground">
-                    <p>No assets found.</p>
-                  </div>
+                  No assets found.
                 </TableCell>
               </TableRow>
             )}

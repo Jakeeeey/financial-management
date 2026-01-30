@@ -95,7 +95,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
       condition: "Good",
       quantity: 1,
       cost_per_item: 0,
-      life_span: 12,
+      life_span: 5,
       date_acquired: new Date(),
       department: 0,
       employee: null,
@@ -637,15 +637,20 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                   name="life_span"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Life (Mo)</FormLabel>
-                      <Input
-                        type="number"
-                        {...field}
-                        className="h-10"
-                        onChange={(e) =>
-                          field.onChange(parseInt(e.target.value) || 12)
-                        }
-                      />
+                      {/* LABEL UPDATED TO YEARS */}
+                      <FormLabel>Life Span (Years) *</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          {...field}
+                          placeholder="e.g. 5"
+                          className="h-10"
+                          onChange={(e) =>
+                            // Ensure we save as an integer for the annual formula
+                            field.onChange(parseInt(e.target.value) || 0)
+                          }
+                        />
+                      </FormControl>
                     </FormItem>
                   )}
                 />

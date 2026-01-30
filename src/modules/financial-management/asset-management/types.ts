@@ -35,7 +35,7 @@ export const assetFormSchema = z.object({
   condition: z.enum(["Good", "Bad", "Under Maintenance", "Discontinued"]),
   quantity: z.number().min(1, "Quantity must be at least 1"),
   cost_per_item: z.number().min(0, "Cost must be positive"),
-  life_span: z.number().min(1, "Life span must be at least 1 month"),
+  life_span: z.number().min(1, "Life span must be at least 1 year"),
   date_acquired: z.date(),
   department: z.number(),
   employee: z.number().nullable(),
