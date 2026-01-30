@@ -1,3 +1,4 @@
+import { AssetFormValues } from "@/modules/financial-management/asset-management/types";
 import { NextResponse } from "next/server";
 
 const DIRECTUS_URL = "http://goatedcodoer:8056";
@@ -6,32 +7,20 @@ const AUTH_HEADERS = {
   Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
 };
 
-interface ItemLookup {
-  id: number;
-  item_name: string;
-  item_type?: { type_name: string };
-  item_classification?: { classification_name: string };
-}
-
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get("type");
 
-    if (type === "departments" || type === "department") {
-      // Check if your Directus collection is actually 'department' or 'departments'
-      // Based on your previous snippet, let's try 'department' first as the endpoint
+    if (type === "departments") {
       const res = await fetch(`${DIRECTUS_URL}/items/department?limit=-1`, {
         headers: AUTH_HEADERS,
       });
       const json = await res.json();
-
-      if (!res.ok) console.error("Department Fetch Error:", json);
-
-      // Return the array directly so the frontend can map it
       return NextResponse.json(json.data || []);
     }
-    if (type === "users" || type === "user") {
+
+    if (type === "users") {
       const res = await fetch(`${DIRECTUS_URL}/items/user?limit=-1`, {
         headers: AUTH_HEADERS,
       });
@@ -39,8 +28,7 @@ export async function GET(req: Request) {
       return NextResponse.json(json.data || []);
     }
 
-    // 2. Main Asset Fetching Logic (Manual Merge for reliability)
-    const [assetsRes, itemsRes, deptsRes] = await Promise.all([
+    const [assetsRes, itemsRes, deptsRes, usersRes] = await Promise.all([
       fetch(`${DIRECTUS_URL}/items/assets_and_equipment?limit=-1&sort=-id`, {
         headers: AUTH_HEADERS,
         cache: "no-store",
@@ -52,78 +40,91 @@ export async function GET(req: Request) {
       fetch(`${DIRECTUS_URL}/items/department?limit=-1`, {
         headers: AUTH_HEADERS,
       }),
+      fetch(`${DIRECTUS_URL}/items/user?limit=-1`, { headers: AUTH_HEADERS }),
     ]);
 
     const assetsJson = await assetsRes.json();
     const itemsJson = await itemsRes.json();
     const deptsJson = await deptsRes.json();
+    const usersJson = await usersRes.json();
 
-    // if (!assetsRes.ok || !itemsRes.ok)
-    //   throw new Error("Failed to fetch from Directus");
-
-    // const assets = assetsJson.data || [];
-
-    const itemsMap = new Map<number, ItemLookup>(
-      (itemsJson.data || []).map((i: ItemLookup) => [i.id, i]),
-    );
+    const itemsMap = new Map((itemsJson.data || []).map((i: any) => [i.id, i]));
     const deptsMap = new Map(
-      deptsJson.data?.map((d: any) => [d.department_id, d.department_name]),
+      (deptsJson.data || []).map((d: any) => [
+        Number(d.department_id),
+        d.department_name,
+      ]),
+    );
+
+    // FIX: Match by user_id
+    const usersMap = new Map(
+      (usersJson.data || []).map((u: any) => {
+        const fullName = `${u.user_fname} ${u.user_lname}`;
+        return [Number(u.user_id), fullName];
+      }),
     );
 
     const mergedData = (assetsJson.data || []).map((asset: any) => {
-      const actualItemId =
-        typeof asset.item_id === "object" ? asset.item_id?.id : asset.item_id;
-      const itemDetails = itemsMap.get(Number(actualItemId));
-
+      const itemDetails = itemsMap.get(Number(asset.item_id)) as any;
       return {
         ...asset,
-        item_name: itemDetails?.item_name ?? "N/A",
+        item_name: itemDetails?.item_name || "N/A",
+        // item_type_name: itemDetails?.item_type?.type_name || "N/A",
+        // item_class_name:
+        //   itemDetails?.item_classification?.classification_name || "N/A",
         department_name: deptsMap.get(Number(asset.department)) ?? "Unassigned",
-        item_type_name: itemDetails?.item_type?.type_name ?? "N/A",
-        item_class_name:
-          itemDetails?.item_classification?.classification_name ?? "N/A",
+        assigned_to_name: usersMap.get(Number(asset.employee)) ?? "Unassigned",
       };
     });
 
     return NextResponse.json(mergedData);
   } catch (error: any) {
-    console.error("GET Error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-// POST remains the same as our previous successful version
 export async function POST(req: Request) {
   try {
+    // 1. Bulletproof Casting
+    // We cast to 'any' first then to 'AssetFormValues' to force TS to accept the structure
     const body = await req.json();
+    const rawBody = body as unknown as AssetFormValues;
 
-    // Step 1: Create Item
+    // Step 1: Create generic Item
     const itemRes = await fetch(`${DIRECTUS_URL}/items/items`, {
       method: "POST",
       headers: AUTH_HEADERS,
       body: JSON.stringify({
-        item_name: body.item_name,
-        item_type: 2,
-        item_classification: 1,
+        item_name: rawBody.item_name, // Resolves
+        item_type: Number(rawBody.item_type) || 2,
+        item_classification: Number(rawBody.item_classification) || 1,
       }),
     });
 
     const itemData = await itemRes.json();
-    if (!itemRes.ok)
-      return NextResponse.json({ error: "Item step failed" }, { status: 400 });
+    if (!itemRes.ok) throw new Error("Item creation failed");
 
-    const newItemId = itemData.data.id;
+    // 2. Date Handling fix for the 'split' error
+    let dateStr: string;
+    if (rawBody.date_acquired instanceof Date) {
+      dateStr = rawBody.date_acquired.toISOString().split("T")[0];
+    } else if (typeof rawBody.date_acquired === "string") {
+      dateStr = rawBody.date_acquired.split("T")[0];
+    } else {
+      dateStr = new Date().toISOString().split("T")[0];
+    }
 
-    // Step 2: Create Asset linked to Item
+    // Step 2: Create Asset
     const assetPayload = {
-      item_id: newItemId,
-      condition: body.condition || "Good",
-      cost_per_item: Number(body.cost_per_item) || 0,
-      quantity: Number(body.quantity) || 1,
-      total: Number(body.cost_per_item || 0) * Number(body.quantity || 1),
-      life_span: Number(body.life_span) || 12,
-      date_acquired: body.date_acquired || new Date().toISOString(),
-      department: body.department ? Number(body.department) : null,
+      item_id: itemData.data.id,
+      condition: rawBody.condition,
+      cost_per_item: Number(rawBody.cost_per_item),
+      quantity: Number(rawBody.quantity),
+      total: Number(rawBody.cost_per_item) * Number(rawBody.quantity),
+      life_span: Number(rawBody.life_span),
+      date_acquired: dateStr, // Safe string value
+      department: rawBody.department,
+      employee: rawBody.employee || null,
       encoder: 81,
     };
 
@@ -134,6 +135,9 @@ export async function POST(req: Request) {
     });
 
     const assetData = await assetRes.json();
+    if (!assetRes.ok)
+      throw new Error(assetData.error?.message || "Asset creation failed");
+
     return NextResponse.json(assetData.data);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

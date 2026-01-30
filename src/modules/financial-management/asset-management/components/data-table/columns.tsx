@@ -56,14 +56,11 @@ export const columns: ColumnDef<AssetTableData>[] = [
     header: "Quantity",
   },
   {
-    id: "assigned_to",
+    accessorKey: "assigned_to_name", // Use the key we created in route.ts
     header: "Assigned To",
-    accessorFn: (row) => {
-      const emp = row.employee;
-      if (emp && typeof emp === "object") {
-        return `${emp.user_fname} ${emp.user_lname}`;
-      }
-      return "Unassigned";
+    cell: ({ row }) => {
+      const name = row.original.assigned_to_name;
+      return <span>{name || "Unassigned"}</span>;
     },
   },
 ];
