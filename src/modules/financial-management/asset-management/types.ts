@@ -1,66 +1,10 @@
-// import { z } from "zod";
-
-// export const assetFormSchema = z.object({
-//   item_name: z.string().min(1, "Required"),
-//   item_type: z.string().min(1, "Required"),
-//   item_classification: z.string().min(1, "Required"),
-//   barcode: z.string().optional(),
-//   rfid_code: z.string().optional(),
-//   condition: z.enum(["Good", "Bad", "Under Maintenance", "Discontinued"]),
-//   quantity: z.coerce.number().min(1),
-//   cost_per_item: z.coerce.number().min(0),
-//   life_span: z.coerce.number().min(1),
-//   date_acquired: z.date(),
-//   department: z.coerce.number(),
-//   employee: z.coerce.number().optional(),
-//   item_image: z.any().optional(),
-// });
-
-// export type AssetFormValues = z.infer<typeof assetFormSchema>;
-
-// export interface Department {
-//   department_id: number;
-//   department_description: string;
-// }
-
-// export interface User {
-//   user_id: number;
-//   user_fname: string;
-//   user_mname?: string; // Optional middle name
-//   user_lname: string;
-// }
-
-// export interface AssetTableData {
-//   id: number;
-//   barcode: string | null;
-//   rfid_code: string | null;
-//   condition: "Good" | "Bad" | "Under Maintenance" | "Discontinued";
-//   quantity: number;
-//   cost_per_item: number;
-//   total: number;
-//   date_acquired: string;
-
-//   // These are the virtual fields we create in our GET route
-//   item_name: string;
-//   item_type_name: string;
-//   item_class_name: string;
-//   department_name: string;
-//   assigned_to_name: string;
-
-//   // Keep the raw IDs in case you need them for Edit/Delete actions
-//   item_id: number;
-//   department: number | null;
-//   employee: number | null;
-//   encoder: number | null;
-// }
-
 import { z } from "zod";
 
 // --- 1. Base Schemas ---
 
 export const departmentSchema = z.object({
   department_id: z.number(),
-  department_name: z.string(), // Matches your UI mapping
+  department_name: z.string(),
 });
 
 export const userSchema = z.object({
@@ -70,25 +14,43 @@ export const userSchema = z.object({
   user_lname: z.string(),
 });
 
-// --- 2. Form Schema (Keep as is, but sync types) ---
+// --- 2. Form Schema (Client-side form values) ---
 
 export const assetFormSchema = z.object({
-  item_name: z.string().min(1, "Required"),
-  item_type: z.string().min(1, "Required"),
-  item_classification: z.string().min(1, "Required"),
-  barcode: z.string().optional(),
-  rfid_code: z.string().optional(),
+  item_name: z.string().min(1, "Item name is required"),
+  item_type: z.string().min(1, "Item type is required"),
+  item_classification: z.string().min(1, "Classification is required"),
+  barcode: z.string().optional().default(""),
+  rfid_code: z.string().optional().default(""),
   condition: z.enum(["Good", "Bad", "Under Maintenance", "Discontinued"]),
-  quantity: z.coerce.number().min(1),
-  cost_per_item: z.coerce.number().min(0),
-  life_span: z.coerce.number().min(1),
-  date_acquired: z.date(), // Form uses Date object
-  department: z.coerce.number(),
-  employee: z.coerce.number().optional(),
+  quantity: z.number().min(1, "Quantity must be at least 1"),
+  cost_per_item: z.number().min(0, "Cost must be positive"),
+  life_span: z.number().min(1, "Life span must be at least 1 month"),
+  date_acquired: z.date(),
+  department: z.number(),
+  employee: z.number().optional().nullable(),
   item_image: z.any().optional(),
 });
 
-// --- 3. Table Schema (For API Responses) ---
+// --- 3. API Submission Schema (What gets sent to the API) ---
+
+export const assetSubmissionSchema = z.object({
+  item_name: z.string(),
+  item_type: z.union([z.string(), z.number()]),
+  item_classification: z.union([z.string(), z.number()]),
+  barcode: z.string().optional(),
+  rfid_code: z.string().optional(),
+  condition: z.enum(["Good", "Bad", "Under Maintenance", "Discontinued"]),
+  quantity: z.number(),
+  cost_per_item: z.number(),
+  life_span: z.number(),
+  date_acquired: z.string(), // ISO string format
+  department: z.number(),
+  employee: z.number().optional().nullable(),
+  encoder: z.number(),
+});
+
+// --- 4. Table Schema (For API GET responses) ---
 
 export const assetTableDataSchema = z.object({
   id: z.number(),
@@ -98,25 +60,25 @@ export const assetTableDataSchema = z.object({
   quantity: z.number(),
   cost_per_item: z.number(),
   total: z.number(),
-  date_acquired: z.string(), // API usually returns a string date
+  date_acquired: z.string(),
+  life_span: z.number(),
 
   // Virtual fields from the JOINs
   item_name: z.string(),
-  item_type_name: z.string(),
-  item_class_name: z.string(),
   department_name: z.string(),
   assigned_to_name: z.string(),
 
-  // Raw IDs
+  // Raw IDs (keep for edit/delete operations)
   item_id: z.number(),
   department: z.number().nullable(),
   employee: z.number().nullable(),
   encoder: z.number().nullable(),
 });
 
-// --- 4. Exported Types ---
+// --- 5. Exported Types ---
 
 export type Department = z.infer<typeof departmentSchema>;
 export type User = z.infer<typeof userSchema>;
 export type AssetFormValues = z.infer<typeof assetFormSchema>;
+export type AssetSubmissionData = z.infer<typeof assetSubmissionSchema>;
 export type AssetTableData = z.infer<typeof assetTableDataSchema>;
