@@ -12,8 +12,38 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Package } from "lucide-react";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 
 export const columns: ColumnDef<AssetTableData>[] = [
+  {
+    accessorKey: "item_image",
+    header: "Asset",
+    cell: ({ row }) => {
+      const imageId = row.getValue("item_image") as string | null;
+      const itemName = row.original.item_name;
+
+      const proxyUrl = imageId
+        ? `/api/fm/asset-image-view?id=${imageId}`
+        : null;
+
+      return (
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 overflow-hidden rounded-md border bg-muted flex items-center justify-center">
+            {proxyUrl ? (
+              <img
+                src={proxyUrl}
+                alt={itemName}
+                className="h-full w-full object-cover transition-all hover:scale-110"
+              />
+            ) : (
+              <Package className="h-5 w-5 text-muted-foreground/50" />
+            )}
+          </div>
+        </div>
+      );
+    },
+  },
   {
     accessorKey: "item_name",
     header: "Item Name",

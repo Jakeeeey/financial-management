@@ -162,12 +162,12 @@ export async function GET(req: Request) {
       return {
         ...asset,
         item_name: baseItem?.item_name ?? "N/A",
-        // FIXED: Looking up type and class IDs via the baseItem object
         item_type_name: typesMap.get(Number(baseItem?.item_type)) ?? "N/A",
         item_classification_name:
           classMap.get(Number(baseItem?.item_classification)) ?? "N/A",
         department_name: deptsMap.get(Number(asset.department)) ?? "Unassigned",
         assigned_to_name: usersMap.get(Number(asset.employee)) ?? "Unassigned",
+        item_image: asset.item_image,
       };
     });
 
@@ -239,6 +239,7 @@ export async function POST(req: Request) {
       barcode: body.barcode || null,
       rfid_code: body.rfid_code || null,
       encoder: 81,
+      item_image: body.item_image || null,
     };
 
     const assetRes = await fetch(`${DIRECTUS_URL}/items/assets_and_equipment`, {
