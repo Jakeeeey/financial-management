@@ -12,8 +12,38 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Package } from "lucide-react";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 
 export const columns: ColumnDef<AssetTableData>[] = [
+  {
+    accessorKey: "item_image",
+    header: "Asset",
+    cell: ({ row }) => {
+      const imageId = row.getValue("item_image") as string | null;
+      const itemName = row.original.item_name;
+
+      const proxyUrl = imageId
+        ? `/api/fm/asset-image-view?id=${imageId}`
+        : null;
+
+      return (
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 overflow-hidden rounded-md border bg-muted flex items-center justify-center">
+            {proxyUrl ? (
+              <img
+                src={proxyUrl}
+                alt={itemName}
+                className="h-full w-full object-cover transition-all hover:scale-110"
+              />
+            ) : (
+              <Package className="h-5 w-5 text-muted-foreground/50" />
+            )}
+          </div>
+        </div>
+      );
+    },
+  },
   {
     accessorKey: "item_name",
     header: "Item Name",
@@ -101,37 +131,27 @@ export const columns: ColumnDef<AssetTableData>[] = [
   },
   {
     accessorKey: "total_value",
-    header: "Projected Value",
-    cell: ({ row }) => {
-      const [viewDate, setViewDate] = useState<Date>(new Date());
-      const asset = row.original;
-
-      const projectedValue = getDepreciatedValue(
-        Number(asset.cost_per_item) * Number(asset.quantity),
-        Number(asset.life_span),
-        new Date(asset.date_acquired).getTime(),
-        viewDate,
-      );
+    header: ({ table }) => {
+      const meta = table.options.meta as any;
+      const setProjectionDate = meta?.setProjectionDate;
 
       return (
         <div className="flex items-center gap-2">
-          <span className="font-mono font-medium text-primary whitespace-nowrap">
-            {formatPHP(projectedValue)}
-          </span>
-
+          <span>Projected Value</span>
           <Select
+            defaultValue="now"
             onValueChange={(val) => {
               const newDate = new Date();
               if (val === "1d") newDate.setDate(newDate.getDate() + 1);
-              if (val === "1m") newDate.setMonth(newDate.getMonth() + 1);
-              if (val === "1y") newDate.setFullYear(newDate.getFullYear() + 1);
-              setViewDate(newDate);
+              else if (val === "1m") newDate.setMonth(newDate.getMonth() + 1);
+              else if (val === "1y")
+                newDate.setFullYear(newDate.getFullYear() + 1);
+              setProjectionDate?.(newDate);
             }}
           >
-            <SelectTrigger className="h-7 w-fit p-0 border-none bg-transparent hover:bg-muted transition-colors flex justify-center">
-              <SelectValue placeholder="" />
+            <SelectTrigger className="h-7 w-25 border-none bg-transparent hover:bg-muted/50 transition-colors">
+              <SelectValue />
             </SelectTrigger>
-
             <SelectContent align="end">
               <SelectItem value="now">Current</SelectItem>
               <SelectItem value="1d">In 1 Day</SelectItem>
@@ -140,6 +160,25 @@ export const columns: ColumnDef<AssetTableData>[] = [
             </SelectContent>
           </Select>
         </div>
+      );
+    },
+    cell: ({ row, table }) => {
+      const asset = row.original;
+      const meta = table.options.meta as any;
+      const projectionDate = meta?.projectionDate || new Date();
+
+      const projectedValue = getDepreciatedValue(
+        Number(asset.cost_per_item),
+        Number(asset.quantity),
+        Number(asset.life_span),
+        asset.date_acquired,
+        projectionDate,
+      );
+
+      return (
+        <span className="font-mono font-medium text-primary whitespace-nowrap">
+          {formatPHP(projectedValue)}
+        </span>
       );
     },
   },

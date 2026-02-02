@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { zodResolver } from "@hookform/resolvers/zod";
+import imageCompression from "browser-image-compression";
 
 import {
   Package,
@@ -15,6 +16,9 @@ import {
   Check,
   ChevronsUpDown,
   Plus,
+  ImagePlus,
+  X,
+  UploadCloud,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
@@ -83,6 +87,8 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
   );
   const [typeSearch, setTypeSearch] = useState("");
   const [classificationSearch, setClassificationSearch] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const form = useForm<AssetFormValues>({
     resolver: zodResolver(assetFormSchema),
@@ -131,12 +137,91 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
     }
   }, [open]);
 
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen);
+    if (isOpen) {
+      const now = new Date();
+      form.reset({
+        item_name: "",
+        item_type: "",
+        item_classification: "",
+        barcode: "",
+        rfid_code: "",
+        condition: "Good",
+        quantity: 1,
+        cost_per_item: 0,
+        life_span: 5,
+        date_acquired: now,
+        department: 0,
+        employee: null,
+      });
+      setSelectedFile(null);
+      setPreviewUrl(null);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const uploadToDirectus = async (file: File) => {
+    try {
+      // 1. Compress the image before uploading to save time/bandwidth
+      const options = {
+        maxSizeMB: 1, // Max size 1MB
+        maxWidthOrHeight: 1024, // Max resolution 1024px
+        useWebWorker: true,
+      };
+
+      console.log("DEBUG: Compressing file...");
+      const compressedFile = await imageCompression(file, options);
+
+      const formData = new FormData();
+      formData.append("file", compressedFile);
+
+      const res = await fetch("/api/fm/asset-image-upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Upload failed");
+
+      const result = await res.json();
+      return result?.data?.id; // Returning the UUID string
+    } catch (error) {
+      console.error("Upload Error:", error);
+      throw error;
+    }
+  };
+
   const onSubmit = async (values: AssetFormValues) => {
     setLoading(true);
     try {
+      let finalImageValue = null;
+
+      // if (selectedFile) {
+      //   finalImageValue = await uploadToDirectus(selectedFile);
+      //   console.log("DEBUG: Image Value to be submitted:", finalImageValue);
+      // } else {
+      //   console.log("DEBUG: No file selected, skipping upload.");
+      // }
+
+      if (selectedFile) {
+        finalImageValue = await uploadToDirectus(selectedFile);
+        console.log("DEBUG: Image Value to be submitted:", finalImageValue);
+      }
+
+      console.log("DEBUG: Form values before submission:", values);
+      console.log("DEBUG: date_acquired value:", values.date_acquired);
+      console.log("DEBUG: date_acquired type:", typeof values.date_acquired);
+
       const submissionData = {
         ...values,
-        date_acquired: values.date_acquired.toISOString(),
+        date_acquired: values.date_acquired.toISOString().split("T")[0],
         cost_per_item: Number(values.cost_per_item),
         quantity: Number(values.quantity),
         life_span: Number(values.life_span),
@@ -147,7 +232,13 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
         barcode: values.barcode || "",
         rfid_code: values.rfid_code || "",
         encoder: 133,
+        item_image: finalImageValue,
       };
+
+      console.log(
+        "DEBUG: Submission data:",
+        JSON.stringify(submissionData, null, 2),
+      );
 
       const res = await fetch("/api/fm/asset-management", {
         method: "POST",
@@ -163,7 +254,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
 
       toast.success("Asset saved successfully!");
       setOpen(false);
-      form.reset();
+      resetForm();
       onSuccess();
     } catch (error: any) {
       console.error("Asset creation error:", error);
@@ -173,13 +264,27 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
     }
   };
 
-  const itemTypes = [
-    { label: "Phone", value: "phone" },
-    { label: "Laptop", value: "laptop" },
-    { label: "Furniture", value: "furniture" },
-  ];
+  const resetForm = () => {
+    form.reset({
+      item_name: "",
+      item_type: "",
+      item_classification: "",
+      barcode: "",
+      rfid_code: "",
+      condition: "Good",
+      quantity: 1,
+      cost_per_item: 0,
+      life_span: 5,
+      date_acquired: new Date(), // ✅ Add this
+      department: 0,
+      employee: null,
+    });
+    setSelectedFile(null);
+    setPreviewUrl(null);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button>Add New Asset</Button>
       </DialogTrigger>
@@ -196,6 +301,65 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
             onSubmit={form.handleSubmit(onSubmit)}
             className="px-6 pb-8 space-y-6"
           >
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                <ImagePlus className="h-4 w-4" /> Asset Image
+              </div>
+              <Separator />
+
+              <div
+                className={cn(
+                  "border-2 border-dashed rounded-lg p-4 transition-all flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-muted/50",
+                  previewUrl ? "border-primary/50" : "border-muted",
+                )}
+                onClick={() => document.getElementById("image-upload")?.click()}
+              >
+                {previewUrl ? (
+                  <div className="relative w-full aspect-video max-h-48 overflow-hidden rounded-md">
+                    <img
+                      src={previewUrl}
+                      alt="Preview"
+                      className="w-full h-full object-contain"
+                    />
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      className="absolute top-2 right-2 h-8 w-8"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewUrl(null);
+                        setSelectedFile(null);
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="p-4 bg-primary/10 rounded-full text-primary">
+                      <UploadCloud className="h-8 w-8" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-medium">
+                        Click to upload or drag and drop
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        PNG, JPG or WebP (max. 2MB)
+                      </p>
+                    </div>
+                  </>
+                )}
+                <input
+                  id="image-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </div>
+            </div>
+
             {/* SECTION 1: GENERAL INFO */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">

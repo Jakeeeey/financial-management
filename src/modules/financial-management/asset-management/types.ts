@@ -54,7 +54,7 @@ export const assetSubmissionSchema = z.object({
   quantity: z.number(),
   cost_per_item: z.number(),
   life_span: z.number(),
-  date_acquired: z.string(), // ISO string format
+  date_acquired: z.date(),
   department: z.number(),
   employee: z.number().optional().nullable(),
   encoder: z.number(),
@@ -70,7 +70,7 @@ export const assetTableDataSchema = z.object({
   quantity: z.number(),
   cost_per_item: z.number(),
   total: z.number(),
-  date_acquired: z.string(),
+  date_acquired: z.date(),
   life_span: z.number(),
 
   // Virtual fields from the JOINs

@@ -162,12 +162,12 @@ export async function GET(req: Request) {
       return {
         ...asset,
         item_name: baseItem?.item_name ?? "N/A",
-        // FIXED: Looking up type and class IDs via the baseItem object
         item_type_name: typesMap.get(Number(baseItem?.item_type)) ?? "N/A",
         item_classification_name:
           classMap.get(Number(baseItem?.item_classification)) ?? "N/A",
         department_name: deptsMap.get(Number(asset.department)) ?? "Unassigned",
         assigned_to_name: usersMap.get(Number(asset.employee)) ?? "Unassigned",
+        item_image: asset.item_image,
       };
     });
 
@@ -218,13 +218,31 @@ export async function POST(req: Request) {
 
     let dateStr: string;
     const dateInput = body.date_acquired;
-    if (dateInput instanceof Date) {
-      dateStr = dateInput.toISOString().split("T")[0];
+
+    console.log("DEBUG: Received date_acquired:", dateInput, typeof dateInput);
+
+    if (!dateInput) {
+      dateStr = new Date().toISOString().split("T")[0];
     } else if (typeof dateInput === "string") {
-      dateStr = dateInput.split("T")[0];
+      // String format (which is what .toISOString() produces from the frontend)
+      try {
+        const parsedDate = new Date(dateInput);
+        if (isNaN(parsedDate.getTime())) {
+          console.warn("Invalid date string received:", dateInput);
+          dateStr = new Date().toISOString().split("T")[0];
+        } else {
+          dateStr = parsedDate.toISOString().split("T")[0];
+        }
+      } catch (error) {
+        console.error("Date parsing error:", error);
+        dateStr = new Date().toISOString().split("T")[0];
+      }
     } else {
+      // Fallback for any other type
       dateStr = new Date().toISOString().split("T")[0];
     }
+
+    console.log("DEBUG: Final dateStr:", dateStr);
 
     const assetPayload = {
       item_id: itemId,
@@ -239,7 +257,10 @@ export async function POST(req: Request) {
       barcode: body.barcode || null,
       rfid_code: body.rfid_code || null,
       encoder: 81,
+      item_image: body.item_image || null,
     };
+
+    console.log("DEBUG: assetPayload:", JSON.stringify(assetPayload, null, 2));
 
     const assetRes = await fetch(`${DIRECTUS_URL}/items/assets_and_equipment`, {
       method: "POST",

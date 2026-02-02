@@ -6,7 +6,7 @@ import { differenceInDays } from "date-fns";
 export function getDepreciatedValue(
   unitCost: number,
   quantity: number,
-  lifeSpanYears: number, // Formula: Cost / Life Span (year)
+  lifeSpanYears: number,
   dateAcquired: string | Date,
   projectionDate: Date = new Date(),
 ) {

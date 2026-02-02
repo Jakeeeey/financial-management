@@ -15,22 +15,23 @@ import { formatPHP, getDepreciatedValue } from "./utils/lib";
 export default function AssetManagementModulePage() {
   const [data, setData] = useState<AssetTableData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [projectionDate, setProjectionDate] = useState<Date>(new Date());
 
   // Calculate aggregate total for the summary header (Always Current Value)
   const totalValue = useMemo(() => {
-    const now = new Date();
     return data.reduce((acc, asset) => {
       return (
         acc +
         getDepreciatedValue(
-          Number(asset.cost_per_item) * Number(asset.quantity),
+          Number(asset.cost_per_item),
+          Number(asset.quantity),
           Number(asset.life_span),
-          new Date(asset.date_acquired).getTime(),
-          now, // Summary always shows "Now"
+          asset.date_acquired,
+          projectionDate,
         )
       );
     }, 0);
-  }, [data]);
+  }, [data, projectionDate]);
 
   const fetchAssets = async () => {
     try {
@@ -92,7 +93,10 @@ export default function AssetManagementModulePage() {
             <AssetDataTable
               columns={columns}
               data={data}
-              // Removed tableMeta since rows are now self-contained
+              tableMeta={{
+                projectionDate,
+                setProjectionDate,
+              }}
             />
           )}
         </CardContent>
