@@ -38,6 +38,13 @@ const data = {
             isActive: true,
             // items: [{ title: "Purchase Order", url: "/scm/supplier-management/purchase-order" }],
         },
+        {
+            title: "Chart Of Accounts",
+            url: "fm/chart-of-accounts",
+            icon: SquareTerminal,
+            isActive: true,
+            // items: [{ title: "Purchase Order", url: "/scm/supplier-management/purchase-order" }],
+        },
 
     ],
 }
