@@ -82,6 +82,16 @@ export const columns: ColumnDef<AssetTableData>[] = [
     },
   },
   {
+    accessorKey: "classification_name",
+    header: "Classification",
+    cell: ({ row }) => {
+      const classification = row.getValue("classification_name") as string;
+      return (
+        classification || <span className="text-muted-foreground">N/A</span>
+      );
+    },
+  },
+  {
     accessorKey: "barcode",
     header: "Barcode",
     cell: ({ row }) => {
@@ -148,8 +158,6 @@ export const columns: ColumnDef<AssetTableData>[] = [
     accessorKey: "total_value",
     header: ({ table }) => {
       const meta = table.options.meta as any;
-      const setProjectionDate = meta?.setProjectionDate;
-
       return (
         <div className="flex items-center gap-2">
           <Select
@@ -160,10 +168,12 @@ export const columns: ColumnDef<AssetTableData>[] = [
               else if (val === "1m") newDate.setMonth(newDate.getMonth() + 1);
               else if (val === "1y")
                 newDate.setFullYear(newDate.getFullYear() + 1);
-              setProjectionDate?.(newDate);
+
+              // This updates the Page state, which flows back down to the cells
+              meta?.setProjectionDate(newDate);
             }}
           >
-            <SelectTrigger className="h-7 w-fit border-none bg-transparent hover:bg-muted/50 transition-colors">
+            <SelectTrigger className="h-7 w-fit border-none bg-transparent">
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">
@@ -179,18 +189,20 @@ export const columns: ColumnDef<AssetTableData>[] = [
     cell: ({ row, table }) => {
       const asset = row.original;
       const meta = table.options.meta as any;
-      const projectionDate = meta?.projectionDate || new Date();
+
+      // CRITICAL: Pull the live date from meta
+      const viewDate = meta?.projectionDate || new Date();
 
       const projectedValue = getDepreciatedValue(
         Number(asset.cost_per_item),
         Number(asset.quantity),
         Number(asset.life_span),
         asset.date_acquired,
-        projectionDate,
+        viewDate, // Pass the dynamic date here
       );
 
       return (
-        <span className="font-mono font-medium text-primary whitespace-nowrap">
+        <span className="font-mono font-medium text-primary">
           {formatPHP(projectedValue)}
         </span>
       );

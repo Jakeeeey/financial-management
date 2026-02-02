@@ -51,6 +51,7 @@ export function AssetDataTable<TData, TValue>({
     onPaginationChange: setPagination,
     // FIX: Pass tableMeta into the internal meta state
     meta: {
+      ...tableMeta,
       onView: (asset: TData) => {
         setSelectedAsset(asset);
         setIsViewOpen(true);
@@ -60,6 +61,8 @@ export function AssetDataTable<TData, TValue>({
       pagination,
     },
   });
+
+  const currentProjectionDate = tableMeta?.projectionDate || new Date();
 
   return (
     <div className="space-y-4">
@@ -113,6 +116,7 @@ export function AssetDataTable<TData, TValue>({
         asset={selectedAsset as any}
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
+        projectionDate={currentProjectionDate}
       />
     </div>
   );

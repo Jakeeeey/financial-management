@@ -75,6 +75,7 @@ export const assetTableDataSchema = z.object({
 
   // Virtual fields from the JOINs
   item_name: z.string(),
+  classification_name: z.string(),
   department_name: z.string(),
   assigned_to_name: z.string(),
 
