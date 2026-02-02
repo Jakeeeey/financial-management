@@ -11,11 +11,13 @@ import { columns } from "./components/data-table/columns";
 import { AssetTableData } from "./types";
 import { AssetDataTable } from "./components/data-table";
 import { formatPHP, getDepreciatedValue } from "./utils/lib";
+import { ColumnFiltersState } from "@tanstack/react-table";
 
 export default function AssetManagementModulePage() {
   const [data, setData] = useState<AssetTableData[]>([]);
   const [loading, setLoading] = useState(true);
   const [projectionDate, setProjectionDate] = useState<Date>(new Date());
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 
   const totalValue = useMemo(() => {
     return data.reduce((acc, asset) => {
@@ -50,17 +52,16 @@ export default function AssetManagementModulePage() {
   }, []);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-4">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-        <div className="mt-4">
+        {/* <div className="mt-4">
           <h2 className="text-2xl font-bold text-primary">
             {formatPHP(totalValue)}
           </h2>
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
             Total Current Asset Value
           </p>
-        </div>
-
+        </div> */}
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -74,27 +75,22 @@ export default function AssetManagementModulePage() {
         </div>
       </div>
 
-      <Card className="shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle>Asset Inventory</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex h-60 items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          ) : (
-            <AssetDataTable
-              columns={columns}
-              data={data}
-              tableMeta={{
-                projectionDate,
-                setProjectionDate,
-              }}
-            />
-          )}
-        </CardContent>
-      </Card>
+      {loading ? (
+        <div className="flex h-60 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : (
+        <AssetDataTable
+          columns={columns}
+          data={data}
+          columnFilters={columnFilters}
+          onColumnFiltersChange={setColumnFilters}
+          tableMeta={{
+            projectionDate,
+            setProjectionDate,
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -37,7 +37,7 @@ export default function ViewAssetModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden border-none shadow-2xl">
+      <DialogContent className="sm:max-w-150 p-0 overflow-hidden border-none shadow-2xl">
         <DialogHeader className="p-6 pb-0">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
@@ -132,7 +132,7 @@ export default function ViewAssetModal({
                 </div>
               </div>
 
-              <div className="relative overflow-hidden rounded-xl border-2 border-primary/20 bg-primary/[0.03] p-5">
+              <div className="relative overflow-hidden rounded-xl border-2 border-primary/20 bg-primary/3 p-5">
                 <div className="flex flex-col gap-1 relative z-10">
                   <span className="text-[10px] uppercase tracking-widest font-black text-primary/60">
                     Projected Value ({projectionDate.toLocaleDateString()})

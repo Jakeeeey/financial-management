@@ -4,7 +4,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { AssetTableData } from "../../types";
 import { formatPHP, getDepreciatedValue } from "../../utils/lib";
-import { useState } from "react";
+import { DataTableColumnHeader } from "./table-column-header";
 import {
   Select,
   SelectContent,
@@ -13,55 +13,116 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Ellipsis,
   EllipsisVertical,
   Eye,
   Package,
   SquarePen,
   Trash2,
+  ShieldCheck,
+  AlertTriangle,
+  Wrench,
+  Ban,
+  Tag,
+  Building,
 } from "lucide-react";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { isWithinInterval, startOfDay, endOfDay, parseISO } from "date-fns";
+import { ta } from "date-fns/locale";
+
+// --- Sub-components ---
+
+const AssetCell = ({
+  imageId,
+  itemName,
+}: {
+  imageId: string | null;
+  itemName: string;
+}) => (
+  <div className="flex items-center gap-3">
+    <div className="h-10 w-10 overflow-hidden rounded-md border bg-muted flex items-center justify-center">
+      {imageId ? (
+        <img
+          src={`/api/fm/asset-image-view?id=${imageId}`}
+          alt={itemName}
+          className="h-full w-full object-cover transition-all hover:scale-110"
+        />
+      ) : (
+        <Package className="h-5 w-5 text-muted-foreground/50" />
+      )}
+    </div>
+  </div>
+);
+
+const ConditionBadge = ({ condition }: { condition: string }) => {
+  const variants: Record<
+    string,
+    "default" | "destructive" | "outline" | "secondary"
+  > = {
+    Good: "default",
+    Bad: "destructive",
+    "Under Maintenance": "secondary",
+    Discontinued: "outline",
+  };
+  return <Badge variant={variants[condition] || "outline"}>{condition}</Badge>;
+};
+
+const ProjectedValueHeader = ({ table }: any) => {
+  const meta = table.options.meta;
+  return (
+    <Select
+      defaultValue="now"
+      onValueChange={(val) => {
+        const newDate = new Date();
+        if (val === "1d") newDate.setDate(newDate.getDate() + 1);
+        else if (val === "1m") newDate.setMonth(newDate.getMonth() + 1);
+        else if (val === "1y") newDate.setFullYear(newDate.getFullYear() + 1);
+        meta?.setProjectionDate(newDate);
+      }}
+    >
+      <SelectTrigger className="h-7 w-fit border-none bg-transparent p-0 focus:ring-0">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="end">
+        <SelectItem value="now">Projected Value</SelectItem>
+        <SelectItem value="1d">In 1 Day</SelectItem>
+        <SelectItem value="1m">In 1 Month</SelectItem>
+        <SelectItem value="1y">In 1 Year</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+};
+
+// --- Column Definitions ---
 
 export const columns: ColumnDef<AssetTableData>[] = [
   {
     accessorKey: "item_image",
     header: "Asset",
-    cell: ({ row }) => {
-      const imageId = row.getValue("item_image") as string | null;
-      const itemName = row.original.item_name;
-
-      const proxyUrl = imageId
-        ? `/api/fm/asset-image-view?id=${imageId}`
-        : null;
-
-      return (
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 overflow-hidden rounded-md border bg-muted flex items-center justify-center">
-            {proxyUrl ? (
-              <img
-                src={proxyUrl}
-                alt={itemName}
-                className="h-full w-full object-cover transition-all hover:scale-110"
-              />
-            ) : (
-              <Package className="h-5 w-5 text-muted-foreground/50" />
-            )}
-          </div>
-        </div>
-      );
-    },
+    enableHiding: false,
+    cell: ({ row }) => (
+      <AssetCell
+        imageId={row.getValue("item_image")}
+        itemName={row.original.item_name}
+      />
+    ),
   },
   {
     accessorKey: "item_name",
-    header: "Item Name",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Item Name" />
+    ),
+    meta: {
+      label: "Item Name",
+      placeholder: "Search assets...",
+      variant: "text",
+    },
     cell: ({ row }) => {
       const name = row.original.item_name;
       const isValid = name && name !== "N/A";
@@ -83,114 +144,81 @@ export const columns: ColumnDef<AssetTableData>[] = [
   },
   {
     accessorKey: "classification_name",
-    header: "Classification",
-    cell: ({ row }) => {
-      const classification = row.getValue("classification_name") as string;
-      return (
-        classification || <span className="text-muted-foreground">N/A</span>
-      );
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Classification" />
+    ),
+    meta: {
+      label: "Classification",
+      variant: "text",
+      icon: Tag,
     },
-  },
-  {
-    accessorKey: "barcode",
-    header: "Barcode",
-    cell: ({ row }) => {
-      const barcode = row.getValue("barcode") as string | null;
-      return barcode || <span className="text-muted-foreground">—</span>;
-    },
-  },
-  {
-    accessorKey: "rfid_code",
-    header: "RFID Code",
-    cell: ({ row }) => {
-      const rfid = row.getValue("rfid_code") as string | null;
-      return rfid || <span className="text-muted-foreground">—</span>;
-    },
+    cell: ({ row }) =>
+      row.getValue("classification_name") || (
+        <span className="text-muted-foreground">N/A</span>
+      ),
   },
   {
     accessorKey: "department_name",
-    header: "Department",
-    cell: ({ row }) => {
-      const dept = row.getValue("department_name") as string;
-      return dept || <span className="text-muted-foreground">Unassigned</span>;
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Department" />
+    ),
+    meta: {
+      label: "Department",
+      variant: "text",
+      icon: Building,
     },
+    cell: ({ row }) =>
+      (row.getValue("department_name") as string) || (
+        <span className="text-muted-foreground">Unassigned</span>
+      ),
   },
   {
     accessorKey: "condition",
-    header: "Condition",
-    cell: ({ row }) => {
-      const condition = row.getValue("condition") as string;
-      const variants: Record<
-        string,
-        "default" | "destructive" | "outline" | "secondary"
-      > = {
-        Good: "default",
-        Bad: "destructive",
-        "Under Maintenance": "secondary",
-        Discontinued: "outline",
-      };
-      return (
-        <Badge variant={variants[condition] || "outline"}>{condition}</Badge>
-      );
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Condition" />
+    ),
+    meta: {
+      label: "Condition",
+      variant: "multiSelect",
+      options: [
+        { label: "Good", value: "Good", icon: ShieldCheck },
+        { label: "Bad", value: "Bad", icon: AlertTriangle },
+        { label: "Maintenance", value: "Under Maintenance", icon: Wrench },
+        { label: "Discontinued", value: "Discontinued", icon: Ban },
+      ],
     },
+    filterFn: "arrIncludesSome",
+    cell: ({ row }) => <ConditionBadge condition={row.getValue("condition")} />,
   },
   {
     accessorKey: "quantity",
-    header: "Qty",
-    cell: ({ row }) => {
-      const qty = row.getValue("quantity") as number;
-      return <div className="text-center font-medium">{qty}</div>;
-    },
+    header: ({ table }) => (
+      <DataTableColumnHeader
+        column={table.getColumn("quantity")!}
+        label="Qty"
+      />
+    ),
+    cell: ({ row }) => (
+      <div className="text-center font-medium">{row.getValue("quantity")}</div>
+    ),
   },
   {
     accessorKey: "cost_per_item",
-    header: "Unit Cost",
-    cell: ({ row }) => {
-      const cost = row.getValue("cost_per_item") as number;
-      return (
-        <div className="font-mono">
-          ₱{cost.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-        </div>
-      );
-    },
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Cost per Item" />
+    ),
+    cell: ({ row }) => (
+      <div className="font-mono">
+        {formatPHP(row.getValue("cost_per_item"))}
+      </div>
+    ),
   },
   {
     accessorKey: "total_value",
-    header: ({ table }) => {
-      const meta = table.options.meta as any;
-      return (
-        <div className="flex items-center gap-2">
-          <Select
-            defaultValue="now"
-            onValueChange={(val) => {
-              const newDate = new Date();
-              if (val === "1d") newDate.setDate(newDate.getDate() + 1);
-              else if (val === "1m") newDate.setMonth(newDate.getMonth() + 1);
-              else if (val === "1y")
-                newDate.setFullYear(newDate.getFullYear() + 1);
-
-              // This updates the Page state, which flows back down to the cells
-              meta?.setProjectionDate(newDate);
-            }}
-          >
-            <SelectTrigger className="h-7 w-fit border-none bg-transparent">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              <SelectItem value="now">Projected Value</SelectItem>
-              <SelectItem value="1d">In 1 Day</SelectItem>
-              <SelectItem value="1m">In 1 Month</SelectItem>
-              <SelectItem value="1y">In 1 Year</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      );
-    },
+    header: ({ table }) => <ProjectedValueHeader table={table} />,
     cell: ({ row, table }) => {
       const asset = row.original;
       const meta = table.options.meta as any;
-
-      // CRITICAL: Pull the live date from meta
       const viewDate = meta?.projectionDate || new Date();
 
       const projectedValue = getDepreciatedValue(
@@ -198,7 +226,7 @@ export const columns: ColumnDef<AssetTableData>[] = [
         Number(asset.quantity),
         Number(asset.life_span),
         asset.date_acquired,
-        viewDate, // Pass the dynamic date here
+        viewDate,
       );
 
       return (
@@ -209,61 +237,66 @@ export const columns: ColumnDef<AssetTableData>[] = [
     },
   },
   {
-    accessorKey: "assigned_to_name",
-    header: "Assigned To",
-    cell: ({ row }) => {
-      const name = row.original.assigned_to_name;
-      const isAssigned = name && name !== "Unassigned";
-      return (
-        <span className={!isAssigned ? "text-muted-foreground italic" : ""}>
-          {name || "Unassigned"}
-        </span>
-      );
-    },
-  },
-  {
     accessorKey: "date_acquired",
-    header: "Date Acquired",
+    id: "date_acquired",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Date Acquired" />
+    ),
+    filterFn: (row, id, value) => {
+      const dateStr = row.getValue(id) as string;
+      if (!dateStr || !value) return true;
+      const rowDate = parseISO(dateStr);
+
+      if (
+        Array.isArray(value) &&
+        (value[0] instanceof Date || value[1] instanceof Date)
+      ) {
+        const [start, end] = value as [Date | null, Date | null];
+        const s = start ? startOfDay(start) : null;
+        const e = end ? endOfDay(end) : null;
+
+        if (s && e) return isWithinInterval(rowDate, { start: s, end: e });
+        if (s) return rowDate >= s;
+        if (e) return rowDate <= e;
+      }
+      return true;
+    },
     cell: ({ row }) => {
       const date = row.getValue("date_acquired") as string;
-      if (!date) return <span className="text-muted-foreground">—</span>;
-
-      const formatted = new Date(date).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-      return <span className="text-sm">{formatted}</span>;
+      return date ? (
+        <span className="text-sm">
+          {new Date(date).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          })}
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      );
     },
   },
   {
     id: "actions",
     cell: ({ row, table }) => {
-      const asset = row.original;
       const meta = table.options.meta as any;
-
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              className="data-[state=open]:bg-muted text-muted-foreground flex size-8"
-              size="icon"
-            >
+            <Button variant="ghost" className="h-8 w-8 p-0" size="icon">
               <EllipsisVertical className="h-4 w-4" />
-              <span className="sr-only">Open menu</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-32">
             <DropdownMenuItem>
-              <SquarePen /> Edit
+              <SquarePen className="mr-2 h-4 w-4" /> Edit
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => meta?.onView(asset)}>
-              <Eye /> View
+            <DropdownMenuItem onClick={() => meta?.onView(row.original)}>
+              <Eye className="mr-2 h-4 w-4" /> View
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive">
-              <Trash2 /> Delete
+              <Trash2 className="mr-2 h-4 w-4" /> Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

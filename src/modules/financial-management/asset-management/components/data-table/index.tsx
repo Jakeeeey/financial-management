@@ -6,8 +6,12 @@ import {
   flexRender,
   getCoreRowModel,
   getPaginationRowModel,
+  getSortedRowModel,
   getFilteredRowModel,
+  SortingState,
+  ColumnFiltersState,
   useReactTable,
+  OnChangeFn,
 } from "@tanstack/react-table";
 
 import {
@@ -21,35 +25,46 @@ import {
 import { DataTablePagination } from "./table-pagination";
 import { useState } from "react";
 import ViewAssetModal from "../AssetViewModal";
+import { Input } from "@/components/ui/input";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
+  columnFilters: ColumnFiltersState;
+  onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>;
   data: TData[];
-  // FIX: Added tableMeta to the interface
   tableMeta?: any;
 }
 
 export function AssetDataTable<TData, TValue>({
   columns,
   data,
+  columnFilters,
+  onColumnFiltersChange,
   tableMeta, // FIX: Destructure here
 }: DataTableProps<TData, TValue>) {
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
     pageSize: 10,
   });
-
+  const [sorting, setSorting] = React.useState<SortingState>([]);
   const [selectedAsset, setSelectedAsset] = useState<TData | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
   const table = useReactTable({
     data,
+    state: {
+      pagination,
+      sorting,
+      columnFilters,
+    },
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    onSortingChange: setSorting,
+    onColumnFiltersChange: onColumnFiltersChange,
     getFilteredRowModel: getFilteredRowModel(),
     onPaginationChange: setPagination,
-    // FIX: Pass tableMeta into the internal meta state
+    getSortedRowModel: getSortedRowModel(),
     meta: {
       ...tableMeta,
       onView: (asset: TData) => {
@@ -57,15 +72,25 @@ export function AssetDataTable<TData, TValue>({
         setIsViewOpen(true);
       },
     },
-    state: {
-      pagination,
-    },
   });
 
   const currentProjectionDate = tableMeta?.projectionDate || new Date();
 
   return (
     <div className="space-y-4">
+      <div className="flex max-w-lg items-start sm:items-center justify-between gap-2">
+        <Input
+          placeholder="Search assets name..."
+          className="w-full"
+          value={
+            (table.getColumn("item_name")?.getFilterValue() as string) ?? ""
+          }
+          onChange={(event) =>
+            table.getColumn("item_name")?.setFilterValue(event.target.value)
+          }
+        />
+        
+      </div>
       <div className="rounded-md border">
         <Table>
           <TableHeader className="bg-muted/50">
