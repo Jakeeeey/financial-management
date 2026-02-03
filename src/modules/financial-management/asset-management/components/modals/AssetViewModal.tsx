@@ -6,7 +6,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatPHP, getDepreciatedValue } from "../utils/lib";
+import {
+  formatPHP,
+  getDepreciatedValue,
+} from "@/modules/financial-management/asset-management/utils/lib";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -69,7 +72,7 @@ export default function ViewAssetModal({
             <div className="aspect-square rounded-xl border bg-secondary/20 flex items-center justify-center overflow-hidden ring-1 ring-border">
               {asset.item_image ? (
                 <img
-                  src={`/api/fm/asset-image-view?id=${asset.item_image}`}
+                  src={`/api/fm/asset-management/asset-image-view?id=${asset.item_image}`}
                   className="object-cover h-full w-full"
                   alt={asset.item_name}
                 />

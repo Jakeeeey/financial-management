@@ -62,7 +62,7 @@ import {
   User,
   ItemType,
   ItemClassification,
-} from "../types";
+} from "@/modules/financial-management/asset-management/types";
 import {
   Command,
   CommandEmpty,
@@ -183,7 +183,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
       const formData = new FormData();
       formData.append("file", compressedFile);
 
-      const res = await fetch("/api/fm/asset-image-upload", {
+      const res = await fetch("/api/fm/asset-management/asset-image-upload", {
         method: "POST",
         body: formData,
       });
