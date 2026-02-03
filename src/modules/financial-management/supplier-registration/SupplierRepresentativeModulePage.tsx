@@ -10,34 +10,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Supplier } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
 import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { EditSupplierModal } from "./components/modals/edit-supplier-modal";
 
 export default function SupplierRepresentativeModulePage() {
-  const {
-    suppliers,
-    isLoading,
-    error,
-    refresh,
-    setSearchQuery,
-    deleteSupplier,
-  } = useSuppliers();
+  const { suppliers, isLoading, error, refresh, setSearchQuery } =
+    useSuppliers();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(
     null,
   );
   const [viewModalOpen, setViewModalOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(
-    null,
-  );
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   // Handle view supplier
   const handleView = (supplier: Supplier) => {
@@ -47,8 +29,14 @@ export default function SupplierRepresentativeModulePage() {
 
   // Handle edit supplier
   const handleEdit = (supplier: Supplier) => {
-    // TODO: Implement edit functionality in next phase
-    toast.info("Edit functionality will be implemented in the next phase");
+    setSelectedSupplier(supplier);
+    setEditModalOpen(true);
+  };
+
+  // Handle edit success
+  const handleEditSuccess = () => {
+    refresh();
+    toast.success("Supplier updated successfully");
   };
 
   // Create columns with handlers
@@ -124,6 +112,17 @@ export default function SupplierRepresentativeModulePage() {
           setViewModalOpen(false);
           setSelectedSupplier(null);
         }}
+      />
+
+      {/* Edit Supplier Modal */}
+      <EditSupplierModal
+        supplier={selectedSupplier}
+        open={editModalOpen}
+        onClose={() => {
+          setEditModalOpen(false);
+          setSelectedSupplier(null);
+        }}
+        onSuccess={handleEditSuccess}
       />
     </div>
   );
