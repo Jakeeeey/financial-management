@@ -1,4 +1,3 @@
-//src/modules/financial-management/discount-type/components/data-table/skeleton-loader.tsx
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -9,61 +8,45 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export function AssetTableSkeleton() {
+export function DiscountTypeTableSkeleton() {
   return (
-    <div className="space-y-4">
-      {/* Header & Actions Skeleton */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <Skeleton className="h-6 w-32" />
         <div className="flex items-center gap-2">
-          <Skeleton className="h-9 w-9 rounded-md" />{" "}
-          <Skeleton className="h-9 w-32 rounded-md" />{" "}
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-64" />
         </div>
       </div>
-      {/* Search Bar Placeholder */}
-      <Skeleton className="h-10 max-w-lg" />
 
-      <div className="rounded-md border">
+      <div className="rounded-lg border">
         <Table>
-          <TableHeader className="bg-muted/50">
+          <TableHeader className="bg-muted/40">
             <TableRow>
-              {Array.from({ length: 8 }).map((_, i) => (
+              {Array.from({ length: 4 }).map((_, i) => (
                 <TableHead key={i}>
-                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-24" />
                 </TableHead>
               ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {Array.from({ length: 8 }).map((_, i) => (
+            {Array.from({ length: 6 }).map((_, i) => (
               <TableRow key={i}>
-                <TableCell>
-                  <Skeleton className="h-10 w-10 rounded-md" />
-                </TableCell>
-                <TableCell>
-                  <Skeleton className="h-4 w-32" />
-                </TableCell>
-                <TableCell>
-                  <Skeleton className="h-4 w-24" />
-                </TableCell>
-                <TableCell>
-                  <Skeleton className="h-4 w-24" />
-                </TableCell>
-                <TableCell>
-                  <Skeleton className="h-4 w-12" />
-                </TableCell>
-                <TableCell>
-                  <Skeleton className="h-4 w-20" />
-                </TableCell>
-                <TableCell>
-                  <Skeleton className="h-4 w-20" />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Skeleton className="h-8 w-8 rounded-full ml-auto" />
-                </TableCell>
+                {Array.from({ length: 4 }).map((__, j) => (
+                  <TableCell key={j}>
+                    <Skeleton className="h-4 w-full" />
+                  </TableCell>
+                ))}
               </TableRow>
             ))}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-4 w-48" />
+        <Skeleton className="h-9 w-52" />
       </div>
     </div>
   );

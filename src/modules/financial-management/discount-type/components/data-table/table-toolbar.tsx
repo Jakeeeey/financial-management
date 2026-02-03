@@ -1,102 +1,48 @@
-//src/modules/financial-management/discount-type/components/data-table/table-toolbar.tsx
 "use client";
 
-import { Table } from "@tanstack/react-table";
-import { Settings2, X } from "lucide-react"; // Added X for resetting filters
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input"; // Import Shadcn Input
+import type { Table } from "@tanstack/react-table";
+import { Input } from "@/components/ui/input";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { DataTableFacetedFilter } from "./table-faceted-filter";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-// Example options - adjust these to match your asset data
-const statuses = [
-  { label: "Active", value: "active" },
-  { label: "Maintenance", value: "maintenance" },
-  { label: "Retired", value: "retired" },
-];
-
-interface TableToolbarProps {
-  table: Table<any>;
-}
-
-export function TableToolbar({ table }: TableToolbarProps) {
-  const isFiltered = table.getState().columnFilters.length > 0;
-
+export function TableToolbar({ table }: { table: Table<any> }) {
   return (
-    <div className="flex items-center justify-between gap-2 pb-4">
-      <div className="flex flex-1 items-center gap-2">
-        {/* 1. Global/Column Search Input */}
-        <Input
-          placeholder="Filter assets..."
-          value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-          onChange={(event) =>
-            table.getColumn("name")?.setFilterValue(event.target.value)
-          }
-          className="h-9 w-37.5 lg:w-62.5"
-        />
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-sm font-semibold">Data Table</div>
 
-        {/* 2. The Combobox (Faceted Filter) */}
-        {table.getColumn("status") && (
-          <DataTableFacetedFilter
-            column={table.getColumn("status")}
-            title="Status"
-            options={statuses}
-          />
-        )}
-
-        {/* 3. Reset Button (shows only when filters are active) */}
-        {isFiltered && (
-          <Button
-            variant="ghost"
-            onClick={() => table.resetColumnFilters()}
-            className="h-9 px-2 lg:px-3"
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>Show</span>
+          <Select
+            value={String(table.getState().pagination.pageSize)}
+            onValueChange={(v) => table.setPageSize(Number(v))}
           >
-            Reset
-            <X className="ml-2 h-4 w-4" />
-          </Button>
-        )}
-      </div>
+            <SelectTrigger className="h-9 w-[90px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[10, 20, 30, 40, 50].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span>entries</span>
+        </div>
 
-      {/* Your existing Column Visibility Toggle */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9 ml-auto">
-            <Settings2 className="mr-2 h-4 w-4" />
-            <span className="hidden lg:inline">View</span>
-            <span className="lg:hidden">Columns</span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          {table
-            .getAllColumns()
-            .filter(
-              (column) =>
-                typeof column.accessorFn !== "undefined" && column.getCanHide(),
-            )
-            .map((column) => {
-              const label =
-                (column.columnDef.meta as any)?.label ??
-                (typeof column.columnDef.header === "string"
-                  ? column.columnDef.header
-                  : column.id);
-              return (
-                <DropdownMenuCheckboxItem
-                  key={column.id}
-                  className="capitalize"
-                  checked={column.getIsVisible()}
-                  onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                >
-                  {label.replace(/_/g, " ")}
-                </DropdownMenuCheckboxItem>
-              );
-            })}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        <Input
+          className="h-9 w-[240px]"
+          placeholder="Search discount type..."
+          value={(table.getColumn("discount_type")?.getFilterValue() as string) ?? ""}
+          onChange={(e) => table.getColumn("discount_type")?.setFilterValue(e.target.value)}
+        />
+      </div>
     </div>
   );
 }

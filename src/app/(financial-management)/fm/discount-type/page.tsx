@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "../_components/nav-user";
-import ComingSoon from "../_components/ComingSoon"
+import { DiscountTypeModule } from "@/modules/financial-management/discount-type";
 
 import { cookies } from "next/headers";
 
@@ -118,7 +118,7 @@ export default async function Page() {
 
             <ScrollArea className="min-h-0 flex-1">
                 <div className="p-4">
-                    <ComingSoon />
+                    <DiscountTypeModule />
                 </div>
             </ScrollArea>
         </div>
