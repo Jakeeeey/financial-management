@@ -46,12 +46,43 @@ export const SupplierSchema = z.object({
 
 /**
  * Form schema for creating/updating suppliers
- * Omits auto-generated fields like id and date_added
+ * Only supplier_name, supplier_shortcut, and supplier_type are required
+ * All other fields are optional
  */
-export const SupplierFormSchema = SupplierSchema.omit({
-  id: true,
-  date_added: true,
-  nonBuy: true,
+export const SupplierFormSchema = z.object({
+  supplier_name: z
+    .string()
+    .min(2, "Supplier name must be at least 2 characters")
+    .max(255, "Supplier name is too long"),
+  supplier_shortcut: z
+    .string()
+    .min(1, "Supplier shortcut is required")
+    .max(50, "Supplier shortcut is too long"),
+  supplier_type: z.string().min(1, "Supplier type is required"),
+  tin_number: z.string().optional().default(""),
+  contact_person: z.string().optional().default(""),
+  email_address: z
+    .string()
+    .email("Invalid email address")
+    .or(z.literal("N/A"))
+    .or(z.literal(""))
+    .optional()
+    .default(""),
+  phone_number: z.string().optional().default(""),
+  address: z.string().optional().default(""),
+  brgy: z.string().optional().default(""),
+  city: z.string().optional().default(""),
+  state_province: z.string().optional().default(""),
+  postal_code: z.string().optional().default(""),
+  country: z.string().default("Philippines"),
+  payment_terms: z.string().optional().default(""),
+  delivery_terms: z.string().optional().default(""),
+  isActive: z.number().int().min(0).max(1).default(1),
+  supplier_image: z.string().optional().default(""),
+  bank_details: z.string().optional().default(""),
+  notes_or_comments: z.string().optional().default(""),
+  agreement_or_contract: z.string().optional().default(""),
+  preferred_communication_method: z.string().optional().default(""),
 });
 
 /**

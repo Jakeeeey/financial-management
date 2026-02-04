@@ -53,8 +53,13 @@ export async function POST(request: NextRequest) {
     // Validate with Zod schema
     const validatedData = SupplierFormSchema.parse(body);
 
+    const supplierWithMetadata = {
+      ...validatedData,
+      date_added: new Date().toISOString(),
+    };
+
     // Create supplier
-    const newSupplier = await createSupplier(validatedData);
+    const newSupplier = await createSupplier(supplierWithMetadata);
 
     return NextResponse.json(
       {

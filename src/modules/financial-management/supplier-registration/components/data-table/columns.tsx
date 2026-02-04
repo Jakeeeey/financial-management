@@ -12,7 +12,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Eye, Pencil, Trash2 } from "lucide-react";
+import { DataTableColumnHeader } from "@/modules/financial-management/supplier-registration/components/data-table/table-column-header";
+import {
+  MoreHorizontal,
+  Eye,
+  Pencil,
+  Tag,
+  User,
+  Fingerprint,
+  Calendar,
+  Activity,
+  MoreVertical,
+} from "lucide-react";
 import { formatDate } from "@/modules/financial-management/supplier-registration/utils/utils";
 
 interface ColumnsProps {
@@ -26,7 +37,9 @@ export const createColumns = ({
 }: ColumnsProps): ColumnDef<Supplier>[] => [
   {
     accessorKey: "supplier_name",
-    header: "Supplier Name",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Supplier Name" />
+    ),
     cell: ({ row }) => {
       const name = row.getValue("supplier_name") as string;
       const shortcut = row.original.supplier_shortcut;
@@ -42,7 +55,9 @@ export const createColumns = ({
   },
   {
     accessorKey: "supplier_type",
-    header: "Type",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Type" />
+    ),
     cell: ({ row }) => {
       const type = row.getValue("supplier_type") as string;
       return <Badge variant="outline">{type}</Badge>;
@@ -50,27 +65,51 @@ export const createColumns = ({
   },
   {
     accessorKey: "contact_person",
-    header: "Contact Person",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Contact Person" />
+    ),
+    cell: ({ row }) => (
+      <div className="flex items-center gap-2">
+        <User className="h-3.5 w-3.5 text-muted-foreground" />
+        <span>{row.getValue("contact_person")}</span>
+      </div>
+    ),
   },
   {
     accessorKey: "tin_number",
-    header: "TIN Number",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="TIN Number" />
+    ),
     cell: ({ row }) => {
       const tin = row.getValue("tin_number") as string;
-      return <span className="font-mono text-sm">{tin}</span>;
+      return (
+        <div className="flex items-center gap-2 font-mono text-sm">
+          <Fingerprint className="h-3.5 w-3.5 text-muted-foreground" />
+          {tin}
+        </div>
+      );
     },
   },
   {
     accessorKey: "date_added",
-    header: "Date Added",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Date Added" />
+    ),
     cell: ({ row }) => {
       const date = row.getValue("date_added") as string;
-      return <span className="text-sm">{formatDate(date)}</span>;
+      return (
+        <div className="flex items-center gap-2">
+          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-sm">{formatDate(date)}</span>
+        </div>
+      );
     },
   },
   {
     accessorKey: "isActive",
-    header: "Status",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Status" />
+    ),
     cell: ({ row }) => {
       const isActive = row.getValue("isActive") as number;
       return (
@@ -91,7 +130,7 @@ export const createColumns = ({
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-8 w-8 p-0">
               <span className="sr-only">Open menu</span>
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

@@ -70,19 +70,7 @@ export function useSuppliers() {
    */
   useEffect(() => {
     fetchSuppliers();
-  }, [fetchSuppliers]);
-
-  /**
-   * Refresh on window focus
-   */
-  useEffect(() => {
-    const handleFocus = () => {
-      refresh();
-    };
-
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [refresh]);
+  }, []);
 
   /**
    * Memoized filtered suppliers

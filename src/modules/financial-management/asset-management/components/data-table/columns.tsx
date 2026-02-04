@@ -24,6 +24,7 @@ import {
   Ban,
   Tag,
   Building,
+  Calendar,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -102,42 +103,69 @@ const ProjectedValueHeader = ({ table }: any) => {
 // --- Column Definitions ---
 
 export const columns: ColumnDef<AssetTableData>[] = [
-  {
-    accessorKey: "item_image",
-    header: "Asset",
-    enableHiding: false,
-    cell: ({ row }) => (
-      <AssetCell
-        imageId={row.getValue("item_image")}
-        itemName={row.original.item_name}
-      />
-    ),
-  },
+  // {
+  //   accessorKey: "item_image",
+  //   header: "Asset",
+  //   enableHiding: false,
+  //   cell: ({ row }) => (
+  //     <AssetCell
+  //       imageId={row.getValue("item_image")}
+  //       itemName={row.original.item_name}
+  //     />
+  //   ),
+  // },
+  // {
+  //   accessorKey: "item_name",
+  //   header: ({ column }) => (
+  //     <DataTableColumnHeader column={column} label="Item Name" />
+  //   ),
+  //   meta: {
+  //     label: "Item Name",
+  //     placeholder: "Search assets...",
+  //     variant: "text",
+  //   },
+  //   cell: ({ row }) => {
+  //     const name = row.original.item_name;
+  //     const isValid = name && name !== "N/A";
+  //     return (
+  //       <div className="flex flex-col">
+  //         <span
+  //           className={`font-medium ${!isValid ? "text-muted-foreground" : ""}`}
+  //         >
+  //           {name || "N/A"}
+  //         </span>
+  //         {!isValid && (
+  //           <span className="text-[10px] text-orange-500 font-mono">
+  //             Missing Item Link
+  //           </span>
+  //         )}
+  //       </div>
+  //     );
+  //   },
+  // },
   {
     accessorKey: "item_name",
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} label="Item Name" />
+      <DataTableColumnHeader column={column} label="Asset" />
     ),
-    meta: {
-      label: "Item Name",
-      placeholder: "Search assets...",
-      variant: "text",
-    },
     cell: ({ row }) => {
       const name = row.original.item_name;
       const isValid = name && name !== "N/A";
       return (
-        <div className="flex flex-col">
-          <span
-            className={`font-medium ${!isValid ? "text-muted-foreground" : ""}`}
-          >
-            {name || "N/A"}
-          </span>
-          {!isValid && (
-            <span className="text-[10px] text-orange-500 font-mono">
-              Missing Item Link
+        <div className="flex items-center gap-3 group">
+          <AssetCell imageId={row.original.item_image} itemName={name} />
+          <div className="flex flex-col min-w-0">
+            <span
+              className={`font-semibold truncate ${!isValid ? "text-muted-foreground italic" : "text-foreground"}`}
+            >
+              {name || "Unnamed Asset"}
             </span>
-          )}
+            {!isValid && (
+              <span className="text-[10px] text-orange-600 font-bold uppercase tracking-tight">
+                Missing Item Link
+              </span>
+            )}
+          </div>
         </div>
       );
     },
@@ -199,7 +227,7 @@ export const columns: ColumnDef<AssetTableData>[] = [
       />
     ),
     cell: ({ row }) => (
-      <div className="text-center font-medium">{row.getValue("quantity")}</div>
+      <div className="font-medium">{row.getValue("quantity")}</div>
     ),
   },
   {
@@ -207,11 +235,7 @@ export const columns: ColumnDef<AssetTableData>[] = [
     header: ({ column }) => (
       <DataTableColumnHeader column={column} label="Cost per Item" />
     ),
-    cell: ({ row }) => (
-      <div className="font-mono">
-        {formatPHP(row.getValue("cost_per_item"))}
-      </div>
-    ),
+    cell: ({ row }) => <div>{formatPHP(row.getValue("cost_per_item"))}</div>,
   },
   {
     accessorKey: "total_value",
@@ -229,50 +253,29 @@ export const columns: ColumnDef<AssetTableData>[] = [
         viewDate,
       );
 
-      return (
-        <span className="font-mono font-medium text-primary">
-          {formatPHP(projectedValue)}
-        </span>
-      );
+      return <span className="text-primary">{formatPHP(projectedValue)}</span>;
     },
   },
   {
     accessorKey: "date_acquired",
-    id: "date_acquired",
     header: ({ column }) => (
-      <DataTableColumnHeader column={column} label="Date Acquired" />
+      <DataTableColumnHeader column={column} label="Acquired" />
     ),
-    filterFn: (row, id, value) => {
-      const dateStr = row.getValue(id) as string;
-      if (!dateStr || !value) return true;
-      const rowDate = parseISO(dateStr);
-
-      if (
-        Array.isArray(value) &&
-        (value[0] instanceof Date || value[1] instanceof Date)
-      ) {
-        const [start, end] = value as [Date | null, Date | null];
-        const s = start ? startOfDay(start) : null;
-        const e = end ? endOfDay(end) : null;
-
-        if (s && e) return isWithinInterval(rowDate, { start: s, end: e });
-        if (s) return rowDate >= s;
-        if (e) return rowDate <= e;
-      }
-      return true;
-    },
     cell: ({ row }) => {
       const date = row.getValue("date_acquired") as string;
-      return date ? (
-        <span className="text-sm">
-          {new Date(date).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-          })}
-        </span>
-      ) : (
-        <span className="text-muted-foreground">—</span>
+      return (
+        <div className="flex items-center gap-2">
+          <Calendar className="h-3.5 w-3.5 text-muted-foreground/80" />
+          <span className="text-xs font-medium">
+            {date
+              ? new Date(date).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })
+              : "—"}
+          </span>
+        </div>
       );
     },
   },

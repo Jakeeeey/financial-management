@@ -90,7 +90,7 @@ export default function AssetManagementModulePage() {
         <ErrorPage
           title="Data Connection Error"
           message={errorState.message}
-          onRefresh={fetchAssets} // Retries the fetch instead of full page reload
+          onRefresh={fetchAssets}
         />
       </div>
     );

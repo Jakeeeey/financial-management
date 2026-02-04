@@ -33,16 +33,20 @@ interface DataTableProps<TData, TValue> {
   onSearchChange?: (value: string) => void;
 }
 
-export function DataTable<TData, TValue>({
+export function SupplierDataTable<TData, TValue>({
   columns,
   data,
-  searchPlaceholder = "Search...",
 }: DataTableProps<TData, TValue>) {
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
     pageSize: 10,
   });
-  const [sorting, setSorting] = React.useState<SortingState>([]);
+  const [sorting, setSorting] = React.useState<SortingState>([
+    {
+      id: "date_added", // Ensure this matches the accessorKey in your columns.tsx
+      desc: true,
+    },
+  ]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
   );

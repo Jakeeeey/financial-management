@@ -1,17 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useSuppliers } from "@/modules/financial-management/supplier-registration/hooks/useSuppliers";
-import { DataTable } from "./components/data-table";
+import { SupplierDataTable } from "./components/data-table";
 import { createColumns } from "./components/data-table/columns";
 import { SupplierDetailsModal } from "@/modules/financial-management/supplier-registration/components/modals/suppliers-detail-modal";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Supplier } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
 import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { EditSupplierModal } from "./components/modals/edit-supplier-modal";
 import { SupplierTableSkeleton } from "./components/data-table/table-skeleton-loader";
+import { AddSupplierModal } from "./components/modals/add-supplier-modal";
 
 export default function SupplierRepresentativeModulePage() {
   const { suppliers, isLoading, refresh, setSearchQuery } = useSuppliers();
@@ -20,18 +20,19 @@ export default function SupplierRepresentativeModulePage() {
   );
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
 
   // Handle view supplier
-  const handleView = (supplier: Supplier) => {
+  const handleView = useCallback((supplier: Supplier) => {
     setSelectedSupplier(supplier);
     setViewModalOpen(true);
-  };
+  }, []);
 
   // Handle edit supplier
-  const handleEdit = (supplier: Supplier) => {
+  const handleEdit = useCallback((supplier: Supplier) => {
     setSelectedSupplier(supplier);
     setEditModalOpen(true);
-  };
+  }, []);
 
   // Handle edit success
   const handleEditSuccess = () => {
@@ -39,11 +40,21 @@ export default function SupplierRepresentativeModulePage() {
     toast.success("Supplier updated successfully");
   };
 
+  // Handle add supplier success
+  const handleAddSuccess = () => {
+    refresh();
+    toast.success("Supplier created successfully");
+  };
+
   // Create columns with handlers
-  const columns = createColumns({
-    onView: handleView,
-    onEdit: handleEdit,
-  });
+  const columns = useMemo(
+    () =>
+      createColumns({
+        onView: handleView,
+        onEdit: handleEdit,
+      }),
+    [handleView, handleEdit],
+  );
 
   if (isLoading) {
     return (
@@ -68,17 +79,17 @@ export default function SupplierRepresentativeModulePage() {
               className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
             />
           </Button>
-          <Button onClick={() => toast.info("Add supplier form coming soon!")}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Supplier
+          <Button onClick={() => setAddModalOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Add New Supplier
           </Button>
         </div>
       </div>
 
       {/* Main Content */}
-      <DataTable
+      <SupplierDataTable
         columns={columns}
-        data={suppliers}
+        data={suppliers || []}
         searchPlaceholder="Search by name, TIN, or contact person..."
         onSearchChange={setSearchQuery}
       />
@@ -102,6 +113,13 @@ export default function SupplierRepresentativeModulePage() {
           setSelectedSupplier(null);
         }}
         onSuccess={handleEditSuccess}
+      />
+
+      {/* Add Supplier Modal */}
+      <AddSupplierModal
+        open={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        onSuccess={handleAddSuccess}
       />
     </div>
   );

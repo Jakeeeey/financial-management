@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Supplier } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
 import { useRepresentatives } from "@/modules/financial-management/supplier-registration/hooks/useRepresentatives";
 import { RepresentativeCard } from "./view-representative-details";
-import { AddRepresentativeForm } from "./add-representative-form";
+import { AddRepresentativeForm } from "../forms/add-representative-form";
 import { useState } from "react";
 import {
   MapPin,

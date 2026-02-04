@@ -269,7 +269,10 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button>Add New Asset</Button>
+        <Button>
+          <Plus className="h-4 w-4" />
+          Add New Asset
+        </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[95vh] overflow-y-auto p-0">
         <DialogHeader className="p-6 pb-2">
