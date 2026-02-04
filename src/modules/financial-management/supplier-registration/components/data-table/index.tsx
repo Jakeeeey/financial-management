@@ -37,7 +37,6 @@ export function DataTable<TData, TValue>({
   columns,
   data,
   searchPlaceholder = "Search...",
-  onSearchChange,
 }: DataTableProps<TData, TValue>) {
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
@@ -64,8 +63,10 @@ export function DataTable<TData, TValue>({
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: setPagination,
     state: {
       sorting,
+      pagination,
       columnFilters,
       columnVisibility,
       rowSelection,
@@ -73,21 +74,20 @@ export function DataTable<TData, TValue>({
     },
   });
 
-  // Handle search change
-  const handleSearchChange = (value: string) => {
-    setGlobalFilter(value);
-    onSearchChange?.(value);
-  };
-
   return (
     <div className="space-y-4">
       {/* Search Bar */}
       <div className="relative flex-1 max-w-sm">
         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder={searchPlaceholder}
-          value={globalFilter ?? ""}
-          onChange={(event) => handleSearchChange(event.target.value)}
+          type="search"
+          placeholder="Search suppliers name..."
+          value={
+            (table.getColumn("supplier_name")?.getFilterValue() as string) ?? ""
+          }
+          onChange={(event) =>
+            table.getColumn("supplier_name")?.setFilterValue(event.target.value)
+          }
           className="pl-8"
         />
       </div>
@@ -143,6 +143,7 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
+      {/* Pagination */}
       <DataTablePagination table={table} />
     </div>
   );

@@ -26,6 +26,7 @@ import { DataTablePagination } from "./table-pagination";
 import { useState } from "react";
 import ViewAssetModal from "../modals/AssetViewModal";
 import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -40,7 +41,7 @@ export function AssetDataTable<TData, TValue>({
   data,
   columnFilters,
   onColumnFiltersChange,
-  tableMeta, // FIX: Destructure here
+  tableMeta,
 }: DataTableProps<TData, TValue>) {
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
@@ -78,18 +79,22 @@ export function AssetDataTable<TData, TValue>({
 
   return (
     <div className="space-y-4">
-      <div className="flex max-w-lg items-start sm:items-center justify-between gap-2">
+      {/* Search Bar */}
+      <div className="relative flex-1 max-w-sm">
+        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search assets name..."
-          className="w-full"
+          type="search"
+          placeholder={"Search items..."}
           value={
             (table.getColumn("item_name")?.getFilterValue() as string) ?? ""
           }
           onChange={(event) =>
             table.getColumn("item_name")?.setFilterValue(event.target.value)
           }
+          className="pl-8"
         />
       </div>
+      {/* Table */}
       <div className="rounded-md border">
         <Table>
           <TableHeader className="bg-muted/50">
@@ -135,7 +140,9 @@ export function AssetDataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
+      {/* Pagination */}
       <DataTablePagination table={table} />
+
       <ViewAssetModal
         asset={selectedAsset as any}
         isOpen={isViewOpen}

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useSuppliers } from "@/modules/financial-management/supplier-registration/hooks/useSuppliers";
 import { DataTable } from "./components/data-table";
 import { createColumns } from "./components/data-table/columns";
-import { SupplierDetailsModal } from "@/modules/financial-management/supplier-registration/components/modals/SupplierDetailsModal";
+import { SupplierDetailsModal } from "@/modules/financial-management/supplier-registration/components/modals/suppliers-detail-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Supplier } from "@/modules/financial-management/supplier-registration/types/supplier.schema";

@@ -99,7 +99,7 @@ export const createColumns = ({
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onView(supplier)}>
               <Eye className="mr-2 h-4 w-4" />
-              View Details
+              View
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onEdit(supplier)}>
               <Pencil className="mr-2 h-4 w-4" />
