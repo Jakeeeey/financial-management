@@ -1,4 +1,3 @@
-// src/modules/financial-management/chart-of-accounts/ChartOfAccountsModule.tsx
 "use client";
 
 import * as React from "react";
@@ -6,11 +5,10 @@ import { Plus } from "lucide-react";
 
 import { useChartOfAccounts } from "./hooks/useChartOfAccounts";
 
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 
 import ChartOfAccountsTable from "./components/ChartOfAccountsTable";
 import COAFormDialog from "./components/COAFormDialog";
@@ -37,32 +35,32 @@ export default function ChartOfAccountsModule() {
     setDeleteLabel("");
   }
 
-  // NOTE: Matches your screenshots (shows Loading...)
+  // Matches your screenshot behavior (Added By field shows Loading...)
   const addedByLabel = "Loading...";
 
   return (
     <div className="space-y-4">
-      {/* Page header (matches your screenshot title/subtitle area) */}
-      <div className="space-y-1">
-        <h1 className="text-3xl font-bold tracking-tight">Chart of Account Management</h1>
-        <p className="text-sm text-muted-foreground">Manage your chart of accounts</p>
+      {/* ✅ Title moved down & aligned with Add Account button */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight">
+            Chart of Account Management
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Manage your chart of accounts
+          </p>
+        </div>
+
+        <Button className="cursor-pointer" onClick={coa.openCreate}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Account
+        </Button>
       </div>
 
+      {/* ✅ Removed the small "Chart of Accounts" label/title */}
+
       <Card className="border-muted/60 bg-muted/20">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <h2 className="text-lg font-semibold">Chart of Accounts</h2>
-            </div>
-
-            <Button className="cursor-pointer" onClick={coa.openCreate}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Account
-            </Button>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 pt-6">
           {/* Search */}
           <Input
             value={coa.q}
@@ -93,9 +91,7 @@ export default function ChartOfAccountsModule() {
                 {coa.rows.length}
               </span>{" "}
               of{" "}
-              <span className="font-medium text-foreground">
-                {coa.total}
-              </span>{" "}
+              <span className="font-medium text-foreground">{coa.total}</span>{" "}
               items
             </div>
 
@@ -141,7 +137,7 @@ export default function ChartOfAccountsModule() {
         onUpdate={async () => {}}
       />
 
-      {/* Edit dialog (with delete button via confirm dialog flow) */}
+      {/* Edit dialog */}
       <COAFormDialog
         open={coa.editState.open}
         onOpenChange={(v) => (v ? null : coa.closeEdit())}
@@ -158,7 +154,7 @@ export default function ChartOfAccountsModule() {
         }}
       />
 
-      {/* Delete confirm (wired but you can trigger from wherever you want) */}
+      {/* Delete confirm (kept; trigger location is up to you) */}
       <DeleteConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
