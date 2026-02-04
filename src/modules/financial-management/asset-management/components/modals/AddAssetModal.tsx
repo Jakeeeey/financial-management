@@ -19,6 +19,7 @@ import {
   ImagePlus,
   X,
   UploadCloud,
+  ImageUp,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
@@ -33,6 +34,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -274,12 +276,14 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
           Add New Asset
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[95vh] overflow-y-auto p-0">
-        <DialogHeader className="p-6 pb-2">
-          <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-            <Package className="h-6 w-6 text-primary" />
-            Add New Asset
+      <DialogContent className="max-w-2xl max-h-[95vh] overflow-y-auto p-0 rounded-2xl">
+        <DialogHeader className="p-6 pb-0 gap-0">
+          <DialogTitle className="text-lg font-semibold flex items-center">
+            Create New Asset
           </DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">
+            Fill in the details below to add a new asset to the inventory.
+          </DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
@@ -287,15 +291,12 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
             onSubmit={form.handleSubmit(onSubmit)}
             className="px-6 pb-8 space-y-6"
           >
+            {/* SECTION 0: IMAGE */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                <ImagePlus className="h-4 w-4" /> Asset Image
-              </div>
               <Separator />
-
               <div
                 className={cn(
-                  "border-2 border-dashed rounded-lg p-4 transition-all flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-muted/50",
+                  "border border-dashed rounded-lg p-4 transition-all flex flex-col items-center justify-center gap-2 cursor-pointer bg-muted/50",
                   previewUrl ? "border-primary/50" : "border-muted",
                 )}
                 onClick={() => document.getElementById("image-upload")?.click()}
@@ -323,8 +324,8 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                   </div>
                 ) : (
                   <>
-                    <div className="p-4 bg-primary/10 rounded-full text-primary">
-                      <UploadCloud className="h-8 w-8" />
+                    <div className="p-4">
+                      <UploadCloud className="h-6 w-6 text-muted-foreground" />
                     </div>
                     <div className="text-center">
                       <p className="text-sm font-medium">
@@ -348,11 +349,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
 
             {/* SECTION 1: GENERAL INFO */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                <ClipboardList className="h-4 w-4" /> General Details
-              </div>
               <Separator />
-
               <FormField
                 control={form.control}
                 name="item_name"
@@ -596,9 +593,6 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
 
             {/* SECTION 2: TRACKING & ASSIGNMENT */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                <Scan className="h-4 w-4" /> Tracking & Assignment
-              </div>
               <Separator />
 
               <div className="grid grid-cols-2 gap-4">
@@ -632,13 +626,12 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                 />
               </div>
 
-              {/* FIX FOR IMAGE 2: Added items-end to ensure vertical alignment */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+              <div className="flex max-w-full flex-row">
                 <FormField
                   control={form.control}
                   name="department"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="flex flex-col flex-1">
                       <FormLabel>Department *</FormLabel>
                       <Select
                         onValueChange={(val) => field.onChange(Number(val))}
@@ -668,13 +661,13 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                   control={form.control}
                   name="employee"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="flex flex-col flex-1">
                       <FormLabel>Assigned To</FormLabel>
                       <Select
                         onValueChange={(val) =>
                           field.onChange(val === "none" ? null : Number(val))
                         }
-                        value={field.value?.toString() ?? "none"}
+                        value={field.value ? field.value.toString() : "none"}
                       >
                         <FormControl>
                           <SelectTrigger className="h-10">
@@ -701,24 +694,24 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                   control={form.control}
                   name="date_acquired"
                   render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel className="mb-2.5">Date Acquired *</FormLabel>
+                    <FormItem className="flex flex-col flex-1">
+                      <FormLabel>Date Acquired</FormLabel>
                       <Popover>
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
                               variant="outline"
                               className={cn(
-                                "w-full h-10 pl-3 text-left font-normal",
+                                "w-full h-9 pl-3 text-left font-normal",
                                 !field.value && "text-muted-foreground",
                               )}
                             >
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                               {field.value ? (
                                 format(field.value, "PPP")
                               ) : (
                                 <span>Pick date</span>
                               )}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                             </Button>
                           </FormControl>
                         </PopoverTrigger>
@@ -728,7 +721,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                             selected={field.value}
                             onSelect={field.onChange}
                             disabled={(date) => date > new Date()}
-                            initialFocus
+                            autoFocus
                           />
                         </PopoverContent>
                       </Popover>
@@ -741,11 +734,6 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
 
             {/* SECTION 3: FINANCIALS & CONDITION */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                <Landmark className="h-4 w-4" /> Financials & Status
-              </div>
-              <Separator />
-
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
                 <FormField
                   control={form.control}
@@ -788,7 +776,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                   render={({ field }) => (
                     <FormItem>
                       {/* LABEL UPDATED TO YEARS */}
-                      <FormLabel>Life Span (Years) *</FormLabel>
+                      <FormLabel>Life Span</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -834,8 +822,9 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                   )}
                 />
               </div>
-            </div>
 
+              <Separator />
+            </div>
             <div className="flex items-center justify-end gap-3 pt-4">
               <Button
                 variant="outline"
