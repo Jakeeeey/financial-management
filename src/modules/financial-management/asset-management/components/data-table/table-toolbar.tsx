@@ -1,9 +1,9 @@
 "use client";
 
 import { Table } from "@tanstack/react-table";
-import { Settings2, X } from "lucide-react"; // Added X for resetting filters
+import { Settings2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input"; // Import Shadcn Input
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,

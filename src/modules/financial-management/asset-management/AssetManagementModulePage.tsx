@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
-import AddAssetModal from "./components/AddAssetModal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +13,7 @@ import { formatPHP, getDepreciatedValue } from "./utils/lib";
 import { ColumnFiltersState } from "@tanstack/react-table";
 import { AssetTableSkeleton } from "./components/data-table/skeleton-loader";
 import { ErrorPage } from "@/app/(financial-management)/fm/_components/ErrorPage";
+import AddAssetModal from "./components/modals/AddAssetModal";
 
 export default function AssetManagementModulePage() {
   const [data, setData] = useState<AssetTableData[]>([]);
@@ -99,14 +99,6 @@ export default function AssetManagementModulePage() {
   return (
     <div className="p-6 space-y-4">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-        {/* <div className="mt-4">
-          <h2 className="text-2xl font-bold text-primary">
-            {formatPHP(totalValue)}
-          </h2>
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-            Total Current Asset Value
-          </p>
-        </div> */}
         <div className="flex items-center gap-2">
           <Button
             variant="outline"

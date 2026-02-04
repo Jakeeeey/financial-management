@@ -49,7 +49,7 @@ const AssetCell = ({
     <div className="h-10 w-10 overflow-hidden rounded-md border bg-muted flex items-center justify-center">
       {imageId ? (
         <img
-          src={`/api/fm/asset-image-view?id=${imageId}`}
+          src={`/api/fm/asset-management/asset-image-view?id=${imageId}`}
           alt={itemName}
           className="h-full w-full object-cover transition-all hover:scale-110"
         />

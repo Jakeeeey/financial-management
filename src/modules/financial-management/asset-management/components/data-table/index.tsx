@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table";
 import { DataTablePagination } from "./table-pagination";
 import { useState } from "react";
-import ViewAssetModal from "../AssetViewModal";
+import ViewAssetModal from "../modals/AssetViewModal";
 import { Input } from "@/components/ui/input";
 
 interface DataTableProps<TData, TValue> {
@@ -89,7 +89,6 @@ export function AssetDataTable<TData, TValue>({
             table.getColumn("item_name")?.setFilterValue(event.target.value)
           }
         />
-        
       </div>
       <div className="rounded-md border">
         <Table>
