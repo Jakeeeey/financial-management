@@ -11,10 +11,10 @@ import { Supplier } from "@/modules/financial-management/supplier-registration/t
 import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { EditSupplierModal } from "./components/modals/edit-supplier-modal";
+import { SupplierTableSkeleton } from "./components/data-table/table-skeleton-loader";
 
 export default function SupplierRepresentativeModulePage() {
-  const { suppliers, isLoading, error, refresh, setSearchQuery } =
-    useSuppliers();
+  const { suppliers, isLoading, refresh, setSearchQuery } = useSuppliers();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(
     null,
   );
@@ -45,18 +45,18 @@ export default function SupplierRepresentativeModulePage() {
     onEdit: handleEdit,
   });
 
+  if (isLoading) {
+    return (
+      <div className="p-6">
+        <SupplierTableSkeleton />
+      </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <div className="p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Supplier Registration
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage suppliers and their representatives
-          </p>
-        </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -76,33 +76,12 @@ export default function SupplierRepresentativeModulePage() {
       </div>
 
       {/* Main Content */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Suppliers List</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {error ? (
-            <div className="text-center py-12">
-              <p className="text-destructive font-medium">
-                Error loading suppliers
-              </p>
-              <p className="text-sm text-muted-foreground mt-2">
-                {error.message}
-              </p>
-              <Button onClick={refresh} variant="outline" className="mt-4">
-                Try Again
-              </Button>
-            </div>
-          ) : (
-            <DataTable
-              columns={columns}
-              data={suppliers}
-              searchPlaceholder="Search by name, TIN, or contact person..."
-              onSearchChange={setSearchQuery}
-            />
-          )}
-        </CardContent>
-      </Card>
+      <DataTable
+        columns={columns}
+        data={suppliers}
+        searchPlaceholder="Search by name, TIN, or contact person..."
+        onSearchChange={setSearchQuery}
+      />
 
       {/* Supplier Details Modal */}
       <SupplierDetailsModal

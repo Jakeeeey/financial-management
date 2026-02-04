@@ -22,9 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
+import { DataTablePagination } from "@/modules/financial-management/asset-management/components/data-table/table-pagination";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -39,6 +39,10 @@ export function DataTable<TData, TValue>({
   searchPlaceholder = "Search...",
   onSearchChange,
 }: DataTableProps<TData, TValue>) {
+  const [pagination, setPagination] = React.useState({
+    pageIndex: 0,
+    pageSize: 10,
+  });
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
@@ -78,16 +82,14 @@ export function DataTable<TData, TValue>({
   return (
     <div className="space-y-4">
       {/* Search Bar */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder={searchPlaceholder}
-            value={globalFilter ?? ""}
-            onChange={(event) => handleSearchChange(event.target.value)}
-            className="pl-8"
-          />
-        </div>
+      <div className="relative flex-1 max-w-sm">
+        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder={searchPlaceholder}
+          value={globalFilter ?? ""}
+          onChange={(event) => handleSearchChange(event.target.value)}
+          className="pl-8"
+        />
       </div>
 
       {/* Table */}
@@ -141,31 +143,7 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          {table.getFilteredRowModel().rows.length} row(s) total
-        </div>
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      <DataTablePagination table={table} />
     </div>
   );
 }
