@@ -4,7 +4,7 @@ import * as React from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 
 import type { DiscountTypeRow, LineDiscountRow } from "../type";
@@ -61,9 +61,15 @@ export default function DiscountTypeDialog({
   const readOnly = mode === "view";
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(discountTypeUpsertSchema),
+    resolver: zodResolver(discountTypeUpsertSchema) as unknown as Resolver<
+      FormValues,
+      any,
+      FormValues
+    >,
+    mode: "onChange",
     defaultValues: {
       discount_type: "",
+      id: undefined,
       line_ids: [],
     },
   });

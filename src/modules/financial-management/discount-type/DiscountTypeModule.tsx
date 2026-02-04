@@ -16,6 +16,8 @@ import { DiscountTypeDataTable } from "./components/data-table";
 import { DiscountTypeTableSkeleton } from "./components/data-table/skeleton-loader";
 import DiscountTypeDialog from "./components/DiscountTypeDialog";
 
+const DiscountTypeTable: any = DiscountTypeDataTable;
+
 export default function DiscountTypeModule() {
   const dt = useDiscountTypes();
 
@@ -57,11 +59,15 @@ export default function DiscountTypeModule() {
         {dt.loading ? (
           <DiscountTypeTableSkeleton />
         ) : (
-          <DiscountTypeDataTable
-            columns={columns}
+          <DiscountTypeTable
+            columns={columns as any}
             data={(dt as any).filteredRows ?? dt.rows}
             // ✅ row click => VIEW ONLY (no edit/delete)
-            onRowClick={(row) => dt.onView(row)}
+            onRowClick={(row: any) => {
+              (dt as any).setOpen?.(true);
+              (dt as any).setEditing?.(row);
+              (dt as any).setMode?.("view");
+            }}
           />
         )}
       </Card>
@@ -72,9 +78,9 @@ export default function DiscountTypeModule() {
         onOpenChange={dt.setOpen}
         editing={dt.editing}
         lineDiscounts={dt.lines}
-        mode={dt.mode} // "view" | "create" | "edit"
-        onSave={dt.mode === "view" ? undefined : dt.save}
-        onDelete={dt.mode === "view" ? undefined : dt.remove}
+        mode={(dt as any).mode} // "view" | "create" | "edit"
+        onSave={(dt as any).mode === "view" ? undefined : dt.save}
+        onDelete={(dt as any).mode === "view" ? undefined : dt.remove}
       />
     </div>
   );
