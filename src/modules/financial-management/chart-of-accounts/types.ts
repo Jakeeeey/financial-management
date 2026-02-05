@@ -71,4 +71,20 @@ export type COACreatePayload = {
   memo_type?: number | null;
 };
 
+// ✅ NEW: Extras for Edit Account (multiple inputs)
+export type FindingRow = {
+  id: number;
+  finding_name: string;
+  coa_id: number;
+};
+
+export type PaymentMethodRow = {
+  method_id: number;
+  method_name: string;
+  description: string | null;
+  isActive: number | null;
+  coa_id: number;
+};
+
+
 export type COAUpdatePayload = Partial<COACreatePayload>;
