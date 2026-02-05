@@ -55,19 +55,14 @@ export function RepresentativeCard({
             </div>
           </TooltipTrigger>
 
-          <TooltipContent
-            side="top"
-            className="p-4 bg-slate-900 text-white rounded-[16px] border-none shadow-2xl min-w-[200px] z-[100]"
-          >
+          <TooltipContent side="top">
             <div className="space-y-2">
-              <p className="text-[14px] font-bold border-b border-slate-700 pb-1 mb-2">
-                {fullName}
-              </p>
-              <div className="flex items-center gap-2 text-[12px] text-slate-300">
+              <p>{fullName}</p>
+              <div className="flex items-center gap-2 text-[12px]">
                 <Mail className="h-3 w-3" />
                 <span>{representative.email}</span>
               </div>
-              <div className="flex items-center gap-2 text-[12px] text-slate-300">
+              <div className="flex items-center gap-2 text-[12px]">
                 <Phone className="h-3 w-3" />
                 <span>{formatPhoneNumber(representative.contact_number)}</span>
               </div>
@@ -82,7 +77,7 @@ export function RepresentativeCard({
               <X className="h-3 w-3" />
             </button>
           </AlertDialogTrigger>
-          <AlertDialogContent className="rounded-[24px]">
+          <AlertDialogContent className="rounded-3xl">
             <AlertDialogHeader>
               <AlertDialogTitle>Remove Representative?</AlertDialogTitle>
               <AlertDialogDescription>

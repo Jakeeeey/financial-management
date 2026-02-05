@@ -29,6 +29,7 @@ import {
   LocationEdit,
   Hash,
   X,
+  Package,
 } from "lucide-react";
 import {
   Tooltip,
@@ -36,6 +37,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useSupplierProducts } from "../../hooks/useSupplierProduct";
+import { ManageProductsModal } from "./manage-products-modal";
 interface SupplierDetailsModalProps {
   supplier: Supplier | null;
   open: boolean;
@@ -48,8 +51,13 @@ export function SupplierDetailsModal({
   onClose,
 }: SupplierDetailsModalProps) {
   const [showAddRepForm, setShowAddRepForm] = useState(false);
+  const [manageProductsOpen, setManageProductsOpen] = useState(false);
   const { representatives, isLoading, removeRepresentative, refresh } =
     useRepresentatives(supplier?.id || null);
+
+  const { products, isLoading: productsLoading } = useSupplierProducts(
+    supplier?.id || null,
+  );
 
   if (!supplier) return null;
 
@@ -73,10 +81,7 @@ export function SupplierDetailsModal({
               {displayMessage}
             </span>
           </TooltipTrigger>
-          <TooltipContent
-            side="top"
-            className="max-w-75 bg-slate-900 text-white p-2 rounded-md shadow-lg"
-          >
+          <TooltipContent side="top" className="max-w-75 ">
             <p className="text-xs leading-relaxed">{message}</p>
           </TooltipContent>
         </Tooltip>
@@ -222,7 +227,7 @@ export function SupplierDetailsModal({
                   {supplier.notes_or_comments ? (
                     supplier.notes_or_comments
                   ) : (
-                    <EmptyInfo message="The complete physical office location and mailing address for this supplier have not yet been documented." />
+                    <EmptyInfo message="There are no notes or historical remarks recorded for this supplier at this time." />
                   )}
                 </p>
               </div>
@@ -266,6 +271,29 @@ export function SupplierDetailsModal({
             </span>
           )}
 
+          <div className="flex items-center justify-between bg-muted/30 p-4 rounded-lg border border-dashed">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-background rounded-full border">
+                <Package className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Product Catalog</p>
+                <p className="text-xs text-muted-foreground">
+                  {productsLoading
+                    ? "Loading..."
+                    : `${products.length} products assigned`}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setManageProductsOpen(true)}
+            >
+              Manage Products
+            </Button>
+          </div>
+
           {/* Supplier Representative Form */}
           <div>
             {showAddRepForm && (
@@ -281,6 +309,12 @@ export function SupplierDetailsModal({
           </div>
         </div>
       </DialogContent>
+      <ManageProductsModal
+        supplierId={supplier.id!}
+        supplierName={supplier.supplier_name}
+        open={manageProductsOpen}
+        onClose={() => setManageProductsOpen(false)}
+      />
     </Dialog>
   );
 }
