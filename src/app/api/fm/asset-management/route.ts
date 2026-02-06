@@ -280,3 +280,83 @@ export async function POST(req: Request) {
     );
   }
 }
+// ============================================================================
+// PATCH HANDLER (Dual-Table Strategic Update)
+// ============================================================================
+
+export async function PATCH(req: Request) {
+  try {
+    const body = await req.json();
+    const { id, item_id, ...updateData } = body;
+
+    if (!id || !item_id)
+      throw new Error("Asset ID and Item ID are required for updates");
+
+    // 1. Update References & Base Item
+    const typeId = await ensureReferenceExists(
+      "item_type",
+      "type_name",
+      updateData.item_type_name,
+    );
+    const classId = await ensureReferenceExists(
+      "item_classification",
+      "classification_name",
+      updateData.classification_name,
+    );
+
+    const itemUpdateRes = await fetch(
+      `${DIRECTUS_URL}/items/items/${item_id}`,
+      {
+        method: "PATCH",
+        headers: AUTH_HEADERS,
+        body: JSON.stringify({
+          item_name: updateData.item_name,
+          item_type: typeId,
+          item_classification: classId,
+        }),
+      },
+    );
+
+    if (!itemUpdateRes.ok)
+      throw new Error("Failed to update base item details");
+
+    // 2. Update Asset Record & Recalculate PHP Total
+    const assetPayload = {
+      condition: updateData.condition,
+      cost_per_item: Number(updateData.cost_per_item),
+      quantity: Number(updateData.quantity),
+      total: Number(updateData.cost_per_item) * Number(updateData.quantity),
+      life_span: Number(updateData.life_span),
+      date_acquired: updateData.date_acquired?.split("T")[0],
+      department: Number(updateData.department),
+      employee: updateData.employee ? Number(updateData.employee) : null,
+      item_image: updateData.item_image,
+      barcode: updateData.barcode,
+      rfid_code: updateData.rfid_code,
+    };
+
+    const assetUpdateRes = await fetch(
+      `${DIRECTUS_URL}/items/assets_and_equipment/${id}`,
+      {
+        method: "PATCH",
+        headers: AUTH_HEADERS,
+        body: JSON.stringify(assetPayload),
+      },
+    );
+
+    const assetResult = await assetUpdateRes.json();
+    if (!assetUpdateRes.ok)
+      throw new Error(
+        assetResult.errors?.[0]?.message ||
+          "Failed to update asset equipment record",
+      );
+
+    return NextResponse.json({ success: true, data: assetResult.data });
+  } catch (error: any) {
+    console.error("PATCH Error:", error);
+    return NextResponse.json(
+      { error: error.message || "Internal server error" },
+      { status: 500 },
+    );
+  }
+}

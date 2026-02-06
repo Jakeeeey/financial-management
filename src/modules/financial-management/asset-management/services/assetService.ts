@@ -24,8 +24,35 @@ export const assetService = {
       body: JSON.stringify({
         ...values,
         encoder: encoderId,
-        // Format date for Directus string format
         date_acquired: values.date_acquired.toISOString().split("T")[0],
+      }),
+    }),
+
+  updateAsset: (
+    id: number,
+    itemId: number,
+    values: AssetFormValues,
+    imageId: string | null,
+  ) =>
+    apiRequest(API_ROUTE, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id,
+        item_id: itemId,
+        item_name: values.item_name,
+        item_type_name: values.item_type,
+        classification_name: values.item_classification,
+        condition: values.condition,
+        cost_per_item: Number(values.cost_per_item),
+        quantity: Number(values.quantity),
+        life_span: Number(values.life_span),
+        date_acquired: values.date_acquired.toISOString().split("T")[0],
+        department: Number(values.department),
+        employee: values.employee ? Number(values.employee) : null,
+        item_image: imageId,
+        barcode: values.barcode,
+        rfid_code: values.rfid_code,
       }),
     }),
 };

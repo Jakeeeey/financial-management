@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL; // http://goatedcodoer:8056
+const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const HEADERS = {
   "Content-Type": "application/json",
   Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,

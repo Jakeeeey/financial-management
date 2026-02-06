@@ -70,12 +70,14 @@ export const assetTableDataSchema = z.object({
   quantity: z.number(),
   cost_per_item: z.number(),
   total: z.number(),
-  date_acquired: z.date(),
+  // API returns date as string, we convert to Date in the UI if needed
+  date_acquired: z.string(), 
   life_span: z.number(),
 
   // Virtual fields from the JOINs
   item_name: z.string(),
   item_image: z.string().nullable(),
+  item_type_name: z.string(), // <--- ADDED THIS TO FIX YOUR ERROR
   classification_name: z.string(),
   department_name: z.string(),
   assigned_to_name: z.string(),

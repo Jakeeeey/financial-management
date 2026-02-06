@@ -34,8 +34,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { isWithinInterval, startOfDay, endOfDay, parseISO } from "date-fns";
-import { ta } from "date-fns/locale";
 
 // --- Sub-components ---
 
@@ -47,7 +45,7 @@ const AssetCell = ({
   itemName: string;
 }) => (
   <div className="flex items-center gap-3">
-    <div className="h-10 w-10 overflow-hidden rounded-md border bg-muted flex items-center justify-center">
+    <div className="h-10 w-10 overflow-hidden rounded-md border bg-muted flex items-center justify-center shrink-0">
       {imageId ? (
         <img
           src={`/api/fm/asset-management/asset-image-view?id=${imageId}`}
@@ -87,7 +85,7 @@ const ProjectedValueHeader = ({ table }: any) => {
         meta?.setProjectionDate(newDate);
       }}
     >
-      <SelectTrigger className="h-7 w-fit border-none bg-transparent p-0 focus:ring-0">
+      <SelectTrigger className="h-7 w-fit border-none bg-transparent p-0 focus:ring-0 font-bold text-muted-foreground hover:text-foreground transition-colors">
         <SelectValue />
       </SelectTrigger>
       <SelectContent align="end">
@@ -103,56 +101,21 @@ const ProjectedValueHeader = ({ table }: any) => {
 // --- Column Definitions ---
 
 export const columns: ColumnDef<AssetTableData>[] = [
-  // {
-  //   accessorKey: "item_image",
-  //   header: "Asset",
-  //   enableHiding: false,
-  //   cell: ({ row }) => (
-  //     <AssetCell
-  //       imageId={row.getValue("item_image")}
-  //       itemName={row.original.item_name}
-  //     />
-  //   ),
-  // },
-  // {
-  //   accessorKey: "item_name",
-  //   header: ({ column }) => (
-  //     <DataTableColumnHeader column={column} label="Item Name" />
-  //   ),
-  //   meta: {
-  //     label: "Item Name",
-  //     placeholder: "Search assets...",
-  //     variant: "text",
-  //   },
-  //   cell: ({ row }) => {
-  //     const name = row.original.item_name;
-  //     const isValid = name && name !== "N/A";
-  //     return (
-  //       <div className="flex flex-col">
-  //         <span
-  //           className={`font-medium ${!isValid ? "text-muted-foreground" : ""}`}
-  //         >
-  //           {name || "N/A"}
-  //         </span>
-  //         {!isValid && (
-  //           <span className="text-[10px] text-orange-500 font-mono">
-  //             Missing Item Link
-  //           </span>
-  //         )}
-  //       </div>
-  //     );
-  //   },
-  // },
   {
     accessorKey: "item_name",
     header: ({ column }) => (
       <DataTableColumnHeader column={column} label="Asset" />
     ),
+    meta: {
+      label: "Item Name",
+      placeholder: "Search assets...",
+      variant: "text",
+    },
     cell: ({ row }) => {
       const name = row.original.item_name;
       const isValid = name && name !== "N/A";
       return (
-        <div className="flex items-center gap-3 group">
+        <div className="flex items-center gap-3 group max-w-62.5">
           <AssetCell imageId={row.original.item_image} itemName={name} />
           <div className="flex flex-col min-w-0">
             <span
@@ -182,7 +145,7 @@ export const columns: ColumnDef<AssetTableData>[] = [
     },
     cell: ({ row }) =>
       row.getValue("classification_name") || (
-        <span className="text-muted-foreground">N/A</span>
+        <span className="text-muted-foreground italic">N/A</span>
       ),
   },
   {
@@ -197,7 +160,7 @@ export const columns: ColumnDef<AssetTableData>[] = [
     },
     cell: ({ row }) =>
       (row.getValue("department_name") as string) || (
-        <span className="text-muted-foreground">Unassigned</span>
+        <span className="text-muted-foreground italic">Unassigned</span>
       ),
   },
   {
@@ -227,7 +190,7 @@ export const columns: ColumnDef<AssetTableData>[] = [
       />
     ),
     cell: ({ row }) => (
-      <div className="font-medium">{row.getValue("quantity")}</div>
+      <div className="font-medium text-center">{row.getValue("quantity")}</div>
     ),
   },
   {
@@ -253,7 +216,7 @@ export const columns: ColumnDef<AssetTableData>[] = [
         viewDate,
       );
 
-      return <span className="text-primary">{formatPHP(projectedValue)}</span>;
+      return <span className="text-primary ">{formatPHP(projectedValue)}</span>;
     },
   },
   {
@@ -264,7 +227,7 @@ export const columns: ColumnDef<AssetTableData>[] = [
     cell: ({ row }) => {
       const date = row.getValue("date_acquired") as string;
       return (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 whitespace-nowrap">
           <Calendar className="h-3.5 w-3.5 text-muted-foreground/80" />
           <span className="text-xs font-medium">
             {date
@@ -290,16 +253,16 @@ export const columns: ColumnDef<AssetTableData>[] = [
               <EllipsisVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-32">
-            <DropdownMenuItem>
-              <SquarePen className="mr-2 h-4 w-4" /> Edit
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onClick={() => meta?.onEdit(row.original)}>
+              <SquarePen className="mr-2 h-4 w-4" /> Edit Details
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => meta?.onView(row.original)}>
-              <Eye className="mr-2 h-4 w-4" /> View
+              <Eye className="mr-2 h-4 w-4" /> View Details
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive">
-              <Trash2 className="mr-2 h-4 w-4" /> Delete
+              <Trash2 className="mr-2 h-4 w-4" /> Delete Asset
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
