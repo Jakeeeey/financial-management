@@ -9,6 +9,8 @@ import type {
   COAUpdatePayload,
   DirectusListResponse,
   DirectusSingleResponse,
+  FindingRow,
+  PaymentMethodRow,
 } from "../types";
 
 const API = "/api/fm/chart-of-accounts";
@@ -53,7 +55,10 @@ export async function createCOA(payload: COACreatePayload): Promise<DirectusSing
   return data as DirectusSingleResponse<COARow>;
 }
 
-export async function updateCOA(id: number, payload: COAUpdatePayload): Promise<DirectusSingleResponse<COARow>> {
+export async function updateCOA(
+  id: number,
+  payload: COAUpdatePayload,
+): Promise<DirectusSingleResponse<COARow>> {
   const res = await fetch(`${API}?resource=chart_of_accounts`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
@@ -95,4 +100,78 @@ export async function listBSISTypes(): Promise<BSISTypeRow[]> {
   const data = await safeJson(res);
   if (!res.ok) throw new Error(errMsg(data));
   return (data?.data ?? []) as BSISTypeRow[];
+}
+
+// ─────────────────────────────────────────────
+// ✅ NEW: Findings (general_findings) - CRUD helpers
+// ─────────────────────────────────────────────
+export async function listGeneralFindings(): Promise<FindingRow[]> {
+  const res = await fetch(`${API}?resource=general_findings`, { cache: "no-store" });
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(errMsg(data));
+  return (data?.data ?? []) as FindingRow[];
+}
+
+export async function createFinding(payload: {
+  finding_name: string;
+  coa_id: number;
+}): Promise<DirectusSingleResponse<FindingRow>> {
+  const res = await fetch(`${API}?resource=general_findings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(errMsg(data));
+  return data as DirectusSingleResponse<FindingRow>;
+}
+
+// Optional: if you later want real delete instead of UI-only remove
+export async function deleteFinding(id: number): Promise<void> {
+  const sp = new URLSearchParams();
+  sp.set("resource", "general_findings");
+  sp.set("id", String(id));
+
+  const res = await fetch(`${API}?${sp.toString()}`, { method: "DELETE" });
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(errMsg(data));
+}
+
+// ─────────────────────────────────────────────
+// ✅ NEW: Payment Methods (payment_methods) - CRUD helpers
+// ─────────────────────────────────────────────
+export async function listPaymentMethods(): Promise<PaymentMethodRow[]> {
+  const res = await fetch(`${API}?resource=payment_methods`, { cache: "no-store" });
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(errMsg(data));
+  return (data?.data ?? []) as PaymentMethodRow[];
+}
+
+export async function createPaymentMethod(payload: {
+  method_name: string;
+  description: string | null;
+  isActive: number;
+  coa_id: number;
+}): Promise<DirectusSingleResponse<PaymentMethodRow>> {
+  const res = await fetch(`${API}?resource=payment_methods`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(errMsg(data));
+  return data as DirectusSingleResponse<PaymentMethodRow>;
+}
+
+// Optional: if you later want real delete instead of UI-only remove
+export async function deletePaymentMethod(method_id: number): Promise<void> {
+  const sp = new URLSearchParams();
+  sp.set("resource", "payment_methods");
+  sp.set("id", String(method_id));
+
+  const res = await fetch(`${API}?${sp.toString()}`, { method: "DELETE" });
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(errMsg(data));
 }
