@@ -54,77 +54,79 @@ export function ProductListItem({
   };
 
   return (
-    <div className="flex items-center justify-between py-2 px-3 hover:bg-muted/50 rounded-md group">
+    <div className="flex items-center gap-4 py-2 px-4 hover:bg-muted/40 transition-colors group border-b last:border-0">
+      {/* Product Info - Flex Grow to push actions to the right */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm">•</span>
-          <div>
-            <p className="text-sm font-medium text-foreground truncate">
-              {product.product_name}
-              {product.product_code && (
-                <span className="text-muted-foreground ml-1">
-                  ({product.product_code})
-                </span>
-              )}
-            </p>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-muted-foreground">Discount:</span>
-              <Select
-                value={product.discount_type?.toString() || "none"}
-                onValueChange={handleDiscountChange}
-                disabled={isUpdating}
-              >
-                <SelectTrigger className="h-7 w-30 text-xs">
-                  <SelectValue placeholder="No discount" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No discount</SelectItem>
-                  {discountTypes.map((dt) => (
-                    <SelectItem key={dt.id} value={dt.id.toString()}>
-                      {dt.discount_type}
-                      {dt.total_percent &&
-                        dt.total_percent !==
-                          "0.000000000000000000000000000000" &&
-                        ` (${parseFloat(dt.total_percent).toFixed(1)}%)`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
+        <p className="text-sm font-medium leading-none truncate">
+          {product.product_name}
+        </p>
+        {product.product_code && (
+          <p className="text-[11px] text-muted-foreground mt-1 font-mono uppercase tracking-wider">
+            {product.product_code}
+          </p>
+        )}
       </div>
 
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove Product?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to remove{" "}
-              <strong>{product.product_name}</strong> from this supplier? This
-              action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleRemove}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+      {/* Discount Selector - Fixed width for alignment */}
+      <div className="flex items-center gap-2 w-[180px]">
+        <Select
+          value={product.discount_type?.toString() || "none"}
+          onValueChange={async (v) => {
+            setIsUpdating(true);
+            await onDiscountChange(
+              product.id,
+              v === "none" ? null : parseInt(v),
+            );
+            setIsUpdating(false);
+          }}
+          disabled={isUpdating}
+        >
+          <SelectTrigger className="h-8 text-xs bg-background">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Default (No Discount)</SelectItem>
+            {discountTypes.map((dt) => (
+              <SelectItem key={dt.id} value={dt.id.toString()}>
+                {dt.discount_type}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="w-8 flex justify-end">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
             >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <X className="h-4 w-4" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove Product?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to remove{" "}
+                <strong>{product.product_name}</strong> from this supplier? This
+                action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleRemove}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   );
 }

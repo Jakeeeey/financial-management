@@ -48,65 +48,70 @@ export function ManageProductsModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="max-w-2xl max-h-[80vh]">
-          <DialogHeader>
-            <div className="flex items-start justify-between">
-              <div>
-                <DialogTitle className="text-xl font-bold">
+        <DialogContent className="max-w-2xl p-0 overflow-hidden flex flex-col h-[70vh]">
+          {/* Header Section */}
+          <div className="p-6 border-b bg-muted/20">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <DialogTitle className="text-lg font-semibold tracking-tight">
                   Manage Products
                 </DialogTitle>
-                <DialogDescription className="mt-1">
+                <DialogDescription className="text-xs uppercase font-medium text-muted-foreground/80">
                   {supplierName}
                 </DialogDescription>
               </div>
-              <Button size="sm" onClick={() => setAddModalOpen(true)}>
-                <Plus className="h-4 w-4 mr-1" />
+              <Button
+                size="sm"
+                onClick={() => setAddModalOpen(true)}
+                className="h-8 px-3"
+              >
+                <Plus className="h-4 w-4 mr-1.5" />
                 Add Product
               </Button>
             </div>
-          </DialogHeader>
+          </div>
 
-          <div className="mt-4">
-            <Card>
-              <CardContent className="pt-6">
-                {isLoading ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    Loading products...
-                  </p>
-                ) : products.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <PackageOpen className="h-12 w-12 text-muted-foreground mb-3" />
-                    <p className="text-sm font-medium text-muted-foreground">
-                      No products assigned to this supplier
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Click "Add Product" to get started
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {products.map((product) => (
-                      <ProductListItem
-                        key={product.id}
-                        product={product}
-                        discountTypes={discountTypes}
-                        onDiscountChange={updateDiscount}
-                        onRemove={removeProduct}
-                      />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+          {/* List Header - Labels for the "columns" */}
+          <div className="flex items-center gap-4 px-4 py-2 bg-muted/30 border-b text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            <span className="flex-1">Product Details</span>
+            <span className="w-[180px]">Applied Discount</span>
+            <span className="w-8"></span>
+          </div>
+
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full text-sm text-muted-foreground animate-pulse">
+                Fetching product catalog...
+              </div>
+            ) : products.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full py-12">
+                <PackageOpen className="h-10 w-10 text-muted-foreground/40 mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  No products assigned yet.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                {products.map((product) => (
+                  <ProductListItem
+                    key={product.id}
+                    product={product}
+                    discountTypes={discountTypes}
+                    onDiscountChange={updateDiscount}
+                    onRemove={removeProduct}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Add Products Modal */}
       <AddProductsModal
         open={addModalOpen}
         onClose={() => setAddModalOpen(false)}
-        onAddProduct={handleAddProduct}
+        onAddProduct={addProduct}
       />
     </>
   );
