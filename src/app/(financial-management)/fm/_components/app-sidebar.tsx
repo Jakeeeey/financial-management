@@ -65,6 +65,60 @@ const data = {
       icon: Bot,
       isActive: true,
     },
+    {
+      title: "Accounting",
+      url: "#",
+      icon: SquareTerminal,
+      isActive: true,
+      items: [
+        {
+          title: "Accounts Payable",
+          url: "/fm/accounting/accounts-payable"
+        },
+        {
+          title: "Accounts Receivable",
+          url: "/fm/accounting/accounts-receivable"
+        }
+      ],
+    },
+    {
+      title: "Reports",
+      url: "#",
+      icon: SquareTerminal,
+      isActive: true,
+      items: [
+        {
+          title: "EWT",
+          url: "/fm/reports/ewt"
+        },
+        {
+          title: "CWT",
+          url: "/fm/reports/cwt"
+        },
+        {
+          title: "VAT",
+          url: "#",
+          items: [
+            {
+              title: "VAT Selling",
+              url: "/fm/reports/vat/vat-selling"
+            },
+            {
+              title: "VAT Purchases",
+              url: "/fm/reports/vat/vat-purchases"
+            }
+          ]
+        },
+        {
+          title: "FWT",
+          url: "/fm/reports/fwt"
+        },
+        {
+          title: "Tax Calendar",
+          url: "/fm/reports/tax-calendar"
+        }
+      ],
+    },
   ],
 };
 
