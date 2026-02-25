@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 function fmtPct(v: string | number) {
   const n = Number(v);
   if (Number.isNaN(n)) return String(v ?? "");
-  return n.toFixed(2);
+  return n.toFixed(10).replace(/\.?0+$/, "");
 }
 
 export const columns: ColumnDef<LineDiscountRow>[] = [

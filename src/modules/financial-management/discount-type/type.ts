@@ -31,7 +31,7 @@ export type DiscountTypeRow = z.infer<typeof discountTypeRowSchema>;
 /** ===== Upsert payload (dialog -> API) ===== */
 export const discountTypeUpsertSchema = z.object({
   id: z.number().optional(),
-  discount_type: z.string().trim().min(1, "Discount Type is required."),
+  discount_type: z.string().trim().min(1, "Discount Type is required"),
   line_ids: z.array(z.number()).default([]),
 });
 export type DiscountTypeUpsert = z.infer<typeof discountTypeUpsertSchema>;

@@ -27,10 +27,14 @@ import {
 
 const schema = z.object({
   line_discount: z.string().trim().min(1, "Code is required."),
-  percentage: z.coerce
-    .number()
-    .min(0, "Must be at least 0.00")
-    .max(99.99, "Must be at most 99.99"),
+  percentage: z.any()
+    .refine((val) => val !== "" && val !== null && val !== undefined, "Percentage is required.")
+    .transform((val) => Number(val))
+    .pipe(
+      z.number({ message: "Percentage is required." })
+        .min(0, "Must be at least 0.00")
+        .max(99.99, "Must be at most 99.99")
+    ),
   description: z.string().trim().nullable().optional(),
 });
 
@@ -91,11 +95,19 @@ export default function LineDiscountDialog({
 
       onOpenChange(false);
     } catch (e: any) {
-      toast.error(e?.message || "Save failed.");
+      toast.error(e?.message || "Save failed");
     } finally {
       setSaving(false);
     }
   }
+
+  function handleValidationError(errors: any) {
+    const firstError = Object.values(errors)[0] as any;
+    if (firstError?.message) {
+      toast.error(firstError.message);
+    }
+  }
+
 
   const title = mode === "create" ? "New Line Discount" : "Edit Line Discount";
   const submitLabel = mode === "create" ? "Create Line Discount" : "Save Changes";
@@ -118,7 +130,7 @@ export default function LineDiscountDialog({
           </div>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+            <form onSubmit={form.handleSubmit(handleSubmit, handleValidationError)} className="space-y-6">
               {/* ✅ Aligned grid: reserve helper-line space on Code */}
               <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
                 {/* Code */}

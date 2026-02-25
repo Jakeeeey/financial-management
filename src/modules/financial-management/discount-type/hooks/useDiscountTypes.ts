@@ -21,7 +21,7 @@ export function useDiscountTypes() {
       setRows(r);
       setLines(l);
     } catch (e: any) {
-      toast.error(e?.message || "Failed to load discount types.");
+      toast.error(e?.message || "Failed to load discount types");
     } finally {
       setLoading(false);
     }
@@ -45,10 +45,10 @@ export function useDiscountTypes() {
     try {
       if (payload.id) {
         await fp.updateDiscountType(payload);
-        toast.success("Discount type updated.");
+        toast.success("Discount type updated");
       } else {
         await fp.createDiscountType(payload);
-        toast.success("Discount type created.");
+        toast.success("Discount type created");
       }
       setOpen(false);
       setEditing(null);
@@ -61,12 +61,12 @@ export function useDiscountTypes() {
   const remove = async (id: number) => {
     try {
       await fp.deleteDiscountType(id);
-      toast.success("Discount type deleted.");
+      toast.success("Discount type deleted");
       setOpen(false);
       setEditing(null);
       await refresh();
     } catch (e: any) {
-      toast.error(e?.message || "Delete failed.");
+      toast.error(e?.message || "Delete failed");
     }
   };
 

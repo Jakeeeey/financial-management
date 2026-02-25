@@ -159,9 +159,17 @@ export default function DiscountTypeDialog({
       const payload: FormValues = { ...v, line_ids: selected };
       await onSave?.(payload);
     } catch (e: any) {
-      toast.error(e?.message || "Save failed.");
+      toast.error(e?.message || "Save failed");
     }
   }
+
+  function handleValidationError(errors: any) {
+    const firstError = Object.values(errors)[0] as any;
+    if (firstError?.message) {
+      toast.error(firstError.message);
+    }
+  }
+
 
   const title =
     mode === "view" ? "View Discount Type" : editing ? "Edit Discount Type" : "Add Discount Type";
@@ -174,7 +182,7 @@ export default function DiscountTypeDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(submit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(submit, handleValidationError)} className="space-y-4">
             <FormField
               control={form.control}
               name="discount_type"

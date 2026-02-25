@@ -25,7 +25,7 @@ export function useLineDiscounts() {
       })
       .catch((e) => {
         if (!alive) return;
-        toast.error(e?.message || "Failed to load line discounts.");
+        toast.error(e?.message || "Failed to load line discounts");
       })
       .finally(() => {
         if (!alive) return;
@@ -38,21 +38,33 @@ export function useLineDiscounts() {
   }, [refreshKey]);
 
   const create = React.useCallback(async (payload: LineDiscountUpsert) => {
-    const created = await api.createLineDiscount(payload);
-    toast.success("Line discount created.");
-    setRows((prev) => [...prev, created].sort((a, b) => (a.line_discount || "").localeCompare(b.line_discount || "")));
+    try {
+      const created = await api.createLineDiscount(payload);
+      toast.success("Line discount created");
+      setRows((prev) => [...prev, created].sort((a, b) => (a.line_discount || "").localeCompare(b.line_discount || "")));
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to create line discount");
+    }
   }, []);
 
   const update = React.useCallback(async (id: number, payload: LineDiscountUpsert) => {
-    const updated = await api.updateLineDiscount(id, payload);
-    toast.success("Line discount updated.");
-    setRows((prev) => prev.map((r) => (r.id === id ? updated : r)));
+    try {
+      const updated = await api.updateLineDiscount(id, payload);
+      toast.success("Line discount updated");
+      setRows((prev) => prev.map((r) => (r.id === id ? updated : r)));
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to update line discount");
+    }
   }, []);
 
   const remove = React.useCallback(async (id: number) => {
-    await api.deleteLineDiscount(id);
-    toast.success("Line discount deleted.");
-    setRows((prev) => prev.filter((r) => r.id !== id));
+    try {
+      await api.deleteLineDiscount(id);
+      toast.success("Line discount deleted");
+      setRows((prev) => prev.filter((r) => r.id !== id));
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to delete line discount");
+    }
   }, []);
 
   return { rows, loading, refresh, create, update, remove };
