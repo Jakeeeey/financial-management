@@ -30,11 +30,3 @@ export function getDepreciatedValue(
   // Ensure value never drops below ₱0.00
   return Math.max(0, currentValue);
 }
-
-export const formatPHP = (amount: number) => {
-  return new Intl.NumberFormat("en-PH", {
-    style: "currency",
-    currency: "PHP",
-    minimumFractionDigits: 2,
-  }).format(amount);
-};

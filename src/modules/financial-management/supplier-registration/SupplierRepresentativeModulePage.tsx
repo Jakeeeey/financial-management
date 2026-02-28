@@ -10,7 +10,7 @@ import { Supplier } from "@/modules/financial-management/supplier-registration/t
 import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { EditSupplierModal } from "./components/modals/edit-supplier-modal";
-import { SupplierTableSkeleton } from "./components/data-table/table-skeleton-loader";
+import { DataTableSkeleton } from "@/app/(financial-management)/fm/_components/DataTableSkeleton";
 import { AddSupplierModal } from "./components/modals/add-supplier-modal";
 import { ErrorPage } from "@/app/(financial-management)/fm/_components/ErrorPage";
 
@@ -61,7 +61,7 @@ export default function SupplierRepresentativeModulePage() {
   if (isLoading) {
     return (
       <div className="p-6">
-        <SupplierTableSkeleton />
+        <DataTableSkeleton />
       </div>
     );
   }

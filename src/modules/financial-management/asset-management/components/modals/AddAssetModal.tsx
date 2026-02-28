@@ -758,7 +758,8 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                       <Input
                         type="number"
                         {...field}
-                        className="h-10"
+                        disabled
+                        className="h-10 bg-muted"
                         onChange={(e) =>
                           field.onChange(parseInt(e.target.value) || 1)
                         }

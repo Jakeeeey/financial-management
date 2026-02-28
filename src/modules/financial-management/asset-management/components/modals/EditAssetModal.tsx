@@ -117,7 +117,7 @@ export default function EditAssetModal({
         barcode: asset.barcode || "",
         rfid_code: asset.rfid_code || "",
         condition: asset.condition,
-        quantity: asset.quantity,
+        quantity: 1, // Fixed to 1
         cost_per_item: asset.cost_per_item,
         life_span: asset.life_span,
         date_acquired: new Date(asset.date_acquired),
@@ -599,6 +599,8 @@ export default function EditAssetModal({
                     <Input
                       type="number"
                       {...field}
+                      disabled
+                      className="bg-muted"
                       onChange={(e) =>
                         field.onChange(parseInt(e.target.value) || 1)
                       }

@@ -10,9 +10,10 @@ import { ColumnFiltersState } from "@tanstack/react-table";
 import { columns } from "./components/data-table/columns";
 import { AssetTableData } from "./types";
 import { AssetDataTable } from "./components/data-table";
-import { formatPHP, getDepreciatedValue } from "./utils/lib";
-import { AssetTableSkeleton } from "./components/data-table/skeleton-loader";
+import { DataTableSkeleton } from "@/app/(financial-management)/fm/_components/DataTableSkeleton";
 import { ErrorPage } from "@/app/(financial-management)/fm/_components/ErrorPage";
+import { formatPHP } from "@/lib/utils";
+import { getDepreciatedValue } from "./utils/lib";
 
 // Hooks
 import { useAssets } from "./hooks/useAssets";
@@ -70,7 +71,7 @@ export default function AssetManagementModulePage() {
   if (loading) {
     return (
       <div className="p-6">
-        <AssetTableSkeleton />
+        <DataTableSkeleton />
       </div>
     );
   }

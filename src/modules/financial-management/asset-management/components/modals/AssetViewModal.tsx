@@ -1,10 +1,8 @@
 "use client";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import {
-  formatPHP,
-  getDepreciatedValue,
-} from "@/modules/financial-management/asset-management/utils/lib";
+import { formatPHP, formatDate } from "@/lib/utils";
+import { getDepreciatedValue } from "@/modules/financial-management/asset-management/utils/lib";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {

@@ -3,7 +3,8 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { AssetTableData } from "../../types";
-import { formatPHP, getDepreciatedValue } from "../../utils/lib";
+import { formatPHP } from "@/lib/utils";
+import { getDepreciatedValue } from "../../utils/lib";
 import { DataTableColumnHeader } from "./table-column-header";
 import {
   Select,
@@ -231,11 +232,11 @@ export const columns: ColumnDef<AssetTableData>[] = [
           <Calendar className="h-3.5 w-3.5 text-muted-foreground/80" />
           <span className="text-xs font-medium">
             {date
-              ? new Date(date).toLocaleDateString("en-US", {
+              ? new Intl.DateTimeFormat("en-US", {
                   year: "numeric",
                   month: "short",
                   day: "numeric",
-                })
+                }).format(new Date(date))
               : "—"}
           </span>
         </div>
