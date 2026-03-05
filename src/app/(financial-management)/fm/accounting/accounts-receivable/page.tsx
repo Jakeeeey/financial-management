@@ -13,7 +13,7 @@ import { NavUser } from "../../_components/nav-user";
 import { cookies } from "next/headers";
 
 // ✅ Wire the module you asked for
-import ComingSoon from "../../_components/ComingSoon";
+import AccountsReceivableModule from "@/modules/financial-management/accounting/accounts-receivable/AccountsReceivableModule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -121,7 +121,7 @@ export default async function Page() {
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
             <main className="min-h-0 flex-1 p-3 sm:p-4 overflow-x-hidden">
-                <ComingSoon />
+                <AccountsReceivableModule />
             </main>
         </div>
     );

@@ -13,7 +13,7 @@ import { NavUser } from "../../_components/nav-user";
 import { cookies } from "next/headers";
 
 // ✅ Wire the module you asked for
-import ComingSoon from "../../_components/ComingSoon";
+import EWTModules from "@/modules/financial-management/reports/ewt/EWTModule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -121,7 +121,7 @@ export default async function Page() {
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
             <main className="min-h-0 flex-1 p-3 sm:p-4 overflow-x-hidden">
-                <ComingSoon />
+                <EWTModules />
             </main>
         </div>
     );
