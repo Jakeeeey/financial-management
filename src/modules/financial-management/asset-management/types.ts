@@ -30,8 +30,10 @@ export const assetFormSchema = z.object({
   item_name: z.string().min(1, "Item name is required"),
   item_type: z.string().min(1, "Item type is required"),
   item_classification: z.string().min(1, "Classification is required"),
-  barcode: z.string(),
-  rfid_code: z.string(),
+  barcode: z.string().optional().nullable().or(z.literal("")),
+  rfid_code: z.string().optional().nullable().or(z.literal("")),
+  serial: z.string().optional().nullable().or(z.literal("")),
+  is_active_warning: z.number(),
   condition: z.enum(["Good", "Bad", "Under Maintenance", "Discontinued"]),
   quantity: z.number().min(1, "Quantity must be at least 1"),
   cost_per_item: z.number().min(0, "Cost must be positive"),
@@ -42,14 +44,16 @@ export const assetFormSchema = z.object({
   item_image: z.any().optional(),
 });
 
-// --- 3. API Submission Schema (What gets sent to the API) ---
+// --- 3. API Submission Schema ---
 
 export const assetSubmissionSchema = z.object({
   item_name: z.string(),
   item_type: z.union([z.string(), z.number()]),
   item_classification: z.union([z.string(), z.number()]),
-  barcode: z.string().optional(),
-  rfid_code: z.string().optional(),
+  barcode: z.string().optional().nullable(),
+  rfid_code: z.string().optional().nullable(),
+  serial: z.string().optional().nullable(),
+  is_active_warning: z.number(),
   condition: z.enum(["Good", "Bad", "Under Maintenance", "Discontinued"]),
   quantity: z.number(),
   cost_per_item: z.number(),
@@ -66,23 +70,24 @@ export const assetTableDataSchema = z.object({
   id: z.number(),
   barcode: z.string().nullable(),
   rfid_code: z.string().nullable(),
+  serial: z.string().nullable(),
+  is_active_warning: z.number(),
   condition: z.enum(["Good", "Bad", "Under Maintenance", "Discontinued"]),
   quantity: z.number(),
   cost_per_item: z.number(),
   total: z.number(),
-  // API returns date as string, we convert to Date in the UI if needed
-  date_acquired: z.string(), 
+  date_acquired: z.string(),
   life_span: z.number(),
 
   // Virtual fields from the JOINs
   item_name: z.string(),
   item_image: z.string().nullable(),
-  item_type_name: z.string(), // <--- ADDED THIS TO FIX YOUR ERROR
+  item_type_name: z.string(),
   classification_name: z.string(),
   department_name: z.string(),
   assigned_to_name: z.string(),
 
-  // Raw IDs (keep for edit/delete operations)
+  // Raw IDs
   item_id: z.number(),
   department: z.number().nullable(),
   employee: z.number().nullable(),

@@ -1,36 +1,39 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import imageCompression from "browser-image-compression";
 import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { zodResolver } from "@hookform/resolvers/zod";
-import imageCompression from "browser-image-compression";
 
-import {
-  Package,
-  Scan,
-  Landmark,
-  ClipboardList,
-  Loader2,
-  CalendarIcon,
-  Check,
-  ChevronsUpDown,
-  Plus,
-  ImagePlus,
-  X,
-  UploadCloud,
-  ImageUp,
-} from "lucide-react";
-import { Separator } from "@/components/ui/separator";
-import { format } from "date-fns";
-import { cn } from "@/lib/utils";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import {
+  CalendarIcon,
+  Check,
+  ChevronsUpDown,
+  Loader2,
+  Plus,
+  UploadCloud,
+  X,
+} from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -46,8 +49,8 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-  FormDescription,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -55,25 +58,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { assetService } from "@/modules/financial-management/asset-management/services/assetService";
 import {
   assetFormSchema,
   AssetFormValues,
   Department,
-  User,
-  ItemType,
   ItemClassification,
+  ItemType,
+  User,
 } from "@/modules/financial-management/asset-management/types";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 
 interface AddAssetModalProps {
   onSuccess: () => void;
@@ -88,6 +81,8 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
   const [classifications, setClassifications] = useState<ItemClassification[]>(
     [],
   );
+  const [items, setItems] = useState<any[]>([]);
+  const [itemNameSearch, setItemNameSearch] = useState("");
   const [typeSearch, setTypeSearch] = useState("");
   const [classificationSearch, setClassificationSearch] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -108,6 +103,8 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
       date_acquired: new Date(),
       department: 0,
       employee: null,
+      serial: "",
+      is_active_warning: 0,
     },
   });
 
@@ -115,17 +112,20 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
     if (open) {
       const fetchData = async () => {
         try {
-          const [depData, userData, typeData, classData] = await Promise.all([
-            assetService.getDepartments(),
-            assetService.getUsers(),
-            assetService.getItemTypes(),
-            assetService.getItemClassifications(),
-          ]);
+          const [depData, userData, typeData, classData, itemData] =
+            await Promise.all([
+              assetService.getDepartments(),
+              assetService.getUsers(),
+              assetService.getItemTypes(),
+              assetService.getItemClassifications(),
+              assetService.getItems(),
+            ]);
 
           setDepartments(Array.isArray(depData) ? depData : []);
           setUsers(Array.isArray(userData) ? userData : []);
           setTypes(Array.isArray(typeData) ? typeData : []);
           setClassifications(Array.isArray(classData) ? classData : []);
+          setItems(Array.isArray(itemData) ? itemData : []);
         } catch (error) {
           console.error("Failed to load dropdown data", error);
           toast.error("Failed to load form options");
@@ -152,6 +152,8 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
         date_acquired: now,
         department: 0,
         employee: null,
+        serial: "",
+        is_active_warning: 0,
       });
       setSelectedFile(null);
       setPreviewUrl(null);
@@ -217,6 +219,8 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
         item_classification: values.item_classification,
         barcode: values.barcode || "",
         rfid_code: values.rfid_code || "",
+        serial: values.serial || "",
+        is_active_warning: values.is_active_warning,
         encoder: 133,
         item_image: finalImageValue,
       };
@@ -259,6 +263,8 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
       date_acquired: new Date(),
       department: 0,
       employee: null,
+      serial: "",
+      is_active_warning: 0,
     });
     setSelectedFile(null);
     setPreviewUrl(null);
@@ -350,15 +356,108 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                 control={form.control}
                 name="item_name"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="flex flex-col">
                     <FormLabel>Item Name *</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g. Dell Latitude 5420"
-                        {...field}
-                        className="bg-muted/20 h-10"
-                      />
-                    </FormControl>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className={cn(
+                              "w-full justify-between h-10 font-normal",
+                              !field.value && "text-muted-foreground",
+                            )}
+                          >
+                            {field.value || "Search or type asset name..."}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-(--radix-popover-trigger-width) p-0"
+                        align="start"
+                      >
+                        <Command
+                          filter={(value, search) => {
+                            if (
+                              value.toLowerCase().includes(search.toLowerCase())
+                            )
+                              return 1;
+                            return 0;
+                          }}
+                        >
+                          <CommandInput
+                            placeholder="Type asset name..."
+                            value={itemNameSearch}
+                            onValueChange={(val) => {
+                              setItemNameSearch(val);
+                              field.onChange(val); // Continously update form value as user types
+                            }}
+                          />
+                          <CommandList>
+                            <CommandEmpty className="p-2 text-sm text-muted-foreground">
+                              New item will be created.
+                            </CommandEmpty>
+                            <CommandGroup heading="Existing Assets">
+                              {items
+                                .filter((item) =>
+                                  item.item_name
+                                    .toLowerCase()
+                                    .includes(itemNameSearch.toLowerCase()),
+                                )
+                                .slice(0, 10) // Limit suggestions
+                                .map((item) => (
+                                  <CommandItem
+                                    key={item.id}
+                                    value={item.item_name}
+                                    onSelect={(val) => {
+                                      form.setValue("item_name", val);
+                                      // Autofill Type and Classification
+                                      if (item.item_type?.type_name) {
+                                        form.setValue(
+                                          "item_type",
+                                          item.item_type.type_name,
+                                        );
+                                      }
+                                      if (
+                                        item.item_classification
+                                          ?.classification_name
+                                      ) {
+                                        form.setValue(
+                                          "item_classification",
+                                          item.item_classification
+                                            .classification_name,
+                                        );
+                                      }
+                                      setItemNameSearch("");
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        item.item_name === field.value
+                                          ? "opacity-100"
+                                          : "opacity-0",
+                                      )}
+                                    />
+                                    <div className="flex flex-col">
+                                      <span>{item.item_name}</span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {item.item_type?.type_name} •{" "}
+                                        {
+                                          item.item_classification
+                                            ?.classification_name
+                                        }
+                                      </span>
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -601,6 +700,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                       <Input
                         placeholder="Optional"
                         {...field}
+                        value={field.value ?? ""}
                         className="h-10"
                       />
                     </FormItem>
@@ -615,8 +715,50 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                       <Input
                         placeholder="Optional"
                         {...field}
+                        value={field.value ?? ""}
                         className="h-10"
                       />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="serial"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Serial Number</FormLabel>
+                      <Input
+                        placeholder="Optional"
+                        {...field}
+                        value={field.value ?? ""}
+                        className="h-10"
+                      />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="is_active_warning"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Security Tag</FormLabel>
+                      <Select
+                        onValueChange={(val) => field.onChange(Number(val))}
+                        value={field.value?.toString() ?? "0"}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Select Status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="1">Activated</SelectItem>
+                          <SelectItem value="0">Deactivated</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </FormItem>
                   )}
                 />

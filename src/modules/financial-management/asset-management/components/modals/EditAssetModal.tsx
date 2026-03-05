@@ -1,21 +1,20 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import imageCompression from "browser-image-compression";
 import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { zodResolver } from "@hookform/resolvers/zod";
-import imageCompression from "browser-image-compression";
 
+import { Button } from "@/components/ui/button";
 import {
-  Check,
-  ChevronsUpDown,
-  Loader2,
-  UploadCloud,
-  X,
-  Edit,
-} from "lucide-react";
-import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +30,12 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -38,30 +43,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import {
   assetFormSchema,
   AssetFormValues,
-  Department,
-  User,
-  ItemType,
-  ItemClassification,
   AssetTableData,
+  Department,
+  ItemClassification,
+  ItemType,
+  User,
 } from "@/modules/financial-management/asset-management/types";
+import { Check, ChevronsUpDown, Loader2, UploadCloud, X } from "lucide-react";
 import { assetService } from "../../services/assetService";
 
 interface EditAssetModalProps {
@@ -104,6 +97,8 @@ export default function EditAssetModal({
       department: 0,
       employee: null,
       item_image: null,
+      serial: "",
+      is_active_warning: 0,
     },
   });
 
@@ -124,6 +119,8 @@ export default function EditAssetModal({
         department: asset.department || 0,
         employee: asset.employee,
         item_image: asset.item_image,
+        serial: asset.serial || "",
+        is_active_warning: asset.is_active_warning || 0,
       });
 
       setPreviewUrl(
@@ -304,7 +301,11 @@ export default function EditAssetModal({
                     <FormItem>
                       <FormLabel>Barcode</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="Scan or enter barcode" />
+                        <Input
+                          {...field}
+                          value={field.value ?? ""}
+                          placeholder="Scan or enter barcode"
+                        />
                       </FormControl>
                     </FormItem>
                   )}
@@ -316,8 +317,51 @@ export default function EditAssetModal({
                     <FormItem>
                       <FormLabel>RFID Code</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="Enter RFID" />
+                        <Input
+                          {...field}
+                          value={field.value ?? ""}
+                          placeholder="Enter RFID"
+                        />
                       </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="serial"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Serial Number</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value ?? ""}
+                          placeholder="Enter Serial"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="is_active_warning"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Security Tag</FormLabel>
+                      <Select
+                        onValueChange={(val) => field.onChange(Number(val))}
+                        value={field.value?.toString() ?? "0"}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select Status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="1">Activated</SelectItem>
+                          <SelectItem value="0">Deactivated</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </FormItem>
                   )}
                 />

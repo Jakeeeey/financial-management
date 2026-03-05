@@ -1,13 +1,14 @@
-import { NextResponse } from "next/server";
 import {
+  createAsset,
   fetchAssets,
   fetchDepartments,
-  fetchUsers,
-  fetchItemTypes,
   fetchItemClassifications,
-  createAsset,
+  fetchItemTypes,
+  fetchItems,
+  fetchUsers,
   updateAsset,
 } from "@/modules/financial-management/asset-management/services/asset";
+import { NextResponse } from "next/server";
 
 /**
  * GET Handler
@@ -31,6 +32,9 @@ export async function GET(req: Request) {
         break;
       case "item_classifications":
         data = await fetchItemClassifications();
+        break;
+      case "items":
+        data = await fetchItems();
         break;
       default:
         data = await fetchAssets();

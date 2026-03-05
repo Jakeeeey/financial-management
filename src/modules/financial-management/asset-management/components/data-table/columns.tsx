@@ -1,11 +1,13 @@
 "use client";
 
-import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
-import { AssetTableData } from "../../types";
-import { formatPHP } from "@/lib/utils";
-import { getDepreciatedValue } from "../../utils/lib";
-import { DataTableColumnHeader } from "./table-column-header";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -13,28 +15,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatPHP } from "@/lib/utils";
+import { ColumnDef } from "@tanstack/react-table";
 import {
+  AlertTriangle,
+  Ban,
+  Building,
+  Calendar,
   EllipsisVertical,
   Eye,
   Package,
-  SquarePen,
-  Trash2,
   ShieldCheck,
-  AlertTriangle,
-  Wrench,
-  Ban,
+  SquarePen,
   Tag,
-  Building,
-  Calendar,
+  Wrench,
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
+import { AssetTableData } from "../../types";
+import { getDepreciatedValue } from "../../utils/lib";
+import { DataTableColumnHeader } from "./table-column-header";
 
 // --- Sub-components ---
 
@@ -261,10 +259,10 @@ export const columns: ColumnDef<AssetTableData>[] = [
             <DropdownMenuItem onClick={() => meta?.onView(row.original)}>
               <Eye className="mr-2 h-4 w-4" /> View Details
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive">
+            {/* <DropdownMenuSeparator /> */}
+            {/* <DropdownMenuItem variant="destructive">
               <Trash2 className="mr-2 h-4 w-4" /> Delete Asset
-            </DropdownMenuItem>
+            </DropdownMenuItem> */}
           </DropdownMenuContent>
         </DropdownMenu>
       );

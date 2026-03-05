@@ -15,10 +15,13 @@ export const assetService = {
   getDepartments: () => apiRequest(`${API_ROUTE}?type=departments`),
 
   getUsers: () => apiRequest(`${API_ROUTE}?type=users`),
-  
+
   getItemTypes: () => apiRequest(`${API_ROUTE}?type=item_types`),
-  
-  getItemClassifications: () => apiRequest(`${API_ROUTE}?type=item_classifications`),
+
+  getItemClassifications: () =>
+    apiRequest(`${API_ROUTE}?type=item_classifications`),
+
+  getItems: () => apiRequest(`${API_ROUTE}?type=items`),
 
   getAssets: () => apiRequest(API_ROUTE),
 
@@ -57,6 +60,8 @@ export const assetService = {
         item_image: imageId,
         barcode: values.barcode,
         rfid_code: values.rfid_code,
+        serial: values.serial,
+        is_active_warning: values.is_active_warning,
       }),
     }),
 };

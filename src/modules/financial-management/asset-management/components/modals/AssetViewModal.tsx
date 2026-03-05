@@ -1,20 +1,21 @@
 "use client";
 
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { formatPHP, formatDate } from "@/lib/utils";
-import { getDepreciatedValue } from "@/modules/financial-management/asset-management/utils/lib";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { formatPHP } from "@/lib/utils";
+import { getDepreciatedValue } from "@/modules/financial-management/asset-management/utils/lib";
 import {
-  Package,
-  User,
-  Building,
   Barcode,
+  Building,
+  CalendarDays,
   Cpu,
   DollarSign,
-  Zap,
+  Package,
+  ShieldAlert,
+  ShieldCheck,
   Tag,
-  CalendarDays,
+  User,
 } from "lucide-react";
 
 export default function ViewAssetModal({
@@ -89,6 +90,21 @@ export default function ViewAssetModal({
                       { dateStyle: "medium" },
                     )}
                   />
+                  <MetricItem
+                    icon={
+                      asset.is_active_warning === 1 ? (
+                        <ShieldCheck size={16} className="text-green-500" />
+                      ) : (
+                        <ShieldAlert size={16} className="text-red-500" />
+                      )
+                    }
+                    label="Security Tag"
+                    value={
+                      asset.is_active_warning === 1
+                        ? "Activated"
+                        : "Deactivated"
+                    }
+                  />
                 </div>
               </div>
             </div>
@@ -108,6 +124,10 @@ export default function ViewAssetModal({
                 <span className="flex items-center gap-1.5 bg-muted/50 px-2 py-1 rounded">
                   <Cpu size={14} className="text-primary" />{" "}
                   {asset.rfid_code || "N/A"}
+                </span>
+                <span className="flex items-center gap-1.5 bg-muted/50 px-2 py-1 rounded">
+                  <Package size={14} className="text-primary" /> SN:{" "}
+                  {asset.serial || "N/A"}
                 </span>
               </div>
             </div>

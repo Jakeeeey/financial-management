@@ -1,9 +1,9 @@
 import {
   AssetTableData,
   Department,
-  User,
-  ItemType,
   ItemClassification,
+  ItemType,
+  User,
 } from "../types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -139,6 +139,8 @@ export async function fetchAssets(): Promise<AssetTableData[]> {
       department_name: deptsMap.get(Number(asset.department)) ?? "Unassigned",
       assigned_to_name: usersMap.get(Number(asset.employee)) ?? "Unassigned",
       item_image: asset.item_image,
+      serial: asset.serial,
+      is_active_warning: asset.is_active_warning,
     };
   });
 }
@@ -179,45 +181,90 @@ export async function fetchItemTypes(): Promise<ItemType[]> {
 /**
  * Fetch Item Classifications
  */
-export async function fetchItemClassifications(): Promise<ItemClassification[]> {
-  const res = await fetch(`${API_BASE_URL}/items/item_classification?limit=-1`, {
-    headers: AUTH_HEADERS,
-  });
+export async function fetchItemClassifications(): Promise<
+  ItemClassification[]
+> {
+  const res = await fetch(
+    `${API_BASE_URL}/items/item_classification?limit=-1`,
+    {
+      headers: AUTH_HEADERS,
+    },
+  );
   const json = await res.json();
   return json.data || [];
+}
+
+/**
+ * Fetch unique items with their type and classification names
+ */
+export async function fetchItems(): Promise<any[]> {
+  const [itemsRes, typeRes, classRes] = await Promise.all([
+    fetch(
+      `${API_BASE_URL}/items/items?fields=*,item_type.type_name,item_classification.classification_name&limit=-1`,
+      {
+        headers: AUTH_HEADERS,
+        cache: "no-store",
+      },
+    ),
+    fetch(`${API_BASE_URL}/items/item_type?limit=-1`, {
+      headers: AUTH_HEADERS,
+    }),
+    fetch(`${API_BASE_URL}/items/item_classification?limit=-1`, {
+      headers: AUTH_HEADERS,
+    }),
+  ]);
+
+  if (!itemsRes.ok) throw new Error("Failed to fetch items");
+
+  const itemsJson = await itemsRes.json();
+  return itemsJson.data || [];
 }
 
 /**
  * Create a new asset
  */
 export async function createAsset(body: any) {
-  const typeId = await ensureReferenceExists(
-    "item_type",
-    "type_name",
-    body.item_type,
+  // 1. Check if an item with this name already exists to prevent duplicates
+  const existingItemRes = await fetch(
+    `${API_BASE_URL}/items/items?filter[item_name][_eq]=${encodeURIComponent(body.item_name)}&fields=id,item_type,item_classification`,
+    { headers: AUTH_HEADERS },
   );
-  const classId = await ensureReferenceExists(
-    "item_classification",
-    "classification_name",
-    body.item_classification,
-  );
+  const existingItemJson = await existingItemRes.json();
 
-  // 1. Create Base Item
-  const itemRes = await fetch(`${API_BASE_URL}/items/items`, {
-    method: "POST",
-    headers: AUTH_HEADERS,
-    body: JSON.stringify({
-      item_name: body.item_name,
-      item_type: typeId,
-      item_classification: classId,
-    }),
-  });
+  let itemId;
 
-  const itemData = await itemRes.json();
-  if (!itemRes.ok)
-    throw new Error(itemData.errors?.[0]?.message || "Failed to create item");
+  if (existingItemJson.data && existingItemJson.data.length > 0) {
+    // Reuse existing item
+    itemId = existingItemJson.data[0].id;
+  } else {
+    // Create new baseline item
+    const typeId = await ensureReferenceExists(
+      "item_type",
+      "type_name",
+      body.item_type,
+    );
+    const classId = await ensureReferenceExists(
+      "item_classification",
+      "classification_name",
+      body.item_classification,
+    );
 
-  const itemId = itemData.data.id;
+    const itemRes = await fetch(`${API_BASE_URL}/items/items`, {
+      method: "POST",
+      headers: AUTH_HEADERS,
+      body: JSON.stringify({
+        item_name: body.item_name,
+        item_type: typeId,
+        item_classification: classId,
+      }),
+    });
+
+    const itemData = await itemRes.json();
+    if (!itemRes.ok)
+      throw new Error(itemData.errors?.[0]?.message || "Failed to create item");
+
+    itemId = itemData.data.id;
+  }
 
   // 2. Format Date
   let dateStr: string;
@@ -227,8 +274,8 @@ export async function createAsset(body: any) {
   } else {
     try {
       const parsedDate = new Date(dateInput);
-      dateStr = isNaN(parsedDate.getTime()) 
-        ? new Date().toISOString().split("T")[0] 
+      dateStr = isNaN(parsedDate.getTime())
+        ? new Date().toISOString().split("T")[0]
         : parsedDate.toISOString().split("T")[0];
     } catch {
       dateStr = new Date().toISOString().split("T")[0];
@@ -248,7 +295,9 @@ export async function createAsset(body: any) {
     employee: body.employee ? Number(body.employee) : null,
     barcode: body.barcode || null,
     rfid_code: body.rfid_code || null,
-    encoder: body.encoder || 81,
+    serial: body.serial || null,
+    is_active_warning: Number(body.is_active_warning) || 0,
+    encoder: body.encoder || 133,
     item_image: body.item_image || null,
   };
 
@@ -260,9 +309,7 @@ export async function createAsset(body: any) {
 
   const assetData = await assetRes.json();
   if (!assetRes.ok)
-    throw new Error(
-      assetData.errors?.[0]?.message || "Failed to create asset",
-    );
+    throw new Error(assetData.errors?.[0]?.message || "Failed to create asset");
 
   return assetData.data;
 }
@@ -288,21 +335,17 @@ export async function updateAsset(body: any) {
     updateData.classification_name || updateData.item_classification,
   );
 
-  const itemUpdateRes = await fetch(
-    `${API_BASE_URL}/items/items/${item_id}`,
-    {
-      method: "PATCH",
-      headers: AUTH_HEADERS,
-      body: JSON.stringify({
-        item_name: updateData.item_name,
-        item_type: typeId,
-        item_classification: classId,
-      }),
-    },
-  );
+  const itemUpdateRes = await fetch(`${API_BASE_URL}/items/items/${item_id}`, {
+    method: "PATCH",
+    headers: AUTH_HEADERS,
+    body: JSON.stringify({
+      item_name: updateData.item_name,
+      item_type: typeId,
+      item_classification: classId,
+    }),
+  });
 
-  if (!itemUpdateRes.ok)
-    throw new Error("Failed to update base item details");
+  if (!itemUpdateRes.ok) throw new Error("Failed to update base item details");
 
   // 2. Update Asset Record
   const assetPayload = {
@@ -317,6 +360,8 @@ export async function updateAsset(body: any) {
     item_image: updateData.item_image,
     barcode: updateData.barcode,
     rfid_code: updateData.rfid_code,
+    serial: updateData.serial,
+    is_active_warning: Number(updateData.is_active_warning),
   };
 
   const assetUpdateRes = await fetch(
