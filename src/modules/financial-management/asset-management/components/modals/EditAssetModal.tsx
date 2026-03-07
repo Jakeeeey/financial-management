@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import imageCompression from "browser-image-compression";
+import Image from "next/image";
 import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -147,7 +148,7 @@ export default function EditAssetModal({
           setUsers(userData);
           setTypes(typeData);
           setClassifications(classData);
-        } catch (error) {
+        } catch {
           toast.error("Failed to load options");
         }
       };
@@ -204,8 +205,8 @@ export default function EditAssetModal({
       toast.success("Asset updated successfully!");
       onClose();
       onSuccess();
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update asset");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to update asset");
     } finally {
       setLoading(false);
     }
@@ -242,10 +243,10 @@ export default function EditAssetModal({
               >
                 {previewUrl ? (
                   <div className="relative w-full aspect-video max-h-48 overflow-hidden rounded-md">
-                    <img
+                    <Image
                       src={previewUrl}
                       alt="Preview"
-                      className="w-full h-full object-contain"
+                      fill className="object-contain"
                     />
                     <Button
                       type="button"

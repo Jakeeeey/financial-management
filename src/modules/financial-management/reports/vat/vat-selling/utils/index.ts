@@ -8,7 +8,7 @@ import type {
   VATCustomerEntry,
   VATSaleBarEntry,
   VATSaleMetrics,
-} from './types';
+} from '../types';
 
 export const COLORS = [
   '#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444',
@@ -32,11 +32,11 @@ export function transformTransactions(raw: RawVATSaleTransaction[]): VATSaleTran
   return raw.map((item) => {
     const rawAmount = Number(item.vat ?? 0);
     return {
-      id:        item.invoiceNo   ?? '-',
-      customer:  item.customer    ?? '-',
-      supplier:  item.supplier    ?? '-',
-      amount:    formatPeso(rawAmount),
-      date:      parseDate(item.invoiceDate),
+      id: item.invoiceNo ?? '-',
+      customer: item.customer ?? '-',
+      supplier: item.supplier ?? '-',
+      amount: formatPeso(rawAmount),
+      date: parseDate(item.invoiceDate),
       rawAmount,
     };
   });
@@ -45,7 +45,7 @@ export function transformTransactions(raw: RawVATSaleTransaction[]): VATSaleTran
 /** Build time-series chart points from raw transactions. */
 export function buildChartPoints(raw: RawVATSaleTransaction[]): VATSaleChartPoint[] {
   return raw.map((item) => ({
-    date:   parseDate(item.invoiceDate),
+    date: parseDate(item.invoiceDate),
     amount: Number(item.vat ?? 0),
   }));
 }
@@ -82,9 +82,9 @@ export function deriveMetrics(raw: RawVATSaleTransaction[]): VATSaleMetrics {
   const totalVat = amounts.reduce((s, v) => s + v, 0);
   return {
     totalVat,
-    avgVat:     totalVat / amounts.length,
+    avgVat: totalVat / amounts.length,
     highestVat: Math.max(...amounts),
-    count:      amounts.length,
+    count: amounts.length,
   };
 }
 

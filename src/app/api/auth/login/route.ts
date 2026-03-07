@@ -7,15 +7,16 @@ export const dynamic = "force-dynamic";
 const COOKIE_NAME = "vos_access_token";
 const COOKIE_MAX_AGE_CAP = 60 * 60 * 24 * 7; // 7 days cap
 
-function pickToken(payload: any): string | null {
+function pickToken(payload: unknown): string | null {
     if (!payload) return null;
     if (typeof payload === "string") return payload.trim() || null;
-    const t = payload.token ?? payload.accessToken ?? payload.access_token ?? payload.jwt;
+    const p = payload as Record<string, unknown>;
+    const t = p?.token ?? p?.accessToken ?? p?.access_token ?? p?.jwt;
     return typeof t === "string" && t.trim() ? t.trim() : null;
 }
 
 // Base64URL decode for JWT header/payload (no verification)
-function b64urlDecodeToJson(part: string): any | null {
+function b64urlDecodeToJson(part: string): Record<string, unknown> | null {
     try {
         let s = part.replace(/-/g, "+").replace(/_/g, "/");
         // pad to multiple of 4
@@ -88,11 +89,13 @@ export async function POST(req: NextRequest) {
             signal: controller.signal,
             cache: "no-store",
         });
-    } catch (err: any) {
+    } catch (err: unknown) {
         // ✅ Log details server-side only
+        const e = err as Record<string, unknown>;
+        const cause = e?.cause as Record<string, unknown> | undefined;
         console.error("[auth/login] Upstream fetch error:", {
-            code: err?.cause?.code || err?.code,
-            message: err?.cause?.message || err?.message,
+            code: cause?.code || e?.code,
+            message: cause?.message || e?.message,
         });
 
         // ✅ Return generic message to client (no internal URL/IP)
@@ -105,7 +108,7 @@ export async function POST(req: NextRequest) {
     }
 
     const raw = await springRes.text();
-    let data: any = null;
+    let data: unknown = null;
     try {
         data = raw ? JSON.parse(raw) : null;
     } catch {

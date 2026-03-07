@@ -14,7 +14,7 @@ export interface RawEWTRow {
   invoiceDate?: string;
   createdAt?: string;
   status?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface EWTRecord {

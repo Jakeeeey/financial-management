@@ -86,10 +86,10 @@ export default function ChartOfAccountsTable(props: {
                 <TableCell className="font-medium">{r.account_title}</TableCell>
                 <TableCell>{r.gl_code || "-"}</TableCell>
                 <TableCell className="uppercase">
-                  {byIdLabel(accountTypes, r.account_type, (x) => (x as any).account_name)}
+                  {byIdLabel(accountTypes, r.account_type, (x) => x.account_name)}
                 </TableCell>
                 <TableCell className="uppercase">
-                  {byIdLabel(balanceTypes, r.balance_type, (x) => (x as any).balance_name)}
+                  {byIdLabel(balanceTypes, r.balance_type, (x) => x.balance_name)}
                 </TableCell>
                 <TableCell>{r.added_by ?? "-"}</TableCell>
                 <TableCell>{formatMDY(r.date_added)}</TableCell>

@@ -61,11 +61,7 @@ export default function DiscountTypeDialog({
   const readOnly = mode === "view";
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(discountTypeUpsertSchema) as unknown as Resolver<
-      FormValues,
-      any,
-      FormValues
-    >,
+    resolver: zodResolver(discountTypeUpsertSchema) as unknown as Resolver<FormValues, unknown, FormValues>,
     mode: "onChange",
     defaultValues: {
       discount_type: "",
@@ -158,15 +154,15 @@ export default function DiscountTypeDialog({
     try {
       const payload: FormValues = { ...v, line_ids: selected };
       await onSave?.(payload);
-    } catch (e: any) {
-      toast.error(e?.message || "Save failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
     }
   }
 
-  function handleValidationError(errors: any) {
-    const firstError = Object.values(errors)[0] as any;
+  function handleValidationError(errors: import("react-hook-form").FieldErrors<FormValues>) {
+    const firstError = Object.values(errors)[0];
     if (firstError?.message) {
-      toast.error(firstError.message);
+      toast.error(String(firstError.message));
     }
   }
 

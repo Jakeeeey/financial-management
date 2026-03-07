@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Supplier } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
@@ -17,16 +17,10 @@ import { AddRepresentativeForm } from "../forms/add-representative-form";
 import { useState } from "react";
 import {
   MapPin,
-  Building2,
-  FileText,
   CreditCard,
-  Users,
   Plus,
-  Stethoscope,
   Phone,
   Mail,
-  LocateIcon,
-  LocationEdit,
   Hash,
   X,
   Package,
@@ -43,6 +37,31 @@ interface SupplierDetailsModalProps {
   supplier: Supplier | null;
   open: boolean;
   onClose: () => void;
+}
+
+interface EmptyInfoProps {
+  message?: string;
+}
+
+function EmptyInfo({
+  message = "The complete physical office location and mailing address for this supplier have not yet been documented.",
+}: EmptyInfoProps) {
+  const isLong = message.length > 12;
+  const displayMessage = isLong ? `${message.substring(0, 18)}...` : message;
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-sm font-normal text-muted-foreground/60 italic cursor-help">
+            {displayMessage}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-75">
+          <p className="text-xs leading-relaxed">{message}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 export function SupplierDetailsModal({
@@ -66,28 +85,7 @@ export function SupplierDetailsModal({
     refresh();
   };
 
-  const EmptyInfo = ({
-    message = "The complete physical office location and mailing address for this supplier have not yet been documented.",
-  }) => {
-    // Logic to clamp text for the display
-    const isLong = message.length > 12;
-    const displayMessage = isLong ? `${message.substring(0, 18)}...` : message;
 
-    return (
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="text-sm font-normal text-muted-foreground/60 italic cursor-help">
-              {displayMessage}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-75 ">
-            <p className="text-xs leading-relaxed">{message}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>

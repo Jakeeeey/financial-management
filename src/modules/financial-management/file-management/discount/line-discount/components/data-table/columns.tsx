@@ -11,7 +11,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -20,6 +19,10 @@ function fmtPct(v: string | number) {
   const n = Number(v);
   if (Number.isNaN(n)) return String(v ?? "");
   return n.toFixed(10).replace(/\.?0+$/, "");
+}
+
+interface LineDiscountTableMeta {
+  onEdit: (row: LineDiscountRow) => void;
 }
 
 export const columns: ColumnDef<LineDiscountRow>[] = [
@@ -50,7 +53,7 @@ export const columns: ColumnDef<LineDiscountRow>[] = [
   {
     id: "actions",
     cell: ({ row, table }) => {
-      const meta = table.options.meta as any;
+      const meta = table.options.meta as LineDiscountTableMeta;
 
       return (
         <DropdownMenu>

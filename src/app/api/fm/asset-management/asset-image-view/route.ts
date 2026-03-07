@@ -27,7 +27,10 @@ export async function GET(req: Request) {
         "Cache-Control": "public, max-age=31536000",
       },
     });
-  } catch (error: any) {
-    return new NextResponse(error.message, { status: 500 });
+  } catch (error: unknown) {
+    return new NextResponse(
+      error instanceof Error ? error.message : "Internal Error",
+      { status: 500 },
+    );
   }
 }

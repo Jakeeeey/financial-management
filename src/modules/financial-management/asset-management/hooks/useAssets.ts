@@ -28,9 +28,9 @@ export function useAssets() {
         throw new Error("Invalid data format received");
 
       setAssets(result);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      const message = err.message || "Could not load asset records.";
+      const message = err instanceof Error ? err.message : "Could not load asset records.";
       setError({
         hasError: true,
         message,

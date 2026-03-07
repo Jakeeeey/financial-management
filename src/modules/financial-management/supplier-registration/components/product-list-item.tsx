@@ -42,14 +42,7 @@ export function ProductListItem({
 }: ProductListItemProps) {
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const handleDiscountChange = async (value: string) => {
-    setIsUpdating(true);
-    const discountId = value === "none" ? null : parseInt(value);
-    await onDiscountChange(product.id, discountId);
-    setIsUpdating(false);
-  };
-
-  const handleRemove = async () => {
+const handleRemove = async () => {
     await onRemove(product.id);
   };
 

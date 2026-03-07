@@ -21,7 +21,7 @@ function getResource(req: NextRequest) {
   return r;
 }
 
-function json(resBody: any, init?: ResponseInit) {
+function json(resBody: unknown, init?: ResponseInit) {
   return NextResponse.json(resBody, init);
 }
 
@@ -56,7 +56,7 @@ async function directusFetch(path: string, init?: RequestInit) {
     },
   });
 
-  let data: any = null;
+  let data: unknown = null;
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) data = await res.json();
   else data = await res.text();
@@ -130,13 +130,14 @@ export async function GET(req: NextRequest) {
     if (!res.ok) return json(res.json, { status: res.status });
 
     // add paging echo for convenience
+    const payload = (res.json as Record<string, unknown>) || {};
     return json({
-      ...res.json,
+      ...payload,
       paging: { page, pageSize },
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return json(
-      { error: "Server error", message: String(e?.message || e) },
+      { error: "Server error", message: String(e instanceof Error ? e.message : e) },
       { status: 500 }
     );
   }
@@ -145,7 +146,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const resource = getResource(req);
-    const body = await req.json();
+    const body = (await req.json()) as Record<string, unknown>;
 
     // Create COA item
     if (resource === "chart_of_accounts") {
@@ -166,9 +167,9 @@ export async function POST(req: NextRequest) {
     });
     if (!res.ok) return json(res.json, { status: res.status });
     return json(res.json);
-  } catch (e: any) {
+  } catch (e: unknown) {
     return json(
-      { error: "Server error", message: String(e?.message || e) },
+      { error: "Server error", message: String(e instanceof Error ? e.message : e) },
       { status: 500 }
     );
   }
@@ -177,9 +178,9 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const resource = getResource(req);
-    const body = await req.json();
+    const body = (await req.json()) as Record<string, unknown>;
 
-    const id = String(body?.id ?? "").trim();
+    const id = String((body as Record<string, unknown>)?.id ?? "").trim();
     const payload = body?.payload ?? null;
 
     if (!id || !payload) {
@@ -197,9 +198,9 @@ export async function PATCH(req: NextRequest) {
 
     if (!res.ok) return json(res.json, { status: res.status });
     return json(res.json);
-  } catch (e: any) {
+  } catch (e: unknown) {
     return json(
-      { error: "Server error", message: String(e?.message || e) },
+      { error: "Server error", message: String(e instanceof Error ? e.message : e) },
       { status: 500 }
     );
   }
@@ -224,9 +225,9 @@ export async function DELETE(req: NextRequest) {
     if (!res.ok && res.status !== 204) return json(res.json, { status: res.status });
 
     return json({ ok: true });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return json(
-      { error: "Server error", message: String(e?.message || e) },
+      { error: "Server error", message: String(e instanceof Error ? e.message : e) },
       { status: 500 }
     );
   }

@@ -19,17 +19,17 @@ import { VATLineChart } from './components/VATLineChart';
 import { VATSupplierPieChart } from './components/VATSupplierPieChart';
 import { VATSupplierComparison } from './components/VATSupplierComparison';
 import { VATTransactionsTable } from './components/VATTransactionsTable';
-import { formatPeso, buildSupplierData, deriveMetrics, COLORS } from './utils';
-import type { VATTransaction, VATSupplierEntry, VATBarEntry, VATChartPoint, VATMetrics } from './types';
+import { formatPeso, COLORS } from './utils';
+import type { VATSupplierEntry, VATBarEntry, VATChartPoint, VATMetrics } from './types';
 
-const EMPTY_METRICS: VATMetrics = { totalVat: 0, avgVat: 0, highestVat: 0, count: 0 };
+// const EMPTY_METRICS: VATMetrics = { totalVat: 0, avgVat: 0, highestVat: 0, count: 0 };
 
 export default function VatPurchasesModule() {
-  const { loading, transactions, metrics, lineData, pieData, barData } = useVATPurchases();
+  const { loading, transactions, metrics, pieData, barData } = useVATPurchases();
 
-  const [page, setPage]         = useState(1);
+  const [page, setPage] = useState(1);
   const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo]     = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [supplier, setSupplier] = useState('');
 
   const supplierOptions = useMemo(
@@ -40,7 +40,7 @@ export default function VatPurchasesModule() {
   const filtered = useMemo(() => {
     return transactions.filter((t) => {
       if (dateFrom && t.date !== '-' && new Date(t.date) < new Date(dateFrom)) return false;
-      if (dateTo   && t.date !== '-' && new Date(t.date) > new Date(dateTo))   return false;
+      if (dateTo && t.date !== '-' && new Date(t.date) > new Date(dateTo)) return false;
       if (supplier && t.supplier !== supplier) return false;
       return true;
     });
@@ -53,9 +53,9 @@ export default function VatPurchasesModule() {
     const totalVat = filtered.reduce((s, t) => s + t.rawAmount, 0);
     return {
       totalVat,
-      avgVat:     filtered.length ? totalVat / filtered.length : 0,
+      avgVat: filtered.length ? totalVat / filtered.length : 0,
       highestVat: filtered.reduce((m, t) => Math.max(m, t.rawAmount), 0),
-      count:      filtered.length,
+      count: filtered.length,
     };
   }, [filtered, isFiltered, metrics]);
 
@@ -83,16 +83,16 @@ export default function VatPurchasesModule() {
     [filteredPieData]
   );
 
-  const displayMetrics  = isFiltered ? filteredMetrics  : metrics;
-  const displayLineData = isFiltered ? filteredLineData  : allLineData;
-  const displayPieData  = isFiltered ? filteredPieData   : pieData;
-  const displayBarData  = isFiltered ? filteredBarData   : barData;
-  const displayTx       = isFiltered ? filtered          : transactions;
+  const displayMetrics = isFiltered ? filteredMetrics : metrics;
+  const displayLineData = isFiltered ? filteredLineData : allLineData;
+  const displayPieData = isFiltered ? filteredPieData : pieData;
+  const displayBarData = isFiltered ? filteredBarData : barData;
+  const displayTx = isFiltered ? filtered : transactions;
 
   const clearFilters = () => { setDateFrom(''); setDateTo(''); setSupplier(''); setPage(1); };
 
   const exportToPDF = () => {
-    const doc   = new jsPDF({ orientation: 'landscape' });
+    const doc = new jsPDF({ orientation: 'landscape' });
     const pageW = doc.internal.pageSize.getWidth();
     const total = displayMetrics.totalVat;
     const formattedTotal = `PHP ${total.toLocaleString('en-PH', {
@@ -148,11 +148,11 @@ export default function VatPurchasesModule() {
     });
 
     // ── Grand Total box ────────────────────────────────────────────────────
-    const finalY = (doc as any).lastAutoTable.finalY ?? 36;
-    const boxW   = 110;
-    const boxH   = 12;
-    const boxX   = pageW - 14 - boxW;
-    const boxY   = finalY + 6;
+    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY ?? 36;
+    const boxW = 110;
+    const boxH = 12;
+    const boxX = pageW - 14 - boxW;
+    const boxY = finalY + 6;
 
     doc.setFillColor(24, 24, 27);
     doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, 'F');
@@ -180,10 +180,10 @@ export default function VatPurchasesModule() {
   );
 
   const statCards = [
-    { title: 'Total VAT',    value: formatPeso(displayMetrics.totalVat),   icon: <DollarSign className="h-4 w-4 text-primary" /> },
-    { title: 'Average VAT',  value: formatPeso(Math.round(displayMetrics.avgVat * 100) / 100), icon: <TrendingUp className="h-4 w-4 text-primary" /> },
-    { title: 'Highest VAT',  value: formatPeso(displayMetrics.highestVat), icon: <TrendingUp className="h-4 w-4 text-primary" /> },
-    { title: 'Transactions', value: String(displayMetrics.count),          icon: <FileText className="h-4 w-4 text-primary" /> },
+    { title: 'Total VAT', value: formatPeso(displayMetrics.totalVat), icon: <DollarSign className="h-4 w-4 text-primary" /> },
+    { title: 'Average VAT', value: formatPeso(Math.round(displayMetrics.avgVat * 100) / 100), icon: <TrendingUp className="h-4 w-4 text-primary" /> },
+    { title: 'Highest VAT', value: formatPeso(displayMetrics.highestVat), icon: <TrendingUp className="h-4 w-4 text-primary" /> },
+    { title: 'Transactions', value: String(displayMetrics.count), icon: <FileText className="h-4 w-4 text-primary" /> },
   ];
 
   return (

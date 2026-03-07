@@ -8,7 +8,7 @@ const STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN;
 
 const COLLECTION = "line_discount";
 
-function json(data: any, status = 200) {
+function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
 }
 
@@ -42,7 +42,7 @@ async function directus<T>(
 
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
-    const j = (await res.json()) as any;
+    const j = (await res.json()) as T;
     return { ok: res.ok, status: res.status, data: j };
   }
 
@@ -50,12 +50,14 @@ async function directus<T>(
   return { ok: res.ok, status: res.status, rawText: t };
 }
 
-function normalizeError(payload: any, fallback = "Request failed.") {
+function normalizeError(payload: unknown, fallback = "Request failed.") {
   // Directus typical: { errors: [{ message, extensions... }] }
+  const p = payload as Record<string, unknown>;
+  const errors = p?.errors as Array<Record<string, unknown>> | undefined;
   const msg =
-    payload?.errors?.[0]?.message ||
-    payload?.error?.message ||
-    payload?.message ||
+    errors?.[0]?.message ||
+    (p?.error as Record<string, unknown>)?.message ||
+    p?.message ||
     fallback;
   return String(msg);
 }
@@ -72,7 +74,7 @@ export async function GET(req: NextRequest) {
   qs.set("limit", limit);
   qs.set("sort", "line_discount"); // stable UI ordering
 
-  const upstream = await directus<any>(`/items/${COLLECTION}?${qs.toString()}`, {
+  const upstream = await directus<unknown>(`/items/${COLLECTION}?${qs.toString()}`, {
     method: "GET",
   });
 
@@ -96,7 +98,7 @@ export async function POST(req: NextRequest) {
     return json({ error: "Code and Percentage are required." }, 400);
   }
 
-  const upstream = await directus<any>(`/items/${COLLECTION}`, {
+  const upstream = await directus<unknown>(`/items/${COLLECTION}`, {
     method: "POST",
     body: JSON.stringify({
       line_discount: String(body.line_discount).trim(),
@@ -127,7 +129,7 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body) return json({ error: "Missing body." }, 400);
 
-  const upstream = await directus<any>(`/items/${COLLECTION}/${encodeURIComponent(id)}`, {
+  const upstream = await directus<unknown>(`/items/${COLLECTION}/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify({
       ...(body.line_discount !== undefined ? { line_discount: String(body.line_discount).trim() } : {}),
@@ -153,7 +155,7 @@ export async function DELETE(req: NextRequest) {
 
   if (!id) return json({ error: "Missing id." }, 400);
 
-  const upstream = await directus<any>(`/items/${COLLECTION}/${encodeURIComponent(id)}`, {
+  const upstream = await directus<unknown>(`/items/${COLLECTION}/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 

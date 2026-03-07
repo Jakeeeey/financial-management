@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { fetchAllDiscountTypes } from "../services/discount-types";
+
 import { DiscountType } from "../types/discount-type.schema";
 
 /**

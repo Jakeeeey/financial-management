@@ -3,6 +3,7 @@
 
 import type { Table } from "@tanstack/react-table";
 import { Plus, Settings2, X } from "lucide-react";
+import type { LineDiscountRow } from "../../type";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,12 +14,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+interface LineDiscountTableMeta {
+  onCreate: () => void;
+  onEdit: (row: LineDiscountRow) => void;
+}
+
 interface TableToolbarProps {
-  table: Table<any>;
+  table: Table<LineDiscountRow>;
 }
 
 export function TableToolbar({ table }: TableToolbarProps) {
-  const meta = table.options.meta as any;
+  const meta = table.options.meta as LineDiscountTableMeta;
   const isFiltered = table.getState().columnFilters.length > 0;
 
   return (
@@ -60,7 +66,7 @@ export function TableToolbar({ table }: TableToolbarProps) {
               .filter((column) => typeof column.accessorFn !== "undefined" && column.getCanHide())
               .map((column) => {
                 const label =
-                  (column.columnDef.meta as any)?.label ??
+                  (column.columnDef.meta as Record<string, unknown>)?.label ??
                   (typeof column.columnDef.header === "string"
                     ? column.columnDef.header
                     : column.id);

@@ -15,9 +15,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const data = await fetchSupplierById(parseInt(id));
     return NextResponse.json({ success: true, data });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: error instanceof Error ? error.message : String(error) },
       { status: 500 },
     );
   }
@@ -39,10 +39,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       data: result,
       message: "Supplier updated successfully",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("PATCH Supplier Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to update supplier" },
+      { success: false, error: error instanceof Error ? error.message : "Failed to update supplier" },
       { status: 500 },
     );
   }
@@ -56,7 +56,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 //     const { id } = await params;
 //     await deleteSupplier(parseInt(id));
 //     return NextResponse.json({ success: true, message: "Supplier deleted" });
-//   } catch (error: any) {
+//   } catch (error: unknown) {
 //     return NextResponse.json(
 //       { success: false, error: error.message },
 //       { status: 500 },

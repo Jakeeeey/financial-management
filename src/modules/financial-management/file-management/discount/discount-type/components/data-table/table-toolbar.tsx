@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export function TableToolbar({ table }: { table: Table<any> }) {
+export function TableToolbar({ table }: { table: Table<unknown> }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div className="text-sm font-semibold">Data Table</div>

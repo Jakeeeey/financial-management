@@ -44,10 +44,10 @@ export function useSuppliers() {
 
       const result = await response.json();
       setSuppliers(result.data || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError({
         hasError: true,
-        message: err.message || "Could not load asset records.",
+        message: (err instanceof Error ? err.message : String(err)) || "Could not load asset records.",
       });
       setSuppliers([]);
     } finally {
@@ -78,7 +78,7 @@ export function useSuppliers() {
    */
   useEffect(() => {
     fetchSuppliers();
-  }, []);
+  }, [fetchSuppliers]);
 
   /**
    * Memoized filtered suppliers

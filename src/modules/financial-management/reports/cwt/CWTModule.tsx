@@ -124,7 +124,7 @@ export default function CWTModule() {
     });
 
     // ── Grand Total box ────────────────────────────────────────────────────
-    const finalY = (doc as any).lastAutoTable.finalY ?? 36;
+    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY ?? 36;
     const boxW   = 110;
     const boxH   = 12;
     const boxX   = pageW - 14 - boxW;

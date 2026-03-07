@@ -14,14 +14,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "@/modules/financial-management/supplier-registration/components/data-table/table-column-header";
 import {
-  MoreHorizontal,
   Eye,
   Pencil,
-  Tag,
   User,
   Fingerprint,
   Calendar,
-  Activity,
   MoreVertical,
 } from "lucide-react";
 import { formatDate } from "@/modules/financial-management/supplier-registration/utils/utils";

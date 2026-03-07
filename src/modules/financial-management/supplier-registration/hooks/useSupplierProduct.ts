@@ -3,13 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 import { toast } from "sonner";
-import {
-  fetchSupplierProducts,
-  addProductToSupplier,
-  updateProductDiscount,
-  removeProductFromSupplier,
-  isProductAlreadyAdded,
-} from "../services/products-per-suppliers";
+// import { fetchSupplierProducts, ... } from \"../services/products-per-suppliers\";
 import { ProductPerSupplierWithDetails } from "../types/product-per-suppplier.schema";
 
 /**
@@ -78,7 +72,7 @@ export function useSupplierProducts(supplierId: number | null) {
         await fetchProducts(supplierId);
         return true;
       } catch (err) {
-        toast.error("An error occurred while adding the product");
+        console.error(err); toast.error("An error occurred while adding the product");
         return false;
       }
     },
@@ -105,7 +99,7 @@ export function useSupplierProducts(supplierId: number | null) {
         toast.success("Discount type updated");
         await fetchProducts(supplierId);
         return true;
-      } catch (err) {
+      } catch {
         toast.error("Failed to update discount");
         return false;
       }
@@ -131,7 +125,7 @@ export function useSupplierProducts(supplierId: number | null) {
         toast.success("Product removed");
         await fetchProducts(supplierId);
         return true;
-      } catch (err) {
+      } catch {
         toast.error("Failed to remove product");
         return false;
       }

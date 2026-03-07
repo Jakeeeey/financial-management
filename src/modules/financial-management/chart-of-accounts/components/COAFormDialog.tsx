@@ -32,7 +32,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 type Mode = "create" | "edit";
 
-function toStr(v: any) {
+function toStr(v: unknown) {
   return typeof v === "string" ? v : v == null ? "" : String(v);
 }
 
@@ -44,11 +44,11 @@ function toNum(v: string) {
 function readIsPaymentFromRow(row?: COARow | null) {
   if (!row) return false;
 
-  const n = (row as any).is_payment;
+  const n = (row as Record<string, unknown>).is_payment;
   if (n === 1 || n === "1" || n === true) return true;
   if (n === 0 || n === "0" || n === false) return false;
 
-  const buf = (row as any).isPayment;
+  const buf = (row as Record<string, unknown>).isPayment as { data: number[] } | undefined;
   const b = buf?.data?.[0];
   if (b === 1) return true;
   if (b === 0) return false;
@@ -138,8 +138,8 @@ export default function COAFormDialog(props: {
 
       setFindings(fAll.filter((x) => Number(x.coa_id) === Number(coaId)));
       setMethods(mAll.filter((x) => Number(x.coa_id) === Number(coaId)));
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to load extra details");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to load extra details");
       setFindings([]);
       setMethods([]);
     } finally {
@@ -156,15 +156,15 @@ export default function COAFormDialog(props: {
       setFindingsLoading(true);
 
       const created = await createFinding({ finding_name: name, coa_id: coaId });
-      const rowCreated = (created as any)?.data as FindingRow | undefined;
+      const rowCreated = (created as Record<string, unknown>)?.data as FindingRow | undefined;
 
       if (rowCreated) setFindings((prev) => [rowCreated, ...prev]);
       else await loadExtras(coaId);
 
       setNewFinding("");
       toast.success("Finding remark added");
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to add finding remark");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to add finding remark");
     } finally {
       setFindingsLoading(false);
     }
@@ -184,7 +184,7 @@ export default function COAFormDialog(props: {
         coa_id: coaId,
       });
 
-      const rowCreated = (created as any)?.data as PaymentMethodRow | undefined;
+      const rowCreated = (created as Record<string, unknown>)?.data as PaymentMethodRow | undefined;
 
       if (rowCreated) setMethods((prev) => [rowCreated, ...prev]);
       else await loadExtras(coaId);
@@ -192,8 +192,8 @@ export default function COAFormDialog(props: {
       setNewMethodName("");
       setNewMethodDesc("");
       toast.success("Payment method added");
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to add payment method");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to add payment method");
     } finally {
       setMethodsLoading(false);
     }
@@ -397,7 +397,7 @@ export default function COAFormDialog(props: {
                     <div className="flex flex-wrap gap-2 pt-1">
                       {findings.map((f, idx) => (
                         <Badge
-                          key={`${Number((f as any).id ?? 0)}-${Number((f as any).coa_id ?? 0)}-${(f as any).finding_name ?? ""}-${idx}`}
+                          key={`${Number(f.id ?? 0)}-${Number(f.coa_id ?? 0)}-${f.finding_name ?? ""}-${idx}`}
                           variant="secondary"
                         >
                           {f.finding_name}
@@ -447,7 +447,7 @@ export default function COAFormDialog(props: {
                     <div className="flex flex-wrap gap-2 pt-1">
                       {methods.map((m, idx) => (
                         <Badge
-                          key={`${Number((m as any).method_id ?? 0)}-${Number((m as any).coa_id ?? 0)}-${(m as any).method_name ?? ""}-${idx}`}
+                          key={`${Number(m.method_id ?? 0)}-${Number(m.coa_id ?? 0)}-${m.method_name ?? ""}-${idx}`}
                           variant="secondary"
                         >
                           {m.method_name}

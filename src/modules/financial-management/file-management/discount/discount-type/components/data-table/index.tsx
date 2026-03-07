@@ -29,7 +29,7 @@ interface DataTableProps<TData, TValue> {
   columnFilters: ColumnFiltersState;
   onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>;
   data: TData[];
-  tableMeta?: any; // expects { onView?: (row: TData) => void }
+  tableMeta?: Record<string, unknown>; // expects { onView?: (row: TData) => void }
 }
 
 export function DiscountTypeDataTable<TData, TValue>({
@@ -42,6 +42,7 @@ export function DiscountTypeDataTable<TData, TValue>({
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 10 });
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     state: { pagination, sorting, columnFilters },
@@ -82,7 +83,7 @@ export function DiscountTypeDataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   className="cursor-pointer hover:bg-muted/40"
-                  onClick={() => (table.options.meta as any)?.onView?.(row.original)}
+                  onClick={() => (table.options.meta as { onView?: (data: TData) => void })?.onView?.(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>

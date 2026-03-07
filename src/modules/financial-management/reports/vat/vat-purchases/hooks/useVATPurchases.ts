@@ -52,7 +52,7 @@ export function useVATPurchases(): UseVATPurchasesResult {
         const data = await res.json();
 
         // API returns a plain array — handle all possible shapes robustly
-        let tx: any[] = [];
+        let tx: import('../types').RawVATTransaction[] = [];
         if (Array.isArray(data)) {
           tx = data;
         } else if (Array.isArray(data.transactions)) {
@@ -63,7 +63,7 @@ export function useVATPurchases(): UseVATPurchasesResult {
           tx = data.content;
         } else {
           const arrProp = Object.values(data).find(v => Array.isArray(v));
-          if (arrProp) tx = arrProp as any[];
+          if (arrProp) tx = arrProp as import('../types').RawVATTransaction[];
         }
 
         setTransactions(transformTransactions(tx));
@@ -75,9 +75,10 @@ export function useVATPurchases(): UseVATPurchasesResult {
         setBarData(barData);
 
         toast.success('VAT Purchases data loaded successfully', { id: toastId });
-      } catch (err: any) {
-        setError(err.message || 'Unknown error');
-        toast.error(`Failed to load VAT data: ${err.message || 'Unknown error'}`, { id: toastId });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        setError(msg);
+        toast.error(`Failed to load VAT data: ${msg}`, { id: toastId });
       } finally {
         setLoading(false);
       }

@@ -21,10 +21,13 @@ async function safeJson(res: Response) {
   return res.text();
 }
 
-function errMsg(data: any) {
+function errMsg(data: unknown): string {
   if (!data) return "Request failed";
   if (typeof data === "string") return data;
-  return data?.errors?.[0]?.message || data?.message || data?.error || "Request failed";
+  const d = data as Record<string, unknown>;
+  const errors = d?.errors as Array<Record<string, unknown>> | undefined;
+  const msg = errors?.[0]?.message || d?.message || d?.error || "Request failed";
+  return String(msg);
 }
 
 export async function listCOA(params: COAListParams): Promise<DirectusListResponse<COARow>> {

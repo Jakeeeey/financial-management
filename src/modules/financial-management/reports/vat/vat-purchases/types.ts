@@ -12,7 +12,7 @@ export interface RawVATTransaction {
   vatAmount?: number | string;
   transactionDate?: string;
   date?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface VATTransaction {

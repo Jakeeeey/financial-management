@@ -18,7 +18,7 @@ interface UseCWTResult {
 
 export function useCWT(): UseCWTResult {
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [records, setRecords] = useState<CWTRecord[]>([]);
 
   useEffect(() => {
@@ -41,9 +41,10 @@ export function useCWT(): UseCWTResult {
         setRecords(transformCWTRows(rawRows));
         setError(null);
         toast.success('CWT data loaded', { id: toastId });
-      } catch (e: any) {
-        setError(e.message);
-        toast.error(`Failed to load CWT data: ${e.message}`, { id: toastId });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        toast.error(`Failed to load CWT data: ${msg}`, { id: toastId });
       } finally {
         setLoading(false);
       }
@@ -52,13 +53,13 @@ export function useCWT(): UseCWTResult {
   }, []);
 
   const metrics = useMemo<CWTMetrics>(() => ({
-    totalAmount:       records.reduce((acc, r) => acc + r.displayAmount, 0),
+    totalAmount: records.reduce((acc, r) => acc + r.displayAmount, 0),
     totalTransactions: records.length,
   }), [records]);
 
-  const pieData   = useMemo(() => buildPieData(records),   [records]);
+  const pieData = useMemo(() => buildPieData(records), [records]);
   const trendData = useMemo(() => buildTrendData(records), [records]);
-  const barData   = useMemo(() => buildBarData(records),   [records]);
+  const barData = useMemo(() => buildBarData(records), [records]);
 
   return { loading, error, records, metrics, pieData, trendData, barData };
 }

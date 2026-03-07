@@ -27,7 +27,7 @@ import {
 
 const schema = z.object({
   line_discount: z.string().trim().min(1, "Code is required."),
-  percentage: z.any()
+  percentage: z.union([z.string(), z.number()])
     .refine((val) => val !== "" && val !== null && val !== undefined, "Percentage is required.")
     .transform((val) => Number(val))
     .pipe(
@@ -58,13 +58,13 @@ export default function LineDiscountDialog({
   onSubmit,
 }: Props) {
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as import("react-hook-form").Resolver<FormValues>,
     defaultValues: {
       line_discount: initial?.line_discount ?? "",
       percentage:
         initial?.percentage !== undefined && initial?.percentage !== null
           ? Number(initial.percentage)
-          : ("" as any),
+          : (undefined as unknown as number),
       description: initial?.description ?? "",
     },
   });
@@ -75,7 +75,7 @@ export default function LineDiscountDialog({
       percentage:
         initial?.percentage !== undefined && initial?.percentage !== null
           ? Number(initial.percentage)
-          : ("" as any),
+          : (undefined as unknown as number),
       description: initial?.description ?? "",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,17 +94,17 @@ export default function LineDiscountDialog({
       });
 
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e?.message || "Save failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
     }
   }
 
-  function handleValidationError(errors: any) {
-    const firstError = Object.values(errors)[0] as any;
+  function handleValidationError(errors: import("react-hook-form").FieldErrors<FormValues>) {
+    const firstError = Object.values(errors)[0];
     if (firstError?.message) {
-      toast.error(firstError.message);
+      toast.error(String(firstError.message));
     }
   }
 
@@ -130,7 +130,7 @@ export default function LineDiscountDialog({
           </div>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit, handleValidationError)} className="space-y-6">
+            <form onSubmit={form.handleSubmit(handleSubmit as import("react-hook-form").SubmitHandler<FormValues>, handleValidationError)} className="space-y-6">
               {/* ✅ Aligned grid: reserve helper-line space on Code */}
               <div className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
                 {/* Code */}
@@ -170,7 +170,7 @@ export default function LineDiscountDialog({
                           className="h-10"
                           placeholder="e.g. 10.00"
                           inputMode="decimal"
-                          value={field.value as any}
+                          value={String(field.value ?? "")}
                           onChange={(e) => field.onChange(e.target.value)}
                         />
                       </FormControl>
@@ -196,7 +196,7 @@ export default function LineDiscountDialog({
                           placeholder="Optional notes..."
                           rows={3}
                           className="resize-none"
-                          value={(field.value ?? "") as any}
+                          value={String(field.value ?? "")}
                           onChange={(e) => field.onChange(e.target.value)}
                         />
                       </FormControl>

@@ -15,7 +15,7 @@ import { LineDiscountTableSkeleton } from "./components/data-table/skeleton-load
 import LineDiscountDialog from "./components/LineDiscountDialog";
 
 export default function LineDiscountModule() {
-  const { rows, loading, create, update, remove } = useLineDiscounts();
+  const { rows, loading, create, update } = useLineDiscounts();
 
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
 

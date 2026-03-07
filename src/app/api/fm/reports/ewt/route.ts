@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
 
     const data = await springRes.json();
     return NextResponse.json(data);
-  } catch (err: any) {
-    console.error('[EWT] Request failed:', err.message);
+  } catch (err: unknown) {
+    console.error(err instanceof Error ? err.message : String(err));
     return NextResponse.json({ ok: false, error: 'Gateway Error' }, { status: 502 });
   }
 }

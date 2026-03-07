@@ -7,7 +7,7 @@ export interface RawVATSaleTransaction {
   vat?: number | string;
   invoiceDate?: string;
   supplier?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface VATSaleTransaction {

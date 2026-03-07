@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ColumnFiltersState } from "@tanstack/react-table";
 
@@ -12,8 +11,7 @@ import { AssetTableData } from "./types";
 import { AssetDataTable } from "./components/data-table";
 import { DataTableSkeleton } from "@/app/(financial-management)/fm/_components/DataTableSkeleton";
 import { ErrorPage } from "@/app/(financial-management)/fm/_components/ErrorPage";
-import { formatPHP } from "./utils/lib";
-import { getDepreciatedValue } from "./utils/lib";
+// import { getDepreciatedValue } from \"./utils/lib\";
 
 // Hooks
 import { useAssets } from "./hooks/useAssets";
@@ -38,6 +36,7 @@ export default function AssetManagementModulePage() {
   const [isEditOpen, setIsEditOpen] = useState(false);
 
   // --- Memoized Calculations ---
+  /*
   const totalValue = useMemo(() => {
     // [Guard Clause] Ensuring reduce doesn't run on non-arrays
     if (!Array.isArray(data)) return 0;
@@ -55,6 +54,7 @@ export default function AssetManagementModulePage() {
       );
     }, 0);
   }, [data, projectionDate]);
+  */
 
   // --- Handlers for Table Actions (Meta Contract) ---
   const handleView = (asset: AssetTableData) => {
@@ -133,7 +133,7 @@ export default function AssetManagementModulePage() {
       {/* Modals */}
       <AssetViewModal
         isOpen={isViewOpen}
-        onClose={() => setIsViewOpen(false)}
+        onOpenChange={(open) => setIsViewOpen(open)}
         asset={selectedAsset}
       />
 

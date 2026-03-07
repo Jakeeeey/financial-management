@@ -15,8 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import Image from "next/image";
 import { formatPHP } from "../../utils/lib";
-import { ColumnDef } from "@tanstack/react-table";
+import { ColumnDef, Table } from "@tanstack/react-table";
 import {
   AlertTriangle,
   Ban,
@@ -46,7 +47,7 @@ const AssetCell = ({
   <div className="flex items-center gap-3">
     <div className="h-10 w-10 overflow-hidden rounded-md border bg-muted flex items-center justify-center shrink-0">
       {imageId ? (
-        <img
+        <Image
           src={`/api/fm/asset-management/asset-image-view?id=${imageId}`}
           alt={itemName}
           className="h-full w-full object-cover transition-all hover:scale-110"
@@ -71,8 +72,8 @@ const ConditionBadge = ({ condition }: { condition: string }) => {
   return <Badge variant={variants[condition] || "outline"}>{condition}</Badge>;
 };
 
-const ProjectedValueHeader = ({ table }: any) => {
-  const meta = table.options.meta;
+const ProjectedValueHeader = ({ table }: { table: Table<AssetTableData> }) => {
+  const meta = table.options.meta as AssetTableMeta;
   return (
     <Select
       defaultValue="now"
@@ -96,6 +97,13 @@ const ProjectedValueHeader = ({ table }: any) => {
     </Select>
   );
 };
+
+interface AssetTableMeta {
+  projectionDate: Date;
+  setProjectionDate: (date: Date) => void;
+  onEdit: (asset: AssetTableData) => void;
+  onView: (asset: AssetTableData) => void;
+}
 
 // --- Column Definitions ---
 
@@ -204,7 +212,7 @@ export const columns: ColumnDef<AssetTableData>[] = [
     header: ({ table }) => <ProjectedValueHeader table={table} />,
     cell: ({ row, table }) => {
       const asset = row.original;
-      const meta = table.options.meta as any;
+      const meta = table.options.meta as AssetTableMeta;
       const viewDate = meta?.projectionDate || new Date();
 
       const projectedValue = getDepreciatedValue(
@@ -244,7 +252,7 @@ export const columns: ColumnDef<AssetTableData>[] = [
   {
     id: "actions",
     cell: ({ row, table }) => {
-      const meta = table.options.meta as any;
+      const meta = table.options.meta as AssetTableMeta;
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

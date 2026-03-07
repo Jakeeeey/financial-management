@@ -70,27 +70,27 @@ export async function fetchSupplierProducts(
 
     const result = await response.json();
 
-    return (result.data || []).map((item: any) => ({
+    return (result.data || []).map((item: { id: number, supplier_id: number, product_id: unknown, discount_type: number | null }) => ({
       id: item.id,
       supplier_id: item.supplier_id,
       product_id:
-        typeof item.product_id === "object"
-          ? item.product_id.product_id // Check if this field name is correct in Directus!
+        typeof item.product_id === 'object' && item.product_id !== null
+          ? (item.product_id as Record<string, unknown>).product_id // Check if this field name is correct in Directus!
           : item.product_id,
       discount_type: item.discount_type,
       product_name:
-        typeof item.product_id === "object"
-          ? item.product_id.product_name
+        typeof item.product_id === 'object' && item.product_id !== null
+          ? (item.product_id as Record<string, unknown>).product_name
           : "Unknown Product",
       product_code:
-        typeof item.product_id === "object"
-          ? item.product_id.product_code
+        typeof item.product_id === 'object' && item.product_id !== null
+          ? (item.product_id as Record<string, unknown>).product_code
           : null,
     }));
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(
       `[SERVER FATAL] Error for supplier ${supplierId}:`,
-      error.message,
+      (error as Error).message,
     );
     throw error;
   }

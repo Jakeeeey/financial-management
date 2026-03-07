@@ -4,7 +4,7 @@
 import { TrendingUp } from 'lucide-react';
 import { Bar, BarChart, LabelList, XAxis, YAxis } from 'recharts';
 import {
-  Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
+  Card, CardContent, CardFooter, CardHeader, CardTitle,
 } from '@/components/ui/card';
 import {
   ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig,
@@ -68,9 +68,9 @@ export function VATLineChart({ data, isFiltered = false }: VATLineChartProps) {
     ? ((nonZero[nonZero.length - 1].amount - nonZero[0].amount) / (nonZero[0].amount || 1)) * 100
     : 0;
 
-  const dateRange = nonZero.length >= 2
-    ? `${nonZero[0].month} – ${nonZero[nonZero.length - 1].month}`
-    : nonZero[0]?.month ?? `Jan ${primaryYear} – Dec ${primaryYear}`;
+  // const dateRange = nonZero.length >= 2
+  //   ? `${nonZero[0].month} – ${nonZero[nonZero.length - 1].month}`
+  //   : nonZero[0]?.month ?? `Jan ${primaryYear} – Dec ${primaryYear}`;
 
   return (
     <Card>
@@ -115,11 +115,11 @@ export function VATLineChart({ data, isFiltered = false }: VATLineChartProps) {
                 fontSize={12}
                 formatter={(v: number) =>
                   v === 0 ? '' :
-                  v >= 1_000_000
-                    ? `₱${(v / 1_000_000).toFixed(1)}M`
-                    : v >= 1000
-                    ? `₱${(v / 1000).toFixed(0)}k`
-                    : `₱${v.toFixed(0)}`
+                    v >= 1_000_000
+                      ? `₱${(v / 1_000_000).toFixed(1)}M`
+                      : v >= 1000
+                        ? `₱${(v / 1000).toFixed(0)}k`
+                        : `₱${v.toFixed(0)}`
                 }
               />
             </Bar>

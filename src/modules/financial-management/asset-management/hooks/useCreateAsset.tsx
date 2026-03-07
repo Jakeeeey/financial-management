@@ -13,8 +13,8 @@ export const useCreateAsset = (onSuccess?: () => void) => {
       await assetService.createAsset(values, 81);
       toast.success("Asset saved successfully!");
       if (onSuccess) onSuccess(); // Refreshes the table
-    } catch (error: any) {
-      toast.error(error.message || "Failed to save asset");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to save asset");
     } finally {
       setIsSubmitting(false);
     }

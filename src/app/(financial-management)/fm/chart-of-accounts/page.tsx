@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic";
 
 const COOKIE_NAME = "vos_access_token";
 
-function decodeJwtPayload(token: string): any | null {
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
     try {
         const parts = token.split(".");
         if (parts.length < 2) return null;
@@ -39,9 +39,9 @@ function decodeJwtPayload(token: string): any | null {
     }
 }
 
-function pickString(obj: any, keys: string[]): string {
+function pickString(obj: Record<string, unknown> | null | undefined, keys: string[]): string {
     for (const k of keys) {
-        const v = obj?.[k];
+        const v = obj ? obj[k] : undefined;
         if (typeof v === "string" && v.trim()) return v.trim();
     }
     return "";
@@ -84,26 +84,20 @@ export default async function Page() {
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <header
-                className="
-          sticky top-2 z-50 relative
-          flex h-16 shrink-0 items-center justify-between
-          border-b bg-background shadow-sm
-          before:content-[''] before:absolute before:inset-x-0 before:-top-2 before:h-2 before:bg-background
-        "
-            >
+            {/* ? Topbar is fixed in place because ONLY <main> scrolls */}
+            <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
                 <div className="flex h-full items-center gap-2 px-4">
-                    <SidebarTrigger className="-ml-1" />
+                    <SidebarTrigger className="-ml-1 shrink-0" />
                     <Separator
                         orientation="vertical"
-                        className="mr-2 data-[orientation=vertical]:h-4"
+                        className="hidden sm:block mr-2 data-[orientation=vertical]:h-4 shrink-0"
                     />
                     <Breadcrumb>
                         <BreadcrumbList>
-                            <BreadcrumbItem className="hidden md:block">
+                            <BreadcrumbItem className="hidden md:block shrink-0">
                                 <BreadcrumbLink href="#">FM</BreadcrumbLink>
                             </BreadcrumbItem>
-                            <BreadcrumbSeparator className="hidden md:block" />
+                            <BreadcrumbSeparator className="hidden md:block shrink-0" />
                             <BreadcrumbItem>
                                 <BreadcrumbPage>Chart Of Accounts</BreadcrumbPage>
                             </BreadcrumbItem>

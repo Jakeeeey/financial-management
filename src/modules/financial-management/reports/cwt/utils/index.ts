@@ -1,44 +1,12 @@
 // utils.ts
 // Data transform and chart-build helpers for the CWT module.
-// Types are inlined here to avoid path resolution issues.
-
-export interface RawCWTRow {
-  docNo?: string;
-  supplier?: string;
-  cwt?: number | string;
-  transactionDate?: string;
-  [key: string]: any;
-}
-
-export interface CWTRecord {
-  id: string;
-  invoiceNo: string;
-  customerName: string;
-  invoiceDate: string;
-  displayAmount: number;
-  dateObj: Date;
-}
-
-export interface CWTMetrics {
-  totalAmount: number;
-  totalTransactions: number;
-}
-
-export interface PieEntry {
-  name: string;
-  value: number;
-}
-
-export interface TrendEntry {
-  month: string;
-  amount: number;
-}
-
-export interface BarEntry {
-  name: string;
-  amount: number;
-  count: number;
-}
+import {
+  RawCWTRow,
+  CWTRecord,
+  PieEntry,
+  TrendEntry,
+  BarEntry
+} from '../types';
 
 // ── Transform ────────────────────────────────────────────────────────────────
 
@@ -47,10 +15,10 @@ export function transformCWTRows(raw: RawCWTRow[]): CWTRecord[] {
     const dateRaw = item.transactionDate ?? '';
     const dateObj = dateRaw ? new Date(dateRaw) : new Date(0);
     return {
-      id:            item.docNo ?? `CWT-${i + 1}`,
-      invoiceNo:     item.docNo ?? `CWT-${i + 1}`,
-      customerName:  item.supplier ?? '-',
-      invoiceDate:   dateRaw,
+      id: item.docNo ?? `CWT-${i + 1}`,
+      invoiceNo: item.docNo ?? `CWT-${i + 1}`,
+      customerName: item.supplier ?? '-',
+      invoiceDate: dateRaw,
       displayAmount: Number(item.cwt ?? 0),
       dateObj,
     };
@@ -66,7 +34,7 @@ export function buildPieData(records: CWTRecord[]): PieEntry[] {
     map[r.customerName] = (map[r.customerName] ?? 0) + r.displayAmount;
   });
   const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
-  const top  = sorted.slice(0, 6);
+  const top = sorted.slice(0, 6);
   const rest = sorted.slice(6).reduce((s, [, v]) => s + v, 0);
   const entries: PieEntry[] = top.map(([name, value]) => ({ name, value }));
   if (rest > 0) entries.push({ name: 'Others', value: rest });
@@ -90,7 +58,7 @@ export function buildBarData(records: CWTRecord[]): BarEntry[] {
   records.forEach((r) => {
     if (!map[r.customerName]) map[r.customerName] = { amount: 0, count: 0 };
     map[r.customerName].amount += r.displayAmount;
-    map[r.customerName].count  += 1;
+    map[r.customerName].count += 1;
   });
   return Object.entries(map)
     .map(([name, { amount, count }]) => ({ name, amount, count }))

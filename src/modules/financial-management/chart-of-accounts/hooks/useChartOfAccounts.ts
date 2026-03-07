@@ -39,8 +39,8 @@ export function useChartOfAccounts() {
       setAccountTypes(a);
       setBalanceTypes(b);
       setBsisTypes(c);
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to load lookups");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to load lookups");
     } finally {
       setLookupsLoading(false);
     }
@@ -53,8 +53,8 @@ export function useChartOfAccounts() {
       setRows(res.data ?? []);
       const t = res?.meta?.filter_count ?? res?.meta?.total_count ?? 0;
       setTotal(typeof t === "number" ? t : 0);
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to load chart of accounts");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to load chart of accounts");
       setRows([]);
       setTotal(0);
     } finally {
@@ -89,8 +89,8 @@ export function useChartOfAccounts() {
       setCreateOpen(false);
       setPage(1);
       await load();
-    } catch (e: any) {
-      toast.error(e?.message || "Create failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Create failed");
     }
   }
 
@@ -100,8 +100,8 @@ export function useChartOfAccounts() {
       toast.success("Changes saved");
       closeEdit();
       await load();
-    } catch (e: any) {
-      toast.error(e?.message || "Update failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Update failed");
     }
   }
 
@@ -114,8 +114,8 @@ export function useChartOfAccounts() {
       const maxPage = Math.max(1, Math.ceil(after / pageSize));
       if (page > maxPage) setPage(maxPage);
       else await load();
-    } catch (e: any) {
-      toast.error(e?.message || "Delete failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
     }
   }
 

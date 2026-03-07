@@ -28,8 +28,8 @@ export type COARow = {
   date_added: string | null;
 
   // optional fields based on your API sample
-  is_payment?: any;
-  isPayment?: any;
+  is_payment?: unknown;
+  isPayment?: unknown;
 };
 
 export type AccountTypeRow = {

@@ -15,7 +15,7 @@ interface UseEWTResult {
   aggregated: AggregatedEntry[];
 }
 
-const EMPTY_METRICS: EWTMetrics = { totalAmount: 0, averageEwt: 0, totalRecords: 0 };
+// const EMPTY_METRICS: EWTMetrics = { totalAmount: 0, averageEwt: 0, totalRecords: 0 };
 
 export function useEWT(): UseEWTResult {
   const [loading, setLoading] = useState(true);
@@ -39,9 +39,10 @@ export function useEWT(): UseEWTResult {
         setRecords(transformEWTRows(rows));
         setError(null);
         toast.success('EWT data loaded successfully', { id: toastId });
-      } catch (e: any) {
-        setError(e.message);
-        toast.error(`Failed to load EWT data: ${e.message}`, { id: toastId });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        toast.error(`Failed to load EWT data: ${msg}`, { id: toastId });
       } finally {
         setLoading(false);
       }
