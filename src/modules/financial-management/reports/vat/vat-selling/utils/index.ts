@@ -1,4 +1,4 @@
-// utils.ts
+// vat-selling/utils.ts
 // Shared helpers and data-transform functions for the VAT Selling module.
 
 import type {
@@ -20,37 +20,43 @@ export function formatPeso(value: number): string {
   return `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** Normalise a raw date string to YYYY-MM-DD for display/filtering. */
+/** Normalise a raw date string to YYYY-MM-DD */
 function parseDate(raw: string | undefined): string {
   if (!raw || raw === '-') return '-';
-  // invoiceDate comes as "2025-12-27 17:13:22" — take the date part only
   return raw.split(' ')[0] ?? raw;
 }
 
-/** Transform raw API records into typed VATSaleTransaction objects. */
+/** Extract VAT amount — API now uses vatAmount, fallback to vat */
+function extractVat(item: RawVATSaleTransaction): number {
+  return Number(item.vatAmount ?? item.vat ?? 0);
+}
+
+/** Transform raw API records into typed VATSaleTransaction objects */
 export function transformTransactions(raw: RawVATSaleTransaction[]): VATSaleTransaction[] {
   return raw.map((item) => {
-    const rawAmount = Number(item.vat ?? 0);
+    const rawAmount = extractVat(item);
     return {
-      id: item.invoiceNo ?? '-',
-      customer: item.customer ?? '-',
-      supplier: item.supplier ?? '-',
-      amount: formatPeso(rawAmount),
-      date: parseDate(item.invoiceDate),
+      id:           item.invoiceNo    ?? '-',
+      customer:     item.customer     ?? '-',
+      supplier:     item.supplier     ?? '-',
+      amount:       formatPeso(rawAmount),
+      grossAmount:  Number(item.grossAmount  ?? 0),
+      vatExclusive: Number(item.vatExclusive ?? 0),
+      date:         parseDate(item.invoiceDate),
       rawAmount,
     };
   });
 }
 
-/** Build time-series chart points from raw transactions. */
+/** Build time-series chart points from raw transactions */
 export function buildChartPoints(raw: RawVATSaleTransaction[]): VATSaleChartPoint[] {
   return raw.map((item) => ({
-    date: parseDate(item.invoiceDate),
-    amount: Number(item.vat ?? 0),
+    date:   parseDate(item.invoiceDate),
+    amount: extractVat(item),
   }));
 }
 
-/** Build pie / bar customer data from raw transactions. */
+/** Build pie / bar customer data from raw transactions */
 export function buildCustomerData(raw: RawVATSaleTransaction[]): {
   pieData: VATCustomerEntry[];
   barData: VATSaleBarEntry[];
@@ -58,16 +64,13 @@ export function buildCustomerData(raw: RawVATSaleTransaction[]): {
   const map: Record<string, number> = {};
   raw.forEach((item) => {
     const name = item.customer ?? '-';
-    map[name] = (map[name] ?? 0) + Number(item.vat ?? 0);
+    map[name] = (map[name] ?? 0) + extractVat(item);
   });
 
-  const sorted = Object.entries(map)
-    .sort((a, b) => b[1] - a[1]);
+  const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
 
   const pieData: VATCustomerEntry[] = sorted.map(([name, value], i) => ({
-    name,
-    value,
-    color: COLORS[i % COLORS.length],
+    name, value, color: COLORS[i % COLORS.length],
   }));
 
   const barData: VATSaleBarEntry[] = sorted.map(([name, total]) => ({ name, total }));
@@ -75,20 +78,20 @@ export function buildCustomerData(raw: RawVATSaleTransaction[]): {
   return { pieData, barData };
 }
 
-/** Derive summary metrics from raw transactions. */
+/** Derive summary metrics from raw transactions */
 export function deriveMetrics(raw: RawVATSaleTransaction[]): VATSaleMetrics {
   if (!raw.length) return { totalVat: 0, avgVat: 0, highestVat: 0, count: 0 };
-  const amounts = raw.map((t) => Number(t.vat ?? 0));
+  const amounts  = raw.map(extractVat);
   const totalVat = amounts.reduce((s, v) => s + v, 0);
   return {
     totalVat,
-    avgVat: totalVat / amounts.length,
+    avgVat:     totalVat / amounts.length,
     highestVat: Math.max(...amounts),
-    count: amounts.length,
+    count:      amounts.length,
   };
 }
 
-/** Generate pagination page numbers with ellipsis. */
+/** Generate pagination page numbers with ellipsis */
 export function getPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const pages: (number | 'ellipsis')[] = [1];

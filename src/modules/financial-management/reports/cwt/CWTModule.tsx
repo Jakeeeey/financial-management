@@ -113,12 +113,14 @@ export default function CWTModule() {
       headStyles: { fillColor: [24, 24, 27], fontSize: 7, textColor: 255 },
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
-      head: [['Doc No.', 'Supplier', 'Transaction Date', 'CWT Amount (PHP)']],
+      head: [['Doc No.', 'Supplier', 'Gross Amount (PHP)', 'Taxable Amount (PHP)', 'CWT Amount (PHP)', 'Transaction Date']],
       body: displayRecords.map((r) => [
         r.invoiceNo,
         r.customerName,
-        formatDate(r.invoiceDate),
+        r.grossAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
+        r.taxableAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
         r.displayAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
+        formatDate(r.invoiceDate),
       ]),
       margin: { left: 14, right: 14 },
     });

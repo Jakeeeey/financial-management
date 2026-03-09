@@ -10,7 +10,7 @@ import {
   PaginationLink, PaginationPrevious, PaginationNext, PaginationEllipsis,
 } from '@/components/ui/pagination';
 import { Calendar, Search } from 'lucide-react';
-import { getPageNumbers } from '../utils';
+import { getPageNumbers, formatPeso } from '../utils';
 import type { VATSaleTransaction } from '../types';
 
 const PAGE_SIZE = 10;
@@ -27,30 +27,30 @@ export function VATSalesTransactionsTable({ transactions, page, setPage }: VATSa
   const q = search.trim().toLowerCase();
   const filtered = q
     ? transactions.filter((tr) =>
-        tr.id.toLowerCase().includes(q)        ||
-        tr.customer.toLowerCase().includes(q)  ||
-        tr.supplier.toLowerCase().includes(q)  ||
-        tr.amount.toLowerCase().includes(q)    ||
-        tr.date.toLowerCase().includes(q)
+        tr.id.toLowerCase().includes(q)           ||
+        tr.customer.toLowerCase().includes(q)     ||
+        tr.supplier.toLowerCase().includes(q)     ||
+        tr.amount.toLowerCase().includes(q)       ||
+        tr.date.toLowerCase().includes(q)         ||
+        tr.grossAmount.toString().includes(q)     ||
+        tr.vatExclusive.toString().includes(q)
       )
     : transactions;
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const safePage   = Math.min(page, totalPages || 1);
-  const paged      = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const totalPages  = Math.ceil(filtered.length / PAGE_SIZE);
+  const safePage    = Math.min(page, totalPages || 1);
+  const paged       = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const pageNumbers = getPageNumbers(safePage, totalPages);
 
   const handleSearch = (val: string) => {
     setSearch(val);
-    setPage(1); // reset to page 1 on new search
+    setPage(1);
   };
 
   return (
     <Card className="shadow-none border-border overflow-hidden">
       <CardHeader className="bg-muted/30 border-b border-border/50 flex flex-row items-center justify-between gap-4">
         <CardTitle className="text-sm font-bold uppercase shrink-0">Sales Transactions</CardTitle>
-
-        {/* Search bar */}
         <div className="relative w-full max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <Input
@@ -60,7 +60,6 @@ export function VATSalesTransactionsTable({ transactions, page, setPage }: VATSa
             className="h-8 pl-8 text-xs focus-visible:ring-1"
           />
         </div>
-
         <span className="text-xs text-muted-foreground shrink-0">
           {filtered.length} result{filtered.length !== 1 ? 's' : ''} &mdash; page {safePage} of {totalPages || 1}
         </span>
@@ -73,14 +72,16 @@ export function VATSalesTransactionsTable({ transactions, page, setPage }: VATSa
               <TableHead className="text-xs font-bold py-4 pl-6">Invoice No.</TableHead>
               <TableHead className="text-xs font-bold py-4">Customer</TableHead>
               <TableHead className="text-xs font-bold py-4">Supplier</TableHead>
-              <TableHead className="text-xs font-bold py-4">VAT Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">Gross Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">VAT Exclusive</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">VAT Amount</TableHead>
               <TableHead className="text-xs font-bold py-4 pr-6">Invoice Date</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-10 text-muted-foreground text-sm">
+                <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm">
                   {q ? `No results for "${search}".` : 'No transactions found.'}
                 </TableCell>
               </TableRow>
@@ -90,7 +91,9 @@ export function VATSalesTransactionsTable({ transactions, page, setPage }: VATSa
                   <TableCell className="font-bold text-primary text-xs py-4 pl-6">{tr.id}</TableCell>
                   <TableCell className="text-xs font-medium py-4">{tr.customer}</TableCell>
                   <TableCell className="text-xs text-muted-foreground py-4">{tr.supplier}</TableCell>
-                  <TableCell className="text-xs font-bold text-primary py-4">{tr.amount}</TableCell>
+                  <TableCell className="text-xs py-4 text-right">{formatPeso(tr.grossAmount)}</TableCell>
+                  <TableCell className="text-xs py-4 text-right">{formatPeso(tr.vatExclusive)}</TableCell>
+                  <TableCell className="text-xs font-bold text-primary py-4 text-right">{tr.amount}</TableCell>
                   <TableCell className="text-[11px] text-muted-foreground py-4 pr-6">
                     <div className="flex items-center gap-1.5">
                       <Calendar size={12} className="text-muted-foreground" />
@@ -117,9 +120,7 @@ export function VATSalesTransactionsTable({ transactions, page, setPage }: VATSa
                 </PaginationItem>
                 {pageNumbers.map((num, i) =>
                   num === 'ellipsis' ? (
-                    <PaginationItem key={`ellipsis-${i}`}>
-                      <PaginationEllipsis />
-                    </PaginationItem>
+                    <PaginationItem key={`ellipsis-${i}`}><PaginationEllipsis /></PaginationItem>
                   ) : (
                     <PaginationItem key={num}>
                       <PaginationLink

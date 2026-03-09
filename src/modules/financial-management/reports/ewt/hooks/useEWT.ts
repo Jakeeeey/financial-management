@@ -19,14 +19,20 @@ interface UseEWTResult {
 
 export function useEWT(): UseEWTResult {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
   const [records, setRecords] = useState<EWTRecord[]>([]);
 
   useEffect(() => {
     async function fetchData() {
       const toastId = toast.loading('Loading EWT data...');
       try {
-        const res = await fetch('/api/fm/reports/ewt', { credentials: 'include' });
+        // Pass a wide range so all historical records are returned from the backend
+        const params = new URLSearchParams({
+          startDate: '2020-01-01',
+          endDate:   new Date().toISOString().split('T')[0],
+        });
+
+        const res = await fetch(`/api/fm/reports/ewt?${params}`, { credentials: 'include' });
         const contentType = res.headers.get('content-type');
         if (!contentType?.includes('application/json')) {
           throw new Error('Backend did not return JSON');
@@ -34,8 +40,10 @@ export function useEWT(): UseEWTResult {
         if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
 
         const result = await res.json();
-        const rows: RawEWTRow[] = Array.isArray(result) ? result : (result.data || []);
-        console.log('Raw EWT rows sample:', rows.slice(0, 3));
+        const rows: RawEWTRow[] = Array.isArray(result)
+          ? result
+          : (result.data ?? result.transactions ?? result.content ?? []);
+
         setRecords(transformEWTRows(rows));
         setError(null);
         toast.success('EWT data loaded successfully', { id: toastId });
@@ -50,8 +58,8 @@ export function useEWT(): UseEWTResult {
     fetchData();
   }, []);
 
-  const metrics = useMemo(() => deriveMetrics(records), [records]);
-  const aggregated = useMemo(() => aggregateByCustomer(records), [records]);
+  const metrics    = useMemo(() => deriveMetrics(records),        [records]);
+  const aggregated = useMemo(() => aggregateByCustomer(records),  [records]);
 
   return { loading, error, records, metrics, aggregated };
 }

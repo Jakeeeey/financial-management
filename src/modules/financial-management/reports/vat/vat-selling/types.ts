@@ -11,33 +11,35 @@ export interface RawVATSaleTransaction {
 }
 
 export interface VATSaleTransaction {
-  id: string;          // invoiceNo
-  customer: string;    // customer
-  supplier: string;    // supplier
-  amount: string;      // pre-formatted peso string (vat)
-  date: string;        // invoiceDate
-  rawAmount: number;   // vat as number, for chart use
+  id:           string;   // invoiceNo
+  customer:     string;
+  supplier:     string;
+  amount:       string;   // formatted vatAmount
+  grossAmount:  number;
+  vatExclusive: number;
+  date:         string;   // invoiceDate (YYYY-MM-DD)
+  rawAmount:    number;   // vatAmount as number, for chart use
 }
 
 export interface VATSaleChartPoint {
-  date: string;
+  date:   string;
   amount: number;
 }
 
 export interface VATCustomerEntry {
-  name: string;
+  name:  string;
   value: number;
   color: string;
 }
 
 export interface VATSaleBarEntry {
-  name: string;
+  name:  string;
   total: number;
 }
 
 export interface VATSaleMetrics {
-  totalVat: number;
-  avgVat: number;
+  totalVat:   number;
+  avgVat:     number;
   highestVat: number;
-  count: number;
+  count:      number;
 }

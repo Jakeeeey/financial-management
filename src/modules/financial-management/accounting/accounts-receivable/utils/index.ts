@@ -5,7 +5,7 @@ import type { RawInvoiceRow, Invoice, AgingBucket, NamedAmount, ARMetrics } from
 
 /** Format a number as Philippine Peso string */
 export const formatPeso = (v: number): string =>
-  `₱${v.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  `₱${v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Format a date string to a readable short date */
 export const formatDate = (d?: string): string => {
@@ -26,7 +26,7 @@ export function transformInvoices(data: RawInvoiceRow[]): {
     { range: '30-60 Days', amount: 0 },
     { range: '60+ Days', amount: 0 },
   ];
-  const branchMap: Record<string, number> = {};
+  const branchMap: Record<string, number>   = {};
   const salesmanMap: Record<string, number> = {};
 
   const invoices: Invoice[] = data.map((row) => {

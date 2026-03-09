@@ -27,16 +27,18 @@ export function TransactionTable({ records, page, setPage }: TransactionTablePro
   const q = search.trim().toLowerCase();
   const filtered = q
     ? records.filter((r) =>
-        r.invoiceNo.toLowerCase().includes(q)    ||
-        r.customerName.toLowerCase().includes(q) ||
+        r.invoiceNo.toLowerCase().includes(q)               ||
+        r.customerName.toLowerCase().includes(q)            ||
         formatDate(r.invoiceDate).toLowerCase().includes(q) ||
-        r.displayAmount.toString().includes(q)
+        r.displayAmount.toString().includes(q)              ||
+        r.grossAmount.toString().includes(q)                ||
+        r.taxableAmount.toString().includes(q)
       )
     : records;
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const safePage   = Math.min(page, totalPages || 1);
-  const paged      = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const totalPages  = Math.ceil(filtered.length / PAGE_SIZE);
+  const safePage    = Math.min(page, totalPages || 1);
+  const paged       = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const pageNumbers = getPageNumbers(safePage, totalPages);
 
   const handleSearch = (val: string) => {
@@ -62,19 +64,21 @@ export function TransactionTable({ records, page, setPage }: TransactionTablePro
         </span>
       </CardHeader>
       <CardContent className="p-0">
-        <Table className="w-full table-fixed">
+        <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead className="text-xs font-bold py-4 pl-6 w-[20%]">Doc No.</TableHead>
-              <TableHead className="text-xs font-bold py-4 w-[40%]">Supplier</TableHead>
-              <TableHead className="text-xs font-bold py-4 w-[20%]">Transaction Date</TableHead>
-              <TableHead className="text-xs font-bold py-4 text-right pr-6 w-[20%]">CWT Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 pl-6">Doc No.</TableHead>
+              <TableHead className="text-xs font-bold py-4">Supplier</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">Gross Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">Taxable Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">CWT Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 pr-6">Transaction Date</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-10 text-muted-foreground text-sm">
+                <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm">
                   {q ? `No results for "${search}".` : 'No transactions found.'}
                 </TableCell>
               </TableRow>
@@ -91,11 +95,17 @@ export function TransactionTable({ records, page, setPage }: TransactionTablePro
                       {row.customerName}
                     </span>
                   </TableCell>
-                  <TableCell className="text-[11px] text-muted-foreground py-4">
-                    {formatDate(row.invoiceDate)}
+                  <TableCell className="text-xs py-4 text-right">
+                    {formatPeso(row.grossAmount)}
                   </TableCell>
-                  <TableCell className="text-right font-bold text-primary text-xs py-4 pr-6">
+                  <TableCell className="text-xs py-4 text-right">
+                    {formatPeso(row.taxableAmount)}
+                  </TableCell>
+                  <TableCell className="text-right font-bold text-primary text-xs py-4">
                     {formatPeso(row.displayAmount)}
+                  </TableCell>
+                  <TableCell className="text-[11px] text-muted-foreground py-4 pr-6">
+                    {formatDate(row.invoiceDate)}
                   </TableCell>
                 </TableRow>
               ))

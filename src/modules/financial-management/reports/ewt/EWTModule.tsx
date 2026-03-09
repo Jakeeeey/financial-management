@@ -36,10 +36,10 @@ export default function EWTModule() {
   const filtered = useMemo(() => {
     if (!isFiltered) return records;
     return records.filter((r) => {
+      // r.date is already stripped to YYYY-MM-DD by transformEWTRows
       if (r.date !== '-') {
-        const d = new Date(r.date);
-        if (dateFrom && d < new Date(dateFrom))                return false;
-        if (dateTo   && d > new Date(dateTo + 'T23:59:59'))    return false;
+        if (dateFrom && r.date < dateFrom) return false;
+        if (dateTo   && r.date > dateTo)   return false;
       }
       if (customer && r.customer !== customer) return false;
       return true;
@@ -74,7 +74,7 @@ export default function EWTModule() {
     // ── Total top-right ────────────────────────────────────────────────────
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    const totalLabel  = ` Grand Total: ${formattedTotal}`;
+    const totalLabel  = `Grand Total: ${formattedTotal}`;
     const totalLabelX = Math.max(pageW / 2, pageW - 14 - doc.getTextWidth(totalLabel));
     doc.text(totalLabel, totalLabelX, 16);
 
@@ -102,10 +102,12 @@ export default function EWTModule() {
       headStyles: { fillColor: [24, 24, 27], fontSize: 7, textColor: 255 },
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
-      head: [['Invoice No.', 'Customer', 'EWT Amount (PHP)', 'Date']],
+      head: [['Invoice No.', 'Customer', 'Gross Amount (PHP)', 'Taxable Amount (PHP)', 'EWT Amount (PHP)', 'Date']],
       body: displayRecords.map((r) => [
         r.id,
         r.customer,
+        r.grossAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
+        r.taxableAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
         r.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
         r.date,
       ]),

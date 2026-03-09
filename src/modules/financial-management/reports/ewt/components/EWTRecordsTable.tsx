@@ -21,22 +21,27 @@ interface EWTRecordsTableProps {
   setPage: (p: number | ((prev: number) => number)) => void;
 }
 
+const fmt = (n: number) =>
+  `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export function EWTRecordsTable({ records, page, setPage }: EWTRecordsTableProps) {
   const [search, setSearch] = useState('');
 
   const q = search.trim().toLowerCase();
   const filtered = q
     ? records.filter((r) =>
-        r.id.toLowerCase().includes(q)       ||
-        r.customer.toLowerCase().includes(q) ||
-        r.date.toLowerCase().includes(q)     ||
-        Math.abs(r.amount).toString().includes(q)
+        r.id.toLowerCase().includes(q)            ||
+        r.customer.toLowerCase().includes(q)      ||
+        r.date.toLowerCase().includes(q)          ||
+        r.amount.toString().includes(q)           ||
+        r.grossAmount.toString().includes(q)      ||
+        r.taxableAmount.toString().includes(q)
       )
     : records;
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const safePage   = Math.min(page, totalPages || 1);
-  const paged      = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const totalPages  = Math.ceil(filtered.length / PAGE_SIZE);
+  const safePage    = Math.min(page, totalPages || 1);
+  const paged       = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const pageNumbers = getPageNumbers(safePage, totalPages);
 
   const handleSearch = (val: string) => {
@@ -69,14 +74,16 @@ export function EWTRecordsTable({ records, page, setPage }: EWTRecordsTableProps
             <TableRow className="bg-muted/50">
               <TableHead className="text-xs font-bold py-4 pl-6">Invoice No.</TableHead>
               <TableHead className="text-xs font-bold py-4">Customer</TableHead>
-              <TableHead className="text-xs font-bold py-4">EWT Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">Gross Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">Taxable Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">EWT Amount</TableHead>
               <TableHead className="text-xs font-bold py-4 pr-6">Invoice Date</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-10 text-muted-foreground text-sm">
+                <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm">
                   {q ? `No results for "${search}".` : 'No records found.'}
                 </TableCell>
               </TableRow>
@@ -85,9 +92,9 @@ export function EWTRecordsTable({ records, page, setPage }: EWTRecordsTableProps
                 <TableRow key={row.id} className="border-border/40 hover:bg-muted/20">
                   <TableCell className="font-bold text-primary text-xs py-4 pl-6">{row.id}</TableCell>
                   <TableCell className="text-xs font-medium py-4">{row.customer}</TableCell>
-                  <TableCell className="text-xs font-bold text-primary py-4">
-                    ₱{Math.abs(row.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </TableCell>
+                  <TableCell className="text-xs py-4 text-right">{fmt(row.grossAmount)}</TableCell>
+                  <TableCell className="text-xs py-4 text-right">{fmt(row.taxableAmount)}</TableCell>
+                  <TableCell className="text-xs font-bold text-primary py-4 text-right">{fmt(row.amount)}</TableCell>
                   <TableCell className="text-[11px] text-muted-foreground py-4 pr-6">{row.date}</TableCell>
                 </TableRow>
               ))

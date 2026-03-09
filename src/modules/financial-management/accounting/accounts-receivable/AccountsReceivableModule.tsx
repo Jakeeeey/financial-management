@@ -158,8 +158,8 @@ export default function AccountsReceivableModule() {
       alternateRowStyles: { fillColor: [245, 245, 245] },
       head: [[
         'Invoice No.', 'Order ID', 'Customer', 'Invoice Date', 'Due Date',
-        'Net Receivable (PHP)', 'Total Paid', 'Outstanding Balance (PHP)',
-        'Days Overdue', 'Branch', 'Salesman', 'Status',
+        'Net Recv. (PHP)', 'Total Paid', 'Ou ts. Balance (PHP)',
+        'Days OD.', 'Branch', 'Salesman', 'Status',
       ]],
       body: displayInvoices.map((inv) => [
         inv.invoiceNo,
