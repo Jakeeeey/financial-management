@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import Image from "next/image";
 import imageCompression from "browser-image-compression";
 import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -72,6 +73,13 @@ interface AddAssetModalProps {
   onSuccess: () => void;
 }
 
+interface AssetItem {
+  id: number;
+  item_name: string;
+  item_type?: { type_name?: string };
+  item_classification?: { classification_name?: string };
+}
+
 export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -81,7 +89,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
   const [classifications, setClassifications] = useState<ItemClassification[]>(
     [],
   );
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<AssetItem[]>([]);
   const [itemNameSearch, setItemNameSearch] = useState("");
   const [typeSearch, setTypeSearch] = useState("");
   const [classificationSearch, setClassificationSearch] = useState("");
@@ -241,9 +249,9 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
       setOpen(false);
       resetForm();
       onSuccess();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Asset creation error:", error);
-      toast.error(error.message || "Failed to save asset");
+      toast.error(error instanceof Error ? error.message : "Failed to save asset");
     } finally {
       setLoading(false);
     }
@@ -305,10 +313,10 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
               >
                 {previewUrl ? (
                   <div className="relative w-full aspect-video max-h-48 overflow-hidden rounded-md">
-                    <img
+                    <Image
                       src={previewUrl}
                       alt="Preview"
-                      className="w-full h-full object-contain"
+                      fill className="object-contain"
                     />
                     <Button
                       type="button"
@@ -526,7 +534,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                                     <span>
                                       Add{" "}
                                       <span className="font-bold">
-                                        "{typeSearch}"
+                                        &quot;{typeSearch}&quot;
                                       </span>{" "}
                                       as new type
                                     </span>
@@ -635,7 +643,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                                     <span>
                                       Add{" "}
                                       <span className="font-bold">
-                                        "{classificationSearch}"
+                                        &quot;{classificationSearch}&quot;
                                       </span>{" "}
                                       as new
                                     </span>

@@ -12,8 +12,11 @@ async function safeJson(res: Response) {
   }
 }
 
-function errMsg(payload: any, fallback: string) {
-  return payload?.error || payload?.message || fallback;
+function errMsg(payload: unknown, fallback: string) {
+  const p = payload as Record<string, unknown>;
+  return (typeof p?.error === "string" ? p.error : null)
+    || (typeof p?.message === "string" ? p.message : null)
+    || fallback;
 }
 
 export async function listLineDiscounts(): Promise<LineDiscountRow[]> {

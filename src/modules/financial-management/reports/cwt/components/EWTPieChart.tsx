@@ -3,8 +3,8 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
-import { formatPeso } from '../../ewt/utils';
-import type { PieEntry } from '../../ewt/types';
+import { formatPeso } from '../utils';
+import type { PieEntry } from '../types';
 
 const COLORS = ['#6366f1', '#a855f7', '#ec4899', '#f97316', '#22c55e', '#06b6d4'];
 

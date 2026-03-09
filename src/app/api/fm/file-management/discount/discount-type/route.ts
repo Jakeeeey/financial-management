@@ -150,7 +150,7 @@ async function directusFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-function json(body: any, status = 200) {
+function json(body: unknown, status = 200) {
   return NextResponse.json(body, { status });
 }
 
@@ -263,8 +263,15 @@ export async function GET(req: NextRequest) {
 
     const rows = await listDiscountTypesJoined();
     return json({ success: true, message: "OK", data: rows });
-  } catch (e: any) {
-    return json({ success: false, message: e?.message || "Server error", data: null }, 500);
+  } catch (e: unknown) {
+    return json(
+      {
+        success: false,
+        message: e instanceof Error ? e.message : "Server error",
+        data: null,
+      },
+      500,
+    );
   }
 }
 
@@ -275,7 +282,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
     const discount_type = String(body?.discount_type ?? "").trim();
-    const line_ids = Array.isArray(body?.line_ids) ? body.line_ids.map((x: any) => Number(x)) : [];
+    const line_ids = Array.isArray(body?.line_ids) ? body.line_ids.map((x: unknown) => Number(x)) : [];
 
     if (!discount_type) {
       return json({ success: false, message: "Discount type is required.", data: null }, 400);
@@ -304,8 +311,15 @@ export async function POST(req: NextRequest) {
     await createLinks(typeId, line_ids);
 
     return json({ success: true, message: "Created.", data: { id: typeId } }, 201);
-  } catch (e: any) {
-    return json({ success: false, message: e?.message || "Server error", data: null }, 500);
+  } catch (e: unknown) {
+    return json(
+      {
+        success: false,
+        message: e instanceof Error ? e.message : "Server error",
+        data: null,
+      },
+      500,
+    );
   }
 }
 
@@ -315,9 +329,9 @@ export async function PUT(req: NextRequest) {
     if (envErr) return json({ success: false, message: envErr, data: null }, 500);
 
     const body = await req.json().catch(() => ({}));
-    const id = Number(body?.id);
+    const id = Number((body as Record<string, unknown>)?.id);
     const discount_type = String(body?.discount_type ?? "").trim();
-    const line_ids = Array.isArray(body?.line_ids) ? body.line_ids.map((x: any) => Number(x)) : [];
+    const line_ids = Array.isArray(body?.line_ids) ? body.line_ids.map((x: unknown) => Number(x)) : [];
 
     if (!id || Number.isNaN(id)) {
       return json({ success: false, message: "Invalid id.", data: null }, 400);
@@ -347,8 +361,15 @@ export async function PUT(req: NextRequest) {
     await createLinks(id, line_ids);
 
     return json({ success: true, message: "Updated.", data: { id } });
-  } catch (e: any) {
-    return json({ success: false, message: e?.message || "Server error", data: null }, 500);
+  } catch (e: unknown) {
+    return json(
+      {
+        success: false,
+        message: e instanceof Error ? e.message : "Server error",
+        data: null,
+      },
+      500,
+    );
   }
 }
 
@@ -369,7 +390,14 @@ export async function DELETE(req: NextRequest) {
     await directusFetch(`/items/discount_type/${id}`, { method: "DELETE" });
 
     return json({ success: true, message: "Deleted.", data: { id } });
-  } catch (e: any) {
-    return json({ success: false, message: e?.message || "Server error", data: null }, 500);
+  } catch (e: unknown) {
+    return json(
+      {
+        success: false,
+        message: e instanceof Error ? e.message : "Server error",
+        data: null,
+      },
+      500,
+    );
   }
 }

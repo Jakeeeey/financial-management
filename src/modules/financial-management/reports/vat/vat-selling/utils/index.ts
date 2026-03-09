@@ -36,13 +36,11 @@ export function transformTransactions(raw: RawVATSaleTransaction[]): VATSaleTran
   return raw.map((item) => {
     const rawAmount = extractVat(item);
     return {
-      id:           item.invoiceNo    ?? '-',
-      customer:     item.customer     ?? '-',
-      supplier:     item.supplier     ?? '-',
-      amount:       formatPeso(rawAmount),
-      grossAmount:  Number(item.grossAmount  ?? 0),
-      vatExclusive: Number(item.vatExclusive ?? 0),
-      date:         parseDate(item.invoiceDate),
+      id: item.invoiceNo ?? '-',
+      customer: item.customer ?? '-',
+      supplier: item.supplier ?? '-',
+      amount: formatPeso(rawAmount),
+      date: parseDate(item.invoiceDate),
       rawAmount,
     };
   });
@@ -51,8 +49,8 @@ export function transformTransactions(raw: RawVATSaleTransaction[]): VATSaleTran
 /** Build time-series chart points from raw transactions */
 export function buildChartPoints(raw: RawVATSaleTransaction[]): VATSaleChartPoint[] {
   return raw.map((item) => ({
-    date:   parseDate(item.invoiceDate),
-    amount: extractVat(item),
+    date: parseDate(item.invoiceDate),
+    amount: Number(item.vat ?? 0),
   }));
 }
 
@@ -85,9 +83,9 @@ export function deriveMetrics(raw: RawVATSaleTransaction[]): VATSaleMetrics {
   const totalVat = amounts.reduce((s, v) => s + v, 0);
   return {
     totalVat,
-    avgVat:     totalVat / amounts.length,
+    avgVat: totalVat / amounts.length,
     highestVat: Math.max(...amounts),
-    count:      amounts.length,
+    count: amounts.length,
   };
 }
 

@@ -12,28 +12,14 @@ import { Separator } from "@/components/ui/separator";
 
 import ChartOfAccountsTable from "./components/ChartOfAccountsTable";
 import COAFormDialog from "./components/COAFormDialog";
-import DeleteConfirmDialog from "./components/DeleteConfirmDialog";
 
 export default function ChartOfAccountsModule() {
   const coa = useChartOfAccounts();
 
-  const [deleteOpen, setDeleteOpen] = React.useState(false);
-  const [deleteId, setDeleteId] = React.useState<number | null>(null);
-  const [deleteLabel, setDeleteLabel] = React.useState<string>("");
 
-  function askDelete(id: number, label: string) {
-    setDeleteId(id);
-    setDeleteLabel(label);
-    setDeleteOpen(true);
-  }
 
-  async function confirmDelete() {
-    if (!deleteId) return;
-    await coa.remove(deleteId);
-    setDeleteOpen(false);
-    setDeleteId(null);
-    setDeleteLabel("");
-  }
+
+
 
   // Matches your screenshot behavior (Added By field shows Loading...)
   const addedByLabel = "Loading...";
@@ -134,7 +120,7 @@ export default function ChartOfAccountsModule() {
         lookupsLoading={coa.lookupsLoading}
         addedByLabel={addedByLabel}
         onCreate={coa.create}
-        onUpdate={async () => {}}
+        onUpdate={async () => { }}
       />
 
       {/* Edit dialog */}
@@ -148,20 +134,14 @@ export default function ChartOfAccountsModule() {
         bsisTypes={coa.bsisTypes}
         lookupsLoading={coa.lookupsLoading}
         addedByLabel={addedByLabel}
-        onCreate={async () => {}}
+        onCreate={async () => { }}
         onUpdate={async (id, payload) => {
           await coa.update(id, payload);
         }}
       />
 
       {/* Delete confirm (kept; trigger location is up to you) */}
-      <DeleteConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="Delete account?"
-        description={`This will permanently delete "${deleteLabel}".`}
-        onConfirm={confirmDelete}
-      />
+
     </div>
   );
 }

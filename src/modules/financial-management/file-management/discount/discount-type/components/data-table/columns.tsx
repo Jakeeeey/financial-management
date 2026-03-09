@@ -6,9 +6,9 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { DataTableColumnHeader } from "./table-column-header";
 
-import type { DiscountTypeRow } from "../../type";
+import type { DiscountTypeRow, AppliedLine } from "../../type";
 
-function pctLabel(v: any) {
+function pctLabel(v: unknown) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "0%";
   return `${n.toFixed(10).replace(/\.?0+$/, "")}%`;
@@ -46,9 +46,9 @@ export const columns: ColumnDef<DiscountTypeRow>[] = [
 
       return (
         <div className="flex flex-wrap gap-2">
-          {lines.map((l: any, idx: number) => (
+          {lines.map((l: AppliedLine, idx: number) => (
             <Badge key={`${l?.line_id ?? "x"}-${idx}`} variant="secondary">
-              {l?.line_discount ?? l?.code ?? `L${l?.line_id ?? ""}`}{" "}
+              {String(l?.code ?? `L${l?.line_id ?? ""}`)}{" "}
               {l?.percentage != null ? `(${pctLabel(l.percentage)})` : ""}
             </Badge>
           ))}

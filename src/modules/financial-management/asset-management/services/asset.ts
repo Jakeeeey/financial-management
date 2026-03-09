@@ -7,7 +7,6 @@ import {
 } from "../types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
-const API_BASE = `${API_BASE_URL}/items`;
 
 const AUTH_HEADERS = {
   "Content-Type": "application/json",
@@ -104,32 +103,32 @@ export async function fetchAssets(): Promise<AssetTableData[]> {
   const classJson = await cRes.json();
 
   const itemsMap = new Map(
-    (itemsJson.data || []).map((i: any) => [Number(i.id), i]),
+    (itemsJson.data || []).map((i: Record<string, unknown>) => [Number(i.id), i]),
   );
   const deptsMap = new Map(
-    (deptsJson.data || []).map((d: any) => [
+    (deptsJson.data || []).map((d: Record<string, unknown>) => [
       Number(d.department_id),
       d.department_name,
     ]),
   );
   const usersMap = new Map(
-    (usersJson.data || []).map((u: any) => [
+    (usersJson.data || []).map((u: Record<string, unknown>) => [
       Number(u.user_id),
       `${u.user_fname} ${u.user_lname}`.trim(),
     ]),
   );
   const typesMap = new Map(
-    (typeJson.data || []).map((t: any) => [Number(t.id), t.type_name]),
+    (typeJson.data || []).map((t: Record<string, unknown>) => [Number(t.id), t.type_name]),
   );
   const classMap = new Map(
-    (classJson.data || []).map((c: any) => [
+    (classJson.data || []).map((c: Record<string, unknown>) => [
       Number(c.id),
       c.classification_name,
     ]),
   );
 
-  return (assetsJson.data || []).map((asset: any) => {
-    const baseItem = itemsMap.get(Number(asset.item_id)) as any;
+  return (assetsJson.data || []).map((asset: Record<string, unknown>) => {
+    const baseItem = itemsMap.get(Number(asset.item_id)) as Record<string, unknown>;
     return {
       ...asset,
       item_name: baseItem?.item_name ?? "N/A",
@@ -197,8 +196,8 @@ export async function fetchItemClassifications(): Promise<
 /**
  * Fetch unique items with their type and classification names
  */
-export async function fetchItems(): Promise<any[]> {
-  const [itemsRes, typeRes, classRes] = await Promise.all([
+export async function fetchItems(): Promise<Record<string, unknown>[]> {
+  const [itemsRes] = await Promise.all([
     fetch(
       `${API_BASE_URL}/items/items?fields=*,item_type.type_name,item_classification.classification_name&limit=-1`,
       {
@@ -223,10 +222,11 @@ export async function fetchItems(): Promise<any[]> {
 /**
  * Create a new asset
  */
-export async function createAsset(body: any) {
+export async function createAsset(body: Record<string, unknown>) {
   // 1. Check if an item with this name already exists to prevent duplicates
+  const itemName = body.item_name as string;
   const existingItemRes = await fetch(
-    `${API_BASE_URL}/items/items?filter[item_name][_eq]=${encodeURIComponent(body.item_name)}&fields=id,item_type,item_classification`,
+    `${API_BASE_URL}/items/items?filter[item_name][_eq]=${encodeURIComponent(itemName)}&fields=id,item_type,item_classification`,
     { headers: AUTH_HEADERS },
   );
   const existingItemJson = await existingItemRes.json();
@@ -241,12 +241,12 @@ export async function createAsset(body: any) {
     const typeId = await ensureReferenceExists(
       "item_type",
       "type_name",
-      body.item_type,
+      body.item_type as string | number,
     );
     const classId = await ensureReferenceExists(
       "item_classification",
       "classification_name",
-      body.item_classification,
+      body.item_classification as string | number,
     );
 
     const itemRes = await fetch(`${API_BASE_URL}/items/items`, {
@@ -273,7 +273,7 @@ export async function createAsset(body: any) {
     dateStr = new Date().toISOString().split("T")[0];
   } else {
     try {
-      const parsedDate = new Date(dateInput);
+      const parsedDate = new Date(dateInput as string | number | Date);
       dateStr = isNaN(parsedDate.getTime())
         ? new Date().toISOString().split("T")[0]
         : parsedDate.toISOString().split("T")[0];
@@ -317,7 +317,7 @@ export async function createAsset(body: any) {
 /**
  * Update an existing asset
  */
-export async function updateAsset(body: any) {
+export async function updateAsset(body: Record<string, unknown>) {
   const { id, item_id, ...updateData } = body;
 
   if (!id || !item_id)
@@ -327,12 +327,12 @@ export async function updateAsset(body: any) {
   const typeId = await ensureReferenceExists(
     "item_type",
     "type_name",
-    updateData.item_type_name || updateData.item_type,
+    (updateData.item_type_name || updateData.item_type) as string | number,
   );
   const classId = await ensureReferenceExists(
     "item_classification",
     "classification_name",
-    updateData.classification_name || updateData.item_classification,
+    (updateData.classification_name || updateData.item_classification) as string | number,
   );
 
   const itemUpdateRes = await fetch(`${API_BASE_URL}/items/items/${item_id}`, {
@@ -354,7 +354,7 @@ export async function updateAsset(body: any) {
     quantity: Number(updateData.quantity),
     total: Number(updateData.cost_per_item) * Number(updateData.quantity),
     life_span: Number(updateData.life_span),
-    date_acquired: updateData.date_acquired?.split("T")[0],
+    date_acquired: (updateData.date_acquired as string | undefined)?.split("T")[0],
     department: Number(updateData.department),
     employee: updateData.employee ? Number(updateData.employee) : null,
     item_image: updateData.item_image,
@@ -377,7 +377,7 @@ export async function updateAsset(body: any) {
   if (!assetUpdateRes.ok)
     throw new Error(
       assetResult.errors?.[0]?.message ||
-        "Failed to update asset equipment record",
+      "Failed to update asset equipment record",
     );
 
   return assetResult.data;

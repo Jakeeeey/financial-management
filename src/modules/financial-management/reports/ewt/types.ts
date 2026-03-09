@@ -12,13 +12,16 @@ export interface RawEWTRow {
   // Fallback aliases
   id?:            string;
   invoice_number?: string;
-  customerName?:  string;
-  client?:        string;
-  amount?:        number | string;
-  date?:          string;
-  createdAt?:     string;
-  status?:        string;
-  [key: string]:  any;
+  customer?: string;
+  customerName?: string;
+  client?: string;
+  ewt?: number | string;
+  amount?: number | string;
+  date?: string;
+  invoiceDate?: string;
+  createdAt?: string;
+  status?: string;
+  [key: string]: unknown;
 }
 
 export interface EWTRecord {

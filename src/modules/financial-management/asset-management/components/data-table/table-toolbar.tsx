@@ -20,7 +20,7 @@ const statuses = [
 ];
 
 interface TableToolbarProps {
-  table: Table<any>;
+  table: Table<unknown>;
 }
 
 export function TableToolbar({ table }: TableToolbarProps) {
@@ -79,7 +79,7 @@ export function TableToolbar({ table }: TableToolbarProps) {
             )
             .map((column) => {
               const label =
-                (column.columnDef.meta as any)?.label ??
+                (column.columnDef.meta as Record<string, unknown>)?.label ??
                 (typeof column.columnDef.header === "string"
                   ? column.columnDef.header
                   : column.id);
@@ -90,7 +90,7 @@ export function TableToolbar({ table }: TableToolbarProps) {
                   checked={column.getIsVisible()}
                   onCheckedChange={(value) => column.toggleVisibility(!!value)}
                 >
-                  {label.replace(/_/g, " ")}
+                  {(label as string).replace(/_/g, " ")}
                 </DropdownMenuCheckboxItem>
               );
             })}

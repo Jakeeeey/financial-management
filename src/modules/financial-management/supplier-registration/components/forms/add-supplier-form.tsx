@@ -63,7 +63,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
     },
   });
 
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: unknown) => {
     setIsSubmitting(true);
     try {
       const response = await fetch("/api/supplier-registration/suppliers", {

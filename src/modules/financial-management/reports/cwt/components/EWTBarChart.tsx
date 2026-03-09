@@ -6,8 +6,8 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import { BarChart2 } from 'lucide-react';
-import { formatPeso } from '../../ewt/utils';
-import type { BarEntry } from '../../ewt/types';
+import { formatPeso } from '../utils';
+import type { BarEntry } from '../types';
 
 interface EWTBarChartProps {
   data: BarEntry[];

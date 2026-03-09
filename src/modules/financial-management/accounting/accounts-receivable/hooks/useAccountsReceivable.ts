@@ -81,9 +81,10 @@ export function useAccountsReceivable(): UseARResult {
         setMetrics(metrics);
         setError(null);
         toast.success('Data loaded successfully', { id: toastId });
-      } catch (e: any) {
-        setError(e.message);
-        toast.error(`Failed to load data: ${e.message}`, { id: toastId });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        toast.error(`Failed to load data: ${msg}`, { id: toastId });
       } finally {
         setLoading(false);
       }

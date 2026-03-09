@@ -2,17 +2,12 @@
 // All TypeScript interfaces and types for the VAT Selling module.
 
 export interface RawVATSaleTransaction {
-  // Actual API fields
-  invoiceNo?:    string;
-  invoiceDate?:  string;
-  customer?:     string;
-  supplier?:     string;
-  grossAmount?:  number;
-  vatExclusive?: number;
-  vatAmount?:    number | string;
-  // Legacy fallback
-  vat?:          number | string;
-  [key: string]: any;
+  invoiceNo?: string;
+  customer?: string;
+  vat?: number | string;
+  invoiceDate?: string;
+  supplier?: string;
+  [key: string]: unknown;
 }
 
 export interface VATSaleTransaction {

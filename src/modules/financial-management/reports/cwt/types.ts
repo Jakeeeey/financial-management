@@ -6,9 +6,7 @@ export interface RawCWTRow {
   supplier?:        string;
   cwt?:             number | string;
   transactionDate?: string;
-  grossAmount?:     number;
-  taxableAmount?:   number;
-  [key: string]:    any;
+  [key: string]: unknown;
 }
 
 export interface CWTRecord {

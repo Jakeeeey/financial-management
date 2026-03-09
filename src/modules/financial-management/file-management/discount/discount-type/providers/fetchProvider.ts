@@ -12,10 +12,10 @@ async function http<T>(url: string, init?: RequestInit): Promise<T> {
     cache: "no-store",
   });
 
-  const data = await res.json().catch(() => null);
+  const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
 
   if (!res.ok || (data && data.success === false)) {
-    const msg = data?.message || `Request failed (${res.status})`;
+    const msg = String(data?.message || `Request failed (${res.status})`);
     throw new Error(msg);
   }
 

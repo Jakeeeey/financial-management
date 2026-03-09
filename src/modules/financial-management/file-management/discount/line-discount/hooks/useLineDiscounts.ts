@@ -42,8 +42,8 @@ export function useLineDiscounts() {
       const created = await api.createLineDiscount(payload);
       toast.success("Line discount created");
       setRows((prev) => [...prev, created].sort((a, b) => (a.line_discount || "").localeCompare(b.line_discount || "")));
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to create line discount");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to create line discount");
     }
   }, []);
 
@@ -52,8 +52,8 @@ export function useLineDiscounts() {
       const updated = await api.updateLineDiscount(id, payload);
       toast.success("Line discount updated");
       setRows((prev) => prev.map((r) => (r.id === id ? updated : r)));
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to update line discount");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to update line discount");
     }
   }, []);
 
@@ -62,8 +62,8 @@ export function useLineDiscounts() {
       await api.deleteLineDiscount(id);
       toast.success("Line discount deleted");
       setRows((prev) => prev.filter((r) => r.id !== id));
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to delete line discount");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete line discount");
     }
   }, []);
 

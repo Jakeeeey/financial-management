@@ -28,15 +28,17 @@ import ViewAssetModal from "../modals/AssetViewModal";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 
-interface DataTableProps<TData, TValue> {
+import { AssetTableData } from "../../types";
+
+interface DataTableProps<TData extends AssetTableData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   columnFilters: ColumnFiltersState;
   onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>;
   data: TData[];
-  tableMeta?: any;
+  tableMeta?: Record<string, unknown>;
 }
 
-export function AssetDataTable<TData, TValue>({
+export function AssetDataTable<TData extends AssetTableData, TValue>({
   columns,
   data,
   columnFilters,
@@ -51,6 +53,7 @@ export function AssetDataTable<TData, TValue>({
   const [selectedAsset, setSelectedAsset] = useState<TData | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     state: {
@@ -75,7 +78,7 @@ export function AssetDataTable<TData, TValue>({
     },
   });
 
-  const currentProjectionDate = tableMeta?.projectionDate || new Date();
+  const currentProjectionDate = (tableMeta?.projectionDate as Date) || new Date();
 
   return (
     <div className="space-y-4">
@@ -105,9 +108,9 @@ export function AssetDataTable<TData, TValue>({
                     {header.isPlaceholder
                       ? null
                       : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
                   </TableHead>
                 ))}
               </TableRow>
@@ -144,7 +147,7 @@ export function AssetDataTable<TData, TValue>({
       <DataTablePagination table={table} />
 
       <ViewAssetModal
-        asset={selectedAsset as any}
+        asset={selectedAsset as TData}
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
         projectionDate={currentProjectionDate}

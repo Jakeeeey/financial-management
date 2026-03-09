@@ -29,8 +29,8 @@ export function useDiscountTypes() {
       const [r, l] = await Promise.all([fp.listDiscountTypes(), fp.listLineDiscounts()]);
       setRows(r);
       setLines(l);
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to load discount types");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to load discount types");
     } finally {
       setLoading(false);
     }
@@ -62,8 +62,8 @@ export function useDiscountTypes() {
       setOpen(false);
       setEditing(null);
       await refresh();
-    } catch (e: any) {
-      toast.error(e?.message || "Save failed.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Save failed.");
     }
   };
 
@@ -74,8 +74,8 @@ export function useDiscountTypes() {
       setOpen(false);
       setEditing(null);
       await refresh();
-    } catch (e: any) {
-      toast.error(e?.message || "Delete failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
     }
   };
 

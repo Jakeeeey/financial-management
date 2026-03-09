@@ -30,38 +30,38 @@ export function transformInvoices(data: RawInvoiceRow[]): {
   const salesmanMap: Record<string, number> = {};
 
   const invoices: Invoice[] = data.map((row) => {
-    // ── Exact field names from Spring Boot API ────────────────────────────
-    const netReceivable = Number(row.netReceivable ?? row.grossAmount ?? row.total ?? row.amount ?? 0);
-    const totalPaid     = Number(row.totalPaid ?? row.paid ?? row.amountPaid ?? 0);
-    const outstanding   = Number(row.outstandingBalance ?? row.outstanding ?? (netReceivable - totalPaid));
-    // daysOverdue: store raw value — 0 means current, >0 means overdue
-    const daysOverdue   = row.daysOverdue != null ? Number(row.daysOverdue) : null;
-    const overdue       = daysOverdue;  // show actual days in the table, null only if unknown
-    const branch        = row.branch    ?? row.branchName   ?? 'Unknown';
-    const salesman      = row.salesman  ?? row.salesmanName ?? 'Unknown';
-    const due           = row.calculatedDueDate ?? row.dueDate ?? row.due ?? '';
+    // ✅ Use actual API field names, fallback to aliases
+    // ✅ Coerce to number to prevent arithmetic errors on unknown properties
+    const netReceivable = Number(row.netReceivable ?? row.total ?? row.amount ?? 0);
+    const totalPaid = Number(row.totalPaid ?? row.paid ?? row.amountPaid ?? 0);
+    const outstanding = Number(row.outstandingBalance ?? row.outstanding ?? (netReceivable - totalPaid));
+    const overdue = Number(row.daysOverdue ?? 0) || null;
+    const branch = String(row.branch ?? row.branchName ?? 'Unknown');
+    const salesman = String(row.salesman ?? row.salesmanName ?? 'Unknown');
+    const due = String(row.calculatedDueDate ?? row.dueDate ?? row.due ?? '');
 
     const status: Invoice['status'] =
-      outstanding === 0          ? 'Paid'
-      : daysOverdue != null && daysOverdue > 0 ? 'Overdue'
-      : 'Due';
+      outstanding === 0 ? 'Paid'
+        : overdue !== null && overdue > 0 ? 'Overdue'
+          : 'Due';
 
-    // Aging buckets — use daysOverdue (0 = current = 0-30 bucket)
-    const ageDays = daysOverdue ?? 0;
-    if (ageDays <= 30)      agingData[0].amount += outstanding;
-    else if (ageDays <= 60) agingData[1].amount += outstanding;
-    else                    agingData[2].amount += outstanding;
+    // Aging buckets
+    if (overdue !== null) {
+      if (overdue <= 30) agingData[0].amount += outstanding;
+      else if (overdue <= 60) agingData[1].amount += outstanding;
+      else agingData[2].amount += outstanding;
+    }
 
-    branchMap[branch]     = (branchMap[branch]     || 0) + outstanding;
+    branchMap[branch] = (branchMap[branch] || 0) + outstanding;
     salesmanMap[salesman] = (salesmanMap[salesman] || 0) + outstanding;
 
     return {
-      id:           String(row.invoiceId ?? row.id ?? row.invoiceNo ?? ''),
-      invoiceNo:    row.invoiceNo ?? row.invoice_number ?? '—',
-      orderId:      row.orderId ?? '—',
-      customer:     row.customerName ?? row.customer ?? row.client ?? '—',
+      id: String(row.invoiceId ?? row.id ?? row.invoiceNo ?? ''),
+      invoiceNo: row.invoiceNo ?? row.invoice_number ?? '—',
+      orderId: row.orderId ?? '—',
+      customer: row.customerName ?? row.customer ?? row.client ?? '—',
       customerCode: row.customerCode ?? '—',
-      invoiceDate:  row.invoiceDate ?? '',
+      invoiceDate: row.invoiceDate ?? '',
       due,
       netReceivable,
       totalPaid,
@@ -81,9 +81,9 @@ export function deriveMetrics(
   invoices: Invoice[],
   branchMap: Record<string, number>
 ): ARMetrics {
-  const totalReceivable  = invoices.reduce((sum, inv) => sum + inv.netReceivable, 0);
+  const totalReceivable = invoices.reduce((sum, inv) => sum + inv.netReceivable, 0);
   const totalOutstanding = Object.values(branchMap).reduce((sum, v) => sum + v, 0);
-  const overdueInvoices  = invoices.filter((inv) => inv.overdue != null && inv.overdue > 0);
+  const overdueInvoices = invoices.filter((inv) => inv.status === 'Overdue');
   const avgOverdue =
     overdueInvoices.length > 0
       ? Math.round(overdueInvoices.reduce((sum, inv) => sum + (inv.overdue || 0), 0) / overdueInvoices.length)

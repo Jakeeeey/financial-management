@@ -173,13 +173,13 @@ export async function isEmailUniqueForSupplier(
   excludeRepId?: number,
 ): Promise<boolean> {
   try {
-    const filter: any = {
+    const filter: Record<string, unknown> = {
       _and: [{ supplier_id: { _eq: supplierId } }, { email: { _eq: email } }],
     };
 
     // Exclude current representative when updating
     if (excludeRepId) {
-      filter._and.push({ id: { _neq: excludeRepId } });
+      (filter._and as Record<string, unknown>[]).push({ id: { _neq: excludeRepId } });
     }
 
     const response = await fetch(

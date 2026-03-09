@@ -65,7 +65,7 @@ export function EditSupplierForm({
     },
   });
 
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: unknown) => {
     setIsSubmitting(true);
     try {
       const response = await fetch(

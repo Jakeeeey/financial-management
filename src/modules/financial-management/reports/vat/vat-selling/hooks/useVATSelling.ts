@@ -68,9 +68,10 @@ export function useVATSelling(): UseVATSellingResult {
         setBarData(barData);
 
         toast.success('VAT Sales data loaded successfully', { id: toastId });
-      } catch (err: any) {
-        setError(err.message || 'Unknown error');
-        toast.error(`Failed to load VAT Sales data: ${err.message || 'Unknown error'}`, { id: toastId });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        setError(msg);
+        toast.error(`Failed to load VAT Sales data: ${msg}`, { id: toastId });
       } finally {
         setLoading(false);
       }

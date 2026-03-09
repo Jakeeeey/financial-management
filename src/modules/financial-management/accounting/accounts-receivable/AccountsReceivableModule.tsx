@@ -6,7 +6,6 @@ import autoTable from 'jspdf-autotable';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -24,11 +23,11 @@ export default function AccountsReceivableModule() {
   const { loading, error, invoices, agingData, branchData, salesmanData, metrics } =
     useAccountsReceivable();
 
-  const [page, setPage]         = useState(1);
+  const [page, setPage] = useState(1);
   const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo]     = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [customer, setCustomer] = useState('');
-  const [branch, setBranch]     = useState('');
+  const [branch, setBranch] = useState('');
   const [salesman, setSalesman] = useState('');
 
   const customerOptions = useMemo(
@@ -46,13 +45,11 @@ export default function AccountsReceivableModule() {
 
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
-      // Strip time component — invoiceDate may be "2025-11-29 17:58:02"
-      const invDate = inv.invoiceDate ? inv.invoiceDate.split(' ')[0] : '';
-      if (dateFrom && invDate && invDate < dateFrom) return false;
-      if (dateTo   && invDate && invDate > dateTo)   return false;
+      if (dateFrom && new Date(inv.invoiceDate) < new Date(dateFrom)) return false;
+      if (dateTo && new Date(inv.invoiceDate) > new Date(dateTo)) return false;
       if (customer && inv.customer !== customer) return false;
-      if (branch   && inv.branch   !== branch)   return false;
-      if (salesman && inv.salesman !== salesman)  return false;
+      if (branch && inv.branch !== branch) return false;
+      if (salesman && inv.salesman !== salesman) return false;
       return true;
     });
   }, [invoices, dateFrom, dateTo, customer, branch, salesman]);
@@ -114,7 +111,7 @@ export default function AccountsReceivableModule() {
   };
 
   const exportToPDF = () => {
-    const doc   = new jsPDF({ orientation: 'landscape' });
+    const doc = new jsPDF({ orientation: 'landscape' });
     const pageW = doc.internal.pageSize.getWidth();
     const total = filteredMetrics.totalReceivable;
     const formattedTotal = `PHP ${total.toLocaleString('en-PH', {
@@ -131,7 +128,7 @@ export default function AccountsReceivableModule() {
     // ── Total top-right ────────────────────────────────────────────────────
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    const totalLabel  = `Grand Total: ${formattedTotal}`;
+    const totalLabel = `Grand Total: ${formattedTotal}`;
     const totalLabelX = Math.max(pageW / 2, pageW - 14 - doc.getTextWidth(totalLabel));
     doc.text(totalLabel, totalLabelX, 16);
 
@@ -182,11 +179,11 @@ export default function AccountsReceivableModule() {
     });
 
     // ── Grand Total box ────────────────────────────────────────────────────
-    const finalY = (doc as any).lastAutoTable.finalY ?? 36;
-    const boxW   = 110;
-    const boxH   = 12;
-    const boxX   = pageW - 14 - boxW;
-    const boxY   = finalY + 6;
+    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY ?? 36;
+    const boxW = 110;
+    const boxH = 12;
+    const boxX = pageW - 14 - boxW;
+    const boxY = finalY + 6;
 
     doc.setFillColor(24, 24, 27);
     doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, 'F');

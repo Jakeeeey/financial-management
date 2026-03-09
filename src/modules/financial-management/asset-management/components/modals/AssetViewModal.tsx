@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
@@ -22,7 +23,7 @@ export default function ViewAssetModal({
   isOpen,
   onOpenChange,
   projectionDate = new Date(),
-}: any) {
+}: { asset: import("../../types").AssetTableData | null; isOpen: boolean; onOpenChange: (open: boolean) => void; projectionDate?: Date }) {
   if (!asset) return null;
 
   const currentVal = getDepreciatedValue(
@@ -57,9 +58,9 @@ export default function ViewAssetModal({
               <div className="relative mx-auto w-full max-w-70 md:max-w-full">
                 <div className="aspect-square rounded-xl bg-background border-2 border-muted flex items-center justify-center overflow-hidden">
                   {asset.item_image ? (
-                    <img
+                    <Image
                       src={`/api/fm/asset-management/asset-image-view?id=${asset.item_image}`}
-                      className="object-contain w-full h-full p-6"
+                      fill className="object-contain w-full h-full p-6"
                       alt={asset.item_name}
                     />
                   ) : (
@@ -192,7 +193,7 @@ export default function ViewAssetModal({
   );
 }
 
-function MetricItem({ icon, label, value }: any) {
+function MetricItem({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | null | number }) {
   return (
     <div className="flex items-center gap-3">
       <div className="p-2 rounded-lg bg-background border border-border text-primary shrink-0">
@@ -208,7 +209,7 @@ function MetricItem({ icon, label, value }: any) {
   );
 }
 
-function DataCard({ label, value }: any) {
+function DataCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="p-4 rounded-xl border bg-card/50 shadow-sm">
       <p className="text-xs uppercase font-bold text-muted-foreground/70 mb-2">
@@ -219,7 +220,7 @@ function DataCard({ label, value }: any) {
   );
 }
 
-function AssignmentBlock({ icon, label, value }: any) {
+function AssignmentBlock({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | null | number }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-primary">

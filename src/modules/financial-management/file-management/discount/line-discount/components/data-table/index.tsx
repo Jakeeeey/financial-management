@@ -31,7 +31,7 @@ interface DataTableProps<TData, TValue> {
   columnFilters: ColumnFiltersState;
   onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>;
   data: TData[];
-  tableMeta?: any;
+  tableMeta?: Record<string, unknown>;
 }
 
 export function LineDiscountDataTable<TData, TValue>({
@@ -47,6 +47,7 @@ export function LineDiscountDataTable<TData, TValue>({
   });
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,
@@ -63,7 +64,7 @@ export function LineDiscountDataTable<TData, TValue>({
 
   return (
     <div className="space-y-3">
-      <TableToolbar table={table as any} />
+      <TableToolbar table={table as unknown as import("@tanstack/react-table").Table<import("../../type").LineDiscountRow>} />
 
       <div className="rounded-md border">
         <Table>
@@ -103,7 +104,7 @@ export function LineDiscountDataTable<TData, TValue>({
         </Table>
       </div>
 
-      <DataTablePagination table={table as any} />
+      <DataTablePagination table={table as unknown as import('@tanstack/react-table').Table<TData>} />
     </div>
   );
 }

@@ -6,8 +6,8 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import { TrendingUp } from 'lucide-react';
-import { formatPeso } from '../../ewt/utils';
-import type { TrendEntry } from '../../ewt/types';
+import { formatPeso } from '../utils';
+import type { TrendEntry } from '../types';
 
 interface EWTTrendChartProps {
   data: TrendEntry[];

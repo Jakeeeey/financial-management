@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 const COOKIE_NAME = "vos_access_token";
 
-function decodeJwtPayload(token: string): any | null {
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
     try {
         const parts = token.split(".");
         if (parts.length < 2) return null;
@@ -36,9 +36,9 @@ function decodeJwtPayload(token: string): any | null {
     }
 }
 
-function pickString(obj: any, keys: string[]): string {
+function pickString(obj: Record<string, unknown> | null | undefined, keys: string[]): string {
     for (const k of keys) {
-        const v = obj?.[k];
+        const v = obj ? obj[k] : undefined;
         if (typeof v === "string" && v.trim()) return v.trim();
     }
     return "";
@@ -81,31 +81,29 @@ export default async function Page() {
 
     return (
         // ✅ UI ONLY: avoid page-level scroll container; prevent horizontal overflow
-        <div className="flex min-h-0 flex-col overflow-x-hidden">
-            <header
-                className="
-          sticky top-2 z-50 relative
-          flex h-16 shrink-0 items-center justify-between
-          border-b bg-background shadow-sm
-          before:content-[''] before:absolute before:inset-x-0 before:-top-2 before:h-2 before:bg-background
-        "
-            >
-                <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4">
-                    <SidebarTrigger className="-ml-1" />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            {/* ? Topbar is fixed in place because ONLY <main> scrolls */}
+            <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
+                <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4 overflow-hidden">
+                    <SidebarTrigger className="-ml-1 shrink-0" />
                     <Separator
                         orientation="vertical"
-                        className="mr-2 data-[orientation=vertical]:h-4"
+                        className="hidden sm:block mr-2 data-[orientation=vertical]:h-4 shrink-0"
                     />
 
-                    <div className="min-w-0">
+                    <div className="min-w-0 overflow-hidden">
                         <Breadcrumb>
-                            <BreadcrumbList className="min-w-0">
-                                <BreadcrumbItem className="hidden md:block">
+                            <BreadcrumbList className="min-w-0 overflow-hidden">
+                                <BreadcrumbItem className="hidden md:block shrink-0">
+                                    <BreadcrumbLink href="#">FM</BreadcrumbLink>
+                                </BreadcrumbItem>
+                                <BreadcrumbSeparator className="hidden md:block shrink-0" />
+                                <BreadcrumbItem className="hidden md:block shrink-0">
                                     <BreadcrumbLink href="#">Reports</BreadcrumbLink>
                                 </BreadcrumbItem>
-                                <BreadcrumbSeparator className="hidden md:block" />
-                                <BreadcrumbItem className="min-w-0">
-                                    <BreadcrumbPage className="truncate">
+                                <BreadcrumbSeparator className="hidden md:block shrink-0" />
+                                <BreadcrumbItem className="min-w-0 overflow-hidden">
+                                    <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
                                         FWT
                                     </BreadcrumbPage>
                                 </BreadcrumbItem>
@@ -114,13 +112,13 @@ export default async function Page() {
                     </div>
                 </div>
 
-                <div className="flex h-full items-center px-3 sm:px-4 shrink-0">
+                <div className="flex h-full items-center px-2 sm:px-4 shrink-0 max-w-[48vw] sm:max-w-none overflow-hidden">
                     <NavUser user={headerUser} />
                 </div>
             </header>
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
-            <main className="min-h-0 flex-1 p-3 sm:p-4 overflow-x-hidden">
+            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
                 <ComingSoon />
             </main>
         </div>

@@ -5,18 +5,8 @@ export interface RawVATTransaction {
   // Actual API fields
   remarks?:         string;
   transactionDate?: string;
-  supplier?:        string;
-  vatExclusive?:    number;
-  grossAmount?:     number;
-  vatAmount?:       number | string;
-  // Legacy fallbacks
-  docNo?:           string;
-  vat?:             number | string;
-  documentNo?:      string;
-  id?:              string;
-  supplierName?:    string;
-  date?:            string;
-  [key: string]:    any;
+  date?: string;
+  [key: string]: unknown;
 }
 
 export interface VATTransaction {

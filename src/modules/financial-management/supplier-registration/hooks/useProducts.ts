@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { fetchAllProducts, searchProducts } from "../services/products";
+
 import { Product } from "../types/product.schema";
 
 /**
@@ -38,8 +38,8 @@ export function useProducts() {
 
       const result = await response.json();
       setProducts(result.data || []);
-    } catch (err: any) {
-      setError({ hasError: true, message: err.message });
+    } catch (err: unknown) {
+      setError({ hasError: true, message: (err instanceof Error ? err.message : String(err)) });
       setProducts([]);
     } finally {
       setIsLoading(false);

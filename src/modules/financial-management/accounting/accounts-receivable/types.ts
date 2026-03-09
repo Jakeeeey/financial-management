@@ -24,7 +24,7 @@ export interface RawInvoiceRow {
   client?: string;
   branchName?: string;
   salesmanName?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface Invoice {

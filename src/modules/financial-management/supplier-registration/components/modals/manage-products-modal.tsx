@@ -4,12 +4,10 @@ import { useState } from "react";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
+DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Plus, PackageOpen } from "lucide-react";
 import { useSupplierProducts } from "../../hooks/useSupplierProduct";
 import { AddProductsModal } from "./add-products-modal";
@@ -34,18 +32,7 @@ export function ManageProductsModal({
     useSupplierProducts(supplierId);
   const { discountTypes } = useDiscountTypes();
 
-  const handleAddProduct = async (
-    productId: number,
-    discountTypeId: number | null,
-  ) => {
-    const success = await addProduct(productId, discountTypeId);
-    if (success) {
-      setAddModalOpen(false);
-    }
-    return success;
-  };
-
-  return (
+return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
         <DialogContent className="max-w-2xl p-0 overflow-hidden flex flex-col h-[70vh]">

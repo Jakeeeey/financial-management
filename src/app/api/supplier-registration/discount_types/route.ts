@@ -1,11 +1,11 @@
 import { fetchAllDiscountTypes } from "@/modules/financial-management/supplier-registration/services/discount-types";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 /**
  * GET /api/supplier-registration/discount-types
  * Fetch all discount types
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const discountTypes = await fetchAllDiscountTypes();
 
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
       },
       { status: 200 },
     );
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error fetching discount types:", error);
     return NextResponse.json(
       {

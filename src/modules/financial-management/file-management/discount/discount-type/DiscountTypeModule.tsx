@@ -15,8 +15,9 @@ import { columns } from "./components/data-table/columns";
 import { DiscountTypeDataTable } from "./components/data-table";
 import { DiscountTypeTableSkeleton } from "./components/data-table/skeleton-loader";
 import DiscountTypeDialog from "./components/DiscountTypeDialog";
+import { DiscountTypeRow } from "./type";
 
-const DiscountTypeTable: any = DiscountTypeDataTable;
+const DiscountTypeTable = DiscountTypeDataTable;
 
 export default function DiscountTypeModule() {
   const dt = useDiscountTypes();
@@ -60,16 +61,13 @@ export default function DiscountTypeModule() {
           <DiscountTypeTableSkeleton />
         ) : (
           <DiscountTypeTable
-            columns={columns as any}
+            columns={columns}
             data={dt.filteredRows}
             columnFilters={[]}
             // ✅ row click => VIEW ONLY (no edit/delete)
             tableMeta={{
-              onView: (row: any) => {
-                dt.setOpen(true);
-                dt.onEdit(row); // setEditing(row) + setOpen(true)
-                // We need to set mode to view separately if onEdit doesn't do it
-                // But DiscountTypeModule currently has a 'mode' prop logic
+              onView: (row: Record<string, unknown>) => {
+                dt.onEdit(row as unknown as DiscountTypeRow);
               },
             }}
           />

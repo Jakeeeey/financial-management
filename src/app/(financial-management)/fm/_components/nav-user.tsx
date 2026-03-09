@@ -141,21 +141,21 @@ export function NavUser({ user, onLogout }: NavUserProps) {
                             </DropdownMenuItem>
 
                             <DropdownMenuItem asChild>
-                                <Link href="/profile" className="cursor-pointer">
+                                <Link href="/fm/my-profile" className="cursor-pointer">
                                     <User className="mr-2 size-4" />
                                     My Profile
                                 </Link>
                             </DropdownMenuItem>
 
                             <DropdownMenuItem asChild>
-                                <Link href="/change-password" className="cursor-pointer">
+                                <Link href="/fm/change-password" className="cursor-pointer">
                                     <KeyRound className="mr-2 size-4" />
                                     Change Password
                                 </Link>
                             </DropdownMenuItem>
 
                             <DropdownMenuItem asChild>
-                                <Link href="/login-activity" className="cursor-pointer">
+                                <Link href="/fm/login-activity" className="cursor-pointer">
                                     <ShieldCheck className="mr-2 size-4" />
                                     Login Activity
                                 </Link>

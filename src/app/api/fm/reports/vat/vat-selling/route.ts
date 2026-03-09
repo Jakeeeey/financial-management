@@ -22,14 +22,14 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const startDate = searchParams.get('startDate');
-  const endDate   = searchParams.get('endDate');
+  const endDate = searchParams.get('endDate');
 
   // Build query string only with params that were actually provided
   const query = new URLSearchParams();
   if (startDate) query.set('startDate', startDate);
-  if (endDate)   query.set('endDate', endDate);
+  if (endDate) query.set('endDate', endDate);
 
-  const base      = SPRING_API_BASE_URL?.replace(/\/$/, '');
+  const base = SPRING_API_BASE_URL?.replace(/\/$/, '');
   const targetUrl = `${base}/api/view-fm-reports-vat-selling/all${query.toString() ? `?${query}` : ''}`;
 
   try {
@@ -49,36 +49,36 @@ export async function GET(request: NextRequest) {
 
     const raw = await springRes.json();
 
-    let transactions: any[] = [];
+    let transactions: unknown[] = [];
     if (Array.isArray(raw)) {
-      transactions = raw;
+      transactions = raw as unknown[];
     } else if (Array.isArray(raw?.transactions)) {
-      transactions = raw.transactions;
+      transactions = (raw as Record<string, unknown>).transactions as unknown[];
     } else if (Array.isArray(raw?.data)) {
-      transactions = raw.data;
+      transactions = (raw as Record<string, unknown>).data as unknown[];
     } else if (Array.isArray(raw?.content)) {
-      transactions = raw.content;
+      transactions = (raw as Record<string, unknown>).content as unknown[];
     } else {
       console.warn('[VAT-SELLING] Unexpected response shape:', JSON.stringify(raw).slice(0, 300));
       transactions = [];
     }
 
-    const normalized = transactions.map((item: any, i: number) => ({
-      id:              item.id || item.invoiceNo || item.invoiceNumber || item.documentNo || `INV-${i + 1}`,
-      invoiceNo:       item.invoiceNo || item.invoiceNumber || item.documentNo || item.id || `INV-${i + 1}`,
-      customer:        item.customer || item.customerName || item.clientName || item.client || '-',
-      customerName:    item.customer || item.customerName || item.clientName || item.client || '-',
+    const normalized = (transactions as Record<string, unknown>[]).map((item, i) => ({
+      id: (item.id as string) || item.invoiceNo || item.invoiceNumber || item.documentNo || `INV-${i + 1}`,
+      invoiceNo: item.invoiceNo || item.invoiceNumber || item.documentNo || (item.id as string) || `INV-${i + 1}`,
+      customer: item.customer || item.customerName || item.clientName || item.client || '-',
+      customerName: item.customer || item.customerName || item.clientName || item.client || '-',
       transactionDate: item.transactionDate || item.invoiceDate || item.date || item.createdAt || '-',
-      date:            item.transactionDate || item.invoiceDate || item.date || item.createdAt || '-',
-      amount:          Number(item.amount || item.totalAmount || item.grossAmount || item.netAmount || 0),
-      vatAmount:       Number(item.vatAmount || item.vat || item.outputVat || item.inputVat || 0),
-      ewtAmount:       Number(item.ewtAmount || item.ewt || item.cwtAmount || item.cwt || 0),
+      date: item.transactionDate || item.invoiceDate || item.date || item.createdAt || '-',
+      amount: Number(item.amount || item.totalAmount || item.grossAmount || item.netAmount || 0),
+      vatAmount: Number(item.vatAmount || item.vat || item.outputVat || item.inputVat || 0),
+      ewtAmount: Number(item.ewtAmount || item.ewt || item.cwtAmount || item.cwt || 0),
       ...item,
     }));
 
     return NextResponse.json({ transactions: normalized });
-  } catch (err: any) {
-    console.error('[VAT-SELLING] Request failed:', err.message);
+  } catch (err: unknown) {
+    console.error(err instanceof Error ? err.message : String(err));
     return NextResponse.json({ ok: false, error: 'Gateway Error' }, { status: 502 });
   }
 }
