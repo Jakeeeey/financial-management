@@ -10,7 +10,7 @@ import {
   PaginationLink, PaginationPrevious, PaginationNext, PaginationEllipsis,
 } from '@/components/ui/pagination';
 import { Calendar, Search } from 'lucide-react';
-import { getPageNumbers } from '../utils';
+import { getPageNumbers, formatPeso } from '../utils';
 import type { VATTransaction } from '../types';
 
 const PAGE_SIZE = 10;
@@ -27,16 +27,18 @@ export function VATTransactionsTable({ transactions, page, setPage }: VATTransac
   const q = search.trim().toLowerCase();
   const filtered = q
     ? transactions.filter((tr) =>
-        tr.id.toLowerCase().includes(q)       ||
-        tr.supplier.toLowerCase().includes(q) ||
-        tr.amount.toLowerCase().includes(q)   ||
-        tr.date.toLowerCase().includes(q)
+        tr.id.toLowerCase().includes(q)            ||
+        tr.supplier.toLowerCase().includes(q)      ||
+        tr.amount.toLowerCase().includes(q)        ||
+        tr.date.toLowerCase().includes(q)          ||
+        tr.grossAmount.toString().includes(q)      ||
+        tr.vatExclusive.toString().includes(q)
       )
     : transactions;
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const safePage   = Math.min(page, totalPages || 1);
-  const paged      = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const totalPages  = Math.ceil(filtered.length / PAGE_SIZE);
+  const safePage    = Math.min(page, totalPages || 1);
+  const paged       = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const pageNumbers = getPageNumbers(safePage, totalPages);
 
   const handleSearch = (val: string) => {
@@ -53,7 +55,7 @@ export function VATTransactionsTable({ transactions, page, setPage }: VATTransac
           <Input
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
-            placeholder="Search doc no., supplier, amount…"
+            placeholder="Search remarks, supplier, amount…"
             className="h-8 pl-8 text-xs focus-visible:ring-1"
           />
         </div>
@@ -65,16 +67,18 @@ export function VATTransactionsTable({ transactions, page, setPage }: VATTransac
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead className="text-xs font-bold py-4 pl-6">Document No.</TableHead>
+              <TableHead className="text-xs font-bold py-4 pl-6">Remarks</TableHead>
               <TableHead className="text-xs font-bold py-4">Supplier</TableHead>
-              <TableHead className="text-xs font-bold py-4">VAT Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">Gross Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">VAT Exclusive</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">VAT Amount</TableHead>
               <TableHead className="text-xs font-bold py-4 pr-6">Transaction Date</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-10 text-muted-foreground text-sm">
+                <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm">
                   {q ? `No results for "${search}".` : 'No transactions found.'}
                 </TableCell>
               </TableRow>
@@ -83,7 +87,9 @@ export function VATTransactionsTable({ transactions, page, setPage }: VATTransac
                 <TableRow key={tr.id} className="border-border/40 hover:bg-muted/20">
                   <TableCell className="font-bold text-primary text-xs py-4 pl-6">{tr.id}</TableCell>
                   <TableCell className="text-xs font-medium py-4">{tr.supplier}</TableCell>
-                  <TableCell className="text-xs font-bold text-primary py-4">{tr.amount}</TableCell>
+                  <TableCell className="text-xs py-4 text-right">{formatPeso(tr.grossAmount)}</TableCell>
+                  <TableCell className="text-xs py-4 text-right">{formatPeso(tr.vatExclusive)}</TableCell>
+                  <TableCell className="text-xs font-bold text-primary py-4 text-right">{tr.amount}</TableCell>
                   <TableCell className="text-[11px] text-muted-foreground py-4 pr-6">
                     <div className="flex items-center gap-1.5">
                       <Calendar size={12} className="text-muted-foreground" />

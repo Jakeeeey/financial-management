@@ -25,7 +25,13 @@ export function useCWT(): UseCWTResult {
     async function loadData() {
       const toastId = toast.loading('Loading CWT data...');
       try {
-        const res = await fetch('/api/fm/reports/cwt', { credentials: 'include' });
+        // Pass a wide range so all historical records are returned from the backend
+        const params = new URLSearchParams({
+          startDate: '2020-01-01',
+          endDate:   new Date().toISOString().split('T')[0],
+        });
+
+        const res = await fetch(`/api/fm/reports/cwt?${params}`, { credentials: 'include' });
         const contentType = res.headers.get('content-type');
         if (!contentType?.includes('application/json')) {
           throw new TypeError('Backend returned HTML instead of JSON. Check the API path.');
@@ -33,7 +39,6 @@ export function useCWT(): UseCWTResult {
         if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
 
         const result = await res.json();
-        // Support top-level array or wrapped { data: [] } / { transactions: [] }
         const rawRows: RawCWTRow[] = Array.isArray(result)
           ? result
           : (result.data ?? result.transactions ?? result.content ?? []);

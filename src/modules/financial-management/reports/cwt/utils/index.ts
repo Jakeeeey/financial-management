@@ -1,44 +1,16 @@
-// utils.ts
+// utils/index.ts
 // Data transform and chart-build helpers for the CWT module.
-// Types are inlined here to avoid path resolution issues.
 
-export interface RawCWTRow {
-  docNo?: string;
-  supplier?: string;
-  cwt?: number | string;
-  transactionDate?: string;
-  [key: string]: any;
-}
+import type {
+  RawCWTRow,
+  CWTRecord,
+  PieEntry,
+  TrendEntry,
+  BarEntry,
+} from '../types';
 
-export interface CWTRecord {
-  id: string;
-  invoiceNo: string;
-  customerName: string;
-  invoiceDate: string;
-  displayAmount: number;
-  dateObj: Date;
-}
-
-export interface CWTMetrics {
-  totalAmount: number;
-  totalTransactions: number;
-}
-
-export interface PieEntry {
-  name: string;
-  value: number;
-}
-
-export interface TrendEntry {
-  month: string;
-  amount: number;
-}
-
-export interface BarEntry {
-  name: string;
-  amount: number;
-  count: number;
-}
+// Re-export types so existing imports from utils still work
+export type { RawCWTRow, CWTRecord, CWTMetrics, PieEntry, TrendEntry, BarEntry } from '../types';
 
 // ── Transform ────────────────────────────────────────────────────────────────
 
@@ -49,9 +21,11 @@ export function transformCWTRows(raw: RawCWTRow[]): CWTRecord[] {
     return {
       id:            item.docNo ?? `CWT-${i + 1}`,
       invoiceNo:     item.docNo ?? `CWT-${i + 1}`,
-      customerName:  item.supplier ?? '-',
+      customerName:  item.supplier    ?? '-',
       invoiceDate:   dateRaw,
-      displayAmount: Number(item.cwt ?? 0),
+      grossAmount:   Number(item.grossAmount   ?? 0),
+      taxableAmount: Number(item.taxableAmount ?? 0),
+      displayAmount: Number(item.cwt           ?? 0),
       dateObj,
     };
   });
@@ -59,21 +33,17 @@ export function transformCWTRows(raw: RawCWTRow[]): CWTRecord[] {
 
 // ── Chart builders ───────────────────────────────────────────────────────────
 
-/** Pie: total CWT per supplier (top 6, rest grouped as "Others") */
 export function buildPieData(records: CWTRecord[]): PieEntry[] {
   const map: Record<string, number> = {};
-  records.forEach((r) => {
-    map[r.customerName] = (map[r.customerName] ?? 0) + r.displayAmount;
-  });
+  records.forEach((r) => { map[r.customerName] = (map[r.customerName] ?? 0) + r.displayAmount; });
   const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
-  const top  = sorted.slice(0, 6);
-  const rest = sorted.slice(6).reduce((s, [, v]) => s + v, 0);
+  const top    = sorted.slice(0, 6);
+  const rest   = sorted.slice(6).reduce((s, [, v]) => s + v, 0);
   const entries: PieEntry[] = top.map(([name, value]) => ({ name, value }));
   if (rest > 0) entries.push({ name: 'Others', value: rest });
   return entries;
 }
 
-/** Trend: monthly CWT totals */
 export function buildTrendData(records: CWTRecord[]): TrendEntry[] {
   const map: Record<string, number> = {};
   records.forEach((r) => {
@@ -84,7 +54,6 @@ export function buildTrendData(records: CWTRecord[]): TrendEntry[] {
   return Object.entries(map).map(([month, amount]) => ({ month, amount }));
 }
 
-/** Bar: per-supplier CWT amount + transaction count (top 10) */
 export function buildBarData(records: CWTRecord[]): BarEntry[] {
   const map: Record<string, { amount: number; count: number }> = {};
   records.forEach((r) => {

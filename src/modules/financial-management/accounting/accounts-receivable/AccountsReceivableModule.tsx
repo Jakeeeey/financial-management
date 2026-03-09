@@ -46,11 +46,13 @@ export default function AccountsReceivableModule() {
 
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
-      if (dateFrom && new Date(inv.invoiceDate) < new Date(dateFrom)) return false;
-      if (dateTo   && new Date(inv.invoiceDate) > new Date(dateTo))   return false;
+      // Strip time component — invoiceDate may be "2025-11-29 17:58:02"
+      const invDate = inv.invoiceDate ? inv.invoiceDate.split(' ')[0] : '';
+      if (dateFrom && invDate && invDate < dateFrom) return false;
+      if (dateTo   && invDate && invDate > dateTo)   return false;
       if (customer && inv.customer !== customer) return false;
       if (branch   && inv.branch   !== branch)   return false;
-      if (salesman && inv.salesman !== salesman) return false;
+      if (salesman && inv.salesman !== salesman)  return false;
       return true;
     });
   }, [invoices, dateFrom, dateTo, customer, branch, salesman]);
@@ -159,8 +161,8 @@ export default function AccountsReceivableModule() {
       alternateRowStyles: { fillColor: [245, 245, 245] },
       head: [[
         'Invoice No.', 'Order ID', 'Customer', 'Invoice Date', 'Due Date',
-        'Net Receivable (PHP)', 'Total Paid', 'Outstanding Balance (PHP)',
-        'Days Overdue', 'Branch', 'Salesman', 'Status',
+        'Net Recv. (PHP)', 'Total Paid', 'Ou ts. Balance (PHP)',
+        'Days OD.', 'Branch', 'Salesman', 'Status',
       ]],
       body: displayInvoices.map((inv) => [
         inv.invoiceNo,

@@ -109,7 +109,7 @@ export default function VatPurchasesModule() {
     // ── Total top-right ────────────────────────────────────────────────────
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    const totalLabel = ` Grand Total: ${formattedTotal}`;
+    const totalLabel = `Grand Total: ${formattedTotal}`;
     const totalLabelX = Math.max(pageW / 2, pageW - 14 - doc.getTextWidth(totalLabel));
     doc.text(totalLabel, totalLabelX, 16);
 
@@ -137,10 +137,12 @@ export default function VatPurchasesModule() {
       headStyles: { fillColor: [24, 24, 27], fontSize: 7, textColor: 255 },
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
-      head: [['Document No.', 'Supplier', 'VAT Amount (PHP)', 'Transaction Date']],
+      head: [['Remarks', 'Supplier', 'Gross Amount (PHP)', 'VAT Exclusive (PHP)', 'VAT Amount (PHP)', 'Transaction Date']],
       body: displayTx.map((tr) => [
         tr.id,
         tr.supplier,
+        tr.grossAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
+        tr.vatExclusive.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
         tr.rawAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
         tr.date,
       ]),

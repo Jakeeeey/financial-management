@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   if (endDate)   query.set('endDate', endDate);
 
   const base      = SPRING_API_BASE_URL?.replace(/\/$/, '');
-  const targetUrl = `${base}/api/view-fm-reports-cwt/all${query.toString() ? `?${query}` : ''}`;
+  const targetUrl = `${base}/api/view-account-receivable/all${query.toString() ? `?${query}` : ''}`;
 
   try {
     const springRes = await fetch(targetUrl, {
@@ -40,14 +40,14 @@ export async function GET(request: NextRequest) {
     });
 
     if (!springRes.ok) {
-      console.error('[CWT] Upstream error:', springRes.status, springRes.statusText);
+      console.error('[AR] Upstream error:', springRes.status, springRes.statusText);
       return NextResponse.json({ ok: false, status: springRes.status }, { status: springRes.status });
     }
 
     const data = await springRes.json();
     return NextResponse.json(data);
   } catch (err: any) {
-    console.error('[CWT] Request failed:', err.message);
+    console.error('[AR] Request failed:', err.message);
     return NextResponse.json({ ok: false, error: 'Gateway Error' }, { status: 502 });
   }
 }

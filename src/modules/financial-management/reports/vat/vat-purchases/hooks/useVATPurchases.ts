@@ -30,13 +30,13 @@ interface UseVATPurchasesResult {
 const EMPTY_METRICS: VATMetrics = { totalVat: 0, avgVat: 0, highestVat: 0, count: 0 };
 
 export function useVATPurchases(): UseVATPurchasesResult {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null);
   const [transactions, setTransactions] = useState<VATTransaction[]>([]);
-  const [metrics, setMetrics] = useState<VATMetrics>(EMPTY_METRICS);
-  const [lineData, setLineData] = useState<VATChartPoint[]>([]);
-  const [pieData, setPieData] = useState<VATSupplierEntry[]>([]);
-  const [barData, setBarData] = useState<VATBarEntry[]>([]);
+  const [metrics, setMetrics]           = useState<VATMetrics>(EMPTY_METRICS);
+  const [lineData, setLineData]         = useState<VATChartPoint[]>([]);
+  const [pieData, setPieData]           = useState<VATSupplierEntry[]>([]);
+  const [barData, setBarData]           = useState<VATBarEntry[]>([]);
 
   useEffect(() => {
     async function fetchData() {
@@ -44,7 +44,13 @@ export function useVATPurchases(): UseVATPurchasesResult {
       setError(null);
       const toastId = toast.loading('Loading VAT Purchases data...');
       try {
-        const res = await fetch('/api/fm/reports/vat/vat-purchases', {
+        // Pass a wide range so all historical records are returned from the backend
+        const params = new URLSearchParams({
+          startDate: '2020-01-01',
+          endDate:   new Date().toISOString().split('T')[0],
+        });
+
+        const res = await fetch(`/api/fm/reports/vat/vat-purchases?${params}`, {
           cache: 'no-store',
           credentials: 'include',
         });
