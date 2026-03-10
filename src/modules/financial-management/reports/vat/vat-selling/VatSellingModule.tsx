@@ -202,7 +202,7 @@ export default function VatSellingModule() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">VAT Sales Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">Overview of VAT sales transactions and analytics</p>
+        <p className="text-sm text-muted-foreground mt-1">Detailed analysis of output VAT, sales trends, and tax contributions</p>
       </div>
 
       {/* Filter bar */}

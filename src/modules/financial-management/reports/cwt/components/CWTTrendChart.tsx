@@ -1,5 +1,5 @@
-// components/EWTTrendChart.tsx
-// Area chart showing monthly EWT trend over time.
+// components/CWTTrendChart.tsx
+// Area chart showing monthly CWT trend over time.
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -9,15 +9,15 @@ import { TrendingUp } from 'lucide-react';
 import { formatPeso } from '../utils';
 import type { TrendEntry } from '../types';
 
-interface EWTTrendChartProps {
+interface CWTTrendChartProps {
   data: TrendEntry[];
 }
 
-export function EWTTrendChart({ data }: EWTTrendChartProps) {
+export function CWTTrendChart({ data }: CWTTrendChartProps) {
   return (
     <Card className="shadow-none border-border">
       <CardHeader className="border-b border-border/50 pb-3 flex flex-row items-center justify-between">
-        <CardTitle className="text-sm font-bold">EWT Trend Analysis</CardTitle>
+        <CardTitle className="text-sm font-bold">CWT Trend Analysis</CardTitle>
         <span className="text-xs text-emerald-500 flex items-center gap-1 font-semibold">
           <TrendingUp className="w-3 h-3" /> Monthly Overview
         </span>
@@ -38,7 +38,7 @@ export function EWTTrendChart({ data }: EWTTrendChartProps) {
             <Area
               type="monotone"
               dataKey="amount"
-              name="EWT Amount"
+              name="CWT Amount"
               stroke="#6366f1"
               strokeWidth={2}
               fill="url(#ewtGradient)"

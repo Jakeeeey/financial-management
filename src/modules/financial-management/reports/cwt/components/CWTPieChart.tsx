@@ -1,5 +1,5 @@
-// components/EWTPieChart.tsx
-// Pie chart showing EWT distribution by customer, with a scrollable dropdown legend.
+// components/CWTPieChart.tsx
+// Pie chart showing CWT distribution by supplier, with a scrollable dropdown legend.
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
@@ -8,16 +8,16 @@ import type { PieEntry } from '../types';
 
 const COLORS = ['#6366f1', '#a855f7', '#ec4899', '#f97316', '#22c55e', '#06b6d4'];
 
-interface EWTPieChartProps {
+interface CWTPieChartProps {
   data: PieEntry[];
   totalAmount: number;
 }
 
-export function EWTPieChart({ data, totalAmount }: EWTPieChartProps) {
+export function CWTPieChart({ data, totalAmount }: CWTPieChartProps) {
   return (
     <Card className="shadow-none border-border">
       <CardHeader className="border-b border-border/50 pb-3">
-        <CardTitle className="text-sm font-bold">EWT Distribution by Customer</CardTitle>
+        <CardTitle className="text-sm font-bold">CWT Distribution by Supplier</CardTitle>
       </CardHeader>
       <CardContent className="pt-4">
         <ResponsiveContainer width="100%" height={300}>
@@ -57,7 +57,7 @@ export function EWTPieChart({ data, totalAmount }: EWTPieChartProps) {
         <div className="mt-3 border border-border rounded-lg overflow-hidden">
           <details className="group">
             <summary className="flex items-center justify-between px-4 py-2.5 cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors text-xs font-semibold select-none">
-              <span>View All Customers ({data.length})</span>
+              <span>View All Suppliers ({data.length})</span>
               <span className="group-open:rotate-180 transition-transform">▾</span>
             </summary>
             <div className="max-h-48 overflow-y-auto divide-y divide-border/40">

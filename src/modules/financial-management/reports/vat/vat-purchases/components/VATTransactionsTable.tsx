@@ -83,9 +83,11 @@ export function VATTransactionsTable({ transactions, page, setPage }: VATTransac
                 </TableCell>
               </TableRow>
             ) : (
-              paged.map((tr) => (
-                <TableRow key={tr.id} className="border-border/40 hover:bg-muted/20">
-                  <TableCell className="font-bold text-primary text-xs py-4 pl-6">{tr.id}</TableCell>
+              paged.map((tr, i) => (
+                <TableRow key={`${tr.id}-${i}`} className="border-border/40 hover:bg-muted/20">
+                  <TableCell className="font-bold text-primary text-xs py-4 pl-6">
+                    {tr.id && tr.id.trim() !== '' ? tr.id : <span className="text-muted-foreground font-normal">---</span>}
+                  </TableCell>
                   <TableCell className="text-xs font-medium py-4">{tr.supplier}</TableCell>
                   <TableCell className="text-xs py-4 text-right">{formatPeso(tr.grossAmount)}</TableCell>
                   <TableCell className="text-xs py-4 text-right">{formatPeso(tr.vatExclusive)}</TableCell>

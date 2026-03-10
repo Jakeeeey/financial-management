@@ -220,7 +220,7 @@ export default function AccountsReceivableModule() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Accounts Receivable Monitoring</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Overview of accounts receivable and outstanding balances
+          Tracking of outstanding balances, invoice aging, and collection performance by salesman
         </p>
       </div>
 

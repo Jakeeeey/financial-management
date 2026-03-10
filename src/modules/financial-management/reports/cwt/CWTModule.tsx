@@ -15,9 +15,9 @@ import {
 } from '@/components/ui/select';
 import { useCWT } from './hooks/useCWT';
 import { MetricCard } from './components/MetricCard';
-import { EWTPieChart } from './components/EWTPieChart';
-import { EWTTrendChart } from './components/EWTTrendChart';
-import { EWTBarChart } from './components/EWTBarChart';
+import { CWTPieChart } from './components/CWTPieChart';
+import { CWTTrendChart } from './components/CWTTrendChart';
+import { CWTBarChart } from './components/CWTBarChart';
 import { TransactionTable } from './components/TransactionTable';
 import { buildPieData, buildTrendData, buildBarData, formatDate } from './utils';
 import type { CWTMetrics } from './types';
@@ -171,8 +171,8 @@ export default function CWTModule() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Financial Management — CWT</h1>
-        <p className="text-sm text-muted-foreground mt-1">Creditable Withholding Tax Report</p>
+        <h1 className="text-2xl font-bold tracking-tight">Creditable Withholding Tax (CWT)</h1>
+        <p className="text-sm text-muted-foreground mt-1">Comprehensive analysis of tax credits, supplier distribution, and monthly trends</p>
       </div>
 
       {/* Filter bar */}
@@ -257,12 +257,12 @@ export default function CWTModule() {
 
       {/* Charts Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <EWTPieChart data={displayPieData} totalAmount={displayMetrics.totalAmount} />
-        <EWTTrendChart data={displayTrendData} />
+        <CWTPieChart data={displayPieData} totalAmount={displayMetrics.totalAmount} />
+        <CWTTrendChart data={displayTrendData} />
       </div>
 
       {/* Charts Row 2 */}
-      <EWTBarChart data={displayBarData} />
+      <CWTBarChart data={displayBarData} />
 
       {/* Table */}
       <TransactionTable records={displayRecords} page={page} setPage={setPage} />

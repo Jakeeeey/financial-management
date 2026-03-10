@@ -1,4 +1,4 @@
-// components/EWTBarChart.tsx
+// components/CWTBarChart.tsx
 // Dual-axis bar chart comparing EWT amount and transaction count per customer.
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,17 +9,17 @@ import { BarChart2 } from 'lucide-react';
 import { formatPeso } from '../utils';
 import type { BarEntry } from '../types';
 
-interface EWTBarChartProps {
+interface CWTBarChartProps {
   data: BarEntry[];
 }
 
-export function EWTBarChart({ data }: EWTBarChartProps) {
+export function CWTBarChart({ data }: CWTBarChartProps) {
   return (
     <Card className="shadow-none border-border">
       <CardHeader className="border-b border-border/50 pb-3 flex flex-row items-center justify-between">
-        <CardTitle className="text-sm font-bold">Customer-wise EWT Comparison</CardTitle>
+        <CardTitle className="text-sm font-bold">Supplier-wise CWT Comparison</CardTitle>
         <span className="text-xs text-purple-500 flex items-center gap-1 font-semibold">
-          <BarChart2 className="w-3 h-3" /> Top Customers
+          <BarChart2 className="w-3 h-3" /> Top Suppliers
         </span>
       </CardHeader>
       <CardContent className="pt-4 pb-2">
@@ -45,8 +45,8 @@ export function EWTBarChart({ data }: EWTBarChartProps) {
                         <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: p.fill }} />
                         <span className="text-muted-foreground">{p.name}:</span>
                         <span className="font-semibold text-foreground">
-                          {p.name === 'EWT Amount'
-                            ? formatPeso(p.value as number)
+                          {p.name === 'CWT Amount'
+                            ? formatPeso(Number(p.value ?? 0))
                             : `${p.value} transaction${(p.value as number) !== 1 ? 's' : ''}`}
                         </span>
                       </div>
@@ -55,7 +55,7 @@ export function EWTBarChart({ data }: EWTBarChartProps) {
                 );
               }}
             />
-            <Bar yAxisId="left" dataKey="amount" name="EWT Amount" fill="#a78bfa" radius={[4, 4, 0, 0]} maxBarSize={56} />
+            <Bar yAxisId="left" dataKey="amount" name="CWT Amount" fill="#a78bfa" radius={[4, 4, 0, 0]} maxBarSize={56} />
             <Bar yAxisId="right" dataKey="count" name="Transactions" fill="#f97316" radius={[4, 4, 0, 0]} maxBarSize={20} />
           </BarChart>
         </ResponsiveContainer>
@@ -64,7 +64,7 @@ export function EWTBarChart({ data }: EWTBarChartProps) {
         <div className="flex items-center gap-5 mt-2 pl-20">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: '#a78bfa' }} />
-            <span className="text-xs font-medium text-muted-foreground">EWT Amount</span>
+            <span className="text-xs font-medium text-muted-foreground">CWT Amount</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: '#f97316' }} />
