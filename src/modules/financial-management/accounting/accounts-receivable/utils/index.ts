@@ -30,38 +30,35 @@ export function transformInvoices(data: RawInvoiceRow[]): {
   const salesmanMap: Record<string, number> = {};
 
   const invoices: Invoice[] = data.map((row) => {
-    // ✅ Use actual API field names, fallback to aliases
-    // ✅ Coerce to number to prevent arithmetic errors on unknown properties
-    const netReceivable = Number(row.netReceivable ?? row.total ?? row.amount ?? 0);
-    const totalPaid = Number(row.totalPaid ?? row.paid ?? row.amountPaid ?? 0);
-    const outstanding = Number(row.outstandingBalance ?? row.outstanding ?? (netReceivable - totalPaid));
-    const overdue = Number(row.daysOverdue ?? 0) || null;
-    const branch = String(row.branch ?? row.branchName ?? 'Unknown');
-    const salesman = String(row.salesman ?? row.salesmanName ?? 'Unknown');
-    const due = String(row.calculatedDueDate ?? row.dueDate ?? row.due ?? '');
+    const netReceivable = Number(row.netReceivable ?? row.grossAmount ?? row.total ?? row.amount ?? 0);
+    const totalPaid     = Number(row.totalPaid ?? row.paid ?? row.amountPaid ?? 0);
+    const outstanding   = Number(row.outstandingBalance ?? row.outstanding ?? (netReceivable - totalPaid));
+    const daysOverdue   = row.daysOverdue != null ? Number(row.daysOverdue) : null;
+    const overdue       = daysOverdue;
+    const branch        = String(row.branch    ?? row.branchName   ?? 'Unknown');
+    const salesman      = String(row.salesman  ?? row.salesmanName ?? 'Unknown');
+    const due           = String(row.calculatedDueDate ?? row.dueDate ?? row.due ?? '');
 
     const status: Invoice['status'] =
-      outstanding === 0 ? 'Paid'
-        : overdue !== null && overdue > 0 ? 'Overdue'
-          : 'Due';
+      outstanding === 0                           ? 'Paid'
+      : daysOverdue != null && daysOverdue > 0    ? 'Overdue'
+      : 'Due';
 
-    // Aging buckets
-    if (overdue !== null) {
-      if (overdue <= 30) agingData[0].amount += outstanding;
-      else if (overdue <= 60) agingData[1].amount += outstanding;
-      else agingData[2].amount += outstanding;
-    }
+    const ageDays = daysOverdue ?? 0;
+    if (ageDays <= 30)      agingData[0].amount += outstanding;
+    else if (ageDays <= 60) agingData[1].amount += outstanding;
+    else                    agingData[2].amount += outstanding;
 
-    branchMap[branch] = (branchMap[branch] || 0) + outstanding;
+    branchMap[branch]     = (branchMap[branch]     || 0) + outstanding;
     salesmanMap[salesman] = (salesmanMap[salesman] || 0) + outstanding;
 
     return {
-      id: String(row.invoiceId ?? row.id ?? row.invoiceNo ?? ''),
-      invoiceNo: row.invoiceNo ?? row.invoice_number ?? '—',
-      orderId: row.orderId ?? '—',
-      customer: row.customerName ?? row.customer ?? row.client ?? '—',
-      customerCode: row.customerCode ?? '—',
-      invoiceDate: row.invoiceDate ?? '',
+      id:           String(row.invoiceId ?? row.id ?? row.invoiceNo ?? ''),
+      invoiceNo:    String(row.invoiceNo ?? row.invoice_number ?? '—'),
+      orderId:      String(row.orderId ?? '—'),
+      customer:     String(row.customerName ?? row.customer ?? row.client ?? '—'),
+      customerCode: String(row.customerCode ?? '—'),
+      invoiceDate:  String(row.invoiceDate ?? ''),
       due,
       netReceivable,
       totalPaid,
@@ -76,17 +73,33 @@ export function transformInvoices(data: RawInvoiceRow[]): {
   return { invoices, agingData, branchMap, salesmanMap };
 }
 
+/** Recalculate aging buckets from an already-transformed Invoice array (for filtered views) */
+export function deriveAgingData(invoices: Invoice[]): AgingBucket[] {
+  const buckets: AgingBucket[] = [
+    { range: '0-30 Days', amount: 0 },
+    { range: '30-60 Days', amount: 0 },
+    { range: '60+ Days', amount: 0 },
+  ];
+  invoices.forEach((inv) => {
+    const ageDays = inv.overdue ?? 0;
+    if (ageDays <= 30)      buckets[0].amount += inv.outstanding;
+    else if (ageDays <= 60) buckets[1].amount += inv.outstanding;
+    else                    buckets[2].amount += inv.outstanding;
+  });
+  return buckets;
+}
+
 /** Derive high-level AR metrics from invoice list */
 export function deriveMetrics(
   invoices: Invoice[],
   branchMap: Record<string, number>
 ): ARMetrics {
-  const totalReceivable = invoices.reduce((sum, inv) => sum + inv.netReceivable, 0);
+  const totalReceivable  = invoices.reduce((sum, inv) => sum + inv.netReceivable, 0);
   const totalOutstanding = Object.values(branchMap).reduce((sum, v) => sum + v, 0);
-  const overdueInvoices = invoices.filter((inv) => inv.status === 'Overdue');
+  const overdueInvoices  = invoices.filter((inv) => inv.overdue != null && inv.overdue > 0);
   const avgOverdue =
     overdueInvoices.length > 0
-      ? Math.round(overdueInvoices.reduce((sum, inv) => sum + (inv.overdue || 0), 0) / overdueInvoices.length)
+      ? Math.round(overdueInvoices.reduce((sum, inv) => sum + (inv.overdue ?? 0), 0) / overdueInvoices.length)
       : 0;
 
   return { totalReceivable, totalOutstanding, overdueInvoices, avgOverdue };

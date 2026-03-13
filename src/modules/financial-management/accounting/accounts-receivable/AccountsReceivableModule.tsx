@@ -6,10 +6,10 @@ import autoTable from 'jspdf-autotable';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AlertCircle, Clock, PhilippinePeso, X, Download } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { AlertCircle, Clock, PhilippinePeso, X, Download } from 'lucide-react';
 import { useAccountsReceivable } from './hooks/useAccountsReceivable';
 import { MetricCard } from './components/MetricCard';
 import { AgingChart } from './components/AgingChart';
@@ -17,17 +17,17 @@ import { SalesmanChart } from './components/SalesmanChart';
 import { BranchProgressList } from './components/BranchprogressList';
 import { InvoiceTable } from './components/InvoiceTable';
 import { CustomerOutstandingChart } from './components/CustomerOutstandingChart';
-import { deriveMetrics, mapToSortedArray } from './utils';
+import { deriveMetrics, mapToSortedArray, deriveAgingData } from './utils';
 
 export default function AccountsReceivableModule() {
   const { loading, error, invoices, agingData, branchData, salesmanData, metrics } =
     useAccountsReceivable();
 
-  const [page, setPage] = useState(1);
+  const [page, setPage]         = useState(1);
   const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateTo, setDateTo]     = useState('');
   const [customer, setCustomer] = useState('');
-  const [branch, setBranch] = useState('');
+  const [branch, setBranch]     = useState('');
   const [salesman, setSalesman] = useState('');
 
   const customerOptions = useMemo(
@@ -45,11 +45,13 @@ export default function AccountsReceivableModule() {
 
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
-      if (dateFrom && new Date(inv.invoiceDate) < new Date(dateFrom)) return false;
-      if (dateTo && new Date(inv.invoiceDate) > new Date(dateTo)) return false;
+      // Strip time component — invoiceDate may be "2025-11-29 17:58:02"
+      const invDate = inv.invoiceDate ? inv.invoiceDate.split(' ')[0] : '';
+      if (dateFrom && invDate && invDate < dateFrom) return false;
+      if (dateTo   && invDate && invDate > dateTo)   return false;
       if (customer && inv.customer !== customer) return false;
-      if (branch && inv.branch !== branch) return false;
-      if (salesman && inv.salesman !== salesman) return false;
+      if (branch   && inv.branch   !== branch)   return false;
+      if (salesman && inv.salesman !== salesman)  return false;
       return true;
     });
   }, [invoices, dateFrom, dateTo, customer, branch, salesman]);
@@ -103,7 +105,11 @@ export default function AccountsReceivableModule() {
       .slice(0, 6);
   }, [filteredSalesmanMap, isFiltered, salesmanData]);
 
-  const displayInvoices = isFiltered ? filteredInvoices : invoices;
+  const displayInvoices  = isFiltered ? filteredInvoices : invoices;
+  const displayAgingData = useMemo(
+    () => isFiltered ? deriveAgingData(filteredInvoices) : agingData,
+    [filteredInvoices, isFiltered, agingData]
+  );
   const { totalReceivable, totalOutstanding, overdueInvoices, avgOverdue } = filteredMetrics;
 
   const clearFilters = () => {
@@ -111,7 +117,7 @@ export default function AccountsReceivableModule() {
   };
 
   const exportToPDF = () => {
-    const doc = new jsPDF({ orientation: 'landscape' });
+    const doc   = new jsPDF({ orientation: 'landscape', format: 'a3' });
     const pageW = doc.internal.pageSize.getWidth();
     const total = filteredMetrics.totalReceivable;
     const formattedTotal = `PHP ${total.toLocaleString('en-PH', {
@@ -123,30 +129,30 @@ export default function AccountsReceivableModule() {
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(20, 20, 20);
-    doc.text('Accounts Receivable Report (Men2 Corp)', 14, 16);
+    doc.text('Accounts Receivable Report (Men2 Corp)', 10, 16);
 
     // ── Total top-right ────────────────────────────────────────────────────
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    const totalLabel = `Grand Total: ${formattedTotal}`;
-    const totalLabelX = Math.max(pageW / 2, pageW - 14 - doc.getTextWidth(totalLabel));
+    const totalLabel  = `Grand Total: ${formattedTotal}`;
+    const totalLabelX = Math.max(pageW / 2, pageW - 10 - doc.getTextWidth(totalLabel));
     doc.text(totalLabel, totalLabelX, 16);
 
     // ── Divider ────────────────────────────────────────────────────────────
     doc.setDrawColor(180, 180, 180);
     doc.setLineWidth(0.3);
-    doc.line(14, 20, pageW - 14, 20);
+    doc.line(10, 20, pageW - 10, 20);
 
     // ── Filter summary ─────────────────────────────────────────────────────
     doc.setFontSize(7.5);
     doc.setTextColor(120, 120, 120);
     doc.text(
       `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Customer: ${customer || 'All'}   Branch: ${branch || 'All'}   Salesman: ${salesman || 'All'}`,
-      14, 26
+      10, 26
     );
     doc.text(
       `Exported: ${new Date().toLocaleString('en-PH')}   Total Records: ${displayInvoices.length}`,
-      14, 31
+      10, 31
     );
     doc.setTextColor(0);
 
@@ -156,34 +162,49 @@ export default function AccountsReceivableModule() {
       headStyles: { fillColor: [24, 24, 27], fontSize: 7, textColor: 255 },
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
+      columnStyles: {
+        0:  { cellWidth: 30 },  // Invoice No.
+        1:  { cellWidth: 34 },  // Order ID
+        2:  { cellWidth: 60 },  // Customer
+        3:  { cellWidth: 26 },  // Inv. Date
+        4:  { cellWidth: 26 },  // Due Date
+        5:  { cellWidth: 30 },  // Net Recv.
+        6:  { cellWidth: 26 },  // Total Paid
+        7:  { cellWidth: 32 },  // Outstanding
+        8:  { cellWidth: 20 },  // Days OD
+        9:  { cellWidth: 38 },  // Branch
+        10: { cellWidth: 42 },  // Salesman
+        11: { cellWidth: 22 },  // Status
+      },
       head: [[
-        'Invoice No.', 'Order ID', 'Customer', 'Invoice Date', 'Due Date',
-        'Net Recv. (PHP)', 'Total Paid', 'Ou ts. Balance (PHP)',
-        'Days OD.', 'Branch', 'Salesman', 'Status',
+        'Invoice No.', 'Order ID', 'Customer', 'Inv. Date', 'Due Date',
+        'Net Recv. (PHP)', 'Total Paid', 'Outstanding (PHP)',
+        'Days OD', 'Branch', 'Salesman', 'Status',
       ]],
       body: displayInvoices.map((inv) => [
         inv.invoiceNo,
         inv.orderId,
         inv.customer,
-        inv.invoiceDate,
-        inv.due,
-        inv.netReceivable?.toFixed(2) ?? '',
-        inv.totalPaid?.toFixed(2) ?? '',
-        inv.outstanding?.toFixed(2) ?? '',
+        (inv.invoiceDate ?? '').split(' ')[0],
+        (inv.due ?? '').split(' ')[0],
+        inv.netReceivable?.toLocaleString('en-PH', { minimumFractionDigits: 2 }) ?? '',
+        inv.totalPaid?.toLocaleString('en-PH', { minimumFractionDigits: 2 }) ?? '',
+        inv.outstanding?.toLocaleString('en-PH', { minimumFractionDigits: 2 }) ?? '',
         inv.overdue ?? '',
         inv.branch,
         inv.salesman,
         inv.status,
       ]),
-      margin: { left: 14, right: 14 },
+      margin: { left: 10, right: 10 },
+      tableWidth: 'auto',
     });
 
     // ── Grand Total box ────────────────────────────────────────────────────
     const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY ?? 36;
-    const boxW = 110;
-    const boxH = 12;
-    const boxX = pageW - 14 - boxW;
-    const boxY = finalY + 6;
+    const boxW   = 110;
+    const boxH   = 12;
+    const boxX   = pageW - 14 - boxW;
+    const boxY   = finalY + 6;
 
     doc.setFillColor(24, 24, 27);
     doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, 'F');
@@ -220,7 +241,7 @@ export default function AccountsReceivableModule() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Accounts Receivable Monitoring</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Tracking of outstanding balances, invoice aging, and collection performance by salesman
+          Overview of accounts receivable and outstanding balances
         </p>
       </div>
 
@@ -342,14 +363,14 @@ export default function AccountsReceivableModule() {
 
       {/* ── Charts Row 1 ── */}
       <div className="grid gap-4 md:grid-cols-2 min-w-0 w-full">
-        <AgingChart data={agingData} />
-        <SalesmanChart data={displaySalesmanData} />
+        <AgingChart data={displayAgingData} isFiltered={isFiltered} />
+        <SalesmanChart data={displaySalesmanData} isFiltered={isFiltered} />
       </div>
 
       {/* ── Charts Row 2 ── */}
       <div className="grid gap-4 md:grid-cols-2 min-w-0 w-full">
-        <CustomerOutstandingChart data={customerData} />
-        <BranchProgressList data={displayBranchData} />
+        <CustomerOutstandingChart data={customerData} isFiltered={isFiltered} />
+        <BranchProgressList data={displayBranchData} isFiltered={isFiltered} />
       </div>
 
       {/* ── Table ── */}
