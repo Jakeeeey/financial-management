@@ -362,7 +362,7 @@ export default function EditAssetModal({
                     <FormItem>
                       <FormLabel>Security Tag</FormLabel>
                       <Select
-                        onValueChange={(val: any) => field.onChange(Number(val))}
+                        onValueChange={(val: string) => field.onChange(Number(val))}
                         value={field.value?.toString() ?? "0"}
                       >
                         <FormControl>

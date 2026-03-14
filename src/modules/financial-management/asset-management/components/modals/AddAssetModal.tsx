@@ -780,7 +780,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <FormItem>
                       <FormLabel>Security Tag</FormLabel>
                       <Select
-                        onValueChange={(val: any) =>
+                        onValueChange={(val: string) =>
                           field.onChange(Number(val))
                         }
                         value={field.value?.toString() ?? "0"}
@@ -808,7 +808,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <FormItem className="flex flex-col flex-1">
                       <FormLabel>Department *</FormLabel>
                       <Select
-                        onValueChange={(val: any) =>
+                        onValueChange={(val: string) =>
                           field.onChange(Number(val))
                         }
                         value={field.value > 0 ? field.value.toString() : ""}
@@ -840,7 +840,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <FormItem className="flex flex-col flex-1">
                       <FormLabel>Assigned To</FormLabel>
                       <Select
-                        onValueChange={(val: any) =>
+                        onValueChange={(val: string) =>
                           field.onChange(val === "none" ? null : Number(val))
                         }
                         value={field.value ? field.value.toString() : "none"}
