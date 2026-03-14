@@ -255,7 +255,10 @@ export default function EditAssetModal({
                     <Image
                       src={previewUrl}
                       alt="Preview"
-                      fill className="object-contain"
+                      width={400}
+                      height={200}
+                      className="object-contain"
+                      unoptimized
                     />
                     <Button
                       type="button"
@@ -359,7 +362,7 @@ export default function EditAssetModal({
                     <FormItem>
                       <FormLabel>Security Tag</FormLabel>
                       <Select
-                        onValueChange={(val) => field.onChange(Number(val))}
+                        onValueChange={(val: any) => field.onChange(Number(val))}
                         value={field.value?.toString() ?? "0"}
                       >
                         <FormControl>

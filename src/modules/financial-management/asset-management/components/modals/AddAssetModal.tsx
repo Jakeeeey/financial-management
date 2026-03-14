@@ -1,8 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import Image from "next/image";
 import imageCompression from "browser-image-compression";
+import Image from "next/image";
 import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -14,10 +14,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
-import { cn } from "../../utils/lib";
 import { format } from "date-fns";
 import {
-  CalendarIcon,
   Check,
   ChevronsUpDown,
   Loader2,
@@ -25,6 +23,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
+import { cn } from "../../utils/lib";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -257,7 +256,9 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
       onSuccess();
     } catch (error: unknown) {
       console.error("Asset creation error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to save asset");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save asset",
+      );
     } finally {
       setLoading(false);
     }
@@ -322,7 +323,10 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <Image
                       src={previewUrl}
                       alt="Preview"
-                      fill className="object-contain"
+                      width={400}
+                      height={200}
+                      className="object-contain"
+                      unoptimized
                     />
                     <Button
                       type="button"
@@ -422,8 +426,11 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                                         .toLowerCase()
                                         .includes(itemNameSearch.toLowerCase()),
                                     )
-                                    .map((item) => [item.item_name.toLowerCase(), item])
-                                ).values()
+                                    .map((item) => [
+                                      item.item_name.toLowerCase(),
+                                      item,
+                                    ]),
+                                ).values(),
                               )
                                 .slice(0, 10) // Limit suggestions
                                 .map((item) => (
@@ -599,7 +606,10 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Classification *</FormLabel>
-                      <Popover open={classificationOpen} onOpenChange={setClassificationOpen}>
+                      <Popover
+                        open={classificationOpen}
+                        onOpenChange={setClassificationOpen}
+                      >
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
@@ -770,7 +780,9 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <FormItem>
                       <FormLabel>Security Tag</FormLabel>
                       <Select
-                        onValueChange={(val) => field.onChange(Number(val))}
+                        onValueChange={(val: any) =>
+                          field.onChange(Number(val))
+                        }
                         value={field.value?.toString() ?? "0"}
                       >
                         <FormControl>
@@ -796,7 +808,9 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <FormItem className="flex flex-col flex-1">
                       <FormLabel>Department *</FormLabel>
                       <Select
-                        onValueChange={(val) => field.onChange(Number(val))}
+                        onValueChange={(val: any) =>
+                          field.onChange(Number(val))
+                        }
                         value={field.value > 0 ? field.value.toString() : ""}
                       >
                         <FormControl>
@@ -826,7 +840,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <FormItem className="flex flex-col flex-1">
                       <FormLabel>Assigned To</FormLabel>
                       <Select
-                        onValueChange={(val) =>
+                        onValueChange={(val: any) =>
                           field.onChange(val === "none" ? null : Number(val))
                         }
                         value={field.value ? field.value.toString() : "none"}
