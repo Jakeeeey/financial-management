@@ -51,7 +51,7 @@ export default function DeliveryTermsFormDialog(props: {
         } else {
           setNameError("");
         }
-      } catch (e) {
+      } catch {
         setNameError("");
       } finally {
         setIsCheckingName(false);
