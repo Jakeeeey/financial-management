@@ -266,12 +266,12 @@ const data = {
             },
             {
               title: "Delivery Terms",
-              url: "#",
+              url: "/fm/supplier-management/delivery-terms",
               icon: CalendarClock,
             },
             {
               title: "Payment Terms",
-              url: "#",
+              url: "/fm/supplier-management/payment-terms",
               icon: CreditCard,
             },
             {
