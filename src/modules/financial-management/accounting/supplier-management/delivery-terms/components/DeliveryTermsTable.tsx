@@ -1,0 +1,143 @@
+"use client";
+
+import * as React from "react";
+import type { DeliveryTermRow } from "../types";
+import * as api from "../providers/fetchProvider";
+
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function UserCell({ userId }: { userId: number | null }) {
+  const [userName, setUserName] = React.useState<string>("-");
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!userId) {
+      console.log("⚠️  UserCell: userId is null or 0");
+      setUserName("-");
+      setLoading(false);
+      return;
+    }
+
+    console.log(`🔄 UserCell: Loading user info for userId=${userId}`);
+
+    const loadUser = async () => {
+      try {
+        console.log(`🔄 UserCell: Calling fetchUserInfo for userId=${userId}`);
+        const user = await api.fetchUserInfo(userId);
+        console.log(`✅ UserCell: Received user data:`, user);
+        
+        const displayName = api.getUserDisplayName(user);
+        console.log(`✅ UserCell: displayName="${displayName}"`);
+        
+        setUserName(displayName);
+      } catch (e) {
+        console.error(`❌ UserCell: Error loading user:`, e);
+        setUserName("-");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUser();
+  }, [userId]);
+
+  if (loading) {
+    return <Skeleton className="h-4 w-[100px]" />;
+  }
+
+  return userName;
+}
+
+export default function DeliveryTermsTable(props: {
+  rows: DeliveryTermRow[];
+  loading: boolean;
+  onEdit: (row: DeliveryTermRow) => void;
+}) {
+  const { rows, loading, onEdit } = props;
+
+  return (
+    <div className="w-full overflow-hidden rounded-md border bg-background">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[60px]">No.</TableHead>
+            <TableHead className="w-[280px]">Name</TableHead>
+            <TableHead className="flex-1">Description</TableHead>
+            <TableHead className="w-[160px]">Created By</TableHead>
+            <TableHead className="w-[160px]">Updated By</TableHead>
+            <TableHead className="w-[100px] text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
+          {loading ? (
+            Array.from({ length: 10 }).map((_, i) => (
+              <TableRow key={`sk-${i}`}>
+                <TableCell>
+                  <Skeleton className="h-4 w-6" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-4 w-[220px]" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-4 w-[300px]" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-4 w-[100px]" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-4 w-[100px]" />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Skeleton className="ml-auto h-8 w-20" />
+                </TableCell>
+              </TableRow>
+            ))
+          ) : rows.length === 0 ? (
+            <TableRow>
+              <TableCell
+                colSpan={6}
+                className="py-10 text-center text-sm text-muted-foreground"
+              >
+                No delivery terms found.
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((r) => (
+              <TableRow key={r.id} className="hover:bg-muted/30">
+                <TableCell className="font-medium text-sm">{r.id}</TableCell>
+                <TableCell className="font-medium">{r.delivery_name}</TableCell>
+                <TableCell className="text-sm">{r.delivery_description || "-"}</TableCell>
+                <TableCell className="text-sm">
+                  <UserCell userId={typeof r.created_by === "number" ? r.created_by : null} />
+                </TableCell>
+                <TableCell className="text-sm">
+                  <UserCell userId={typeof r.updated_by === "number" ? r.updated_by : null} />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="cursor-pointer"
+                    onClick={() => onEdit(r)}
+                  >
+                    Edit
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
