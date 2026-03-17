@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import {
   Command,
   CommandEmpty,
@@ -45,7 +46,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { cn } from "../../utils/lib";
 import {
   assetFormSchema,
   AssetFormValues,
@@ -55,8 +55,10 @@ import {
   ItemType,
   User,
 } from "@/modules/financial-management/asset-management/types";
+import { format } from "date-fns";
 import { Check, ChevronsUpDown, Loader2, UploadCloud, X } from "lucide-react";
 import { assetService } from "../../services/assetService";
+import { cn } from "../../utils/lib";
 
 interface EditAssetModalProps {
   isOpen: boolean;
@@ -81,6 +83,13 @@ export default function EditAssetModal({
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Popover states to auto-close upon selection
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [classificationOpen, setClassificationOpen] = useState(false);
+  const [departmentOpen, setDepartmentOpen] = useState(false);
+  const [employeeOpen, setEmployeeOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
 
   const form = useForm<AssetFormValues>({
     resolver: zodResolver(assetFormSchema),
@@ -246,7 +255,10 @@ export default function EditAssetModal({
                     <Image
                       src={previewUrl}
                       alt="Preview"
-                      fill className="object-contain"
+                      width={400}
+                      height={200}
+                      className="object-contain"
+                      unoptimized
                     />
                     <Button
                       type="button"
@@ -350,7 +362,7 @@ export default function EditAssetModal({
                     <FormItem>
                       <FormLabel>Security Tag</FormLabel>
                       <Select
-                        onValueChange={(val) => field.onChange(Number(val))}
+                        onValueChange={(val: string) => field.onChange(Number(val))}
                         value={field.value?.toString() ?? "0"}
                       >
                         <FormControl>
@@ -378,7 +390,7 @@ export default function EditAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Item Type *</FormLabel>
-                    <Popover>
+                    <Popover open={typeOpen} onOpenChange={setTypeOpen}>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
@@ -400,9 +412,10 @@ export default function EditAssetModal({
                                 <CommandItem
                                   key={t.id}
                                   value={t.type_name}
-                                  onSelect={(val) =>
-                                    form.setValue("item_type", val)
-                                  }
+                                  onSelect={(val) => {
+                                    form.setValue("item_type", val);
+                                    setTypeOpen(false);
+                                  }}
                                 >
                                   <Check
                                     className={cn(
@@ -431,7 +444,7 @@ export default function EditAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Classification *</FormLabel>
-                    <Popover>
+                    <Popover open={classificationOpen} onOpenChange={setClassificationOpen}>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
@@ -455,9 +468,10 @@ export default function EditAssetModal({
                                 <CommandItem
                                   key={c.id}
                                   value={c.classification_name}
-                                  onSelect={(val) =>
-                                    form.setValue("item_classification", val)
-                                  }
+                                  onSelect={(val) => {
+                                    form.setValue("item_classification", val);
+                                    setClassificationOpen(false);
+                                  }}
                                 >
                                   <Check
                                     className={cn(
@@ -481,7 +495,7 @@ export default function EditAssetModal({
             </div>
 
             {/* ASSIGNMENT SECTION */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Department */}
               <FormField
                 control={form.control}
@@ -489,7 +503,7 @@ export default function EditAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Department</FormLabel>
-                    <Popover>
+                    <Popover open={departmentOpen} onOpenChange={setDepartmentOpen}>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
@@ -512,9 +526,10 @@ export default function EditAssetModal({
                                 <CommandItem
                                   key={d.department_id}
                                   value={d.department_name}
-                                  onSelect={() =>
-                                    form.setValue("department", d.department_id)
-                                  }
+                                  onSelect={() => {
+                                    form.setValue("department", d.department_id);
+                                    setDepartmentOpen(false);
+                                  }}
                                 >
                                   <Check
                                     className={cn(
@@ -543,7 +558,7 @@ export default function EditAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Assigned To</FormLabel>
-                    <Popover>
+                    <Popover open={employeeOpen} onOpenChange={setEmployeeOpen}>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
@@ -566,9 +581,10 @@ export default function EditAssetModal({
                                 <CommandItem
                                   key={u.user_id}
                                   value={`${u.user_fname} ${u.user_lname}`}
-                                  onSelect={() =>
-                                    form.setValue("employee", u.user_id)
-                                  }
+                                  onSelect={() => {
+                                    form.setValue("employee", u.user_id);
+                                    setEmployeeOpen(false);
+                                  }}
                                 >
                                   <Check
                                     className={cn(
@@ -586,6 +602,52 @@ export default function EditAssetModal({
                         </Command>
                       </PopoverContent>
                     </Popover>
+                  </FormItem>
+                )}
+              />
+
+              {/* Date Acquired */}
+              <FormField
+                control={form.control}
+                name="date_acquired"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Date Acquired</FormLabel>
+                    <Popover open={dateOpen} onOpenChange={setDateOpen}>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-between h-10 font-normal",
+                              !field.value && "text-muted-foreground",
+                            )}
+                          >
+                            {field.value ? (
+                              format(field.value, "PPP")
+                            ) : (
+                              <span>Pick date</span>
+                            )}
+                            {/* <CalendarIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" /> */}
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={field.value}
+                          onSelect={(date) => {
+                            if (date) {
+                              field.onChange(date);
+                              setDateOpen(false);
+                            }
+                          }}
+                          disabled={(date) => date > new Date()}
+                          autoFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <FormMessage />
                   </FormItem>
                 )}
               />
