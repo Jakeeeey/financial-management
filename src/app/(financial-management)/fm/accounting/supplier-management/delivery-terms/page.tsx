@@ -8,12 +8,12 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { NavUser } from "../../_components/nav-user";
+import { NavUser } from "../../../_components/nav-user";
 
 import { cookies } from "next/headers";
 
 // ✅ Wire the module you asked for
-import ComingSoon from "../../_components/ComingSoon";
+import ComingSoon from "../../../_components/ComingSoon";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
