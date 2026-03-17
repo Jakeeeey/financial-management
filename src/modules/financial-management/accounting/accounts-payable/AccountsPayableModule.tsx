@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { PhilippinePeso, AlertTriangle, TrendingDown, FileText, X, Download } from 'lucide-react';
+import { PhilippinePeso, TrendingDown, FileText, X, Download } from 'lucide-react';
 import { useAccountsPayable } from './hooks/useAccountsPayable';
 import { MetricCard }       from './components/MetricCard';
 import { APAgingChart }     from './components/APAgingChart';
@@ -54,11 +54,11 @@ export default function AccountsPayableModule() {
     });
   }, [records, dateFrom, dateTo, supplier, status, isFiltered]);
 
-  const displayRecords     = isFiltered ? filteredRecords : records;
-  const displayMetrics     = useMemo(() => isFiltered ? deriveMetrics(filteredRecords)       : metrics,      [filteredRecords, isFiltered, metrics]);
-  const displayAgingData   = useMemo(() => isFiltered ? buildAgingBuckets(filteredRecords)   : agingData,    [filteredRecords, isFiltered, agingData]);
-  const displaySupplierData= useMemo(() => isFiltered ? buildSupplierData(filteredRecords)   : supplierData, [filteredRecords, isFiltered, supplierData]);
-  const displayStatusData  = useMemo(() => isFiltered ? buildStatusData(filteredRecords)     : statusData,   [filteredRecords, isFiltered, statusData]);
+  const displayRecords      = isFiltered ? filteredRecords : records;
+  const displayMetrics      = useMemo(() => isFiltered ? deriveMetrics(filteredRecords)       : metrics,      [filteredRecords, isFiltered, metrics]);
+  const displayAgingData    = useMemo(() => isFiltered ? buildAgingBuckets(filteredRecords)   : agingData,    [filteredRecords, isFiltered, agingData]);
+  const displaySupplierData = useMemo(() => isFiltered ? buildSupplierData(filteredRecords)   : supplierData, [filteredRecords, isFiltered, supplierData]);
+  const displayStatusData   = useMemo(() => isFiltered ? buildStatusData(filteredRecords)     : statusData,   [filteredRecords, isFiltered, statusData]);
 
   const clearFilters = () => {
     setDateFrom(''); setDateTo(''); setSupplier(''); setStatus(''); setPage(1);
