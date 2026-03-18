@@ -66,10 +66,12 @@ function buildDeliveryTermsListQuery(req: NextRequest) {
 
   const offset = (page - 1) * pageSize;
 
+  // Ensure newest items appear at the top. 
+  // We sort by created_at first so new items (which might have null updated_at) don't sink to the bottom.
   const params = new URLSearchParams();
   params.set("limit", String(pageSize));
   params.set("offset", String(offset));
-  params.set("sort", "-updated_at");
+  params.set("sort", "-created_at,-updated_at");
   params.set("meta", "filter_count,total_count");
 
   params.set(

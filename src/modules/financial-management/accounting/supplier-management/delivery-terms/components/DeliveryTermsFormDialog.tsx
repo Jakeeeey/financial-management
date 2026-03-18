@@ -128,12 +128,12 @@ export default function DeliveryTermsFormDialog(props: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg overflow-hidden">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-hidden">
           <div className="space-y-2">
             <label className="text-sm font-medium">
               Delivery Name <span className="text-destructive">*</span>
@@ -149,13 +149,13 @@ export default function DeliveryTermsFormDialog(props: {
             )}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 w-full">
             <label className="text-sm font-medium">Description</label>
             <Textarea
               value={deliveryDescription}
               onChange={(e) => setDeliveryDescription(e.target.value)}
               placeholder="Enter description (optional)..."
-              className="min-h-[100px]"
+              className="min-h-[100px] max-h-[300px] w-full resize-none overflow-hidden overflow-y-auto break-words whitespace-pre-wrap"
             />
           </div>
 

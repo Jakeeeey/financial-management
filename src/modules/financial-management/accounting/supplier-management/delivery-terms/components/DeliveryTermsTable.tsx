@@ -61,8 +61,9 @@ export default function DeliveryTermsTable(props: {
   rows: DeliveryTermRow[];
   loading: boolean;
   onEdit: (row: DeliveryTermRow) => void;
+  onView: (row: DeliveryTermRow) => void;
 }) {
-  const { rows, loading, onEdit } = props;
+  const { rows, loading, onEdit, onView } = props;
 
   return (
     <div className="w-full overflow-hidden rounded-md border bg-background">
@@ -113,10 +114,14 @@ export default function DeliveryTermsTable(props: {
             </TableRow>
           ) : (
             rows.map((r) => (
-              <TableRow key={r.id} className="hover:bg-muted/30">
-                <TableCell className="font-medium text-sm">{r.id}</TableCell>
-                <TableCell className="font-medium">{r.delivery_name}</TableCell>
-                <TableCell className="text-sm">{r.delivery_description || "-"}</TableCell>
+              <TableRow key={r.id} className="hover:bg-primary/5 transition-colors group">
+                <TableCell className="font-medium text-sm group-hover:text-primary transition-colors">{r.id}</TableCell>
+                <TableCell className="font-medium truncate max-w-[200px] group-hover:text-primary transition-colors" title={r.delivery_name}>
+                  {r.delivery_name}
+                </TableCell>
+                <TableCell className="text-sm truncate max-w-[300px] group-hover:text-primary transition-colors" title={r.delivery_description || ""}>
+                  {r.delivery_description || "-"}
+                </TableCell>
                 <TableCell className="text-sm">
                   <UserCell userId={typeof r.created_by === "number" ? r.created_by : null} />
                 </TableCell>
@@ -124,14 +129,24 @@ export default function DeliveryTermsTable(props: {
                   <UserCell userId={typeof r.updated_by === "number" ? r.updated_by : null} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="cursor-pointer"
-                    onClick={() => onEdit(r)}
-                  >
-                    Edit
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="cursor-pointer hover:border-primary hover:text-primary hover:bg-primary/10 transition-colors"
+                      onClick={() => onView(r)}
+                    >
+                      View
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="cursor-pointer hover:border-primary hover:text-primary hover:bg-primary/10 transition-colors"
+                      onClick={() => onEdit(r)}
+                    >
+                      Edit
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))
