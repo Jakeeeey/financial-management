@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -127,13 +127,17 @@ export default function PaymentTermsModule({ currentUserId }: PaymentTermsModule
 
   return (
     <div className="space-y-4">
-      {/* Header: title + add button aligned */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Payment Terms</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage payment terms{terms.length ? ` — ${terms.length} total` : ""}
-          </p>
+        <div className="flex items-center gap-3 pb-5">
+          <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
+            <WalletCards className="h-7 w-7 text-primary" aria-hidden="true" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight">Payment Terms</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Manage payment terms{terms.length ? ` — ${terms.length} total` : ""}
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center">
