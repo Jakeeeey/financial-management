@@ -91,10 +91,10 @@ export function PaymentTermsTable({ terms, isLoading, onEdit, searchQuery = "" }
       cell: ({ row }) => {
         const paymentTerm = row.original;
         return (
-          <div className="flex justify-end">
+          <div className="flex justify-end relative z-10">
             <Button
               variant="ghost"
-              className="h-8 w-8 p-0"
+              className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary transition-colors"
               onClick={() => onEdit(paymentTerm)}
               aria-label={`Edit ${paymentTerm.name}`}
             >
@@ -159,7 +159,7 @@ export function PaymentTermsTable({ terms, isLoading, onEdit, searchQuery = "" }
 
   return (
     <div className="rounded-md border">
-      <Table className="table-auto">
+      <Table className="table-auto group/table">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -187,21 +187,23 @@ export function PaymentTermsTable({ terms, isLoading, onEdit, searchQuery = "" }
         <TableBody>
           {table.getRowModel().rows?.length ? (
             table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
+              <TableRow key={row.id} className="group/row hover:bg-muted/50 transition-colors">
                 {row.getVisibleCells().map((cell) => (
                   <TableCell
                     key={cell.id}
-                    className={
+                    className={`group/cell ${
                       cell.column.id === "actions"
                         ? "text-right min-w-[48px]"
                         : cell.column.id === "no"
                         ? "text-left min-w-[48px]"
                         : cell.column.id === "description"
                         ? "max-w-[40ch]"
-                        : undefined
-                    }
+                        : ""
+                    }`}
                   >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    <div className="group-hover/cell:text-primary transition-colors">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </div>
                   </TableCell>
                 ))}
               </TableRow>

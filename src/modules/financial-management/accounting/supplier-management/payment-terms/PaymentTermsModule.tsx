@@ -13,12 +13,17 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PaymentTermsTable } from "./components/PaymentTermsTable";
 import { AddPaymentTermDialog } from "./components/AddPaymentTermDialog";
 import { EditPaymentTermDialog } from "./components/EditPaymentTermDialog"; // Import the Edit Dialog
 import type { PaymentTerm } from "./types"; // Ensure you import your type
-
-const PAGE_SIZE = 10;
 
 function getPageNumbers(currentPage: number, totalPages: number) {
   if (totalPages <= 5) {
@@ -46,6 +51,7 @@ export default function PaymentTermsModule({ currentUserId }: PaymentTermsModule
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   
   // 1. Add state to hold the term currently being edited
   const [termToEdit, setTermToEdit] = useState<PaymentTerm | null>(null);
@@ -106,14 +112,14 @@ export default function PaymentTermsModule({ currentUserId }: PaymentTermsModule
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, sortOrder]);
+  }, [searchQuery, sortOrder, pageSize]);
 
-  const totalPages = Math.max(1, Math.ceil(tableTerms.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(tableTerms.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const paginatedTerms = useMemo(() => {
-    const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
-    return tableTerms.slice(startIndex, startIndex + PAGE_SIZE);
-  }, [safeCurrentPage, tableTerms]);
+    const startIndex = (safeCurrentPage - 1) * pageSize;
+    return tableTerms.slice(startIndex, startIndex + pageSize);
+  }, [safeCurrentPage, tableTerms, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -121,8 +127,8 @@ export default function PaymentTermsModule({ currentUserId }: PaymentTermsModule
     }
   }, [currentPage, totalPages]);
 
-  const startItem = tableTerms.length === 0 ? 0 : (safeCurrentPage - 1) * PAGE_SIZE + 1;
-  const endItem = tableTerms.length === 0 ? 0 : Math.min(safeCurrentPage * PAGE_SIZE, tableTerms.length);
+  const startItem = tableTerms.length === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
+  const endItem = tableTerms.length === 0 ? 0 : Math.min(safeCurrentPage * pageSize, tableTerms.length);
   const pageNumbers = getPageNumbers(safeCurrentPage, totalPages);
 
   return (
@@ -180,14 +186,34 @@ export default function PaymentTermsModule({ currentUserId }: PaymentTermsModule
       />
 
       {!isLoading && tableTerms.length > 0 ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">
             Showing {startItem} to {endItem} of {tableTerms.length} payment terms
           </p>
 
-          {totalPages > 1 ? (
-            <Pagination className="mx-0 w-auto justify-start sm:justify-end">
-              <PaginationContent>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium">Rows per page</p>
+              <Select
+                value={pageSize.toString()}
+                onValueChange={(value) => setPageSize(Number(value))}
+              >
+                <SelectTrigger className="h-8 w-[70px]">
+                  <SelectValue placeholder={pageSize} />
+                </SelectTrigger>
+                <SelectContent side="top">
+                  {[10, 20, 30, 40, 50].map((size) => (
+                    <SelectItem key={size} value={size.toString()}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {totalPages > 1 ? (
+              <Pagination className="mx-0 w-auto justify-start sm:justify-end">
+                <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
                     href="#"
@@ -234,7 +260,8 @@ export default function PaymentTermsModule({ currentUserId }: PaymentTermsModule
                 </PaginationItem>
               </PaginationContent>
             </Pagination>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       ) : null}
 
