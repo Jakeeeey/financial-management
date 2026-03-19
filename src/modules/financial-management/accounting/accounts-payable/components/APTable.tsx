@@ -8,6 +8,9 @@ import {
 } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import {
+  Tooltip, TooltipContent, TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   Pagination, PaginationContent, PaginationItem, PaginationLink,
   PaginationPrevious, PaginationNext, PaginationEllipsis,
 } from '@/components/ui/pagination';
@@ -98,7 +101,19 @@ export function APTable({ records, page, setPage }: APTableProps) {
                 paged.map((r, i) => (
                   <TableRow key={`${r.id}-${i}`} className="border-border/40 hover:bg-muted/20">
                     <TableCell className="font-bold text-primary text-xs py-3 pl-6 whitespace-nowrap">{r.refNo}</TableCell>
-                    <TableCell className="text-xs font-medium py-3 max-w-[160px] truncate" title={r.supplier}>{r.supplier}</TableCell>
+
+                    {/* Payee — truncated with right-side tooltip showing full name */}
+                    <TableCell className="text-xs font-medium py-3 max-w-[160px]">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="block truncate cursor-default">{r.supplier}</span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          <p>{r.supplier}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TableCell>
+
                     <TableCell className="text-xs text-muted-foreground py-3 max-w-[140px] truncate" title={r.invoiceNo}>
                       {r.invoiceNo && r.invoiceNo !== '—'
                         ? r.invoiceNo
