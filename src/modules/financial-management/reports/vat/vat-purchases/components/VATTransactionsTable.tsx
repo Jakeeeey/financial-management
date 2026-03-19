@@ -89,8 +89,8 @@ export function VATTransactionsTable({ transactions, page, setPage }: VATTransac
                     {tr.id && tr.id.trim() !== '' ? tr.id : <span className="text-muted-foreground font-normal">---</span>}
                   </TableCell>
                   <TableCell className="text-xs font-medium py-4">{tr.supplier}</TableCell>
-                  <TableCell className="text-xs py-4 text-right">{formatPeso(tr.grossAmount)}</TableCell>
                   <TableCell className="text-xs py-4 text-right">{formatPeso(tr.vatExclusive)}</TableCell>
+                  <TableCell className="text-xs py-4 text-right">{formatPeso(tr.grossAmount)}</TableCell>
                   <TableCell className="text-xs font-bold text-primary py-4 text-right">{tr.amount}</TableCell>
                   <TableCell className="text-[11px] text-muted-foreground py-4 pr-6">
                     <div className="flex items-center gap-1.5">
