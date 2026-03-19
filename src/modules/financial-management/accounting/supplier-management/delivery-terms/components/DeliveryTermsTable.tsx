@@ -113,9 +113,9 @@ export default function DeliveryTermsTable(props: {
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((r) => (
+            rows.map((r, index) => (
               <TableRow key={r.id} className="hover:bg-primary/5 transition-colors group">
-                <TableCell className="font-medium text-sm group-hover:text-primary transition-colors">{r.id}</TableCell>
+                <TableCell className="font-medium text-sm group-hover:text-primary transition-colors">{index + 1}</TableCell>
                 <TableCell className="font-medium truncate max-w-[200px] group-hover:text-primary transition-colors" title={r.delivery_name}>
                   {r.delivery_name}
                 </TableCell>
