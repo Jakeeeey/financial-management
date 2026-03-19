@@ -76,7 +76,7 @@ export function APTable({ records, page, setPage }: APTableProps) {
             <TableHeader>
               <TableRow className="bg-muted/50">
                 <TableHead className="text-xs font-bold py-3 pl-6 whitespace-nowrap">Ref. No.</TableHead>
-                <TableHead className="text-xs font-bold py-3 whitespace-nowrap">Supplier</TableHead>
+                <TableHead className="text-xs font-bold py-3 whitespace-nowrap">Payee</TableHead>
                 <TableHead className="text-xs font-bold py-3 whitespace-nowrap">Invoice No.</TableHead>
                 <TableHead className="text-xs font-bold py-3 whitespace-nowrap">Invoice Date</TableHead>
                 <TableHead className="text-xs font-bold py-3 whitespace-nowrap">Due Date</TableHead>
