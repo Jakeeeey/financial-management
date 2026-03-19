@@ -362,7 +362,9 @@ export default function EditAssetModal({
                     <FormItem>
                       <FormLabel>Security Tag</FormLabel>
                       <Select
-                        onValueChange={(val: string) => field.onChange(Number(val))}
+                        onValueChange={(val: string) =>
+                          field.onChange(Number(val))
+                        }
                         value={field.value?.toString() ?? "0"}
                       >
                         <FormControl>
@@ -444,7 +446,10 @@ export default function EditAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Classification *</FormLabel>
-                    <Popover open={classificationOpen} onOpenChange={setClassificationOpen}>
+                    <Popover
+                      open={classificationOpen}
+                      onOpenChange={setClassificationOpen}
+                    >
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
@@ -502,8 +507,11 @@ export default function EditAssetModal({
                 name="department"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                    <FormLabel>Department</FormLabel>
-                    <Popover open={departmentOpen} onOpenChange={setDepartmentOpen}>
+                    <FormLabel>Department *</FormLabel>
+                    <Popover
+                      open={departmentOpen}
+                      onOpenChange={setDepartmentOpen}
+                    >
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
@@ -512,8 +520,8 @@ export default function EditAssetModal({
                           >
                             {departments.find(
                               (d) => d.department_id === field.value,
-                            )?.department_name || "Select department..."}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                            )?.department_name || "Select "}
+                            <ChevronsUpDown className="h-4 w-4 opacity-50" />
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
@@ -527,7 +535,10 @@ export default function EditAssetModal({
                                   key={d.department_id}
                                   value={d.department_name}
                                   onSelect={() => {
-                                    form.setValue("department", d.department_id);
+                                    form.setValue(
+                                      "department",
+                                      d.department_id,
+                                    );
                                     setDepartmentOpen(false);
                                   }}
                                 >
@@ -567,8 +578,8 @@ export default function EditAssetModal({
                           >
                             {users.find((u) => u.user_id === field.value)
                               ? `${users.find((u) => u.user_id === field.value)?.user_fname} ${users.find((u) => u.user_id === field.value)?.user_lname}`
-                              : "Select employee..."}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                              : "Select "}
+                            <ChevronsUpDown className="h-4 w-4 opacity-50" />
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
