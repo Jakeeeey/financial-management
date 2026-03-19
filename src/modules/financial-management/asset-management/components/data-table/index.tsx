@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DataTablePagination } from "./table-pagination";
+import { DataTableFacetedFilter } from "./table-faceted-filter";
 import { useState } from "react";
 import ViewAssetModal from "../modals/AssetViewModal";
 import { Input } from "@/components/ui/input";
@@ -80,22 +81,42 @@ export function AssetDataTable<TData extends AssetTableData, TValue>({
 
   const currentProjectionDate = (tableMeta?.projectionDate as Date) || new Date();
 
+  // Generate unique departments for the faceted filter
+  const departments = React.useMemo(() => {
+    const uniqueDepartments = new Set(
+      data.map((d) => d.department_name && d.department_name !== "Unassigned" ? d.department_name : "").filter(Boolean)
+    );
+    return Array.from(uniqueDepartments).map((d) => ({
+      label: d as string,
+      value: d as string,
+    }));
+  }, [data]);
+
   return (
     <div className="space-y-4">
-      {/* Search Bar */}
-      <div className="relative flex-1 max-w-sm">
-        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
-          type="search"
-          placeholder={"Search items..."}
-          value={
-            (table.getColumn("item_name")?.getFilterValue() as string) ?? ""
-          }
-          onChange={(event) =>
-            table.getColumn("item_name")?.setFilterValue(event.target.value)
-          }
-          className="pl-8"
-        />
+      {/* Search Bar & Filters */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+        <div className="relative flex-1 w-full sm:max-w-sm">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder={"Search items..."}
+            value={
+              (table.getColumn("item_name")?.getFilterValue() as string) ?? ""
+            }
+            onChange={(event) =>
+              table.getColumn("item_name")?.setFilterValue(event.target.value)
+            }
+            className="pl-8"
+          />
+        </div>
+        {table.getColumn("department_name") && (
+          <DataTableFacetedFilter
+            column={table.getColumn("department_name")}
+            title="Department"
+            options={departments}
+          />
+        )}
       </div>
       {/* Table */}
       <div className="rounded-md border">

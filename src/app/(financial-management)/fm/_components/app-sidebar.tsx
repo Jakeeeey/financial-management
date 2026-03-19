@@ -81,6 +81,27 @@ const data = {
       icon: ListTree,
       isActive: true,
     },
+    /*{
+      title: "Treasury",
+      url: "#",
+      icon: Landmark,
+      items: [
+        {
+          title: "Budgeting",
+          url: "#",
+          icon: Briefcase,
+          items: [
+            { title: "Dashboard", url: "/fm/treasury/budgeting/dashboard-v1", icon: Briefcase },
+            { title: "Budget Requests", url: "/fm/treasury/budgeting/budget-records", icon: Briefcase },
+            { title: "Budget Approvals", url: "/fm/treasury/budgeting/budget-approvals", icon: Briefcase },
+            { title: "Audit Trails", url: "/fm/treasury/budgeting/budget-audit-trail", icon: Briefcase },
+            { title: "Reports", url: "/fm/treasury/budgeting/reports", icon: Briefcase },
+          ],
+        },
+        { title: "Disbursement", url: "/fm/treasury/disbursement", icon: Briefcase },
+        { title: "Remittances", url: "/fm/treasury/remittances", icon: Briefcase },
+      ],
+    },*/
     {
       title: "Treasury",
       url: "#",
@@ -197,27 +218,27 @@ const data = {
           items: [
             {
               title: "CCM's List",
-              url: "#",
+              url: "/fm/claims-management/ccm-list",
               icon: List,
             },
             {
               title: "Generate Transmittal",
-              url: "#",
+              url: "/fm/claims-management/generate-transmittal",
               icon: FileOutput,
             },
             {
               title: "For Receiving",
-              url: "#",
+              url: "/fm/claims-management/for-receiving",
               icon: Inbox,
             },
             {
               title: "For Payment",
-              url: "#",
+              url: "/fm/claims-management/for-payment",
               icon: CreditCard,
             },
             {
               title: "Transmittal History",
-              url: "#",
+              url: "/fm/claims-management/transmittal-history",
               icon: History,
             }
           ]
