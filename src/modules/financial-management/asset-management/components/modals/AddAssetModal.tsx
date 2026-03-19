@@ -1,8 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import Image from "next/image";
 import imageCompression from "browser-image-compression";
+import Image from "next/image";
 import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -14,10 +14,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
-import { cn } from "../../utils/lib";
 import { format } from "date-fns";
 import {
-  CalendarIcon,
   Check,
   ChevronsUpDown,
   Loader2,
@@ -25,6 +23,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
+import { cn } from "../../utils/lib";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -95,6 +94,12 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
   const [classificationSearch, setClassificationSearch] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Popover states to auto-close upon selection
+  const [nameOpen, setNameOpen] = useState(false);
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [classificationOpen, setClassificationOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
 
   const form = useForm<AssetFormValues>({
     resolver: zodResolver(assetFormSchema),
@@ -217,7 +222,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
 
       const submissionData = {
         ...values,
-        date_acquired: values.date_acquired.toISOString().split("T")[0],
+        date_acquired: format(values.date_acquired, "yyyy-MM-dd"),
         cost_per_item: Number(values.cost_per_item),
         quantity: Number(values.quantity),
         life_span: Number(values.life_span),
@@ -251,7 +256,9 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
       onSuccess();
     } catch (error: unknown) {
       console.error("Asset creation error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to save asset");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save asset",
+      );
     } finally {
       setLoading(false);
     }
@@ -316,7 +323,10 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <Image
                       src={previewUrl}
                       alt="Preview"
-                      fill className="object-contain"
+                      width={400}
+                      height={200}
+                      className="object-contain"
+                      unoptimized
                     />
                     <Button
                       type="button"
@@ -366,7 +376,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Item Name *</FormLabel>
-                    <Popover>
+                    <Popover open={nameOpen} onOpenChange={setNameOpen}>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
@@ -408,12 +418,20 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                               New item will be created.
                             </CommandEmpty>
                             <CommandGroup heading="Existing Assets">
-                              {items
-                                .filter((item) =>
-                                  item.item_name
-                                    .toLowerCase()
-                                    .includes(itemNameSearch.toLowerCase()),
-                                )
+                              {Array.from(
+                                new Map(
+                                  items
+                                    .filter((item) =>
+                                      item.item_name
+                                        .toLowerCase()
+                                        .includes(itemNameSearch.toLowerCase()),
+                                    )
+                                    .map((item) => [
+                                      item.item_name.toLowerCase(),
+                                      item,
+                                    ]),
+                                ).values(),
+                              )
                                 .slice(0, 10) // Limit suggestions
                                 .map((item) => (
                                   <CommandItem
@@ -439,6 +457,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                                         );
                                       }
                                       setItemNameSearch("");
+                                      setNameOpen(false);
                                     }}
                                   >
                                     <Check
@@ -479,7 +498,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Item Type *</FormLabel>
-                      <Popover>
+                      <Popover open={typeOpen} onOpenChange={setTypeOpen}>
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
@@ -528,6 +547,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                                     onClick={() => {
                                       form.setValue("item_type", typeSearch);
                                       setTypeSearch("");
+                                      setTypeOpen(false);
                                     }}
                                   >
                                     <Plus className="h-4 w-4" />
@@ -554,6 +574,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                                       onSelect={(val) => {
                                         form.setValue("item_type", val);
                                         setTypeSearch("");
+                                        setTypeOpen(false);
                                       }}
                                     >
                                       <Check
@@ -585,7 +606,10 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Classification *</FormLabel>
-                      <Popover>
+                      <Popover
+                        open={classificationOpen}
+                        onOpenChange={setClassificationOpen}
+                      >
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
@@ -637,6 +661,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                                         classificationSearch,
                                       );
                                       setClassificationSearch("");
+                                      setClassificationOpen(false);
                                     }}
                                   >
                                     <Plus className="h-4 w-4" />
@@ -668,6 +693,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                                           val,
                                         );
                                         setClassificationSearch("");
+                                        setClassificationOpen(false);
                                       }}
                                     >
                                       <Check
@@ -754,7 +780,9 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <FormItem>
                       <FormLabel>Security Tag</FormLabel>
                       <Select
-                        onValueChange={(val) => field.onChange(Number(val))}
+                        onValueChange={(val: string) =>
+                          field.onChange(Number(val))
+                        }
                         value={field.value?.toString() ?? "0"}
                       >
                         <FormControl>
@@ -772,7 +800,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                 />
               </div>
 
-              <div className="flex max-w-full flex-row">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FormField
                   control={form.control}
                   name="department"
@@ -780,7 +808,9 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <FormItem className="flex flex-col flex-1">
                       <FormLabel>Department *</FormLabel>
                       <Select
-                        onValueChange={(val) => field.onChange(Number(val))}
+                        onValueChange={(val: string) =>
+                          field.onChange(Number(val))
+                        }
                         value={field.value > 0 ? field.value.toString() : ""}
                       >
                         <FormControl>
@@ -810,7 +840,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                     <FormItem className="flex flex-col flex-1">
                       <FormLabel>Assigned To</FormLabel>
                       <Select
-                        onValueChange={(val) =>
+                        onValueChange={(val: string) =>
                           field.onChange(val === "none" ? null : Number(val))
                         }
                         value={field.value ? field.value.toString() : "none"}
@@ -842,7 +872,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                   render={({ field }) => (
                     <FormItem className="flex flex-col flex-1">
                       <FormLabel>Date Acquired</FormLabel>
-                      <Popover>
+                      <Popover open={dateOpen} onOpenChange={setDateOpen}>
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
@@ -852,7 +882,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                                 !field.value && "text-muted-foreground",
                               )}
                             >
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                              {/* <CalendarIcon className="ml-auto h-4 w-4 opacity-50" /> */}
                               {field.value ? (
                                 format(field.value, "PPP")
                               ) : (
@@ -865,7 +895,12 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                           <Calendar
                             mode="single"
                             selected={field.value}
-                            onSelect={field.onChange}
+                            onSelect={(date) => {
+                              if (date) {
+                                field.onChange(date);
+                                setDateOpen(false);
+                              }
+                            }}
                             disabled={(date) => date > new Date()}
                             autoFocus
                           />

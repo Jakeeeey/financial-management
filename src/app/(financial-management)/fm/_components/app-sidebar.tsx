@@ -5,24 +5,52 @@ import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
+  Briefcase,
+  ListTree,
+  Landmark,
+  Calculator,
+  TrendingUp,
+  Lock,
+  Send,
+  Building,
+  Receipt,
+  Inbox,
+  Store,
+  Scale,
+  LineChart,
+  Wallet,
+  BookOpen,
+  ArrowDownToLine,
+  ArrowUpToLine,
+  ClipboardList,
+  List,
+  FileOutput,
+  CreditCard,
+  History,
+  ShoppingCart,
+  FileMinus,
+  FilePlus,
+  PackageSearch,
+  Truck,
+  UserPlus,
+  CalendarClock,
   Boxes,
-  Building2,
-  FileSpreadsheet,
-  FolderOpenDot,
-  NotebookText,
-  BadgeCent,
   BadgePercent,
+  FileBarChart,
+  NotebookPen,
+  RefreshCcw,
+  Layers,
+  FileSpreadsheet,
+  FileText,
+  Files,
+  Percent,
+  ArrowUpRight,
+  ArrowDownRight,
+  FileCheck2,
+  CalendarDays,
+  FolderTree,
   Tag,
   Tags,
-  Banknote,
-  PiggyBank,
-  ScrollText,
-  Files,
-  FolderOpen,
-  ArrowUpRightSquare,
-  ArrowDownLeftSquare,
-  FileCheck2,
-  CalendarCheck
 } from "lucide-react";
 
 import { NavMain } from "./nav-main";
@@ -44,19 +72,309 @@ const data = {
     {
       title: "Asset Management",
       url: "/fm/asset-management",
-      icon: Boxes,
+      icon: Briefcase,
       isActive: true,
     },
     {
       title: "Chart Of Accounts",
       url: "/fm/chart-of-accounts",
-      icon: NotebookText,
+      icon: ListTree,
       isActive: true,
+    },
+    {
+      title: "Treasury",
+      url: "#",
+      icon: Landmark,
+      items: [
+        {
+          title: "Budgeting",
+          url: "#",
+          icon: Calculator,
+          isActive: true,
+          items: [
+            {
+              title: "Current Budget",
+              url: "/fm/treasury/budgeting/current-budget",
+              icon: TrendingUp,
+            },
+            {
+              title: "Non Current Budget",
+              url: "/fm/treasury/budgeting/non-current-budget",
+              icon: Lock,
+            }
+          ]
+        },
+        {
+          title: "Disbursement",
+          url: "/fm/treasury/disbursement",
+          icon: Send,
+        },
+        {
+          title: "Bank Management",
+          url: "#",
+          icon: Building,
+          isActive: true,
+          items: [
+            {
+              title: "Cheque Monitoring",
+              url: "/fm/treasury/bank-management/cheque-monitoring",
+              icon: Receipt,
+            },
+          ]
+        },
+        {
+          title: "Collection Posting",
+          url: "#",
+          icon: Inbox,
+          isActive: true,
+          items: [
+            {
+              title: "Cashiering",
+              url: "/fm/treasury/collection-posting/cashiering",
+              icon: Store,
+            },
+          ]
+        },
+        {
+          title: "Bank Reconciliation",
+          url: "/fm/treasury/bank-reconciliation",
+          icon: Scale,
+        },
+        {
+          title: "Business Analytics",
+          url: "#",
+          icon: LineChart,
+          isActive: true,
+          items: [
+            {
+              title: "Cash Management",
+              url: "/fm/treasury/business-analytics/cash-management",
+              icon: Wallet,
+            },
+          ]
+        },
+      ],
+    },
+    {
+      title: "Accounting",
+      url: "#",
+      icon: BookOpen,
+      isActive: true,
+      items: [
+        {
+          title: "Accounts Payable",
+          url: "/fm/accounting/accounts-payable",
+          icon: ArrowDownToLine,
+        },
+        {
+          title: "Accounts Receivable",
+          url: "/fm/accounting/accounts-receivable",
+          icon: ArrowUpToLine,
+        },
+        {
+          title: "Assets",
+          url: "#",
+          icon: Briefcase,
+          isActive: true,
+          items: [
+            {
+              title: "Current Assets",
+              url: "/fm/accounting/assets/current-asset",
+              icon: Briefcase,
+            },
+            {
+              title: "Non Current Assets",
+              url: "/fm/accounting/assets/non-current-asset",
+              icon: Briefcase,
+            }
+          ]
+        },
+        {
+          title: "Claims",
+          url: "#",
+          icon: ClipboardList,
+          isActive: true,
+          items: [
+            {
+              title: "CCM's List",
+              url: "#",
+              icon: List,
+            },
+            {
+              title: "Generate Transmittal",
+              url: "#",
+              icon: FileOutput,
+            },
+            {
+              title: "For Receiving",
+              url: "#",
+              icon: Inbox,
+            },
+            {
+              title: "For Payment",
+              url: "#",
+              icon: CreditCard,
+            },
+            {
+              title: "Transmittal History",
+              url: "#",
+              icon: History,
+            }
+          ]
+        },
+        {
+          title: "Purchase Order",
+          url: "/fm/accounting/purchase-order",
+          icon: ShoppingCart,
+        },
+        {
+          title: "Customer Debit Memo",
+          url: "/fm/accounting/customer-debit-memo",
+          icon: FileMinus,
+        },
+        {
+          title: "Customer Credit Memo",
+          url: "/fm/accounting/customer-credit-memo",
+          icon: FilePlus,
+        },
+        {
+          title: "Procurement",
+          url: "/fm/accounting/procurement",
+          icon: PackageSearch,
+        },
+        {
+          title: "Supplier Debit Memo",
+          url: "/fm/accounting/supplier-debit-memo",
+          icon: FileMinus,
+        },
+        {
+          title: "Supplier Credit Memo",
+          url: "/fm/accounting/supplier-credit-memo",
+          icon: FilePlus,
+        },
+        {
+          title: "Supplier Management",
+          url: "#",
+          icon: Truck,
+          isActive: true,
+          items: [
+            {
+              title: "Supplier Registration",
+              url: "/fm/supplier-registration",
+              icon: UserPlus,
+              isActive: true,
+            },
+            {
+              title: "Delivery Terms",
+              url: "/fm/accounting/supplier-management/delivery-terms",
+              icon: CalendarClock,
+            },
+            {
+              title: "Payment Terms",
+              url: "/fm/accounting/supplier-management/payment-terms",
+              icon: CreditCard,
+            },
+            {
+              title: "Product Per Supplier",
+              url: "#",
+              icon: Boxes,
+            },
+            {
+              title: "Discount Setting",
+              url: "#",
+              icon: BadgePercent,
+            }
+          ]
+        },
+      ],
+    },
+    {
+      title: "Financial Statements",
+      url: "#",
+      icon: FileBarChart,
+      isActive: true,
+      items: [
+        {
+          title: "Journal Entry",
+          url: "/fm/financial-statements/journal-entry",
+          icon: NotebookPen,
+        },
+        {
+          title: "Trial Balance",
+          url: "/fm/financial-statements/trial-balance",
+          icon: Scale,
+        },
+        {
+          title: "Statement of Financial Position",
+          url: "/fm/financial-statements/statement-of-financial-position",
+          icon: Landmark,
+        },
+        {
+          title: "Statement of Financial Performance",
+          url: "/fm/financial-statements/statement-of-financial-performance",
+          icon: TrendingUp,
+        },
+        {
+          title: "Statement of Cash Flow",
+          url: "/fm/financial-statements/statement-of-cash-flow",
+          icon: RefreshCcw,
+        },
+        {
+          title: "Statement of Changes in Equity",
+          url: "/fm/financial-statements/statement-of-changes-in-equity",
+          icon: Layers,
+        },
+      ]
+    },
+    {
+      title: "Reports",
+      url: "#",
+      icon: FileSpreadsheet,
+      isActive: true,
+      items: [
+        {
+          title: "EWT",
+          url: "/fm/reports/ewt",
+          icon: FileText,
+        },
+        {
+          title: "CWT",
+          url: "/fm/reports/cwt",
+          icon: Files,
+        },
+        {
+          title: "VAT",
+          url: "#",
+          icon: Percent,
+          items: [
+            {
+              title: "VAT Selling",
+              url: "/fm/reports/vat/vat-selling",
+              icon: ArrowUpRight,
+            },
+            {
+              title: "VAT Purchases",
+              url: "/fm/reports/vat/vat-purchases",
+              icon: ArrowDownRight,
+            }
+          ]
+        },
+        {
+          title: "FWT",
+          url: "/fm/reports/fwt",
+          icon: FileCheck2,
+        },
+        {
+          title: "Tax Calendar",
+          url: "/fm/reports/tax-calendar",
+          icon: CalendarDays,
+        }
+      ],
     },
     {
       title: "File Management",
       url: "#",
-      icon: FolderOpenDot,
+      icon: FolderTree,
       items: [
         {
           title: "Discount",
@@ -75,75 +393,6 @@ const data = {
             },
           ],
         },
-      ],
-    },
-    {
-      title: "Supplier Registration",
-      url: "/fm/supplier-registration",
-      icon: Building2,
-      isActive: true,
-    },
-    {
-      title: "Accounting",
-      url: "#",
-      icon: BadgeCent,
-      isActive: true,
-      items: [
-        {
-          title: "Accounts Payable",
-          url: "/fm/accounting/accounts-payable",
-          icon: Banknote,
-        },
-        {
-          title: "Accounts Receivable",
-          url: "/fm/accounting/accounts-receivable",
-          icon: PiggyBank,
-        }
-      ],
-    },
-    {
-      title: "Reports",
-      url: "#",
-      icon: FileSpreadsheet,
-      isActive: true,
-      items: [
-        {
-          title: "EWT",
-          url: "/fm/reports/ewt",
-          icon: ScrollText,
-        },
-        {
-          title: "CWT",
-          url: "/fm/reports/cwt",
-          icon: Files,
-        },
-        {
-          title: "VAT",
-          url: "#",
-          icon: FolderOpen,
-          items: [
-            {
-              title: "VAT Selling",
-              url: "/fm/reports/vat/vat-selling",
-              icon: ArrowUpRightSquare,
-            },
-            {
-              title: "VAT Purchases",
-              url: "/fm/reports/vat/vat-purchases",
-              icon: ArrowDownLeftSquare,
-            }
-          ]
-        },
-        {
-          title: "FWT",
-          url: "/fm/reports/fwt",
-          icon: FileCheck2,
-        },
-        {
-          title: "Tax Calendar",
-          url: "/fm/reports/tax-calendar",
-          icon: CalendarCheck,
-        }
       ],
     },
   ],

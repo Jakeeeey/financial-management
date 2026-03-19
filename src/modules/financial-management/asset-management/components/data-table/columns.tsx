@@ -15,8 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import Image from "next/image";
-import { formatPHP } from "../../utils/lib";
 import { ColumnDef, Table } from "@tanstack/react-table";
 import {
   AlertTriangle,
@@ -31,8 +29,9 @@ import {
   Tag,
   Wrench,
 } from "lucide-react";
+import Image from "next/image";
 import { AssetTableData } from "../../types";
-import { getDepreciatedValue } from "../../utils/lib";
+import { formatPHP, getDepreciatedValue } from "../../utils/lib";
 import { DataTableColumnHeader } from "./table-column-header";
 
 // --- Sub-components ---
@@ -49,8 +48,11 @@ const AssetCell = ({
       {imageId ? (
         <Image
           src={`/api/fm/asset-management/asset-image-view?id=${imageId}`}
+          width={100}
+          height={100}
           alt={itemName}
           className="h-full w-full object-cover transition-all hover:scale-110"
+          unoptimized
         />
       ) : (
         <Package className="h-5 w-5 text-muted-foreground/50" />
@@ -239,10 +241,10 @@ export const columns: ColumnDef<AssetTableData>[] = [
           <span className="text-xs font-medium">
             {date
               ? new Intl.DateTimeFormat("en-US", {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              }).format(new Date(date))
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                }).format(new Date(date))
               : "—"}
           </span>
         </div>

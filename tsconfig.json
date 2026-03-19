@@ -34,7 +34,11 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    "src/modules/financial-management/accounting/supplier-management/delivery-terms/hooks/sample",
+    "src/modules/financial-management/accounting/supplier-management/payment-terms/components/sample",
+    "src/modules/financial-management/accounting/supplier-management/payment-terms/hooks/sample",
+    "src/modules/financial-management/accounting/supplier-management/payment-terms/utils/sample"
   ],
   "exclude": [
     "node_modules"

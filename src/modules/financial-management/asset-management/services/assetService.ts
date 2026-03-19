@@ -1,4 +1,5 @@
 import { AssetFormValues } from "../types";
+import { format } from "date-fns";
 
 const API_ROUTE = "/api/fm/asset-management";
 
@@ -31,7 +32,7 @@ export const assetService = {
       body: JSON.stringify({
         ...values,
         encoder: encoderId,
-        date_acquired: values.date_acquired.toISOString().split("T")[0],
+        date_acquired: format(values.date_acquired, "yyyy-MM-dd"),
       }),
     }),
 
@@ -54,7 +55,7 @@ export const assetService = {
         cost_per_item: Number(values.cost_per_item),
         quantity: Number(values.quantity),
         life_span: Number(values.life_span),
-        date_acquired: values.date_acquired.toISOString().split("T")[0],
+        date_acquired: format(values.date_acquired, "yyyy-MM-dd"),
         department: Number(values.department),
         employee: values.employee ? Number(values.employee) : null,
         item_image: imageId,
