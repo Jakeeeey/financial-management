@@ -97,7 +97,7 @@ export function EditPaymentTermDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Edit Payment Term</DialogTitle>
         </DialogHeader>
@@ -124,8 +124,9 @@ export function EditPaymentTermDialog({
                   <FormLabel>Description</FormLabel>
                   <FormControl>
                     <Textarea 
-                      placeholder="Optional description..." 
-                      {...field} 
+                      placeholder="Optional description..."
+                      className="min-h-24 max-h-48 resize-y overflow-y-auto [field-sizing:fixed]"
+                      {...field}
                       value={field.value ?? ""} // Ensure null doesn't break input
                     />
                   </FormControl>

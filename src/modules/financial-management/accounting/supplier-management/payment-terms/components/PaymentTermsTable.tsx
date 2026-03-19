@@ -65,8 +65,8 @@ export function PaymentTermsTable({ terms, isLoading, onEdit, searchQuery = "" }
               <TooltipTrigger asChild>
                 <span className="block max-w-[320px] truncate cursor-help">{preview}</span>
               </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-75">
-                <p className="text-xs leading-relaxed whitespace-pre-wrap">{text}</p>
+              <TooltipContent side="top" className="max-w-[300px] sm:max-w-[400px]">
+                <p className="text-xs leading-relaxed whitespace-pre-wrap break-words">{text}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
