@@ -167,6 +167,9 @@ export const columns: ColumnDef<AssetTableData>[] = [
       variant: "text",
       icon: Building,
     },
+    filterFn: (row, id, value) => {
+      return value.includes(row.getValue(id));
+    },
     cell: ({ row }) =>
       (row.getValue("department_name") as string) || (
         <span className="text-muted-foreground italic">Unassigned</span>
