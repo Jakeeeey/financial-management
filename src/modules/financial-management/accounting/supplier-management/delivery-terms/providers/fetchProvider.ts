@@ -84,7 +84,7 @@ export async function deleteDeliveryTerm(id: number): Promise<void> {
   if (!res.ok) throw new Error(errMsg(data));
 }
 
-export async function checkDeliveryNameExists(deliveryName: string): Promise<boolean> {
+export async function checkDeliveryNameExists(deliveryName: string, excludeId?: number): Promise<boolean> {
   const res = await fetch(
     `${API_BASE}?q=${encodeURIComponent(deliveryName)}&pageSize=1`
   );
@@ -93,7 +93,7 @@ export async function checkDeliveryNameExists(deliveryName: string): Promise<boo
   
   const rows = (data as ListResponse)?.data ?? [];
   return rows.some(
-    (row) => row.delivery_name.toLowerCase() === deliveryName.toLowerCase()
+    (row) => row.delivery_name.toLowerCase() === deliveryName.toLowerCase() && row.id !== excludeId
   );
 }
 
