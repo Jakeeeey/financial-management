@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { toLocal, type PaymentTermSource } from "../transform";
 
 const DIRECTUS_BASE = process.env.DIRECTUS_BASE_URL ?? "http://192.168.0.143:8056";
 const DIRECTUS_TOKEN = process.env.DIRECTUS_TOKEN;
@@ -89,8 +90,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ success: false, error: txt || "Not found" }, { status: res.status });
     }
     const json = await res.json();
-    const term = (json?.data ?? json) as any;
-    const { toLocal } = await import("../transform");
+    const term = (json?.data ?? json) as PaymentTermSource | null | undefined;
     const mapped = toLocal(term);
     return NextResponse.json({
       success: true,

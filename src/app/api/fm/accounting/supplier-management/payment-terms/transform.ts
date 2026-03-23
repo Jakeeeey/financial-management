@@ -1,4 +1,25 @@
+import type { PaymentTerm } from "@/modules/financial-management/accounting/supplier-management/payment-terms/types";
+
 // Helpers to map between Directus `payment_terms` fields and local PaymentTerm shape
+
+export type PaymentTermSource = {
+  id?: string | number | null;
+  ID?: string | number | null;
+  name?: string | null;
+  payment_name?: string | null;
+  description?: string | null;
+  payment_description?: string | null;
+  days?: number | string | null;
+  payment_days?: number | string | null;
+  isActive?: boolean | null;
+  payment_active?: boolean | null;
+  createdBy?: unknown;
+  created_by?: unknown;
+  createdAt?: string | null;
+  created_at?: string | null;
+  updatedAt?: string | null;
+  updated_at?: string | null;
+};
 
 function extractCreatedById(createdBy: unknown) {
   if (createdBy == null) return null;
@@ -31,20 +52,20 @@ function extractCreatedByName(createdBy: unknown) {
   return fullName || null;
 }
 
-export function toLocal(item: any) {
+export function toLocal(item: PaymentTermSource | null | undefined): PaymentTerm | null {
   if (!item) return null;
 
   return {
     id: String(item.id ?? item.ID ?? ""),
-    name: item.payment_name ?? item.payment_name ?? item.name ?? "",
-    description: item.payment_description ?? item.payment_description ?? item.description ?? "",
+    name: item.payment_name ?? item.name ?? "",
+    description: item.payment_description ?? item.description ?? "",
     // Normalize null/undefined to 0 for days so forms expect a number
-    days: Number(item.payment_days ?? item.payment_days ?? item.days ?? 0) || 0,
+    days: Number(item.payment_days ?? item.days ?? 0) || 0,
     isActive: typeof item.payment_active === "boolean" ? item.payment_active : (item.isActive ?? true),
     createdBy: extractCreatedById(item.created_by ?? item.createdBy),
     createdByName: extractCreatedByName(item.created_by ?? item.createdBy),
-    createdAt: item.created_at ?? item.createdAt ?? null,
-    updatedAt: item.updated_at ?? item.updatedAt ?? null,
+    createdAt: item.created_at ?? item.createdAt ?? undefined,
+    updatedAt: item.updated_at ?? item.updatedAt ?? undefined,
   };
 }
 

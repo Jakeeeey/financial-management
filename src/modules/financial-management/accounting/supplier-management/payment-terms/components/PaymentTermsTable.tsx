@@ -34,6 +34,7 @@ interface PaymentTermsTableProps {
 }
 
 export function PaymentTermsTable({ terms, isLoading, onEdit, searchQuery = "" }: PaymentTermsTableProps) {
+  "use no memo";
   const columns: ColumnDef<PaymentTerm>[] = [
     {
       id: "no",
@@ -107,6 +108,7 @@ export function PaymentTermsTable({ terms, isLoading, onEdit, searchQuery = "" }
     },
   ];
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: terms,
     columns,
