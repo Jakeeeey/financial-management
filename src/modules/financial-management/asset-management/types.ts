@@ -39,7 +39,7 @@ export const assetFormSchema = z.object({
   cost_per_item: z.number().min(0, "Cost must be positive"),
   life_span: z.number().min(1, "Life span must be at least 1 year"),
   date_acquired: z.date(),
-  department: z.number(),
+  department: z.number().min(1, "Department is required"),
   employee: z.number().nullable(),
   item_image: z.any().optional(),
 });

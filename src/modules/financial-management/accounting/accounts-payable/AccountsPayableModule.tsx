@@ -65,91 +65,82 @@ export default function AccountsPayableModule() {
   };
 
   const exportToPDF = () => {
-    const doc    = new jsPDF({ orientation: 'landscape', format: 'a3' });
-    const pageW  = doc.internal.pageSize.getWidth();
-    const total  = displayMetrics.totalPayable;
-    const formattedTotal = `PHP ${total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const doc   = new jsPDF({ orientation: 'landscape' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const total = displayMetrics.totalPayable;
+  const formattedTotal = `PHP ${total.toLocaleString('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(20, 20, 20);
-    doc.text('Accounts Payable Report (Men2 Corp)', 10, 16);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(20, 20, 20);
+  doc.text('Accounts Payable Report (Men2 Corp)', 14, 16);
 
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    const totalLabel  = `Grand Total: ${formattedTotal}`;
-    const totalLabelX = Math.max(pageW / 2, pageW - 10 - doc.getTextWidth(totalLabel));
-    doc.text(totalLabel, totalLabelX, 16);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  const totalLabel  = `Grand Total: ${formattedTotal}`;
+  const totalLabelX = Math.max(pageW / 2, pageW - 14 - doc.getTextWidth(totalLabel));
+  doc.text(totalLabel, totalLabelX, 16);
 
-    doc.setDrawColor(180, 180, 180);
-    doc.setLineWidth(0.3);
-    doc.line(10, 20, pageW - 10, 20);
+  doc.setDrawColor(180, 180, 180);
+  doc.setLineWidth(0.3);
+  doc.line(14, 20, pageW - 14, 20);
 
-    doc.setFontSize(7.5);
-    doc.setTextColor(120, 120, 120);
-    doc.text(
-      `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Supplier: ${supplier || 'All'}   Status: ${status || 'All'}`,
-      10, 26
-    );
-    doc.text(
-      `Exported: ${new Date().toLocaleString('en-PH')}   Total Records: ${displayRecords.length}`,
-      10, 31
-    );
-    doc.setTextColor(0);
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 120, 120);
+  doc.text(
+    `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Supplier: ${supplier || 'All'}   Status: ${status || 'All'}`,
+    14, 26
+  );
+  doc.text(
+    `Exported: ${new Date().toLocaleString('en-PH')}   Total Records: ${displayRecords.length}`,
+    14, 31
+  );
+  doc.setTextColor(0);
 
-    autoTable(doc, {
-      startY: 36,
-      headStyles: { fillColor: [24, 24, 27], fontSize: 7, textColor: 255 },
-      bodyStyles: { fontSize: 7 },
-      alternateRowStyles: { fillColor: [245, 245, 245] },
-      columnStyles: {
-        0: { cellWidth: 30 },
-        1: { cellWidth: 55 },
-        2: { cellWidth: 30 },
-        3: { cellWidth: 26 },
-        4: { cellWidth: 26 },
-        5: { cellWidth: 32 },
-        6: { cellWidth: 32 },
-        7: { cellWidth: 32 },
-        8: { cellWidth: 22 },
-        9: { cellWidth: 22 },
-      },
-      head: [[
-        'Ref. No.', 'Supplier', 'Invoice No.', 'Invoice Date', 'Due Date',
-        'Amount Payable (PHP)', 'Amount Paid (PHP)', 'Outstanding Balance (PHP)', 'Aging (Days)', 'Status',
-      ]],
-      body: displayRecords.map((r) => [
-        r.refNo,
-        r.supplier,
-        r.invoiceNo !== '—' ? r.invoiceNo : '',
-        r.invoiceDate ? r.invoiceDate.split(' ')[0] : '—',
-        r.dueDate     ? r.dueDate.split(' ')[0]     : '—',
-        r.amountPayable.toLocaleString('en-PH',      { minimumFractionDigits: 2 }),
-        r.amountPaid.toLocaleString('en-PH',         { minimumFractionDigits: 2 }),
-        r.outstandingBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
-        r.aging > 0 ? r.aging : 0,
-        r.status,
-      ]),
-      margin: { left: 10, right: 10 },
-      tableWidth: 'auto',
-    });
+  autoTable(doc, {
+    startY: 36,
+    headStyles: { fillColor: [24, 24, 27], fontSize: 7, textColor: 255 },
+    bodyStyles: { fontSize: 7 },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+    head: [[
+      'Ref. No.', 'Supplier', 'Invoice No.', 'Invoice Date', 'Due Date',
+      'Amount Payable (PHP)', 'Amount Paid (PHP)', 'Outstanding Balance (PHP)', 'Aging (Days)', 'Status',
+    ]],
+    body: displayRecords.map((r) => [
+      r.refNo,
+      r.supplier,
+      r.invoiceNo !== '—' ? r.invoiceNo : '',
+      r.invoiceDate ? r.invoiceDate.split(' ')[0] : '—',
+      r.dueDate     ? r.dueDate.split(' ')[0]     : '—',
+      r.amountPayable.toLocaleString('en-PH',      { minimumFractionDigits: 2 }),
+      r.amountPaid.toLocaleString('en-PH',         { minimumFractionDigits: 2 }),
+      r.outstandingBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
+      r.aging > 0 ? r.aging : 0,
+      r.status,
+    ]),
+    margin: { left: 14, right: 14 },
+  });
 
-    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY ?? 36;
-    const boxW = 110, boxH = 12;
-    const boxX = pageW - 14 - boxW;
-    const boxY = finalY + 6;
+  const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY ?? 36;
+  const boxW   = 110;
+  const boxH   = 12;
+  const boxX   = pageW - 14 - boxW;
+  const boxY   = finalY + 6;
 
-    doc.setFillColor(24, 24, 27);
-    doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, 'F');
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(255, 255, 255);
-    doc.text('Grand Total:', boxX + 4, boxY + 7.5);
-    const amtW = doc.getTextWidth(formattedTotal);
-    doc.text(formattedTotal, boxX + boxW - 4 - amtW, boxY + 7.5);
+  doc.setFillColor(24, 24, 27);
+  doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, 'F');
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text('Grand Total:', boxX + 4, boxY + 7.5);
+  const amtW = doc.getTextWidth(formattedTotal);
+  doc.text(formattedTotal, boxX + boxW - 4 - amtW, boxY + 7.5);
 
-    doc.save(`ap-export-${new Date().toISOString().split('T')[0]}.pdf`);
-  };
+  doc.save(`ap-export-${new Date().toISOString().split('T')[0]}.pdf`);
+};
 
   if (loading) return (
     <div className="p-8 space-y-4">
