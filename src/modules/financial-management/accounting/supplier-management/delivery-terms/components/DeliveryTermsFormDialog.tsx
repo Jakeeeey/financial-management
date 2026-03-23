@@ -33,7 +33,6 @@ export default function DeliveryTermsFormDialog(props: {
 
   const [deliveryName, setDeliveryName] = React.useState("");
   const [deliveryDescription, setDeliveryDescription] = React.useState("");
-  const [originalDeliveryName, setOriginalDeliveryName] = React.useState("");
   const [isCheckingName, setIsCheckingName] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -42,11 +41,9 @@ export default function DeliveryTermsFormDialog(props: {
 
     if (mode === "edit" && row) {
       setDeliveryName(toStr(row.delivery_name));
-      setOriginalDeliveryName(toStr(row.delivery_name));
       setDeliveryDescription(toStr(row.delivery_description));
     } else {
       setDeliveryName("");
-      setOriginalDeliveryName("");
       setDeliveryDescription("");
     }
   }, [open, mode, row]);
