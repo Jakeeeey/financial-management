@@ -7,6 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Input } from '@/components/ui/input';
 import {
+  Tooltip, TooltipContent, TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   Pagination, PaginationContent, PaginationItem,
   PaginationLink, PaginationPrevious, PaginationNext, PaginationEllipsis,
 } from '@/components/ui/pagination';
@@ -104,11 +107,21 @@ export function InvoiceTable({ invoices, page, setPage }: InvoiceTableProps) {
                       {inv.orderId}
                     </span>
                   </TableCell>
+
+                  {/* Customer — truncated with right-side tooltip showing full name */}
                   <TableCell className="py-3">
-                    <span className="text-xs font-medium truncate block w-full" title={inv.customer}>
-                      {inv.customer}
-                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="text-xs font-medium truncate block w-full cursor-default">
+                          {inv.customer}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">
+                        <p>{inv.customer}</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </TableCell>
+
                   <TableCell className="py-3">
                     <span className="text-[11px] text-muted-foreground whitespace-nowrap block">
                       {formatDate(inv.invoiceDate)}
