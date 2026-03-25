@@ -56,7 +56,7 @@ export function MemoFiltersBar({
           </SelectTrigger>
           <SelectContent className="max-h-60">
             {accounts.map(a => {
-              const id = (a as any).id ?? a.coa_id;
+              const id = ('id' in a && typeof (a as { id?: number }).id === 'number') ? (a as { id: number }).id : a.coa_id;
               return (
                 <SelectItem key={id} value={String(id)} className="text-xs">
                   {a.account_title ?? String(id)}

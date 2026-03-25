@@ -3,7 +3,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { SupplierMemo, Supplier, ChartOfAccount, CreateMemoPayload, MemoFilters } from "../types";
+import type { SupplierCreditMemo, Supplier, ChartOfAccount, CreateMemoPayload, MemoFilters } from "../types";
 
 const API_PATH = "/api/fm/accounting/supplier-credit-memo";
 
@@ -14,15 +14,17 @@ const DEFAULT_FILTERS: MemoFilters = {
   status:           "",
 };
 
-function extractList<T>(json: any): T[] {
-  if (Array.isArray(json))       return json as T[];
-  if (Array.isArray(json?.data)) return json.data as T[];
+function extractList<T>(json: unknown): T[] {
+  if (Array.isArray(json)) return json as T[];
+  if (typeof json === "object" && json !== null && "data" in json && Array.isArray((json as Record<string, unknown>).data)) {
+    return (json as Record<string, unknown>).data as T[];
+  }
   return [];
 }
 
 // ─── Main hook ────────────────────────────────────────────────────────────────
 export function useSupplierCreditMemo() {
-  const [memos,     setMemos]     = useState<SupplierMemo[]>([]);
+  const [memos,     setMemos]     = useState<SupplierCreditMemo[]>([]);
   const [total,     setTotal]     = useState(0);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState<string | null>(null);
@@ -41,13 +43,19 @@ export function useSupplierCreditMemo() {
       if (filters.status)           q.set("status",           filters.status);
 
       const res  = await fetch(`${API_PATH}?${q}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.message || `HTTP ${res.status}: ${res.statusText}`);
-      const data = extractList<SupplierMemo>(json);
+      const json: unknown = await res.json();
+      if (!res.ok) {
+        const msg = typeof json === "object" && json !== null && "message" in json
+          ? String((json as Record<string, unknown>).message)
+          : `HTTP ${res.status}: ${res.statusText}`;
+        throw new Error(msg);
+      }
+      const data = extractList<SupplierCreditMemo>(json);
       setMemos(data);
-      setTotal(json?.total ?? data.length);
-    } catch (e: any) {
-      setError(e.message);
+      const jsonObj = json as Record<string, unknown>;
+      setTotal(typeof jsonObj.total === "number" ? jsonObj.total : data.length);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -90,12 +98,21 @@ export function useSuppliers() {
   const [loading,   setLoading]   = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    fetch(`${API_PATH}?action=suppliers`)
-      .then(r => r.json())
-      .then(json => setSuppliers(extractList<Supplier>(json)))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    const run = async () => {
+      setLoading(true);
+      try {
+        const r    = await fetch(`${API_PATH}?action=suppliers`);
+        const json: unknown = await r.json();
+        if (!cancelled) setSuppliers(extractList<Supplier>(json));
+      } catch {
+        // silent — dropdowns fail gracefully
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
   }, []);
 
   return { suppliers, loading };
@@ -107,12 +124,21 @@ export function useChartOfAccounts() {
   const [loading,  setLoading]  = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    fetch(`${API_PATH}?action=chart-of-accounts`)
-      .then(r => r.json())
-      .then(json => setAccounts(extractList<ChartOfAccount>(json)))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    const run = async () => {
+      setLoading(true);
+      try {
+        const r    = await fetch(`${API_PATH}?action=chart-of-accounts`);
+        const json: unknown = await r.json();
+        if (!cancelled) setAccounts(extractList<ChartOfAccount>(json));
+      } catch {
+        // silent
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
   }, []);
 
   return { accounts, loading };
@@ -132,11 +158,21 @@ export function useCreateMemo() {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(payload),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.message || json?.error || `HTTP ${res.status}`);
-      return { success: true, data: json.data ?? json, message: json.message ?? "Memo created successfully." };
-    } catch (e: any) {
-      setError(e.message);
+      const json: unknown = await res.json();
+      const jsonObj = json as Record<string, unknown>;
+      if (!res.ok) {
+        throw new Error(
+          String(jsonObj?.message || jsonObj?.error || (jsonObj?.errors as unknown[])?.[0] || `HTTP ${res.status}`)
+        );
+      }
+      return {
+        success: true,
+        data:    jsonObj.data ?? json,
+        message: typeof jsonObj.message === "string" ? jsonObj.message : "Memo created successfully.",
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      setError(msg);
       return { success: false };
     } finally {
       setLoading(false);

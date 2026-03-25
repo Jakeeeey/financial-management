@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic';
 
 const DIRECTUS_URL        = process.env.NEXT_PUBLIC_API_BASE_URL;
 const DIRECTUS_TOKEN      = process.env.DIRECTUS_STATIC_TOKEN;
-const SPRING_API_BASE_URL = process.env.SPRING_API_BASE_URL;
 const COOKIE_NAME         = 'vos_access_token';
 
 // ─── GET /api/fm/accounting/supplier-debit-memo ───────────────────────────────
@@ -66,19 +65,19 @@ export async function GET(request: NextRequest) {
 
   // ── Debit Memo list → type=2 ────────────────────────────────────────────────
   try {
-    const filter: Record<string, any> = { type: { _eq: 2 } };
+    const filter: Record<string, Record<string, unknown>> = { type: { _eq: 2 } };
 
     const search        = searchParams.get('search');
     const supplier_id   = searchParams.get('supplier_id');
     const chart_of_acct = searchParams.get('chart_of_account');
     const status        = searchParams.get('status');
 
-    if (supplier_id)   filter['supplier_id']      = { _eq: Number(supplier_id) };
+    if (supplier_id)   filter['supplier_id'] = { _eq: Number(supplier_id) };
     if (chart_of_acct) filter['chart_of_account'] = { _eq: Number(chart_of_acct) };
-    if (status)        filter['status']            = { _eq: status };
+    if (status)        filter['status'] = { _eq: status };
 
     if (search) {
-      filter['_or'] = [
+      (filter as Record<string, unknown>)['_or'] = [
         { memo_number: { _contains: search } },
         { reason:      { _contains: search } },
         { status:      { _contains: search } },

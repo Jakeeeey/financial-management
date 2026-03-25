@@ -9,7 +9,6 @@ export const dynamic = 'force-dynamic';
 // Directus instance — same source as your working /items/suppliers_memo
 const DIRECTUS_URL         = process.env.NEXT_PUBLIC_API_BASE_URL;
 const DIRECTUS_TOKEN       = process.env.DIRECTUS_STATIC_TOKEN;
-const SPRING_API_BASE_URL  = process.env.SPRING_API_BASE_URL;
 const COOKIE_NAME          = 'vos_access_token';
 
 // ─── GET /api/fm/accounting/supplier-credit-memo ──────────────────────────────
@@ -70,16 +69,16 @@ export async function GET(request: NextRequest) {
   // ── Credit Memo list → Directus /items/suppliers_memo ──────────────────────
   // type=1 → credit memos only
   try {
-    const filter: Record<string, any> = { type: { _eq: 1 } };
+    const filter: Record<string, Record<string, unknown>> = { type: { _eq: 1 } };
 
     const search        = searchParams.get('search');
     const supplier_id   = searchParams.get('supplier_id');
     const chart_of_acct = searchParams.get('chart_of_account');
     const status        = searchParams.get('status');
 
-    if (supplier_id)   filter['supplier_id']      = { _eq: Number(supplier_id) };
+    if (supplier_id)   filter['supplier_id'] = { _eq: Number(supplier_id) };
     if (chart_of_acct) filter['chart_of_account'] = { _eq: Number(chart_of_acct) };
-    if (status)        filter['status']            = { _eq: status };
+    if (status)        filter['status'] = { _eq: status };
 
     const query = new URLSearchParams();
     query.set('filter', JSON.stringify(filter));
@@ -89,7 +88,7 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       // Directus search across multiple fields via _or filter
-      filter['_or'] = [
+      (filter as Record<string, unknown>)['_or'] = [
         { memo_number: { _contains: search } },
         { reason:      { _contains: search } },
         { status:      { _contains: search } },

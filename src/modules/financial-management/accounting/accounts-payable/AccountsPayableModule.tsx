@@ -36,8 +36,7 @@ function getTxType(refNo: string): 'Trade' | 'Non-Trade' {
 const TX_TABS: TxType[] = ['All', 'Trade', 'Non-Trade'];
 
 export default function AccountsPayableModule() {
-  const { loading, error, records, agingData, supplierData, statusData, metrics } =
-    useAccountsPayable();
+  const { loading, error, records } = useAccountsPayable();
 
   const [page,     setPage]     = useState(1);
   const [dateFrom, setDateFrom] = useState('');

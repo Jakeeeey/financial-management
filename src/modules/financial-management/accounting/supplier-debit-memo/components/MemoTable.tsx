@@ -24,10 +24,6 @@ const STATUS_STYLES: Record<string, { bg: string; color: string; border: string 
   Applied:   { bg: "rgba(59,130,246,0.15)", color: "#1d4ed8",  border: "rgba(59,130,246,0.3)"  },
 };
 
-const STATUS_STYLES_DARK: Record<string, string> = {
-  Available: "#34d399",
-  Applied:   "#60a5fa",
-};
 
 function StatusPill({ status }: { status: string }) {
   const key   = status ?? "";
@@ -60,14 +56,13 @@ function getPageNumbers(current: number, total: number): (number | "ellipsis")[]
 
 interface MemoTableProps {
   memos:     SupplierDebitMemo[];
-  total:     number;
   loading:   boolean;
   error?:    string | null;
   suppliers: Supplier[];
   accounts:  ChartOfAccount[];
 }
 
-export function MemoTable({ memos, total, loading, error, suppliers, accounts }: MemoTableProps) {
+export function MemoTable({ memos, loading, error, suppliers, accounts }: MemoTableProps) {
   const [search, setSearch] = useState("");
   const [page,   setPage]   = useState(1);
 
@@ -76,12 +71,12 @@ export function MemoTable({ memos, total, loading, error, suppliers, accounts }:
   suppliers.forEach(s => {
     supplierMap[String(s.id)] = s.supplier_name;
     // Directus may also return supplier_name directly on the memo row
-    if ((s as any).supplier_name) supplierMap[String(s.id)] = (s as any).supplier_name;
+    if (s.supplier_name) supplierMap[String(s.id)] = s.supplier_name;
   });
 
   const accountMap: Record<string, string> = {};
   accounts.forEach(a => {
-    const key = String((a as any).id ?? a.coa_id);
+    const key = String(('id' in a && typeof (a as { id?: number }).id === 'number') ? (a as { id: number }).id : a.coa_id ?? a.coa_id);
     accountMap[key] = a.account_title ?? key;
   });
 

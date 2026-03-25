@@ -126,7 +126,7 @@ export function AddMemoModal({ onClose, onSuccess }: AddMemoModalProps) {
 
   const coaOptions = useMemo(() =>
     accounts.map(a => {
-      const id = (a as any).id ?? a.coa_id;
+      const id = ('id' in a && typeof (a as { id?: number }).id === 'number') ? (a as { id: number }).id : a.coa_id;
       return { value: String(id), label: a.account_title ?? String(id) };
     }),
     [accounts]
@@ -167,7 +167,7 @@ export function AddMemoModal({ onClose, onSuccess }: AddMemoModalProps) {
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 bg-primary/10 text-primary border-primary/20">
                   Credit
                 </Badge>
-                <span className="text-xs text-muted-foreground"></span>
+                <span className="text-xs text-muted-foreground">type = 1 · status = Available</span>
               </div>
               <h2 className="text-base font-semibold tracking-tight">New Supplier Credit Memo</h2>
               <p className="text-xs text-muted-foreground mt-0.5">
