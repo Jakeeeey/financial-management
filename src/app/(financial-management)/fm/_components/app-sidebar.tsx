@@ -51,6 +51,7 @@ import {
   FolderTree,
   Tag,
   Tags,
+  Plus,
 } from "lucide-react";
 
 import { NavMain } from "./nav-main";
@@ -309,6 +310,30 @@ const data = {
         },
       ],
     },
+    {
+      title: "Price Control",
+      url: "#",
+      icon: FileSpreadsheet,
+      isActive: true,
+      items: [
+        {
+          title: "Product Pricing",
+          url: "/fm/price-control/product-pricing",
+          icon: FileText,
+        },
+        {
+          title: "Price Change Requests",
+          url: "/fm/price-control/price-change-requests",
+          icon: FileText,
+        },
+        {
+          title: "Price Type Creation",
+          url: "/fm/price-control/price-type-creation",
+          icon: Plus,
+        },
+      ],
+    },
+
     {
       title: "Financial Statements",
       url: "#",
