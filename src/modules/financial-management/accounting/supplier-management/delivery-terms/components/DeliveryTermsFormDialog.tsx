@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Spinner } from "@/components/ui/spinner";
 
 type Mode = "create" | "edit";
 
@@ -32,34 +33,8 @@ export default function DeliveryTermsFormDialog(props: {
 
   const [deliveryName, setDeliveryName] = React.useState("");
   const [deliveryDescription, setDeliveryDescription] = React.useState("");
-  const [nameError, setNameError] = React.useState("");
   const [isCheckingName, setIsCheckingName] = React.useState(false);
-
-  // Check for duplicate name
-  React.useEffect(() => {
-    const timer = setTimeout(async () => {
-      if (!deliveryName.trim() || mode === "edit") {
-        setNameError("");
-        return;
-      }
-
-      try {
-        setIsCheckingName(true);
-        const exists = await api.checkDeliveryNameExists(deliveryName.trim());
-        if (exists) {
-          setNameError("Delivery name is already taken");
-        } else {
-          setNameError("");
-        }
-      } catch{
-        setNameError("");
-      } finally {
-        setIsCheckingName(false);
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [deliveryName, mode]);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
@@ -67,17 +42,14 @@ export default function DeliveryTermsFormDialog(props: {
     if (mode === "edit" && row) {
       setDeliveryName(toStr(row.delivery_name));
       setDeliveryDescription(toStr(row.delivery_description));
-      setNameError("");
     } else {
       setDeliveryName("");
       setDeliveryDescription("");
-      setNameError("");
     }
   }, [open, mode, row]);
 
   function validate() {
     if (!deliveryName.trim()) return "Delivery Name is required";
-    if (nameError) return nameError;
     return null;
   }
 
@@ -88,52 +60,80 @@ export default function DeliveryTermsFormDialog(props: {
       return;
     }
 
-    const userId = await api.getCurrentUserId();
-    console.log("🔑 getCurrentUserId result:", userId, "typeof:", typeof userId);
+    setIsCheckingName(true);
 
-    // Build payload step by step
-    const payload: DeliveryTermPayload = {
-      delivery_name: deliveryName.trim(),
-    };
-
-    // Only add description if it's not empty
-    if (deliveryDescription.trim()) {
-      payload.delivery_description = deliveryDescription.trim();
-    }
-
-    // Add user tracking
-    if (userId) {
-      if (mode === "create") {
-        payload.created_by = userId;
-        console.log("✅ Added created_by:", userId, "to payload");
-      } else if (mode === "edit") {
-        payload.updated_by = userId;
-        console.log("✅ Added updated_by:", userId, "to payload");
+    try {
+      // Check if name already exists before submitting
+      const exists = await api.checkDeliveryNameExists(
+        deliveryName.trim(),
+        mode === "edit" ? row?.id : undefined
+      );
+      
+      if (exists) {
+        toast.error("Delivery name is already taken");
+        return;
       }
-    } else {
-      console.warn("⚠️  userId is", userId, "not adding user tracking");
-    }
 
-    console.log("📦 Final payload being sent:", payload);
+      setIsSubmitting(true);
 
-    if (mode === "create") {
-      await onCreate(payload);
-    } else if (mode === "edit" && row?.id) {
-      await onUpdate(row.id, payload);
+      const userId = await api.getCurrentUserId();
+      console.log("🔑 getCurrentUserId result:", userId, "typeof:", typeof userId);
+
+      // Build payload step by step
+      const payload: DeliveryTermPayload = {
+        delivery_name: deliveryName.trim(),
+      };
+
+      // Only add description if it's not empty
+      if (deliveryDescription.trim()) {
+        payload.delivery_description = deliveryDescription.trim();
+      }
+
+      // Add user tracking
+      if (userId) {
+        if (mode === "create") {
+          payload.created_by = userId;
+          console.log("✅ Added created_by:", userId, "to payload");
+        } else if (mode === "edit") {
+          payload.updated_by = userId;
+          console.log("✅ Added updated_by:", userId, "to payload");
+        }
+      } else {
+        console.warn("⚠️  userId is", userId, "not adding user tracking");
+      }
+
+      console.log("📦 Final payload being sent:", payload);
+
+      if (mode === "create") {
+        await onCreate(payload);
+      } else if (mode === "edit" && row?.id) {
+        await onUpdate(row.id, payload);
+      }
+    } finally {
+      setIsCheckingName(false);
+      setIsSubmitting(false);
     }
   }
 
   const title = mode === "create" ? "Add Delivery Term" : "Edit Delivery Term";
   const primaryText = mode === "create" ? "Create" : "Save Changes";
 
+  // Prevent dialog from closing while checking or submitting
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && (isCheckingName || isSubmitting)) {
+      return;  // Prevent closing
+    }
+    onOpenChange(newOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-lg overflow-hidden">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-hidden">
           <div className="space-y-2">
             <label className="text-sm font-medium">
               Delivery Name <span className="text-destructive">*</span>
@@ -142,20 +142,18 @@ export default function DeliveryTermsFormDialog(props: {
               value={deliveryName}
               onChange={(e) => setDeliveryName(e.target.value)}
               placeholder="Enter delivery name..."
-              className={nameError ? "border-destructive" : ""}
+              disabled={isSubmitting}
             />
-            {nameError && (
-              <p className="text-sm text-destructive">{nameError}</p>
-            )}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 w-full">
             <label className="text-sm font-medium">Description</label>
             <Textarea
               value={deliveryDescription}
               onChange={(e) => setDeliveryDescription(e.target.value)}
               placeholder="Enter description (optional)..."
-              className="min-h-[100px]"
+              disabled={isSubmitting}
+              className="min-h-[100px] max-h-[300px] w-full resize-none overflow-hidden overflow-y-auto break-words whitespace-pre-wrap"
             />
           </div>
 
@@ -164,15 +162,23 @@ export default function DeliveryTermsFormDialog(props: {
               variant="outline"
               className="cursor-pointer"
               onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
             >
               Cancel
             </Button>
             <Button 
               className="cursor-pointer" 
               onClick={submit} 
-              disabled={!!nameError || isCheckingName}
+              disabled={isCheckingName || isSubmitting}
             >
-              {primaryText}
+              {isCheckingName || isSubmitting ? (
+                <div className="flex items-center gap-2">
+                  <Spinner className="h-4 w-4" />
+                  {isCheckingName ? "Verifying..." : `${primaryText}...`}
+                </div>
+              ) : (
+                primaryText
+              )}
             </Button>
           </div>
         </div>

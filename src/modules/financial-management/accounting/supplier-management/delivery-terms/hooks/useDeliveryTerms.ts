@@ -13,7 +13,7 @@ type EditState =
 export function useDeliveryTerms() {
   const [q, setQ] = React.useState("");
   const [page, setPage] = React.useState(1);
-  const [pageSize] = React.useState(20);
+  const [pageSize, setPageSize] = React.useState(20);
 
   const [rows, setRows] = React.useState<DeliveryTermRow[]>([]);
   const [total, setTotal] = React.useState(0);
@@ -113,9 +113,11 @@ export function useDeliveryTerms() {
     page,
     setPage,
     pageSize,
+    setPageSize,
     pageCount,
     canPrev,
     canNext,
+    refresh: load,
 
     // dialogs
     createOpen,
