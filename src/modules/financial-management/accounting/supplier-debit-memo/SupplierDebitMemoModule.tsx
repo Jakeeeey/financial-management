@@ -12,7 +12,7 @@ import { AddMemoModal }   from "./components/AddMemoModal";
 
 export default function SupplierDebitMemoModule() {
   const {
-    memos, total, loading, error,
+    memos, loading, error,
     filters, updateFilter, clearFilters, hasFilters,
     toast, showToast,
     modalOpen, setModalOpen,

@@ -16,7 +16,7 @@ export default function SupplierCreditMemoModule() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const {
-    memos, total, loading, error,
+    memos, loading, error,
     filters, updateFilter, clearFilters, hasFilters,
     stats, refetch,
   } = useSupplierCreditMemo();
