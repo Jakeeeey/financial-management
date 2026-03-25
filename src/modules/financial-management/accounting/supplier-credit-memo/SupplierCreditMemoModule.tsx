@@ -89,7 +89,6 @@ export default function SupplierCreditMemoModule() {
       {/* Table */}
       <MemoTable
         memos={memos}
-        total={total}
         loading={loading}
         error={error}
         suppliers={suppliers}

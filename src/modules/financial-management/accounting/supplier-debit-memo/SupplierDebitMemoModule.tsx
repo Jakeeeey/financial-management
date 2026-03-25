@@ -81,7 +81,6 @@ export default function SupplierDebitMemoModule() {
       {/* Table */}
       <MemoTable
         memos={memos}
-        total={total}
         loading={loading}
         error={error}
         suppliers={suppliers}
