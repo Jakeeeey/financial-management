@@ -6,7 +6,8 @@ import { STATUS_CONFIG } from "../utils";
 
 export function StatusBadge({ status }: { status: string }) {
   const key = String(status || "").trim();
-  const config = STATUS_CONFIG[key] ?? STATUS_CONFIG[key.toLowerCase() as any];
+  const lowerKey = key.toLowerCase() as keyof typeof STATUS_CONFIG;
+  const config = STATUS_CONFIG[key] ?? STATUS_CONFIG[lowerKey];
   return (
     <span
       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
