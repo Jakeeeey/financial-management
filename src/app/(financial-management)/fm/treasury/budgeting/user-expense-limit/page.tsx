@@ -12,8 +12,7 @@ import { NavUser } from "../../../_components/nav-user";
 
 import { cookies } from "next/headers";
 
-// ✅ Wire the module you asked for
-import PaymentTermsModule from "@/modules/financial-management/accounting/supplier-management/payment-terms";
+import ComingSoon from "@/app/(financial-management)/fm/_components/ComingSoon";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -99,12 +98,16 @@ export default async function Page() {
                                 </BreadcrumbItem>
                                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                                 <BreadcrumbItem className="hidden md:block shrink-0">
-                                    <BreadcrumbLink href="#">Supplier Management</BreadcrumbLink>
+                                    <BreadcrumbLink href="#">Treasury</BreadcrumbLink>
+                                </BreadcrumbItem>
+                                <BreadcrumbSeparator className="hidden md:block shrink-0" />
+                                <BreadcrumbItem className="hidden md:block shrink-0">
+                                    <BreadcrumbLink href="#">Budgeting</BreadcrumbLink>
                                 </BreadcrumbItem>
                                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                                     <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                                        Delivery Terms
+                                        User Expense Limit
                                     </BreadcrumbPage>
                                 </BreadcrumbItem>
                             </BreadcrumbList>
@@ -119,7 +122,7 @@ export default async function Page() {
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-                <PaymentTermsModule />
+                <ComingSoon />
             </main>
         </div>
     );
