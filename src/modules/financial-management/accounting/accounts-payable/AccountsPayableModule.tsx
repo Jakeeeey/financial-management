@@ -23,28 +23,44 @@ import {
 } from './utils';
 import type { APStatus } from './types';
 
-const STATUS_OPTIONS: APStatus[] = ['Paid', 'Unpaid', 'Partially Paid', 'Unpaid | Overdue', 'Partially Paid | Overdue'];
+const STATUS_OPTIONS: APStatus[] = [
+  'Paid', 'Unpaid', 'Partially Paid', 'Unpaid | Overdue', 'Partially Paid | Overdue',
+];
+
+type TxType = 'All' | 'Trade' | 'Non-Trade';
+
+function getTxType(refNo: string): 'Trade' | 'Non-Trade' {
+  return refNo.toUpperCase().startsWith('NT') ? 'Non-Trade' : 'Trade';
+}
+
+const TX_TABS: TxType[] = ['All', 'Trade', 'Non-Trade'];
 
 export default function AccountsPayableModule() {
-  const { loading, error, records, agingData, supplierData, statusData, metrics } =
-    useAccountsPayable();
+  const { loading, error, records } = useAccountsPayable();
 
-  const [page,      setPage]      = useState(1);
-  const [dateFrom,  setDateFrom]  = useState('');
-  const [dateTo,    setDateTo]    = useState('');
-  const [supplier,  setSupplier]  = useState('');
-  const [status,    setStatus]    = useState('');
+  const [page,     setPage]     = useState(1);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo,   setDateTo]   = useState('');
+  const [supplier, setSupplier] = useState('');
+  const [status,   setStatus]   = useState('');
+  const [txType,   setTxType]   = useState<TxType>('All');
 
   const supplierOptions = useMemo(
     () => Array.from(new Set(records.map((r) => r.supplier).filter(Boolean))).sort(),
     [records]
   );
 
-  const isFiltered = !!(dateFrom || dateTo || supplier || status);
+  // Step 1 — filter by transaction type (NT prefix = Non-Trade, everything else = Trade)
+  const byType = useMemo(() =>
+    txType === 'All' ? records : records.filter(r => getTxType(r.refNo) === txType),
+    [records, txType]
+  );
+
+  // Step 2 — filter by date / supplier / status
+  const isFiltered = !!(dateFrom || dateTo || supplier || status || txType !== 'All');
 
   const filteredRecords = useMemo(() => {
-    if (!isFiltered) return records;
-    return records.filter((r) => {
+    return byType.filter((r) => {
       const recDate = (r.invoiceDate || r.dueDate || '').split(' ')[0];
       if (dateFrom && recDate && recDate < dateFrom) return false;
       if (dateTo   && recDate && recDate > dateTo)   return false;
@@ -52,48 +68,56 @@ export default function AccountsPayableModule() {
       if (status   && r.status   !== status)          return false;
       return true;
     });
-  }, [records, dateFrom, dateTo, supplier, status, isFiltered]);
+  }, [byType, dateFrom, dateTo, supplier, status]);
 
-  const displayRecords      = isFiltered ? filteredRecords : records;
-  const displayMetrics      = useMemo(() => isFiltered ? deriveMetrics(filteredRecords)       : metrics,      [filteredRecords, isFiltered, metrics]);
-  const displayAgingData    = useMemo(() => isFiltered ? buildAgingBuckets(filteredRecords)   : agingData,    [filteredRecords, isFiltered, agingData]);
-  const displaySupplierData = useMemo(() => isFiltered ? buildSupplierData(filteredRecords)   : supplierData, [filteredRecords, isFiltered, supplierData]);
-  const displayStatusData   = useMemo(() => isFiltered ? buildStatusData(filteredRecords)     : statusData,   [filteredRecords, isFiltered, statusData]);
+  const displayRecords      = filteredRecords;
+  const displayMetrics      = useMemo(() => deriveMetrics(filteredRecords),       [filteredRecords]);
+  const displayAgingData    = useMemo(() => buildAgingBuckets(filteredRecords),   [filteredRecords]);
+  const displaySupplierData = useMemo(() => buildSupplierData(filteredRecords),   [filteredRecords]);
+  const displayStatusData   = useMemo(() => buildStatusData(filteredRecords),     [filteredRecords]);
+
+  const tradeCount    = records.filter(r => getTxType(r.refNo) === 'Trade').length;
+  const nonTradeCount = records.filter(r => getTxType(r.refNo) === 'Non-Trade').length;
 
   const clearFilters = () => {
-    setDateFrom(''); setDateTo(''); setSupplier(''); setStatus(''); setPage(1);
+    setDateFrom(''); setDateTo(''); setSupplier(''); setStatus('');
+    setTxType('All'); setPage(1);
   };
 
+  const handleTxType = (t: TxType) => { setTxType(t); setPage(1); };
+
   const exportToPDF = () => {
-    const doc    = new jsPDF({ orientation: 'landscape', format: 'a3' });
-    const pageW  = doc.internal.pageSize.getWidth();
-    const total  = displayMetrics.totalPayable;
-    const formattedTotal = `PHP ${total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const doc   = new jsPDF({ orientation: 'landscape' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const total = displayMetrics.totalPayable;
+    const formattedTotal = `PHP ${total.toLocaleString('en-PH', {
+      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    })}`;
 
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(20, 20, 20);
-    doc.text('Accounts Payable Report (Men2 Corp)', 10, 16);
+    doc.text('Accounts Payable Report (Men2 Corp)', 14, 16);
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     const totalLabel  = `Grand Total: ${formattedTotal}`;
-    const totalLabelX = Math.max(pageW / 2, pageW - 10 - doc.getTextWidth(totalLabel));
+    const totalLabelX = Math.max(pageW / 2, pageW - 14 - doc.getTextWidth(totalLabel));
     doc.text(totalLabel, totalLabelX, 16);
 
     doc.setDrawColor(180, 180, 180);
     doc.setLineWidth(0.3);
-    doc.line(10, 20, pageW - 10, 20);
+    doc.line(14, 20, pageW - 14, 20);
 
     doc.setFontSize(7.5);
     doc.setTextColor(120, 120, 120);
     doc.text(
-      `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Supplier: ${supplier || 'All'}   Status: ${status || 'All'}`,
-      10, 26
+      `Type: ${txType}   From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Supplier: ${supplier || 'All'}   Status: ${status || 'All'}`,
+      14, 26
     );
     doc.text(
       `Exported: ${new Date().toLocaleString('en-PH')}   Total Records: ${displayRecords.length}`,
-      10, 31
+      14, 31
     );
     doc.setTextColor(0);
 
@@ -102,24 +126,13 @@ export default function AccountsPayableModule() {
       headStyles: { fillColor: [24, 24, 27], fontSize: 7, textColor: 255 },
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
-      columnStyles: {
-        0: { cellWidth: 30 },
-        1: { cellWidth: 55 },
-        2: { cellWidth: 30 },
-        3: { cellWidth: 26 },
-        4: { cellWidth: 26 },
-        5: { cellWidth: 32 },
-        6: { cellWidth: 32 },
-        7: { cellWidth: 32 },
-        8: { cellWidth: 22 },
-        9: { cellWidth: 22 },
-      },
       head: [[
-        'Ref. No.', 'Supplier', 'Invoice No.', 'Invoice Date', 'Due Date',
+        'Ref. No.', 'Type', 'Supplier', 'Invoice No.', 'Invoice Date', 'Due Date',
         'Amount Payable (PHP)', 'Amount Paid (PHP)', 'Outstanding Balance (PHP)', 'Aging (Days)', 'Status',
       ]],
       body: displayRecords.map((r) => [
         r.refNo,
+        getTxType(r.refNo),
         r.supplier,
         r.invoiceNo !== '—' ? r.invoiceNo : '',
         r.invoiceDate ? r.invoiceDate.split(' ')[0] : '—',
@@ -130,8 +143,7 @@ export default function AccountsPayableModule() {
         r.aging > 0 ? r.aging : 0,
         r.status,
       ]),
-      margin: { left: 10, right: 10 },
-      tableWidth: 'auto',
+      margin: { left: 14, right: 14 },
     });
 
     const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY ?? 36;
@@ -185,6 +197,32 @@ export default function AccountsPayableModule() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2 w-full min-w-0">
+
+        {/* Transaction type toggle — All / Trade / Non-Trade */}
+        <div className="flex items-center rounded-md border border-border bg-background h-9 p-1 gap-0.5 shrink-0">
+          {TX_TABS.map(t => {
+            const isActive = txType === t;
+            const count    = t === 'All' ? records.length : t === 'Trade' ? tradeCount : nonTradeCount;
+            return (
+              <button
+                key={t}
+                onClick={() => handleTxType(t)}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                {t}
+                <span className={`text-[10px] font-semibold ${isActive ? 'opacity-70' : 'opacity-50'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Date From */}
         <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 h-9">
           <span className="text-xs font-medium text-muted-foreground shrink-0">From</span>
           <Input
@@ -195,6 +233,7 @@ export default function AccountsPayableModule() {
           />
         </div>
 
+        {/* Date To */}
         <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 h-9">
           <span className="text-xs font-medium text-muted-foreground shrink-0">To</span>
           <Input
@@ -205,6 +244,7 @@ export default function AccountsPayableModule() {
           />
         </div>
 
+        {/* Supplier */}
         <Select
           value={supplier || '__all__'}
           onValueChange={(val) => { setSupplier(val === '__all__' ? '' : val); setPage(1); }}
@@ -220,6 +260,7 @@ export default function AccountsPayableModule() {
           </SelectContent>
         </Select>
 
+        {/* Status */}
         <Select
           value={status || '__all__'}
           onValueChange={(val) => { setStatus(val === '__all__' ? '' : val); setPage(1); }}
@@ -235,13 +276,19 @@ export default function AccountsPayableModule() {
           </SelectContent>
         </Select>
 
+        {/* Clear */}
         {isFiltered && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}
-            className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1.5"
+          >
             <X className="h-3.5 w-3.5" /> Clear
           </Button>
         )}
 
+        {/* Export PDF */}
         <Button
           variant="outline"
           size="sm"
@@ -296,7 +343,7 @@ export default function AccountsPayableModule() {
       {/* Charts Row 2 — Supplier full width */}
       <APSupplierChart data={displaySupplierData} isFiltered={isFiltered} />
 
-      {/* Table */}
+      {/* Table — type filter already applied above, no tabs needed inside */}
       <APTable records={displayRecords} page={page} setPage={setPage} />
 
     </div>
