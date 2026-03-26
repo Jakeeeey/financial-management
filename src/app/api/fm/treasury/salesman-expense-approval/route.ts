@@ -416,7 +416,7 @@ export async function POST(req: NextRequest) {
         department_id: approverDepartmentId,
         remarks: remarks || null,
         supporting_documents_url: supportingDocs || null,
-        status: "submitted",
+        status: "Submitted",
         isPosted: 0,
         date_created: nowTs,
         date_updated: nowTs,
