@@ -12,20 +12,13 @@ import { NavUser } from "../../../_components/nav-user";
 
 import { cookies } from "next/headers";
 
-import PaymentTermsModule from "@/modules/financial-management/accounting/supplier-management/payment-terms/PaymentTermsModule";
+// ✅ Wire the module you asked for
+import PaymentTermsModule from "@/modules/financial-management/accounting/supplier-management/payment-terms";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const COOKIE_NAME = "vos_access_token";
-const DIRECTUS_BASE = process.env.DIRECTUS_BASE_URL ?? "http://192.168.0.143:8056";
-const DIRECTUS_TOKEN = process.env.DIRECTUS_TOKEN;
-
-function buildHeaders() {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (DIRECTUS_TOKEN) headers["Authorization"] = `Bearer ${DIRECTUS_TOKEN}`;
-    return headers;
-}
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
     try {
@@ -79,43 +72,12 @@ function buildHeaderUserFromToken(token: string | null | undefined) {
     };
 }
 
-async function buildCurrentUserIdFromToken(token: string | null | undefined) {
-    const payload = token ? decodeJwtPayload(token) : null;
-
-    const directId = pickString(payload, ["user_id", "userId"]);
-    if (directId) return directId;
-
-    const email = pickString(payload, ["email", "Email"]);
-    if (email) {
-        try {
-            const response = await fetch(
-                `${DIRECTUS_BASE}/items/user?fields=user_id,user_email&filter[user_email][_eq]=${encodeURIComponent(email)}`,
-                {
-                    cache: "no-store",
-                    headers: buildHeaders(),
-                },
-            );
-
-            if (response.ok) {
-                const json = await response.json();
-                const user = Array.isArray(json?.data) ? json.data[0] : null;
-                const userId = String(user?.user_id ?? "").trim();
-                if (userId) return userId;
-            }
-        } catch {
-        }
-    }
-
-    return "";
-}
-
 export default async function Page() {
     // ✅ Next.js 16: cookies() is async
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
 
     const headerUser = buildHeaderUserFromToken(token);
-    const currentUserId = await buildCurrentUserIdFromToken(token);
 
     return (
         // ✅ UI ONLY: avoid page-level scroll container; prevent horizontal overflow
@@ -142,7 +104,7 @@ export default async function Page() {
                                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                                     <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                                        Payment Terms
+                                        Delivery Terms
                                     </BreadcrumbPage>
                                 </BreadcrumbItem>
                             </BreadcrumbList>
@@ -157,7 +119,7 @@ export default async function Page() {
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-                <PaymentTermsModule currentUserId={currentUserId} />
+                <PaymentTermsModule />
             </main>
         </div>
     );
