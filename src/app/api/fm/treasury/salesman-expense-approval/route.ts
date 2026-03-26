@@ -171,6 +171,85 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // ── GET ?resource=logs ────────────────────────────────────────────────
+    if (resource === "logs") {
+      const disbRes = await directusFetch(
+        `/items/disbursement_draft?filter[transaction_type][_eq]=2&sort=-id&limit=50&fields=id,doc_no,status,transaction_date,payee,total_amount,remarks,approver_id,date_created`
+      );
+      if (!disbRes.ok) return json(disbRes.data, { status: disbRes.status });
+      const logs = (disbRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
+
+      // Resolve user names (payee and approver)
+      const uids = new Set<number>();
+      for (const log of logs as Record<string, unknown>[]) {
+        if (log.payee) uids.add(Number(log.payee));
+        if (log.approver_id) uids.add(Number(log.approver_id));
+      }
+
+      let userMap: Record<number, string> = {};
+      if (uids.size > 0) {
+        const uRes = await directusFetch(
+          `/items/user?filter[user_id][_in]=${[...uids].join(",")}&fields=user_id,user_fname,user_lname&limit=-1`
+        );
+        const uRows = (uRes.data as { data?: unknown[] })?.data ?? [];
+        userMap = Object.fromEntries(
+          (uRows as Record<string, unknown>[]).map((u) => [
+            Number(u.user_id),
+            `${u.user_fname} ${u.user_lname}`.trim(),
+          ])
+        );
+      }
+
+      const formattedLogs = (logs as Record<string, unknown>[]).map((log) => ({
+        id: log.id,
+        doc_no: log.doc_no,
+        transaction_date: log.transaction_date,
+        salesman_name: userMap[Number(log.payee)] || `User #${log.payee}`,
+        total_amount: log.total_amount,
+        remarks: log.remarks,
+        approver_name: userMap[Number(log.approver_id)] || `User #${log.approver_id}`,
+        status: log.status,
+        date_created: log.date_created,
+      }));
+
+      return json({ data: formattedLogs });
+    }
+
+    // ── GET ?resource=log-details ─────────────────────────────────────────
+    if (resource === "log-details") {
+      const disbId = sp.get("disbursement_id");
+      if (!disbId) return json({ error: "Disbursement ID required" }, { status: 400 });
+
+      const pRes = await directusFetch(
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${disbId}&fields=id,coa_id,amount,remarks,date&limit=-1`
+      );
+      if (!pRes.ok) return json(pRes.data, { status: pRes.status });
+      const payables = (pRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
+
+      // Resolve COA names
+      const coaIds = [...new Set((payables as Record<string, unknown>[]).map((p) => Number(p.coa_id)))];
+      let coaMap: Record<number, string> = {};
+      if (coaIds.length > 0) {
+        const cRes = await directusFetch(
+          `/items/chart_of_accounts?filter[coa_id][_in]=${coaIds.join(",")}&fields=coa_id,account_title&limit=-1`
+        );
+        const cRows = (cRes.data as { data?: unknown[] })?.data ?? [];
+        coaMap = Object.fromEntries(
+          (cRows as Record<string, unknown>[]).map((c) => [Number(c.coa_id), String(c.account_title ?? "")])
+        );
+      }
+
+      const formattedPayables = (payables as Record<string, unknown>[]).map((p) => ({
+        id: p.id,
+        coa_name: coaMap[Number(p.coa_id)] || `COA #${p.coa_id}`,
+        amount: p.amount,
+        remarks: p.remarks,
+        date: p.date,
+      }));
+
+      return json({ data: formattedPayables });
+    }
+
     // ── GET ?resource=salesmen (default) ──────────────────────────────────
     // 1. Fetch all active salesmen
     const sRes = await directusFetch(

@@ -5,6 +5,8 @@ import type {
   SalesmanExpenseRow,
   SalesmanExpenseDetail,
   ConfirmExpensesPayload,
+  ApprovalLog,
+  ApprovalLogDetail,
 } from "../type";
 
 const BASE = "/api/fm/treasury/salesman-expense-approval";
@@ -41,4 +43,14 @@ export async function confirmExpenses(
     body: JSON.stringify(payload),
   });
   return data as { ok: boolean; disbursement_id: number | null; doc_no?: string };
+}
+
+export async function getApprovalLogs(): Promise<ApprovalLog[]> {
+  const data = (await apiFetch(`${BASE}?resource=logs`)) as { data: ApprovalLog[] };
+  return data.data;
+}
+
+export async function getApprovalLogDetails(disbursementId: number): Promise<ApprovalLogDetail[]> {
+  const data = (await apiFetch(`${BASE}?resource=log-details&disbursement_id=${disbursementId}`)) as { data: ApprovalLogDetail[] };
+  return data.data;
 }

@@ -59,3 +59,23 @@ export interface ConfirmExpensesPayload {
   salesman_id: number;
   device_time: string;
 }
+
+export interface ApprovalLog {
+  id: number;
+  doc_no: string;
+  transaction_date: string;
+  salesman_name: string;
+  total_amount: number;
+  remarks: string;
+  approver_name: string;
+  status: string;
+  date_created: string;
+}
+
+export interface ApprovalLogDetail {
+  id: number;
+  coa_name: string;
+  amount: number;
+  remarks: string;
+  date: string;
+}

@@ -4,12 +4,14 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import type { SalesmanExpenseRow, SalesmanExpenseDetail } from "../type";
+import type { SalesmanExpenseRow, SalesmanExpenseDetail, ApprovalLog } from "../type";
 import * as api from "../providers/fetchProvider";
 
 export function useSalesmanExpenseApproval() {
   const [rows, setRows] = React.useState<SalesmanExpenseRow[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [logs, setLogs] = React.useState<ApprovalLog[]>([]);
+  const [logsLoading, setLogsLoading] = React.useState(false);
 
   // Search & Pagination state
   const [q, setQ] = React.useState("");
@@ -21,18 +23,33 @@ export function useSalesmanExpenseApproval() {
   const [selectedSalesman, setSelectedSalesman] = React.useState<SalesmanExpenseRow | null>(null);
   const [salesmanDetail, setSalesmanDetail] = React.useState<SalesmanExpenseDetail | null>(null);
 
+  const loadLogs = React.useCallback(async () => {
+    try {
+      setLogsLoading(true);
+      const data = await api.getApprovalLogs();
+      setLogs(data);
+    } catch (e: unknown) {
+      console.error("Failed to load logs", e);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+
   const load = React.useCallback(async () => {
     try {
       setLoading(true);
-      const data = await api.listSalesmenWithExpenses();
+      const [data] = await Promise.all([
+        api.listSalesmenWithExpenses(),
+        loadLogs(),
+      ]);
       setRows(data);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed to load salesmen");
+      toast.error(e instanceof Error ? e.message : "Failed to load sportsmen");
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadLogs]);
 
   React.useEffect(() => {
     load();
@@ -97,6 +114,8 @@ export function useSalesmanExpenseApproval() {
     modalLoading,
     selectedSalesman,
     salesmanDetail,
+    logs,
+    logsLoading,
     openModal,
     closeModal,
     onConfirmed,

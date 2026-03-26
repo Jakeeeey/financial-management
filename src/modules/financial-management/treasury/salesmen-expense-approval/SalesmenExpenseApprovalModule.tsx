@@ -7,11 +7,12 @@ import { RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FolderOpen } from "lucide-react";
+
 
 import { useSalesmanExpenseApproval } from "./hooks/useSalesmanExpenseApproval";
 import SalesmanExpenseTable from "./components/SalesmanExpenseTable";
 import ExpenseApprovalModal from "./components/ExpenseApprovalModal";
+import { ApprovalLogTable } from "./components/ApprovalLogTable";
 
 export default function SalesmenExpenseApprovalModule() {
   const {
@@ -26,13 +27,15 @@ export default function SalesmenExpenseApprovalModule() {
     modalOpen,
     modalLoading,
     salesmanDetail,
+    logs,
+    logsLoading,
     openModal,
     closeModal,
     onConfirmed,
   } = useSalesmanExpenseApproval();
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-20">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
@@ -86,6 +89,10 @@ export default function SalesmenExpenseApprovalModule() {
         </CardContent>
       </Card>
 
+      {/* Logs section */}
+      <div className="pt-4">
+        <ApprovalLogTable logs={logs} loading={logsLoading} />
+      </div>
 
       {/* Approval Modal */}
       <ExpenseApprovalModal

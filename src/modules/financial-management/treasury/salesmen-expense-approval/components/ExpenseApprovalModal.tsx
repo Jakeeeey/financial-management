@@ -97,14 +97,12 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
   const allIds = detail?.expenses.map((e) => e.id) ?? [];
   const allSelected = allIds.length > 0 && selectedIds.size === allIds.length;
 
-  // Check if any selected item exceeds the limit
-  const hasExceedingItems = detail?.expenses.some(
-    e => selectedIds.has(e.id) && expenseLimit > 0 && Number(e.amount) > expenseLimit
-  );
+  // Check if the total of selected items exceeds the batch limit
+  const isOverBatchLimit = expenseLimit > 0 && totalSelected > expenseLimit;
 
   function rowBgClass(expense: ExpenseDraftRow): string {
     if (!selectedIds.has(expense.id)) return "opacity-50 grayscale-[0.5]";
-    if (expenseLimit > 0 && Number(expense.amount) > expenseLimit) {
+    if (isOverBatchLimit) {
       return "bg-red-100/80 dark:bg-red-900/40 border-l-4 border-l-red-600 font-medium";
     }
     return "bg-green-50/80 dark:bg-green-900/20 border-l-4 border-l-green-500";
@@ -213,7 +211,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
                   <p className={`font-black text-sm leading-tight ${expenseLimit > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
                     {expenseLimit > 0 ? formatCurrency(expenseLimit) : "Unlimited"}
                   </p>
-                  <p className="text-[10px] text-muted-foreground italic tracking-tight leading-none pt-1">Applied per transaction line</p>
+                  <p className="text-[10px] text-muted-foreground italic tracking-tight leading-none pt-1">Applied to total selection</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
@@ -230,11 +228,11 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
                 </div>
               </div>
 
-              {hasExceedingItems && (
+              {isOverBatchLimit && (
                 <div className="px-6 py-2 bg-red-50 dark:bg-red-950/20 border-b border-red-100 flex items-center gap-3">
                   <AlertCircle className="h-4 w-4 text-red-600 animate-bounce" />
                   <p className="text-xs font-bold text-red-700 uppercase tracking-tight">
-                    Warning: One or more selected lines exceed this user&apos;s expense ceiling.
+                    Warning: The total selected amount exceeds this user&apos;s expense ceiling for this batch.
                   </p>
                 </div>
               )}
@@ -436,7 +434,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
       <Dialog open={!!previewUrl} onOpenChange={(v) => !v && setPreviewUrl(null)}>
         <DialogContent
           showCloseButton={false}
-          className="max-w-[90vw] max-h-[85vh] w-fit p-0 overflow-hidden bg-black border-none shadow-2xl flex flex-col items-center justify-center rounded-lg relative"
+          className="max-w-[90vw] max-h-[85vh] w-fit p-0 overflow-hidden bg-black border-none shadow-2xl flex flex-col items-center justify-center rounded-lg"
         >
           <DialogTitle className="sr-only">Expense Attachment Preview</DialogTitle>
           <Button
