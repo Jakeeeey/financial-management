@@ -126,6 +126,11 @@ const data = {
           ]
         },
         {
+          title: "Salesman Expense Approval",
+          url: "/fm/treasury/salesman-expense-approval",
+          icon: Receipt,
+        },
+        {
           title: "Disbursement",
           url: "/fm/treasury/disbursement",
           icon: Send,
