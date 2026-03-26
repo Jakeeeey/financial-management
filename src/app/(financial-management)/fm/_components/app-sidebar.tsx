@@ -1,4 +1,3 @@
-// src/app/(supply-chain-management)/scm/_components/app-sidebar.tsx
 "use client";
 
 import * as React from "react";
