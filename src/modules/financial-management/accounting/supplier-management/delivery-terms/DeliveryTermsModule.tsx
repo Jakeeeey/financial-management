@@ -1,35 +1,53 @@
 "use client";
 
 import * as React from "react";
-import { Plus } from "lucide-react";
+import { Plus, Truck, RefreshCw } from "lucide-react";
 
 import { useDeliveryTerms } from "./hooks/useDeliveryTerms";
+import type { DeliveryTermRow } from "./types";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import DeliveryTermsTable from "./components/DeliveryTermsTable";
 import DeliveryTermsFormDialog from "./components/DeliveryTermsFormDialog";
+import DeliveryTermsViewDialog from "./components/DeliveryTermsViewDialog";
 
 export default function DeliveryTermsModule() {
   const dt = useDeliveryTerms();
+  const [viewRow, setViewRow] = React.useState<DeliveryTermRow | null>(null);
 
   return (
     <div className="space-y-4">
       {/* Title + Add Button */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight">
-            Delivery Term Management
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage your delivery terms
-          </p>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 text-primary">
+            <Truck className="h-8 w-8" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold tracking-tight">
+              Delivery Term Management
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Manage your delivery terms
+            </p>
+          </div>
         </div>
 
-        <Button className="cursor-pointer" onClick={dt.openCreate}>
+        <Button 
+          className="cursor-pointer h-11 px-6 rounded-xl shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90 transition-all hover:scale-[1.02]"
+          onClick={dt.openCreate}
+        >
           <Plus className="mr-2 h-4 w-4" />
           Add Delivery Term
         </Button>
@@ -39,21 +57,34 @@ export default function DeliveryTermsModule() {
       <Card className="border-muted/60 bg-muted/20">
         <CardContent className="space-y-3 pt-6">
           {/* Search */}
-          <Input
-            value={dt.q}
-            onChange={(e) => {
-              dt.setQ(e.target.value);
-              dt.setPage(1);
-            }}
-            placeholder="Search by name or description..."
-            className="bg-background"
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              value={dt.q}
+              onChange={(e) => {
+                dt.setQ(e.target.value);
+                dt.setPage(1);
+              }}
+              placeholder="Search by name or description..."
+              className="bg-background max-w-sm"
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              className="cursor-pointer bg-background"
+              onClick={dt.refresh}
+              disabled={dt.loading}
+              title="Refresh"
+            >
+              <RefreshCw className={`h-4 w-4 ${dt.loading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
 
           {/* Table */}
           <DeliveryTermsTable
             rows={dt.rows}
             loading={dt.loading}
             onEdit={(row) => dt.openEdit(row)}
+            onView={(row) => setViewRow(row)}
           />
 
           <Separator />
@@ -71,6 +102,28 @@ export default function DeliveryTermsModule() {
             </div>
 
             <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 mr-4">
+                <span className="text-sm text-muted-foreground">Rows per page</span>
+                <Select
+                  value={dt.pageSize.toString()}
+                  onValueChange={(val) => {
+                    dt.setPageSize(Number(val));
+                    dt.setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-[70px] h-9 bg-background">
+                    <SelectValue placeholder={dt.pageSize.toString()} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[10, 20, 30, 40, 50].map((size) => (
+                      <SelectItem key={size} value={size.toString()}>
+                        {size}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <Button
                 variant="outline"
                 className="cursor-pointer"
@@ -117,6 +170,13 @@ export default function DeliveryTermsModule() {
         onUpdate={async (id, payload) => {
           await dt.update(id, payload);
         }}
+      />
+
+      {/* View dialog */}
+      <DeliveryTermsViewDialog
+        open={!!viewRow}
+        onOpenChange={(open) => !open && setViewRow(null)}
+        row={viewRow}
       />
     </div>
   );
