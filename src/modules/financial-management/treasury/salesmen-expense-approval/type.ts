@@ -58,6 +58,7 @@ export interface ConfirmExpensesPayload {
   salesman_user_id: number;
   salesman_id: number;
   device_time: string;
+  edited_amounts?: Record<number, number>; // Maps expense_id -> new amount
 }
 
 export interface ApprovalLog {

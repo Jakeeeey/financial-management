@@ -74,8 +74,8 @@ export default function SalesmanExpenseTable(props: Props) {
             <TableRow className="bg-muted/50">
               <TableHead className="w-12 text-center">No.</TableHead>
               <TableHead>Name</TableHead>
-              <TableHead className="text-center">Draft (qty)</TableHead>
-              <TableHead className="text-center">Rejected (qty)</TableHead>
+              <TableHead className="text-center">Draft</TableHead>
+              <TableHead className="text-center">Rejected</TableHead>
               <TableHead className="text-center">Action</TableHead>
             </TableRow>
           </TableHeader>

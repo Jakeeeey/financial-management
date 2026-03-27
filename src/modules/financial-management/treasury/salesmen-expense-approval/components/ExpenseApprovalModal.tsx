@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -63,12 +64,28 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
   const [selectedIds, setSelectedIds] = React.useState<Set<number>>(new Set());
   const [remarks, setRemarks] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  const [localAmounts, setLocalAmounts] = React.useState<Record<number, string>>({});
 
   // Reset selections when detail changes (new salesman loaded)
   React.useEffect(() => {
     setSelectedIds(new Set());
     setRemarks("");
+    if (detail) {
+      const initial: Record<number, string> = {};
+      detail.expenses.forEach(e => {
+        initial[e.id] = String(e.amount);
+      });
+      setLocalAmounts(initial);
+    } else {
+      setLocalAmounts({});
+    }
   }, [detail]);
+
+  function handleAmountChange(id: number, val: string) {
+    if (/^\d*\.?\d*$/.test(val)) {
+      setLocalAmounts(prev => ({ ...prev, [id]: val }));
+    }
+  }
 
   function toggle(id: number) {
     setSelectedIds((prev) => {
@@ -91,7 +108,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
 
   const totalSelected = detail?.expenses
     .filter((e) => selectedIds.has(e.id))
-    .reduce((sum, e) => sum + Number(e.amount), 0) ?? 0;
+    .reduce((sum, e) => sum + Number(localAmounts[e.id] || 0), 0) ?? 0;
 
   const expenseLimit = detail?.expense_limit ?? 0;
   const allIds = detail?.expenses.map((e) => e.id) ?? [];
@@ -119,6 +136,15 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
       return;
     }
 
+    // Identify edited amounts
+    const editedMap: Record<number, number> = {};
+    detail.expenses.forEach(e => {
+      const newVal = Number(localAmounts[e.id] || 0);
+      if (newVal !== Number(e.amount)) {
+        editedMap[e.id] = newVal;
+      }
+    });
+
     setSubmitting(true);
     try {
       const result = await api.confirmExpenses({
@@ -128,6 +154,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
         salesman_user_id: detail.salesman.employee_id,
         salesman_id: detail.salesman.id,
         device_time: new Date().toLocaleString("sv-SE").replace(" ", "T"),
+        edited_amounts: Object.keys(editedMap).length > 0 ? editedMap : undefined,
       });
 
       if (result.doc_no) {
@@ -320,9 +347,20 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
                               </p>
                             </TableCell>
                             <TableCell className="text-right whitespace-nowrap">
-                              <p className={`text-sm font-black tabular-nums ${expenseLimit > 0 && Number(expense.amount) > expenseLimit ? 'text-red-700 animate-pulse font-extrabold' : 'text-foreground'}`}>
-                                {formatCurrency(Number(expense.amount))}
-                              </p>
+                              <div className="flex flex-col items-end gap-1" onClick={(e) => e.stopPropagation()}>
+                                <Input
+                                  className={`h-8 w-24 text-right font-black tabular-nums transition-all shadow-sm border-2 
+                                    ${Number(localAmounts[expense.id]) !== Number(expense.amount) ? 'border-amber-400 bg-amber-50' : 'border-primary/20 focus:border-primary'}`}
+                                  value={localAmounts[expense.id] || ""}
+                                  onChange={(e) => handleAmountChange(expense.id, e.target.value)}
+                                  disabled={submitting}
+                                />
+                                {Number(localAmounts[expense.id]) !== Number(expense.amount) && (
+                                  <span className="text-[9px] text-amber-600 font-bold uppercase italic animate-in fade-in slide-in-from-right-1">
+                                    Orig: {formatCurrency(Number(expense.amount))}
+                                  </span>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-center">
                               {expense.attachment_url ? (
