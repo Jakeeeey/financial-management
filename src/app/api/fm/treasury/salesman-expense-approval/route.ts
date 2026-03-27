@@ -79,8 +79,8 @@ async function getRbacFilters() {
     directusFetch(`/items/supervisor_per_division?filter[supervisor_id][_eq]=${currentUserId}&filter[is_deleted][_eq]=0&fields=division_id&limit=-1`)
   ]);
 
-  const myDepartments = ((deptRes.data as { data?: unknown[] })?.data ?? []).map((d: any) => Number(d.department_id));
-  const myDivisions = ((supRes.data as { data?: unknown[] })?.data ?? []).map((s: any) => Number(s.division_id));
+  const myDepartments = ((deptRes.data as { data?: { department_id: number }[] })?.data ?? []).map((d) => Number(d.department_id));
+  const myDivisions = ((supRes.data as { data?: { division_id: number }[] })?.data ?? []).map((s) => Number(s.division_id));
 
   return { currentUserId, myDepartments, myDivisions };
 }
@@ -140,7 +140,7 @@ export async function GET(req: NextRequest) {
       const rawExpenses = (eRes.data as { data?: unknown[] })?.data ?? [];
 
       // Filter expenses according to RBAC logic
-      const expenses = (rawExpenses as Record<string, unknown>[]).filter((exp: any) => {
+      const expenses = (rawExpenses as (Record<string, unknown> & { division_id?: number })[]).filter((exp) => {
         const isMyDiv = myDivisions.includes(Number(exp.division_id || 0));
         return isMyDept || isMyDiv;
       });
@@ -224,21 +224,21 @@ export async function GET(req: NextRequest) {
         if (log.approver_id) uids.add(Number(log.approver_id));
       }
 
-      let userMap: Record<number, string> = {};
-      let userDeptMap: Record<number, number> = {};
+      const userMap: Record<number, string> = {};
+      const userDeptMap: Record<number, number> = {};
       if (uids.size > 0) {
         const uRes = await directusFetch(
           `/items/user?filter[user_id][_in]=${[...uids].join(",")}&fields=user_id,user_fname,user_lname,user_department&limit=-1`
         );
-        const uRows = (uRes.data as { data?: unknown[] })?.data ?? [];
-        for (const u of uRows as any[]) {
+        const uRows = (uRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        for (const u of uRows) {
           userMap[Number(u.user_id)] = `${u.user_fname ?? ''} ${u.user_lname ?? ''}`.trim();
           userDeptMap[Number(u.user_id)] = Number(u.user_department) || 0;
         }
       }
 
       // Filter by RBAC
-      const visibleLogs = (logs as any[]).filter(log => {
+      const visibleLogs = (logs as (Record<string, unknown> & { approver_id?: number; payee?: number; division_id?: number })[]).filter(log => {
         const isMyApproval = Number(log.approver_id) === currentUserId;
         const payeeDept = userDeptMap[Number(log.payee)] || 0;
         const isMyDept = myDepartments.includes(payeeDept);
@@ -307,8 +307,8 @@ export async function GET(req: NextRequest) {
     if (salesmen.length === 0) return json({ data: [] });
 
     // 1.5. Fetch user departments for salesmen to apply Logic 1
-    const uids = [...new Set(salesmen.map((s: any) => Number(s.employee_id)).filter(Boolean))];
-    let userDeptMap: Record<number, number> = {};
+    const uids = [...new Set(salesmen.map((s) => Number(s.employee_id)).filter(Boolean))];
+    const userDeptMap: Record<number, number> = {};
     if (uids.length > 0) {
       const uRes = await directusFetch(
         `/items/user?filter[user_id][_in]=${uids.join(",")}&fields=user_id,user_department&limit=-1`
@@ -326,7 +326,7 @@ export async function GET(req: NextRequest) {
     const rawExpenses = ((allExpRes.data as { data?: unknown[] })?.data ?? []) as Record<string, unknown>[];
 
     // RBAC Filter:
-    const allExpenses = rawExpenses.filter((exp: any) => {
+    const allExpenses = rawExpenses.filter((exp: Record<string, unknown>) => {
       const salesmanDeptId = userDeptMap[Number(exp.encoded_by)] || 0;
       const isMyDept = myDepartments.includes(salesmanDeptId);
       const isMyDiv = myDivisions.includes(Number(exp.division_id || 0));
@@ -335,7 +335,7 @@ export async function GET(req: NextRequest) {
 
     // Build map: "encoded_by_division_id" → { draft: count, rejected: count }
     const countMap: Record<string, { draft: number; rejected: number }> = {};
-    for (const exp of allExpenses as any) {
+    for (const exp of allExpenses as Record<string, unknown>[]) {
       const key = `${exp.encoded_by}_${exp.division_id}`;
       if (!countMap[key]) countMap[key] = { draft: 0, rejected: 0 };
       if (exp.status === "Drafts") countMap[key].draft++;
@@ -343,8 +343,8 @@ export async function GET(req: NextRequest) {
     }
 
     // 3. Map salesmen to counts using composite key
-    const result = (salesmen as any[])
-      .map((s: any) => {
+    const result = (salesmen as Record<string, unknown>[])
+      .map((s) => {
         const key = `${s.employee_id}_${s.division_id}`;
         const counts = countMap[key] || { draft: 0, rejected: 0 };
         if (counts.draft === 0 && counts.rejected === 0) return null;
@@ -413,8 +413,8 @@ export async function POST(req: NextRequest) {
       directusFetch(`/items/supervisor_per_division?filter[supervisor_id][_eq]=${approverId}&filter[is_deleted][_eq]=0&fields=division_id&limit=-1`)
     ]);
 
-    const myDepartments = ((deptRes.data as { data?: unknown[] })?.data ?? []).map((d: any) => Number(d.department_id));
-    const myDivisions = ((supRes.data as { data?: unknown[] })?.data ?? []).map((s: any) => Number(s.division_id));
+    const myDepartments = ((deptRes.data as { data?: { department_id: number }[] })?.data ?? []).map((d) => Number(d.department_id));
+    const myDivisions = ((supRes.data as { data?: { division_id: number }[] })?.data ?? []).map((s) => Number(s.division_id));
 
     if (myDepartments.length === 0 && myDivisions.length === 0) {
       return json({ error: "Forbidden" }, { status: 403 });
@@ -429,7 +429,7 @@ export async function POST(req: NextRequest) {
     );
     const rawDetailRows = (((eRes.data as { data?: unknown[] })?.data) ?? []) as Record<string, unknown>[];
 
-    const allDetailRows = rawDetailRows.filter((exp: any) => {
+    const allDetailRows = rawDetailRows.filter((exp: Record<string, unknown>) => {
       const isMyDept = myDepartments.includes(salesmanDepartmentId || 0);
       const isMyDiv = myDivisions.includes(Number(exp.division_id || 0));
       return isMyDept || isMyDiv;

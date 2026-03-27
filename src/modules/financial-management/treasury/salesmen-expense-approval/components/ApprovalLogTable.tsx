@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Badge } from "@/components/ui/badge";
-import { History, Search, FileText, User, Calendar, Loader2, Info, CheckCircle2, Receipt, ArrowRight } from "lucide-react";
+import { History, Search, FileText, Loader2, Info, CheckCircle2, Receipt, ArrowRight } from "lucide-react";
 import { format } from "date-fns";
 import type { ApprovalLog, ApprovalLogDetail } from "../type";
 import * as api from "../providers/fetchProvider";
@@ -155,7 +155,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                 {/* Remarks & Approver Banner */}
                 <div className="mt-4 pt-3 border-t border-border/50 flex flex-col gap-2">
                    <p className="text-xs font-medium text-muted-foreground italic line-clamp-2 leading-relaxed">
-                     "{log.remarks || "No supplementary remarks provided."}"
+                     &quot;{log.remarks || "No supplementary remarks provided."}&quot;
                    </p>
                    <div className="flex items-center justify-between">
                      <p className="text-[10px] uppercase font-bold text-muted-foreground/80 flex items-center gap-1.5">

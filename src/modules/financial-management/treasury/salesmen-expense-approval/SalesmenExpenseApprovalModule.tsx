@@ -4,7 +4,6 @@
 import * as React from "react";
 import { RefreshCw, ShieldAlert, ArrowLeft } from "lucide-react";
 
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
