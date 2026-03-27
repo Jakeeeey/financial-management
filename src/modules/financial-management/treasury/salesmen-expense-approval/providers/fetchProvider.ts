@@ -15,6 +15,7 @@ async function apiFetch(url: string, init?: RequestInit): Promise<unknown> {
   const res = await fetch(url, { cache: "no-store", ...init });
   const data = await res.json();
   if (!res.ok) {
+    if (res.status === 403) throw new Error("403_UNAUTHORIZED");
     const msg =
       (data as { error?: string; message?: string })?.message ||
       (data as { error?: string })?.error ||

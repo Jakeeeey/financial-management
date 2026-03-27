@@ -52,9 +52,9 @@ export default function SalesmanExpenseTable(props: Props) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col flex-1 min-h-0 gap-4">
       {/* Search Input */}
-      <div className="relative max-w-sm">
+      <div className="relative max-w-sm shrink-0">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Search salesman by name or code..."
@@ -67,10 +67,10 @@ export default function SalesmanExpenseTable(props: Props) {
         />
       </div>
 
-      {/* Fixed Height Container for ~5 rows */}
-      <div className="overflow-x-auto rounded-md border min-h-[420px]">
-        <Table>
-          <TableHeader>
+      {/* Flexible Height Container */}
+      <div className="flex-1 overflow-auto rounded-md border shadow-inner bg-background relative">
+        <Table className="relative min-w-max w-full">
+          <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm shadow-sm">
             <TableRow className="bg-muted/50">
               <TableHead className="w-12 text-center">No.</TableHead>
               <TableHead>Name</TableHead>
@@ -141,7 +141,7 @@ export default function SalesmanExpenseTable(props: Props) {
       </div>
 
       {/* Pagination Controls */}
-      <div className="flex items-center justify-between py-2 border-t pt-4">
+      <div className="flex items-center justify-between shrink-0 py-2 border-t pt-2">
         <p className="text-sm text-muted-foreground">
           Showing <span className="font-medium text-foreground">{rows.length}</span> of{" "}
           <span className="font-medium text-foreground">{totalItems}</span> salesman

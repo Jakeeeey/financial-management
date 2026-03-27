@@ -12,6 +12,7 @@ export function useSalesmanExpenseApproval() {
   const [loading, setLoading] = React.useState(true);
   const [logs, setLogs] = React.useState<ApprovalLog[]>([]);
   const [logsLoading, setLogsLoading] = React.useState(false);
+  const [unauthorized, setUnauthorized] = React.useState(false);
 
   // Search & Pagination state
   const [q, setQ] = React.useState("");
@@ -29,7 +30,11 @@ export function useSalesmanExpenseApproval() {
       const data = await api.getApprovalLogs();
       setLogs(data);
     } catch (e: unknown) {
-      console.error("Failed to load logs", e);
+      if (e instanceof Error && e.message === "403_UNAUTHORIZED") {
+        setUnauthorized(true);
+      } else {
+        console.error("Failed to load logs", e);
+      }
     } finally {
       setLogsLoading(false);
     }
@@ -44,7 +49,11 @@ export function useSalesmanExpenseApproval() {
       ]);
       setRows(data);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed to load sportsmen");
+      if (e instanceof Error && e.message === "403_UNAUTHORIZED") {
+        setUnauthorized(true);
+      } else {
+        toast.error(e instanceof Error ? e.message : "Failed to load expenses.");
+      }
       setRows([]);
     } finally {
       setLoading(false);
@@ -119,6 +128,7 @@ export function useSalesmanExpenseApproval() {
     openModal,
     closeModal,
     onConfirmed,
+    unauthorized,
   };
 }
 

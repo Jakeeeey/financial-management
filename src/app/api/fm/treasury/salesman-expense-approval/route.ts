@@ -68,12 +68,39 @@ function todayManila(): string {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Manila" });
 }
 
+async function getRbacFilters() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
+  const currentUserId = token ? decodeJwtSub(token) : null;
+  if (!currentUserId) return null;
+
+  const [deptRes, supRes] = await Promise.all([
+    directusFetch(`/items/department?filter[department_head_id][_eq]=${currentUserId}&fields=department_id&limit=-1`),
+    directusFetch(`/items/supervisor_per_division?filter[supervisor_id][_eq]=${currentUserId}&filter[is_deleted][_eq]=0&fields=division_id&limit=-1`)
+  ]);
+
+  const myDepartments = ((deptRes.data as { data?: unknown[] })?.data ?? []).map((d: any) => Number(d.department_id));
+  const myDivisions = ((supRes.data as { data?: unknown[] })?.data ?? []).map((s: any) => Number(s.division_id));
+
+  return { currentUserId, myDepartments, myDivisions };
+}
+
 // ─── GET ────────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
   try {
+    const rbac = await getRbacFilters();
+    if (!rbac) return json({ error: "Unauthorized" }, { status: 401 });
+    const { currentUserId, myDepartments, myDivisions } = rbac;
+
+    const isAuthorized = myDepartments.length > 0 || myDivisions.length > 0;
+
     const sp = req.nextUrl.searchParams;
     const resource = sp.get("resource") || "salesmen";
+
+    if (!isAuthorized) {
+      return json({ error: "Forbidden" }, { status: 403 });
+    }
 
     // ── GET ?resource=expenses&salesman_id=X ───────────────────────────────
     if (resource === "expenses") {
@@ -91,30 +118,39 @@ export async function GET(req: NextRequest) {
       const employeeId = Number(salesman.employee_id);
       const divisionId_ref = Number(salesman.division_id || 0);
 
-      // 2. Get expense_draft rows for this user AND division (Drafts + Rejected)
-      const eRes = await directusFetch(
-        `/items/expense_draft?filter[encoded_by][_eq]=${employeeId}` +
-        `&filter[division_id][_eq]=${divisionId_ref}` +
-        `&filter[status][_in]=Drafts,Rejected` +
-        `&fields=id,encoded_by,particulars,transaction_date,amount,payee,attachment_url,status,drafted_at,rejected_at,approved_at,remarks` +
-        `&limit=-1&sort=transaction_date`
-      );
-      if (!eRes.ok) return json(eRes.data, { status: eRes.status });
-      const expenses = (eRes.data as { data?: unknown[] })?.data ?? [];
-
-      // 3. Get expense ceiling for this user
-      const cRes = await directusFetch(
-        `/items/user_expense_ceiling?filter[user_id][_eq]=${employeeId}&limit=1`
-      );
-      const ceilingRow = ((cRes.data as { data?: unknown[] })?.data ?? [])[0] as Record<string, unknown> | undefined;
-      const expenseLimit = Number(ceilingRow?.expense_limit ?? 0);
-
-      // 4. Get user info for the salesman
+      // 2. Get user info for the salesman
       const uRes = await directusFetch(
         `/items/user?filter[user_id][_eq]=${employeeId}` +
         `&fields=user_id,user_fname,user_mname,user_lname,user_position,user_department&limit=1`
       );
       const userInfo = ((uRes.data as { data?: unknown[] })?.data ?? [])[0] as Record<string, unknown> | undefined;
+      const salesmanDeptId = userInfo?.user_department ? Number(userInfo.user_department) : 0;
+
+      const isMyDept = myDepartments.includes(salesmanDeptId);
+
+      // 3. Get expense_draft rows for this user (Drafts + Rejected) matching division_id
+      const eRes = await directusFetch(
+        `/items/expense_draft?filter[encoded_by][_eq]=${employeeId}` +
+        `&filter[division_id][_eq]=${divisionId_ref}` +
+        `&filter[status][_in]=Drafts,Rejected` +
+        `&fields=id,encoded_by,particulars,transaction_date,amount,payee,attachment_url,status,drafted_at,rejected_at,approved_at,remarks,division_id` +
+        `&limit=-1&sort=transaction_date`
+      );
+      if (!eRes.ok) return json(eRes.data, { status: eRes.status });
+      const rawExpenses = (eRes.data as { data?: unknown[] })?.data ?? [];
+
+      // Filter expenses according to RBAC logic
+      const expenses = (rawExpenses as Record<string, unknown>[]).filter((exp: any) => {
+        const isMyDiv = myDivisions.includes(Number(exp.division_id || 0));
+        return isMyDept || isMyDiv;
+      });
+
+      // 4. Get expense ceiling for this user
+      const cRes = await directusFetch(
+        `/items/user_expense_ceiling?filter[user_id][_eq]=${employeeId}&limit=1`
+      );
+      const ceilingRow = ((cRes.data as { data?: unknown[] })?.data ?? [])[0] as Record<string, unknown> | undefined;
+      const expenseLimit = Number(ceilingRow?.expense_limit ?? 0);
 
       // 5. Fetch department and division names
       let divisionId: number | null = null;
@@ -176,7 +212,7 @@ export async function GET(req: NextRequest) {
     // ── GET ?resource=logs ────────────────────────────────────────────────
     if (resource === "logs") {
       const disbRes = await directusFetch(
-        `/items/disbursement_draft?filter[transaction_type][_eq]=2&sort=-id&limit=50&fields=id,doc_no,status,transaction_date,payee,total_amount,remarks,approver_id,date_created`
+        `/items/disbursement_draft?filter[transaction_type][_eq]=2&sort=-id&limit=200&fields=id,doc_no,status,transaction_date,payee,total_amount,remarks,approver_id,date_created,division_id`
       );
       if (!disbRes.ok) return json(disbRes.data, { status: disbRes.status });
       const logs = (disbRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
@@ -189,20 +225,28 @@ export async function GET(req: NextRequest) {
       }
 
       let userMap: Record<number, string> = {};
+      let userDeptMap: Record<number, number> = {};
       if (uids.size > 0) {
         const uRes = await directusFetch(
-          `/items/user?filter[user_id][_in]=${[...uids].join(",")}&fields=user_id,user_fname,user_lname&limit=-1`
+          `/items/user?filter[user_id][_in]=${[...uids].join(",")}&fields=user_id,user_fname,user_lname,user_department&limit=-1`
         );
         const uRows = (uRes.data as { data?: unknown[] })?.data ?? [];
-        userMap = Object.fromEntries(
-          (uRows as Record<string, unknown>[]).map((u) => [
-            Number(u.user_id),
-            `${u.user_fname} ${u.user_lname}`.trim(),
-          ])
-        );
+        for (const u of uRows as any[]) {
+          userMap[Number(u.user_id)] = `${u.user_fname ?? ''} ${u.user_lname ?? ''}`.trim();
+          userDeptMap[Number(u.user_id)] = Number(u.user_department) || 0;
+        }
       }
 
-      const formattedLogs = (logs as Record<string, unknown>[]).map((log) => ({
+      // Filter by RBAC
+      const visibleLogs = (logs as any[]).filter(log => {
+        const isMyApproval = Number(log.approver_id) === currentUserId;
+        const payeeDept = userDeptMap[Number(log.payee)] || 0;
+        const isMyDept = myDepartments.includes(payeeDept);
+        const isMyDiv = myDivisions.includes(Number(log.division_id || 0));
+        return isMyApproval || isMyDept || isMyDiv;
+      }).slice(0, 50);
+
+      const formattedLogs = visibleLogs.map((log) => ({
         id: log.id,
         doc_no: log.doc_no,
         transaction_date: log.transaction_date,
@@ -258,19 +302,40 @@ export async function GET(req: NextRequest) {
       `/items/salesman?fields=id,salesman_name,salesman_code,employee_id,division_id&filter[isActive][_eq]=1&limit=-1&sort=salesman_name`
     );
     if (!sRes.ok) return json(sRes.data, { status: sRes.status });
-    const salesmen = (sRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
+    const salesmen = ((sRes.data as { data?: unknown[] })?.data ?? []) as Record<string, unknown>[];
 
-    if ((salesmen as unknown[]).length === 0) return json({ data: [] });
+    if (salesmen.length === 0) return json({ data: [] });
 
-    // 2. Get all expense_draft (Drafts + Rejected) counts grouped by User + Division
+    // 1.5. Fetch user departments for salesmen to apply Logic 1
+    const uids = [...new Set(salesmen.map((s: any) => Number(s.employee_id)).filter(Boolean))];
+    let userDeptMap: Record<number, number> = {};
+    if (uids.length > 0) {
+      const uRes = await directusFetch(
+        `/items/user?filter[user_id][_in]=${uids.join(",")}&fields=user_id,user_department&limit=-1`
+      );
+      const uRows = (uRes.data as { data?: unknown[] })?.data ?? [];
+      for (const u of uRows as Record<string, unknown>[]) {
+        if (u.user_department) userDeptMap[Number(u.user_id)] = Number(u.user_department);
+      }
+    }
+
+    // 2. Get all expense_draft (Drafts + Rejected) and filter by RBAC
     const allExpRes = await directusFetch(
       `/items/expense_draft?filter[status][_in]=Drafts,Rejected&fields=id,encoded_by,division_id,status&limit=-1`
     );
-    const allExpenses = (allExpRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
+    const rawExpenses = ((allExpRes.data as { data?: unknown[] })?.data ?? []) as Record<string, unknown>[];
+
+    // RBAC Filter:
+    const allExpenses = rawExpenses.filter((exp: any) => {
+      const salesmanDeptId = userDeptMap[Number(exp.encoded_by)] || 0;
+      const isMyDept = myDepartments.includes(salesmanDeptId);
+      const isMyDiv = myDivisions.includes(Number(exp.division_id || 0));
+      return isMyDept || isMyDiv;
+    });
 
     // Build map: "encoded_by_division_id" → { draft: count, rejected: count }
     const countMap: Record<string, { draft: number; rejected: number }> = {};
-    for (const exp of allExpenses as Record<string, unknown>[]) {
+    for (const exp of allExpenses as any) {
       const key = `${exp.encoded_by}_${exp.division_id}`;
       if (!countMap[key]) countMap[key] = { draft: 0, rejected: 0 };
       if (exp.status === "Drafts") countMap[key].draft++;
@@ -278,8 +343,8 @@ export async function GET(req: NextRequest) {
     }
 
     // 3. Map salesmen to counts using composite key
-    const result = (salesmen as Record<string, unknown>[])
-      .map((s) => {
+    const result = (salesmen as any[])
+      .map((s: any) => {
         const key = `${s.employee_id}_${s.division_id}`;
         const counts = countMap[key] || { draft: 0, rejected: 0 };
         if (counts.draft === 0 && counts.rejected === 0) return null;
@@ -343,6 +408,18 @@ export async function POST(req: NextRequest) {
     const approverId = token ? decodeJwtSub(token) : null;
     if (!approverId) return json({ error: "Unauthorized: no approver identified" }, { status: 401 });
 
+    const [deptRes, supRes] = await Promise.all([
+      directusFetch(`/items/department?filter[department_head_id][_eq]=${approverId}&fields=department_id&limit=-1`),
+      directusFetch(`/items/supervisor_per_division?filter[supervisor_id][_eq]=${approverId}&filter[is_deleted][_eq]=0&fields=division_id&limit=-1`)
+    ]);
+
+    const myDepartments = ((deptRes.data as { data?: unknown[] })?.data ?? []).map((d: any) => Number(d.department_id));
+    const myDivisions = ((supRes.data as { data?: unknown[] })?.data ?? []).map((s: any) => Number(s.division_id));
+
+    if (myDepartments.length === 0 && myDivisions.length === 0) {
+      return json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const nowTs = device_time || nowManila();
     const rejectedIds = all_ids.filter((id) => !selected_ids.includes(id));
 
@@ -350,7 +427,17 @@ export async function POST(req: NextRequest) {
     const eRes = await directusFetch(
       `/items/expense_draft?filter[id][_in]=${all_ids.join(",")}&fields=id,encoded_by,particulars,amount,transaction_date,attachment_url,remarks,division_id,payee,status,version&limit=-1`
     );
-    const allDetailRows = (eRes.data as { data?: unknown[] })?.data as Record<string, unknown>[] ?? [];
+    const rawDetailRows = (((eRes.data as { data?: unknown[] })?.data) ?? []) as Record<string, unknown>[];
+
+    const allDetailRows = rawDetailRows.filter((exp: any) => {
+      const isMyDept = myDepartments.includes(salesmanDepartmentId || 0);
+      const isMyDiv = myDivisions.includes(Number(exp.division_id || 0));
+      return isMyDept || isMyDiv;
+    });
+
+    if (allDetailRows.length !== rawDetailRows.length) {
+      return json({ error: "Forbidden: Not authorized for some selected expenses" }, { status: 403 });
+    }
 
     // 2. Process Amount Changes & Audit Logs for ANY item in the batch
     if (edited_amounts && Object.keys(edited_amounts).length > 0) {
