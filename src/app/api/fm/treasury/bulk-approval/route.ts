@@ -61,11 +61,6 @@ function nowManila(): string {
   return new Date().toLocaleString("sv-SE", { timeZone: "Asia/Manila" }).replace(" ", "T");
 }
 
-/** Manila today as YYYY-MM-DD */
-function todayManila(): string {
-  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Manila" });
-}
-
 /** Parse current_tier from disbursement_draft.status */
 function parseTier(status: string): number {
   if (!status) return 1;
@@ -142,9 +137,6 @@ export async function GET(req: NextRequest) {
     const myDivisionIds = [...new Set(approverRecords.map(r => r.division_id))];
     // Use the minimum (highest authority) hierarchy level across all their records
     const myLevel = approverRecords.reduce((min, r) => Math.min(min, r.approver_heirarchy), 99);
-    // For single-division operations, use the first record's division
-    const approverRecord = approverRecords[0];
-
     // ── GET ?resource=debug ──────────────────────────────────────────────
     if (resource === "debug") {
       const allDraftsRes = await directusFetch(
@@ -590,12 +582,31 @@ export async function POST(req: NextRequest) {
 
     // 7. Short-circuit rejection
     if (status === "REJECTED") {
+      // Reset all other existing votes to DRAFT to preserve history but clear approval progress
+      const allVotesRes = await directusFetch(
+        `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draft_id}&fields=id,approver_id&limit=-1`
+      );
+      if (allVotesRes.ok) {
+        const votes = (allVotesRes.data as { data?: { id: number; approver_id: number }[] })?.data ?? [];
+        const otherVoteIds = votes
+          .filter(v => Number(v.approver_id) !== Number(currentUserId))
+          .map(v => v.id);
+
+        if (otherVoteIds.length > 0) {
+          await directusFetch(`/items/disbursement_draft_approvals`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(otherVoteIds.map(id => ({ id, status: "DRAFT" }))),
+          });
+        }
+      }
+
       await directusFetch(`/items/disbursement_draft/${draft_id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ status: "Rejected" }),
       });
-      return json({ ok: true, result: "REJECTED", message: "Draft has been rejected." });
+      return json({ ok: true, result: "REJECTED", message: "Draft has been rejected and other votes reset to DRAFT." });
     }
 
     // 8. Consensus evaluation
@@ -651,22 +662,42 @@ export async function POST(req: NextRequest) {
         }
         const liveDocNo = `NT-${nextDocNum}`;
 
+        // Identify Level 1 approvers for this division (highest hierarchy)
+        const l1ApproversRes = await directusFetch(
+          `/items/disbursement_draft_approver?filter[division_id][_eq]=${myDivisionId}&filter[approver_heirarchy][_eq]=1&fields=approver_id&limit=-1`
+        );
+        const l1ApproverIds = ((l1ApproversRes.data as { data?: { approver_id: number }[] })?.data ?? []).map(a => Number(a.approver_id));
+
+        // Get the latest APPROVED remark from any Level 1 approver
+        let finalRemarks = (draft as Record<string, unknown>).remarks;
+        if (l1ApproverIds.length > 0) {
+          const l1VoteRes = await directusFetch(
+            `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draft_id}&filter[approver_id][_in]=${l1ApproverIds.join(",")}&filter[status][_eq]=APPROVED&sort=-created_at&limit=1&fields=remarks`
+          );
+          const l1Vote = ((l1VoteRes.data as { data?: { remarks: string }[] })?.data ?? [])[0];
+          if (l1Vote?.remarks) {
+            finalRemarks = l1Vote.remarks;
+          }
+        }
+
+        const d = draft as Record<string, unknown>;
+
         // Create live disbursement
         const liveDisbRes = await directusFetch(`/items/disbursement`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             doc_no: liveDocNo,
-            transaction_type: Number(draft.transaction_type ?? 2),
-            payee: draft.payee,
-            remarks: draft.remarks,
-            total_amount: draft.total_amount,
+            transaction_type: Number(d.transaction_type ?? 2),
+            payee: d.payee,
+            remarks: finalRemarks,
+            total_amount: d.total_amount,
             paid_amount: 0,
-            encoder_id: draft.encoder_id,
+            encoder_id: d.encoder_id,
             approver_id: currentUserId,
             posted_by: null,
-            transaction_date: draft.transaction_date,
-            division_id: draft.division_id,
+            transaction_date: d.transaction_date,
+            division_id: d.division_id,
             status: "Approved",
             isPosted: 0,
             date_approved: nowTs,

@@ -16,7 +16,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
@@ -70,6 +69,7 @@ function formatDateTime(d: string) {
 function VoteStatusIcon({ status }: { status: string }) {
   if (status === "APPROVED") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
   if (status === "REJECTED") return <XCircle className="h-4 w-4 text-red-500" />;
+  if (status === "DRAFT") return <Clock className="h-4 w-4 text-slate-400" />;
   return <Clock className="h-4 w-4 text-amber-500" />;
 }
 
@@ -206,11 +206,11 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
             )}
 
             {/* Scrollable Body */}
-            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-0 min-h-0">
+            <div className="flex-1 overflow-y-auto flex flex-col lg:flex-row gap-0 min-h-0">
 
               {/* Left: Payables */}
-              <div className="flex-[3] flex flex-col min-h-0 border-r bg-background relative transition-all duration-300">
-                <div className="px-8 py-5 border-b bg-muted/5 shrink-0 flex items-center justify-between">
+              <div className="flex-[3] flex flex-col border-r bg-background relative transition-all duration-300">
+                <div className="px-8 py-4 border-b bg-muted/5 shrink-0 flex items-center justify-between sticky top-0 z-30 backdrop-blur-md">
                   <h3 className="text-[11px] font-black uppercase tracking-[0.25em] text-muted-foreground/60 flex items-center gap-2">
                     <FileText size={16} className="text-primary/70" /> Payable Line Items
                   </h3>
@@ -232,9 +232,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                     </Tooltip>
                   </TooltipProvider>
                 </div>
-                <div className="flex-1 overflow-auto px-4 py-2">
+                <div className="flex-1 px-4 py-2">
                   <Table>
-                    <TableHeader className="sticky top-0 bg-background/95 backdrop-blur-md z-10 shadow-sm border-b">
+                    <TableHeader className="sticky top-[53px] bg-background/95 backdrop-blur-md z-20 shadow-sm border-b">
                       <TableRow className="hover:bg-transparent border-none">
                         <TableHead className="text-[10px] font-black uppercase tracking-wider h-10">#</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-wider h-10">Account (COA)</TableHead>
@@ -278,9 +278,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
               {/* Right: Approvers by Level */}
               {showTiers && (
-                <div className="flex-[2] min-w-[320px] max-w-[400px] flex flex-col min-h-0 overflow-auto p-6 space-y-4 bg-muted/[0.03] relative border-l lg:border-l-0 animate-in slide-in-from-right-2 duration-300">
+                <div className="flex-[2] min-w-[320px] max-w-[400px] flex flex-col p-6 space-y-4 bg-muted/[0.03] relative border-l lg:border-l-0 animate-in slide-in-from-right-2 duration-300">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(var(--primary),0.02),transparent)] pointer-events-none" />
-                  <h3 className="text-[11px] font-black uppercase tracking-[0.25em] text-muted-foreground/60 shrink-0 relative z-10 flex items-center gap-2">
+                  <h3 className="text-[11px] font-black uppercase tracking-[0.25em] text-muted-foreground/60 shrink-0 relative z-10 flex items-center gap-2 sticky top-0 bg-muted/5 backdrop-blur-sm -mx-6 px-6 py-4 border-b mb-2">
                     <ShieldCheck size={16} className="text-primary/70" /> Approval Tiers
                   </h3>
                   
@@ -315,8 +315,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                               <div key={a.approver_id} className="flex items-center justify-between gap-2.5 py-0.5">
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   <div className={`h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-[10px] font-black shadow-inner border transition-all duration-300
-                                    ${a.vote?.status === "APPROVED" ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
-                                      a.vote?.status === "REJECTED" ? "bg-red-100 text-red-700 border-red-200" :
+                                    ${(a.vote?.status === "APPROVED") ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
+                                      (a.vote?.status === "REJECTED") ? "bg-red-100 text-red-700 border-red-200" :
+                                      (a.vote?.status === "DRAFT") ? "bg-slate-50 text-slate-500 border-slate-200" :
                                       "bg-background text-muted-foreground border-muted-foreground/20 group-hover/tier:border-primary/30"}`}>
                                     {a.name.charAt(0)}
                                   </div>
@@ -332,8 +333,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                     <div className="flex items-center gap-1 bg-background px-1.5 py-1 rounded-lg shadow-sm border border-muted-foreground/10">
                                       <VoteStatusIcon status={a.vote.status} />
                                       <span className={`text-[9px] font-black uppercase tracking-tight
-                                        ${a.vote.status === "APPROVED" ? "text-emerald-600" : "text-red-600"}`}>
-                                        {a.vote.status}
+                                        ${a.vote.status === "APPROVED" ? "text-emerald-600" :
+                                          a.vote.status === "REJECTED" ? "text-red-600" : "text-slate-500"}`}>
+                                        {a.vote.status === "DRAFT" ? "RESET" : a.vote.status}
                                       </span>
                                     </div>
                                   ) : (

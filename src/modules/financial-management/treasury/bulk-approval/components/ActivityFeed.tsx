@@ -41,6 +41,7 @@ export function ActivityFeed({ logs, loading }: Props) {
     if (s === "submitted") return { label: "Awaiting L1", color: "text-blue-700 bg-blue-100/80", icon: <Clock className="h-3 w-3" /> };
     const m = s.match(/pending_l(\d+)/);
     if (m) return { label: `Awaiting L${m[1]}`, color: "text-amber-700 bg-amber-100/80", icon: <Clock className="h-3 w-3" /> };
+    if (s === "draft") return { label: "Reset/Draft", color: "text-slate-600 bg-slate-100", icon: <Clock className="h-3 w-3" /> };
     return { label: draftStatus, color: "text-muted-foreground bg-muted", icon: null };
   }
 
@@ -114,6 +115,7 @@ export function ActivityFeed({ logs, loading }: Props) {
             const isLoading = loadingDetails[log.id];
             const itemDetails = details[log.id] || [];
             const isApproved = log.vote_status?.toUpperCase() === "APPROVED";
+            const isRejected = log.vote_status?.toUpperCase() === "REJECTED";
             const draftStatusMeta = getDraftStatusMeta(log.draft_status ?? "");
 
             return (
@@ -123,7 +125,9 @@ export function ActivityFeed({ logs, loading }: Props) {
                   ${isExpanded
                     ? isApproved
                       ? "bg-emerald-50/50 border-emerald-200 ring-1 ring-emerald-200"
-                      : "bg-red-50/50 border-red-200 ring-1 ring-red-200"
+                      : isRejected
+                        ? "bg-red-50/50 border-red-200 ring-1 ring-red-200"
+                        : "bg-slate-50 border-slate-200 ring-1 ring-slate-200"
                     : "bg-card hover:border-primary/30"}`}
                 onClick={() => toggleExpand(log.id, Number(log.draft_id))}
               >
@@ -134,7 +138,9 @@ export function ActivityFeed({ logs, loading }: Props) {
                     <div className={`h-10 w-10 shrink-0 rounded-full flex items-center justify-center font-black border shadow-sm text-sm
                       ${isApproved
                         ? "bg-emerald-100 text-emerald-700 border-emerald-200"
-                        : "bg-red-100 text-red-700 border-red-200"}`}>
+                        : isRejected
+                          ? "bg-red-100 text-red-700 border-red-200"
+                          : "bg-slate-100 text-slate-700 border-slate-200"}`}>
                       {log.payee_name.charAt(0)}
                     </div>
                     <div className="flex flex-col min-w-0">
@@ -159,12 +165,12 @@ export function ActivityFeed({ logs, loading }: Props) {
                       className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 gap-1 flex items-center
                         ${isApproved
                           ? "bg-emerald-100/80 text-emerald-700"
-                          : "bg-red-100/80 text-red-700"}`}
+                          : isRejected
+                            ? "bg-red-100/80 text-red-700"
+                            : "bg-slate-200 text-slate-700"}`}
                     >
-                      {isApproved
-                        ? <CheckCircle2 className="h-3 w-3" />
-                        : <XCircle className="h-3 w-3" />}
-                      My Vote: {isApproved ? "Approved" : "Rejected"}
+                      {isApproved ? <CheckCircle2 className="h-3 w-3" /> : isRejected ? <XCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                      {isApproved ? "My Vote: Approved" : isRejected ? "My Vote: Rejected" : "My Vote: Reset/Draft"}
                     </Badge>
                     {/* Current draft status badge */}
                     <Badge
