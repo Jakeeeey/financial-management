@@ -5,6 +5,8 @@ export interface SalesmanExpenseRow {
   salesman_name: string;
   salesman_code: string;
   employee_id: number;
+  division_id: number | null;
+  division_name: string | null;
   draft_count: number;
   rejected_count: number;
 }

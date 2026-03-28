@@ -51,6 +51,7 @@ import {
   Tag,
   Tags,
   Plus,
+  CheckCheckIcon,
 } from "lucide-react";
 
 import { NavMain } from "./nav-main";
@@ -122,18 +123,26 @@ const data = {
               title: "Non Current Budget",
               url: "/fm/treasury/budgeting/non-current-budget",
               icon: Lock,
-            },
-            {
-              title: "User Expense Limit",
-              url: "/fm/treasury/budgeting/user-expense-limit",
-              icon: Wallet,
             }
           ]
         },
-        {
+         {
+          title: "Expense Approval",
+          url: "#",
+          icon: Receipt,
+          isActive: true,
+          items: [
+         {
           title: "Salesman Expense Approval",
           url: "/fm/treasury/salesman-expense-approval",
           icon: Receipt,
+            },
+            {
+              title: "Bulk Approval",
+              url: "/fm/treasury/bulk-approval",
+              icon: CheckCheckIcon,
+            }
+          ]
         },
         {
           title: "Disbursement",
