@@ -342,18 +342,35 @@ export async function GET(req: NextRequest) {
       if (exp.status === "Rejected") countMap[key].rejected++;
     }
 
-    // 3. Map salesmen to counts using composite key
+    // 3. Resolve division names
+    const divisionIds = [...new Set(
+      (salesmen as Record<string, unknown>[]).map((s) => Number(s.division_id)).filter(Boolean)
+    )];
+    const divisionNameMap: Record<number, string> = {};
+    if (divisionIds.length > 0) {
+      const divRes = await directusFetch(
+        `/items/division?filter[division_id][_in]=${divisionIds.join(",")}&fields=division_id,division_name&limit=-1`
+      );
+      const divRows = (divRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+      for (const d of divRows) {
+        divisionNameMap[Number(d.division_id)] = String(d.division_name ?? "");
+      }
+    }
+
+    // 4. Map salesmen to counts using composite key
     const result = (salesmen as Record<string, unknown>[])
       .map((s) => {
         const key = `${s.employee_id}_${s.division_id}`;
         const counts = countMap[key] || { draft: 0, rejected: 0 };
         if (counts.draft === 0 && counts.rejected === 0) return null;
+        const divId = s.division_id ? Number(s.division_id) : null;
         return {
           id: s.id,
           salesman_name: s.salesman_name,
           salesman_code: s.salesman_code,
           employee_id: s.employee_id,
-          division_id: s.division_id,
+          division_id: divId,
+          division_name: divId ? (divisionNameMap[divId] ?? null) : null,
           draft_count: counts.draft,
           rejected_count: counts.rejected,
         };
@@ -361,6 +378,7 @@ export async function GET(req: NextRequest) {
       .filter(Boolean);
 
     return json({ data: result });
+
   } catch (e: unknown) {
     return json({ error: "Server error", message: String(e instanceof Error ? e.message : e) }, { status: 500 });
   }

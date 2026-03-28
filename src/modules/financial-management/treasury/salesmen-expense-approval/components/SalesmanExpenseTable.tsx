@@ -74,6 +74,7 @@ export default function SalesmanExpenseTable(props: Props) {
             <TableRow className="bg-muted/50">
               <TableHead className="w-12 text-center">No.</TableHead>
               <TableHead>Name</TableHead>
+              <TableHead>Division</TableHead>
               <TableHead className="text-center">Draft</TableHead>
               <TableHead className="text-center">Rejected</TableHead>
               <TableHead className="text-center">Action</TableHead>
@@ -82,7 +83,7 @@ export default function SalesmanExpenseTable(props: Props) {
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-[360px] text-center">
+                <TableCell colSpan={6} className="h-[360px] text-center">
                   <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
                     <FolderOpen className="h-10 w-10 opacity-40" />
                     <p className="text-sm">No salesmen with pending expenses.</p>
@@ -99,6 +100,13 @@ export default function SalesmanExpenseTable(props: Props) {
                     {(page - 1) * 5 + idx + 1}
                   </TableCell>
                   <TableCell className="font-medium">{row.salesman_name}</TableCell>
+                  <TableCell>
+                    {row.division_name ? (
+                      <span className="text-sm">{row.division_name}</span>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-center">
                     {row.draft_count > 0 ? (
                       <Badge
