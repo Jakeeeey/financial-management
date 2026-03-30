@@ -493,7 +493,7 @@ export async function POST(req: NextRequest) {
           await directusFetch(`/items/expense_draft/${id}`, {
             method: "PATCH",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
               amount: newAmount,
               version: newVersion
             }),
