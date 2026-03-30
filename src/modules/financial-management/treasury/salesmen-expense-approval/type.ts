@@ -19,6 +19,7 @@ export interface ExpenseDraftRow {
   transaction_date: string; // YYYY-MM-DD
   amount: number;
   payee: string | null;
+  payee_id: number | null;
   attachment_url: string | null;
   status: "Drafts" | "Approved" | "Rejected";
   drafted_at: string | null;
