@@ -64,7 +64,7 @@ interface EditAssetModalProps {
   isOpen: boolean;
   onClose: () => void;
   asset: AssetTableData | null;
-  onSuccess: () => void;
+  onSuccess?: () => void;
   onLocalUpdate: (updated: Partial<AssetTableData> & { id: number }) => void;
 }
 
