@@ -50,8 +50,9 @@ import {
   FolderTree,
   Tag,
   Tags,
+  CheckCheckIcon,
   Plus,
-  Printer,
+
 } from "lucide-react";
 
 import { NavMain } from "./nav-main";
@@ -126,16 +127,16 @@ const data = {
             }
           ]
         },
-         {
+        {
           title: "Expense Approval",
           url: "#",
           icon: Receipt,
           isActive: true,
           items: [
-         {
-          title: "Salesman Expense Approval",
-          url: "/fm/treasury/salesman-expense-approval",
-          icon: Receipt,
+            {
+              title: "Salesman Expense Approval",
+              url: "/fm/treasury/salesman-expense-approval",
+              icon: Receipt,
             },
             {
               title: "Bulk Approval",
