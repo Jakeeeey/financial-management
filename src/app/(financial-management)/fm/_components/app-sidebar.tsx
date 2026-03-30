@@ -1,4 +1,3 @@
-// src/app/(supply-chain-management)/scm/_components/app-sidebar.tsx
 "use client";
 
 import * as React from "react";
@@ -124,6 +123,24 @@ const data = {
               title: "Non Current Budget",
               url: "/fm/treasury/budgeting/non-current-budget",
               icon: Lock,
+            }
+          ]
+        },
+         {
+          title: "Expense Approval",
+          url: "#",
+          icon: Receipt,
+          isActive: true,
+          items: [
+         {
+          title: "Salesman Expense Approval",
+          url: "/fm/treasury/salesman-expense-approval",
+          icon: Receipt,
+            },
+            {
+              title: "Bulk Approval",
+              url: "/fm/treasury/bulk-approval",
+              icon: CheckCheckIcon,
             }
           ]
         },
