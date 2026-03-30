@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+
 import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
@@ -69,7 +70,6 @@ function formatDateTime(d: string) {
 function VoteStatusIcon({ status }: { status: string }) {
   if (status === "APPROVED") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
   if (status === "REJECTED") return <XCircle className="h-4 w-4 text-red-500" />;
-  if (status === "DRAFT") return <Clock className="h-4 w-4 text-slate-400" />;
   return <Clock className="h-4 w-4 text-amber-500" />;
 }
 
@@ -315,9 +315,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                               <div key={a.approver_id} className="flex items-center justify-between gap-2.5 py-0.5">
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   <div className={`h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-[10px] font-black shadow-inner border transition-all duration-300
-                                    ${(a.vote?.status === "APPROVED") ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
-                                      (a.vote?.status === "REJECTED") ? "bg-red-100 text-red-700 border-red-200" :
-                                      (a.vote?.status === "DRAFT") ? "bg-slate-50 text-slate-500 border-slate-200" :
+                                    ${a.vote?.status === "APPROVED" ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
+                                      a.vote?.status === "REJECTED" ? "bg-red-100 text-red-700 border-red-200" :
                                       "bg-background text-muted-foreground border-muted-foreground/20 group-hover/tier:border-primary/30"}`}>
                                     {a.name.charAt(0)}
                                   </div>
@@ -333,9 +332,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                     <div className="flex items-center gap-1 bg-background px-1.5 py-1 rounded-lg shadow-sm border border-muted-foreground/10">
                                       <VoteStatusIcon status={a.vote.status} />
                                       <span className={`text-[9px] font-black uppercase tracking-tight
-                                        ${a.vote.status === "APPROVED" ? "text-emerald-600" :
-                                          a.vote.status === "REJECTED" ? "text-red-600" : "text-slate-500"}`}>
-                                        {a.vote.status === "DRAFT" ? "RESET" : a.vote.status}
+                                        ${a.vote.status === "APPROVED" ? "text-emerald-600" : "text-red-600"}`}>
+                                        {a.vote.status}
                                       </span>
                                     </div>
                                   ) : (

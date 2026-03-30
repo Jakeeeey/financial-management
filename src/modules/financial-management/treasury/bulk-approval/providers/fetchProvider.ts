@@ -4,7 +4,7 @@
 import type {
   DraftRow,
   DraftDetail,
-  ActivityLog,
+  LogDraft,
   ActivityLogDetail,
   VotePayload,
 } from "../type";
@@ -65,9 +65,9 @@ export async function submitVote(payload: VotePayload): Promise<{
   };
 }
 
-export async function getActivityLogs(): Promise<ActivityLog[]> {
+export async function getActivityLogs(): Promise<LogDraft[]> {
   const data = await apiFetch(`${BASE}?resource=logs`);
-  return (data as { data: ActivityLog[] }).data;
+  return (data as { data: LogDraft[] }).data;
 }
 
 export async function getActivityLogDetail(draftId: number): Promise<ActivityLogDetail[]> {

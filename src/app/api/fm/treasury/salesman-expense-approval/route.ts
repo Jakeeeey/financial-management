@@ -212,15 +212,16 @@ export async function GET(req: NextRequest) {
     // ── GET ?resource=logs ────────────────────────────────────────────────
     if (resource === "logs") {
       const disbRes = await directusFetch(
-        `/items/disbursement_draft?filter[transaction_type][_eq]=2&sort=-id&limit=200&fields=id,doc_no,status,transaction_date,payee,total_amount,remarks,approver_id,date_created,division_id`
+        `/items/disbursement_draft?filter[transaction_type][_eq]=2&sort=-id&limit=200&fields=id,doc_no,status,transaction_date,payee,encoder_id,total_amount,remarks,approver_id,date_created,division_id`
       );
       if (!disbRes.ok) return json(disbRes.data, { status: disbRes.status });
       const logs = (disbRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
 
-      // Resolve user names (payee and approver)
+      // Resolve user names (encoder, payee and approver)
       const uids = new Set<number>();
       for (const log of logs as Record<string, unknown>[]) {
-        if (log.payee) uids.add(Number(log.payee));
+        if (log.payee) uids.add(Number(log.payee)); // legacy
+        if (log.encoder_id) uids.add(Number(log.encoder_id));
         if (log.approver_id) uids.add(Number(log.approver_id));
       }
 
@@ -238,10 +239,10 @@ export async function GET(req: NextRequest) {
       }
 
       // Filter by RBAC
-      const visibleLogs = (logs as (Record<string, unknown> & { approver_id?: number; payee?: number; division_id?: number })[]).filter(log => {
+      const visibleLogs = (logs as (Record<string, unknown> & { approver_id?: number; payee?: number; encoder_id?: number; division_id?: number })[]).filter(log => {
         const isMyApproval = Number(log.approver_id) === currentUserId;
-        const payeeDept = userDeptMap[Number(log.payee)] || 0;
-        const isMyDept = myDepartments.includes(payeeDept);
+        const targetDept = userDeptMap[Number(log.encoder_id)] || userDeptMap[Number(log.payee)] || 0;
+        const isMyDept = myDepartments.includes(targetDept);
         const isMyDiv = myDivisions.includes(Number(log.division_id || 0));
         return isMyApproval || isMyDept || isMyDiv;
       }).slice(0, 50);
@@ -250,7 +251,7 @@ export async function GET(req: NextRequest) {
         id: log.id,
         doc_no: log.doc_no,
         transaction_date: log.transaction_date,
-        salesman_name: userMap[Number(log.payee)] || `User #${log.payee}`,
+        salesman_name: userMap[Number(log.encoder_id)] || userMap[Number(log.payee)] || `User #${log.encoder_id || log.payee}`,
         total_amount: log.total_amount,
         remarks: log.remarks,
         approver_name: userMap[Number(log.approver_id)] || `User #${log.approver_id}`,
@@ -564,7 +565,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         doc_no: docNo,
         transaction_type: 2,
-        payee: salesman_user_id,
+        payee: null,
         encoder_id: salesman_user_id,
         approver_id: approverId,
         total_amount: totalAmount,

@@ -4,7 +4,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import type { DraftRow, DraftDetail, ActivityLog } from "../type";
+import type { DraftRow, DraftDetail, LogDraft } from "../type";
 import * as api from "../providers/fetchProvider";
 
 export function useBulkApproval() {
@@ -13,7 +13,7 @@ export function useBulkApproval() {
   const [myLevel, setMyLevel] = React.useState<number>(0);
   const [unauthorized, setUnauthorized] = React.useState(false);
 
-  const [logs, setLogs] = React.useState<ActivityLog[]>([]);
+  const [logs, setLogs] = React.useState<LogDraft[]>([]);
   const [logsLoading, setLogsLoading] = React.useState(false);
 
   // Search & pagination

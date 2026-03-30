@@ -9,7 +9,7 @@ const DIRECTUS_BASE =
 const STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 const COOKIE_NAME = "vos_access_token";
 
-// ─── helpers ───────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function json(body: unknown, init?: ResponseInit) {
   return NextResponse.json(body, init);
@@ -24,19 +24,16 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
 async function directusFetch(path: string, init?: RequestInit) {
   if (!DIRECTUS_BASE)
     return { ok: false, status: 500, data: { error: "NEXT_PUBLIC_API_BASE_URL not set" } };
-
   const url = `${DIRECTUS_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
   const res = await fetch(url, {
     cache: "no-store",
     ...init,
     headers: { ...authHeaders(), ...(init?.headers as Record<string, string> || {}) },
   });
-
   let data: unknown = null;
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) data = await res.json();
   else data = await res.text();
-
   return { ok: res.ok, status: res.status, data };
 }
 
@@ -47,7 +44,9 @@ function decodeJwtSub(token: string): number | null {
     const p = parts[1];
     const b64 = p.replace(/-/g, "+").replace(/_/g, "/");
     const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
-    const payload = JSON.parse(Buffer.from(padded, "base64").toString("utf8")) as Record<string, unknown>;
+    const payload = JSON.parse(
+      Buffer.from(padded, "base64").toString("utf8")
+    ) as Record<string, unknown>;
     const sub = payload["sub"] ?? payload["user_id"] ?? payload["id"];
     const n = Number(sub);
     return Number.isFinite(n) ? n : null;
@@ -56,12 +55,12 @@ function decodeJwtSub(token: string): number | null {
   }
 }
 
-/** Manila "now" as a naive ISO string */
 function nowManila(): string {
-  return new Date().toLocaleString("sv-SE", { timeZone: "Asia/Manila" }).replace(" ", "T");
+  return new Date()
+    .toLocaleString("sv-SE", { timeZone: "Asia/Manila" })
+    .replace(" ", "T");
 }
 
-/** Parse current_tier from disbursement_draft.status */
 function parseTier(status: string): number {
   if (!status) return 1;
   const s = status.toUpperCase();
@@ -71,32 +70,31 @@ function parseTier(status: string): number {
   return 1;
 }
 
-/** Build the status string for a given tier */
 function tierStatus(tier: number): string {
   if (tier <= 1) return "Submitted";
   return `Pending_L${tier}`;
 }
 
-/** Get current user ID from JWT cookie */
 async function getCurrentUserId(): Promise<number | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
   return token ? decodeJwtSub(token) : null;
 }
 
-/** Get ALL approver records for a user (may be registered for multiple divisions) */
-async function getApproverRecords(userId: number): Promise<Array<{
-  id: number;
-  approver_id: number;
-  division_id: number;
-  approver_heirarchy: number;
-}>> {
+async function getApproverRecords(userId: number): Promise<
+  Array<{
+    id: number;
+    approver_id: number;
+    division_id: number;
+    approver_heirarchy: number;
+  }>
+> {
   const res = await directusFetch(
     `/items/disbursement_draft_approver?filter[approver_id][_eq]=${userId}&filter[is_deleted][_eq]=0&fields=id,approver_id,division_id,approver_heirarchy&limit=-1&sort=-id`
   );
   if (!res.ok) return [];
-  const rows = ((res.data as { data?: Record<string, unknown>[] })?.data ?? []);
-  return rows.map(r => ({
+  const rows = (res.data as { data?: Record<string, unknown>[] })?.data ?? [];
+  return rows.map((r) => ({
     id: Number(r.id),
     approver_id: Number(r.approver_id),
     division_id: Number(r.division_id),
@@ -104,13 +102,12 @@ async function getApproverRecords(userId: number): Promise<Array<{
   }));
 }
 
-/** Convenience — returns first record or null (for authorization checks) */
 async function getApproverRecord(userId: number) {
   const records = await getApproverRecords(userId);
   return records.length ? records[0] : null;
 }
 
-// ─── GET ────────────────────────────────────────────────────────────────────
+// ─── GET ─────────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
   try {
@@ -120,27 +117,27 @@ export async function GET(req: NextRequest) {
     const sp = req.nextUrl.searchParams;
     const resource = sp.get("resource") || "drafts";
 
-    // ── GET ?resource=my-access ──────────────────────────────────────────
+    // ── my-access ───────────────────────────────────────────────────────────
     if (resource === "my-access") {
       const approver = await getApproverRecord(currentUserId);
       if (!approver) return json({ error: "Forbidden" }, { status: 403 });
       return json({ data: approver });
     }
 
-    // All other resources require approver access
     const approverRecords = await getApproverRecords(currentUserId);
-    if (!approverRecords.length) return json({ error: "Forbidden" }, { status: 403 });
+    if (!approverRecords.length)
+      return json({ error: "Forbidden" }, { status: 403 });
 
-    // A user may be an approver for multiple divisions.
-    // Collect all unique division_ids and use the highest-priority (lowest id = first created)
-    // hierarchy level for voting gating.
-    const myDivisionIds = [...new Set(approverRecords.map(r => r.division_id))];
-    // Use the minimum (highest authority) hierarchy level across all their records
-    const myLevel = approverRecords.reduce((min, r) => Math.min(min, r.approver_heirarchy), 99);
-    // ── GET ?resource=debug ──────────────────────────────────────────────
+    const myDivisionIds = [...new Set(approverRecords.map((r) => r.division_id))];
+    const myLevel = approverRecords.reduce(
+      (min, r) => Math.min(min, r.approver_heirarchy),
+      99
+    );
+
+    // ── debug ────────────────────────────────────────────────────────────────
     if (resource === "debug") {
       const allDraftsRes = await directusFetch(
-        `/items/disbursement_draft?fields=id,doc_no,status,division_id,transaction_type,date_created&sort=-id&limit=20`
+        `/items/disbursement_draft?fields=id,doc_no,status,approval_version,division_id,date_created&sort=-id&limit=20`
       );
       return json({
         debug: true,
@@ -152,45 +149,44 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ── GET ?resource=drafts ─────────────────────────────────────────────
+    // ── drafts ───────────────────────────────────────────────────────────────
     if (resource === "drafts") {
-      // Status flow: Submitted (L1) → Pending_L2 → ... → Approved | Rejected
-      // Directus _eq is reliable; we query each division separately and merge.
-      const activeTierStatus = myLevel === 1 ? "Submitted" : `Pending_L${myLevel}`;
+      const activeTierStatus =
+        myLevel === 1 ? "Submitted" : `Pending_L${myLevel}`;
 
-      // Build one query per division for "Submitted" status,
-      // and one per division for the user's active tier status (if L2+).
-      const divisionQueries = myDivisionIds.flatMap(divId => {
+      // Fetch pending drafts across all authorized divisions
+      const divisionQueries = myDivisionIds.flatMap((divId) => {
         const base =
           `/items/disbursement_draft?filter[division_id][_eq]=${divId}` +
-          `&fields=id,doc_no,payee,total_amount,remarks,status,transaction_date,division_id,transaction_type,encoder_id,approver_id,date_created` +
+          `&fields=id,doc_no,payee,total_amount,remarks,status,approval_version,transaction_date,division_id,transaction_type,encoder_id,approver_id,date_created` +
           `&sort=-id&limit=-1`;
         const queries = [directusFetch(`${base}&filter[status][_eq]=Submitted`)];
         if (myLevel > 1) {
-          queries.push(directusFetch(`${base}&filter[status][_eq]=${activeTierStatus}`));
+          queries.push(
+            directusFetch(`${base}&filter[status][_eq]=${activeTierStatus}`)
+          );
         }
         return queries;
       });
 
       const allResults = await Promise.all(divisionQueries);
-
-      // Merge and deduplicate by id
       const seen = new Set<number>();
       const drafts: Record<string, unknown>[] = [];
       for (const res of allResults) {
         if (!res.ok) continue;
-        for (const row of ((res.data as { data?: Record<string, unknown>[] })?.data ?? [])) {
+        for (const row of (res.data as { data?: Record<string, unknown>[] })
+          ?.data ?? []) {
           const rid = Number(row.id);
-          if (!seen.has(rid)) { seen.add(rid); drafts.push(row); }
+          if (!seen.has(rid)) {
+            seen.add(rid);
+            drafts.push(row);
+          }
         }
       }
-      console.log(`[bulk-approval] drafts found: ${drafts.length} (divisions=${myDivisionIds.join(",")}, myLevel=${myLevel})`);
 
       if (!drafts.length) return json({ data: [], myLevel });
 
-
-
-      // Resolve payee/encoder names (payee is stored as user_id directly)
+      // Resolve names
       const uids = new Set<number>();
       for (const d of drafts as Record<string, unknown>[]) {
         if (d.payee) uids.add(Number(d.payee));
@@ -201,45 +197,44 @@ export async function GET(req: NextRequest) {
         const uRes = await directusFetch(
           `/items/user?filter[user_id][_in]=${[...uids].join(",")}&fields=user_id,user_fname,user_lname&limit=-1`
         );
-        for (const u of (uRes.data as { data?: Record<string, unknown>[] })?.data ?? []) {
-          userMap[Number(u.user_id)] = `${u.user_fname ?? ""} ${u.user_lname ?? ""}`.trim();
+        for (const u of (uRes.data as { data?: Record<string, unknown>[] })
+          ?.data ?? []) {
+          userMap[Number(u.user_id)] =
+            `${u.user_fname ?? ""} ${u.user_lname ?? ""}`.trim();
         }
       }
 
-      // Get all approval votes for these drafts (table may not exist yet — safe fallback)
-      const draftIds = (drafts as Record<string, unknown>[]).map(d => Number(d.id));
+      // Fetch all votes for these drafts
+      const draftIds = drafts.map((d) => Number(d.id));
       let allVotes: Record<string, unknown>[] = [];
       if (draftIds.length > 0) {
         const votesRes = await directusFetch(
-          `/items/disbursement_draft_approvals?filter[draft_id][_in]=${draftIds.join(",")}&fields=id,draft_id,approver_id,status,created_at&limit=-1`
+          `/items/disbursement_draft_approvals?filter[draft_id][_in]=${draftIds.join(",")}&fields=id,draft_id,approver_id,status,version,created_at&limit=-1`
         );
         if (votesRes.ok) {
-          allVotes = ((votesRes.data as { data?: Record<string, unknown>[] })?.data ?? []);
-        } else {
-          console.warn("[bulk-approval] votes query failed (collection may not exist yet):", votesRes.status);
+          allVotes =
+            (votesRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
         }
       }
 
-      // Get total approvers per level — use each draft's own division_id
-      // (all our fetched drafts belong to one of myDivisionIds, so we use the first)
+      // Approvers per level for the first division (for display badges)
       const approversRes = await directusFetch(
         `/items/disbursement_draft_approver?filter[division_id][_eq]=${myDivisionIds[0]}&filter[is_deleted][_eq]=0&fields=approver_id,approver_heirarchy&limit=-1`
       );
-      const allApproversData = approversRes.ok
+      const allApprovers = approversRes.ok
         ? ((approversRes.data as { data?: Record<string, unknown>[] })?.data ?? [])
         : [];
-      if (!approversRes.ok) console.warn("[bulk-approval] approvers query failed:", approversRes.status);
-      const allApprovers = allApproversData;
-      const maxLevel = allApprovers.reduce((m: number, a: Record<string, unknown>) => Math.max(m, Number(a.approver_heirarchy ?? 1)), 1);
-
-      // Count approvers per level
+      const maxLevel = allApprovers.reduce(
+        (m, a) => Math.max(m, Number(a.approver_heirarchy ?? 1)),
+        1
+      );
       const approversPerLevel: Record<number, number> = {};
-      for (const a of allApprovers as Record<string, unknown>[]) {
+      for (const a of allApprovers) {
         const lvl = Number(a.approver_heirarchy ?? 1);
         approversPerLevel[lvl] = (approversPerLevel[lvl] || 0) + 1;
       }
 
-      // Build vote maps per draft
+      // Group votes by draft
       const votesByDraft: Record<number, Record<string, unknown>[]> = {};
       for (const v of allVotes) {
         const did = Number(v.draft_id);
@@ -247,92 +242,114 @@ export async function GET(req: NextRequest) {
         votesByDraft[did].push(v);
       }
 
-      const enriched = (drafts as Record<string, unknown>[]).map(d => {
+      const enriched = (drafts as Record<string, unknown>[]).map((d) => {
         const draftId = Number(d.id);
         const currentTier = parseTier(String(d.status ?? "Submitted"));
+        const currentVersion = Number(d.approval_version ?? 1);
         const votes = votesByDraft[draftId] || [];
 
-        // Suppress unused - maxLevel used in enriched return
-        void maxLevel;
-
-        // Has current user voted?
-        const myVote = votes.find(v => Number(v.approver_id) === currentUserId);
+        // Only votes matching current approval_version are "active"
+        const currentVotes = votes.filter(
+          (v) => Number(v.version) === currentVersion && String(v.status) !== "DRAFT"
+        );
+        const myVote = currentVotes.find(
+          (v) => Number(v.approver_id) === currentUserId
+        );
 
         return {
           id: draftId,
           doc_no: d.doc_no,
           payee_user_id: d.payee,
           payee_name: userMap[Number(d.payee)] || `User #${d.payee}`,
-          encoder_name: userMap[Number(d.encoder_id)] || `User #${d.encoder_id}`,
+          encoder_name:
+            userMap[Number(d.encoder_id)] || `User #${d.encoder_id}`,
           total_amount: d.total_amount,
           remarks: d.remarks,
           status: d.status,
+          approval_version: currentVersion,
           transaction_date: d.transaction_date,
           date_created: d.date_created,
           current_tier: currentTier,
           max_level: maxLevel,
           approvers_per_level: approversPerLevel,
-          my_vote: myVote ? { status: myVote.status, created_at: myVote.created_at } : null,
-          can_vote: (myLevel === currentTier) && !myVote,
+          my_vote: myVote
+            ? { status: myVote.status, created_at: myVote.created_at, version: myVote.version }
+            : null,
+          can_vote: myLevel === currentTier && !myVote,
         };
       });
 
       return json({ data: enriched, myLevel });
     }
 
-    // ── GET ?resource=draft-detail&draft_id=X ────────────────────────────
+    // ── draft-detail ─────────────────────────────────────────────────────────
     if (resource === "draft-detail") {
       const draftId = sp.get("draft_id");
       if (!draftId) return json({ error: "draft_id required" }, { status: 400 });
 
-      // Fetch draft — check against all authorized divisions
-      // Use filter on id only; access is validated by checking the draft's division_id is in myDivisionIds
       const dRes = await directusFetch(
-        `/items/disbursement_draft?filter[id][_eq]=${draftId}&fields=id,doc_no,payee,total_amount,remarks,status,transaction_date,division_id,encoder_id,approver_id,date_created&limit=1`
+        `/items/disbursement_draft?filter[id][_eq]=${draftId}&fields=id,doc_no,payee,total_amount,remarks,status,approval_version,transaction_date,division_id,encoder_id,approver_id,date_created&limit=1`
       );
       if (!dRes.ok) return json(dRes.data, { status: dRes.status });
-      const draft = ((dRes.data as { data?: unknown[] })?.data ?? [])[0] as Record<string, unknown> | undefined;
+      const draft = (
+        (dRes.data as { data?: unknown[] })?.data ?? []
+      )[0] as Record<string, unknown> | undefined;
       if (!draft) return json({ error: "Draft not found" }, { status: 404 });
-      // Validate access: draft's division must be in the user's authorized divisions
-      const draftDivId = Number((draft as Record<string, unknown>).division_id);
+
+      const draftDivId = Number(draft.division_id);
       if (!myDivisionIds.includes(draftDivId)) {
-        return json({ error: "Access denied: draft division not in your authorized divisions" }, { status: 403 });
+        return json({ error: "Access denied" }, { status: 403 });
       }
 
-      // Fetch payables
+      const currentVersion = Number(draft.approval_version ?? 1);
+
+      // Payables
       const pRes = await directusFetch(
         `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,remarks,date,reference_no&limit=-1`
       );
-      const payables = (pRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
+      const payables =
+        (pRes.data as { data?: unknown[] })?.data ?? ([] as Record<string, unknown>[]);
 
-      // Resolve COA names
-      const coaIds = [...new Set((payables as Record<string, unknown>[]).map(p => Number(p.coa_id)).filter(Boolean))];
+      // COA names
+      const coaIds = [
+        ...new Set(
+          (payables as Record<string, unknown>[])
+            .map((p) => Number(p.coa_id))
+            .filter(Boolean)
+        ),
+      ];
       let coaMap: Record<number, string> = {};
       if (coaIds.length > 0) {
         const cRes = await directusFetch(
           `/items/chart_of_accounts?filter[coa_id][_in]=${coaIds.join(",")}&fields=coa_id,account_title&limit=-1`
         );
         coaMap = Object.fromEntries(
-          ((cRes.data as { data?: Record<string, unknown>[] })?.data ?? []).map(c => [Number(c.coa_id), String(c.account_title ?? "")])
+          (
+            (cRes.data as { data?: Record<string, unknown>[] })?.data ?? []
+          ).map((c) => [Number(c.coa_id), String(c.account_title ?? "")])
         );
       }
 
-      // Fetch existing approval votes
+      // ALL votes for this draft (all versions) — for historical display
       const votesRes = await directusFetch(
-        `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draftId}&fields=id,approver_id,status,remarks,created_at&sort=created_at&limit=-1`
+        `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draftId}&fields=id,approver_id,status,remarks,version,created_at&sort=version,created_at&limit=-1`
       );
-      const votes = (votesRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
+      const allVotes =
+        (votesRes.data as { data?: unknown[] })?.data ?? ([] as Record<string, unknown>[]);
 
-      // Fetch all approvers for the DRAFT's division
+      // All approvers for this division
       const approversRes = await directusFetch(
         `/items/disbursement_draft_approver?filter[division_id][_eq]=${draftDivId}&filter[is_deleted][_eq]=0&fields=id,approver_id,approver_heirarchy&limit=-1&sort=approver_heirarchy`
       );
-      const allApprovers = (approversRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
+      const allApprovers =
+        (approversRes.data as { data?: unknown[] })?.data ?? ([] as Record<string, unknown>[]);
 
-      // Resolve user names for approvers + voters
+      // Resolve user names
       const uids = new Set<number>();
-      for (const a of allApprovers as Record<string, unknown>[]) uids.add(Number(a.approver_id));
-      for (const v of votes as Record<string, unknown>[]) uids.add(Number(v.approver_id));
+      for (const a of allApprovers as Record<string, unknown>[])
+        uids.add(Number(a.approver_id));
+      for (const v of allVotes as Record<string, unknown>[])
+        uids.add(Number(v.approver_id));
       if (draft.payee) uids.add(Number(draft.payee));
       if (draft.encoder_id) uids.add(Number(draft.encoder_id));
 
@@ -341,55 +358,100 @@ export async function GET(req: NextRequest) {
         const uRes = await directusFetch(
           `/items/user?filter[user_id][_in]=${[...uids].join(",")}&fields=user_id,user_fname,user_lname&limit=-1`
         );
-        for (const u of (uRes.data as { data?: Record<string, unknown>[] })?.data ?? []) {
-          userMap[Number(u.user_id)] = `${u.user_fname ?? ""} ${u.user_lname ?? ""}`.trim();
+        for (const u of (uRes.data as { data?: Record<string, unknown>[] })
+          ?.data ?? []) {
+          userMap[Number(u.user_id)] =
+            `${u.user_fname ?? ""} ${u.user_lname ?? ""}`.trim();
         }
       }
 
       const currentTier = parseTier(String(draft.status ?? "Submitted"));
-      const maxLevel = (allApprovers as Record<string, unknown>[]).reduce((m, a) => Math.max(m, Number(a.approver_heirarchy ?? 1)), 1);
+      const maxLevel = (allApprovers as Record<string, unknown>[]).reduce(
+        (m, a) => Math.max(m, Number(a.approver_heirarchy ?? 1)),
+        1
+      );
 
-      // Build vote map by approver
-      const voteByApprover: Record<number, Record<string, unknown>> = {};
-      for (const v of votes as Record<string, unknown>[]) {
-        voteByApprover[Number(v.approver_id)] = v;
+      // Current-version votes only (for active tier display + can_vote)
+      const currentVoteByApprover: Record<number, Record<string, unknown>> = {};
+      for (const v of allVotes as Record<string, unknown>[]) {
+        if (Number(v.version) === currentVersion && String(v.status) !== "DRAFT") {
+          currentVoteByApprover[Number(v.approver_id)] = v;
+        }
       }
 
-      // Group approvers by level
-      const approversByLevel: Record<number, {
-        approver_id: number;
-        name: string;
-        level: number;
-        vote: { status: string; remarks: string | null; created_at: string } | null;
-      }[]> = {};
+      // Group current votes by level
+      const approversByLevel: Record<
+        number,
+        {
+          approver_id: number;
+          name: string;
+          level: number;
+          vote: { status: string; remarks: string | null; created_at: string; version: number } | null;
+        }[]
+      > = {};
       for (const a of allApprovers as Record<string, unknown>[]) {
         const lvl = Number(a.approver_heirarchy ?? 1);
         const aid = Number(a.approver_id);
-        const vote = voteByApprover[aid];
+        const vote = currentVoteByApprover[aid];
         if (!approversByLevel[lvl]) approversByLevel[lvl] = [];
         approversByLevel[lvl].push({
           approver_id: aid,
           name: userMap[aid] || `User #${aid}`,
           level: lvl,
-          vote: vote ? {
-            status: String(vote.status ?? ""),
-            remarks: vote.remarks ? String(vote.remarks) : null,
-            created_at: String(vote.created_at ?? ""),
-          } : null,
+          vote: vote
+            ? {
+                status: String(vote.status ?? ""),
+                remarks: vote.remarks ? String(vote.remarks) : null,
+                created_at: String(vote.created_at ?? ""),
+                version: Number(vote.version),
+              }
+            : null,
         });
       }
 
-      const myVote = voteByApprover[currentUserId];
+      // Historical rounds — group by version, show all votes
+      const versionSet = [
+        ...new Set(
+          (allVotes as Record<string, unknown>[]).map((v) => Number(v.version))
+        ),
+      ].sort((a, b) => a - b);
+
+      const voteHistory = versionSet.map((ver) => {
+        const roundVotes = (allVotes as Record<string, unknown>[]).filter(
+          (v) => Number(v.version) === ver
+        );
+        const outcome = roundVotes.some((v) => String(v.status) === "REJECTED")
+          ? "REJECTED"
+          : roundVotes.some((v) => String(v.status) === "APPROVED")
+          ? "IN_PROGRESS"
+          : "PENDING";
+        return {
+          version: ver,
+          is_current: ver === currentVersion,
+          outcome,
+          votes: roundVotes.map((v) => ({
+            approver_id: Number(v.approver_id),
+            name: userMap[Number(v.approver_id)] || `User #${v.approver_id}`,
+            status: String(v.status),
+            remarks: v.remarks ? String(v.remarks) : null,
+            created_at: String(v.created_at ?? ""),
+          })),
+        };
+      });
+
+      const myVote = currentVoteByApprover[currentUserId];
 
       return json({
         draft: {
           ...draft,
           payee_name: userMap[Number(draft.payee)] || `User #${draft.payee}`,
-          encoder_name: userMap[Number(draft.encoder_id)] || `User #${draft.encoder_id}`,
+          encoder_name:
+            userMap[Number(draft.encoder_id)] || `User #${draft.encoder_id}`,
           current_tier: currentTier,
           max_level: maxLevel,
+          approval_version: currentVersion,
         },
-        payables: (payables as Record<string, unknown>[]).map(p => ({
+        payables: (payables as Record<string, unknown>[]).map((p) => ({
           id: p.id,
           coa_id: p.coa_id,
           coa_name: coaMap[Number(p.coa_id)] || `COA #${p.coa_id}`,
@@ -399,48 +461,77 @@ export async function GET(req: NextRequest) {
           reference_no: p.reference_no,
         })),
         approvers_by_level: approversByLevel,
+        vote_history: voteHistory,
         my_level: myLevel,
-        my_vote: myVote ? {
-          status: String(myVote.status ?? ""),
-          remarks: myVote.remarks ? String(myVote.remarks) : null,
-          created_at: String(myVote.created_at ?? ""),
-        } : null,
-        can_vote: (myLevel === currentTier) && !myVote,
+        my_vote: myVote
+          ? {
+              status: String(myVote.status ?? ""),
+              remarks: myVote.remarks ? String(myVote.remarks) : null,
+              created_at: String(myVote.created_at ?? ""),
+              version: Number(myVote.version),
+            }
+          : null,
+        can_vote: myLevel === currentTier && !myVote,
       });
     }
 
-    // ── GET ?resource=logs ────────────────────────────────────────────────
+    // ── logs ─────────────────────────────────────────────────────────────────
     if (resource === "logs") {
-      // Fetch all approval actions by the current user
-      const myApprovalsRes = await directusFetch(
-        `/items/disbursement_draft_approvals?filter[approver_id][_eq]=${currentUserId}` +
-        `&fields=id,draft_id,status,remarks,created_at&sort=-created_at&limit=50`
+      // Query by DIVISION — not by user vote — so every level sees the same history
+      // L1, L2, L3... all see all drafts in their authorized division(s)
+      const divisionDraftQueries = myDivisionIds.map((divId) =>
+        directusFetch(
+          `/items/disbursement_draft?filter[division_id][_eq]=${divId}` +
+          `&fields=id,doc_no,payee,total_amount,remarks,status,approval_version,transaction_date,date_created,encoder_id,division_id` +
+          `&sort=-id&limit=-1`
+        )
+      );
+      const draftResults = await Promise.all(divisionDraftQueries);
+
+      // Merge + deduplicate across divisions
+      const seen = new Set<number>();
+      const draftRows: Record<string, unknown>[] = [];
+      for (const res of draftResults) {
+        if (!res.ok) continue;
+        for (const row of (res.data as { data?: Record<string, unknown>[] })?.data ?? []) {
+          const id = Number(row.id);
+          if (!seen.has(id)) { seen.add(id); draftRows.push(row); }
+        }
+      }
+
+      if (!draftRows.length) return json({ data: [] });
+
+      const draftIds = draftRows.map((d) => Number(d.id));
+
+      // Fetch ALL approval votes for these drafts (all approvers, all versions)
+      const allVotesRes = await directusFetch(
+        `/items/disbursement_draft_approvals?filter[draft_id][_in]=${draftIds.join(",")}&fields=id,draft_id,approver_id,status,remarks,version,created_at&sort=version,created_at&limit=-1`
+      );
+      const allVotes = (
+        (allVotesRes.data as { data?: Record<string, unknown>[] })?.data ?? []
+      ).filter((v) => String(v.status) !== "DRAFT");
+
+      // Approver level map: approver_id → hierarchy level
+      const approverLevelMap: Record<number, number> = {};
+      await Promise.all(
+        myDivisionIds.map(async (divId) => {
+          const aRes = await directusFetch(
+            `/items/disbursement_draft_approver?filter[division_id][_eq]=${divId}&filter[is_deleted][_eq]=0&fields=approver_id,approver_heirarchy&limit=-1`
+          );
+          for (const a of (aRes.data as { data?: Record<string, unknown>[] })?.data ?? []) {
+            approverLevelMap[Number(a.approver_id)] = Number(a.approver_heirarchy);
+          }
+        })
       );
 
-      if (!myApprovalsRes.ok) return json({ data: [] });
-
-      const myApprovals = ((myApprovalsRes.data as { data?: Record<string, unknown>[] })?.data ?? []);
-      if (!myApprovals.length) return json({ data: [] });
-
-      // Get unique draft IDs
-      const draftIds = [...new Set(myApprovals.map(a => Number(a.draft_id)))];
-
-      // Fetch draft details for those IDs
-      const draftsRes = await directusFetch(
-        `/items/disbursement_draft?filter[id][_in]=${draftIds.join(",")}` +
-        `&fields=id,doc_no,payee,total_amount,remarks,status,transaction_date,date_created,encoder_id` +
-        `&limit=-1`
-      );
-      const drafts = ((draftsRes.data as { data?: Record<string, unknown>[] })?.data ?? []);
-      const draftMap: Record<number, Record<string, unknown>> = {};
-      for (const d of drafts) draftMap[Number(d.id)] = d;
-
-      // Resolve user names (payees + approver itself)
+      // Resolve all relevant user names
       const uids = new Set<number>();
-      uids.add(currentUserId);
-      for (const d of drafts) {
+      for (const d of draftRows) {
         if (d.payee) uids.add(Number(d.payee));
         if (d.encoder_id) uids.add(Number(d.encoder_id));
+      }
+      for (const v of allVotes) {
+        if (v.approver_id) uids.add(Number(v.approver_id));
       }
       const userMap: Record<number, string> = {};
       if (uids.size > 0) {
@@ -452,30 +543,74 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Build the log response — one entry per approval action
-      const formatted = myApprovals.map(a => {
-        const draft = draftMap[Number(a.draft_id)];
-        return {
-          id: a.id,
-          draft_id: a.draft_id,
-          doc_no: draft?.doc_no ?? "—",
-          payee_name: draft ? (userMap[Number(draft.payee)] || `User #${draft.payee}`) : "—",
-          total_amount: draft?.total_amount ?? 0,
-          remarks: a.remarks ?? draft?.remarks ?? null,
-          // The vote action (APPROVED/REJECTED) by this approver
-          vote_status: a.status,
-          // The current draft lifecycle status
-          draft_status: draft?.status ?? "—",
-          transaction_date: draft?.transaction_date ?? null,
-          date_created: a.created_at,
-          last_approver_name: userMap[currentUserId] || "You",
-        };
-      });
+      // Group votes by draft_id
+      const votesByDraft: Record<number, Record<string, unknown>[]> = {};
+      for (const v of allVotes) {
+        const did = Number(v.draft_id);
+        if (!votesByDraft[did]) votesByDraft[did] = [];
+        votesByDraft[did].push(v);
+      }
+
+      // Build draft-centric response — only include drafts that have at least one vote
+      const formatted = draftRows
+        .filter((d) => (votesByDraft[Number(d.id)] ?? []).length > 0)
+        .map((d) => {
+          const draftId = Number(d.id);
+          const currentVersion = Number(d.approval_version ?? 1);
+          const votes = votesByDraft[draftId] ?? [];
+
+          const versionSet = [
+            ...new Set(votes.map((v) => Number(v.version))),
+          ].sort((a, b) => a - b);
+
+          const rounds = versionSet.map((ver) => {
+            const roundVotes = votes
+              .filter((v) => Number(v.version) === ver)
+              .map((v) => ({
+                approver_id: Number(v.approver_id),
+                name: userMap[Number(v.approver_id)] || `User #${v.approver_id}`,
+                level: approverLevelMap[Number(v.approver_id)] ?? 0,
+                status: String(v.status),
+                remarks: v.remarks ? String(v.remarks) : null,
+                created_at: String(v.created_at ?? ""),
+              }))
+              .sort((a, b) => a.level - b.level);
+
+            const hasRejection = roundVotes.some((v) => v.status === "REJECTED");
+            const isFinalApproved =
+              String(d.status) === "Approved" && ver === currentVersion && !hasRejection;
+
+            const outcome = isFinalApproved
+              ? "FINAL_APPROVED"
+              : hasRejection
+              ? "REJECTED"
+              : ver < currentVersion
+              ? "SUPERSEDED"
+              : "IN_PROGRESS";
+
+            return { version: ver, is_current: ver === currentVersion, outcome, votes: roundVotes };
+          });
+
+          return {
+            id: draftId,
+            doc_no: d.doc_no,
+            payee_name: userMap[Number(d.payee)] || `User #${d.payee}`,
+            encoder_name: userMap[Number(d.encoder_id)] || `User #${d.encoder_id}`,
+            total_amount: d.total_amount,
+            remarks: d.remarks,
+            status: d.status,
+            approval_version: currentVersion,
+            transaction_date: d.transaction_date,
+            date_created: d.date_created,
+            rounds,
+          };
+        });
 
       return json({ data: formatted });
     }
 
-    // ── GET ?resource=log-detail&draft_id=X ─────────────────────────────
+    // ── log-detail ───────────────────────────────────────────────────────────
+
     if (resource === "log-detail") {
       const draftId = sp.get("draft_id");
       if (!draftId) return json({ error: "draft_id required" }, { status: 400 });
@@ -483,19 +618,28 @@ export async function GET(req: NextRequest) {
       const pRes = await directusFetch(
         `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,remarks,date&limit=-1`
       );
-      const payables = (pRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
-      const coaIds = [...new Set((payables as Record<string, unknown>[]).map(p => Number(p.coa_id)).filter(Boolean))];
+      const payables =
+        (pRes.data as { data?: unknown[] })?.data ?? ([] as Record<string, unknown>[]);
+      const coaIds = [
+        ...new Set(
+          (payables as Record<string, unknown>[])
+            .map((p) => Number(p.coa_id))
+            .filter(Boolean)
+        ),
+      ];
       let coaMap: Record<number, string> = {};
       if (coaIds.length > 0) {
         const cRes = await directusFetch(
           `/items/chart_of_accounts?filter[coa_id][_in]=${coaIds.join(",")}&fields=coa_id,account_title&limit=-1`
         );
         coaMap = Object.fromEntries(
-          ((cRes.data as { data?: Record<string, unknown>[] })?.data ?? []).map(c => [Number(c.coa_id), String(c.account_title ?? "")])
+          (
+            (cRes.data as { data?: Record<string, unknown>[] })?.data ?? []
+          ).map((c) => [Number(c.coa_id), String(c.account_title ?? "")])
         );
       }
       return json({
-        data: (payables as Record<string, unknown>[]).map(p => ({
+        data: (payables as Record<string, unknown>[]).map((p) => ({
           id: p.id,
           coa_name: coaMap[Number(p.coa_id)] || `COA #${p.coa_id}`,
           amount: p.amount,
@@ -507,11 +651,14 @@ export async function GET(req: NextRequest) {
 
     return json({ error: "Unknown resource" }, { status: 400 });
   } catch (e: unknown) {
-    return json({ error: "Server error", message: String(e instanceof Error ? e.message : e) }, { status: 500 });
+    return json(
+      { error: "Server error", message: String(e instanceof Error ? e.message : e) },
+      { status: 500 }
+    );
   }
 }
 
-// ─── POST (vote submission) ──────────────────────────────────────────────────
+// ─── POST (vote submission) ───────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   try {
@@ -522,52 +669,75 @@ export async function POST(req: NextRequest) {
     };
     const { draft_id, status, remarks } = body;
 
-    if (!draft_id || !status) return json({ error: "draft_id and status are required" }, { status: 400 });
+    if (!draft_id || !status)
+      return json({ error: "draft_id and status are required" }, { status: 400 });
 
-    // 1. Mandatory rejection reason
     if (status === "REJECTED" && (!remarks || remarks.trim().length < 10)) {
-      return json({ error: "Rejection reason is mandatory (minimum 10 characters)." }, { status: 400 });
+      return json(
+        { error: "Rejection reason is mandatory (minimum 10 characters)." },
+        { status: 400 }
+      );
     }
 
-    // 2. Identify current approver
+    // Identify approver
     const currentUserId = await getCurrentUserId();
     if (!currentUserId) return json({ error: "Unauthorized" }, { status: 401 });
 
-    const approverRecord = await getApproverRecord(currentUserId);
-    if (!approverRecord) return json({ error: "Forbidden: Not an authorized approver" }, { status: 403 });
+    const approverRecords = await getApproverRecords(currentUserId);
+    if (!approverRecords.length)
+      return json({ error: "Forbidden: Not an authorized approver" }, { status: 403 });
 
-    const myLevel = approverRecord.approver_heirarchy;
-    const myDivisionId = approverRecord.division_id;
+    const myDivisionIds = [...new Set(approverRecords.map((r) => r.division_id))];
+    const myLevel = approverRecords.reduce(
+      (min, r) => Math.min(min, r.approver_heirarchy),
+      99
+    );
 
-    // 3. Fetch the draft
+    // Fetch draft (incl. approval_version)
     const draftRes = await directusFetch(
-      `/items/disbursement_draft?filter[id][_eq]=${draft_id}&filter[division_id][_eq]=${myDivisionId}&fields=id,status,payee,total_amount,remarks,transaction_date,division_id,encoder_id&limit=1`
+      `/items/disbursement_draft?filter[id][_eq]=${draft_id}&fields=id,status,approval_version,payee,total_amount,remarks,transaction_date,division_id,encoder_id,transaction_type&limit=1`
     );
     if (!draftRes.ok) return json(draftRes.data, { status: draftRes.status });
-    const draft = ((draftRes.data as { data?: unknown[] })?.data ?? [])[0] as Record<string, unknown> | undefined;
-    if (!draft) return json({ error: "Draft not found or access denied" }, { status: 404 });
+    const draft = (
+      (draftRes.data as { data?: unknown[] })?.data ?? []
+    )[0] as Record<string, unknown> | undefined;
+    if (!draft) return json({ error: "Draft not found" }, { status: 404 });
 
-    const currentTier = parseTier(String(draft.status ?? "Submitted"));
-
-    // 4. Level check
-    if (myLevel !== currentTier) {
-      return json({
-        error: `You cannot vote at this time. Current active tier: ${currentTier}, your tier: ${myLevel}.`
-      }, { status: 403 });
+    const draftDivId = Number(draft.division_id);
+    if (!myDivisionIds.includes(draftDivId)) {
+      return json({ error: "Access denied: not your division" }, { status: 403 });
     }
 
-    // 5. Duplicate vote check
+    const currentVersion = Number(draft.approval_version ?? 1);
+    const currentTier = parseTier(String(draft.status ?? "Submitted"));
+
+    // Level check
+    if (myLevel !== currentTier) {
+      return json(
+        {
+          error: `You cannot vote now. Active tier: ${currentTier}, your tier: ${myLevel}.`,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Duplicate vote check — only for current version
     const existingVoteRes = await directusFetch(
-      `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draft_id}&filter[approver_id][_eq]=${currentUserId}&fields=id&limit=1`
+      `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draft_id}&filter[approver_id][_eq]=${currentUserId}&filter[version][_eq]=${currentVersion}&fields=id,status&limit=1`
     );
-    const existingVote = ((existingVoteRes.data as { data?: unknown[] })?.data ?? [])[0];
-    if (existingVote) {
-      return json({ error: "You have already voted on this draft." }, { status: 409 });
+    const existingVote = (
+      (existingVoteRes.data as { data?: Record<string, unknown>[] })?.data ?? []
+    )[0];
+    if (existingVote && String(existingVote.status) !== "DRAFT") {
+      return json(
+        { error: "You have already voted on this draft (current round)." },
+        { status: 409 }
+      );
     }
 
     const nowTs = nowManila();
 
-    // 6. Record the vote
+    // Insert new vote with version
     await directusFetch(`/items/disbursement_draft_approvals`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -576,85 +746,101 @@ export async function POST(req: NextRequest) {
         approver_id: currentUserId,
         status,
         remarks: remarks?.trim() || null,
+        version: currentVersion,
         created_at: nowTs,
       }),
     });
 
-    // 7. Short-circuit rejection
+    // ── REJECTION: increment approval_version, reset draft to Submitted ──────
+    // No vote data is touched — history is preserved!
     if (status === "REJECTED") {
-      // Reset all other existing votes to DRAFT to preserve history but clear approval progress
-      const allVotesRes = await directusFetch(
-        `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draft_id}&fields=id,approver_id&limit=-1`
-      );
-      if (allVotesRes.ok) {
-        const votes = (allVotesRes.data as { data?: { id: number; approver_id: number }[] })?.data ?? [];
-        const otherVoteIds = votes
-          .filter(v => Number(v.approver_id) !== Number(currentUserId))
-          .map(v => v.id);
-
-        if (otherVoteIds.length > 0) {
-          await directusFetch(`/items/disbursement_draft_approvals`, {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(otherVoteIds.map(id => ({ id, status: "DRAFT" }))),
-          });
-        }
-      }
-
       await directusFetch(`/items/disbursement_draft/${draft_id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: "Rejected" }),
+        body: JSON.stringify({
+          status: "Submitted",
+          approval_version: currentVersion + 1,
+        }),
       });
-      return json({ ok: true, result: "REJECTED", message: "Draft has been rejected and other votes reset to DRAFT." });
+
+      return json({
+        ok: true,
+        result: "REJECTED",
+        message: `Draft rejected (Round ${currentVersion}). All previous votes preserved. Draft resets to Level 1 for Round ${currentVersion + 1}.`,
+        rejection_round: currentVersion,
+        next_round: currentVersion + 1,
+      });
     }
 
-    // 8. Consensus evaluation
-    // Get all approvers for this division at the current level
+    // ── APPROVAL CONSENSUS ────────────────────────────────────────────────────
     const tierApproversRes = await directusFetch(
-      `/items/disbursement_draft_approver?filter[division_id][_eq]=${myDivisionId}&filter[is_deleted][_eq]=0&filter[approver_heirarchy][_eq]=${currentTier}&fields=approver_id&limit=-1`
+      `/items/disbursement_draft_approver?filter[division_id][_eq]=${draftDivId}&filter[is_deleted][_eq]=0&filter[approver_heirarchy][_eq]=${currentTier}&fields=approver_id&limit=-1`
     );
-    const tierApprovers = (tierApproversRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
+    const tierApprovers = (
+      (tierApproversRes.data as { data?: unknown[] })?.data ?? []
+    ) as Record<string, unknown>[];
     const totalInTier = tierApprovers.length;
 
-    // Count approved votes for this draft at this tier (including current vote)
-    const tierApproverIds = (tierApprovers as Record<string, unknown>[]).map(a => Number(a.approver_id));
+    const tierApproverIds = tierApprovers.map((a) => Number(a.approver_id));
+
+    // Count APPROVED votes for the current version at this tier
     const votesInTierRes = await directusFetch(
-      `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draft_id}&filter[status][_eq]=APPROVED&fields=approver_id&limit=-1`
+      `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draft_id}&filter[status][_eq]=APPROVED&filter[version][_eq]=${currentVersion}&fields=approver_id&limit=-1`
     );
-    const votesInTier = ((votesInTierRes.data as { data?: Record<string, unknown>[] })?.data ?? [])
-      .filter(v => tierApproverIds.includes(Number(v.approver_id)));
+    const votesInTier = (
+      (votesInTierRes.data as { data?: Record<string, unknown>[] })?.data ?? []
+    ).filter((v) => tierApproverIds.includes(Number(v.approver_id)));
     const approvedInTier = votesInTier.length;
 
     if (approvedInTier >= totalInTier) {
-      // Tier complete — find the max level across all approvers
+      // Find max level for this division
       const allApproversRes = await directusFetch(
-        `/items/disbursement_draft_approver?filter[division_id][_eq]=${myDivisionId}&filter[is_deleted][_eq]=0&fields=approver_heirarchy&limit=-1`
+        `/items/disbursement_draft_approver?filter[division_id][_eq]=${draftDivId}&filter[is_deleted][_eq]=0&fields=approver_id,approver_heirarchy&limit=-1&sort=-approver_heirarchy`
       );
-      const allApprovers = (allApproversRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
-      const maxLevel = (allApprovers as Record<string, unknown>[]).reduce((m, a) => Math.max(m, Number(a.approver_heirarchy ?? 1)), 1);
-
+      const allApprovers = (
+        allApproversRes.data as { data?: Record<string, unknown>[] }
+      )?.data ?? [];
+      const maxLevel = allApprovers.reduce(
+        (m, a) => Math.max(m, Number(a.approver_heirarchy ?? 1)),
+        1
+      );
       const nextLevel = currentTier + 1;
 
       if (nextLevel > maxLevel) {
-        // ── ALL TIERS COMPLETE → APPROVE AND POST TO LIVE TABLES ──────
+        // ── ALL TIERS COMPLETE → POST TO LIVE ────────────────────────
+        // Remarks = highest-hierarchy approver's vote remarks for this version
+        const highestApprover = allApprovers[0]; // sort=-approver_heirarchy
+        const highestVoteRes = await directusFetch(
+          `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draft_id}&filter[approver_id][_eq]=${Number(highestApprover?.approver_id)}&filter[status][_eq]=APPROVED&filter[version][_eq]=${currentVersion}&fields=remarks&limit=1`
+        );
+        const highestVote = (
+          (highestVoteRes.data as { data?: Record<string, unknown>[] })?.data ?? []
+        )[0];
+        const finalRemarks = highestVote?.remarks
+          ? String(highestVote.remarks)
+          : draft.remarks
+          ? String(draft.remarks)
+          : null;
+
         await directusFetch(`/items/disbursement_draft/${draft_id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ status: "Approved" }),
         });
 
-        // Fetch payables draft
         const payDraftRes = await directusFetch(
           `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draft_id}&fields=id,division_id,reference_no,date,coa_id,amount,remarks&limit=-1`
         );
-        const payDraftRows = (payDraftRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
+        const payDraftRows = (
+          (payDraftRes.data as { data?: unknown[] })?.data ?? []
+        ) as Record<string, unknown>[];
 
-        // Generate doc_no for live disbursement
         const latestLiveRes = await directusFetch(
           `/items/disbursement?sort=-id&fields=id,doc_no&limit=1`
         );
-        const latestLive = ((latestLiveRes.data as { data?: unknown[] })?.data ?? [])[0] as Record<string, unknown> | undefined;
+        const latestLive = (
+          (latestLiveRes.data as { data?: unknown[] })?.data ?? []
+        )[0] as Record<string, unknown> | undefined;
         let nextDocNum = 1000;
         if (latestLive?.doc_no) {
           const match = String(latestLive.doc_no).match(/(\d+)/);
@@ -662,42 +848,21 @@ export async function POST(req: NextRequest) {
         }
         const liveDocNo = `NT-${nextDocNum}`;
 
-        // Identify Level 1 approvers for this division (highest hierarchy)
-        const l1ApproversRes = await directusFetch(
-          `/items/disbursement_draft_approver?filter[division_id][_eq]=${myDivisionId}&filter[approver_heirarchy][_eq]=1&fields=approver_id&limit=-1`
-        );
-        const l1ApproverIds = ((l1ApproversRes.data as { data?: { approver_id: number }[] })?.data ?? []).map(a => Number(a.approver_id));
-
-        // Get the latest APPROVED remark from any Level 1 approver
-        let finalRemarks = (draft as Record<string, unknown>).remarks;
-        if (l1ApproverIds.length > 0) {
-          const l1VoteRes = await directusFetch(
-            `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${draft_id}&filter[approver_id][_in]=${l1ApproverIds.join(",")}&filter[status][_eq]=APPROVED&sort=-created_at&limit=1&fields=remarks`
-          );
-          const l1Vote = ((l1VoteRes.data as { data?: { remarks: string }[] })?.data ?? [])[0];
-          if (l1Vote?.remarks) {
-            finalRemarks = l1Vote.remarks;
-          }
-        }
-
-        const d = draft as Record<string, unknown>;
-
-        // Create live disbursement
         const liveDisbRes = await directusFetch(`/items/disbursement`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             doc_no: liveDocNo,
-            transaction_type: Number(d.transaction_type ?? 2),
-            payee: d.payee,
+            transaction_type: Number(draft.transaction_type ?? 2),
+            payee: draft.payee,
             remarks: finalRemarks,
-            total_amount: d.total_amount,
+            total_amount: draft.total_amount,
             paid_amount: 0,
-            encoder_id: d.encoder_id,
-            approver_id: currentUserId,
+            encoder_id: draft.encoder_id,
+            approver_id: Number(highestApprover?.approver_id ?? currentUserId),
             posted_by: null,
-            transaction_date: d.transaction_date,
-            division_id: d.division_id,
+            transaction_date: draft.transaction_date,
+            division_id: draft.division_id,
             status: "Approved",
             isPosted: 0,
             date_approved: nowTs,
@@ -707,47 +872,56 @@ export async function POST(req: NextRequest) {
         });
 
         if (!liveDisbRes.ok) {
-          return json({ error: "Failed to create live disbursement", detail: liveDisbRes.data }, { status: 500 });
+          return json(
+            { error: "Failed to create live disbursement", detail: liveDisbRes.data },
+            { status: 500 }
+          );
         }
 
-        const liveId = Number(((liveDisbRes.data as { data?: Record<string, unknown> })?.data)?.id ?? 0);
-        if (!liveId) return json({ error: "Live disbursement created but no ID returned" }, { status: 500 });
+        const liveId = Number(
+          ((liveDisbRes.data as { data?: Record<string, unknown> })?.data)?.id ?? 0
+        );
+        if (!liveId)
+          return json(
+            { error: "Live disbursement created but no ID returned" },
+            { status: 500 }
+          );
 
-        // Create live payables
         if (payDraftRows.length > 0) {
-          const livePayables = (payDraftRows as Record<string, unknown>[]).map(p => ({
-            disbursement_id: liveId,
-            division_id: p.division_id,
-            reference_no: liveDocNo,
-            date: p.date,
-            coa_id: p.coa_id,
-            amount: p.amount,
-            remarks: p.remarks,
-          }));
-
           await directusFetch(`/items/disbursement_payables`, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify(livePayables),
+            body: JSON.stringify(
+              payDraftRows.map((p) => ({
+                disbursement_id: liveId,
+                division_id: p.division_id,
+                reference_no: liveDocNo,
+                date: p.date,
+                coa_id: p.coa_id,
+                amount: p.amount,
+                remarks: p.remarks,
+              }))
+            ),
           });
         }
 
         return json({
           ok: true,
           result: "APPROVED",
-          message: `All tiers approved. Draft posted to live disbursement (${liveDocNo}).`,
+          message: `All tiers approved (Round ${currentVersion}). Posted as ${liveDocNo}.`,
           live_disbursement_id: liveId,
           doc_no: liveDocNo,
+          approval_round: currentVersion,
+          final_remarks_from: `Level ${maxLevel} approver`,
         });
       } else {
-        // ── ADVANCE TO NEXT TIER ──────────────────────────────────────
+        // Advance to next tier
         const newStatus = tierStatus(nextLevel);
         await directusFetch(`/items/disbursement_draft/${draft_id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ status: newStatus }),
         });
-
         return json({
           ok: true,
           result: "TIER_ADVANCED",
@@ -757,15 +931,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Tier not yet complete — vote recorded, waiting for others
     return json({
       ok: true,
       result: "VOTE_RECORDED",
-      message: `Vote recorded. ${approvedInTier} of ${totalInTier} approvals at Level ${currentTier}.`,
+      message: `Vote recorded (Round ${currentVersion}). ${approvedInTier} of ${totalInTier} at Level ${currentTier}.`,
       approved_in_tier: approvedInTier,
       total_in_tier: totalInTier,
     });
   } catch (e: unknown) {
-    return json({ error: "Server error", message: String(e instanceof Error ? e.message : e) }, { status: 500 });
+    return json(
+      { error: "Server error", message: String(e instanceof Error ? e.message : e) },
+      { status: 500 }
+    );
   }
 }
