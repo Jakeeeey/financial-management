@@ -25,11 +25,19 @@ async function directusFetch(path: string, init?: RequestInit) {
   if (!DIRECTUS_BASE)
     return { ok: false, status: 500, data: { error: "NEXT_PUBLIC_API_BASE_URL not set" } };
 
+  const cookieStore = await cookies();
+  const userToken = cookieStore.get(COOKIE_NAME)?.value;
+  const computedHeaders = { ...authHeaders(), ...(init?.headers as Record<string, string> || {}) };
+  
+  if (!computedHeaders.Authorization && userToken) {
+    computedHeaders.Authorization = `Bearer ${userToken}`;
+  }
+
   const url = `${DIRECTUS_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
   const res = await fetch(url, {
     cache: "no-store",
     ...init,
-    headers: { ...authHeaders(), ...(init?.headers as Record<string, string> || {}) },
+    headers: computedHeaders,
   });
 
   let data: unknown = null;
@@ -133,7 +141,7 @@ export async function GET(req: NextRequest) {
         `/items/expense_draft?filter[encoded_by][_eq]=${employeeId}` +
         `&filter[division_id][_eq]=${divisionId_ref}` +
         `&filter[status][_in]=Drafts,Rejected` +
-        `&fields=id,encoded_by,particulars,transaction_date,amount,payee,attachment_url,status,drafted_at,rejected_at,approved_at,remarks,division_id` +
+        `&fields=id,encoded_by,particulars,transaction_date,amount,payee,payee_id,attachment_url,status,drafted_at,rejected_at,approved_at,remarks,division_id` +
         `&limit=-1&sort=transaction_date`
       );
       if (!eRes.ok) return json(eRes.data, { status: eRes.status });
@@ -212,15 +220,16 @@ export async function GET(req: NextRequest) {
     // ── GET ?resource=logs ────────────────────────────────────────────────
     if (resource === "logs") {
       const disbRes = await directusFetch(
-        `/items/disbursement_draft?filter[transaction_type][_eq]=2&sort=-id&limit=200&fields=id,doc_no,status,transaction_date,payee,total_amount,remarks,approver_id,date_created,division_id`
+        `/items/disbursement_draft?filter[transaction_type][_eq]=2&sort=-id&limit=200&fields=id,doc_no,status,transaction_date,payee,encoder_id,total_amount,remarks,approver_id,date_created,division_id`
       );
       if (!disbRes.ok) return json(disbRes.data, { status: disbRes.status });
       const logs = (disbRes.data as { data?: unknown[] })?.data ?? [] as Record<string, unknown>[];
 
-      // Resolve user names (payee and approver)
+      // Resolve user names (encoder, payee and approver)
       const uids = new Set<number>();
       for (const log of logs as Record<string, unknown>[]) {
-        if (log.payee) uids.add(Number(log.payee));
+        if (log.payee) uids.add(Number(log.payee)); // legacy
+        if (log.encoder_id) uids.add(Number(log.encoder_id));
         if (log.approver_id) uids.add(Number(log.approver_id));
       }
 
@@ -238,10 +247,10 @@ export async function GET(req: NextRequest) {
       }
 
       // Filter by RBAC
-      const visibleLogs = (logs as (Record<string, unknown> & { approver_id?: number; payee?: number; division_id?: number })[]).filter(log => {
+      const visibleLogs = (logs as (Record<string, unknown> & { approver_id?: number; payee?: number; encoder_id?: number; division_id?: number })[]).filter(log => {
         const isMyApproval = Number(log.approver_id) === currentUserId;
-        const payeeDept = userDeptMap[Number(log.payee)] || 0;
-        const isMyDept = myDepartments.includes(payeeDept);
+        const targetDept = userDeptMap[Number(log.encoder_id)] || userDeptMap[Number(log.payee)] || 0;
+        const isMyDept = myDepartments.includes(targetDept);
         const isMyDiv = myDivisions.includes(Number(log.division_id || 0));
         return isMyApproval || isMyDept || isMyDiv;
       }).slice(0, 50);
@@ -250,7 +259,7 @@ export async function GET(req: NextRequest) {
         id: log.id,
         doc_no: log.doc_no,
         transaction_date: log.transaction_date,
-        salesman_name: userMap[Number(log.payee)] || `User #${log.payee}`,
+        salesman_name: userMap[Number(log.encoder_id)] || userMap[Number(log.payee)] || `User #${log.encoder_id || log.payee}`,
         total_amount: log.total_amount,
         remarks: log.remarks,
         approver_name: userMap[Number(log.approver_id)] || `User #${log.approver_id}`,
@@ -443,7 +452,7 @@ export async function POST(req: NextRequest) {
 
     // 1. Fetch ALL expense details (for logging and building)
     const eRes = await directusFetch(
-      `/items/expense_draft?filter[id][_in]=${all_ids.join(",")}&fields=id,encoded_by,particulars,amount,transaction_date,attachment_url,remarks,division_id,payee,status,version&limit=-1`
+      `/items/expense_draft?filter[id][_in]=${all_ids.join(",")}&fields=id,encoded_by,particulars,amount,transaction_date,attachment_url,remarks,division_id,payee,payee_id,status,version&limit=-1`
     );
     const rawDetailRows = (((eRes.data as { data?: unknown[] })?.data) ?? []) as Record<string, unknown>[];
 
@@ -493,7 +502,7 @@ export async function POST(req: NextRequest) {
           await directusFetch(`/items/expense_draft/${id}`, {
             method: "PATCH",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
               amount: newAmount,
               version: newVersion
             }),
@@ -564,7 +573,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         doc_no: docNo,
         transaction_type: 2,
-        payee: salesman_user_id,
+        payee: firstExpense?.payee_id || salesman_user_id,
         encoder_id: salesman_user_id,
         approver_id: approverId,
         total_amount: totalAmount,
@@ -592,20 +601,25 @@ export async function POST(req: NextRequest) {
     // 7. Create disbursement_payables_draft — one per approved expense
     const payablePayloads = selectedExpenses.map((e) => ({
       disbursement_id: disbursementId,
-      division_id: salesmanDivisionId,
+      division_id: salesmanDivisionId || null,
       reference_no: docNo,
       date: e.transaction_date ? String(e.transaction_date) : transactionDate,
-      coa_id: e.particulars,
+      coa_id: Number(e.particulars) || null,
       amount: Number(e.amount ?? 0),
-      remarks: e.remarks ?? null,
+      remarks: e.payee ? `[${e.payee}] ${e.remarks || ""}`.trim() : (e.remarks ?? null),
       date_created: nowTs,
     }));
 
-    await directusFetch(`/items/disbursement_payables_draft`, {
+    const pRes = await directusFetch(`/items/disbursement_payables_draft`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payablePayloads),
     });
+
+    if (!pRes.ok) {
+      // Return 400 with details so frontend can show why payables failed to insert
+      return json({ error: "Failed to insert payables", detail: pRes.data, payload: payablePayloads }, { status: 400 });
+    }
 
     return json({ ok: true, disbursement_id: disbursementId, doc_no: docNo });
   } catch (e: unknown) {

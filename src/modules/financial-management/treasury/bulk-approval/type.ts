@@ -9,12 +9,14 @@ export interface DraftRow {
   total_amount: number;
   remarks: string | null;
   status: string;
+  division_name?: string;
+  approval_version: number;
   transaction_date: string | null;
   date_created: string;
   current_tier: number;
   max_level: number;
   approvers_per_level: Record<number, number>;
-  my_vote: { status: string; created_at: string } | null;
+  my_vote: { status: string; created_at: string; version: number } | null;
   can_vote: boolean;
 }
 
@@ -36,7 +38,51 @@ export interface ApproverVote {
     status: string;
     remarks: string | null;
     created_at: string;
+    version: number;
   } | null;
+}
+
+/** A single vote entry in an approval round */
+export interface LogVote {
+  approver_id: number;
+  name: string;
+  /** Approval hierarchy level (1 = first, N = last) */
+  level: number;
+  status: string; // APPROVED | REJECTED
+  remarks: string | null;
+  created_at: string;
+}
+
+/** All votes in one approval round */
+export interface LogRound {
+  version: number;
+  is_current: boolean;
+  /** FINAL_APPROVED | REJECTED | SUPERSEDED | IN_PROGRESS */
+  outcome: string;
+  votes: LogVote[];
+}
+
+/** Draft-centric log record returned by the logs resource */
+export interface LogDraft {
+  id: number;
+  doc_no: string;
+  payee_name: string;
+  encoder_name: string;
+  total_amount: number;
+  remarks: string | null;
+  status: string;
+  approval_version: number;
+  transaction_date: string | null;
+  date_created: string;
+  rounds: LogRound[];
+}
+
+/** One round per approvers_by_level tier in the draft-detail response */
+export interface VoteRound {
+  version: number;
+  is_current: boolean;
+  outcome: string;
+  votes: LogVote[];
 }
 
 export interface DraftDetail {
@@ -48,6 +94,7 @@ export interface DraftDetail {
     total_amount: number;
     remarks: string | null;
     status: string;
+    approval_version: number;
     transaction_date: string | null;
     date_created: string;
     current_tier: number;
@@ -55,25 +102,10 @@ export interface DraftDetail {
   };
   payables: DraftPayable[];
   approvers_by_level: Record<number, ApproverVote[]>;
+  vote_history: VoteRound[];
   my_level: number;
-  my_vote: { status: string; remarks: string | null; created_at: string } | null;
+  my_vote: { status: string; remarks: string | null; created_at: string; version: number } | null;
   can_vote: boolean;
-}
-
-export interface ActivityLog {
-  id: number;
-  draft_id: number;
-  doc_no: string;
-  payee_name: string;
-  total_amount: number;
-  remarks: string | null;
-  /** The action the current user took: APPROVED | REJECTED */
-  vote_status: string;
-  /** The current lifecycle status of the draft: Submitted, Pending_L2, Approved, Rejected, etc. */
-  draft_status: string;
-  transaction_date: string | null;
-  date_created: string;
-  last_approver_name: string;
 }
 
 export interface ActivityLogDetail {
@@ -88,4 +120,8 @@ export interface VotePayload {
   draft_id: number;
   status: "APPROVED" | "REJECTED";
   remarks?: string;
+  edited_payables?: {
+    id: number;
+    amount: string | number;
+  }[];
 }

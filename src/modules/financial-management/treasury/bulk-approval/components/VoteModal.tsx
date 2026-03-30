@@ -16,15 +16,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Tooltip,
   TooltipContent,
@@ -69,7 +62,6 @@ function formatDateTime(d: string) {
 function VoteStatusIcon({ status }: { status: string }) {
   if (status === "APPROVED") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
   if (status === "REJECTED") return <XCircle className="h-4 w-4 text-red-500" />;
-  if (status === "DRAFT") return <Clock className="h-4 w-4 text-slate-400" />;
   return <Clock className="h-4 w-4 text-amber-500" />;
 }
 
@@ -87,13 +79,25 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const [submitting, setSubmitting] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<"APPROVED" | "REJECTED" | null>(null);
   const [showTiers, setShowTiers] = React.useState(true);
+  const [editedAmounts, setEditedAmounts] = React.useState<Record<number, string>>({});
 
   React.useEffect(() => {
     if (open) {
       setRemarks("");
       setConfirmAction(null);
+      setEditedAmounts({});
     }
   }, [open, detail]);
+
+  const currentTotalAmount = React.useMemo(() => {
+    if (!detail) return 0;
+    const { payables, draft } = detail;
+    if (!payables || payables.length === 0) return Number(draft.total_amount);
+    return payables.reduce((acc, p) => {
+      const val = editedAmounts[p.id];
+      return acc + (val !== undefined && val !== "" ? Number(val) : Number(p.amount));
+    }, 0);
+  }, [detail, editedAmounts]);
 
   if (!detail) return null;
 
@@ -114,10 +118,19 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
     setSubmitting(true);
     try {
+      const payloadEditedPayables = payables.map(p => {
+        const edited = editedAmounts[p.id];
+        if (edited !== undefined && Number(edited) !== Number(p.amount)) {
+          return { id: p.id, amount: Number(edited) };
+        }
+        return null;
+      }).filter(Boolean) as { id: number; amount: number }[];
+
       const result = await api.submitVote({
         draft_id: draft.id,
         status: confirmAction,
         remarks: remarks.trim() || undefined,
+        edited_payables: payloadEditedPayables.length > 0 ? payloadEditedPayables : undefined,
       });
 
       if (result.result === "APPROVED") {
@@ -190,7 +203,12 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                 <p className="text-[9px] font-black uppercase text-primary/40 tracking-[0.1em] flex items-center gap-1.5">
                   <DollarSign size={12} /> Total Amount
                 </p>
-                <p className="font-black text-lg text-primary tabular-nums tracking-tighter">{formatCurrency(Number(draft.total_amount))}</p>
+                <p className="font-black text-lg text-primary tabular-nums tracking-tighter">
+                  {formatCurrency(currentTotalAmount)}
+                  {currentTotalAmount !== Number(draft.total_amount) && (
+                    <span className="text-[10px] text-amber-500 ml-2 animate-pulse">(Modified)</span>
+                  )}
+                </p>
               </div>
               <div className="space-y-0.5">
                 <p className="text-[9px] font-black uppercase text-primary/40 tracking-[0.1em]">Transaction Date</p>
@@ -233,46 +251,60 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                   </TooltipProvider>
                 </div>
                 <div className="flex-1 px-4 py-2">
-                  <Table>
-                    <TableHeader className="sticky top-[53px] bg-background/95 backdrop-blur-md z-20 shadow-sm border-b">
-                      <TableRow className="hover:bg-transparent border-none">
-                        <TableHead className="text-[10px] font-black uppercase tracking-wider h-10">#</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase tracking-wider h-10">Account (COA)</TableHead>
-                        <TableHead className="text-right text-[10px] font-black uppercase tracking-wider h-10">Amount</TableHead>
-                        <TableHead className="text-center text-[10px] font-black uppercase tracking-wider h-10">Date</TableHead>
-                        <TableHead className="text-left text-[10px] font-black uppercase tracking-wider h-10">Remarks</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b bg-muted/20">
+                        <th className="py-3 px-2 text-[10px] font-black uppercase tracking-wider">#</th>
+                        <th className="py-3 px-2 text-[10px] font-black uppercase tracking-wider">Account (COA)</th>
+                        <th className="py-3 px-2 text-right text-[10px] font-black uppercase tracking-wider">Amount</th>
+                        <th className="py-3 px-2 text-center text-[10px] font-black uppercase tracking-wider">Date</th>
+                        <th className="py-3 px-2 text-left text-[10px] font-black uppercase tracking-wider">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
                       {payables.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} className="text-center py-20 text-muted-foreground">
+                        <tr>
+                          <td colSpan={5} className="text-center py-20 text-muted-foreground">
                             <div className="flex flex-col items-center gap-3 opacity-40">
                               <FileText size={48} />
                               <p className="text-sm font-bold uppercase tracking-widest">No payable items found.</p>
                             </div>
-                          </TableCell>
-                        </TableRow>
+                          </td>
+                        </tr>
                       ) : (
                         payables.map((p, idx) => (
-                          <TableRow key={p.id} className="group/row hover:bg-muted/30 border-muted/40 transition-colors">
-                            <TableCell className="text-xs text-muted-foreground/60 font-mono font-bold w-12">{idx + 1}</TableCell>
-                            <TableCell className="py-4">
-                              <p className="text-sm font-black leading-tight text-foreground group-hover/row:text-primary transition-colors">{p.coa_name}</p>
+                          <tr key={p.id} className="border-b hover:bg-muted/10">
+                            <td className="py-4 px-2 text-xs text-muted-foreground/60 font-mono font-bold w-12">{idx + 1}</td>
+                            <td className="py-4 px-2">
+                              <p className="text-sm font-black leading-tight text-foreground">{p.coa_name || "Unknown COA"}</p>
                               <p className="text-[10px] text-muted-foreground/70 font-mono mt-0.5">#{p.coa_id}</p>
-                            </TableCell>
-                            <TableCell className="text-right font-black tabular-nums text-sm text-primary">
-                              {formatCurrency(Number(p.amount))}
-                            </TableCell>
-                            <TableCell className="text-center text-xs text-muted-foreground font-semibold px-4">{formatDate(p.date)}</TableCell>
-                            <TableCell className="text-xs italic text-muted-foreground/80 max-w-[200px] truncate font-medium">
+                            </td>
+                            <td className="py-2 px-2 text-right font-black tabular-nums text-sm text-primary">
+                              {can_vote && !my_vote ? (
+                                <div className="flex justify-end">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    className="w-28 text-right bg-background border rounded-md px-2 py-1 text-sm font-black tabular-nums focus:ring-2 focus:ring-primary focus:outline-none transition-all shadow-sm"
+                                    value={editedAmounts[p.id] !== undefined ? editedAmounts[p.id] : p.amount}
+                                    onChange={(e) => setEditedAmounts(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                  />
+                                </div>
+                              ) : (
+                                p.amount ? formatCurrency(Number(p.amount)) : "0.00"
+                              )}
+                            </td>
+                            <td className="py-4 px-2 text-center text-xs text-muted-foreground font-semibold px-4">
+                              {p.date ? formatDate(p.date) : "—"}
+                            </td>
+                            <td className="py-4 px-2 text-xs italic text-muted-foreground/80 max-w-[200px] truncate font-medium">
                               {p.remarks || "—"}
-                            </TableCell>
-                          </TableRow>
+                            </td>
+                          </tr>
                         ))
                       )}
-                    </TableBody>
-                  </Table>
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -315,9 +347,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                               <div key={a.approver_id} className="flex items-center justify-between gap-2.5 py-0.5">
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   <div className={`h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-[10px] font-black shadow-inner border transition-all duration-300
-                                    ${(a.vote?.status === "APPROVED") ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
-                                      (a.vote?.status === "REJECTED") ? "bg-red-100 text-red-700 border-red-200" :
-                                      (a.vote?.status === "DRAFT") ? "bg-slate-50 text-slate-500 border-slate-200" :
+                                    ${a.vote?.status === "APPROVED" ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
+                                      a.vote?.status === "REJECTED" ? "bg-red-100 text-red-700 border-red-200" :
                                       "bg-background text-muted-foreground border-muted-foreground/20 group-hover/tier:border-primary/30"}`}>
                                     {a.name.charAt(0)}
                                   </div>
@@ -333,9 +364,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                     <div className="flex items-center gap-1 bg-background px-1.5 py-1 rounded-lg shadow-sm border border-muted-foreground/10">
                                       <VoteStatusIcon status={a.vote.status} />
                                       <span className={`text-[9px] font-black uppercase tracking-tight
-                                        ${a.vote.status === "APPROVED" ? "text-emerald-600" :
-                                          a.vote.status === "REJECTED" ? "text-red-600" : "text-slate-500"}`}>
-                                        {a.vote.status === "DRAFT" ? "RESET" : a.vote.status}
+                                        ${a.vote.status === "APPROVED" ? "text-emerald-600" : "text-red-600"}`}>
+                                        {a.vote.status}
                                       </span>
                                     </div>
                                   ) : (

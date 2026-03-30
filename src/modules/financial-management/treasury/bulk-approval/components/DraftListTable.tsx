@@ -26,6 +26,7 @@ interface Props {
   pageCount: number;
   loading: boolean;
   myLevel: number;
+  levelsByDivision: Record<number, number[]>;
   onAction: (row: DraftRow) => void;
 }
 
@@ -91,7 +92,7 @@ function StatusBadge({ status, current_tier }: { status: string; current_tier: n
 }
 
 export default function DraftListTable(props: Props) {
-  const { rows, totalItems, q, setQ, page, setPage, pageCount, loading, myLevel, onAction } = props;
+  const { rows, totalItems, q, setQ, page, setPage, pageCount, loading, myLevel, levelsByDivision, onAction } = props;
 
   if (loading) {
     return (
@@ -119,10 +120,14 @@ export default function DraftListTable(props: Props) {
       </div>
 
       {/* Level indicator */}
-      {myLevel > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-primary/5 border border-primary/20 rounded-xl text-xs font-bold text-primary shrink-0">
+      {Object.keys(levelsByDivision).length > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-primary/5 border border-primary/20 rounded-xl text-xs font-bold text-primary shrink-0 transition-all hover:bg-primary/10">
           <LockKeyhole className="h-3.5 w-3.5" />
-          You are a <span className="underline underline-offset-2">Level {myLevel}</span> approver — buttons are active only when the draft reaches your tier.
+          {Object.keys(levelsByDivision).length > 1 ? (
+            <span>You have active approval roles in <span className="underline underline-offset-2">{Object.keys(levelsByDivision).length} divisions</span>. The action button is enabled only when a draft reaches your specific tier.</span>
+          ) : (
+            <span>You are a <span className="underline underline-offset-2">Level {myLevel}</span> approver — buttons are active only when the draft reaches your tier.</span>
+          )}
         </div>
       )}
 
@@ -133,6 +138,7 @@ export default function DraftListTable(props: Props) {
             <TableRow className="bg-muted/50">
               <TableHead className="w-10 text-center text-xs">#</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-tight">Doc No</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-tight">Division</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-tight">Payee</TableHead>
               <TableHead className="text-right text-xs font-bold uppercase tracking-tight">Amount</TableHead>
               <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Date</TableHead>
@@ -162,6 +168,11 @@ export default function DraftListTable(props: Props) {
                   </TableCell>
                   <TableCell>
                     <span className="font-black text-sm font-mono text-primary">{row.doc_no}</span>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-[10px] font-bold bg-muted/50 border-muted-foreground/30 px-2 py-0">
+                      {row.division_name || "N/A"}
+                    </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col">
