@@ -9,6 +9,7 @@ export interface DraftRow {
   total_amount: number;
   remarks: string | null;
   status: string;
+  division_name?: string;
   approval_version: number;
   transaction_date: string | null;
   date_created: string;
@@ -119,4 +120,8 @@ export interface VotePayload {
   draft_id: number;
   status: "APPROVED" | "REJECTED";
   remarks?: string;
+  edited_payables?: {
+    id: number;
+    amount: string | number;
+  }[];
 }

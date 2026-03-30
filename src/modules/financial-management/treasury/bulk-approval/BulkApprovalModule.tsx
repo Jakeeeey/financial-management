@@ -23,6 +23,7 @@ export default function BulkApprovalModule() {
     pageCount,
     loading,
     myLevel,
+    levelsByDivision,
     unauthorized,
     logs,
     logsLoading,
@@ -68,7 +69,9 @@ export default function BulkApprovalModule() {
             Disbursement Approval
           </h1>
           <p className="text-sm font-medium text-muted-foreground ml-5">
-            {myLevel > 0
+            {Object.keys(levelsByDivision).length > 1
+              ? `You have active approval roles across ${Object.keys(levelsByDivision).length} divisions.`
+              : myLevel > 0
               ? `You are a Level ${myLevel} approver — cast your vote on pending drafts.`
               : "Multi-tier consensus approval for disbursement drafts."}
           </p>
@@ -114,6 +117,7 @@ export default function BulkApprovalModule() {
               pageCount={pageCount}
               loading={loading}
               myLevel={myLevel}
+              levelsByDivision={levelsByDivision}
               onAction={openVoteModal}
             />
           </div>

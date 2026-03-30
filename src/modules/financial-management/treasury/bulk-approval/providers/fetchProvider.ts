@@ -29,14 +29,22 @@ export async function checkMyAccess(): Promise<{
   approver_id: number;
   division_id: number;
   approver_heirarchy: number;
-}> {
+}[]> {
   const data = await apiFetch(`${BASE}?resource=my-access`);
-  return (data as { data: { approver_id: number; division_id: number; approver_heirarchy: number } }).data;
+  return (data as { data: { approver_id: number; division_id: number; approver_heirarchy: number }[] }).data;
 }
 
-export async function listDrafts(): Promise<{ data: DraftRow[]; myLevel: number }> {
+export async function listDrafts(): Promise<{ 
+  data: DraftRow[]; 
+  myLevel: number;
+  levelsByDivision: Record<number, number[]>;
+}> {
   const data = await apiFetch(`${BASE}?resource=drafts`);
-  return data as { data: DraftRow[]; myLevel: number };
+  return data as { 
+    data: DraftRow[]; 
+    myLevel: number;
+    levelsByDivision: Record<number, number[]>;
+  };
 }
 
 export async function getDraftDetail(draftId: number): Promise<DraftDetail> {

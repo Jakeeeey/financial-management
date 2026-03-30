@@ -11,6 +11,7 @@ export function useBulkApproval() {
   const [drafts, setDrafts] = React.useState<DraftRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [myLevel, setMyLevel] = React.useState<number>(0);
+  const [levelsByDivision, setLevelsByDivision] = React.useState<Record<number, number[]>>({});
   const [unauthorized, setUnauthorized] = React.useState(false);
 
   const [logs, setLogs] = React.useState<LogDraft[]>([]);
@@ -52,6 +53,7 @@ export function useBulkApproval() {
       ]);
       setDrafts(result.data);
       setMyLevel(result.myLevel);
+      setLevelsByDivision(result.levelsByDivision || {});
     } catch (e: unknown) {
       if (e instanceof Error && e.message === "403_UNAUTHORIZED") {
         setUnauthorized(true);
@@ -125,6 +127,7 @@ export function useBulkApproval() {
     pageCount,
     loading,
     myLevel,
+    levelsByDivision,
     unauthorized,
     logs,
     logsLoading,
