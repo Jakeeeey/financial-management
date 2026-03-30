@@ -103,7 +103,10 @@ export async function fetchAssets(): Promise<AssetTableData[]> {
   const classJson = await cRes.json();
 
   const itemsMap = new Map(
-    (itemsJson.data || []).map((i: Record<string, unknown>) => [Number(i.id), i]),
+    (itemsJson.data || []).map((i: Record<string, unknown>) => [
+      Number(i.id),
+      i,
+    ]),
   );
   const deptsMap = new Map(
     (deptsJson.data || []).map((d: Record<string, unknown>) => [
@@ -118,7 +121,10 @@ export async function fetchAssets(): Promise<AssetTableData[]> {
     ]),
   );
   const typesMap = new Map(
-    (typeJson.data || []).map((t: Record<string, unknown>) => [Number(t.id), t.type_name]),
+    (typeJson.data || []).map((t: Record<string, unknown>) => [
+      Number(t.id),
+      t.type_name,
+    ]),
   );
   const classMap = new Map(
     (classJson.data || []).map((c: Record<string, unknown>) => [
@@ -128,7 +134,10 @@ export async function fetchAssets(): Promise<AssetTableData[]> {
   );
 
   return (assetsJson.data || []).map((asset: Record<string, unknown>) => {
-    const baseItem = itemsMap.get(Number(asset.item_id)) as Record<string, unknown>;
+    const baseItem = itemsMap.get(Number(asset.item_id)) as Record<
+      string,
+      unknown
+    >;
     return {
       ...asset,
       item_name: baseItem?.item_name ?? "N/A",
@@ -332,7 +341,9 @@ export async function updateAsset(body: Record<string, unknown>) {
   const classId = await ensureReferenceExists(
     "item_classification",
     "classification_name",
-    (updateData.classification_name || updateData.item_classification) as string | number,
+    (updateData.classification_name || updateData.item_classification) as
+      | string
+      | number,
   );
 
   const itemUpdateRes = await fetch(`${API_BASE_URL}/items/items/${item_id}`, {
@@ -354,7 +365,9 @@ export async function updateAsset(body: Record<string, unknown>) {
     quantity: Number(updateData.quantity),
     total: Number(updateData.cost_per_item) * Number(updateData.quantity),
     life_span: Number(updateData.life_span),
-    date_acquired: (updateData.date_acquired as string | undefined)?.split("T")[0],
+    date_acquired: (updateData.date_acquired as string | undefined)?.split(
+      "T",
+    )[0],
     department: Number(updateData.department),
     employee: updateData.employee ? Number(updateData.employee) : null,
     item_image: updateData.item_image,
@@ -377,7 +390,7 @@ export async function updateAsset(body: Record<string, unknown>) {
   if (!assetUpdateRes.ok)
     throw new Error(
       assetResult.errors?.[0]?.message ||
-      "Failed to update asset equipment record",
+        "Failed to update asset equipment record",
     );
 
   return assetResult.data;

@@ -16,6 +16,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
 import {
+  CalendarIcon,
   Check,
   ChevronsUpDown,
   Loader2,
@@ -62,6 +63,7 @@ import { assetService } from "@/modules/financial-management/asset-management/se
 import {
   assetFormSchema,
   AssetFormValues,
+  AssetTableData,
   Department,
   ItemClassification,
   ItemType,
@@ -70,6 +72,7 @@ import {
 
 interface AddAssetModalProps {
   onSuccess: () => void;
+  onLocalAppend: (asset: AssetTableData) => void;
 }
 
 interface AssetItem {
@@ -79,7 +82,9 @@ interface AssetItem {
   item_classification?: { classification_name?: string };
 }
 
-export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
+export default function AddAssetModal({
+  onLocalAppend,
+}: AddAssetModalProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -250,10 +255,47 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
         throw new Error(result.error || "Failed to save asset");
       }
 
+      const selectedDepartment = departments.find(
+        (d) => d.department_id === values.department,
+      );
+      const selectedEmployee = users.find((u) => u.user_id === values.employee);
+
+      // 👇 Use local date formatting to avoid UTC timezone shift
+      const d = values.date_acquired;
+      const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+      // 👇 Build full display row — id and item_id come from API, rest from form + resolved names
+      const newAssetRow: AssetTableData = {
+        id: result.data.id,
+        item_id: result.data.item_id,
+        item_name: values.item_name,
+        item_type_name: values.item_type,
+        classification_name: values.item_classification,
+        condition: values.condition,
+        cost_per_item: values.cost_per_item,
+        quantity: values.quantity,
+        total: values.cost_per_item * values.quantity,
+        life_span: values.life_span,
+        date_acquired: localDateStr,
+        department: values.department,
+        department_name: selectedDepartment?.department_name ?? "Unassigned",
+        employee: values.employee,
+        assigned_to_name: selectedEmployee
+          ? `${selectedEmployee.user_fname} ${selectedEmployee.user_lname}`.trim()
+          : "Unassigned",
+        item_image: finalImageValue,
+        barcode: values.barcode || null,
+        rfid_code: values.rfid_code || null,
+        serial: values.serial || null,
+        is_active_warning: values.is_active_warning,
+        encoder: 133,
+      };
+
+      onLocalAppend(newAssetRow);
       toast.success("Asset saved successfully!");
       setOpen(false);
       resetForm();
-      onSuccess();
+      // onSuccess();
     } catch (error: unknown) {
       console.error("Asset creation error:", error);
       toast.error(
@@ -882,7 +924,7 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                                 !field.value && "text-muted-foreground",
                               )}
                             >
-                              {/* <CalendarIcon className="ml-auto h-4 w-4 opacity-50" /> */}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                               {field.value ? (
                                 format(field.value, "PPP")
                               ) : (
@@ -902,6 +944,9 @@ export default function AddAssetModal({ onSuccess }: AddAssetModalProps) {
                               }
                             }}
                             disabled={(date) => date > new Date()}
+                            captionLayout="dropdown"
+                            fromYear={1900}
+                            toYear={new Date().getFullYear()}
                             autoFocus
                           />
                         </PopoverContent>
