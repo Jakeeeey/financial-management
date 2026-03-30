@@ -15,6 +15,7 @@ import PricingFiltersBar from "./PricingFiltersBar";
 import PricingTable from "./PricingTable";
 import BulkSaveBar from "./BulkSaveBar";
 
+import { pivotPrices } from "../utils/pivot";
 import * as api from "../providers/pricingApi";
 import PrintPricingDialog from "./PrintPricingDialog";
 
@@ -22,10 +23,12 @@ import type {
     Brand,
     Category,
     MatrixRow,
+    PriceRow,
     PricingFilters,
     ProductRow,
     Supplier,
     Unit,
+    VariantCell,
 } from "../types";
 
 type SupplierScope = "ALL" | "LINKED_ONLY";
@@ -182,8 +185,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function toNullableNumber(value: unknown): number | null {
     if (value === null || value === undefined || value === "") return null;
+    if (typeof value === "object" && value !== null) {
+        const record = value as Record<string, unknown>;
+        const val = record.product_id ?? record.id ?? record.value;
+        const n = Number(val);
+        return Number.isFinite(n) && n > 0 ? n : null;
+    }
     const n = Number(value);
-    return Number.isFinite(n) ? n : null;
+    return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 function toNumberOrZero(value: unknown): number {
@@ -422,11 +431,14 @@ export default function PricingMatrixView() {
     ]);
 
     const [printOpen, setPrintOpen] = React.useState(false);
-    const [printRows, setPrintRows] = React.useState<ProductRow[]>([]);
     const [printFiltersText, setPrintFiltersText] = React.useState("");
     const [printGeneratedAt, setPrintGeneratedAt] = React.useState("");
+    const [isPrinting, setIsPrinting] = React.useState(false);
+    const [printMatrixRows, setPrintMatrixRows] = React.useState<MatrixRow[]>([]);
+    const [printUsedUnitIds, setPrintUsedUnitIds] = React.useState<Set<number>>(new Set());
 
     const openPrint = React.useCallback(async () => {
+        setIsPrinting(true);
         try {
             const filters = matrix.filters;
 
@@ -441,8 +453,73 @@ export default function PricingMatrixView() {
                 missing_tier: toBool01(filters.missing_tier, "0"),
             };
 
+            // 1. Fetch ALL products (no pagination)
             const res = await api.getPrintProducts(params);
-            const resolvedRows = extractPrintRows(res);
+            const allProducts = extractPrintRows(res);
+
+            if (allProducts.length === 0) {
+                toast.warning("No printable products found for the current filters.");
+                return;
+            }
+
+            // 2. Fetch ALL prices for these products in chunks (avoid URL length limits)
+            const allProductIds = allProducts.map(p => p.product_id);
+            const CHUNK_SIZE = 200;
+            const priceRows: PriceRow[] = [];
+
+            for (let i = 0; i < allProductIds.length; i += CHUNK_SIZE) {
+                const slice = allProductIds.slice(i, i + CHUNK_SIZE);
+                const chunkRes = await api.getPricesForProducts(slice);
+                if (Array.isArray(chunkRes.data)) {
+                    priceRows.push(...chunkRes.data);
+                }
+            }
+
+            const priceMap = pivotPrices(pt.priceTypes, priceRows);
+
+            // 3. Group into MatrixRows
+            const groups = new Map<number, ProductRow[]>();
+            const usedUnitIds = new Set<number>();
+
+            for (const p of allProducts) {
+                // Harden gid: if parent_id is 0 or null, use product_id
+                const gid = (p.parent_id && p.parent_id > 0) ? p.parent_id : p.product_id;
+
+                if (!groups.has(gid)) groups.set(gid, []);
+                groups.get(gid)!.push(p);
+
+                if (p.unit_of_measurement) usedUnitIds.add(Number(p.unit_of_measurement));
+            }
+
+            const assembled: MatrixRow[] = [];
+            const EMPTY_PIVOT = { A: null, B: null, C: null, D: null, E: null };
+
+            for (const [groupId, variants] of groups.entries()) {
+                const display = variants.find(v => v.product_id === groupId) || variants[0];
+                const variantsByUnitId: Record<number, VariantCell> = {};
+
+                for (const v of variants) {
+                    const uomId = Number(v.unit_of_measurement);
+                    if (uomId) {
+                        variantsByUnitId[uomId] = {
+                            product: v,
+                            tiers: { ...(priceMap.get(v.product_id) ?? EMPTY_PIVOT) }
+                        };
+                    }
+                }
+
+                assembled.push({
+                    group_id: groupId,
+                    display,
+                    variantsByUnitId,
+                    category_name: display.product_category ? lookupMaps.categoriesById.get(Number(display.product_category)) ?? null : null,
+                    brand_name: display.product_brand ? lookupMaps.brandsById.get(Number(display.product_brand)) ?? null : null,
+                });
+            }
+
+            assembled.sort((a, b) =>
+                (a.display.product_name || "").localeCompare(b.display.product_name || "")
+            );
 
             const resolvedFiltersText = buildFiltersText({
                 filters,
@@ -456,17 +533,16 @@ export default function PricingMatrixView() {
 
             setPrintGeneratedAt(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
             setPrintFiltersText(resolvedFiltersText);
-            setPrintRows(resolvedRows);
+            setPrintMatrixRows(assembled);
+            setPrintUsedUnitIds(usedUnitIds);
             setPrintOpen(true);
-
-            if (resolvedRows.length === 0) {
-                toast.warning("No printable rows found for the current filters.");
-            }
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : "Failed to open print editor";
             toast.error(message);
+        } finally {
+            setIsPrinting(false);
         }
-    }, [matrix.filters, lookupMaps]);
+    }, [matrix.filters, lookupMaps, pt.priceTypes]);
 
     React.useEffect(() => {
         if (lookups.error) toast.error(lookups.error);
@@ -508,7 +584,7 @@ export default function PricingMatrixView() {
                         onDiscard={matrix.discardAll}
                         onRefresh={matrix.refresh}
                         onPrint={openPrint}
-                        loading={Boolean(matrix.loading)}
+                        loading={Boolean(matrix.loading) || isPrinting}
                     />
                 </div>
 
@@ -519,11 +595,13 @@ export default function PricingMatrixView() {
                 <PrintPricingDialog
                     open={printOpen}
                     onOpenChange={setPrintOpen}
-                    rows={printRows}
+                    rows={printMatrixRows}
                     filtersText={printFiltersText}
                     generatedAtText={printGeneratedAt}
                     unitName={(id) => (id ? lookupMaps.unitsById.get(Number(id)) ?? "" : "")}
                     units={lookups.units}
+                    priceTypes={pt.priceTypes}
+                    usedUnitIds={printUsedUnitIds}
                 />
             </div>
         </div>

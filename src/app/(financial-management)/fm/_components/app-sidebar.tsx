@@ -52,6 +52,7 @@ import {
   Tag,
   Tags,
   Plus,
+  Printer,
 } from "lucide-react";
 
 import { NavMain } from "./nav-main";
@@ -441,6 +442,7 @@ const data = {
         },
       ],
     },
+
   ],
 };
 
