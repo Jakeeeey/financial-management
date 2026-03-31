@@ -71,12 +71,12 @@ export default function SalesmanExpenseTable(props: Props) {
       <div className="flex-1 overflow-y-auto overflow-x-hidden rounded-xl border shadow-inner bg-background relative">
         <Table className="w-full table-fixed">
           <colgroup>
-            <col className="w-9" />           {/* No. */}
-            <col className="w-[35%]" />        {/* Name */}
-            <col className="w-[20%]" />        {/* Division */}
-            <col className="w-[12%]" />        {/* Draft */}
-            <col className="w-[12%]" />        {/* Rejected */}
-            <col className="w-[12%]" />        {/* Action */}
+            <col className="w-9" />
+            <col className="w-[35%]" />
+            <col className="w-[20%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
           </colgroup>
           <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm shadow-sm">
             <TableRow className="bg-muted/50">

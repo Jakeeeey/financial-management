@@ -135,15 +135,15 @@ export default function DraftListTable(props: Props) {
       <div className="flex-1 overflow-y-auto overflow-x-hidden rounded-xl border shadow-inner bg-background relative">
         <Table className="w-full table-fixed">
           <colgroup>
-            <col className="w-9" />           {/* # */}
-            <col className="w-[11%]" />        {/* Doc No */}
-            <col className="w-[12%]" />        {/* Division */}
-            <col className="w-[22%]" />        {/* Payee */}
-            <col className="w-[13%]" />        {/* Amount */}
-            <col className="w-[11%]" />        {/* Date */}
-            <col className="w-[10%]" />        {/* Status */}
-            <col className="w-[13%]" />        {/* Tier Progress */}
-            <col className="w-[9%]" />         {/* Action */}
+            <col className="w-9" />
+            <col className="w-[11%]" />
+            <col className="w-[12%]" />
+            <col className="w-[22%]" />
+            <col className="w-[13%]" />
+            <col className="w-[11%]" />
+            <col className="w-[10%]" />
+            <col className="w-[13%]" />
+            <col className="w-[9%]" />
           </colgroup>
           <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm shadow-sm">
             <TableRow className="bg-muted/50">

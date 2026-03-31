@@ -521,7 +521,9 @@ export async function GET(req: NextRequest) {
         })),
         approvers_by_level: approversByLevel,
         vote_history: voteHistory,
-        my_level: myLevel,
+        my_level: (levelsByDivision[draftDivId] || []).includes(currentTier) 
+          ? currentTier 
+          : ((levelsByDivision[draftDivId] || [])[0] ?? myLevel),
         my_vote: myVote
           ? {
               status: String(myVote.status ?? ""),
@@ -530,7 +532,7 @@ export async function GET(req: NextRequest) {
               version: Number(myVote.version),
             }
           : null,
-        can_vote: myLevel === currentTier && !myVote,
+        can_vote: (levelsByDivision[draftDivId] || []).includes(currentTier) && !myVote,
       });
     }
 
@@ -769,7 +771,7 @@ export async function POST(req: NextRequest) {
 
     // Fetch draft (incl. approval_version and content version)
     const draftRes = await directusFetch(
-      `/items/disbursement_draft?filter[id][_eq]=${draft_id}&fields=id,doc_no,status,approval_version,version,payee,total_amount,remarks,transaction_date,division_id,department_id,encoder_id,transaction_type&limit=1`
+      `/items/disbursement_draft?filter[id][_eq]=${draft_id}&fields=id,doc_no,status,approval_version,version,payee,total_amount,remarks,transaction_date,division_id,department_id,encoder_id,transaction_type,supporting_documents_url&limit=1`
     );
     if (!draftRes.ok) return json(draftRes.data, { status: draftRes.status });
     const draft = (
@@ -1017,6 +1019,19 @@ export async function POST(req: NextRequest) {
         }
         const liveDocNo = `NT-${nextDocNum}`;
 
+        // Format supporting documents as comma-separated string
+        let finalSupportingDocsUrl = null;
+        if (draft.supporting_documents_url) {
+          if (Array.isArray(draft.supporting_documents_url)) {
+            finalSupportingDocsUrl = draft.supporting_documents_url
+              .map((u: any) => (typeof u === "object" && u !== null ? (u.directus_files_id || u.id || u) : u))
+              .filter(Boolean)
+              .join(",");
+          } else if (typeof draft.supporting_documents_url === "string") {
+            finalSupportingDocsUrl = draft.supporting_documents_url;
+          }
+        }
+
         const liveDisbPayload: Record<string, unknown> = {
           doc_no: liveDocNo,
           transaction_type: Number(draft.transaction_type ?? 2),
@@ -1024,16 +1039,17 @@ export async function POST(req: NextRequest) {
           total_amount: draft.total_amount,
           paid_amount: 0,
           encoder_id: draft.encoder_id,
-          approver_id: Number(highestApprover?.approver_id ?? currentUserId),
+          approver_id: null,
           posted_by: null,
           transaction_date: draft.transaction_date,
           division_id: draft.division_id,
           department_id: draft.department_id,
-          status: "Approved",
+          status: "Draft",
           isPosted: 0,
-          date_approved: nowTs,
+          date_approved: null,
           date_created: nowTs,
           date_updated: nowTs,
+          supporting_documents_url: finalSupportingDocsUrl,
         };
 
         // Update the draft records to correspond with the live one
