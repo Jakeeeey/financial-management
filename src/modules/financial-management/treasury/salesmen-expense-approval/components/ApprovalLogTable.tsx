@@ -60,25 +60,25 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full">
       {/* Feed Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 mb-6 px-1">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary shadow-inner">
-            <History size={20} className="stroke-[2.5]" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 mb-4 px-1">
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 bg-primary/10 rounded-lg flex items-center justify-center text-primary shadow-inner">
+            <History size={16} className="stroke-[2.5]" />
           </div>
           <div>
-            <h3 className="text-xl font-black tracking-tight text-foreground">Activity Feed</h3>
-            <p className="text-xs font-medium text-muted-foreground">
+            <h3 className="text-lg font-black tracking-tight text-foreground">Activity Feed</h3>
+            <p className="text-[10px] font-medium text-muted-foreground">
               Recent treasury disbursements & approvals
             </p>
           </div>
         </div>
 
-        <div className="relative w-full md:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <div className="relative w-full md:w-56">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search docs or names..."
-            className="w-full pl-9 pr-4 py-2 text-sm bg-muted/30 border-transparent focus:border-primary focus:bg-background rounded-xl outline-none ring-0 transition-all font-medium"
+            className="w-full pl-8 pr-3 h-8 text-xs bg-muted/30 border-transparent focus:border-primary focus:bg-background rounded-lg outline-none ring-0 transition-all font-medium"
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -109,7 +109,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
             return (
               <div 
                 key={log.id} 
-                className={`group flex flex-col p-4 md:p-5 rounded-2xl border transition-all cursor-pointer shadow-sm hover:shadow-md
+                className={`group flex flex-col p-3 rounded-xl border transition-all cursor-pointer shadow-sm hover:shadow-md
                   ${isExpanded ? 'bg-primary/[0.02] border-primary/20 ring-1 ring-primary/20' : 'bg-card hover:border-primary/30'}
                 `}
                 onClick={() => toggleExpand(log.id)}
@@ -117,16 +117,16 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                 <div className="flex justify-between items-start gap-4">
                   
                   {/* Left: User & Main Info */}
-                  <div className="flex items-start gap-4 flex-1 overflow-hidden">
-                    <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-primary font-black border border-primary/10 shadow-sm">
+                  <div className="flex items-start gap-3 flex-1 overflow-hidden">
+                    <div className="h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-primary text-xs font-black border border-primary/10 shadow-sm">
                       {log.salesman_name.charAt(0)}
                     </div>
                     <div className="flex flex-col min-w-0">
-                      <p className="font-bold text-sm text-foreground truncate flex items-center gap-2">
+                      <p className="font-bold text-xs text-foreground truncate flex items-center gap-2">
                         {log.salesman_name}
                       </p>
-                      <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground font-mono">
-                        <FileText size={12} className="opacity-60" />
+                      <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground font-mono">
+                        <FileText size={10} className="opacity-60" />
                         <span className="font-semibold text-primary/80">{log.doc_no}</span>
                         <span className="opacity-30">•</span>
                         <span>{format(new Date(log.date_created), "MMM dd, hh:mm a")}</span>
@@ -135,13 +135,13 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                   </div>
 
                   {/* Right: Amount & Status */}
-                  <div className="flex flex-col items-end shrink-0 gap-1.5">
-                    <span className="text-lg font-black tracking-tight tabular-nums text-foreground drop-shadow-sm">
+                  <div className="flex flex-col items-end shrink-0 gap-1 mt-0.5">
+                    <span className="text-base font-black tracking-tight tabular-nums text-foreground drop-shadow-sm">
                       {formatCurrency(log.total_amount)}
                     </span>
                     <Badge 
                       variant="secondary" 
-                      className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 max-w-[120px] truncate
+                      className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0 max-w-[100px] truncate
                         ${log.status === 'Draft' ? 'bg-amber-100/50 text-amber-700' : 
                           log.status === 'Submitted' ? 'bg-indigo-100/50 text-indigo-700' :
                           log.status === 'Approved' ? 'bg-emerald-100/50 text-emerald-700' : 
@@ -153,17 +153,17 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                 </div>
 
                 {/* Remarks & Approver Banner */}
-                <div className="mt-4 pt-3 border-t border-border/50 flex flex-col gap-2">
-                   <p className="text-xs font-medium text-muted-foreground italic line-clamp-2 leading-relaxed">
+                <div className="mt-3 pt-2.5 border-t border-border/50 flex flex-col gap-1.5">
+                   <p className="text-[11px] font-medium text-muted-foreground italic line-clamp-2 leading-tight">
                      &quot;{log.remarks || "No supplementary remarks provided."}&quot;
                    </p>
                    <div className="flex items-center justify-between">
-                     <p className="text-[10px] uppercase font-bold text-muted-foreground/80 flex items-center gap-1.5">
-                       <CheckCircle2 size={12} className="text-emerald-500" /> 
+                     <p className="text-[9px] uppercase font-bold text-muted-foreground/80 flex items-center gap-1.5">
+                       <CheckCircle2 size={10} className="text-emerald-500" /> 
                        Submitted by {log.approver_name}
                      </p>
-                     <p className="text-[10px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                        {isExpanded ? "Close details" : "View breakdown"} <ArrowRight size={10} />
+                     <p className="text-[9px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                        {isExpanded ? "Close details" : "View breakdown"} <ArrowRight size={8} />
                      </p>
                    </div>
                 </div>
