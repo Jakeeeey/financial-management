@@ -1024,7 +1024,13 @@ export async function POST(req: NextRequest) {
         if (draft.supporting_documents_url) {
           if (Array.isArray(draft.supporting_documents_url)) {
             finalSupportingDocsUrl = draft.supporting_documents_url
-              .map((u: any) => (typeof u === "object" && u !== null ? (u.directus_files_id || u.id || u) : u))
+              .map((u: unknown) => {
+                if (typeof u === "object" && u !== null) {
+                  const obj = u as Record<string, unknown>;
+                  return obj.directus_files_id || obj.id || obj;
+                }
+                return u;
+              })
               .filter(Boolean)
               .join(",");
           } else if (typeof draft.supporting_documents_url === "string") {
