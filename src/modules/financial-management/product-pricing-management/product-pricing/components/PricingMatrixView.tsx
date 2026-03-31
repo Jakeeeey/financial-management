@@ -549,7 +549,9 @@ export default function PricingMatrixView() {
         if (pt.error) toast.error(pt.error);
     }, [lookups.error, pt.error]);
 
-    if (lookups.loading || pt.loading) {
+    const isInitialLoad = (lookups.loading || pt.loading) && currentRows.length === 0;
+
+    if (isInitialLoad) {
         return (
             <div className="space-y-3">
                 <Skeleton className="h-10 w-full rounded-xl" />

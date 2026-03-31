@@ -374,7 +374,16 @@ export default function PricingTable({ matrix }: Props) {
         .pmx-table { border-collapse: separate !important; border-spacing: 0 !important; }
         .pmx-price-x::-webkit-scrollbar { height: 0px; }
         .pmx-price-x::-webkit-scrollbar-thumb { background: transparent; }
+        .pmx-loading-row { opacity: 0.5; pointer-events: none; transition: opacity 0.2s ease; }
       `}</style>
+
+            {loading && rows.length > 0 && (
+                <div className="absolute top-0 left-0 right-0 z-50 h-1 overflow-hidden">
+                    <div className="h-full w-full bg-primary/20 animate-pulse">
+                        <div className="h-full bg-primary animate-progress-fast" style={{ width: '30%' }} />
+                    </div>
+                </div>
+            )}
 
             <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
                 <div className="flex min-w-0">
@@ -422,11 +431,10 @@ export default function PricingTable({ matrix }: Props) {
                                 <col style={{ width: LEFT_COL_WIDTHS[4] }} />
                             </colgroup>
 
-                            <PTableBody>
+                            <PTableBody className={cn(loading && rows.length > 0 && "pmx-loading-row")}>
                                 {loading && rows.length === 0 ? <LoadingLeftBody rowCount={10} /> : null}
 
-                                {!loading &&
-                                    rows.map((r) => {
+                                {rows.map((r) => {
                                         const display = r.display ?? {};
                                         const groupKey = String(r.group_id);
                                         const hovered = hoverKey === groupKey;
@@ -554,11 +562,10 @@ export default function PricingTable({ matrix }: Props) {
                                         )}
                                     </colgroup>
 
-                                    <PTableBody>
+                                    <PTableBody className={cn(loading && rows.length > 0 && "pmx-loading-row")}>
                                         {loading && rows.length === 0 ? <LoadingRightBody rowCount={10} priceCols={priceCols} /> : null}
 
-                                        {!loading &&
-                                            rows.map((r) => {
+                                        {rows.map((r) => {
                                                 const groupKey = String(r.group_id);
                                                 const hovered = hoverKey === groupKey;
 

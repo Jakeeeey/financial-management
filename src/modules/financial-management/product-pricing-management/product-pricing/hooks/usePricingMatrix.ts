@@ -335,7 +335,7 @@ export function usePricingMatrix(args: {
         setPage(1);
     }
 
-    return {
+    return React.useMemo(() => ({
         TIERS,
         loading,
         rows,
@@ -362,7 +362,17 @@ export function usePricingMatrix(args: {
         discardAll,
 
         refresh,
-    };
+    }), [
+        loading,
+        rows,
+        meta,
+        usedUnits,
+        priceTypes,
+        filters,
+        page,
+        pageSize,
+        dirty.size,
+    ]);
 }
 
 function unitLabel(u: Unit) {
