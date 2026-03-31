@@ -50,8 +50,9 @@ import {
   FolderTree,
   Tag,
   Tags,
-  Plus,
   CheckCheckIcon,
+  Plus,
+
 } from "lucide-react";
 
 import { NavMain } from "./nav-main";
@@ -126,16 +127,16 @@ const data = {
             }
           ]
         },
-         {
+        {
           title: "Expense Approval",
           url: "#",
           icon: Receipt,
           isActive: true,
           items: [
-         {
-          title: "Salesman Expense Approval",
-          url: "/fm/treasury/salesman-expense-approval",
-          icon: Receipt,
+            {
+              title: "Salesman Expense Approval",
+              url: "/fm/treasury/salesman-expense-approval",
+              icon: Receipt,
             },
             {
               title: "Bulk Approval",
@@ -237,27 +238,27 @@ const data = {
           items: [
             {
               title: "CCM's List",
-              url: "/fm/claims-management/ccm-list",
+              url: "/fm/accounting/claims-management/ccm-list",
               icon: List,
             },
             {
               title: "Generate Transmittal",
-              url: "/fm/claims-management/generate-transmittal",
+              url: "/fm/accounting/claims-management/generate-transmittal",
               icon: FileOutput,
             },
             {
               title: "For Receiving",
-              url: "/fm/claims-management/for-receiving",
+              url: "/fm/accounting/claims-management/for-receiving",
               icon: Inbox,
             },
             {
               title: "For Payment",
-              url: "/fm/claims-management/for-payment",
+              url: "/fm/accounting/claims-management/for-payment",
               icon: CreditCard,
             },
             {
               title: "Transmittal History",
-              url: "/fm/claims-management/transmittal-history",
+              url: "/fm/accounting/claims-management/transmittal-history",
               icon: History,
             }
           ]
@@ -459,6 +460,7 @@ const data = {
         },
       ],
     },
+
   ],
 };
 

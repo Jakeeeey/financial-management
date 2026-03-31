@@ -139,13 +139,13 @@ export default function RequestsTable(props: Props) {
                                         <Checkbox
                                             checked={isSelected}
                                             onCheckedChange={(checked) => props.onToggleSelect?.(id, checked === true)}
-                                            aria-label={`Select request ${id}`}
+                                            aria-label={`Select request PCR-${id}`}
                                             disabled={props.acting || !isPending}
                                         />
                                     </TableCell>
                                 )}
 
-                                <TableCell className="font-medium">{id}</TableCell>
+                                <TableCell className="font-medium">PCR-{id}</TableCell>
                                 <TableCell className="max-w-[420px] truncate">{productLabel(r)}</TableCell>
                                 <TableCell>{priceTypeLabel(r)}</TableCell>
                                 <TableCell className="text-right">{fmt(r.proposed_price)}</TableCell>

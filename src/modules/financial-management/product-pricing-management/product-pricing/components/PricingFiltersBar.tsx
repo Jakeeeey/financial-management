@@ -119,6 +119,7 @@ export default function PricingFiltersBar(props: Props) {
         [filters],
     );
 
+    const [localQ, setLocalQ] = React.useState(filters.q);
     const [supplierOpen, setSupplierOpen] = React.useState(false);
     const [brandOpen, setBrandOpen] = React.useState(false);
     const [catOpen, setCatOpen] = React.useState(false);
@@ -128,6 +129,10 @@ export default function PricingFiltersBar(props: Props) {
     const [brandQuery, setBrandQuery] = React.useState("");
     const [catQuery, setCatQuery] = React.useState("");
     const [unitQuery, setUnitQuery] = React.useState("");
+
+    React.useEffect(() => {
+        setLocalQ(filters.q);
+    }, [filters.q]);
 
     const filteredSuppliers = React.useMemo(() => {
         const q = supplierQuery.trim().toLowerCase();
@@ -283,14 +288,24 @@ export default function PricingFiltersBar(props: Props) {
                 <div className="min-w-0 overflow-x-auto">
                     <div className="min-w-[980px] max-w-full">
                         <div className="grid gap-2 md:grid-cols-12">
-                            <div className="min-w-0 md:col-span-4">
+                            <div className="flex gap-2 min-w-0 md:col-span-4">
                                 <Input
                                     placeholder="Search name / code / barcode…"
-                                    value={filters.q}
-                                    onChange={(e) =>
-                                        setFilters((prev) => ({ ...prev, q: e.target.value }))
-                                    }
+                                    value={localQ}
+                                    onChange={(e) => setLocalQ(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            setFilters((prev) => ({ ...prev, q: localQ }));
+                                        }
+                                    }}
                                 />
+                                <Button
+                                    type="button"
+                                    onClick={() => setFilters((prev) => ({ ...prev, q: localQ }))}
+                                >
+                                    Search
+                                </Button>
                             </div>
 
                             <div className="min-w-0 md:col-span-2">

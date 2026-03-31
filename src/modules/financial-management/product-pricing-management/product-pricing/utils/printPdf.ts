@@ -2,7 +2,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-import type { ProductRow, ProductTierKey, Unit } from "../types";
+import type { MatrixRow, ProductTierKey, Unit, PriceType } from "../types";
 
 type Options = {
     paper?: "a4" | "legal" | "a3";
@@ -10,6 +10,9 @@ type Options = {
     fontSize?: number;
     compact?: boolean;
     includeBarcode?: boolean;
+    priceTypes?: PriceType[];
+    units?: Unit[];
+    usedUnitIds?: Set<number>;
 };
 
 type PdfCell = {
@@ -18,281 +21,192 @@ type PdfCell = {
     colSpan?: number;
     styles?: {
         halign?: "left" | "center" | "right" | "justify";
+        valign?: "top" | "middle" | "bottom";
+        fillColor?: [number, number, number];
+        textColor?: [number, number, number];
+        fontStyle?: "normal" | "bold" | "italic" | "bolditalic";
+        fontSize?: number;
     };
 };
-
-type AutoTableColumnStyle = {
-    cellWidth?: number | "auto" | "wrap";
-    halign?: "left" | "center" | "right" | "justify";
-};
-
-type AutoTableDoc = jsPDF & {
-    lastAutoTable?: {
-        finalY?: number;
-    };
-};
-
-function safeStr(v: unknown): string {
-    const s = String(v ?? "").trim();
-    if (!s || s === "undefined" || s === "null") return "";
-    return s;
-}
-
-function toNumberOrNull(v: unknown): number | null {
-    if (v === null || v === undefined || v === "") return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-}
 
 function money(v: unknown): string {
     const n = Number(v);
     if (!Number.isFinite(n)) return "";
     return n.toLocaleString(undefined, {
-        minimumFractionDigits: 0,
+        minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     });
 }
 
-function tierValue(p: ProductRow, tier: ProductTierKey): unknown {
-    if (tier === "A") return p.priceA;
-    if (tier === "B") return p.priceB;
-    if (tier === "C") return p.priceC;
-    if (tier === "D") return p.priceD;
-    return p.priceE;
-}
+const TIERS: ProductTierKey[] = ["A", "B", "C", "D", "E"];
 
-function buildGroupKey(p: ProductRow): number {
-    const parentId = toNumberOrNull(p.parent_id);
-    if (parentId !== null && parentId > 0) return parentId;
+const groupColors: Record<string, [number, number, number]> = {
+    A: [240, 249, 255], // sky-50
+    B: [236, 253, 245], // emerald-50
+    C: [245, 243, 255], // violet-50
+    D: [255, 251, 235], // amber-50
+    E: [255, 241, 242], // rose-50
+};
 
-    const productId = Number(p.product_id);
-    return Number.isFinite(productId) ? productId : 0;
-}
+const groupTextColors: Record<string, [number, number, number]> = {
+    A: [3, 105, 161],  // sky-700
+    B: [4, 120, 87],   // emerald-700
+    C: [109, 40, 217], // violet-700
+    D: [180, 83, 9],   // amber-800
+    E: [190, 18, 60],  // rose-700
+};
 
-function pickBase(items: ProductRow[]) {
-    const parent = items.find((x) => x.parent_id == null);
-    const base = parent ?? items[0];
-
-    return {
-        name: safeStr(base?.product_name) || "—",
-        code: safeStr(base?.product_code) || "—",
-        barcode: safeStr(base?.barcode) || "",
-    };
-}
-
-export function generatePricingMatrixPdf(args: {
-    rows: ProductRow[];
-    filtersText: string;
-    lookups: {
-        unitName: (id: number | null | undefined) => string;
-        units?: Unit[];
-    };
-    options?: Options;
-}) {
-    const { rows, filtersText, lookups } = args;
-    const opts: Options = args.options ?? {};
-
+export function generatePricingMatrixPdf(
+    rows: MatrixRow[],
+    opts: Options = {}
+) {
     const paper = opts.paper ?? "a4";
     const orientation = opts.orientation ?? "landscape";
     const includeBarcode = opts.includeBarcode ?? true;
     const compact = opts.compact ?? true;
+    const usedUnitIds = opts.usedUnitIds ?? new Set();
+    const unitsList = opts.units ?? [];
 
-    const TIERS: ProductTierKey[] = ["A", "B", "C", "D", "E"];
+    const doc = new jsPDF({ orientation, unit: "pt", format: paper });
 
-    const doc = new jsPDF({ orientation, unit: "pt", format: paper }) as AutoTableDoc;
-
-    const usedUnitIds = Array.from(
-        new Set(
-            (rows ?? [])
-                .map((r) => toNumberOrNull(r.unit_of_measurement))
-                .filter((n): n is number => n !== null && n > 0),
-        ),
-    );
-
-    const usedUnits = usedUnitIds
-        .map((id) => ({
-            id,
-            label: safeStr(lookups.unitName(id)) || String(id),
-        }))
-        .sort((a, b) => a.label.localeCompare(b.label));
-
-    const now = new Date();
-    const generated = `${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
-
-    const groups = new Map<number, ProductRow[]>();
-
-    for (const r of rows ?? []) {
-        const key = buildGroupKey(r);
-        const existing = groups.get(key);
-
-        if (existing) {
-            existing.push(r);
-        } else {
-            groups.set(key, [r]);
-        }
-    }
-
-    const groupList = Array.from(groups.entries()).map(([key, items]) => {
-        const byUnit = new Map<number, ProductRow>();
-
-        for (const item of items) {
-            const unitId = toNumberOrNull(item.unit_of_measurement);
-            if (unitId !== null && unitId > 0) {
-                byUnit.set(unitId, item);
-            }
-        }
-
-        const base = pickBase(items);
-
-        return {
-            key,
-            product_name: base.name,
-            product_code: base.code,
-            barcode: base.barcode,
-            byUnit,
-        };
-    });
-
-    groupList.sort((a, b) => a.product_name.localeCompare(b.product_name));
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text("Product Pricing Matrix", 40, 36);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.text(`Generated: ${generated}`, doc.internal.pageSize.getWidth() - 220, 36);
-    doc.text(filtersText ? `Filters: ${filtersText}` : "Filters: (none)", 40, 56);
+    // Filter units that are actually used in the data
+    const usedUnits = unitsList
+        .filter(u => usedUnitIds.has(Number(u.unit_id)))
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     const uomCount = Math.max(usedUnits.length, 1);
 
+    // --- Header Construction (3 Levels) ---
     const headRow1: PdfCell[] = [
-        { content: "Product", rowSpan: 2 },
-        { content: "Code", rowSpan: 2 },
+        { content: "Product Details", colSpan: includeBarcode ? 5 : 4, styles: { halign: "center", fontStyle: "bold" } },
     ];
-
-    if (includeBarcode) {
-        headRow1.push({ content: "Barcode", rowSpan: 2 });
-    }
 
     for (const tier of TIERS) {
         headRow1.push({
-            content: tier,
+            content: `PRICE TYPE ${tier}`,
             colSpan: uomCount,
-            styles: { halign: "center" },
+            styles: { 
+                halign: "center", 
+                fillColor: groupColors[tier],
+                textColor: groupTextColors[tier],
+                fontStyle: "bold"
+            },
         });
     }
 
-    const headRow2: PdfCell[] = [];
+    const headRow2: PdfCell[] = [
+        { content: "Code", rowSpan: 2, styles: { valign: "middle" } },
+        { content: "Barcode", rowSpan: 2, styles: { valign: "middle" } },
+        { content: "Product Name", rowSpan: 2, styles: { valign: "middle" } },
+        { content: "Category", rowSpan: 2, styles: { valign: "middle" } },
+        { content: "Brand", rowSpan: 2, styles: { valign: "middle" } },
+    ];
 
-    for (let i = 0; i < TIERS.length; i += 1) {
+    if (!includeBarcode) headRow2.splice(1, 1);
+
+    for (const tier of TIERS) {
+        headRow2.push({
+            content: `Tier ${tier}`,
+            colSpan: uomCount,
+            styles: { 
+                halign: "center",
+                fillColor: groupColors[tier],
+                textColor: groupTextColors[tier]
+            },
+        });
+    }
+
+    const headRow3: PdfCell[] = [];
+    for (const tier of TIERS) {
         if (usedUnits.length === 0) {
-            headRow2.push({
-                content: "—",
-                styles: { halign: "center" },
-            });
-            continue;
-        }
-
-        for (const unit of usedUnits) {
-            headRow2.push({
-                content: unit.label,
-                styles: { halign: "center" },
-            });
+            headRow3.push({ content: "Price", styles: { halign: "center", fillColor: groupColors[tier] } });
+        } else {
+            for (const unit of usedUnits) {
+                headRow3.push({
+                    content: unit.unit_shortcut || unit.unit_name || "—",
+                    styles: { 
+                        halign: "center", 
+                        fontSize: 7,
+                        fillColor: groupColors[tier]
+                    },
+                });
+            }
         }
     }
 
-    const body: string[][] = groupList.map((group) => {
-        const rowCells: string[] = [group.product_name, group.product_code];
-
-        if (includeBarcode) {
-            rowCells.push(group.barcode);
-        }
+    // --- Body Construction ---
+    const body: (string | number)[][] = rows.map((row) => {
+        const display = row.display;
+        const cells: (string | number)[] = [
+            display.product_code || "—",
+        ];
+        if (includeBarcode) cells.push(display.barcode || "—");
+        cells.push(display.product_name || "—");
+        cells.push(row.category_name || "—");
+        cells.push(row.brand_name || "—");
 
         for (const tier of TIERS) {
             if (usedUnits.length === 0) {
-                rowCells.push("");
-                continue;
-            }
-
-            for (const unit of usedUnits) {
-                const variant = group.byUnit.get(unit.id);
-                rowCells.push(variant ? money(tierValue(variant, tier)) : "");
+                cells.push(""); 
+            } else {
+                for (const unit of usedUnits) {
+                    const variant = row.variantsByUnitId[Number(unit.unit_id)];
+                    const price = variant?.tiers?.[tier];
+                    cells.push(price != null ? money(price) : "—");
+                }
             }
         }
-
-        return rowCells;
+        return cells;
     });
 
-    const pageW = doc.internal.pageSize.getWidth();
-    const marginX = 24;
-
-    const fixedProductW = Math.min(240, Math.max(180, pageW * 0.22));
-    const fixedCodeW = 80;
-    const fixedBarcodeW = includeBarcode ? 110 : 0;
-
-    const fixedW = fixedProductW + fixedCodeW + fixedBarcodeW;
-    const priceCols = TIERS.length * uomCount;
-    const avail = Math.max(200, pageW - marginX * 2 - fixedW);
-    const priceCellW = Math.max(34, Math.floor(avail / Math.max(1, priceCols)));
-
-    const baselineFont = Number.isFinite(opts.fontSize) ? Number(opts.fontSize) : 6;
-    const overloadFactor = priceCols > 20 ? 2 : priceCols > 16 ? 1 : 0;
-    const fontSize = Math.max(5, Math.min(9, baselineFont - overloadFactor));
-
-    const cellPadding = compact ? 3 : 5;
-
-    const columnStyles: Record<number, AutoTableColumnStyle> = {
-        0: { cellWidth: fixedProductW },
-        1: { cellWidth: fixedCodeW },
-    };
-
-    if (includeBarcode) {
-        columnStyles[2] = { cellWidth: fixedBarcodeW };
-    }
-
-    const startIdx = includeBarcode ? 3 : 2;
-    for (let i = 0; i < priceCols; i += 1) {
-        columnStyles[startIdx + i] = {
-            cellWidth: priceCellW,
-            halign: "right",
-        };
-    }
+    const now = new Date();
+    doc.setFontSize(14);
+    doc.text("Product Pricing Matrix Report", 40, 40);
+    doc.setFontSize(9);
+    doc.setTextColor(100);
+    doc.text(`Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`, 40, 55);
+    doc.text(`Total Products: ${rows.length}`, 40, 68);
 
     autoTable(doc, {
-        startY: 72,
-        head: [headRow1, headRow2],
+        startY: 85,
+        head: [headRow1, headRow2, headRow3],
         body,
         theme: "grid",
-        margin: { left: marginX, right: marginX },
-
         styles: {
-            font: "helvetica",
-            fontSize,
-            cellPadding,
-            overflow: "linebreak",
+            fontSize: opts.fontSize || 7,
+            cellPadding: compact ? 3 : 5,
             valign: "middle",
-            lineWidth: 0.4,
+            lineWidth: 0.5,
+            lineColor: [200, 200, 200],
         },
-
         headStyles: {
+            fillColor: [245, 245, 245],
+            textColor: [50, 50, 50],
             fontStyle: "bold",
-            halign: "center",
-            valign: "middle",
         },
-
-        columnStyles,
-
-        didDrawPage: () => {
-            const pageCount = doc.getNumberOfPages();
-            const pageWidth = doc.internal.pageSize.getWidth();
-            const pageHeight = doc.internal.pageSize.getHeight();
-            const pageNumber = doc.getCurrentPageInfo().pageNumber;
-
+        columnStyles: {
+            0: { cellWidth: 60 }, // Code
+            1: includeBarcode ? { cellWidth: 80 } : { cellWidth: 151 }, // Barcode or Name expansion
+            2: { cellWidth: includeBarcode ? 140 : 180 }, // Name
+            3: { cellWidth: 70 }, // Category
+            4: { cellWidth: 70 }, // Brand
+        },
+        didParseCell: (data) => {
+            if (data.section === "body" && data.column.index >= (includeBarcode ? 5 : 4)) {
+                const tierIdx = Math.floor((data.column.index - (includeBarcode ? 5 : 4)) / uomCount);
+                const tier = TIERS[tierIdx];
+                if (tier) {
+                    data.cell.styles.fillColor = groupColors[tier];
+                    data.cell.styles.halign = "right";
+                }
+            }
+        },
+        didDrawPage: (data) => {
+            const str = "Page " + doc.getCurrentPageInfo().pageNumber;
             doc.setFontSize(8);
-            doc.text(`Page ${pageNumber} of ${pageCount}`, pageWidth - 90, pageHeight - 16);
-        },
+            doc.text(str, data.settings.margin.left, doc.internal.pageSize.getHeight() - 10);
+        }
     });
 
-    doc.save("product-pricing-matrix.pdf");
+    doc.save(`Product_Pricing_Matrix_${now.toISOString().split("T")[0]}.pdf`);
 }
