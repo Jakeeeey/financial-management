@@ -1,16 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
-import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ColumnFiltersState } from "@tanstack/react-table";
+import { RefreshCw } from "lucide-react";
+import { useState } from "react";
 
 // Components
-import { columns } from "./components/data-table/columns";
-import { AssetTableData } from "./types";
-import { AssetDataTable } from "./components/data-table";
 import { DataTableSkeleton } from "@/app/(financial-management)/fm/_components/DataTableSkeleton";
 import { ErrorPage } from "@/app/(financial-management)/fm/_components/ErrorPage";
+import { AssetDataTable } from "./components/data-table";
+import { columns } from "./components/data-table/columns";
+import { AssetTableData } from "./types";
 // import { getDepreciatedValue } from \"./utils/lib\";
 
 // Hooks
@@ -22,7 +22,14 @@ import AssetViewModal from "./components/modals/AssetViewModal";
 import AssetEditModal from "./components/modals/EditAssetModal";
 
 export default function AssetManagementModulePage() {
-  const { assets: data, isLoading: loading, error: errorState, refresh: fetchAssets } = useAssets();
+  const {
+    assets: data,
+    isLoading: loading,
+    error: errorState,
+    refresh: fetchAssets,
+    updateAssetLocally,
+    appendAssetLocally,
+  } = useAssets();
 
   // Table & Filter State
   const [projectionDate, setProjectionDate] = useState<Date>(new Date());
@@ -102,7 +109,10 @@ export default function AssetManagementModulePage() {
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
-          <AddAssetModal onSuccess={fetchAssets} />
+          <AddAssetModal
+            onSuccess={fetchAssets}
+            onLocalAppend={appendAssetLocally}
+          />
         </div>
 
         {/* Optional: Display Total Inventory Value */}
@@ -144,6 +154,7 @@ export default function AssetManagementModulePage() {
           setSelectedAsset(null);
         }}
         onSuccess={fetchAssets}
+        onLocalUpdate={updateAssetLocally}
         asset={selectedAsset}
       />
     </div>

@@ -176,6 +176,24 @@ export const columns: ColumnDef<AssetTableData>[] = [
       ),
   },
   {
+    accessorKey: "assigned_to_name",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} label="Assigned To" />
+    ),
+    meta: {
+      label: "Assigned To",
+      variant: "text",
+      icon: Building,
+    },
+    filterFn: (row, id, value) => {
+      return value.includes(row.getValue(id));
+    },
+    cell: ({ row }) =>
+      (row.getValue("assigned_to_name") as string) || (
+        <span className="text-muted-foreground italic">Unassigned</span>
+      ),
+  },
+  {
     accessorKey: "condition",
     header: ({ column }) => (
       <DataTableColumnHeader column={column} label="Condition" />
