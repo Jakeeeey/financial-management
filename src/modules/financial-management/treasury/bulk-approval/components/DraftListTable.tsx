@@ -51,23 +51,23 @@ function TierProgress({ current, max, approversPerLevel }: {
   approversPerLevel: Record<number, number>;
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-0.5">
       {Array.from({ length: max }, (_, i) => i + 1).map(level => {
         const isDone = level < current;
         const isActive = level === current;
         return (
-          <div key={level} className="flex items-center gap-1">
+          <div key={level} className="flex items-center gap-0.5">
             <div
               title={`Level ${level} (${approversPerLevel[level] ?? 0} approver${(approversPerLevel[level] ?? 0) !== 1 ? "s" : ""})`}
-              className={`flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-black transition-all
-                ${isDone ? "bg-emerald-500 text-white shadow-sm shadow-emerald-500/30" :
-                  isActive ? "bg-primary text-primary-foreground shadow-sm shadow-primary/30 animate-pulse" :
+              className={`flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-black transition-all shrink-0
+                ${isDone ? "bg-emerald-500 text-white" :
+                  isActive ? "bg-primary text-primary-foreground animate-pulse" :
                   "bg-muted text-muted-foreground border border-muted-foreground/20"}`}
             >
-              {isDone ? <CheckCircle2 className="h-3 w-3" /> : level}
+              {isDone ? <CheckCircle2 className="h-2.5 w-2.5" /> : level}
             </div>
             {level < max && (
-              <div className={`w-4 h-0.5 rounded-full transition-all ${isDone ? "bg-emerald-400" : "bg-muted"}`} />
+              <div className={`w-2 h-px rounded-full transition-all ${isDone ? "bg-emerald-400" : "bg-muted-foreground/30"}`} />
             )}
           </div>
         );
@@ -80,15 +80,15 @@ function StatusBadge({ status, current_tier }: { status: string; current_tier: n
   const s = status.toUpperCase();
   if (s === "SUBMITTED" || s.startsWith("PENDING")) {
     return (
-      <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200 gap-1">
-        <Clock className="h-3 w-3" />
-        Level {current_tier}
+      <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200 gap-0.5 text-[10px] px-1.5 py-0">
+        <Clock className="h-2.5 w-2.5" />
+        Lvl {current_tier}
       </Badge>
     );
   }
-  if (s === "APPROVED") return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">Approved</Badge>;
-  if (s === "REJECTED") return <Badge className="bg-red-100 text-red-700 border-red-200">Rejected</Badge>;
-  return <Badge variant="outline">{status}</Badge>;
+  if (s === "APPROVED") return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] px-1.5 py-0">Approved</Badge>;
+  if (s === "REJECTED") return <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0">Rejected</Badge>;
+  return <Badge variant="outline" className="text-[10px] px-1.5 py-0">{status}</Badge>;
 }
 
 export default function DraftListTable(props: Props) {
@@ -104,13 +104,13 @@ export default function DraftListTable(props: Props) {
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-4">
+    <div className="flex flex-col flex-1 min-h-0 gap-2">
       {/* Search */}
       <div className="relative max-w-sm shrink-0">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Search by doc no, payee, or remarks..."
-          className="pl-9"
+          className="pl-8 h-8 text-xs"
           value={q}
           onChange={(e) => {
             setQ(e.target.value);
@@ -121,22 +121,33 @@ export default function DraftListTable(props: Props) {
 
       {/* Level indicator */}
       {Object.keys(levelsByDivision).length > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-primary/5 border border-primary/20 rounded-xl text-xs font-bold text-primary shrink-0 transition-all hover:bg-primary/10">
-          <LockKeyhole className="h-3.5 w-3.5" />
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary/5 border border-primary/20 rounded-lg text-[11px] font-semibold text-primary shrink-0">
+          <LockKeyhole className="h-3 w-3 shrink-0" />
           {Object.keys(levelsByDivision).length > 1 ? (
-            <span>You have active approval roles in <span className="underline underline-offset-2">{Object.keys(levelsByDivision).length} divisions</span>. The action button is enabled only when a draft reaches your specific tier.</span>
+            <span>Active approval roles in <span className="underline underline-offset-2">{Object.keys(levelsByDivision).length} divisions</span> — action buttons activate when a draft hits your tier.</span>
           ) : (
-            <span>You are a <span className="underline underline-offset-2">Level {myLevel}</span> approver — buttons are active only when the draft reaches your tier.</span>
+            <span>You are a <span className="underline underline-offset-2">Level {myLevel}</span> approver — buttons active when draft reaches your tier.</span>
           )}
         </div>
       )}
 
       {/* Table */}
-      <div className="flex-1 overflow-auto rounded-xl border shadow-inner bg-background relative">
-        <Table className="relative min-w-max w-full">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden rounded-xl border shadow-inner bg-background relative">
+        <Table className="w-full table-fixed">
+          <colgroup>
+            <col className="w-9" />           {/* # */}
+            <col className="w-[11%]" />        {/* Doc No */}
+            <col className="w-[12%]" />        {/* Division */}
+            <col className="w-[22%]" />        {/* Payee */}
+            <col className="w-[13%]" />        {/* Amount */}
+            <col className="w-[11%]" />        {/* Date */}
+            <col className="w-[10%]" />        {/* Status */}
+            <col className="w-[13%]" />        {/* Tier Progress */}
+            <col className="w-[9%]" />         {/* Action */}
+          </colgroup>
           <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm shadow-sm">
             <TableRow className="bg-muted/50">
-              <TableHead className="w-10 text-center text-xs">#</TableHead>
+              <TableHead className="text-center text-xs">#</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-tight">Doc No</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-tight">Division</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-tight">Payee</TableHead>
@@ -150,7 +161,7 @@ export default function DraftListTable(props: Props) {
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-[340px] text-center">
+                <TableCell colSpan={9} className="h-[340px] text-center">
                   <div className="flex flex-col items-center justify-center gap-3 text-muted-foreground">
                     <FolderOpen className="h-10 w-10 opacity-30" />
                     <p className="text-sm font-medium">No pending disbursement drafts found.</p>
@@ -166,50 +177,64 @@ export default function DraftListTable(props: Props) {
                   <TableCell className="text-center text-muted-foreground text-xs font-mono">
                     {(page - 1) * 8 + idx + 1}
                   </TableCell>
-                  <TableCell>
-                    <span className="font-black text-sm font-mono text-primary">{row.doc_no}</span>
+                  <TableCell className="overflow-hidden">
+                    <span className="font-black text-xs font-mono text-primary block truncate" title={row.doc_no}>
+                      {row.doc_no}
+                    </span>
                   </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-[10px] font-bold bg-muted/50 border-muted-foreground/30 px-2 py-0">
+                  <TableCell className="overflow-hidden">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] font-bold bg-muted/50 border-muted-foreground/30 px-2 py-0 max-w-full block truncate"
+                      title={row.division_name || "N/A"}
+                    >
                       {row.division_name || "N/A"}
                     </Badge>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-bold text-sm">{row.payee_name}</span>
-                      <span className="text-[10px] text-muted-foreground italic">
-                        Encoded by: {row.encoder_name}
+                  <TableCell className="overflow-hidden">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold text-xs truncate block" title={row.payee_name}>
+                        {row.payee_name}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground italic truncate block">
+                        {row.encoder_name}
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right font-black tabular-nums text-sm">
-                    {formatCurrency(Number(row.total_amount))}
+                  <TableCell className="text-right font-black tabular-nums text-xs overflow-hidden">
+                    <span className="block truncate" title={formatCurrency(Number(row.total_amount))}>
+                      {formatCurrency(Number(row.total_amount))}
+                    </span>
                   </TableCell>
-                  <TableCell className="text-center text-xs text-muted-foreground font-medium">
-                    {formatDate(row.transaction_date)}
+                  <TableCell className="text-center text-xs text-muted-foreground font-medium overflow-hidden">
+                    <span className="block truncate">{formatDate(row.transaction_date)}</span>
                   </TableCell>
-                  <TableCell className="text-center">
-                    <StatusBadge status={row.status} current_tier={row.current_tier} />
+                  <TableCell className="text-center overflow-hidden">
+                    <div className="flex justify-center">
+                      <StatusBadge status={row.status} current_tier={row.current_tier} />
+                    </div>
                   </TableCell>
-                  <TableCell className="text-center">
-                    <TierProgress
-                      current={row.current_tier}
-                      max={row.max_level}
-                      approversPerLevel={row.approvers_per_level}
-                    />
+                  <TableCell className="overflow-hidden">
+                    <div className="flex justify-center">
+                      <TierProgress
+                        current={row.current_tier}
+                        max={row.max_level}
+                        approversPerLevel={row.approvers_per_level}
+                      />
+                    </div>
                   </TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className="text-center overflow-hidden">
                     <Button
                       size="sm"
                       variant={row.can_vote ? "default" : "outline"}
-                      className={`text-xs rounded-full transition-all
+                      className={`text-[11px] h-7 px-2 rounded-full transition-all w-full max-w-[72px]
                         ${row.can_vote
                           ? "shadow-sm shadow-primary/20 font-bold"
                           : "text-muted-foreground"
                         }`}
                       onClick={() => onAction(row)}
                     >
-                      {row.can_vote ? "Vote Now" : "View"}
+                      {row.can_vote ? "Vote" : "View"}
                     </Button>
                   </TableCell>
                 </TableRow>
