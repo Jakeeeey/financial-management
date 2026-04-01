@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { AssetTableData } from "../types";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AssetTableData } from "../types";
 
 export function useAssets() {
   const [assets, setAssets] = useState<AssetTableData[]>([]);
@@ -30,7 +30,8 @@ export function useAssets() {
       setAssets(result);
     } catch (err: unknown) {
       console.error(err);
-      const message = err instanceof Error ? err.message : "Could not load asset records.";
+      const message =
+        err instanceof Error ? err.message : "Could not load asset records.";
       setError({
         hasError: true,
         message,
@@ -49,10 +50,31 @@ export function useAssets() {
     fetchAssets();
   }, [fetchAssets]);
 
+  // Patches a single row in the local state without triggering a full refetch
+  const updateAssetLocally = useCallback(
+    (updatedAsset: Partial<AssetTableData> & { id: number }) => {
+      setAssets((prev) =>
+        prev.map((asset) =>
+          asset.id === updatedAsset.id ? { ...asset, ...updatedAsset } : asset,
+        ),
+      );
+    },
+    [],
+  );
+
+  const appendAssetLocally = useCallback(
+    (newAsset: AssetTableData) => {
+      setAssets((prev) => [newAsset, ...prev]);
+    },
+    [],
+  );
+
   return {
     assets,
     isLoading,
     error,
     refresh,
+    updateAssetLocally,
+    appendAssetLocally,
   };
 }

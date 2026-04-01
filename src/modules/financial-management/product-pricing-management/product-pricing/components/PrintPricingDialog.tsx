@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import type { ProductRow, Unit } from "../types";
+import type { MatrixRow, PriceType, Unit } from "../types";
 
 import {
     Dialog,
@@ -30,16 +30,18 @@ type Props = {
     open: boolean;
     onOpenChange: (v: boolean) => void;
 
-    rows: ProductRow[];
+    rows: MatrixRow[];
     filtersText: string;
     generatedAtText: string;
 
     unitName: (id: number | null | undefined) => string;
     units?: Unit[];
+    priceTypes?: PriceType[];
+    usedUnitIds?: Set<number>;
 };
 
 export default function PrintPricingDialog(props: Props) {
-    const { open, onOpenChange, rows, filtersText, generatedAtText, unitName } = props;
+    const { open, onOpenChange, rows, filtersText, generatedAtText } = props;
 
     const [paper, setPaper] = React.useState<Paper>("a4");
     const [orientation, setOrientation] = React.useState<Orient>("landscape");
@@ -48,19 +50,17 @@ export default function PrintPricingDialog(props: Props) {
     const [includeBarcode, setIncludeBarcode] = React.useState(true);
 
     const downloadPdf = React.useCallback(() => {
-        generatePricingMatrixPdf({
-            rows,
-            filtersText,
-            lookups: { unitName },
-            options: {
-                paper,
-                orientation,
-                fontSize,
-                compact,
-                includeBarcode,
-            },
+        generatePricingMatrixPdf(rows, {
+            paper,
+            orientation,
+            fontSize,
+            compact,
+            includeBarcode,
+            priceTypes: props.priceTypes,
+            units: props.units,
+            usedUnitIds: props.usedUnitIds,
         });
-    }, [rows, filtersText, unitName, paper, orientation, fontSize, compact, includeBarcode]);
+    }, [rows, paper, orientation, fontSize, compact, includeBarcode, props.priceTypes, props.units, props.usedUnitIds]);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
