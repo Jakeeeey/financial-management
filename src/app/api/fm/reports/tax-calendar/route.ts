@@ -13,7 +13,7 @@ const COOKIE_NAME    = 'vos_access_token';
 // ─── GET /api/fm/reports/tax-calendar ─────────────────────────────────────────
 // Prefix with _ to signal intentionally unused (satisfies @typescript-eslint/no-unused-vars)
 // Prefix with _ to signal intentionally unused (satisfies @typescript-eslint/no-unused-vars)
-export async function GET(_request: NextRequest) {
+export async function GET() {
   const cookieStore = await cookies();
   const token       = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) {
