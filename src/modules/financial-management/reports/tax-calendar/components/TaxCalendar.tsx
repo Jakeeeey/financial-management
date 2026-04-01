@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useState, useMemo } from 'react';
 import { STATUS_STYLE } from '../types';
-import type { TaxActivity, TaxStatus } from '../types';
+import type { TaxActivity } from '../types';
 
 // Tax type badge colors — cycle through a set
 const TYPE_COLORS = [
