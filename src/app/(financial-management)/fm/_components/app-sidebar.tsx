@@ -134,7 +134,7 @@ const data = {
           isActive: true,
           items: [
             {
-              title: "Salesman Expense Approval",
+              title: "Salesman Expense",
               url: "/fm/treasury/salesman-expense-approval",
               icon: Receipt,
             },
