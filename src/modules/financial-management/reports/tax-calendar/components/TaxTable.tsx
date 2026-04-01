@@ -1,5 +1,5 @@
 // tax-calendar/components/TaxTable.tsx
-import { useState, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,16 +38,26 @@ export function TaxTable({
 }: Props) {
   const [page, setPage] = useState(1);
 
-  // Reset to page 1 whenever the filtered list changes
-  // (e.g. user types in the search box or changes a filter)
-  useEffect(() => {
-    setPage(1);
-  }, [activities.length, search]);
+  // Track the previous activities key (length + search) so we can reset the
+  // page to 1 *during* render instead of in an effect — avoids the
+  // react-hooks/set-state-in-effect lint error and the extra render cycle.
+  const prevKeyRef = useRef(`${activities.length}::${search}`);
+  const currentKey = `${activities.length}::${search}`;
 
-  const totalPages  = Math.max(1, Math.ceil(activities.length / PAGE_SIZE));
-  const safePage    = Math.min(page, totalPages);
-  const sliceStart  = (safePage - 1) * PAGE_SIZE;
-  const paginated   = activities.slice(sliceStart, sliceStart + PAGE_SIZE);
+  let safePage = page;
+  if (prevKeyRef.current !== currentKey) {
+    prevKeyRef.current = currentKey;
+    safePage = 1;
+    // Enqueue the state update so React keeps the state in sync,
+    // but we already use safePage=1 for this render.
+    // We use a functional update to avoid stale-closure issues.
+    if (page !== 1) setPage(1);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(activities.length / PAGE_SIZE));
+  safePage         = Math.min(safePage, totalPages);
+  const sliceStart = (safePage - 1) * PAGE_SIZE;
+  const paginated  = activities.slice(sliceStart, sliceStart + PAGE_SIZE);
 
   return (
     <Card className="shadow-none border-border overflow-hidden">
@@ -144,7 +154,6 @@ export function TaxTable({
         {totalPages > 1 && (
           <div className="flex items-center justify-center px-6 py-4 border-t border-border/50 gap-2">
 
-            {/* Previous — plain text + chevron, no box */}
             <button
               disabled={safePage === 1}
               onClick={() => setPage((p) => p - 1)}
@@ -154,7 +163,6 @@ export function TaxTable({
               Previous
             </button>
 
-            {/* Page number pills */}
             <div className="flex items-center gap-1">
               {Array.from({ length: totalPages }, (_, i) => i + 1)
                 .filter((p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
@@ -182,7 +190,6 @@ export function TaxTable({
                 )}
             </div>
 
-            {/* Next — plain text + chevron, no box */}
             <button
               disabled={safePage === totalPages}
               onClick={() => setPage((p) => p + 1)}

@@ -1,7 +1,5 @@
 // tax-calendar/utils/index.ts
 import type { TaxActivity, TaxStatus } from '../types';
-import { Clock, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
-import type { ReactNode } from 'react';
 
 export function formatDate(d: string | null): string {
   if (!d) return '—';
@@ -32,7 +30,7 @@ export function getDaysLabel(a: TaxActivity): { text: string; className: string 
     return { text: '—', className: 'text-muted-foreground' };
   }
   const days = daysUntil(a.due_date);
-  if (days < 0)  return { text: `${Math.abs(days)}d ago`, className: 'text-red-600 font-semibold' };
+  if (days < 0)   return { text: `${Math.abs(days)}d ago`, className: 'text-red-600 font-semibold' };
   if (days === 0) return { text: 'Today',                  className: 'text-orange-600 font-semibold' };
   if (days <= 7)  return { text: `${days}d`,               className: 'text-orange-500 font-semibold' };
   return { text: `${days}d`, className: 'text-foreground font-semibold' };

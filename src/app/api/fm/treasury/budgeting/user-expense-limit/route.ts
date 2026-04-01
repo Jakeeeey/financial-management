@@ -1,4 +1,4 @@
-// src/app/api/user-expense-limit/route.ts
+// src/app/api/fm/treasury/budgeting/user-expense-limit/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -10,8 +10,14 @@ const DIRECTUS_URL   = process.env.NEXT_PUBLIC_API_BASE_URL;
 const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN;
 const COOKIE_NAME    = "vos_access_token";
 
+// ─── Shared department type ────────────────────────────────────────────────────
+interface Department {
+  department_id:   number;
+  department_name: string;
+}
+
 // Local helper: fetch departments directly from Directus
-async function fetchDepartments() {
+async function fetchDepartments(): Promise<Department[]> {
   const res = await fetch(`${DIRECTUS_URL}/items/department?fields=department_id,department_name&limit=-1`, {
     headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
     cache: "no-store",
@@ -21,18 +27,36 @@ async function fetchDepartments() {
 }
 
 // ─── User shape from /items/user ──────────────────────────────────────────────
+// department field may arrive as a bare FK number or an expanded object
+type RawDepartmentField =
+  | number
+  | { department_id?: number; id?: number }
+  | null
+  | undefined;
+
 interface DirectusUser {
-  user_id:    number;
-  user_fname: string | null;
-  user_lname: string | null;
-  user_email: string | null;
-  user_department?: number | { department_id: number; department_name: string } | null;
+  user_id:         number;
+  user_fname:      string | null;
+  user_lname:      string | null;
+  user_email:      string | null;
+  user_department: RawDepartmentField;
 }
 
 function fullName(u: DirectusUser | undefined): string {
   if (!u) return "—";
   const name = [u.user_fname, u.user_lname].filter(Boolean).join(" ");
   return name || u.user_email || "—";
+}
+
+/** Safely extract a numeric department id from the raw field value. */
+function parseDeptId(raw: RawDepartmentField): number | undefined {
+  if (typeof raw === "number") return raw;
+  if (raw && typeof raw === "object") {
+    const id = raw.department_id ?? raw.id;
+    const n  = Number(id);
+    return isNaN(n) ? undefined : n;
+  }
+  return undefined;
 }
 
 // ─── GET /api/user-expense-limit ──────────────────────────────────────────────
@@ -67,21 +91,18 @@ export async function GET(request: NextRequest) {
       const usersJson    = await usersRes.json()    as { data?: DirectusUser[] };
 
       const takenIds = new Set((existingJson.data ?? []).map(r => r.user_id));
-      const deptMap = Object.fromEntries((depts ?? []).map((d: { department_id: number; department_name: string }) => [d.department_id, d.department_name]));
+      const deptMap  = Object.fromEntries(depts.map(d => [d.department_id, d.department_name]));
 
       const available = (usersJson.data ?? [])
         .filter(u => !takenIds.has(u.user_id))
         .map(u => {
-          let deptId: number | undefined;
-          const d = (u as any).user_department;
-          if (typeof d === "number") deptId = d;
-          else if (d && typeof d === "object") deptId = Number(d.department_id ?? d.id ?? d);
+          const deptId = parseDeptId(u.user_department);   // ← no `any`
           return {
             ...u,
             user_department_name: deptId ? (deptMap[deptId] ?? null) : null,
           };
         });
-        
+
       return NextResponse.json({ data: available });
     } catch (err) {
       console.error("[UEL Available Users]", err instanceof Error ? err.message : String(err));
@@ -106,30 +127,25 @@ export async function GET(request: NextRequest) {
     const limitsJson = await limitsRes.json() as { data?: Record<string, unknown>[] };
     const usersJson  = await usersRes.json()  as { data?: DirectusUser[] };
 
-    // Key by user_id (your custom users table uses user_id as PK)
     const userMap = Object.fromEntries(
       (usersJson.data ?? []).map(u => [u.user_id, u])
     );
 
-    // Departments map
     const deptMap = Object.fromEntries(
-      (depts ?? []).map((d: { department_id: number; department_name: string }) => [d.department_id, d.department_name])
+      depts.map(d => [d.department_id, d.department_name])
     );
 
     const enriched = (limitsJson.data ?? []).map(l => {
-      const userId = l.user_id   as number;
+      const userId = l.user_id    as number;
       const cbId   = l.created_by as number | null;
       const ubId   = l.updated_by as number | null;
 
       const u  = userMap[userId];
       const cb = cbId ? userMap[cbId] : undefined;
       const ub = ubId ? userMap[ubId] : undefined;
-      let dept;
-      const rawDept = (u as any)?.user_department;
-      let deptId: number | undefined;
-      if (typeof rawDept === "number") deptId = rawDept;
-      else if (rawDept && typeof rawDept === "object") deptId = Number(rawDept.department_id ?? rawDept.id ?? rawDept);
-      if (deptId) dept = deptMap[deptId];
+
+      const deptId = parseDeptId(u?.user_department);    // ← no `any`
+      const dept   = deptId ? deptMap[deptId] : undefined;
 
       return {
         ...l,
@@ -149,8 +165,6 @@ export async function GET(request: NextRequest) {
 }
 
 // ─── Decode JWT payload to get current user_id ────────────────────────────────
-// JWT is base64url encoded: header.payload.signature
-// The payload contains sub (user_id as string) based on your token structure
 function decodeJwtUserId(token: string): number | null {
   try {
     const parts   = token.split(".");
@@ -158,7 +172,6 @@ function decodeJwtUserId(token: string): number | null {
     const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const padded  = payload + "=".repeat((4 - payload.length % 4) % 4);
     const decoded = JSON.parse(Buffer.from(padded, "base64").toString("utf-8")) as Record<string, unknown>;
-    // Your JWT has "sub" as the user_id string
     const sub = decoded.sub ?? decoded.user_id ?? decoded.userId ?? decoded.id;
     const id  = Number(sub);
     return isNaN(id) ? null : id;
@@ -173,7 +186,6 @@ export async function POST(request: NextRequest) {
   const token       = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
 
-  // Decode the logged-in user's id from the JWT to store as created_by
   const currentUserId = decodeJwtUserId(token);
 
   try {
@@ -193,7 +205,7 @@ export async function POST(request: NextRequest) {
       body:    JSON.stringify({
         user_id,
         expense_limit,
-        created_by: currentUserId,  // ← logged-in user from JWT
+        created_by: currentUserId,
       }),
       cache:   "no-store",
     });

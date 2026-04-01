@@ -11,7 +11,8 @@ const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN;
 const COOKIE_NAME    = 'vos_access_token';
 
 // ─── GET /api/fm/reports/tax-calendar ─────────────────────────────────────────
-export async function GET(request: NextRequest) {
+// Prefix with _ to signal intentionally unused (satisfies @typescript-eslint/no-unused-vars)
+export async function GET(_request: NextRequest) {
   const cookieStore = await cookies();
   const token       = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) {
