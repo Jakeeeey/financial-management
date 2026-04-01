@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-const DIRECTUS_BASE = process.env.DIRECTUS_BASE_URL ?? "http://192.168.0.143:8056";
+const DIRECTUS_BASE = process.env.DIRECTUS_BASE_URL;
 const DIRECTUS_TOKEN = process.env.DIRECTUS_TOKEN;
 const COOKIE_NAME = "vos_access_token";
 

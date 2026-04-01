@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import { useMemo, useCallback, useState, useEffect } from "react";
 import { toast } from "sonner";
 
 import type {
@@ -63,22 +63,22 @@ export function usePricingMatrix(args: {
 }) {
     const { categoriesById, brandsById, unitsById, unitsList = [], priceTypes } = args;
 
-    const tierIdMap = React.useMemo(() => buildTierIdMap(priceTypes), [priceTypes]);
+    const tierIdMap = useMemo(() => buildTierIdMap(priceTypes), [priceTypes]);
 
-    const [filters, setFilters] = React.useState<PricingFilters>(defaultFilters);
+    const [filters, setFilters] = useState<PricingFilters>(defaultFilters);
 
-    const [page, setPage] = React.useState(1);
-    const [pageSize, setPageSize] = React.useState(50);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
 
-    const [loading, setLoading] = React.useState(false);
-    const [rows, setRows] = React.useState<MatrixRow[]>([]);
-    const [meta, setMeta] = React.useState<ProductsMeta>(undefined);
-    const [usedUnits, setUsedUnits] = React.useState<Unit[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [rows, setRows] = useState<MatrixRow[]>([]);
+    const [meta, setMeta] = useState<ProductsMeta>(undefined);
+    const [usedUnits, setUsedUnits] = useState<Unit[]>([]);
 
-    const [dirty, setDirty] = React.useState<Map<DirtyKey, number | null>>(new Map());
-    const [dirtyErrors, setDirtyErrors] = React.useState<Map<DirtyKey, string>>(new Map());
+    const [dirty, setDirty] = useState<Map<DirtyKey, number | null>>(new Map());
+    const [dirtyErrors, setDirtyErrors] = useState<Map<DirtyKey, string>>(new Map());
 
-    const filtersKey = React.useMemo(
+    const filtersKey = useMemo(
         () =>
             JSON.stringify({
                 q: filters.q,
@@ -102,11 +102,11 @@ export function usePricingMatrix(args: {
         ],
     );
 
-    React.useEffect(() => {
+    useEffect(() => {
         setPage(1);
     }, [filtersKey]);
 
-    const refresh = React.useCallback(async () => {
+    const refresh = useCallback(async () => {
         setLoading(true);
 
         try {
@@ -226,14 +226,14 @@ export function usePricingMatrix(args: {
         }
     }, [filters, page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes]);
 
-    React.useEffect(() => {
+    useEffect(() => {
         refresh().catch((error: unknown) => {
             const message = error instanceof Error ? error.message : "Failed to load pricing matrix";
             toast.error(message);
         });
     }, [refresh]);
 
-    function setCell(productId: number, tier: ProductTierKey, raw: unknown) {
+    const setCell = useCallback((productId: number, tier: ProductTierKey, raw: unknown) => {
         const key: DirtyKey = `${productId}:${tier}`;
         const value = clampMoney(toNumberOrNull(raw));
         const err = validatePrice(value);
@@ -250,23 +250,23 @@ export function usePricingMatrix(args: {
             else next.delete(key);
             return next;
         });
-    }
+    }, []);
 
-    function getCellValue(productId: number, tier: ProductTierKey, base: number | null) {
+    const getCellValue = useCallback((productId: number, tier: ProductTierKey, base: number | null) => {
         const key: DirtyKey = `${productId}:${tier}`;
         if (dirty.has(key)) return dirty.get(key) ?? null;
         return base;
-    }
+    }, [dirty]);
 
-    function isDirty(productId: number, tier: ProductTierKey) {
+    const isDirty = useCallback((productId: number, tier: ProductTierKey) => {
         return dirty.has(`${productId}:${tier}` as DirtyKey);
-    }
+    }, [dirty]);
 
-    function getError(productId: number, tier: ProductTierKey) {
+    const getError = useCallback((productId: number, tier: ProductTierKey) => {
         return dirtyErrors.get(`${productId}:${tier}` as DirtyKey) ?? null;
-    }
+    }, [dirtyErrors]);
 
-    async function saveAll() {
+    const saveAll = useCallback(async () => {
         if (dirtyErrors.size > 0) {
             toast.error("Please fix validation errors before submitting.");
             return;
@@ -323,19 +323,19 @@ export function usePricingMatrix(args: {
             const message = error instanceof Error ? error.message : "Failed to submit requests";
             toast.error(message);
         }
-    }
+    }, [dirty, dirtyErrors, tierIdMap, refresh]);
 
-    function discardAll() {
+    const discardAll = useCallback(() => {
         setDirty(new Map());
         setDirtyErrors(new Map());
-    }
+    }, []);
 
-    function resetFilters() {
+    const resetFilters = useCallback(() => {
         setFilters(defaultFilters);
         setPage(1);
-    }
+    }, []);
 
-    return {
+    return useMemo(() => ({
         TIERS,
         loading,
         rows,
@@ -362,7 +362,28 @@ export function usePricingMatrix(args: {
         discardAll,
 
         refresh,
-    };
+    }), [
+        loading,
+        rows,
+        meta,
+        usedUnits,
+        priceTypes,
+        filters,
+        setFilters,
+        resetFilters,
+        page,
+        setPage,
+        pageSize,
+        setPageSize,
+        setCell,
+        getCellValue,
+        isDirty,
+        getError,
+        dirty,
+        saveAll,
+        discardAll,
+        refresh,
+    ]);
 }
 
 function unitLabel(u: Unit) {
