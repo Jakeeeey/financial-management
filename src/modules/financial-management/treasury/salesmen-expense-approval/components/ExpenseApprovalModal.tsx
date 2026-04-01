@@ -177,7 +177,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
   const salesman = detail?.salesman;
   const userName = salesman?.user
     ? [salesman.user.user_fname, salesman.user.user_mname, salesman.user.user_lname]
-        .filter(Boolean).join(" ")
+      .filter(Boolean).join(" ")
     : salesman?.salesman_name ?? "—";
 
   return (
@@ -370,7 +370,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          setPreviewUrl(`/api/assets?id=${expense.attachment_url}`);
+                                          setPreviewUrl(`/api/fm/expense-assets?id=${expense.attachment_url}`);
                                         }}
                                         className="inline-flex p-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all shadow-sm cursor-pointer"
                                       >

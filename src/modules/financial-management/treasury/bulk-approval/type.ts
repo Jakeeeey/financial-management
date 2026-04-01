@@ -85,6 +85,38 @@ export interface VoteRound {
   votes: LogVote[];
 }
 
+export interface DraftPayableLog {
+  coa_id: number;
+  coa_name: string;
+  original_amount: number;
+  new_amount: number;
+  remarks: string | null;
+  date: string | null;
+  reference_no: string | null;
+}
+
+export interface DraftLog {
+  id: number;
+  editor_name: string;
+  edit_reason: string;
+  old_total: number;
+  new_total: number;
+  created_at: string;
+  payables: DraftPayableLog[];
+}
+
+export interface ExpenseLog {
+  id: number;
+  expense_id: number;
+  action: string;
+  editor_name: string;
+  changed_at: string;
+  amount: number;
+  remarks: string | null;
+  particulars: string;
+  status: string;
+}
+
 export interface DraftDetail {
   draft: {
     id: number;
@@ -103,6 +135,8 @@ export interface DraftDetail {
   payables: DraftPayable[];
   approvers_by_level: Record<number, ApproverVote[]>;
   vote_history: VoteRound[];
+  logs?: DraftLog[];
+  expense_logs?: ExpenseLog[];
   my_level: number;
   my_vote: { status: string; remarks: string | null; created_at: string; version: number } | null;
   can_vote: boolean;

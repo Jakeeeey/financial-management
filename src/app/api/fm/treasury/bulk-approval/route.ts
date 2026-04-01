@@ -339,7 +339,7 @@ export async function GET(req: NextRequest) {
 
       // Payables
       const pRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,remarks,date,reference_no&limit=-1`
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,remarks,date,reference_no,expense_id&limit=-1`
       );
       
       let debugPayablesError = null;
@@ -350,13 +350,45 @@ export async function GET(req: NextRequest) {
       const payablesUnresolved =
         (pRes.data as { data?: unknown[] })?.data ?? ([] as Record<string, unknown>[]);
 
-      // COA names
-      const coaIds = [
+      // ── LOGS: Fetch disbursement_draft_logs & draft_payable logs ──
+      const dlogRes = await directusFetch(
+        `/items/disbursement_draft_logs?filter[draft_id][_eq]=${draftId}&sort=-created_at&fields=log_id,editor_id,edit_reason,payload_snapshot,created_at&limit=-1`
+      );
+      const rawDraftLogs = (dlogRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+      const logIds = rawDraftLogs.map((l) => Number(l.log_id));
+      
+      let rawPayableLogs: Record<string, unknown>[] = [];
+      if (logIds.length > 0) {
+        const plogRes = await directusFetch(
+          `/items/disbursement_payables_draft_logs?filter[log_id][_in]=${logIds.join(",")}&fields=id,log_id,coa_id,original_amount,new_amount,remarks,date,reference_no&limit=-1`
+        );
+        rawPayableLogs = (plogRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+      }
+
+      // ── EXPENSE LOGS: Fetch expense_draft_logs for underlying active expenses ──
+      const activeExpenseIds = [
         ...new Set(
           (payablesUnresolved as Record<string, unknown>[])
-            .map((p) => Number(p.coa_id))
+            .map((p) => Number(p.expense_id))
             .filter(Boolean)
         ),
+      ];
+      
+      let rawExpenseLogs: Record<string, unknown>[] = [];
+      if (activeExpenseIds.length > 0) {
+        const eLogRes = await directusFetch(
+           `/items/expense_draft_logs?filter[expense_id][_in]=${activeExpenseIds.join(",")}&sort=-changed_at&fields=log_id,expense_id,action,changed_by,changed_at,amount,remarks,particulars,status&limit=-1`
+        );
+        rawExpenseLogs = (eLogRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+      }
+
+      // COA names
+      const coaIds = [
+        ...new Set([
+          ...(payablesUnresolved as Record<string, unknown>[]).map((p) => Number(p.coa_id)),
+          ...rawPayableLogs.map((p) => Number(p.coa_id)),
+          ...rawExpenseLogs.map((p) => Number(p.particulars)),
+        ].filter(Boolean)),
       ];
       let coaMap: Record<number, string> = {};
       if (coaIds.length > 0) {
@@ -392,6 +424,10 @@ export async function GET(req: NextRequest) {
         uids.add(Number(a.approver_id));
       for (const v of allVotes as Record<string, unknown>[])
         uids.add(Number(v.approver_id));
+      for (const l of rawDraftLogs)
+        if (l.editor_id) uids.add(Number(l.editor_id));
+      for (const e of rawExpenseLogs)
+        if (e.changed_by) uids.add(Number(e.changed_by));
 
       if (draft.encoder_id) uids.add(Number(draft.encoder_id));
       if (draft.payee) {
@@ -497,6 +533,45 @@ export async function GET(req: NextRequest) {
 
       const myVote = currentVoteByApprover[currentUserId];
 
+      const formattedLogs = rawDraftLogs.map((l) => {
+        let snapshot = { old_total: 0, new_total: 0 };
+        try { snapshot = JSON.parse(String(l.payload_snapshot || "{}")); } catch {}
+
+        const pLogs = rawPayableLogs
+          .filter(p => Number(p.log_id) === Number(l.id))
+          .map(p => ({
+            coa_id: Number(p.coa_id),
+            coa_name: coaMap[Number(p.coa_id)] || `COA #${p.coa_id}`,
+            original_amount: Number(p.original_amount),
+            new_amount: Number(p.new_amount),
+            remarks: p.remarks ? String(p.remarks) : null,
+            date: p.date ? String(p.date) : null,
+            reference_no: p.reference_no ? String(p.reference_no) : null,
+          }));
+
+        return {
+          id: Number(l.log_id),
+          editor_name: userMap[Number(l.editor_id)] || `User #${l.editor_id}`,
+          edit_reason: String(l.edit_reason || "Unknown reason"),
+          old_total: Number(snapshot.old_total || 0),
+          new_total: Number(snapshot.new_total || 0),
+          created_at: String(l.created_at || ""),
+          payables: pLogs,
+        };
+      });
+
+      const formattedExpenseLogs = rawExpenseLogs.map((l) => ({
+        id: Number(l.log_id),
+        expense_id: Number(l.expense_id),
+        action: String(l.action || ""),
+        editor_name: userMap[Number(l.changed_by)] || `User #${l.changed_by}`,
+        changed_at: String(l.changed_at || ""),
+        amount: Number(l.amount || 0),
+        remarks: l.remarks ? String(l.remarks) : null,
+        particulars: coaMap[Number(l.particulars)] || String(l.particulars || ""),
+        status: String(l.status || ""),
+      }));
+
       return json({
         draft: {
           ...draft,
@@ -521,6 +596,8 @@ export async function GET(req: NextRequest) {
         })),
         approvers_by_level: approversByLevel,
         vote_history: voteHistory,
+        logs: formattedLogs,
+        expense_logs: formattedExpenseLogs,
         my_level: (levelsByDivision[draftDivId] || []).includes(currentTier) 
           ? currentTier 
           : ((levelsByDivision[draftDivId] || [])[0] ?? myLevel),
@@ -930,11 +1007,57 @@ export async function POST(req: NextRequest) {
     // ── REJECTION: increment approval_version, reset draft to Submitted ──────
     // No vote data is touched — history is preserved!
     if (status === "REJECTED") {
+      let draftStatus = "Submitted";
+      let fallbackMessage = "";
+
+      if (currentTier > 1) {
+        // Fallback to previous tier
+        const previousTier = currentTier - 1;
+        draftStatus = tierStatus(previousTier);
+        fallbackMessage = `Draft fell back to Level ${previousTier} (Round ${currentVersion + 1}). Previous votes preserved.`;
+      } else {
+        // L1 rejection
+        if (Number(draft.transaction_type) === 2) {
+          draftStatus = "Rejected";
+
+          const payRes = await directusFetch(
+            `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draft_id}&fields=expense_id&limit=-1`
+          );
+          console.log("[DEBUG] Rejection payRes:", payRes);
+          const payRows = (payRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+          const expenseIds = payRows.map(r => {
+            const raw = r.expense_id;
+            if (typeof raw === "object" && raw !== null) return Number((raw as { id: number }).id);
+            return Number(raw);
+          }).filter(id => !isNaN(id) && id > 0);
+          
+          console.log("[DEBUG] Extracted expenseIds:", expenseIds);
+
+          if (expenseIds.length > 0) {
+            const revertRes = await directusFetch(`/items/expense_draft`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                keys: expenseIds,
+                data: { status: "Rejected", rejected_at: nowTs },
+              }),
+            });
+            console.log("[DEBUG] Revert expense_draft response:", revertRes);
+          } else {
+            console.log("[DEBUG] No valid expenseIds found. Check if the draft was created BEFORE expense_id column was added.");
+          }
+          fallbackMessage = `Draft rejected (Round ${currentVersion}). Associated expenses returned to Salesman Expense queue.`;
+        } else {
+          draftStatus = "Submitted";
+          fallbackMessage = `Draft rejected (Round ${currentVersion}). Returned to Level 1 for Round ${currentVersion + 1}.`;
+        }
+      }
+
       await directusFetch(`/items/disbursement_draft/${draft_id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          status: "Submitted",
+          status: draftStatus,
           approval_version: currentVersion + 1,
         }),
       });
@@ -942,7 +1065,7 @@ export async function POST(req: NextRequest) {
       return json({
         ok: true,
         result: "REJECTED",
-        message: `Draft rejected (Round ${currentVersion}). All previous votes preserved. Draft resets to Level 1 for Round ${currentVersion + 1}.`,
+        message: fallbackMessage,
         rejection_round: currentVersion,
         next_round: currentVersion + 1,
       });
