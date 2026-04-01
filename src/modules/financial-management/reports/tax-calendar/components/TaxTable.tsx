@@ -1,5 +1,5 @@
+import { useState, useRef, useEffect } from 'react';
 // tax-calendar/components/TaxTable.tsx
-import { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,21 +38,19 @@ export function TaxTable({
 }: Props) {
   const [page, setPage] = useState(1);
 
-  // Track the previous activities key (length + search) so we can reset the
-  // page to 1 *during* render instead of in an effect — avoids the
-  // react-hooks/set-state-in-effect lint error and the extra render cycle.
+  // Track the previous activities key (length + search) so we can reset the page to 1 when data/search changes
   const prevKeyRef = useRef(`${activities.length}::${search}`);
   const currentKey = `${activities.length}::${search}`;
 
+  useEffect(() => {
+    if (prevKeyRef.current !== currentKey) {
+      prevKeyRef.current = currentKey;
+      if (page !== 1) setPage(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activities.length, search]);
+
   let safePage = page;
-  if (prevKeyRef.current !== currentKey) {
-    prevKeyRef.current = currentKey;
-    safePage = 1;
-    // Enqueue the state update so React keeps the state in sync,
-    // but we already use safePage=1 for this render.
-    // We use a functional update to avoid stale-closure issues.
-    if (page !== 1) setPage(1);
-  }
 
   const totalPages = Math.max(1, Math.ceil(activities.length / PAGE_SIZE));
   safePage         = Math.min(safePage, totalPages);

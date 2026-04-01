@@ -7,21 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { useState, useMemo } from 'react';
 import { STATUS_STYLE } from '../types';
 import type { TaxActivity, TaxStatus } from '../types';
-import { AlertCircle, CheckCircle2, Clock, FileText } from 'lucide-react';
-
-const STATUS_ICON: Record<TaxStatus, React.ReactNode> = {
-  PENDING: <Clock        className="h-3 w-3" />,
-  FILED:   <FileText     className="h-3 w-3" />,
-  PAID:    <CheckCircle2 className="h-3 w-3" />,
-  OVERDUE: <AlertCircle  className="h-3 w-3" />,
-};
-
-const STATUS_BORDER: Record<TaxStatus, string> = {
-  PENDING: 'border-l-yellow-400',
-  FILED:   'border-l-blue-400',
-  PAID:    'border-l-green-400',
-  OVERDUE: 'border-l-red-400',
-};
 
 // Tax type badge colors — cycle through a set
 const TYPE_COLORS = [
