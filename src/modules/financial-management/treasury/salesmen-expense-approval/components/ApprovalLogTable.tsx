@@ -4,7 +4,7 @@ import * as React from "react";
 import { Badge } from "@/components/ui/badge";
 import { 
   History, Search, FileText, Loader2, Info, 
-  CheckCircle2, Receipt, ArrowRight, TrendingUp, TrendingDown, Clock, User
+  CheckCircle2, Receipt, ArrowRight, TrendingUp, TrendingDown
 } from "lucide-react";
 import { format } from "date-fns";
 import type { ApprovalLog, ApprovalLogDetail } from "../type";
@@ -168,7 +168,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                 {/* Remarks & Approver Banner */}
                 <div className="mt-3 pt-2.5 border-t border-border/50 flex flex-col gap-1.5">
                    <p className="text-[11px] font-medium text-muted-foreground italic line-clamp-2 leading-tight">
-                     &quot;{log.remarks || "No supplementary remarks provided."}&quot;
+                     &ldquo;{log.remarks || "No supplementary remarks provided."}&rdquo;
                    </p>
                    <div className="flex items-center justify-between">
                      <p className="text-[9px] uppercase font-bold text-muted-foreground/80 flex items-center gap-1.5">
@@ -204,7 +204,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                                     {v.status}
                                   </Badge>
                                </div>
-                               {v.remarks && <p className="text-[11px] font-medium text-muted-foreground italic leading-tight pl-3 relative before:content-[''] before:w-0.5 before:bg-muted before:absolute before:left-0 before:top-1 before:bottom-0">"{v.remarks}"</p>}
+                               {v.remarks && <p className="text-[11px] font-medium text-muted-foreground italic leading-tight pl-3 relative before:content-[''] before:w-0.5 before:bg-muted before:absolute before:left-0 before:top-1 before:bottom-0">&ldquo;{v.remarks}&rdquo;</p>}
                                <p className="text-[8px] text-muted-foreground/40 font-bold mt-1.5 pl-3">{formatDateTime(v.created_at)}</p>
                              </div>
                            ))}
@@ -238,7 +238,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                                       </div>
                                     </div>
                                     <p className="text-[10px] font-medium italic text-muted-foreground line-clamp-2 border-l-2 border-primary/10 pl-2">
-                                      "{rev.edit_reason}"
+                                      &ldquo;{rev.edit_reason}&rdquo;
                                     </p>
                                     <div className="mt-1 flex items-center justify-between border-t pt-2 border-dashed">
                                       <div className="flex flex-col">

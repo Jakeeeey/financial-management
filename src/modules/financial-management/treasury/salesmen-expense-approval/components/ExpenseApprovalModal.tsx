@@ -118,7 +118,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
   const isOverBatchLimit = expenseLimit > 0 && totalSelected > expenseLimit;
 
   function rowBgClass(expense: ExpenseDraftRow): string {
-    if (!selectedIds.has(expense.id)) return "opacity-50 grayscale-[0.5]";
+    if (!selectedIds.has(expense.id)) return "";
     if (isOverBatchLimit) {
       return "bg-red-100/80 dark:bg-red-900/40 border-l-4 border-l-red-600 font-medium";
     }
@@ -183,7 +183,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-        <DialogContent className="max-w-6xl max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden border-none shadow-2xl">
+        <DialogContent className="sm:!max-w-[45vw] max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden border-none shadow-2xl">
           <DialogHeader className="px-6 py-4 bg-primary text-primary-foreground shrink-0 relative overflow-hidden">
             <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
               <FileText size={120} />
@@ -325,7 +325,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
                         detail.expenses.map((expense, idx) => (
                           <TableRow
                             key={expense.id}
-                            className={`group cursor-pointer transition-all border-b-muted/40 ${rowBgClass(expense)} hover:opacity-100`}
+                            className={`group cursor-pointer transition-all border-b-muted/40 ${rowBgClass(expense)}`}
                             onClick={() => toggle(expense.id)}
                           >
                             <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>

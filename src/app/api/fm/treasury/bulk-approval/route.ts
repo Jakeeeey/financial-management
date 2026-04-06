@@ -25,21 +25,35 @@ async function directusFetch(path: string, init?: RequestInit) {
   if (!DIRECTUS_BASE)
     return { ok: false, status: 500, data: { error: "NEXT_PUBLIC_API_BASE_URL not set" } };
 
-  // Attempt to use user's cookie if STATIC_TOKEN is empty or absent
   const cookieStore = await cookies();
   const userToken = cookieStore.get(COOKIE_NAME)?.value;
-  const computedHeaders = { ...authHeaders(), ...(init?.headers as Record<string, string> || {}) };
   
-  if (!computedHeaders.Authorization && userToken) {
+  // Use static token if provided, but if forced userToken or static fails, try userToken
+  let computedHeaders = { ...authHeaders(), ...(init?.headers as Record<string, string> || {}) };
+  
+  const headers = init?.headers as Record<string, any>;
+  if (headers?.["X-Force-User-Token"] || (!computedHeaders.Authorization && userToken)) {
     computedHeaders.Authorization = `Bearer ${userToken}`;
+    delete (computedHeaders as any)["X-Force-User-Token"];
   }
 
   const url = `${DIRECTUS_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
-  const res = await fetch(url, {
+  let res = await fetch(url, {
     cache: "no-store",
     ...init,
     headers: computedHeaders,
   });
+
+  // FALLBACK: if 403 and we didn't try the userToken yet, try it!
+  const hMap = init?.headers as Record<string, any>;
+  if (!res.ok && res.status === 403 && userToken && !hMap?.["X-Force-User-Token"]) {
+    res = await fetch(url, {
+      cache: "no-store",
+      ...init,
+      headers: { ...computedHeaders, Authorization: `Bearer ${userToken}` },
+    });
+  }
+
   let data: unknown = null;
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) data = await res.json();
@@ -63,6 +77,36 @@ function decodeJwtSub(token: string): number | null {
   } catch {
     return null;
   }
+}
+
+/** Robustly convert a Directus return value (primitive or object) into a numeric ID. */
+function toNumericId(val: unknown): number | null {
+  if (val === null || val === undefined) return null;
+  if (typeof val === "number") return val;
+  if (typeof val === "string") {
+    const n = Number(val);
+    if (!isNaN(n) && val.trim() !== "") return n;
+    return null;
+  }
+  if (typeof val === "object") {
+    const obj = val as Record<string, unknown>;
+    const id = obj.id ?? obj.user_id ?? obj.coa_id ?? obj.expense_id ?? obj.value;
+    return toNumericId(id);
+  }
+  return null;
+}
+
+/** Robustly extract a File UUID from a Directus field value. */
+function resolveAttachmentId(val: unknown): string | null {
+  if (val === null || val === undefined) return null;
+  if (typeof val === "string") return val.trim() || null;
+  if (typeof val === "number") return String(val);
+  if (typeof val === "object") {
+    const obj = val as Record<string, unknown>;
+    const id = obj.id ?? obj.uuid ?? obj.directus_files_id;
+    return typeof id === "string" ? id : null;
+  }
+  return null;
 }
 
 function nowManila(): string {
@@ -339,7 +383,7 @@ export async function GET(req: NextRequest) {
 
       // Payables
       const pRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,remarks,date,reference_no,expense_id&limit=-1`
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,remarks,date,reference_no,expense_id.*&limit=-1`
       );
       
       let debugPayablesError = null;
@@ -369,17 +413,43 @@ export async function GET(req: NextRequest) {
       const activeExpenseIds = [
         ...new Set(
           (payablesUnresolved as Record<string, unknown>[])
-            .map((p) => Number(p.expense_id))
-            .filter(Boolean)
+            .map((p) => toNumericId(p.expense_id))
+            .filter((id): id is number => id !== null)
         ),
       ];
       
       let rawExpenseLogs: Record<string, unknown>[] = [];
+      let expenseAttachmentMap: Record<number, string | null> = {};
+      let eDraftRes: any = null;
+
       if (activeExpenseIds.length > 0) {
-        const eLogRes = await directusFetch(
-           `/items/expense_draft_logs?filter[expense_id][_in]=${activeExpenseIds.join(",")}&sort=-changed_at&fields=log_id,expense_id,action,changed_by,changed_at,amount,remarks,particulars,status&limit=-1`
-        );
+        const [eLogRes, eDraftRes] = await Promise.all([
+          directusFetch(
+            `/items/expense_draft_logs?filter[expense_id][_in]=${activeExpenseIds.join(",")}&sort=-changed_at&fields=log_id,expense_id,action,changed_by,changed_at,amount,remarks,particulars,status&limit=-1`
+          ),
+          directusFetch(
+            `/items/expense_draft?filter[id][_in]=${activeExpenseIds.join(",")}&fields=id,attachment_url,attatchment_url&limit=-1`
+          )
+        ]);
+
         rawExpenseLogs = (eLogRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        const expenseDrafts = (eDraftRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        
+        expenseDrafts.forEach((ed: any) => {
+          const aid = resolveAttachmentId(ed.attachment_url) || resolveAttachmentId(ed.attatchment_url);
+          if (aid) expenseAttachmentMap[toNumericId(ed.id) ?? -1] = aid;
+        });
+
+        // Backup plan: if drafts failed but logs worked, try to get IDs from logs too (if they exist there)
+        if (expenseDrafts.length === 0) {
+          rawExpenseLogs.forEach((log: any) => {
+            const eid = toNumericId(log.expense_id);
+            if (eid !== null && !expenseAttachmentMap[eid]) {
+               const aid = resolveAttachmentId(log.attachment_url) || resolveAttachmentId(log.attatchment_url);
+               if (aid) expenseAttachmentMap[eid] = aid;
+            }
+          });
+        }
       }
 
       // COA names
@@ -538,7 +608,7 @@ export async function GET(req: NextRequest) {
         try { snapshot = JSON.parse(String(l.payload_snapshot || "{}")); } catch {}
 
         const pLogs = rawPayableLogs
-          .filter(p => Number(p.log_id) === Number(l.id))
+          .filter(p => Number(p.log_id) === Number(l.log_id))
           .map(p => ({
             coa_id: Number(p.coa_id),
             coa_name: coaMap[Number(p.coa_id)] || `COA #${p.coa_id}`,
@@ -593,6 +663,9 @@ export async function GET(req: NextRequest) {
           remarks: p.remarks,
           date: p.date,
           reference_no: p.reference_no,
+          attachment_url: resolveAttachmentId((p.expense_id as any)?.attachment_url) || 
+                          resolveAttachmentId((p.expense_id as any)?.attatchment_url) || 
+                          null,
         })),
         approvers_by_level: approversByLevel,
         vote_history: voteHistory,

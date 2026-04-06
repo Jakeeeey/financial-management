@@ -28,6 +28,7 @@ export interface DraftPayable {
   remarks: string | null;
   date: string | null;
   reference_no: string | null;
+  attachment_url: string | null;
 }
 
 export interface ApproverVote {

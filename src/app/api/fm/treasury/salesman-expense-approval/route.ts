@@ -262,10 +262,9 @@ export async function GET(req: NextRequest) {
       let allExpenseLogs: Record<string, unknown>[] = [];
 
       if (logIds.length > 0) {
-        const [vRes, dlRes, elRes] = await Promise.all([
+        const [vRes, dlRes] = await Promise.all([
           directusFetch(`/items/disbursement_draft_approvals?filter[draft_id][_in]=${logIds.join(",")}&filter[status][_neq]=DRAFT&fields=draft_id,approver_id,status,remarks,version,created_at&sort=version,created_at&limit=-1`),
           directusFetch(`/items/disbursement_draft_logs?filter[draft_id][_in]=${logIds.join(",")}&fields=id,draft_id,editor_id,edit_reason,payload_snapshot,created_at&sort=-created_at&limit=-1`),
-          directusFetch(`/items/expense_draft_logs?filter[expense_id][_in]= (SELECT expense_id FROM disbursement_payables_draft WHERE disbursement_id IN (${logIds.join(",")}))&fields=log_id,expense_id,action,changed_by,changed_at,amount,remarks,particulars,status&limit=-1`)
         ]);
 
         // Wait! Directus doesn't support subqueries in filter JSON usually.
@@ -305,7 +304,7 @@ export async function GET(req: NextRequest) {
 
         // Resolve COA names for expense logs
         const coaIdsForLogs = [...new Set(allExpenseLogs.map(l => Number(l.particulars)).filter(Boolean))];
-        let coaMapForLogs: Record<number, string> = {};
+        const coaMapForLogs: Record<number, string> = {};
         if (coaIdsForLogs.length > 0) {
            const cRes = await directusFetch(`/items/chart_of_accounts?filter[coa_id][_in]=${coaIdsForLogs.join(",")}&fields=coa_id,account_title&limit=-1`);
            for (const c of (cRes.data as { data?: Record<string, unknown>[] })?.data ?? []) {
