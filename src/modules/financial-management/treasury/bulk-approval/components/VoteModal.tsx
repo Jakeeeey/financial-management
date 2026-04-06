@@ -3,10 +3,9 @@
 
 import * as React from "react";
 import {
-  Loader2, AlertCircle, FileText, User, DollarSign,
-  CheckCircle2, XCircle, Clock, ShieldCheck, ChevronRight,
-  X, PanelRightOpen, PanelRightClose, History, ArrowRight, TrendingDown, TrendingUp,
-  ExternalLink, Eye
+  Loader2, AlertCircle, FileText, CheckCircle2, XCircle, Clock, 
+  ShieldCheck, ChevronRight, X, PanelRightOpen, PanelRightClose, 
+  History, ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -17,6 +16,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
@@ -24,15 +24,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 
 import type { DraftDetail } from "../type";
 import * as api from "../providers/fetchProvider";
@@ -58,6 +49,12 @@ function formatDate(d: string | null) {
   } catch { return d; }
 }
 
+function VoteStatusIcon({ status }: { status: string }) {
+  if (status === "APPROVED") return <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
+  if (status === "REJECTED") return <XCircle className="h-3 w-3 text-red-500" />;
+  return <Clock className="h-3 w-3 text-amber-500" />;
+}
+
 function formatDateTime(d: string) {
   if (!d) return "—";
   try {
@@ -66,12 +63,6 @@ function formatDateTime(d: string) {
       hour: "2-digit", minute: "2-digit",
     });
   } catch { return d; }
-}
-
-function VoteStatusIcon({ status }: { status: string }) {
-  if (status === "APPROVED") return <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
-  if (status === "REJECTED") return <XCircle className="h-3 w-3 text-red-500" />;
-  return <Clock className="h-3 w-3 text-amber-500" />;
 }
 
 function ParseTierLabel(status: string): number {
@@ -614,7 +605,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                         </label>
                         <Textarea
                           value={remarks}
-                          onChange={(e) => setRemarks(e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRemarks(e.target.value)}
                           placeholder={
                             confirmAction === "REJECTED"
                               ? "Please specify why you are rejecting this draft..."

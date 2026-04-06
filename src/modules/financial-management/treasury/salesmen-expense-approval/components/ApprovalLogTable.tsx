@@ -277,7 +277,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                                     <p className="text-[11px] font-black text-primary">{formatCurrency(exRev.amount)}</p>
                                     <span className="text-[7px] text-muted-foreground/40 font-bold">{formatDateTime(exRev.changed_at)}</span>
                                   </div>
-                                  {exRev.remarks && <p className="text-[8px] italic text-muted-foreground line-clamp-1 border-l border-amber-200 pl-1.5 opacity-70">"{exRev.remarks}"</p>}
+                                  {exRev.remarks && <p className="text-[8px] italic text-muted-foreground line-clamp-1 border-l border-amber-200 pl-1.5 opacity-70">&quot;{exRev.remarks}&quot;</p>}
                                 </div>
                               ))}
                             </div>

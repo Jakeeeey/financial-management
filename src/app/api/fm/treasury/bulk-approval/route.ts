@@ -1,6 +1,11 @@
 // src/app/api/fm/treasury/bulk-approval/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { 
+  DirectusDisbursementPayableDraft, 
+  DirectusExpenseDraft, 
+  DirectusExpenseDraftLog 
+} from "@/modules/financial-management/treasury/salesmen-expense-approval/type";
 
 export const runtime = "nodejs";
 
@@ -29,12 +34,12 @@ async function directusFetch(path: string, init?: RequestInit) {
   const userToken = cookieStore.get(COOKIE_NAME)?.value;
   
   // Use static token if provided, but if forced userToken or static fails, try userToken
-  let computedHeaders = { ...authHeaders(), ...(init?.headers as Record<string, string> || {}) };
+  const computedHeaders: Record<string, string> = { ...authHeaders(), ...(init?.headers as Record<string, string> || {}) };
   
-  const headers = init?.headers as Record<string, any>;
+  const headers = init?.headers as Record<string, string | boolean | undefined>;
   if (headers?.["X-Force-User-Token"] || (!computedHeaders.Authorization && userToken)) {
     computedHeaders.Authorization = `Bearer ${userToken}`;
-    delete (computedHeaders as any)["X-Force-User-Token"];
+    delete (computedHeaders as Record<string, unknown>)["X-Force-User-Token"];
   }
 
   const url = `${DIRECTUS_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
@@ -45,7 +50,7 @@ async function directusFetch(path: string, init?: RequestInit) {
   });
 
   // FALLBACK: if 403 and we didn't try the userToken yet, try it!
-  const hMap = init?.headers as Record<string, any>;
+  const hMap = init?.headers as Record<string, unknown>;
   if (!res.ok && res.status === 403 && userToken && !hMap?.["X-Force-User-Token"]) {
     res = await fetch(url, {
       cache: "no-store",
@@ -418,9 +423,8 @@ export async function GET(req: NextRequest) {
         ),
       ];
       
-      let rawExpenseLogs: Record<string, unknown>[] = [];
-      let expenseAttachmentMap: Record<number, string | null> = {};
-      let eDraftRes: any = null;
+      let rawExpenseLogs: DirectusExpenseDraftLog[] = [];
+      const expenseAttachmentMap: Record<number, string | null> = {};
 
       if (activeExpenseIds.length > 0) {
         const [eLogRes, eDraftRes] = await Promise.all([
@@ -432,17 +436,17 @@ export async function GET(req: NextRequest) {
           )
         ]);
 
-        rawExpenseLogs = (eLogRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
-        const expenseDrafts = (eDraftRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        rawExpenseLogs = (eLogRes.data as { data?: DirectusExpenseDraftLog[] })?.data ?? [];
+        const expenseDrafts = (eDraftRes.data as { data?: DirectusExpenseDraft[] })?.data ?? [];
         
-        expenseDrafts.forEach((ed: any) => {
+        expenseDrafts.forEach((ed: DirectusExpenseDraft) => {
           const aid = resolveAttachmentId(ed.attachment_url) || resolveAttachmentId(ed.attatchment_url);
           if (aid) expenseAttachmentMap[toNumericId(ed.id) ?? -1] = aid;
         });
 
         // Backup plan: if drafts failed but logs worked, try to get IDs from logs too (if they exist there)
         if (expenseDrafts.length === 0) {
-          rawExpenseLogs.forEach((log: any) => {
+          rawExpenseLogs.forEach((log: DirectusExpenseDraftLog) => {
             const eid = toNumericId(log.expense_id);
             if (eid !== null && !expenseAttachmentMap[eid]) {
                const aid = resolveAttachmentId(log.attachment_url) || resolveAttachmentId(log.attatchment_url);
@@ -663,8 +667,8 @@ export async function GET(req: NextRequest) {
           remarks: p.remarks,
           date: p.date,
           reference_no: p.reference_no,
-          attachment_url: resolveAttachmentId((p.expense_id as any)?.attachment_url) || 
-                          resolveAttachmentId((p.expense_id as any)?.attatchment_url) || 
+          attachment_url: resolveAttachmentId((p as unknown as DirectusDisbursementPayableDraft).expense_id && typeof (p as unknown as DirectusDisbursementPayableDraft).expense_id === 'object' ? ((p as unknown as DirectusDisbursementPayableDraft).expense_id as { attachment_url?: string }).attachment_url : null) || 
+                          resolveAttachmentId((p as unknown as DirectusDisbursementPayableDraft).expense_id && typeof (p as unknown as DirectusDisbursementPayableDraft).expense_id === 'object' ? ((p as unknown as DirectusDisbursementPayableDraft).expense_id as { attatchment_url?: string }).attatchment_url : null) || 
                           null,
         })),
         approvers_by_level: approversByLevel,
