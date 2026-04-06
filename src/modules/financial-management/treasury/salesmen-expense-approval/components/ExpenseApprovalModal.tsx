@@ -402,7 +402,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
               {/* Footer / Submission Area */}
               <div className="px-6 py-5 bg-background shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.1)] shrink-0 border-t flex flex-col gap-4">
                 <div className="flex flex-col md:flex-row md:items-end gap-6">
-                  <div className="flex-1 space-y-2">
+                  <div className="flex-1 min-w-0 space-y-2">
                     <div className="flex items-center gap-2">
                       <label className="text-[11px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
                         Disbursement Remarks <span className="text-red-600 font-bold">*</span>
@@ -420,7 +420,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
                       value={remarks}
                       onChange={(e) => setRemarks(e.target.value)}
                       placeholder="Provide a justification for this batch of expenses..."
-                      className="min-h-[90px] max-h-[90px] resize-none border-2 focus:border-primary transition-all shadow-sm font-medium"
+                      className="min-h-[90px] max-h-[90px] w-full resize-none border-2 focus:border-primary transition-all shadow-sm font-medium break-all"
                       disabled={submitting}
                     />
                     <p className="text-[10px] text-muted-foreground italic">
