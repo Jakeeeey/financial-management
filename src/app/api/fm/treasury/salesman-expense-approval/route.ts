@@ -247,7 +247,7 @@ export async function GET(req: NextRequest) {
       }
 
       // Filter by RBAC
-      const visibleLogs = (logs as (Record<string, unknown> & { approver_id?: number; payee?: number; encoder_id?: number; division_id?: number })[]).filter(log => {
+      const visibleLogs = (logs as (Record<string, unknown> & { approver_id?: number; payee?: number; encoder_id?: number; division_id?: number; id: number; doc_no: string; transaction_date: string; total_amount: number; remarks: string; status: string; date_created: string })[]).filter(log => {
         const isMyApproval = Number(log.approver_id) === currentUserId;
         const targetDept = userDeptMap[Number(log.encoder_id)] || userDeptMap[Number(log.payee)] || 0;
         const isMyDept = myDepartments.includes(targetDept);
@@ -255,19 +255,133 @@ export async function GET(req: NextRequest) {
         return isMyApproval || isMyDept || isMyDiv;
       }).slice(0, 50);
 
-      const formattedLogs = visibleLogs.map((log) => ({
-        id: log.id,
-        doc_no: log.doc_no,
-        transaction_date: log.transaction_date,
-        salesman_name: userMap[Number(log.encoder_id)] || userMap[Number(log.payee)] || `User #${log.encoder_id || log.payee}`,
-        total_amount: log.total_amount,
-        remarks: log.remarks,
-        approver_name: userMap[Number(log.approver_id)] || `User #${log.approver_id}`,
-        status: log.status,
-        date_created: log.date_created,
-      }));
+      // Fetch Treasury Votes (Approvals History) for these logs
+      const logIds = visibleLogs.map((l) => Number(l.id));
+      let allVotes: Record<string, unknown>[] = [];
+      let allDraftLogs: Record<string, unknown>[] = [];
+      let allExpenseLogs: Record<string, unknown>[] = [];
 
-      return json({ data: formattedLogs });
+      if (logIds.length > 0) {
+        const [vRes, dlRes] = await Promise.all([
+          directusFetch(`/items/disbursement_draft_approvals?filter[draft_id][_in]=${logIds.join(",")}&filter[status][_neq]=DRAFT&fields=draft_id,approver_id,status,remarks,version,created_at&sort=version,created_at&limit=-1`),
+          directusFetch(`/items/disbursement_draft_logs?filter[draft_id][_in]=${logIds.join(",")}&fields=id,draft_id,editor_id,edit_reason,payload_snapshot,created_at&sort=-created_at&limit=-1`),
+        ]);
+
+        // Wait! Directus doesn't support subqueries in filter JSON usually.
+        // Let's do it in two steps for expense_logs if needed, or just fetch ALL for the logIds via payables.
+        
+        // Actually, let's fetch expense_ids from payables first.
+        const pResForIds = await directusFetch(`/items/disbursement_payables_draft?filter[disbursement_id][_in]=${logIds.join(",")}&fields=expense_id&limit=-1`);
+        const pRowsForIds = (pResForIds.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        const expenseIdsForAudit = [...new Set(pRowsForIds.map(pr => {
+          const raw = pr.expense_id;
+          if (typeof raw === "object" && raw !== null) return Number((raw as { id: number }).id);
+          return Number(raw);
+        }).filter(id => !isNaN(id) && id > 0))];
+
+        if (expenseIdsForAudit.length > 0) {
+           const finalElRes = await directusFetch(`/items/expense_draft_logs?filter[expense_id][_in]=${expenseIdsForAudit.join(",")}&fields=log_id,expense_id,action,changed_by,changed_at,amount,remarks,particulars,status&limit=-1`);
+           allExpenseLogs = (finalElRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        }
+
+        allVotes = (vRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        allDraftLogs = (dlRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        
+        // Resolve user names for all actors
+        const voteUids = [...new Set([
+          ...allVotes.map(v => Number(v.approver_id)),
+          ...allDraftLogs.map(l => Number(l.editor_id)),
+          ...allExpenseLogs.map(l => Number(l.changed_by))
+        ].filter(Boolean))];
+
+        const missingUids = voteUids.filter(uid => !userMap[uid]);
+        if (missingUids.length > 0) {
+          const uRes = await directusFetch(`/items/user?filter[user_id][_in]=${missingUids.join(",")}&fields=user_id,user_fname,user_lname&limit=-1`);
+          for (const u of (uRes.data as { data?: Record<string, unknown>[] })?.data ?? []) {
+            userMap[Number(u.user_id)] = `${u.user_fname ?? ''} ${u.user_lname ?? ''}`.trim();
+          }
+        }
+
+        // Resolve COA names for expense logs
+        const coaIdsForLogs = [...new Set(allExpenseLogs.map(l => Number(l.particulars)).filter(Boolean))];
+        const coaMapForLogs: Record<number, string> = {};
+        if (coaIdsForLogs.length > 0) {
+           const cRes = await directusFetch(`/items/chart_of_accounts?filter[coa_id][_in]=${coaIdsForLogs.join(",")}&fields=coa_id,account_title&limit=-1`);
+           for (const c of (cRes.data as { data?: Record<string, unknown>[] })?.data ?? []) {
+             coaMapForLogs[Number(c.coa_id)] = String(c.account_title ?? "");
+           }
+        }
+
+        const formattedLogs = visibleLogs.map((log) => {
+          const logVotes = allVotes
+            .filter(v => Number(v.draft_id) === Number(log.id))
+            .map(v => ({
+              approver_name: userMap[Number(v.approver_id)] || `User #${v.approver_id}`,
+              status: String(v.status),
+              remarks: v.remarks ? String(v.remarks) : null,
+              version: Number(v.version),
+              created_at: String(v.created_at ?? ""),
+            }));
+
+          const draftLogs = allDraftLogs
+            .filter(l => Number(l.draft_id) === Number(log.id))
+            .map(l => {
+              let snapshot = { old_total: 0, new_total: 0 };
+              try { snapshot = JSON.parse(String(l.payload_snapshot || "{}")); } catch {}
+              return {
+                id: Number(l.id),
+                editor_name: userMap[Number(l.editor_id)] || `User #${l.editor_id}`,
+                edit_reason: String(l.edit_reason || ""),
+                old_total: Number(snapshot.old_total || 0),
+                new_total: Number(snapshot.new_total || 0),
+                created_at: String(l.created_at || ""),
+              };
+            });
+
+          // Match expense logs using the mapping
+          const currentExpenseIds = pRowsForIds
+            .filter(pr => {
+               const draftId = typeof pr.disbursement_id === "object" && pr.disbursement_id !== null ? (pr.disbursement_id as { id: number }).id : pr.disbursement_id;
+               return Number(draftId) === Number(log.id);
+            })
+            .map(pr => {
+              const raw = pr.expense_id;
+              if (typeof raw === "object" && raw !== null) return Number((raw as { id: number }).id);
+              return Number(raw);
+            });
+
+          const expenseLogs = allExpenseLogs
+            .filter(l => currentExpenseIds.includes(Number(l.expense_id)))
+            .map(l => ({
+               id: Number(l.log_id),
+               expense_id: Number(l.expense_id),
+               action: String(l.action || ""),
+               editor_name: userMap[Number(l.changed_by)] || `User #${l.changed_by}`,
+               changed_at: String(l.changed_at || ""),
+               amount: Number(l.amount || 0),
+               remarks: l.remarks ? String(l.remarks) : null,
+               particulars: coaMapForLogs[Number(l.particulars)] || String(l.particulars || ""),
+               status: String(l.status || ""),
+            }));
+
+          return {
+            id: log.id,
+            doc_no: log.doc_no,
+            transaction_date: log.transaction_date,
+            salesman_name: userMap[Number(log.encoder_id)] || userMap[Number(log.payee)] || `User #${log.encoder_id || log.payee}`,
+            total_amount: log.total_amount,
+            remarks: log.remarks,
+            approver_name: userMap[Number(log.approver_id)] || `User #${log.approver_id}`,
+            status: log.status,
+            date_created: log.date_created,
+            votes: logVotes,
+            logs: draftLogs,
+            expense_logs: expenseLogs,
+          };
+        });
+
+        return json({ data: formattedLogs });
+      }
     }
 
     // ── GET ?resource=log-details ─────────────────────────────────────────
@@ -545,17 +659,35 @@ export async function POST(req: NextRequest) {
       return json({ ok: true, disbursement_id: null, message: "All expenses rejected" });
     }
 
-    // 4. Generate doc_no: fetch latest disbursement_draft to get next number
-    const latestRes = await directusFetch(
-      `/items/disbursement_draft?filter[doc_no][_starts_with]=NT-&sort=-id&fields=id,doc_no&limit=1`
+    // 4. Check if we can recycle an existing disbursement_draft
+    let existingDisbursementId: number | null = null;
+    let existingDocNo: string | null = null;
+    let existingApprovalVersion = 1;
+    let existingTotalAmount = 0;
+
+    const existingPayRes = await directusFetch(
+      `/items/disbursement_payables_draft?filter[expense_id][_in]=${selected_ids.join(",")}&fields=disbursement_id&limit=1`
     );
-    const latestRow = ((latestRes.data as { data?: unknown[] })?.data ?? [])[0] as Record<string, unknown> | undefined;
-    let nextNum = 1000;
-    if (latestRow?.doc_no) {
-      const match = String(latestRow.doc_no).match(/NT-(\d+)/);
-      if (match) nextNum = parseInt(match[1], 10) + 1;
+    const existingPayRows = (existingPayRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+    if (existingPayRows.length > 0) {
+      const pRow = existingPayRows[0];
+      const dId = typeof pRow.disbursement_id === "object" && pRow.disbursement_id !== null
+        ? (pRow.disbursement_id as Record<string, unknown>).id
+        : pRow.disbursement_id;
+
+      if (dId) {
+        const dRes = await directusFetch(
+          `/items/disbursement_draft?filter[id][_eq]=${dId}&fields=id,doc_no,approval_version,total_amount&limit=1`
+        );
+        const dRows = (dRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        if (dRows.length > 0) {
+          existingDisbursementId = Number(dRows[0].id);
+          existingDocNo = String(dRows[0].doc_no);
+          existingApprovalVersion = Number(dRows[0].approval_version || 1);
+          existingTotalAmount = Number(dRows[0].total_amount || 0);
+        }
+      }
     }
-    const docNo = `NT-${nextNum}`;
 
     // 5. Build disbursement totals
     const totalAmount = selectedExpenses.reduce((sum, e) => sum + Number(e.amount ?? 0), 0);
@@ -566,41 +698,144 @@ export async function POST(req: NextRequest) {
       .map((e) => String(e.attachment_url))
       .join(",");
 
-    // 6. Create disbursement_draft
-    const disbRes = await directusFetch(`/items/disbursement_draft`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        doc_no: docNo,
-        transaction_type: 2,
-        payee: firstExpense?.payee_id || salesman_user_id,
-        encoder_id: salesman_user_id,
-        approver_id: approverId,
-        total_amount: totalAmount,
-        paid_amount: 0,
-        transaction_date: transactionDate,
-        division_id: salesmanDivisionId,
-        department_id: salesmanDepartmentId,
-        remarks: remarks || null,
-        supporting_documents_url: supportingDocs || null,
-        status: "Submitted",
-        isPosted: 0,
-        date_created: nowTs,
-        date_updated: nowTs,
-        date_approved: nowTs,
-      }),
-    });
+    let disbursementId: number;
+    let docNo: string;
 
-    if (!disbRes.ok) return json({ error: "Failed to create disbursement", detail: disbRes.data }, { status: 500 });
+    if (existingDisbursementId) {
+      // 6a. UPDATE existing disbursement_draft
+      docNo = existingDocNo || `NT-?`;
+      disbursementId = existingDisbursementId;
+      
+      await directusFetch(`/items/disbursement_draft/${disbursementId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          total_amount: totalAmount,
+          transaction_date: transactionDate,
+          remarks: remarks || null,
+          supporting_documents_url: supportingDocs || null,
+          status: "Submitted",
+          approval_version: existingApprovalVersion + 1,
+          date_updated: nowTs,
+        }),
+      });
 
-    const disbursementId = Number(
-      ((disbRes.data as { data?: Record<string, unknown> })?.data)?.id ?? 0
-    );
-    if (!disbursementId) return json({ error: "Disbursement created but no ID returned" }, { status: 500 });
+      // Fetch old payables before deleting to calculate variance
+      const oldPRes = await directusFetch(
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${disbursementId}&fields=id,coa_id,amount,remarks,date,reference_no,expense_id&limit=-1`
+      );
+      const oldPRows = (oldPRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+      
+      const patchedPayablesLogPayloads = [];
+
+      for (const old of oldPRows) {
+        const matchedExpense = selectedExpenses.find(e => Number(e.id) === Number(old.expense_id));
+        const finalAmount = matchedExpense ? Number(matchedExpense.amount) : 0;
+        
+        if (Number(old.amount) !== finalAmount) {
+          patchedPayablesLogPayloads.push({
+             coa_id: Number(old.coa_id) || null,
+             original_amount: Number(old.amount),
+             new_amount: finalAmount,
+             remarks: String(old.remarks || ""),
+             date: String(old.date || ""),
+             reference_no: String(old.reference_no || ""),
+          });
+        }
+      }
+
+      // Record snapshot to draft_logs!
+      const draftLogRes = await directusFetch(`/items/disbursement_draft_logs`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          draft_id: disbursementId,
+          editor_id: salesman_user_id,
+          edit_reason: remarks ? `Resubmitted: ${remarks}` : "Salesman resubmitted draft after rejection round.",
+          payload_snapshot: JSON.stringify({
+            old_total: existingTotalAmount,
+            new_total: totalAmount,
+            timestamp: nowTs,
+          }),
+          created_at: nowTs,
+        }),
+      });
+
+      if (draftLogRes.ok && patchedPayablesLogPayloads.length > 0) {
+        const draftLogId = (draftLogRes.data as { data?: { id?: number } })?.data?.id;
+        if (draftLogId) {
+          const pLogs = patchedPayablesLogPayloads.map(p => ({
+            log_id: draftLogId,
+            coa_id: p.coa_id,
+            original_amount: p.original_amount,
+            new_amount: p.new_amount,
+            reference_no: p.reference_no,
+            date: p.date,
+            remarks: p.remarks,
+          }));
+
+          await directusFetch(`/items/disbursement_payables_draft_logs`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(pLogs),
+          });
+        }
+      }
+
+      if (oldPRows.length > 0) {
+        const oldIds = oldPRows.map((r) => Number(r.id));
+        await directusFetch(`/items/disbursement_payables_draft`, {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(oldIds),
+        });
+      }
+    } else {
+      // 6b. CREATE NEW disbursement_draft
+      const latestRes = await directusFetch(
+        `/items/disbursement_draft?filter[doc_no][_starts_with]=NT-&sort=-id&fields=id,doc_no&limit=1`
+      );
+      const latestRow = ((latestRes.data as { data?: unknown[] })?.data ?? [])[0] as Record<string, unknown> | undefined;
+      let nextNum = 1000;
+      if (latestRow?.doc_no) {
+        const match = String(latestRow.doc_no).match(/NT-(\d+)/);
+        if (match) nextNum = parseInt(match[1], 10) + 1;
+      }
+      docNo = `NT-${nextNum}`;
+
+      const disbRes = await directusFetch(`/items/disbursement_draft`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          doc_no: docNo,
+          transaction_type: 2,
+          payee: firstExpense?.payee_id || salesman_user_id,
+          encoder_id: salesman_user_id,
+          approver_id: approverId,
+          total_amount: totalAmount,
+          paid_amount: 0,
+          transaction_date: transactionDate,
+          division_id: salesmanDivisionId,
+          department_id: salesmanDepartmentId,
+          remarks: remarks || null,
+          supporting_documents_url: supportingDocs || null,
+          status: "Submitted",
+          isPosted: 0,
+          date_created: nowTs,
+          date_updated: nowTs,
+          date_approved: nowTs,
+        }),
+      });
+
+      if (!disbRes.ok) return json({ error: "Failed to create disbursement", detail: disbRes.data }, { status: 500 });
+      disbursementId = Number(((disbRes.data as { data?: Record<string, unknown> })?.data)?.id ?? 0);
+      if (!disbursementId) return json({ error: "Disbursement created but no ID returned" }, { status: 500 });
+    }
 
     // 7. Create disbursement_payables_draft — one per approved expense
     const payablePayloads = selectedExpenses.map((e) => ({
       disbursement_id: disbursementId,
+      expense_id: Number(e.id),
       division_id: salesmanDivisionId || null,
       reference_no: docNo,
       date: e.transaction_date ? String(e.transaction_date) : transactionDate,
