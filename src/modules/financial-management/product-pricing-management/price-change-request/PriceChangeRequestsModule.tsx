@@ -142,7 +142,7 @@ export function PriceChangeRequestsModule() {
                         <TabsContent value="inbox" className="space-y-3">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                 <Input
-                                    placeholder="Search request # / product name / product code..."
+                                    placeholder="Search PCR # / product name / product code..."
                                     value={inbox.query.q ?? ""}
                                     onChange={(e) =>
                                         inbox.setQuery((q) => ({
@@ -223,7 +223,7 @@ export function PriceChangeRequestsModule() {
                         <TabsContent value="mine" className="space-y-3">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                 <Input
-                                    placeholder="Search request # / product..."
+                                    placeholder="Search PCR # / product..."
                                     value={mine.query.q ?? ""}
                                     onChange={(e) =>
                                         mine.setQuery((q) => ({

@@ -64,14 +64,15 @@ interface EditAssetModalProps {
   isOpen: boolean;
   onClose: () => void;
   asset: AssetTableData | null;
-  onSuccess: () => void;
+  onSuccess?: () => void;
+  onLocalUpdate: (updated: Partial<AssetTableData> & { id: number }) => void;
 }
 
 export default function EditAssetModal({
   asset,
   isOpen,
   onClose,
-  onSuccess,
+  onLocalUpdate,
 }: EditAssetModalProps) {
   const [loading, setLoading] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -211,9 +212,49 @@ export default function EditAssetModal({
         finalImageValue,
       );
 
+      const selectedDepartment = departments.find(
+        (d) => d.department_id === values.department,
+      );
+      const selectedEmployee = users.find((u) => u.user_id === values.employee);
+      const d = values.date_acquired;
+      const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+      // 👇 Build the locally-patched version of the row from form values
+      // This mirrors exactly what fetchAssets would return for this row
+      const updatedFields: Partial<AssetTableData> & { id: number } = {
+        id: asset.id,
+        item_name: values.item_name,
+        item_type_name: values.item_type,
+        classification_name: values.item_classification,
+        condition: values.condition,
+        cost_per_item: values.cost_per_item,
+        quantity: values.quantity,
+        life_span: values.life_span,
+        date_acquired: localDateStr,
+        department: values.department,
+        department_name:
+          selectedDepartment?.department_name ?? asset.department_name,
+        employee: values.employee,
+        assigned_to_name: selectedEmployee
+          ? `${selectedEmployee.user_fname} ${selectedEmployee.user_lname}`.trim()
+          : "Unassigned",
+        item_image: finalImageValue,
+        barcode: values.barcode ?? null,
+        rfid_code: values.rfid_code ?? null,
+        serial: values.serial ?? null,
+        is_active_warning: values.is_active_warning,
+      };
+
+      onLocalUpdate(updatedFields); // 👈 patch just this row, no refetch
       toast.success("Asset updated successfully!");
       onClose();
-      onSuccess();
+
+      // NOTE: onSuccess (full refetch) is intentionally NOT called here anymore.
+      // It's kept in the props as a fallback you can call manually if ever needed.
+
+      // toast.success("Asset updated successfully!");
+      // onClose();
+      // onSuccess();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to update asset");
     } finally {
@@ -654,6 +695,9 @@ export default function EditAssetModal({
                             }
                           }}
                           disabled={(date) => date > new Date()}
+                          captionLayout="dropdown"
+                          startMonth={new Date(1900, 0)}
+                          endMonth={new Date()}
                           autoFocus
                         />
                       </PopoverContent>
