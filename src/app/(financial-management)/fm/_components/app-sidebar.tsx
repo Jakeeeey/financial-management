@@ -124,6 +124,11 @@ const data = {
               title: "Non Current Budget",
               url: "/fm/treasury/budgeting/non-current-budget",
               icon: Lock,
+            },
+            {
+              title: "User Expense Limit",
+              url: "/fm/treasury/budgeting/user-expense-limit",
+              icon: Wallet,
             }
           ]
         },
