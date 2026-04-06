@@ -31,29 +31,29 @@ function getOutcomeMeta(outcome: string) {
     case "FINAL_APPROVED":
       return {
         label: "Fully Approved",
-        bg: "bg-emerald-50 border-emerald-200",
-        pill: "bg-emerald-100 text-emerald-700 border-emerald-200",
+        bg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900/50",
+        pill: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800",
         icon: <PartyPopper className="h-3.5 w-3.5" />,
       };
     case "REJECTED":
       return {
         label: "Rejected",
-        bg: "bg-red-50/60 border-red-200",
-        pill: "bg-red-100 text-red-700 border-red-200",
+        bg: "bg-red-50/60 border-red-200 dark:bg-red-950/20 dark:border-red-900/50",
+        pill: "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800",
         icon: <XCircle className="h-3.5 w-3.5" />,
       };
     case "SUPERSEDED":
       return {
         label: "Superseded",
-        bg: "bg-slate-50 border-slate-200",
-        pill: "bg-slate-100 text-slate-500 border-slate-200",
+        bg: "bg-slate-50 border-slate-200 dark:bg-slate-900/40 dark:border-slate-800",
+        pill: "bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700",
         icon: <RotateCcw className="h-3.5 w-3.5" />,
       };
     default: // IN_PROGRESS
       return {
         label: "In Progress",
-        bg: "bg-amber-50/50 border-amber-200",
-        pill: "bg-amber-100 text-amber-700 border-amber-200",
+        bg: "bg-amber-50/50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50",
+        pill: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800",
         icon: <Clock className="h-3.5 w-3.5" />,
       };
   }
@@ -62,11 +62,11 @@ function getOutcomeMeta(outcome: string) {
 // ── Current draft lifecycle badge ─────────────────────────────────────────────
 function getDraftStatusMeta(status: string) {
   const s = status.toLowerCase();
-  if (s === "approved")   return { label: "Fully Approved", cls: "text-emerald-700 bg-emerald-100/80", icon: <CheckCircle2 className="h-3 w-3" /> };
-  if (s === "submitted")  return { label: "Awaiting L1",    cls: "text-blue-700 bg-blue-100/80",      icon: <Clock className="h-3 w-3" /> };
+  if (s === "approved")   return { label: "Fully Approved", cls: "text-emerald-700 bg-emerald-100/80 dark:bg-emerald-900/40 dark:text-emerald-400", icon: <CheckCircle2 className="h-3 w-3" /> };
+  if (s === "submitted")  return { label: "Awaiting L1",    cls: "text-blue-700 bg-blue-100/80 dark:bg-blue-900/40 dark:text-blue-400",      icon: <Clock className="h-3 w-3" /> };
   const m = s.match(/pending_l(\d+)/);
-  if (m)                  return { label: `Awaiting L${m[1]}`, cls: "text-amber-700 bg-amber-100/80", icon: <Clock className="h-3 w-3" /> };
-  return                         { label: status,           cls: "text-muted-foreground bg-muted",    icon: <AlertCircle className="h-3 w-3" /> };
+  if (m)                  return { label: `Awaiting L${m[1]}`, cls: "text-amber-700 bg-amber-100/80 dark:bg-amber-900/40 dark:text-amber-400", icon: <Clock className="h-3 w-3" /> };
+  return                         { label: status,           cls: "text-muted-foreground bg-muted dark:bg-muted/20",    icon: <AlertCircle className="h-3 w-3" /> };
 }
 
 // ── Vote row inside a round ────────────────────────────────────────────────────
@@ -83,9 +83,9 @@ function VoteRow({ vote }: { vote: LogRound["votes"][number] }) {
 
       {/* Avatar */}
       <div className={`shrink-0 h-7 w-7 rounded-full border font-black text-[11px] flex items-center justify-center shadow-sm transition-colors
-        ${approved ? "bg-emerald-100 text-emerald-700 border-emerald-200"
-          : rejected ? "bg-red-100 text-red-700 border-red-200"
-          : "bg-muted text-muted-foreground border-muted-foreground/20"}`}>
+        ${approved ? "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800"
+          : rejected ? "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800"
+          : "bg-muted text-muted-foreground border-muted-foreground/20 dark:bg-slate-800 dark:border-slate-700 text-muted-foreground/80"}`}>
         {vote.name.charAt(0)}
       </div>
 
@@ -104,9 +104,9 @@ function VoteRow({ vote }: { vote: LogRound["votes"][number] }) {
 
       {/* Status chip */}
       <div className={`shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-black uppercase tracking-wider shadow-sm
-        ${approved ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-          : rejected ? "bg-red-50 border-red-200 text-red-700"
-          : "bg-muted border-muted-foreground/10 text-muted-foreground"}`}>
+        ${approved ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900/50 dark:text-emerald-400"
+          : rejected ? "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900/50 dark:text-red-400"
+          : "bg-muted border-muted-foreground/10 text-muted-foreground dark:bg-slate-900/50 dark:border-slate-800"}`}>
         {approved ? <CheckCircle2 className="h-3 w-3" /> : rejected ? <XCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
         {vote.status}
       </div>
@@ -120,10 +120,10 @@ function RoundSection({ round, defaultOpen }: { round: LogRound; defaultOpen?: b
   const meta = getOutcomeMeta(round.outcome);
 
   return (
-    <div className={`rounded-xl border overflow-hidden transition-all ${meta.bg}`}>
+    <div className={`rounded-xl border overflow-hidden transition-all dark:shadow-[0_0_20px_-12px_rgba(0,0,0,0.5)] ${meta.bg}`}>
       {/* Round header */}
       <button
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors"
         onClick={() => setOpen((v) => !v)}
       >
         <div className="flex items-center gap-2.5">
@@ -335,11 +335,11 @@ export function ActivityFeed({ logs, loading }: Props) {
                       ) : itemDetails.length === 0 ? (
                         <p className="text-xs italic text-center text-muted-foreground py-3">No line items found.</p>
                       ) : (
-                        <div className="rounded-xl border overflow-hidden bg-background/60 shadow-inner">
+                        <div className="rounded-xl border overflow-hidden bg-background/60 dark:bg-slate-900/60 dark:border-slate-800 shadow-inner">
                           {itemDetails.map((item, idx) => (
                             <div
                               key={item.id}
-                              className={`flex justify-between items-center p-3 px-4 hover:bg-muted/30 transition-colors ${idx !== 0 ? "border-t border-border/50" : ""}`}
+                              className={`flex justify-between items-center p-3 px-4 hover:bg-muted/30 dark:hover:bg-white/[0.03] transition-colors ${idx !== 0 ? "border-t border-border/50 dark:border-white/5" : ""}`}
                             >
                               <div className="flex flex-col min-w-0 pr-4">
                                 <span className="text-[11px] font-bold text-foreground/80 truncate">{item.coa_name}</span>
