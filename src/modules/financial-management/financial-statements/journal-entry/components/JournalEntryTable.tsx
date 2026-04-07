@@ -78,127 +78,121 @@ export default function JournalEntryTable({
     <div className="space-y-4">
     <div className="rounded-xl border shadow-sm overflow-hidden bg-background">
       <Table>
-        <TableHeader className="bg-muted/50">
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[110px] text-[11px] font-bold uppercase tracking-wider">Date</TableHead>
-            <TableHead className="w-[100px] text-[11px] font-bold uppercase tracking-wider text-center">Type</TableHead>
-            <TableHead className="w-[140px] text-[11px] font-bold uppercase tracking-wider">Ref / JE No.</TableHead>
-            <TableHead className="w-[200px] text-[11px] font-bold uppercase tracking-wider">Account Title</TableHead>
-            <TableHead className="min-w-[240px] text-[11px] font-bold uppercase tracking-wider">Description / Narrative</TableHead>
-            <TableHead className="w-[100px] text-[11px] font-bold uppercase tracking-wider">Source</TableHead>
-            <TableHead className="w-[100px] text-[11px] font-bold uppercase tracking-wider text-right">Debit</TableHead>
-            <TableHead className="w-[100px] text-[11px] font-bold uppercase tracking-wider text-right">Credit</TableHead>
-            <TableHead className="w-[100px] text-[11px] font-bold uppercase tracking-wider text-right">Status</TableHead>
+        <TableHeader className="bg-slate-100 text-slate-800 border-b border-slate-200">
+          <TableRow className="hover:bg-slate-100">
+            <TableHead className="w-[100px] text-[10px] font-black uppercase tracking-widest py-3">Date</TableHead>
+            <TableHead className="w-[80px] text-[10px] font-black uppercase tracking-widest text-center py-3">Type</TableHead>
+            <TableHead className="w-[140px] text-[10px] font-black uppercase tracking-widest py-3">Ref / JE No.</TableHead>
+            <TableHead className="w-[200px] text-[10px] font-black uppercase tracking-widest py-3">Account Title</TableHead>
+            <TableHead className="min-w-[240px] text-[10px] font-black uppercase tracking-widest py-3">Description / Narrative</TableHead>
+            <TableHead className="w-[120px] text-[10px] font-black uppercase tracking-widest py-3">Source</TableHead>
+            <TableHead className="w-[100px] text-[10px] font-black uppercase tracking-widest text-right py-3">Debit</TableHead>
+            <TableHead className="w-[100px] text-[10px] font-black uppercase tracking-widest text-right py-3">Credit</TableHead>
+            <TableHead className="w-[100px] text-[10px] font-black uppercase tracking-widest text-right py-3">Balance</TableHead>
+            <TableHead className="w-[100px] text-[10px] font-black uppercase tracking-widest text-right py-3">Status</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {groups.map((group) => (
             <React.Fragment key={group.jeGroupCounter}>
-              {/* PRIMARY ENTRY ROW */}
-              <TableRow 
-                className={cn(
-                  "bg-muted/5 group border-t-2 border-muted/80",
-                  group.isImbalanced && "bg-orange-50/50 hover:bg-orange-100/50"
-                )}
-              >
-                <TableCell className="font-medium text-xs">
-                  {format(new Date(group.transactionDate), "yyyy-MM-dd")}
-                </TableCell>
-                <TableCell className="text-center">
-                    <Badge variant="outline" className="text-[10px] font-semibold bg-background shadow-sm border-muted-foreground/20 px-1 py-0 h-4">
-                        {group.sourceModule.split(" ")[0]}
-                    </Badge>
-                </TableCell>
-                <TableCell className="font-mono text-[11px] font-bold text-indigo-600">
-                    <div className="flex items-center gap-1">
-                        {group.jeNo}
-                        {group.isImbalanced && <AlertCircle className="h-3 w-3 text-orange-500" />}
-                    </div>
-                </TableCell>
-                <TableCell className="text-muted-foreground text-[10px] italic">
-                   Header Primary Context
-                </TableCell>
-                <TableCell>
-                  <button 
-                    onClick={() => onDrillDown(group)}
-                    className="text-left hover:text-primary transition-colors focus:outline-none"
-                  >
-                    <div className="flex flex-col">
-                        <span className="font-semibold text-xs text-foreground group-hover:underline underline-offset-2 flex items-center gap-1.5 leading-tight">
-                            {group.description}
-                            <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </span>
-                        <span className="text-[10px] text-muted-foreground/80 mt-0.5">Ref: {group.jeNo}</span>
-                    </div>
-                  </button>
-                </TableCell>
-                <TableCell className="text-[10px] font-medium text-muted-foreground">
-                    {group.sourceModule}
-                </TableCell>
-                <TableCell colSpan={2} className="p-0">
-                    {group.isImbalanced && (
-                        <div className="flex items-center justify-end px-4 h-full">
-                            <span className="text-[10px] font-bold text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded flex items-center gap-1 animate-pulse">
-                                <AlertCircle className="h-2.5 w-2.5" />
-                                IMBALANCE: {formatNumber(group.balance)}
-                            </span>
-                        </div>
-                    )}
-                </TableCell>
-                <TableCell className="text-right">
-                    <div className={cn(
-                        "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tight shadow-sm",
-                        group.status === "Posted" ? "bg-emerald-100 text-emerald-800" :
-                        group.status === "For Review" ? "bg-amber-100 text-amber-800" :
-                        group.status === "Approved" ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-800"
-                    )}>
-                        {group.status}
-                    </div>
-                </TableCell>
-              </TableRow>
-
-              {/* LINE ITEM ROWS */}
+              {/* LINE ITEM ROWS (With conditional Header info) */}
               {group.entries.map((entry, idx) => (
-                <TableRow key={`${entry.jeGroupCounter}-${idx}`} className="hover:bg-muted/50 border-none transition-colors">
-                  <TableCell />
-                  <TableCell />
-                  <TableCell />
-                  <TableCell className="font-semibold text-[11px] text-slate-700">
-                    <div className={cn(idx > 0 && "pl-4 border-l-2 ml-1 border-muted/50")}>
+                <TableRow 
+                  key={`${entry.jeGroupCounter}-${idx}`} 
+                  onClick={() => onDrillDown(group)}
+                  className={cn(
+                    "cursor-pointer group/row transition-colors",
+                    idx === 0 && "border-t-2 border-t-slate-200 bg-background",
+                    idx > 0 && "border-none bg-background",
+                    "hover:bg-indigo-50/40"
+                  )}
+                >
+                  <TableCell className="align-top py-3 font-semibold text-xs text-slate-700">
+                    {idx === 0 ? format(new Date(group.transactionDate), "yyyy-MM-dd") : ""}
+                  </TableCell>
+                  <TableCell className="align-top py-3 text-center">
+                    {idx === 0 && (
+                        <Badge variant="outline" className="text-[10px] font-bold bg-white shadow-sm border-slate-200 px-2 py-0 h-5">
+                            {group.sourceModule.split(" ")[0]}
+                        </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="align-top py-3 font-mono text-[11px] font-black text-slate-900 group-hover/row:text-indigo-600 transition-colors">
+                      {idx === 0 && (
+                          <div className="flex items-center gap-1.5">
+                              {group.jeNo}
+                              {group.isImbalanced && <AlertCircle className="h-3 w-3 text-rose-500" />}
+                          </div>
+                      )}
+                  </TableCell>
+                  <TableCell className="align-top py-3 font-semibold text-[11px] text-slate-800">
+                    <div className={cn(idx > 0 && "pl-6 text-slate-600")}>
                         {entry.accountTitle}
                     </div>
                   </TableCell>
-                  <TableCell className="text-[11px] text-muted-foreground/70 italic">
-                    {entry.accountTitle} distribution
+                  <TableCell className="align-top py-3 text-[11px]">
+                    {idx === 0 ? (
+                       <div className="flex flex-col gap-0.5">
+                          <span className="font-bold text-slate-900 group-hover/row:underline underline-offset-2 break-words">
+                             {group.description}
+                          </span>
+                          <span className="italic text-slate-500 opacity-80 mt-1">Ref: {group.jeNo}</span>
+                       </div>
+                    ) : (
+                       <span className="italic text-slate-500">{entry.accountTitle} distribution</span>
+                    )}
                   </TableCell>
-                  <TableCell className="text-[10px] text-muted-foreground/60">
-                    {entry.division || "-"} / {entry.department || "-"}
+                  <TableCell className="align-top py-3 text-[10px] font-bold text-slate-500">
+                      {idx === 0 ? group.sourceModule : "- / -"}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums font-medium text-[11px]">
+                  <TableCell className="align-top py-3 text-right tabular-nums font-semibold text-[11px] text-slate-700">
                     {entry.debit > 0 ? formatNumber(entry.debit) : ""}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums font-medium text-[11px]">
+                  <TableCell className="align-top py-3 text-right tabular-nums font-semibold text-[11px] text-slate-700">
                     {entry.credit > 0 ? formatNumber(entry.credit) : ""}
                   </TableCell>
-                  <TableCell />
+                  <TableCell className="align-top py-3 text-right tabular-nums">
+                    {idx === 0 && group.balance !== 0 ? (
+                        <span className={cn(
+                            "text-[11px] font-black",
+                            group.isImbalanced ? "text-rose-600" : "text-slate-700"
+                        )}>
+                            {formatNumber(group.balance)}
+                        </span>
+                    ) : ""}
+                  </TableCell>
+                  <TableCell className="align-top py-3 text-right">
+                      {idx === 0 && (
+                          <div className={cn(
+                              "inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm border",
+                              group.status === "Posted" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                              group.status === "For Review" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                              group.status === "Approved" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-slate-50 text-slate-700 border-slate-200"
+                          )}>
+                              {group.status}
+                          </div>
+                      )}
+                  </TableCell>
                 </TableRow>
               ))}
               
               {/* BALANCE SUMMARY ROW (INTERNAL TO GROUP) */}
-              <TableRow className="h-8 border-b-2 border-muted hover:bg-transparent">
-                  <TableCell />
-                  <TableCell />
-                  <TableCell />
-                  <TableCell />
-                  <TableCell />
-                  <TableCell className="text-[10px] font-bold text-muted-foreground text-right">TOTAL MATCH</TableCell>
-                  <TableCell className="text-right tabular-nums text-[11px] font-black border-t border-slate-200">
+              <TableRow 
+                onClick={() => onDrillDown(group)}
+                className="cursor-pointer border-none bg-background hover:bg-indigo-50/40"
+              >
+                  <TableCell colSpan={6} className="py-2 pr-6">
+                      <div className="flex justify-end">
+                         <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">TOTAL MATCH</span>
+                      </div>
+                  </TableCell>
+                  <TableCell className="py-2 text-right tabular-nums text-[11px] font-black text-slate-900 border-t border-slate-200">
                     {formatNumber(group.totalDebit)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums text-[11px] font-black border-t border-slate-200">
+                  <TableCell className="py-2 text-right tabular-nums text-[11px] font-black text-slate-900 border-t border-slate-200">
                     {formatNumber(group.totalCredit)}
                   </TableCell>
-                  <TableCell />
+                  <TableCell colSpan={2} className="py-2 border-t border-slate-200" />
               </TableRow>
             </React.Fragment>
           ))}

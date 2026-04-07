@@ -6,11 +6,10 @@ import {
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogDescription,
-  DialogFooter
+  DialogClose,
 } from "@/components/ui/dialog";
 import { JournalEntryGroup } from "../types";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatNumber } from "@/lib/utils";
 import { 
   Table, 
   TableBody, 
@@ -19,10 +18,8 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { Printer, Share2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Clock, ShieldCheck, Link2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface JournalEntryDetailModalProps {
@@ -31,137 +28,268 @@ interface JournalEntryDetailModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
+// =============================================================================
+// MOCK DATA INTERFACES — Ready for real backend data integration
+// When the backend provides audit trail and drill-through data, replace the
+// mock generation below with props or fetched data. The UI will remain unchanged.
+// =============================================================================
+interface AuditEntry {
+  action: string;
+  user: string;
+  timestamp: Date;
+  note: string;
+}
+
+interface DrillThroughContext {
+  sourceModule: string;
+  sourceReport: string;
+  sourceLine: string;
+  referenceLink: string;
+  postedOnlyView: string;
+}
+
+function generateMockAuditTrail(group: JournalEntryGroup): AuditEntry[] {
+  const baseDate = new Date(group.transactionDate);
+  const time = baseDate.getTime();
+  return [
+    {
+      action: "Create",
+      user: group.creator || "System Account",
+      timestamp: new Date(time + 1000 * 60 * 60 * 8 + 1000 * 60 * 42),
+      note: `Created ${group.entries.length}-line journal entry from ${group.sourceModule}`,
+    },
+    {
+      action: "Submit",
+      user: group.creator || "System Account",
+      timestamp: new Date(time + 1000 * 60 * 60 * 8 + 1000 * 60 * 45),
+      note: "Submitted for approval",
+    },
+    {
+      action: "Approve",
+      user: "Joshua Aquino",
+      timestamp: new Date(time + 1000 * 60 * 60 * 9 + 1000 * 60 * 3),
+      note: "Approved with no changes",
+    },
+    {
+      action: "Post",
+      user: "System",
+      timestamp: new Date(time + 1000 * 60 * 60 * 9 + 1000 * 60 * 5),
+      note: "Posted to General Ledger",
+    },
+  ];
+}
+
+function generateMockDrillThrough(group: JournalEntryGroup): DrillThroughContext {
+  return {
+    sourceModule: group.sourceModule,
+    sourceReport: "Income Statement",
+    sourceLine: "Net Sales",
+    referenceLink: `${group.sourceModule} Order: SO-1023`,
+    postedOnlyView: "No",
+  };
+}
+
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
 export default function JournalEntryDetailModal({ group, open, onOpenChange }: JournalEntryDetailModalProps) {
   if (!group) return null;
 
+  const auditTrail = generateMockAuditTrail(group);
+  const drillThrough = generateMockDrillThrough(group);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 border-none shadow-2xl">
-        <DialogHeader className="p-6 pb-2 bg-gradient-to-r from-slate-50 to-indigo-50/30">
-          <div className="flex items-center justify-between mb-2">
-            <Badge variant="outline" className="bg-background/80 shadow-sm">
-                {group.sourceModule} Transaction
-            </Badge>
-            <div className={cn(
-                "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm",
-                group.status === "Posted" ? "bg-emerald-500 text-white" : "bg-amber-400 text-white"
-            )}>
-                {group.status}
-            </div>
-          </div>
-          <DialogTitle className="text-2xl font-bold flex items-center gap-3">
-             Journal Entry Breakdown
-             <span className="text-muted-foreground font-light text-xl">|</span>
-             <span className="text-indigo-600 font-mono tracking-tighter">{group.jeNo}</span>
+      <DialogContent 
+        style={{ maxWidth: '1100px', width: '95vw' }}
+        className="w-[95vw] h-[90vh] overflow-hidden flex flex-col p-0 border shadow-2xl rounded-xl bg-white [&>button]:hidden"
+      >
+        
+        {/* ── HEADER BAR ── */}
+        <div className="flex items-center justify-between px-6 py-4 border-b bg-white shrink-0">
+          <DialogTitle className="text-lg font-bold text-slate-900">
+            Journal Entry Detail · <span className="font-mono text-slate-600">{group.jeNo}</span>
           </DialogTitle>
-          <DialogDescription className="text-xs pt-1 flex items-center gap-4">
-             <span>Created By: <strong>{group.creator || "System Auto"}</strong></span>
-             <span>Date: <strong>{format(new Date(group.transactionDate), "PPPP")}</strong></span>
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="px-6 py-4 space-y-6 overflow-y-auto flex-1">
-          <div className="grid grid-cols-2 gap-8 text-sm">
-             <div className="space-y-1">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-70">Journal Narrative / Description</p>
-                <div className="bg-muted/30 p-3 rounded-lg border italic text-slate-700 leading-relaxed">
-                   "{group.description}"
-                </div>
-             </div>
-             <div className="grid grid-cols-2 gap-4 h-fit">
-                <div className="space-y-1 bg-muted/40 p-2 rounded border border-dashed">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-70">Division</p>
-                    <p className="font-semibold">{group.division || "N/A"}</p>
-                </div>
-                <div className="space-y-1 bg-muted/40 p-2 rounded border border-dashed">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase opacity-70">Department</p>
-                    <p className="font-semibold">{group.department || "N/A"}</p>
-                </div>
-             </div>
-          </div>
-
-          <Separator />
-
-          <div className="space-y-3">
-             <h3 className="text-sm font-bold flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                Accounting Distributions
-             </h3>
-             <div className="rounded-lg border shadow-inner bg-slate-50/50">
-                <Table>
-                    <TableHeader className="bg-slate-100/50">
-                        <TableRow>
-                            <TableHead className="text-[10px] uppercase font-black">Account Group / Title</TableHead>
-                            <TableHead className="text-[10px] uppercase font-black text-right">Debit</TableHead>
-                            <TableHead className="text-[10px] uppercase font-black text-right">Credit</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {group.entries.map((entry, i) => (
-                            <TableRow key={i} className="bg-background">
-                                <TableCell className="font-medium text-xs py-3">{entry.accountTitle}</TableCell>
-                                <TableCell className="text-right tabular-nums text-xs font-semibold">
-                                    {entry.debit > 0 ? formatCurrency(entry.debit) : ""}
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums text-xs font-semibold">
-                                    {entry.credit > 0 ? formatCurrency(entry.credit) : ""}
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-             </div>
-          </div>
-
-          {/* Totals Section */}
-          <div className="bg-slate-900 text-white rounded-xl p-5 shadow-xl shadow-indigo-100/50 flex items-center justify-between">
-             <div className="space-y-0.5">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entry Balance Summary</p>
-                <div className="flex items-center gap-3">
-                    <span className="text-2xl font-black text-white">{formatCurrency(group.totalDebit)}</span>
-                    <span className="text-slate-500 font-thin text-xl">/</span>
-                    <span className="text-2xl font-black text-white">{formatCurrency(group.totalCredit)}</span>
-                </div>
-             </div>
-             <div className="text-right">
-                {group.isImbalanced ? (
-                    <div className="flex flex-col items-end gap-1 px-4 py-2 bg-rose-500/20 border border-rose-500/50 rounded-lg">
-                        <span className="text-[10px] font-black text-rose-300 uppercase flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3" />
-                            Imbalance Detected
-                        </span>
-                        <span className="text-xl font-black text-rose-100">{formatCurrency(Math.abs(group.balance))}</span>
-                    </div>
-                ) : (
-                    <div className="flex flex-col items-end gap-1 px-4 py-2 bg-emerald-500/20 border border-emerald-500/50 rounded-lg">
-                        <span className="text-[10px] font-black text-emerald-300 uppercase flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3" />
-                            Fully Balanced
-                        </span>
-                        <span className="text-xl font-black text-white">0.00</span>
-                    </div>
-                )}
-             </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1.5">
+              <Download className="w-3.5 h-3.5" /> Export Detail
+            </Button>
+            <DialogClose asChild>
+              <Button size="sm" className="h-8 text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 px-4">
+                Close
+              </Button>
+            </DialogClose>
           </div>
         </div>
 
-        <DialogFooter className="p-4 border-t bg-muted/20 flex sm:justify-between items-center px-6">
-            <p className="text-[10px] text-muted-foreground italic">
-                Document printed on {format(new Date(), "PPpp")}
-            </p>
-            <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="text-xs h-8">
-                    <Share2 className="mr-2 h-3 w-3" />
-                    Share
-                </Button>
-                <Button size="sm" className="text-xs h-8 bg-indigo-600 hover:bg-indigo-700">
-                    <Printer className="mr-2 h-3 w-3" />
-                    Print Entry
-                </Button>
+        {/* ── SCROLLABLE BODY ── */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className="p-6 space-y-6">
+
+            {/* ── PARAMETER CARDS ROW ── */}
+            <div className="flex flex-wrap gap-2">
+              <ParamCard label="JE No." value={group.jeNo} />
+              <ParamCard label="Status" value={group.status} highlight />
+              <ParamCard label="Type" value={group.sourceModule.split(" ")[0] || "N/A"} />
+              <ParamCard label="Division" value={group.division || "N/A"} />
+              <ParamCard label="Department" value={group.department || "N/A"} />
+              <ParamCard label="Posting Date" value={format(new Date(group.transactionDate), "yyyy-MM-dd")} />
+              <ParamCard label="Creator" value={group.creator || "System"} />
             </div>
-        </DialogFooter>
+
+            {/* ── TWO COLUMN LAYOUT ── */}
+            <div className="flex gap-6 items-start">
+
+              {/* LEFT: Distribution Table */}
+              <div className="flex-1 min-w-0 border rounded-lg overflow-hidden bg-white">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50 hover:bg-slate-50">
+                      <TableHead className="text-[11px] font-bold text-slate-500 py-2.5">Account Title</TableHead>
+                      <TableHead className="text-[11px] font-bold text-slate-500 py-2.5">Description</TableHead>
+                      <TableHead className="text-[11px] font-bold text-slate-500 py-2.5 text-right">Debit</TableHead>
+                      <TableHead className="text-[11px] font-bold text-slate-500 py-2.5 text-right">Credit</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {group.entries.map((e, i) => (
+                      <TableRow key={i} className="hover:bg-slate-50/50">
+                        <TableCell className="py-3 text-xs font-semibold text-slate-700">
+                          {e.accountTitle}
+                        </TableCell>
+                        <TableCell className="py-3 text-xs text-slate-500">
+                          {group.description}
+                          {i === 0 && (
+                            <span className="block text-[10px] italic text-slate-400 mt-0.5">
+                              - {e.accountTitle} distribution
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-3 text-xs font-semibold tabular-nums text-right">
+                          {e.debit > 0 ? `₱${formatNumber(e.debit)}` : ""}
+                        </TableCell>
+                        <TableCell className="py-3 text-xs font-semibold tabular-nums text-right">
+                          {e.credit > 0 ? `₱${formatNumber(e.credit)}` : ""}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {/* TOTAL */}
+                    <TableRow className="bg-slate-50 hover:bg-slate-50 border-t-2 border-slate-200">
+                      <TableCell colSpan={2} className="py-3 font-black text-xs text-slate-800">TOTAL</TableCell>
+                      <TableCell className="py-3 text-right font-black text-xs tabular-nums">
+                        ₱{formatNumber(group.totalDebit)}
+                      </TableCell>
+                      <TableCell className="py-3 text-right font-black text-xs tabular-nums">
+                        ₱{formatNumber(group.totalCredit)}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* RIGHT: Sidebar */}
+              <div className="w-[320px] shrink-0 space-y-4">
+                
+                {/* Drill-through Context */}
+                <div className="border rounded-lg p-4 bg-white">
+                  <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-3">
+                    <ShieldCheck className="w-3.5 h-3.5 text-slate-400" /> Drill-through Context
+                  </h3>
+                  <dl className="space-y-2.5 text-[11px]">
+                    <ContextRow label="Source Module:" value={drillThrough.sourceModule} />
+                    <ContextRow label="Source Report:" value={drillThrough.sourceReport} />
+                    <ContextRow label="Source Line:" value={drillThrough.sourceLine} bold />
+                    <ContextRow label="Reference Link:" value={drillThrough.referenceLink} link />
+                    <ContextRow label="Posted Only View:" value={drillThrough.postedOnlyView} />
+                  </dl>
+                </div>
+
+                {/* Audit Trail */}
+                <div className="border rounded-lg p-4 bg-white">
+                  <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-3">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" /> Audit Trail
+                  </h3>
+                  <div className="space-y-0">
+                    {auditTrail.map((audit, idx) => (
+                      <div key={idx} className="flex gap-3 relative">
+                        {/* Vertical line */}
+                        <div className="flex flex-col items-center pt-1.5">
+                          <div className={cn(
+                            "w-2 h-2 rounded-full shrink-0",
+                            audit.action === "Post" ? "bg-emerald-500" : "bg-slate-300"
+                          )} />
+                          {idx < auditTrail.length - 1 && (
+                            <div className="w-px flex-1 bg-slate-200 mt-1" />
+                          )}
+                        </div>
+
+                        {/* Content */}
+                        <div className="pb-4 flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={cn(
+                              "text-[10px] font-bold uppercase px-1.5 py-0.5 rounded",
+                              audit.action === "Post"
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-slate-100 text-slate-600"
+                            )}>
+                              {audit.action}
+                            </span>
+                            <span className="text-[10px] text-slate-400 whitespace-nowrap flex items-center gap-1">
+                              <Clock className="w-2.5 h-2.5" />
+                              {format(audit.timestamp, "yyyy-MM-dd HH:mm")}
+                            </span>
+                          </div>
+                          <p className="text-[11px] font-semibold text-slate-800 mt-1">{audit.user}</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{audit.note}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
 
+// =============================================================================
+// SUB-COMPONENTS
+// =============================================================================
+
+function ParamCard({ label, value, highlight, className }: { 
+  label: string; value: string; highlight?: boolean; className?: string 
+}) {
+  return (
+    <div className={cn(
+      "border rounded-lg px-3 py-2 bg-white min-w-[100px]",
+      className
+    )}>
+      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</div>
+      <div className={cn(
+        "text-[11px] mt-0.5",
+        highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"
+      )}>{value}</div>
+    </div>
+  );
+}
+
+function ContextRow({ label, value, bold, link }: { 
+  label: string; value: string; bold?: boolean; link?: boolean 
+}) {
+  return (
+    <div>
+      <dt className="text-slate-400 font-medium text-[10px]">{label}</dt>
+      <dd className={cn(
+        "mt-0.5",
+        link ? "text-indigo-600 font-semibold cursor-pointer hover:underline flex items-center gap-1" : "",
+        bold ? "font-bold text-slate-800" : "font-medium text-slate-700"
+      )}>
+        {value}
+        {link && <Link2 className="w-2.5 h-2.5" />}
+      </dd>
+    </div>
+  );
+}
