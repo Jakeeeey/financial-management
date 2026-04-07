@@ -208,12 +208,20 @@ export async function GET(req: NextRequest) {
     if (resource === "drafts") {
       if (myDivisionIds.length === 0) return json({ data: [], myLevel, levelsByDivision });
 
+      const startDate = sp.get("start_date");
+      const endDate = sp.get("end_date");
+
       const queryParams = new URLSearchParams({
         fields: "id,doc_no,payee,total_amount,remarks,status,approval_version,transaction_date,division_id,transaction_type,encoder_id,approver_id,date_created",
         sort: "-id",
         limit: "-1"
       });
-      queryParams.set("filter", JSON.stringify({ division_id: { _in: myDivisionIds } }));
+
+      const filters: Record<string, any> = { division_id: { _in: myDivisionIds } };
+      if (startDate && endDate) {
+        filters.transaction_date = { _between: [startDate, endDate] };
+      }
+      queryParams.set("filter", JSON.stringify(filters));
 
       const draftsRes = await directusFetch(
         `/items/disbursement_draft?${queryParams.toString()}`

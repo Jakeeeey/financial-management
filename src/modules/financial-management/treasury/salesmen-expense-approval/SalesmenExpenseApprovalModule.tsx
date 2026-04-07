@@ -12,7 +12,7 @@ import { useSalesmanExpenseApproval } from "./hooks/useSalesmanExpenseApproval";
 import SalesmanExpenseTable from "./components/SalesmanExpenseTable";
 import ExpenseApprovalModal from "./components/ExpenseApprovalModal";
 import { ApprovalLogTable } from "./components/ApprovalLogTable";
-import { DateRangePicker } from "./components/DateRangePicker";
+import { DateRangePicker } from "../components/DateRangePicker";
 
 export default function SalesmenExpenseApprovalModule() {
   const {
