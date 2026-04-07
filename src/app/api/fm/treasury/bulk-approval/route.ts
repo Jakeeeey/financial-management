@@ -217,7 +217,7 @@ export async function GET(req: NextRequest) {
         limit: "-1"
       });
 
-      const filters: Record<string, any> = { division_id: { _in: myDivisionIds } };
+      const filters: Record<string, unknown> = { division_id: { _in: myDivisionIds } };
       if (startDate && endDate) {
         filters.transaction_date = { _between: [startDate, endDate] };
       }
