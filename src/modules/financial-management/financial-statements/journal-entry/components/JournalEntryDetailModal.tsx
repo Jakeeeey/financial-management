@@ -129,7 +129,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
             {/* ── PARAMETER CARDS ROW ── */}
             <div className="flex flex-wrap gap-2">
               <ParamCard label="JE No." value={group.jeNo} />
-              <ParamCard label="Status" value={group.status} highlight />
+              <StatusParamCard label="Status" value={group.status} />
               <ParamCard label="Type" value={group.sourceModule.split(" ")[0] || "N/A"} />
               <ParamCard label="Division" value={group.division || "N/A"} />
               <ParamCard label="Department" value={group.department || "N/A"} />
@@ -272,6 +272,30 @@ function ParamCard({ label, value, highlight, className }: {
         "text-[11px] mt-0.5",
         highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"
       )}>{value}</div>
+    </div>
+  );
+}
+
+function StatusParamCard({ label, value }: { label: string; value: string }) {
+  const statusStr = (value || "").trim();
+  const statusLower = statusStr.toLowerCase();
+  let statusClasses = "text-slate-700 bg-slate-100 border-slate-200";
+
+  if (statusLower === "approved") statusClasses = "text-blue-700 bg-blue-50 border-blue-200";
+  else if (statusLower === "posted") statusClasses = "text-emerald-700 bg-emerald-50 border-emerald-200";
+  else if (statusLower === "for review") statusClasses = "text-amber-700 bg-amber-50 border-amber-200";
+  else if (statusLower === "draft") statusClasses = "text-slate-700 bg-slate-50 border-slate-200";
+  else if (statusLower === "dispatched") statusClasses = "text-indigo-700 bg-indigo-50 border-indigo-200";
+  else if (statusLower === "voided" || statusLower === "cancelled") statusClasses = "text-rose-700 bg-rose-50 border-rose-200";
+
+  return (
+    <div className="border rounded-lg px-3 py-2 bg-white min-w-[100px] flex flex-col justify-center">
+      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{label}</div>
+      <div>
+        <span className={cn("inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border", statusClasses)}>
+          {value}
+        </span>
+      </div>
     </div>
   );
 }

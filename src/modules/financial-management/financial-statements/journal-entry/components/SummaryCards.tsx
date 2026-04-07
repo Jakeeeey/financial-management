@@ -49,9 +49,9 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
       value: formatCurrency(data.netBalance),
       description: data.netBalance !== 0 ? "Imbalance detected" : "Perfectly balanced",
       icon: Scale,
-      color: data.netBalance !== 0 ? "text-orange-600" : "text-slate-600",
-      bg: data.netBalance !== 0 ? "bg-orange-50" : "bg-slate-50",
-      highlight: data.netBalance !== 0,
+      color: data.netBalance !== 0 ? "text-white" : "text-slate-600",
+      bg: data.netBalance !== 0 ? "bg-red-700/50" : "bg-slate-50",
+      destructive: data.netBalance !== 0,
     },
     {
       title: "Largest Entry",
@@ -85,12 +85,17 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
         <Card 
           key={i} 
           className={cn(
-            "overflow-hidden border-none shadow-sm transition-all hover:shadow-md",
-            card.highlight && "ring-2 ring-orange-500 ring-offset-2"
+            "overflow-hidden border shadow-sm transition-all hover:shadow-md",
+            card.destructive 
+              ? "bg-destructive text-destructive-foreground border-destructive ring-2 ring-destructive ring-offset-2"
+              : "bg-white border-transparent"
           )}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <CardTitle className={cn(
+              "text-xs font-medium uppercase tracking-wider",
+              card.destructive ? "text-destructive-foreground/90" : "text-muted-foreground"
+            )}>
               {card.title}
             </CardTitle>
             <div className={cn("p-2 rounded-lg", card.bg)}>
@@ -99,7 +104,10 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
           </CardHeader>
           <CardContent>
             <div className="text-xl font-bold tracking-tight">{card.value}</div>
-            <p className="text-[10px] text-muted-foreground mt-1 truncate">
+            <p className={cn(
+              "text-[10px] mt-1 truncate",
+              card.destructive ? "text-destructive-foreground/80 font-medium" : "text-muted-foreground"
+            )}>
               {card.description}
             </p>
           </CardContent>
