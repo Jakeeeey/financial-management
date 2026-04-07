@@ -21,6 +21,7 @@ interface JournalEntryContextType {
   analytics: AnalyticsSummary;
   filters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
+  uniqueSourceModules: string[];
   isLoading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -109,6 +110,12 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     return filteredGroups.slice(start, start + pageSize);
   }, [filteredGroups, currentPage, pageSize]);
 
+  // Extract unique sorted Source Modules for filtering
+  const uniqueSourceModules = React.useMemo(() => {
+    const modules = new Set(entries.map((e) => e.sourceModule).filter(Boolean));
+    return ["All Source Modules", ...Array.from(modules).sort()];
+  }, [entries]);
+
   const resetFilters = () => {
     setFilters({
       search: "",
@@ -138,6 +145,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     analytics,
     filters,
     setFilters,
+    uniqueSourceModules,
     isLoading,
     error,
     refresh: fetchData,

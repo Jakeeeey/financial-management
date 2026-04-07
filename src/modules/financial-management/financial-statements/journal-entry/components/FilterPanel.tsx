@@ -34,10 +34,11 @@ import { FilterState, PresetRange } from "../types";
 interface FilterPanelProps {
   filters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
+  uniqueSourceModules: string[];
   onReset: () => void;
 }
 
-export default function FilterPanel({ filters, setFilters, onReset }: FilterPanelProps) {
+export default function FilterPanel({ filters, setFilters, uniqueSourceModules, onReset }: FilterPanelProps) {
   const updateFilter = (key: keyof FilterState, value: any) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
@@ -166,7 +167,7 @@ export default function FilterPanel({ filters, setFilters, onReset }: FilterPane
         { label: "Division", key: "division", items: ["All Divisions"] },
         { label: "Department", key: "department", items: ["All Departments"] },
         { label: "Entry Type", key: "entryType", items: ["All Entry Types", "Sales", "Purchase", "Adjustment", "Accrual"] },
-        { label: "Source Module", key: "sourceModule", items: ["All Source Modules", "Sales Invoice", "AP Voucher", "Inventory", "Payroll"] },
+        { label: "Source Module", key: "sourceModule", items: uniqueSourceModules.length > 0 ? uniqueSourceModules : ["All Source Modules"] },
         { label: "Entry Status", key: "status", items: ["All Statuses", "Posted", "For Review", "Approved", "Draft"] },
       ].map((item) => (
         <div key={item.key} className="space-y-2">

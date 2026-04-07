@@ -102,20 +102,20 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         style={{ maxWidth: '1100px', width: '95vw' }}
-        className="w-[95vw] h-[90vh] overflow-hidden flex flex-col p-0 border shadow-2xl rounded-xl bg-white [&>button]:hidden"
+        className="w-[95vw] h-[90vh] overflow-hidden flex flex-col p-0 border border-border shadow-2xl rounded-xl bg-background [&>button]:hidden"
       >
         
         {/* ── HEADER BAR ── */}
-        <div className="flex items-center justify-between px-6 py-4 border-b bg-white shrink-0">
-          <DialogTitle className="text-lg font-bold text-slate-900">
-            Journal Entry Detail · <span className="font-mono text-slate-600">{group.jeNo}</span>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-background shrink-0">
+          <DialogTitle className="text-lg font-bold text-foreground">
+            Journal Entry Detail · <span className="font-mono text-muted-foreground">{group.jeNo}</span>
           </DialogTitle>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1.5">
               <Download className="w-3.5 h-3.5" /> Export Detail
             </Button>
             <DialogClose asChild>
-              <Button size="sm" className="h-8 text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 px-4">
+              <Button size="sm" className="h-8 text-xs font-semibold px-4">
                 Close
               </Button>
             </DialogClose>
@@ -141,26 +141,26 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
             <div className="flex gap-6 items-start">
 
               {/* LEFT: Distribution Table */}
-              <div className="flex-1 min-w-0 border rounded-lg overflow-hidden bg-white">
+              <div className="flex-1 min-w-0 border border-border rounded-lg overflow-hidden bg-background">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-slate-50 hover:bg-slate-50">
-                      <TableHead className="text-[11px] font-bold text-slate-500 py-2.5">Account Title</TableHead>
-                      <TableHead className="text-[11px] font-bold text-slate-500 py-2.5">Description</TableHead>
-                      <TableHead className="text-[11px] font-bold text-slate-500 py-2.5 text-right">Debit</TableHead>
-                      <TableHead className="text-[11px] font-bold text-slate-500 py-2.5 text-right">Credit</TableHead>
+                    <TableRow className="bg-muted/50 hover:bg-muted/50 border-b border-border">
+                      <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5">Account Title</TableHead>
+                      <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5">Description</TableHead>
+                      <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5 text-right">Debit</TableHead>
+                      <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5 text-right">Credit</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {group.entries.map((e, i) => (
-                      <TableRow key={i} className="hover:bg-slate-50/50">
-                        <TableCell className="py-3 text-xs font-semibold text-slate-700">
+                      <TableRow key={i} className="hover:bg-muted/50 border-b border-border/60">
+                        <TableCell className="py-3 text-xs font-semibold text-foreground">
                           {e.accountTitle}
                         </TableCell>
-                        <TableCell className="py-3 text-xs text-slate-500">
+                        <TableCell className="py-3 text-xs text-muted-foreground">
                           {group.description}
                           {i === 0 && (
-                            <span className="block text-[10px] italic text-slate-400 mt-0.5">
+                            <span className="block text-[10px] italic text-muted-foreground/80 mt-0.5">
                               - {e.accountTitle} distribution
                             </span>
                           )}
@@ -174,8 +174,8 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                       </TableRow>
                     ))}
                     {/* TOTAL */}
-                    <TableRow className="bg-slate-50 hover:bg-slate-50 border-t-2 border-slate-200">
-                      <TableCell colSpan={2} className="py-3 font-black text-xs text-slate-800">TOTAL</TableCell>
+                    <TableRow className="bg-muted/30 hover:bg-muted/30 border-t-2 border-border/80">
+                      <TableCell colSpan={2} className="py-3 font-black text-xs text-foreground">TOTAL</TableCell>
                       <TableCell className="py-3 text-right font-black text-xs tabular-nums">
                         ₱{formatNumber(group.totalDebit)}
                       </TableCell>
@@ -191,9 +191,9 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
               <div className="w-[320px] shrink-0 space-y-4">
                 
                 {/* Drill-through Context */}
-                <div className="border rounded-lg p-4 bg-white">
-                  <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-3">
-                    <ShieldCheck className="w-3.5 h-3.5 text-slate-400" /> Drill-through Context
+                <div className="border border-border rounded-lg p-4 bg-background">
+                  <h3 className="text-xs font-bold text-foreground flex items-center gap-1.5 mb-3">
+                    <ShieldCheck className="w-3.5 h-3.5 text-muted-foreground" /> Drill-through Context
                   </h3>
                   <dl className="space-y-2.5 text-[11px]">
                     <ContextRow label="Source Module:" value={drillThrough.sourceModule} />
@@ -205,9 +205,9 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                 </div>
 
                 {/* Audit Trail */}
-                <div className="border rounded-lg p-4 bg-white">
-                  <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-3">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" /> Audit Trail
+                <div className="border border-border rounded-lg p-4 bg-background">
+                  <h3 className="text-xs font-bold text-foreground flex items-center gap-1.5 mb-3">
+                    <Clock className="w-3.5 h-3.5 text-muted-foreground" /> Audit Trail
                   </h3>
                   <div className="space-y-0">
                     {auditTrail.map((audit, idx) => (
@@ -216,10 +216,10 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                         <div className="flex flex-col items-center pt-1.5">
                           <div className={cn(
                             "w-2 h-2 rounded-full shrink-0",
-                            audit.action === "Post" ? "bg-emerald-500" : "bg-slate-300"
+                            audit.action === "Post" ? "bg-emerald-500" : "bg-muted-foreground/30"
                           )} />
                           {idx < auditTrail.length - 1 && (
-                            <div className="w-px flex-1 bg-slate-200 mt-1" />
+                            <div className="w-px flex-1 bg-border mt-1" />
                           )}
                         </div>
 
@@ -229,18 +229,18 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                             <span className={cn(
                               "text-[10px] font-bold uppercase px-1.5 py-0.5 rounded",
                               audit.action === "Post"
-                                ? "bg-emerald-50 text-emerald-700"
-                                : "bg-slate-100 text-slate-600"
+                                ? "bg-emerald-50 max-dark:bg-emerald-900/30 text-emerald-700 max-dark:text-emerald-400"
+                                : "bg-muted text-muted-foreground"
                             )}>
                               {audit.action}
                             </span>
-                            <span className="text-[10px] text-slate-400 whitespace-nowrap flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground whitespace-nowrap flex items-center gap-1">
                               <Clock className="w-2.5 h-2.5" />
                               {format(audit.timestamp, "yyyy-MM-dd HH:mm")}
                             </span>
                           </div>
-                          <p className="text-[11px] font-semibold text-slate-800 mt-1">{audit.user}</p>
-                          <p className="text-[10px] text-slate-500 mt-0.5">{audit.note}</p>
+                          <p className="text-[11px] font-semibold text-foreground mt-1">{audit.user}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{audit.note}</p>
                         </div>
                       </div>
                     ))}
@@ -264,13 +264,13 @@ function ParamCard({ label, value, highlight, className }: {
 }) {
   return (
     <div className={cn(
-      "border rounded-lg px-3 py-2 bg-white min-w-[100px]",
+      "border border-border rounded-lg px-3 py-2 bg-background min-w-[100px]",
       className
     )}>
-      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</div>
+      <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">{label}</div>
       <div className={cn(
         "text-[11px] mt-0.5",
-        highlight ? "font-bold text-slate-900" : "font-medium text-slate-700"
+        highlight ? "font-bold text-foreground" : "font-medium text-foreground/80"
       )}>{value}</div>
     </div>
   );
@@ -289,8 +289,8 @@ function StatusParamCard({ label, value }: { label: string; value: string }) {
   else if (statusLower === "voided" || statusLower === "cancelled") statusClasses = "text-rose-700 bg-rose-50 border-rose-200";
 
   return (
-    <div className="border rounded-lg px-3 py-2 bg-white min-w-[100px] flex flex-col justify-center">
-      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{label}</div>
+    <div className="border border-border rounded-lg px-3 py-2 bg-background min-w-[100px] flex flex-col justify-center">
+      <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-0.5">{label}</div>
       <div>
         <span className={cn("inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border", statusClasses)}>
           {value}
@@ -305,11 +305,11 @@ function ContextRow({ label, value, bold, link }: {
 }) {
   return (
     <div>
-      <dt className="text-slate-400 font-medium text-[10px]">{label}</dt>
+      <dt className="text-muted-foreground font-medium text-[10px]">{label}</dt>
       <dd className={cn(
         "mt-0.5",
-        link ? "text-indigo-600 font-semibold cursor-pointer hover:underline flex items-center gap-1" : "",
-        bold ? "font-bold text-slate-800" : "font-medium text-slate-700"
+        link ? "text-indigo-600 dark:text-indigo-400 font-semibold cursor-pointer hover:underline flex items-center gap-1" : "",
+        bold ? "font-bold text-foreground" : "font-medium text-foreground/80"
       )}>
         {value}
         {link && <Link2 className="w-2.5 h-2.5" />}

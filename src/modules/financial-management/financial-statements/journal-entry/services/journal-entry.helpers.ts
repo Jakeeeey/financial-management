@@ -37,6 +37,15 @@ export function groupJournalEntries(entries: JournalEntry[]): JournalEntryGroup[
   });
 
   return Array.from(groupMap.values()).map((g) => {
+    // Sort entries: Debits first, then Credits
+    g.entries.sort((a, b) => {
+      // If a is debit and b is credit, a comes first
+      if (a.debit > 0 && b.debit === 0 && b.credit > 0) return -1;
+      // If a is credit and b is debit, b comes first
+      if (a.debit === 0 && a.credit > 0 && b.debit > 0) return 1;
+      return 0;
+    });
+
     // Rounding to 2 decimal places to avoid floating point issues
     g.balance = Number((g.totalDebit - g.totalCredit).toFixed(2));
     g.isImbalanced = Math.abs(g.balance) > 0.01;

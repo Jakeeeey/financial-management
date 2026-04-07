@@ -25,32 +25,32 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
       value: data.jeCount,
       description: "Entries in current analysis",
       icon: FileText,
-      color: "text-blue-600",
-      bg: "bg-blue-50",
+      color: "text-blue-600 dark:text-blue-400",
+      bg: "bg-blue-50 dark:bg-blue-900/20",
     },
     {
       title: "Total Debit",
       value: formatCurrency(data.totalDebit),
       description: "Filtered debit total",
       icon: ArrowUpCircle,
-      color: "text-emerald-600",
-      bg: "bg-emerald-50",
+      color: "text-emerald-600 dark:text-emerald-400",
+      bg: "bg-emerald-50 dark:bg-emerald-900/20",
     },
     {
       title: "Total Credit",
       value: formatCurrency(data.totalCredit),
       description: "Filtered credit total",
       icon: ArrowDownCircle,
-      color: "text-rose-600",
-      bg: "bg-rose-50",
+      color: "text-rose-600 dark:text-rose-400",
+      bg: "bg-rose-50 dark:bg-rose-900/20",
     },
     {
       title: "Ending Balance",
       value: formatCurrency(data.netBalance),
       description: data.netBalance !== 0 ? "Imbalance detected" : "Perfectly balanced",
       icon: Scale,
-      color: data.netBalance !== 0 ? "text-white" : "text-slate-600",
-      bg: data.netBalance !== 0 ? "bg-red-700/50" : "bg-slate-50",
+      color: data.netBalance !== 0 ? "text-white" : "text-slate-600 dark:text-slate-400",
+      bg: data.netBalance !== 0 ? "bg-red-700/80" : "bg-slate-50 dark:bg-slate-800/50",
       destructive: data.netBalance !== 0,
     },
     {
@@ -58,24 +58,24 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
       value: formatCurrency(data.largestEntry),
       description: "Highest single line amount",
       icon: Zap,
-      color: "text-amber-600",
-      bg: "bg-amber-50",
+      color: "text-amber-600 dark:text-amber-400",
+      bg: "bg-amber-50 dark:bg-amber-900/20",
     },
     {
       title: "Imbalanced JES",
       value: data.imbalancedCount,
       description: "Entries needing review",
       icon: AlertTriangle,
-      color: data.imbalancedCount > 0 ? "text-red-600" : "text-slate-400",
-      bg: data.imbalancedCount > 0 ? "bg-red-50" : "bg-slate-50",
+      color: data.imbalancedCount > 0 ? "text-red-600 dark:text-red-400" : "text-slate-400",
+      bg: data.imbalancedCount > 0 ? "bg-red-50 dark:bg-red-900/20" : "bg-slate-50 dark:bg-slate-800/50",
     },
     {
       title: "Posted vs Unposted",
       value: `${data.postedCount} / ${data.unpostedCount}`,
       description: "Current processing state",
       icon: LogOut,
-      color: "text-indigo-600",
-      bg: "bg-indigo-50",
+      color: "text-indigo-600 dark:text-indigo-400",
+      bg: "bg-indigo-50 dark:bg-indigo-900/20",
     },
   ];
 
@@ -88,7 +88,7 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
             "overflow-hidden border shadow-sm transition-all hover:shadow-md",
             card.destructive 
               ? "bg-destructive text-destructive-foreground border-destructive ring-2 ring-destructive ring-offset-2"
-              : "bg-white border-transparent"
+              : "bg-card text-card-foreground border-border"
           )}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

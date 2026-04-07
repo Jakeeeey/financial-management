@@ -44,6 +44,7 @@ function JournalEntryDashboard() {
     analytics, 
     filters, 
     setFilters, 
+    uniqueSourceModules,
     isLoading, 
     error, 
     refresh,
@@ -68,7 +69,7 @@ function JournalEntryDashboard() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-slate-50/30 overflow-hidden">
+    <div className="flex flex-col h-full bg-muted/10 overflow-hidden">
       {/* Header Section */}
       <div className="bg-background px-6 py-4 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 shadow-sm">
         <div>
@@ -85,7 +86,7 @@ function JournalEntryDashboard() {
                 <Printer className="mr-2 h-3.5 w-3.5" />
                 Print List
             </Button>
-            <Button size="sm" className="h-9 text-xs bg-slate-900 border-none shadow-lg shadow-slate-200" onClick={() => handleExport("Excel")}>
+            <Button size="sm" className="h-9 text-xs shadow-md" onClick={() => handleExport("Excel")}>
                 <FileDown className="mr-2 h-3.5 w-3.5" />
                 Export Excel
             </Button>
@@ -97,6 +98,7 @@ function JournalEntryDashboard() {
         <FilterPanel 
             filters={filters} 
             setFilters={setFilters} 
+            uniqueSourceModules={uniqueSourceModules}
             onReset={resetFilters} 
         />
 
@@ -105,31 +107,7 @@ function JournalEntryDashboard() {
           {/* Summary Stats */}
           <SummaryCards data={analytics} />
 
-          {/* Table Toolbar */}
-          <div className="flex items-center justify-between bg-white/60 backdrop-blur-md p-3 rounded-xl border border-muted shadow-sm sticky top-0 z-10">
-             <div className="flex items-center gap-4 text-xs">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <span className="font-bold text-foreground">Basis:</span> Accrual
-                </span>
-                <Separator orientation="vertical" className="h-4" />
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <span className="font-bold text-foreground">Period:</span> {filters.startDate} - {filters.endDate}
-                </span>
-             </div>
-             
-             <Tabs defaultValue="list">
-                <TabsList className="h-8 p-1 bg-muted/40">
-                    <TabsTrigger value="list" className="h-6 text-[10px] w-20 uppercase font-bold tracking-widest">
-                        <List className="h-3 w-3 mr-1" />
-                        List
-                    </TabsTrigger>
-                    <TabsTrigger value="grid" className="h-6 text-[10px] w-20 uppercase font-bold tracking-widest">
-                        <LayoutGrid className="h-3 w-3 mr-1" />
-                        Cards
-                    </TabsTrigger>
-                </TabsList>
-             </Tabs>
-          </div>
+
 
           {/* Grouped Table with Loading State */}
           {isLoading ? (
