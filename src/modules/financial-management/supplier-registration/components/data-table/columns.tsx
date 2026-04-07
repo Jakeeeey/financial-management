@@ -22,6 +22,9 @@ import {
   MoreVertical,
 } from "lucide-react";
 import { formatDate } from "@/modules/financial-management/supplier-registration/utils/utils";
+import Image from "next/image";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 interface ColumnsProps {
   onView: (supplier: Supplier) => void;
@@ -40,12 +43,30 @@ export const createColumns = ({
     cell: ({ row }) => {
       const name = row.getValue("supplier_name") as string;
       const shortcut = row.original.supplier_shortcut;
+      const image = row.original.supplier_image;
       return (
-        <div className="flex flex-col">
-          <span className="font-medium">{name}</span>
-          {shortcut && (
-            <span className="text-xs text-muted-foreground">{shortcut}</span>
+        <div className="flex items-center gap-3">
+          {image ? (
+            <Image
+              src={`${API_BASE_URL}/assets/${image}`}
+              alt={name}
+              width={32}
+              height={32}
+              className="rounded-full object-cover border shrink-0"
+            />
+          ) : (
+            <div className="h-8 w-8 rounded-full flex items-center justify-center border bg-muted shrink-0">
+              <span className="text-xs font-bold text-muted-foreground">
+                {name.charAt(0)}
+              </span>
+            </div>
           )}
+          <div className="flex flex-col">
+            <span className="font-medium">{name}</span>
+            {shortcut && (
+              <span className="text-xs text-muted-foreground">{shortcut}</span>
+            )}
+          </div>
         </div>
       );
     },
