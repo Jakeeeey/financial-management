@@ -21,6 +21,7 @@ import SummaryCards from "./components/SummaryCards";
 import FilterPanel from "./components/FilterPanel";
 import JournalEntryTable from "./components/JournalEntryTable";
 import JournalEntryDetailModal from "./components/JournalEntryDetailModal";
+import { exportJournalToExcel, exportJournalToPdf } from "./services/export.service";
 
 import { DataTableSkeleton } from "@/app/(financial-management)/fm/_components/DataTableSkeleton";
 import { ErrorPage } from "@/app/(financial-management)/fm/_components/ErrorPage";
@@ -60,8 +61,19 @@ function JournalEntryDashboard() {
   const [selectedGroup, setSelectedGroup] = React.useState<JournalEntryGroup | null>(null);
   const [isDetailOpen, setIsDetailOpen] = React.useState(false);
 
-  const handleExport = (type: string) => {
-    toast.info(`${type} export feature coming soon!`);
+  const handleExport = (type: "PDF" | "Excel") => {
+    const dateRangeText = `${filters.startDate} to ${filters.endDate}`;
+    try {
+      if (type === "Excel") {
+        exportJournalToExcel(groups, dateRangeText, "General_Journal_Export.xlsx");
+        toast.success("Excel exported successfully!");
+      } else {
+        exportJournalToPdf(groups, dateRangeText, "General_Journal_Export.pdf");
+        toast.success("PDF exported successfully!");
+      }
+    } catch (err) {
+      toast.error(`Failed to export ${type}`);
+    }
   };
 
   if (error) {
@@ -84,7 +96,7 @@ function JournalEntryDashboard() {
         <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => handleExport("PDF")}>
                 <Printer className="mr-2 h-3.5 w-3.5" />
-                Print List
+                Export PDF
             </Button>
             <Button size="sm" className="h-9 text-xs shadow-md" onClick={() => handleExport("Excel")}>
                 <FileDown className="mr-2 h-3.5 w-3.5" />

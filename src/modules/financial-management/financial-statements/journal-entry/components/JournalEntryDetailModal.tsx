@@ -19,8 +19,10 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { format } from "date-fns";
-import { Clock, ShieldCheck, Link2, Download } from "lucide-react";
+import { Clock, ShieldCheck, Link2, Download, Printer, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { exportJournalToExcel, exportJournalToPdf } from "../services/export.service";
+import { toast } from "sonner";
 
 interface JournalEntryDetailModalProps {
   group: JournalEntryGroup | null;
@@ -111,8 +113,36 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
             Journal Entry Detail · <span className="font-mono text-muted-foreground">{group.jeNo}</span>
           </DialogTitle>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 text-xs font-semibold gap-1.5">
-              <Download className="w-3.5 h-3.5" /> Export Detail
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="h-8 text-xs font-semibold gap-1.5"
+              onClick={() => {
+                try {
+                  const dateStr = format(new Date(), "PP");
+                  exportJournalToPdf([group], dateStr, `Journal_Entry_${group.jeNo}.pdf`);
+                  toast.success("PDF exported successfully!");
+                } catch(e) {
+                  toast.error("Failed to export PDF");
+                }
+              }}
+            >
+              <Printer className="w-3.5 h-3.5" /> Export PDF
+            </Button>
+            <Button 
+              size="sm" 
+              className="h-8 text-xs font-semibold gap-1.5"
+              onClick={() => {
+                try {
+                  const dateStr = format(new Date(), "PP");
+                  exportJournalToExcel([group], dateStr, `Journal_Entry_${group.jeNo}.xlsx`);
+                  toast.success("Excel exported successfully!");
+                } catch(e) {
+                  toast.error("Failed to export Excel");
+                }
+              }}
+            >
+              <FileDown className="w-3.5 h-3.5" /> Export Excel
             </Button>
             <DialogClose asChild>
               <Button size="sm" className="h-8 text-xs font-semibold px-4">

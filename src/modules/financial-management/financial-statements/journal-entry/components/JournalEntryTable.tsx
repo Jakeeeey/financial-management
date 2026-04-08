@@ -119,50 +119,50 @@ export default function JournalEntryTable({
               const creditEntries = group.entries.filter(e => e.credit > 0);
 
               const renderDistributionStrStack = (
-                 entriesToRender: typeof group.entries, 
-                 isDescCol: boolean = false,
-                 isCredit: boolean = false
+                entriesToRender: typeof group.entries,
+                isDescCol: boolean = false,
+                isCredit: boolean = false
               ) => {
-                 return (
-                    <div className="flex flex-col gap-2">
-                       {entriesToRender.map((e, idx) => (
-                           <div key={idx} className={cn(
-                              "min-h-[32px] flex items-center text-[11px]", 
-                              isDescCol ? "text-muted-foreground max-w-[280px]" : "font-semibold text-foreground",
-                              isCredit && !isDescCol && "pl-6 text-muted-foreground/80"
-                           )}>
-                              {isDescCol ? (
-                                  idx === 0 && !isCredit ? (
-                                    <div className="flex flex-col justify-center">
-                                       <span className="font-semibold text-foreground break-words leading-tight">
-                                          {group.description || "N/A"}
-                                       </span>
-                                       <span className="italic text-muted-foreground opacity-80 mt-0.5 text-[10px]">Ref: {group.jeNo}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="italic text-muted-foreground text-[10px] break-words line-clamp-2 leading-tight">
-                                       - {e.accountTitle} distribution
-                                    </span>
-                                  )
-                              ) : (
-                                 e.accountTitle
-                              )}
-                           </div>
-                       ))}
-                    </div>
-                 );
+                return (
+                  <div className="flex flex-col gap-2">
+                    {entriesToRender.map((e, idx) => (
+                      <div key={idx} className={cn(
+                        "min-h-[32px] flex items-center text-[11px]",
+                        isDescCol ? "text-muted-foreground max-w-[280px]" : "font-semibold text-foreground",
+                        isCredit && !isDescCol && "pl-6 text-muted-foreground/80"
+                      )}>
+                        {isDescCol ? (
+                          idx === 0 && !isCredit ? (
+                            <div className="flex flex-col justify-center">
+                              <span className="font-semibold text-foreground break-words leading-tight">
+                                {group.description || "N/A"}
+                              </span>
+                              <span className="italic text-muted-foreground opacity-80 mt-0.5 text-[10px]">Ref: {group.jeNo}</span>
+                            </div>
+                          ) : (
+                            <span className="italic text-muted-foreground text-[10px] break-words line-clamp-2 leading-tight">
+                              - {e.accountTitle} distribution
+                            </span>
+                          )
+                        ) : (
+                          e.accountTitle
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
               };
 
               const renderNumericStack = (entriesToRender: typeof group.entries, field: "debit" | "credit") => {
-                 return (
-                    <div className="flex flex-col gap-2">
-                       {entriesToRender.map((e, idx) => (
-                           <div key={idx} className="min-h-[32px] flex justify-end items-center text-[11px] font-semibold text-foreground/90">
-                               {e[field] > 0 ? formatNumber(e[field]) : ""}
-                           </div>
-                       ))}
-                    </div>
-                 );
+                return (
+                  <div className="flex flex-col gap-2">
+                    {entriesToRender.map((e, idx) => (
+                      <div key={idx} className="min-h-[32px] flex justify-end items-center text-[11px] font-semibold text-foreground/90">
+                        {e[field] > 0 ? formatNumber(e[field]) : ""}
+                      </div>
+                    ))}
+                  </div>
+                );
               }
 
               return (
@@ -188,10 +188,10 @@ export default function JournalEntryTable({
                     </TableCell>
 
                     <TableCell className="align-top py-4">
-                       {renderDistributionStrStack(debitEntries, false, false)}
+                      {renderDistributionStrStack(debitEntries, false, false)}
                     </TableCell>
                     <TableCell className="align-top py-4">
-                       {renderDistributionStrStack(debitEntries, true, false)}
+                      {renderDistributionStrStack(debitEntries, true, false)}
                     </TableCell>
 
                     <TableCell className="align-top py-4 text-[10px] font-bold text-muted-foreground group-hover/debit:bg-muted/20">
@@ -199,27 +199,30 @@ export default function JournalEntryTable({
                     </TableCell>
 
                     <TableCell className="align-top py-4 text-right tabular-nums">
-                       {renderNumericStack(debitEntries, "debit")}
-                       {/* Total Debit on the same row if desired? Wait, the wireframe shows Debit totals on the same block. Let's put the total at the bottom of the stack! */}
-                       {debitEntries.length > 0 && (
-                           <div className="min-h-[28px] mt-2 flex justify-end items-center text-[11px] font-black text-foreground border-t border-border pt-1">
-                              {formatNumber(group.totalDebit)}
-                           </div>
-                       )}
+                      {renderNumericStack(debitEntries, "debit")}
                     </TableCell>
                     <TableCell className="align-top py-4 text-right tabular-nums"></TableCell>
 
                     <TableCell className="align-top py-4 text-right tabular-nums group-hover/debit:bg-muted/20">
-                      {group.balance !== 0 ? (
-                        <span className={cn(
-                          "text-[11px] font-black",
-                          group.isImbalanced ? "text-rose-600" : "text-foreground"
-                        )}>
-                          {formatNumber(group.balance)}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-bold text-muted-foreground">0.00</span>
-                      )}
+                      <div className="flex flex-col gap-2">
+                        {debitEntries.length > 0 ? (
+                          debitEntries.map((_, i) => (
+                            <div key={i} className="h-[32px] flex justify-end items-center">
+                              {i === debitEntries.length - 1 ? (
+                                <span className="text-[11px] font-black text-foreground">
+                                  {group.totalDebit > 0 ? formatNumber(group.totalDebit) : "0.00"}
+                                </span>
+                              ) : (
+                                <span className="invisible">&nbsp;</span>
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="h-[32px] flex justify-end items-center">
+                            <span className="text-[11px] font-black text-foreground">0.00</span>
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="align-top py-4 text-right group-hover/debit:bg-muted/20">
                       <div className={cn(
@@ -234,7 +237,7 @@ export default function JournalEntryTable({
                   {/* ROW 2: SECONDARY (CREDIT) */}
                   <TableRow
                     onClick={() => onDrillDown(group)}
-                    className="cursor-pointer transition-colors border-b-2 border-border/80 hover:bg-muted/50 group/credit"
+                    className="cursor-pointer transition-colors hover:bg-muted/50 group/credit border-none"
                   >
                     {/* Empty cells for metadata aligning */}
                     <TableCell className="group-hover/credit:bg-muted/20"></TableCell>
@@ -242,26 +245,47 @@ export default function JournalEntryTable({
                     <TableCell className="group-hover/credit:bg-muted/20"></TableCell>
 
                     <TableCell className="align-top py-4">
-                       {renderDistributionStrStack(creditEntries, false, true)}
+                      {renderDistributionStrStack(creditEntries, false, true)}
                     </TableCell>
                     <TableCell className="align-top py-4">
-                       {renderDistributionStrStack(creditEntries, true, true)}
+                      {renderDistributionStrStack(creditEntries, true, true)}
                     </TableCell>
 
                     <TableCell className="group-hover/credit:bg-muted/20"></TableCell>
 
                     <TableCell className="align-top py-4 text-right tabular-nums"></TableCell>
                     <TableCell className="align-top py-4 text-right tabular-nums">
-                       {renderNumericStack(creditEntries, "credit")}
-                       {/* Total Credit */}
-                       {creditEntries.length > 0 && (
-                           <div className="min-h-[28px] mt-2 flex justify-end items-center text-[11px] font-black text-foreground border-t border-border pt-1">
-                              {formatNumber(group.totalCredit)}
-                           </div>
-                       )}
+                      {renderNumericStack(creditEntries, "credit")}
                     </TableCell>
-                    
-                    <TableCell className="group-hover/credit:bg-muted/20"></TableCell>
+
+                    <TableCell className="align-top py-4 text-right tabular-nums group-hover/credit:bg-muted/20">
+                      <div className="flex flex-col gap-2">
+                        {creditEntries.length > 0 ? (
+                          creditEntries.map((_, i) => (
+                            <div key={i} className="h-[32px] flex justify-end items-center">
+                              {i === creditEntries.length - 1 ? (
+                                group.balance !== 0 || (group.totalDebit - group.totalCredit) !== 0 ? (
+                                  <span className={cn(
+                                    "text-[11px] font-black",
+                                    group.isImbalanced ? "text-rose-600" : "text-foreground"
+                                  )}>
+                                    {formatNumber(group.totalDebit - group.totalCredit)}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] font-bold text-muted-foreground">0.00</span>
+                                )
+                              ) : (
+                                <span className="invisible">&nbsp;</span>
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="h-[32px] flex justify-end items-center">
+                            <span className="text-[11px] font-bold text-muted-foreground">0.00</span>
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="group-hover/credit:bg-muted/20"></TableCell>
                   </TableRow>
                 </React.Fragment>
