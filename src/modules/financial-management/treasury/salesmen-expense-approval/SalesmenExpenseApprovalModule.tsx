@@ -12,6 +12,7 @@ import { useSalesmanExpenseApproval } from "./hooks/useSalesmanExpenseApproval";
 import SalesmanExpenseTable from "./components/SalesmanExpenseTable";
 import ExpenseApprovalModal from "./components/ExpenseApprovalModal";
 import { ApprovalLogTable } from "./components/ApprovalLogTable";
+import { DateRangePicker } from "../components/DateRangePicker";
 
 export default function SalesmenExpenseApprovalModule() {
   const {
@@ -32,6 +33,8 @@ export default function SalesmenExpenseApprovalModule() {
     closeModal,
     onConfirmed,
     unauthorized,
+    dateRange,
+    setDateRange,
   } = useSalesmanExpenseApproval();
 
   if (unauthorized) {
@@ -70,14 +73,17 @@ export default function SalesmenExpenseApprovalModule() {
             Manage and process pending salesman disbursements.
           </p>
         </div>
-        <Button
-          className="rounded-full shadow-lg font-bold tracking-wide shadow-primary/20 active:scale-95 transition-all"
-          onClick={() => window.location.reload()}
-          disabled={loading}
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh View
-        </Button>
+        <div className="flex items-center gap-3">
+          <DateRangePicker date={dateRange} setDate={setDateRange} />
+          <Button
+            className="rounded-full shadow-lg font-bold tracking-wide shadow-primary/20 active:scale-95 transition-all"
+            onClick={() => window.location.reload()}
+            disabled={loading}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh View
+          </Button>
+        </div>
       </div>
 
       {/* Main Content Splitting */}

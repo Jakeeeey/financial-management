@@ -136,11 +136,20 @@ export async function GET(req: NextRequest) {
 
       const isMyDept = myDepartments.includes(salesmanDeptId);
 
+      const startDate = sp.get("start_date");
+      const endDate = sp.get("end_date");
+
+      let expFilter = `/items/expense_draft?filter[encoded_by][_eq]=${employeeId}` +
+        `&filter[division_id][_eq]=${divisionId_ref}` +
+        `&filter[status][_in]=Drafts,Rejected`;
+      
+      if (startDate && endDate) {
+        expFilter += `&filter[transaction_date][_between]=${startDate},${endDate}`;
+      }
+
       // 3. Get expense_draft rows for this user (Drafts + Rejected) matching division_id
       const eRes = await directusFetch(
-        `/items/expense_draft?filter[encoded_by][_eq]=${employeeId}` +
-        `&filter[division_id][_eq]=${divisionId_ref}` +
-        `&filter[status][_in]=Drafts,Rejected` +
+        expFilter +
         `&fields=id,encoded_by,particulars,transaction_date,amount,payee,payee_id,attachment_url,status,drafted_at,rejected_at,approved_at,remarks,division_id` +
         `&limit=-1&sort=transaction_date`
       );
@@ -442,9 +451,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const startDate = sp.get("start_date");
+    const endDate = sp.get("end_date");
+
+    let expFilterBase = `/items/expense_draft?filter[status][_in]=Drafts,Rejected`;
+    if (startDate && endDate) {
+      expFilterBase += `&filter[transaction_date][_between]=${startDate},${endDate}`;
+    }
+
     // 2. Get all expense_draft (Drafts + Rejected) and filter by RBAC
     const allExpRes = await directusFetch(
-      `/items/expense_draft?filter[status][_in]=Drafts,Rejected&fields=id,encoded_by,division_id,status&limit=-1`
+      `${expFilterBase}&fields=id,encoded_by,division_id,status&limit=-1`
     );
     const rawExpenses = ((allExpRes.data as { data?: unknown[] })?.data ?? []) as Record<string, unknown>[];
 
