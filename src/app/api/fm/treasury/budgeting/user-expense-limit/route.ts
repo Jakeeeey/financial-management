@@ -72,6 +72,17 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action") ?? "";
 
+  // ── Departments list ──────────────────────────────────────────────────────
+  if (action === "departments") {
+    try {
+      const depts = await fetchDepartments();
+      return NextResponse.json({ data: depts });
+    } catch (err) {
+      console.error("[UEL Departments]", err instanceof Error ? err.message : String(err));
+      return NextResponse.json({ ok: false, error: "Gateway Error" }, { status: 502 });
+    }
+  }
+
   // ── Users without a limit ────────────────────────────────────────────────
   if (action === "available-users") {
     try {
@@ -112,6 +123,8 @@ export async function GET(request: NextRequest) {
 
   // ── All limits with joined user names ─────────────────────────────────────
   try {
+    const department_id = searchParams.get("department_id");
+
     const [limitsRes, usersRes, depts] = await Promise.all([
       fetch(
         `${DIRECTUS_URL}/items/user_expense_ceiling?limit=-1&sort=-created_at`,
@@ -154,10 +167,16 @@ export async function GET(request: NextRequest) {
         user_department: dept ?? null,
         created_by_name: fullName(cb),
         updated_by_name: fullName(ub),
+        user_department_id: deptId ?? null,
       };
     });
 
-    return NextResponse.json({ data: enriched });
+    // Filter by department if provided
+    const filtered = department_id
+      ? enriched.filter(item => (item as Record<string, unknown>).user_department_id === Number(department_id))
+      : enriched;
+
+    return NextResponse.json({ data: filtered });
   } catch (err) {
     console.error("[UEL GET]", err instanceof Error ? err.message : String(err));
     return NextResponse.json({ ok: false, error: "Gateway Error" }, { status: 502 });

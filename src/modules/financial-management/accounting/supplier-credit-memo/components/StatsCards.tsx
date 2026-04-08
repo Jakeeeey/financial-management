@@ -49,7 +49,7 @@ export function StatsCards({ stats, loading }: StatsCardsProps) {
           </div>
           <p className="text-2xl font-bold tracking-tight">{stats.total}</p>
           <p className="text-xs text-muted-foreground mt-1">
-            {stats.available} available · {stats.pendingSOA} pending SOA
+            {stats.available} available
           </p>
         </CardContent>
       </Card>

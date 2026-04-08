@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   if (action === 'suppliers') {
     try {
       const res = await fetch(
-        `${DIRECTUS_URL}/items/suppliers?fields=id,supplier_name,supplier_shortcut&filter[isActive][_eq]=1&limit=-1&sort=supplier_name`,
+        `${DIRECTUS_URL}/items/suppliers?fields=id,supplier_name,supplier_shortcut,supplier_type&filter[isActive][_eq]=1&limit=-1&sort=supplier_name`,
         {
           method : 'GET',
           headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
@@ -71,10 +71,17 @@ export async function GET(request: NextRequest) {
     const supplier_id   = searchParams.get('supplier_id');
     const chart_of_acct = searchParams.get('chart_of_account');
     const status        = searchParams.get('status');
+    const date_from     = searchParams.get('date_from');
+    const date_to       = searchParams.get('date_to');
 
     if (supplier_id)   filter['supplier_id'] = { _eq: Number(supplier_id) };
     if (chart_of_acct) filter['chart_of_account'] = { _eq: Number(chart_of_acct) };
     if (status)        filter['status'] = { _eq: status };
+    if (date_from || date_to) {
+      filter['date'] = {};
+      if (date_from) (filter['date'] as Record<string, string>)['_gte'] = date_from;
+      if (date_to)   (filter['date'] as Record<string, string>)['_lte'] = date_to;
+    }
 
     if (search) {
       (filter as Record<string, unknown>)['_or'] = [

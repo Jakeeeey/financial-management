@@ -1,23 +1,36 @@
 "use client";
 
-// tax-calendar/TaxCalendarModule.tsx
 import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Plus, X, AlertCircle } from 'lucide-react';
+import { Plus, X, AlertCircle, Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 import { useTaxCalendar }    from './hooks/useTaxCalendar';
 import { TaxMetricCards }    from './components/MetricCard';
 import { UpcomingBanner }    from './components/UpComing';
 import { TaxFormDialog }     from './components/TaxFormDialog';
+import { TaxViewDialog }     from './components/TaxViewDialog';
 import { TaxTable }          from './components/TaxTable';
+import { TaxListView }       from './components/TaxListView';
+import { TaxMappingView }    from './components/TaxMappingView';
 import { TaxCalendarView }   from './components/TaxCalendar';
 import { deriveMetrics, getUpcoming, applyFilters } from './utils';
-import { STATUSES, EMPTY_FORM } from './types';
+import { EMPTY_FORM } from './types';
 import type { TaxActivity, TaxActivityForm } from './types';
+
+// Derived status options for the filter dropdown
+const DERIVED_STATUSES = ['PENDING', 'UPCOMING', 'OVERDUE', 'FILED', 'PAID'] as const;
+const DERIVED_STATUS_LABEL: Record<string, string> = {
+  PENDING:  'Pending',
+  UPCOMING: 'Upcoming',
+  OVERDUE:  'Overdue',
+  FILED:    'Filed',
+  PAID:     'Paid',
+};
 
 export default function TaxCalendarModule() {
   const { loading, error, activities, refetch, create, update } = useTaxCalendar();
@@ -25,26 +38,41 @@ export default function TaxCalendarModule() {
   const [search,       setSearch]       = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter,   setTypeFilter]   = useState('All');
+  const [dateBasis,    setDateBasis]    = useState('All');
+  const [fromDate,     setFromDate]     = useState('');
+  const [toDate,       setToDate]       = useState('');
+  const [tableView,    setTableView]    = useState<'activities' | 'list' | 'mapping'>('activities');
   const [addOpen,      setAddOpen]      = useState(false);
   const [editItem,     setEditItem]     = useState<TaxActivity | null>(null);
+  const [viewItem,     setViewItem]     = useState<TaxActivity | null>(null);
   const [saving,       setSaving]       = useState(false);
 
-  const isFiltered = !!(search || statusFilter !== 'All' || typeFilter !== 'All');
+  const isFiltered = !!(search || statusFilter !== 'All' || typeFilter !== 'All' || dateBasis !== 'All' || fromDate || toDate);
 
-  // Filtered by status and type only (for calendar and metrics)
+  const dateFilteredActivities = useMemo(() => {
+    return activities.filter(a => {
+      if (fromDate || toDate) {
+        const aDate = new Date(a.due_date).toISOString().split('T')[0];
+        if (fromDate && aDate < fromDate) return false;
+        if (toDate   && aDate > toDate)   return false;
+      }
+      if (dateBasis !== 'All' && a.filing_frequency !== dateBasis) return false;
+      return true;
+    });
+  }, [activities, fromDate, toDate, dateBasis]);
+
   const filteredByCategory = useMemo(
-    () => applyFilters(activities, '', statusFilter, typeFilter),
-    [activities, statusFilter, typeFilter]
+    () => applyFilters(dateFilteredActivities, '', statusFilter, typeFilter),
+    [dateFilteredActivities, statusFilter, typeFilter]
   );
 
-  // Fully filtered including search (for table only)
-  const filtered   = useMemo(
-    () => applyFilters(activities, search, statusFilter, typeFilter),
-    [activities, search, statusFilter, typeFilter]
+  const filtered = useMemo(
+    () => applyFilters(dateFilteredActivities, search, statusFilter, typeFilter),
+    [dateFilteredActivities, search, statusFilter, typeFilter]
   );
 
-  const metrics    = useMemo(() => deriveMetrics(filteredByCategory), [filteredByCategory]);
-  const upcoming   = useMemo(() => getUpcoming(filteredByCategory),   [filteredByCategory]);
+  const metrics     = useMemo(() => deriveMetrics(filteredByCategory),   [filteredByCategory]);
+  const upcoming    = useMemo(() => getUpcoming(filteredByCategory),     [filteredByCategory]);
   const typeOptions = useMemo(
     () => [...new Set(activities.map((a) => a.tax_type))].sort(),
     [activities]
@@ -65,15 +93,23 @@ export default function TaxCalendarModule() {
     if (ok) setEditItem(null);
   };
 
-  const clearFilters = () => { setSearch(''); setStatusFilter('All'); setTypeFilter('All'); };
+  const clearFilters = () => {
+    setSearch(''); setStatusFilter('All'); setTypeFilter('All');
+    setDateBasis('All'); setFromDate(''); setToDate('');
+  };
 
   const editInitial = editItem ? {
-    title:         editItem.title,
-    description:   editItem.description ?? '',
-    tax_type:      editItem.tax_type,
-    due_date:      editItem.due_date.slice(0, 16),
-    status:        editItem.status,
-    reminder_date: editItem.reminder_date?.slice(0, 16) ?? '',
+    title:              editItem.title,
+    description:        editItem.description ?? '',
+    tax_type:           editItem.tax_type,
+    bir_form:           editItem.bir_form ?? '',
+    filing_frequency:   editItem.filing_frequency ?? 'Monthly',
+    due_date_rule:      editItem.due_date_rule ?? '',
+    due_date:           editItem.due_date.slice(0, 16),
+    actual_filing_date: editItem.actual_filing_date?.slice(0, 16) ?? '',
+    payment_date:       editItem.payment_date?.slice(0, 16) ?? '',
+    amount_paid:        editItem.amount_paid?.toString() ?? '',
+    reminder_date:      editItem.reminder_date?.slice(0, 16) ?? '',
   } : EMPTY_FORM;
 
   if (loading) return (
@@ -95,8 +131,6 @@ export default function TaxCalendarModule() {
           </div>
           <h2 className="text-lg font-bold text-red-600">Failed to Load Tax Calendar</h2>
           <p className="text-sm text-red-500 font-medium break-words">{error}</p>
-          
-          {/* Diagnostic hints */}
           <div className="border-t border-red-500/10 pt-4 mt-4 text-left">
             <p className="text-xs text-muted-foreground font-semibold mb-2">Possible solutions:</p>
             <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
@@ -110,40 +144,19 @@ export default function TaxCalendarModule() {
                 <>
                   <li>Your account may not have permission to access tax calendar</li>
                   <li>Contact your administrator if this is unexpected</li>
-                  <li>Check the <button onClick={() => window.open('/api/fm/reports/tax-calendar/health', '_blank')} className="text-blue-500 hover:underline">health endpoint</button> for more details</li>
-                </>
-              )}
-              {error.includes('Invalid response') && (
-                <>
-                  <li>There may be a server configuration issue</li>
-                  <li>Check browser DevTools → Network tab for request details</li>
                 </>
               )}
               {error.includes('Failed to fetch') && (
                 <>
                   <li>The server may be unreachable</li>
                   <li>Check your internet connection</li>
-                  <li>Check if the backend server is running</li>
                 </>
               )}
               <li>Try refreshing the page</li>
             </ul>
           </div>
-          
           <div className="flex gap-2 justify-center pt-4">
-            <Button variant="outline" size="sm" onClick={refetch}>
-              Retry
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => {
-                console.log('Full error:', error);
-                console.log('Check browser console for full error details');
-              }}
-            >
-              Show Details
-            </Button>
+            <Button variant="outline" size="sm" onClick={refetch}>Retry</Button>
           </div>
         </div>
       </div>
@@ -171,14 +184,43 @@ export default function TaxCalendarModule() {
 
       {/* ── Filters ── */}
       <div className="flex flex-wrap gap-2 w-full">
+        <Select value={dateBasis} onValueChange={setDateBasis}>
+          <SelectTrigger className="h-9 w-[140px] text-xs">
+            <SelectValue placeholder="Date Basis" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="All"       className="text-xs">All Frequency</SelectItem>
+            <SelectItem value="Monthly"   className="text-xs">Monthly</SelectItem>
+            <SelectItem value="Quarterly" className="text-xs">Quarterly</SelectItem>
+            <SelectItem value="Annually"  className="text-xs">Annually</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <div className="flex gap-2 items-center">
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="h-9 px-3 text-xs border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="h-9 px-3 text-xs border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+
+        {/* Status filter now uses derived statuses */}
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="h-9 w-[140px] text-xs">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="All" className="text-xs text-muted-foreground">All Statuses</SelectItem>
-            {STATUSES.map((s) => (
-              <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+            {DERIVED_STATUSES.map((s) => (
+              <SelectItem key={s} value={s} className="text-xs">{DERIVED_STATUS_LABEL[s]}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -195,6 +237,16 @@ export default function TaxCalendarModule() {
           </SelectContent>
         </Select>
 
+        <div className="relative w-full sm:w-72 flex-shrink-0" style={{maxWidth: 288}}>
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search title, tax type, form…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-9 pl-8 w-full text-xs"
+          />
+        </div>
+
         {isFiltered && (
           <Button variant="ghost" size="sm" onClick={clearFilters}
             className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1.5">
@@ -209,36 +261,41 @@ export default function TaxCalendarModule() {
       {/* ── Calendar ── */}
       <TaxCalendarView activities={filteredByCategory} />
 
-      {/* ── Table ── */}
-      <TaxTable
-        activities={filtered}
-        isFiltered={isFiltered}
-        total={activities.length}
-        onEdit={setEditItem}
-        search={search}
-        onSearchChange={setSearch}
-      />
+      {/* ── Table View Switcher ── */}
+      <div className="flex gap-3 border-b border-border/50 pb-3">
+        {(['activities', 'list', 'mapping'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setTableView(v)}
+            className={`text-sm font-medium px-3 py-2 rounded-t-lg transition-colors border-b-2 ${
+              tableView === v
+                ? 'text-foreground border-b-primary'
+                : 'text-muted-foreground border-b-transparent hover:text-foreground'
+            }`}
+          >
+            {v === 'activities' ? 'Tax Activities' : v === 'list' ? 'List View' : 'Tax Mapping'}
+          </button>
+        ))}
+      </div>
 
-      {/* ── Add Dialog ── */}
-      <TaxFormDialog
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onSave={handleCreate}
-        initial={EMPTY_FORM}
-        loading={saving}
-        title="Add Tax Date"
-      />
+      {tableView === 'activities' && (
+        <TaxTable activities={filtered} isFiltered={isFiltered} total={activities.length} onView={setViewItem} />
+      )}
+      {tableView === 'list' && (
+        <TaxListView activities={filtered} isFiltered={isFiltered} total={activities.length} onView={setViewItem} />
+      )}
+      {tableView === 'mapping' && (
+        <TaxMappingView activities={filtered} isFiltered={isFiltered} total={activities.length} />
+      )}
 
-      {/* ── Edit Dialog ── */}
-      <TaxFormDialog
-        open={!!editItem}
-        onClose={() => setEditItem(null)}
-        onSave={handleUpdate}
-        initial={editInitial}
-        loading={saving}
-        title="Edit Tax Date"
-      />
+      <TaxViewDialog open={!!viewItem} onClose={() => setViewItem(null)} item={viewItem}
+        onEdit={(item) => { setViewItem(null); setEditItem(item); }} />
 
+      <TaxFormDialog open={addOpen} onClose={() => setAddOpen(false)} onSave={handleCreate}
+        initial={EMPTY_FORM} loading={saving} title="Add Tax Date" />
+
+      <TaxFormDialog open={!!editItem} onClose={() => setEditItem(null)} onSave={handleUpdate}
+        initial={editInitial as TaxActivityForm} loading={saving} title="Edit Tax Date" />
     </div>
   );
 }
