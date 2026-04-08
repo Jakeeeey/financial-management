@@ -124,7 +124,8 @@ export function SupplierDetailsModal({
                       alt={supplier.supplier_name}
                       width={56}
                       height={56}
-                      className="rounded-full object-cover border"
+                      className="h-14 w-14 rounded-full object-cover border aspect-square"
+                      unoptimized
                     />
                   ) : (
                     <div className="h-14 w-14 rounded-full flex items-center justify-center border">

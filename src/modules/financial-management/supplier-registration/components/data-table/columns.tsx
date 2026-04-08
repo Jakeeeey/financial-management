@@ -1,7 +1,5 @@
 "use client";
 
-import { ColumnDef } from "@tanstack/react-table";
-import { Supplier } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,15 +11,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "@/modules/financial-management/supplier-registration/components/data-table/table-column-header";
+import { Supplier } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
+import { formatDate } from "@/modules/financial-management/supplier-registration/utils/utils";
+import { ColumnDef } from "@tanstack/react-table";
 import {
+  Calendar,
   Eye,
+  Fingerprint,
+  MoreVertical,
   Pencil,
   User,
-  Fingerprint,
-  Calendar,
-  MoreVertical,
 } from "lucide-react";
-import { formatDate } from "@/modules/financial-management/supplier-registration/utils/utils";
 import Image from "next/image";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -52,10 +52,11 @@ export const createColumns = ({
               alt={name}
               width={32}
               height={32}
-              className="rounded-full object-cover border shrink-0"
+              className="h-8 w-8 rounded-sm object-cover border shrink-0 aspect-square"
+              unoptimized
             />
           ) : (
-            <div className="h-8 w-8 rounded-full flex items-center justify-center border bg-muted shrink-0">
+            <div className="h-8 w-8 rounded-sm flex items-center justify-center border bg-muted shrink-0">
               <span className="text-xs font-bold text-muted-foreground">
                 {name.charAt(0)}
               </span>

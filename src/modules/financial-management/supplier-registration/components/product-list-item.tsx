@@ -1,14 +1,3 @@
-"use client";
-
-import { useState } from "react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,9 +9,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { X } from "lucide-react";
-import { ProductPerSupplierWithDetails } from "../types/product-per-suppplier.schema";
+import { Button } from "@/components/ui/button";
+import { Trash2 } from "lucide-react";
+import { useState } from "react";
 import { DiscountType } from "../types/discount-type.schema";
+import { ProductPerSupplierWithDetails } from "../types/product-per-suppplier.schema";
+import { Combobox } from "./ui/Combobox";
 
 interface ProductListItemProps {
   product: ProductPerSupplierWithDetails;
@@ -42,84 +34,68 @@ export function ProductListItem({
 }: ProductListItemProps) {
   const [isUpdating, setIsUpdating] = useState(false);
 
-const handleRemove = async () => {
-    await onRemove(product.id);
-  };
-
   return (
-    <div className="flex items-center gap-4 py-2 px-4 hover:bg-muted/40 transition-colors group border-b last:border-0">
-      {/* Product Info - Flex Grow to push actions to the right */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium leading-none truncate">
-          {product.product_name}
-        </p>
+    <div className="grid grid-cols-[1fr_200px_40px] gap-4 items-center px-6 py-3 hover:bg-muted/30 transition-colors group">
+      {/* Product info */}
+      <div className="min-w-0">
+        <p className="text-sm font-medium truncate">{product.product_name}</p>
         {product.product_code && (
-          <p className="text-[11px] text-muted-foreground mt-1 font-mono uppercase tracking-wider">
+          <p className="text-xs text-muted-foreground font-mono mt-0.5">
             {product.product_code}
           </p>
         )}
       </div>
 
-      {/* Discount Selector - Fixed width for alignment */}
-      <div className="flex items-center gap-2 w-[180px]">
-        <Select
-          value={product.discount_type?.toString() || "none"}
-          onValueChange={async (v) => {
-            setIsUpdating(true);
-            await onDiscountChange(
-              product.id,
-              v === "none" ? null : parseInt(v),
-            );
-            setIsUpdating(false);
-          }}
-          disabled={isUpdating}
-        >
-          <SelectTrigger className="h-8 text-xs bg-background">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Default (No Discount)</SelectItem>
-            {discountTypes.map((dt) => (
-              <SelectItem key={dt.id} value={dt.id.toString()}>
-                {dt.discount_type}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {/* Discount selector */}
+      <Combobox
+        options={[
+          { value: "none", label: "No Discount" },
+          ...discountTypes.map((dt) => ({
+            value: dt.id.toString(),
+            label: dt.discount_type,
+          })),
+        ]}
+        value={product.discount_type?.toString() || "none"}
+        onValueChange={async (v) => {
+          setIsUpdating(true);
+          const discountId = !v || v === "none" ? null : parseInt(v);
+          await onDiscountChange(product.id, discountId);
+          setIsUpdating(false);
+        }}
+        disabled={isUpdating}
+        placeholder="No Discount"
+      />
 
-      <div className="w-8 flex justify-end">
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+      {/* Remove */}
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Product?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove <strong>{product.product_name}</strong> from this supplier?
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => onRemove(product.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              <X className="h-4 w-4" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Remove Product?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to remove{" "}
-                <strong>{product.product_name}</strong> from this supplier? This
-                action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleRemove}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                Remove
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

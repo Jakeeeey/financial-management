@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Supplier,
   SupplierFormSchema,
+  SupplierFormValues,
 } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +24,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import Image from "next/image";
+import {
+  usePaymentTerms,
+  useDeliveryTerms,
+} from "@/modules/financial-management/supplier-registration/hooks/useTerms";
+import { Term } from "@/modules/financial-management/supplier-registration/services/terms";
+import { Combobox } from "../ui/Combobox";
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -109,7 +116,10 @@ export function EditSupplierForm({
     },
   });
 
-  const onSubmit = async (data: Record<string, unknown>) => {
+  const { paymentTerms, isLoading: isLoadingPayment } = usePaymentTerms();
+  const { deliveryTerms, isLoading: isLoadingDelivery } = useDeliveryTerms();
+
+  const onSubmit = async (data: SupplierFormValues) => {
     setIsSubmitting(true);
     try {
       let imageId = supplier.supplier_image || "";
@@ -153,7 +163,6 @@ export function EditSupplierForm({
         throw new Error(result.error || "Failed to update supplier");
       }
 
-      toast.success("Supplier updated successfully");
       form.reset();
       onSuccess();
     } catch (error) {
@@ -165,9 +174,59 @@ export function EditSupplierForm({
     }
   };
 
+  const onInvalid = useCallback((errors: FieldErrors<SupplierFormValues>) => {
+    const fieldTabMap: Record<string, string> = {
+      supplier_name: "contact",
+      supplier_shortcut: "contact",
+      supplier_type: "contact",
+      contact_person: "contact",
+      email_address: "contact",
+      phone_number: "contact",
+      preferred_communication_method: "contact",
+      address: "location",
+      brgy: "location",
+      city: "location",
+      state_province: "location",
+      postal_code: "location",
+      country: "location",
+      tin_number: "business",
+      bank_details: "business",
+      notes_or_comments: "business",
+      agreement_or_contract: "business",
+      supplier_image: "business",
+      payment_terms: "terms",
+      delivery_terms: "terms",
+    };
+
+    const errorTabs = new Set<string>();
+    let firstTabWithError: string | null = null;
+
+    Object.keys(errors).forEach((field) => {
+      const tab = fieldTabMap[field];
+      if (tab) {
+        errorTabs.add(tab);
+        if (!firstTabWithError) firstTabWithError = tab;
+      }
+    });
+
+    if (errorTabs.size > 0) {
+      const tabNames = Array.from(errorTabs)
+        .map((t) => t.charAt(0).toUpperCase() + t.slice(1))
+        .join(", ");
+      toast.error(`Please check these tabs for missing fields: ${tabNames}`);
+
+      if (firstTabWithError) {
+        setActiveTab(firstTabWithError);
+      }
+    }
+  }, []);
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form
+        onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+        className="space-y-6"
+      >
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="contact">Contact Info</TabsTrigger>
@@ -222,13 +281,17 @@ export function EditSupplierForm({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Supplier Type{" "}
-                        <span className="text-destructive">*</span>
+                        Supplier Type <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., TRADE, MANUFACTURER"
-                          {...field}
+                        <Combobox
+                          options={[
+                            { value: "TRADE", label: "TRADE" },
+                            { value: "NON-TRADE", label: "NON-TRADE" },
+                          ]}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder="Select supplier type"
                         />
                       </FormControl>
                       <FormMessage />
@@ -507,7 +570,8 @@ export function EditSupplierForm({
                           alt="Preview"
                           width={128}
                           height={128}
-                          className="rounded-lg object-cover"
+                          className="h-32 w-32 rounded-lg object-cover aspect-square"
+                          unoptimized
                         />
                         <button
                           type="button"
@@ -560,13 +624,22 @@ export function EditSupplierForm({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Payment Terms{" "}
-                        <span className="text-destructive">*</span>
+                        Payment Terms <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., Cash On Delivery, Net 30"
-                          {...field}
+                        <Combobox
+                          options={paymentTerms.map((term: Term) => ({
+                            value: term.name,
+                            label: term.name,
+                          }))}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder={
+                            isLoadingPayment
+                              ? "Loading terms..."
+                              : "Select payment terms"
+                          }
+                          disabled={isLoadingPayment}
                         />
                       </FormControl>
                       <FormMessage />
@@ -580,13 +653,22 @@ export function EditSupplierForm({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Delivery Terms{" "}
-                        <span className="text-destructive">*</span>
+                        Delivery Terms <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., Delivery, Pickup"
-                          {...field}
+                        <Combobox
+                          options={deliveryTerms.map((term: Term) => ({
+                            value: term.name,
+                            label: term.name,
+                          }))}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder={
+                            isLoadingDelivery
+                              ? "Loading terms..."
+                              : "Select delivery terms"
+                          }
+                          disabled={isLoadingDelivery}
                         />
                       </FormControl>
                       <FormMessage />

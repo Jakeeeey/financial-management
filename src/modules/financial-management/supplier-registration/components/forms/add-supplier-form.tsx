@@ -1,9 +1,14 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { SupplierFormSchema } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
+import {
+  usePaymentTerms,
+  useDeliveryTerms,
+} from "@/modules/financial-management/supplier-registration/hooks/useTerms";
+import { Term } from "@/modules/financial-management/supplier-registration/services/terms";
+import { SupplierFormSchema, SupplierFormValues } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -15,13 +20,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox } from "../ui/Combobox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Upload, X } from "lucide-react";
@@ -99,7 +98,10 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
     },
   });
 
-  const onSubmit = async (data: Record<string, unknown>) => {
+  const { paymentTerms, isLoading: isLoadingPayment } = usePaymentTerms();
+  const { deliveryTerms, isLoading: isLoadingDelivery } = useDeliveryTerms();
+
+  const onSubmit = async (data: SupplierFormValues) => {
     setIsSubmitting(true);
     try {
       let imageId = "";
@@ -138,7 +140,6 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
         throw new Error(result.error || "Failed to create supplier");
       }
 
-      toast.success("Supplier created successfully");
       form.reset();
       clearImage();
       onSuccess();
@@ -151,9 +152,59 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
     }
   };
 
+  const onInvalid = useCallback((errors: FieldErrors<SupplierFormValues>) => {
+    const fieldTabMap: Record<string, string> = {
+      supplier_name: "contact",
+      supplier_shortcut: "contact",
+      supplier_type: "contact",
+      contact_person: "contact",
+      email_address: "contact",
+      phone_number: "contact",
+      preferred_communication_method: "contact",
+      address: "location",
+      brgy: "location",
+      city: "location",
+      state_province: "location",
+      postal_code: "location",
+      country: "location",
+      tin_number: "business",
+      bank_details: "business",
+      notes_or_comments: "business",
+      agreement_or_contract: "business",
+      supplier_image: "business",
+      payment_terms: "terms",
+      delivery_terms: "terms",
+    };
+
+    const errorTabs = new Set<string>();
+    let firstTabWithError: string | null = null;
+
+    Object.keys(errors).forEach((field) => {
+      const tab = fieldTabMap[field];
+      if (tab) {
+        errorTabs.add(tab);
+        if (!firstTabWithError) firstTabWithError = tab;
+      }
+    });
+
+    if (errorTabs.size > 0) {
+      const tabNames = Array.from(errorTabs)
+        .map((t) => t.charAt(0).toUpperCase() + t.slice(1))
+        .join(", ");
+      toast.error(`Please check these tabs for missing fields: ${tabNames}`);
+
+      if (firstTabWithError) {
+        setActiveTab(firstTabWithError);
+      }
+    }
+  }, []);
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form
+        onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+        className="space-y-6"
+      >
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="contact">Contact Info</TabsTrigger>
@@ -208,23 +259,19 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Supplier Type{" "}
-                        <span className="text-destructive">*</span>
+                        Supplier Type <span className="text-destructive">*</span>
                       </FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select supplier type" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="TRADE">TRADE</SelectItem>
-                          <SelectItem value="NON-TRADE">NON-TRADE</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <Combobox
+                          options={[
+                            { value: "TRADE", label: "TRADE" },
+                            { value: "NON-TRADE", label: "NON-TRADE" },
+                          ]}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder="Select supplier type"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -235,7 +282,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="contact_person"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Person</FormLabel>
+                      <FormLabel>
+                        Contact Person <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input
                           placeholder="Enter contact person name"
@@ -307,7 +356,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="address"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Address</FormLabel>
+                      <FormLabel>
+                        Address <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="Street address" {...field} />
                       </FormControl>
@@ -322,7 +373,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                     name="brgy"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Barangay</FormLabel>
+                        <FormLabel>
+                          Barangay <span className="text-destructive">*</span>
+                        </FormLabel>
                         <FormControl>
                           <Input placeholder="Barangay name" {...field} />
                         </FormControl>
@@ -336,7 +389,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                     name="city"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>City</FormLabel>
+                        <FormLabel>
+                          City <span className="text-destructive">*</span>
+                        </FormLabel>
                         <FormControl>
                           <Input placeholder="City name" {...field} />
                         </FormControl>
@@ -352,7 +407,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                     name="state_province"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Province</FormLabel>
+                        <FormLabel>
+                          Province <span className="text-destructive">*</span>
+                        </FormLabel>
                         <FormControl>
                           <Input placeholder="Province name" {...field} />
                         </FormControl>
@@ -366,7 +423,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                     name="postal_code"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Postal Code</FormLabel>
+                        <FormLabel>
+                          Postal Code <span className="text-destructive">*</span>
+                        </FormLabel>
                         <FormControl>
                           <Input placeholder="e.g., 2300" {...field} />
                         </FormControl>
@@ -381,11 +440,12 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="country"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Country</FormLabel>
+                      <FormLabel>
+                        Country <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="Philippines" {...field} />
                       </FormControl>
-                      <FormDescription>Default: Philippines</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -403,7 +463,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="tin_number"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>TIN Number</FormLabel>
+                      <FormLabel>
+                        TIN Number <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="9-12 digits" {...field} />
                       </FormControl>
@@ -484,7 +546,8 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                           alt="Preview"
                           width={128}
                           height={128}
-                          className="rounded-lg object-cover"
+                          className="h-32 w-32 rounded-lg object-cover aspect-square"
+                          unoptimized
                         />
                         <button
                           type="button"
@@ -536,11 +599,23 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="payment_terms"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Payment Terms</FormLabel>
+                      <FormLabel>
+                        Payment Terms <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., Cash On Delivery, Net 30"
-                          {...field}
+                        <Combobox
+                          options={paymentTerms.map((term: Term) => ({
+                            value: term.name,
+                            label: term.name,
+                          }))}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder={
+                            isLoadingPayment
+                              ? "Loading terms..."
+                              : "Select payment terms"
+                          }
+                          disabled={isLoadingPayment}
                         />
                       </FormControl>
                       <FormMessage />
@@ -553,11 +628,23 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="delivery_terms"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Delivery Terms</FormLabel>
+                      <FormLabel>
+                        Delivery Terms <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., Delivery, Pickup"
-                          {...field}
+                        <Combobox
+                          options={deliveryTerms.map((term: Term) => ({
+                            value: term.name,
+                            label: term.name,
+                          }))}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder={
+                            isLoadingDelivery
+                              ? "Loading terms..."
+                              : "Select delivery terms"
+                          }
+                          disabled={isLoadingDelivery}
                         />
                       </FormControl>
                       <FormMessage />
