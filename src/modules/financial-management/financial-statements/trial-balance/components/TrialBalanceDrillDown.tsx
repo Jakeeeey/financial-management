@@ -4,24 +4,26 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Search, Download, RotateCcw } from "lucide-react";
-import { TrialBalanceAccount, JournalEntryLine } from "../types";
+import { TrialBalanceItem } from "../types/trial-balance.schema";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
-import { MOCK_JOURNAL_LINES } from "../constants";
+import { formatCurrency } from "@/lib/utils";
 
-export function TrialBalanceDrillDown({ 
-  account, 
-  onBack 
-}: { 
-  account: TrialBalanceAccount;
+/**
+ * Drill-down view for a selected Trial Balance account.
+ * Currently shows the account header and a placeholder for journal entry lines.
+ * Will be connected to a journal-entry-lines API when available.
+ */
+export function TrialBalanceDrillDown({
+  account,
+  onBack,
+}: {
+  account: TrialBalanceItem;
   onBack: () => void;
 }) {
-  const formatCurrency = (val: number) => {
+  const formatAmount = (val: number) => {
     if (val === 0) return "—";
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-    }).format(val);
+    return formatCurrency(val);
   };
 
   return (
@@ -35,24 +37,28 @@ export function TrialBalanceDrillDown({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <h2 className="text-xl font-bold truncate">
-                {account.code} - {account.title}
+                {account.glCode} - {account.accountTitle}
               </h2>
               <Badge variant="outline" className="shrink-0">
-                {MOCK_JOURNAL_LINES.length} journal lines
+                {account.accountCategory} • {account.accountType}
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              Detailed transaction analysis for {account.branch} • {account.division}
+              Detailed transaction analysis • {account.balanceType} balance
             </p>
           </div>
           <div className="flex items-center gap-4 text-right">
             <div>
               <p className="text-[10px] text-muted-foreground uppercase font-bold">Debit Total</p>
-              <p className="font-mono font-bold">{formatCurrency(account.debit)}</p>
+              <p className="font-mono font-bold">{formatAmount(account.totalDebit)}</p>
             </div>
             <div>
               <p className="text-[10px] text-muted-foreground uppercase font-bold">Credit Total</p>
-              <p className="font-mono font-bold text-primary">{formatCurrency(account.credit)}</p>
+              <p className="font-mono font-bold text-primary">{formatAmount(account.totalCredit)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-muted-foreground uppercase font-bold">Net Balance</p>
+              <p className="font-mono font-bold">{formatCurrency(account.netBalance)}</p>
             </div>
           </div>
         </div>
@@ -63,7 +69,7 @@ export function TrialBalanceDrillDown({
         <div className="w-64 shrink-0 flex flex-col gap-6">
           <div className="space-y-4 pr-2">
             <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Workspace Filters</h3>
-            
+
             <div className="space-y-2">
               <Label htmlFor="je-search" className="text-xs">Search Lines</Label>
               <div className="relative">
@@ -80,8 +86,8 @@ export function TrialBalanceDrillDown({
             <div className="space-y-2">
               <Label className="text-xs">Date Range</Label>
               <div className="grid gap-2">
-                <Input type="date" className="h-8 text-xs" defaultValue="2026-03-01" />
-                <Input type="date" className="h-8 text-xs" defaultValue="2026-03-31" />
+                <Input type="date" className="h-8 text-xs" defaultValue="2025-01-01" />
+                <Input type="date" className="h-8 text-xs" defaultValue="2025-12-30" />
               </div>
             </div>
 
@@ -98,8 +104,8 @@ export function TrialBalanceDrillDown({
           </div>
         </div>
 
-        {/* Right Journal Table */}
-        <div className="flex-1 min-w-0 border rounded-xl overflow-hidden bg-white">
+        {/* Right Journal Table - Placeholder for future journal-lines API */}
+        <div className="flex-1 min-w-0 border rounded-xl overflow-hidden bg-card">
           <Table>
             <TableHeader className="bg-muted/30">
               <TableRow>
@@ -113,17 +119,15 @@ export function TrialBalanceDrillDown({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {MOCK_JOURNAL_LINES.map((line) => (
-                <TableRow key={line.id} className="hover:bg-muted/10 transition-colors">
-                  <TableCell className="font-mono text-xs font-medium text-blue-600">{line.id}</TableCell>
-                  <TableCell className="text-xs">{line.date}</TableCell>
-                  <TableCell className="text-xs font-medium">{line.description}</TableCell>
-                  <TableCell className="text-right font-mono text-xs">{formatCurrency(line.debit)}</TableCell>
-                  <TableCell className="text-right font-mono text-xs">{formatCurrency(line.credit)}</TableCell>
-                  <TableCell className="text-xs">{line.source}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{line.postedBy}</TableCell>
-                </TableRow>
-              ))}
+              <TableRow>
+                <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                  <div className="flex flex-col items-center gap-2">
+                    <Search className="h-8 w-8 text-muted-foreground/30" />
+                    <p className="text-sm font-medium">Journal entry lines will be loaded here</p>
+                    <p className="text-xs">Waiting for journal-lines API integration</p>
+                  </div>
+                </TableCell>
+              </TableRow>
             </TableBody>
           </Table>
         </div>

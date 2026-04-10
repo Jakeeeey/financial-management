@@ -7,26 +7,24 @@ import { TrialBalanceSummary } from "./components/TrialBalanceSummary";
 import { TrialBalanceDetailView } from "./components/TrialBalanceDetailView";
 import { TrialBalanceSummaryView } from "./components/TrialBalanceSummaryView";
 import { TrialBalanceDrillDown } from "./components/TrialBalanceDrillDown";
-import { MOCK_ACCOUNTS } from "./constants";
-import { TrialBalanceAccount } from "./types";
+import { TrialBalanceItem } from "./types/trial-balance.schema";
+import { TrialBalanceProvider } from "./providers/TrialBalanceProvider";
+import { useTrialBalance } from "./hooks/useTrialBalance";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
 
-export function TrialBalanceView() {
+function TrialBalanceContent() {
+  const { items, summary, isLoading, error } = useTrialBalance();
   const [viewMode, setViewMode] = React.useState<"detail" | "summary">("detail");
-  const [selectedAccount, setSelectedAccount] = React.useState<TrialBalanceAccount | null>(null);
-
-  const totalDebit = MOCK_ACCOUNTS.reduce((sum, acc) => sum + (acc.debit > 0 ? acc.debit : 0), 0);
-  const totalCredit = MOCK_ACCOUNTS.reduce((sum, acc) => sum + acc.credit, 0);
-  const difference = Math.abs(totalDebit - totalCredit);
-  const isOutofBalance = difference !== 0;
+  const [selectedAccount, setSelectedAccount] = React.useState<TrialBalanceItem | null>(null);
 
   if (selectedAccount) {
     return (
-      <TrialBalanceDrillDown 
-        account={selectedAccount} 
-        onBack={() => setSelectedAccount(null)} 
+      <TrialBalanceDrillDown
+        account={selectedAccount}
+        onBack={() => setSelectedAccount(null)}
       />
     );
   }
@@ -34,23 +32,27 @@ export function TrialBalanceView() {
   return (
     <div className="flex flex-col gap-2">
       <TrialBalanceHeader />
-      
+
       <TrialBalanceFilters />
 
-      <TrialBalanceSummary 
-        totalDebit={totalDebit}
-        totalCredit={totalCredit}
-        accountCount={MOCK_ACCOUNTS.length}
-      />
+      <TrialBalanceSummary summary={summary} />
 
-      {isOutofBalance && (
+      {!summary.isBalanced && items.length > 0 && (
         <Alert variant="destructive" className="mb-6 animate-in slide-in-from-top-2">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Out of Balance</AlertTitle>
           <AlertDescription>
-            Report is out of balance by {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(difference)}. 
+            Report is out of balance by {formatCurrency(summary.difference)}.
             Please review flagged accounts and regenerate after correction.
           </AlertDescription>
+        </Alert>
+      )}
+
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
@@ -64,13 +66,21 @@ export function TrialBalanceView() {
       </div>
 
       {viewMode === "detail" ? (
-        <TrialBalanceDetailView data={MOCK_ACCOUNTS} />
+        <TrialBalanceDetailView data={items} isLoading={isLoading} />
       ) : (
-        <TrialBalanceSummaryView 
-          data={MOCK_ACCOUNTS} 
-          onAccountClick={(acc) => setSelectedAccount(acc)} 
+        <TrialBalanceSummaryView
+          data={items}
+          onAccountClick={(acc) => setSelectedAccount(acc)}
         />
       )}
     </div>
+  );
+}
+
+export function TrialBalanceView() {
+  return (
+    <TrialBalanceProvider>
+      <TrialBalanceContent />
+    </TrialBalanceProvider>
   );
 }

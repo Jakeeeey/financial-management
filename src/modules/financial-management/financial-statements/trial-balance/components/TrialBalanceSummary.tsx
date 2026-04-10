@@ -3,6 +3,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { AlertCircle, CheckCircle2, ListFilter } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
+import { TrialBalanceSummaryData } from "../types/trial-balance.schema";
 
 interface SummaryCardProps {
   label: string;
@@ -40,46 +42,28 @@ function SummaryCard({ label, value, subLabel, type = "default", icon }: Summary
   );
 }
 
-export function TrialBalanceSummary({ 
-  totalDebit, 
-  totalCredit, 
-  accountCount 
-}: { 
-  totalDebit: number; 
-  totalCredit: number; 
-  accountCount: number;
-}) {
-  const difference = Math.abs(totalDebit - totalCredit);
-  const isBalanced = difference === 0;
-
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-    }).format(val);
-  };
-
+export function TrialBalanceSummary({ summary }: { summary: TrialBalanceSummaryData }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <SummaryCard 
-        label="Total Debit" 
-        value={formatCurrency(totalDebit)} 
+      <SummaryCard
+        label="Total Debit"
+        value={formatCurrency(summary.totalDebit)}
         icon={<ListFilter className="h-8 w-8" />}
       />
-      <SummaryCard 
-        label="Total Credit" 
-        value={formatCurrency(totalCredit)} 
+      <SummaryCard
+        label="Total Credit"
+        value={formatCurrency(summary.totalCredit)}
       />
-      <SummaryCard 
-        label="Difference" 
-        value={formatCurrency(difference)}
-        type={isBalanced ? "success" : "error"}
-        subLabel={isBalanced ? "Report is balanced" : "Mismatch detected"}
-        icon={isBalanced ? <CheckCircle2 className="h-8 w-8 text-green-500" /> : <AlertCircle className="h-8 w-8 text-destructive" />}
+      <SummaryCard
+        label="Difference"
+        value={formatCurrency(summary.difference)}
+        type={summary.isBalanced ? "success" : "error"}
+        subLabel={summary.isBalanced ? "Report is balanced" : "Mismatch detected"}
+        icon={summary.isBalanced ? <CheckCircle2 className="h-8 w-8 text-green-500" /> : <AlertCircle className="h-8 w-8 text-destructive" />}
       />
-      <SummaryCard 
-        label="Accounts" 
-        value={accountCount} 
+      <SummaryCard
+        label="Accounts"
+        value={summary.accountCount}
         subLabel="Unique accounts found"
       />
     </div>
