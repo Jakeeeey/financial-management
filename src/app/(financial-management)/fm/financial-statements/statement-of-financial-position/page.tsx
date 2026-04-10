@@ -13,7 +13,7 @@ import { NavUser } from "../../_components/nav-user";
 import { cookies } from "next/headers";
 
 // ✅ Wire the module you asked for
-import ComingSoon from "../../_components/ComingSoon";
+import { StatementOfFinancialPositionClient } from "@/modules/financial-management/financial-statements/statement-of-financial-position/components/statement-of-financial-position-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,8 +118,8 @@ export default async function Page() {
             </header>
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
-            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-                <ComingSoon />
+            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-6 lg:p-8 bg-slate-50/50">
+                <StatementOfFinancialPositionClient />
             </main>
         </div>
     );
