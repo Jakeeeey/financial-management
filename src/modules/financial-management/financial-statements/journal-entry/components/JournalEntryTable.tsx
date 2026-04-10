@@ -127,7 +127,7 @@ export default function JournalEntryTable({
                   <div className="flex flex-col gap-2">
                     {entriesToRender.map((e, idx) => (
                       <div key={idx} className={cn(
-                        "min-h-[32px] flex items-center text-[11px]",
+                        "h-[40px] flex items-center text-[11px]",
                         isDescCol ? "text-muted-foreground max-w-[280px]" : "font-semibold text-foreground",
                         isCredit && !isDescCol && "pl-6 text-muted-foreground/80"
                       )}>
@@ -157,7 +157,7 @@ export default function JournalEntryTable({
                 return (
                   <div className="flex flex-col gap-2">
                     {entriesToRender.map((e, idx) => (
-                      <div key={idx} className="min-h-[32px] flex justify-end items-center text-[11px] font-semibold text-foreground/90">
+                      <div key={idx} className="h-[40px] flex justify-end items-center text-[11px] font-semibold text-foreground/90">
                         {e[field] > 0 ? formatNumber(e[field]) : ""}
                       </div>
                     ))}
@@ -207,7 +207,7 @@ export default function JournalEntryTable({
                       <div className="flex flex-col gap-2">
                         {debitEntries.length > 0 ? (
                           debitEntries.map((_, i) => (
-                            <div key={i} className="h-[32px] flex justify-end items-center">
+                            <div key={i} className="h-[40px] flex justify-end items-center">
                               {i === debitEntries.length - 1 ? (
                                 <span className="text-[11px] font-black text-foreground">
                                   {group.totalDebit > 0 ? formatNumber(group.totalDebit) : "0.00"}
@@ -218,7 +218,7 @@ export default function JournalEntryTable({
                             </div>
                           ))
                         ) : (
-                          <div className="h-[32px] flex justify-end items-center">
+                          <div className="h-[40px] flex justify-end items-center">
                             <span className="text-[11px] font-black text-foreground">0.00</span>
                           </div>
                         )}
@@ -262,7 +262,7 @@ export default function JournalEntryTable({
                       <div className="flex flex-col gap-2">
                         {creditEntries.length > 0 ? (
                           creditEntries.map((_, i) => (
-                            <div key={i} className="h-[32px] flex justify-end items-center">
+                            <div key={i} className="h-[40px] flex justify-end items-center">
                               {i === creditEntries.length - 1 ? (
                                 group.balance !== 0 || (group.totalDebit - group.totalCredit) !== 0 ? (
                                   <span className={cn(
@@ -280,13 +280,20 @@ export default function JournalEntryTable({
                             </div>
                           ))
                         ) : (
-                          <div className="h-[32px] flex justify-end items-center">
+                          <div className="h-[40px] flex justify-end items-center">
                             <span className="text-[11px] font-bold text-muted-foreground">0.00</span>
                           </div>
                         )}
                       </div>
                     </TableCell>
                     <TableCell className="group-hover/credit:bg-muted/20"></TableCell>
+                  </TableRow>
+
+                  {/* ROW 3: RECORD BOUNDARY SEPARATOR (REVERTED) */}
+                  <TableRow style={{ backgroundColor: '#0f172a' }}>
+                    <TableCell colSpan={10} className="p-0 border-none">
+                      <div style={{ width: '100%', height: '2px', backgroundColor: '#0f172a' }} />
+                    </TableCell>
                   </TableRow>
                 </React.Fragment>
               );
