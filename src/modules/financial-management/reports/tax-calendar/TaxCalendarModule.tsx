@@ -282,10 +282,10 @@ export default function TaxCalendarModule() {
         <TaxTable activities={filtered} isFiltered={isFiltered} total={activities.length} onView={setViewItem} />
       )}
       {tableView === 'list' && (
-        <TaxListView activities={filtered} isFiltered={isFiltered} total={activities.length} onView={setViewItem} />
+        <TaxListView activities={filtered} isFiltered={isFiltered} />
       )}
       {tableView === 'mapping' && (
-        <TaxMappingView activities={filtered} isFiltered={isFiltered} total={activities.length} />
+        <TaxMappingView activities={filtered} isFiltered={isFiltered} />
       )}
 
       <TaxViewDialog open={!!viewItem} onClose={() => setViewItem(null)} item={viewItem}

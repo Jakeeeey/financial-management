@@ -29,6 +29,7 @@ export function LimitFilters({
 
   // Sync local state if filters.search is cleared externally (e.g. onClear)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSearchInput(filters.search ?? "");
   }, [filters.search]);
 

@@ -18,10 +18,9 @@ const FREQUENCY_STYLE: Record<string, string> = {
 interface Props {
   activities: TaxActivity[];
   isFiltered: boolean;
-  total: number;
 }
 
-export function TaxMappingView({ activities, isFiltered, total }: Props) {
+export function TaxMappingView({ activities, isFiltered }: Props) {
   const [page, setPage] = useState(1);
 
   const prevKeyRef = useRef(`${activities.length}`);
@@ -30,9 +29,10 @@ export function TaxMappingView({ activities, isFiltered, total }: Props) {
   useEffect(() => {
     if (prevKeyRef.current !== currentKey) {
       prevKeyRef.current = currentKey;
-      if (page !== 1) setPage(1);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPage(1);
     }
-  }, [activities.length, page]);
+  }, [currentKey]);
 
   const totalPages = Math.max(1, Math.ceil(activities.length / PAGE_SIZE));
   const safePage   = Math.min(page, totalPages);

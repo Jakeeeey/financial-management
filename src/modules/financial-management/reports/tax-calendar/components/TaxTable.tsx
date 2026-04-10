@@ -47,9 +47,10 @@ export function TaxTable({ activities, isFiltered, total, onView }: Props) {
     const key = `${activities.length}`;
     if (prevKeyRef.current !== key) {
       prevKeyRef.current = key;
-      if (page !== 1) setPage(1);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPage(1);
     }
-  }, [activities.length, page]);
+  }, [activities.length]);
 
   const totalPages = Math.max(1, Math.ceil(activities.length / PAGE_SIZE));
   const safePage   = Math.min(page, totalPages);

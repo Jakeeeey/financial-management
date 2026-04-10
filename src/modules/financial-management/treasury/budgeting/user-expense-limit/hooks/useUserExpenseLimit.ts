@@ -55,7 +55,7 @@ export function useUserExpenseLimits() {
 
   useEffect(() => {
     load(filters.department_id);
-  }, [filters.department_id]); // only re-fetch on department change
+  }, [filters.department_id, load]); // only re-fetch on department change
 
   // Apply search locally in memory — no loading, no fetch, instant
   const limits = useMemo(() => {

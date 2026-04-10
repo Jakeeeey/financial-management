@@ -5,9 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import {
   Pagination, PaginationContent, PaginationItem, PaginationLink,
   PaginationPrevious, PaginationNext, PaginationEllipsis,
@@ -82,7 +81,7 @@ export function LimitTable({ limits, loading, error, onEdit }: LimitTableProps) 
             ) : paged.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-12 text-sm text-muted-foreground">
-                  No expense limits found. Click "Add Limit" to create one.
+                  No expense limits found. Click &quot;Add Limit&quot; to create one.
                 </TableCell>
               </TableRow>
             ) : (
