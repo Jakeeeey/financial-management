@@ -137,7 +137,6 @@ export default function JournalEntryTable({
                               <span className="font-semibold text-foreground break-words leading-tight">
                                 {group.description || "N/A"}
                               </span>
-                              <span className="italic text-muted-foreground opacity-80 mt-0.5 text-[10px]">Ref: {group.jeNo}</span>
                             </div>
                           ) : (
                             <span className="italic text-muted-foreground text-[10px] break-words line-clamp-2 leading-tight">

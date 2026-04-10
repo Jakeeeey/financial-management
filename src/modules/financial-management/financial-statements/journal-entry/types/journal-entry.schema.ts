@@ -9,9 +9,12 @@ export const JournalEntrySchema = z.object({
   description: z.string(),
   status: z.string(),
   division: z.string().nullable().default(null),
+  divisionName: z.string().nullable().default(null),
   department: z.string().nullable().default(null),
+  departmentName: z.string().nullable().default(null),
   creator: z.string().nullable().default(null),
   coaId: z.number(),
+  accountNumber: z.string().default(""),
   accountTitle: z.string(),
   debit: z.number(),
   credit: z.number(),
@@ -30,7 +33,9 @@ export interface JournalEntryGroup {
   description: string;
   status: string;
   division: string | null;
+  divisionName: string | null;
   department: string | null;
+  departmentName: string | null;
   creator: string | null;
   entries: JournalEntry[];
   totalDebit: number;

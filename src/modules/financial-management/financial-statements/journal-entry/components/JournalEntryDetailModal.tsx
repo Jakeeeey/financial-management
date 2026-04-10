@@ -175,6 +175,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50 hover:bg-muted/50 border-b border-border">
+                      <TableHead className="text-[11px] font-bold text-muted-foreground w-[100px] py-2.5">Account No.</TableHead>
                       <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5">Account Title</TableHead>
                       <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5">Description</TableHead>
                       <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5 text-right">Debit</TableHead>
@@ -184,6 +185,9 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                   <TableBody>
                     {group.entries.map((e, i) => (
                       <TableRow key={i} className="hover:bg-muted/50 border-b border-border/60">
+                        <TableCell className="py-3 text-xs font-mono text-muted-foreground">
+                          {e.accountNumber || "N/A"}
+                        </TableCell>
                         <TableCell className="py-3 text-xs font-semibold text-foreground">
                           {e.accountTitle}
                         </TableCell>

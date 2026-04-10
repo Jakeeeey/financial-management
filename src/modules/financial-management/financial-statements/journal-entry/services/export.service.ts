@@ -38,7 +38,7 @@ const buildExportData = (groups: JournalEntryGroup[]) => {
         isFirst ? group.sourceModule.split(" ")[0] : "",
         isFirst ? group.jeNo : "",
         entry.accountTitle,
-        isFirst ? `${group.description || "N/A"}\nRef: ${group.jeNo}` : `- ${entry.accountTitle} distribution`,
+        isFirst ? (group.description || "N/A") : `- ${entry.accountTitle} distribution`,
         entry.debit,
         "",
         isLast ? group.totalDebit : "",

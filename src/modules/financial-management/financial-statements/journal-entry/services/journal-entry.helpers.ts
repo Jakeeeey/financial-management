@@ -21,7 +21,9 @@ export function groupJournalEntries(entries: JournalEntry[]): JournalEntryGroup[
         description: e.description,
         status: e.status,
         division: e.division,
+        divisionName: e.divisionName,
         department: e.department,
+        departmentName: e.departmentName,
         creator: e.creator,
         entries: [],
         totalDebit: 0,
@@ -80,9 +82,10 @@ export function filterJournalEntries(entries: JournalEntry[], filters: FilterSta
     if (filters.search) {
       const s = filters.search.toLowerCase();
       const match = 
-        e.jeNo.toLowerCase().includes(s) || 
-        e.accountTitle.toLowerCase().includes(s) || 
-        e.description.toLowerCase().includes(s) ||
+        (e.jeNo || "").toLowerCase().includes(s) || 
+        (e.accountTitle || "").toLowerCase().includes(s) || 
+        (e.accountNumber || "").toLowerCase().includes(s) ||
+        (e.description || "").toLowerCase().includes(s) ||
         (e.transactionRef && e.transactionRef.toLowerCase().includes(s));
       if (!match) return false;
     }
