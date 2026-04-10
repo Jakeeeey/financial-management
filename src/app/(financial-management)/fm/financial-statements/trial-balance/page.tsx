@@ -72,6 +72,8 @@ function buildHeaderUserFromToken(token: string | null | undefined) {
     };
 }
 
+import { TrialBalanceView } from "@/modules/financial-management/financial-statements/trial-balance/TrialBalanceView";
+
 export default async function Page() {
     // ✅ Next.js 16: cookies() is async
     const cookieStore = await cookies();
@@ -81,7 +83,7 @@ export default async function Page() {
 
     return (
         // ✅ UI ONLY: avoid page-level scroll container; prevent horizontal overflow
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#F8F9FC]">
             {/* ? Topbar is fixed in place because ONLY <main> scrolls */}
             <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
                 <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4 overflow-hidden">
@@ -118,8 +120,10 @@ export default async function Page() {
             </header>
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
-            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-                <ComingSoon />
+            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+                <div className="max-w-[1600px] mx-auto">
+                    <TrialBalanceView />
+                </div>
             </main>
         </div>
     );
