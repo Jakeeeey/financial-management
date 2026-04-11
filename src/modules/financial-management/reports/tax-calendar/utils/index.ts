@@ -21,33 +21,59 @@ export function daysUntil(due: string): number {
   today.setHours(0, 0, 0, 0);
   const dueDate = new Date(due);
   dueDate.setHours(0, 0, 0, 0);
-  const diff = dueDate.getTime() - today.getTime();
-  return Math.ceil(diff / 86400000);
+  return Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
 }
 
+// ── Derived status logic ──────────────────────────────────────────────────────
+// Priority order: Paid > Filed > Overdue > Upcoming > Pending
+const UPCOMING_THRESHOLD = 5; // days
+
+export function deriveStatus(a: TaxActivity): TaxStatus {
+  // Paid: amount_paid exists and is non-zero
+  if (a.amount_paid && Number(a.amount_paid) !== 0) return 'PAID';
+  // Filed: filing date exists
+  if (a.actual_filing_date) return 'FILED';
+  // Overdue: past due date and not filed
+  const days = daysUntil(a.due_date);
+  if (days < 0) return 'OVERDUE';
+  // Upcoming: within 5-day threshold
+  if (days <= UPCOMING_THRESHOLD) return 'UPCOMING';
+  // Pending: 6+ days before due date (default)
+  return 'PENDING';
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function getDaysLabel(a: TaxActivity): { text: string; className: string } {
-  if (a.status === 'PAID' || a.status === 'FILED') {
+  const status = deriveStatus(a);
+  if (status === 'PAID' || status === 'FILED') {
     return { text: '—', className: 'text-muted-foreground' };
   }
   const days = daysUntil(a.due_date);
   if (days < 0)   return { text: `${Math.abs(days)}d ago`, className: 'text-red-600 font-semibold' };
   if (days === 0) return { text: 'Today',                  className: 'text-orange-600 font-semibold' };
-  if (days <= 7)  return { text: `${days}d`,               className: 'text-orange-500 font-semibold' };
+  if (days <= 5)  return { text: `${days}d`,               className: 'text-orange-500 font-semibold' };
   return { text: `${days}d`, className: 'text-foreground font-semibold' };
 }
 
 export function deriveMetrics(activities: TaxActivity[]) {
-  return {
-    pending: activities.filter((a) => a.status === 'PENDING').length,
-    overdue: activities.filter((a) => a.status === 'OVERDUE').length,
-    filed:   activities.filter((a) => a.status === 'FILED').length,
-    paid:    activities.filter((a) => a.status === 'PAID').length,
-  };
+  const upcomingDeadlines = activities.filter(
+    (a) => deriveStatus(a) === 'UPCOMING'
+  ).length;
+
+  const overdueFilings  = activities.filter((a) => deriveStatus(a) === 'OVERDUE').length;
+  const filedThisPeriod = activities.filter(
+    (a) => { const s = deriveStatus(a); return s === 'FILED' || s === 'PAID'; }
+  ).length;
+
+  const total = activities.length;
+  const complianceRate = total > 0 ? Math.round((filedThisPeriod / total) * 100) : 0;
+
+  return { upcomingDeadlines, overdueFilings, filedThisPeriod, complianceRate };
 }
 
 export function getUpcoming(activities: TaxActivity[]): TaxActivity[] {
   return activities
-    .filter((a) => a.status === 'PENDING' && daysUntil(a.due_date) <= 7 && daysUntil(a.due_date) >= 0)
+    .filter((a) => deriveStatus(a) === 'UPCOMING')
     .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
 }
 
@@ -58,8 +84,9 @@ export function applyFilters(
   typeFilter: string,
 ): TaxActivity[] {
   return activities.filter((a) => {
-    if (statusFilter !== 'All' && a.status !== statusFilter) return false;
-    if (typeFilter   !== 'All' && a.tax_type !== typeFilter) return false;
+    // Use derived status for filtering, not the stored a.status
+    if (statusFilter !== 'All' && deriveStatus(a) !== statusFilter) return false;
+    if (typeFilter   !== 'All' && a.tax_type !== typeFilter)        return false;
     const q = search.toLowerCase();
     if (q && !a.title.toLowerCase().includes(q) &&
              !a.tax_type.toLowerCase().includes(q) &&
@@ -68,11 +95,10 @@ export function applyFilters(
   });
 }
 
-// Note: icon components must be imported at component level, not here
-// So we export just the class strings for icon selection
 export const STATUS_ICON_NAME: Record<TaxStatus, string> = {
-  PENDING: 'Clock',
-  FILED:   'FileText',
-  PAID:    'CheckCircle2',
-  OVERDUE: 'AlertCircle',
+  PENDING:  'Clock',
+  UPCOMING: 'AlertCircle',
+  FILED:    'FileText',
+  PAID:     'CheckCircle2',
+  OVERDUE:  'AlertCircle',
 };

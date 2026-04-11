@@ -5,9 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import {
   Pagination, PaginationContent, PaginationItem, PaginationLink,
   PaginationPrevious, PaginationNext, PaginationEllipsis,
@@ -32,19 +31,9 @@ interface LimitTableProps {
 }
 
 export function LimitTable({ limits, loading, error, onEdit }: LimitTableProps) {
-  const [search, setSearch] = useState("");
   const [page,   setPage]   = useState(1);
 
-  const q = search.trim().toLowerCase();
-  const filtered = q
-    ? limits.filter(l =>
-        (l.user_name       ?? "").toLowerCase().includes(q) ||
-        (l.user_email      ?? "").toLowerCase().includes(q) ||
-        (l.user_department ?? "").toLowerCase().includes(q) ||
-        l.expense_limit.toString().includes(q)
-      )
-    : limits;
-
+  const filtered = limits;
   const totalPages  = Math.ceil(filtered.length / PAGE_SIZE);
   const safePage    = Math.min(page, totalPages || 1);
   const paged       = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
@@ -54,16 +43,7 @@ export function LimitTable({ limits, loading, error, onEdit }: LimitTableProps) 
     <Card className="shadow-none border-border overflow-hidden">
       <CardHeader className="bg-muted/30 border-b border-border/50 flex flex-row items-center justify-between gap-4">
         <CardTitle className="text-sm font-bold uppercase shrink-0">Expense Limits</CardTitle>
-        <div className="relative w-full max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-          <Input
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search name, email, department…"
-            className="h-8 pl-8 text-xs focus-visible:ring-1"
-          />
-        </div>
-        <span className="text-xs text-muted-foreground shrink-0">
+        <span className="text-xs text-muted-foreground shrink-0 ml-auto">
           {filtered.length} result{filtered.length !== 1 ? "s" : ""} — page {safePage} of {totalPages || 1}
         </span>
       </CardHeader>
@@ -101,7 +81,7 @@ export function LimitTable({ limits, loading, error, onEdit }: LimitTableProps) 
             ) : paged.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-12 text-sm text-muted-foreground">
-                  {q ? `No results for "${search}".` : "No expense limits set."}
+                  No expense limits found. Click &quot;Add Limit&quot; to create one.
                 </TableCell>
               </TableRow>
             ) : (
