@@ -14,10 +14,11 @@ export const JournalEntrySchema = z.object({
   departmentName: z.string().nullable().default(null),
   creator: z.string().nullable().default(null),
   coaId: z.number(),
-  accountNumber: z.string().default(""),
+  accountNumber: z.string().optional(),
   accountTitle: z.string(),
   debit: z.number(),
   credit: z.number(),
+  postingDate: z.string().nullable().optional(),
 });
 
 export type JournalEntry = z.infer<typeof JournalEntrySchema>;
@@ -42,6 +43,7 @@ export interface JournalEntryGroup {
   totalCredit: number;
   balance: number;
   isImbalanced: boolean;
+  postingDate: string | null;
 }
 
 export type PresetRange = "Monthly" | "Quarterly" | "Yearly" | "Custom";
@@ -51,6 +53,9 @@ export interface FilterState {
   startDate: string;
   endDate: string;
   presetRange: PresetRange;
+  selectedMonth: number;
+  selectedQuarter: number;
+  selectedYear: number;
   branch: string;
   division: string;
   department: string;
@@ -59,6 +64,16 @@ export interface FilterState {
   sourceModule: string;
   showPostedOnly: boolean;
   status: string;
+  sortField: string;
+  sortOrder: "asc" | "desc" | null;
+}
+
+export interface HighRiskEntry {
+  jeNo: string;
+  jeGroupCounter: number;
+  riskReasons: string[];
+  totalDebit: number;
+  severity: number;
 }
 
 export interface AnalyticsSummary {
@@ -70,4 +85,6 @@ export interface AnalyticsSummary {
   imbalancedCount: number;
   postedCount: number;
   unpostedCount: number;
+  statusBreakdown: Record<string, number>;
+  highRiskEntries: HighRiskEntry[];
 }

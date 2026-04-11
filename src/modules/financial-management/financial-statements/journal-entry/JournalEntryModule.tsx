@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 import { 
   JournalEntry, 
   JournalEntryGroup, 
@@ -19,6 +20,7 @@ import { JournalEntryProvider } from "./providers/JournalEntryProvider";
 
 import SummaryCards from "./components/SummaryCards";
 import FilterPanel from "./components/FilterPanel";
+import RiskInsights from "./components/RiskInsights";
 import JournalEntryTable from "./components/JournalEntryTable";
 import JournalEntryDetailModal from "./components/JournalEntryDetailModal";
 import { exportJournalToExcel, exportJournalToPdf } from "./services/export.service";
@@ -62,7 +64,9 @@ function JournalEntryDashboard() {
   const [isDetailOpen, setIsDetailOpen] = React.useState(false);
 
   const handleExport = (type: "PDF" | "Excel") => {
-    const dateRangeText = `${filters.startDate} to ${filters.endDate}`;
+    const formattedStart = format(new Date(filters.startDate), "MMM d, yyyy");
+    const formattedEnd = format(new Date(filters.endDate), "MMM d, yyyy");
+    const dateRangeText = `${formattedStart} to ${formattedEnd}`;
     try {
       if (type === "Excel") {
         exportJournalToExcel(groups, dateRangeText, "General_Journal_Export.xlsx");
@@ -76,6 +80,14 @@ function JournalEntryDashboard() {
     }
   };
 
+  const handleSort = (field: string) => {
+    setFilters(prev => ({
+        ...prev,
+        sortField: field,
+        sortOrder: prev.sortField === field && prev.sortOrder === "asc" ? "desc" : "asc"
+    }));
+  };
+
   if (error) {
     return <ErrorPage message={error} onRefresh={refresh} />;
   }
@@ -85,9 +97,9 @@ function JournalEntryDashboard() {
       {/* Header Section */}
       <div className="bg-background px-6 py-4 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 shadow-sm">
         <div>
-          <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
+          <h1 className="text-lg font-semibold tracking-tight flex items-center gap-2">
              Journal Entry Analysis
-             <Badge variant="secondary" className="text-[10px] uppercase font-bold py-0 h-4">Analytics Dashboard</Badge>
+             <Badge variant="secondary" className="text-[10px] uppercase font-medium py-0 h-4">Analytics Dashboard</Badge>
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Real-time audit, validation, and multi-line accounting distribution tracking.
@@ -119,11 +131,12 @@ function JournalEntryDashboard() {
           {/* Summary Stats */}
           <SummaryCards data={analytics} />
 
-
+          {/* New Risk Oversight Section */}
+          {!isLoading && <RiskInsights data={analytics} />}
 
           {/* Grouped Table with Loading State */}
           {isLoading ? (
-              <DataTableSkeleton columnCount={9} rowCount={10} />
+              <DataTableSkeleton columnCount={13} rowCount={10} />
           ) : (
               <JournalEntryTable 
                 groups={paginatedGroups} 
@@ -138,6 +151,11 @@ function JournalEntryDashboard() {
                 totalGroupCount={totalGroupCount}
                 onPageChange={setCurrentPage}
                 onPageSizeChange={setPageSize}
+                startDate={filters.startDate}
+                endDate={filters.endDate}
+                sortField={filters.sortField}
+                sortOrder={filters.sortOrder}
+                onSort={handleSort}
               />
           )}
         </div>

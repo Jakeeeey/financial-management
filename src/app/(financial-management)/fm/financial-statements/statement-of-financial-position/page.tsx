@@ -118,7 +118,7 @@ export default async function Page() {
             </header>
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
-            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-6 lg:p-8 bg-slate-50/50">
+            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-6 lg:p-8 bg-muted/50">
                 <StatementOfFinancialPositionClient />
             </main>
         </div>

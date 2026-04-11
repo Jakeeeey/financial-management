@@ -119,7 +119,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
               className="h-8 text-xs font-semibold gap-1.5"
               onClick={() => {
                 try {
-                  const dateStr = format(new Date(), "PP");
+                  const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
                   exportJournalToPdf([group], dateStr, `Journal_Entry_${group.jeNo}.pdf`);
                   toast.success("PDF exported successfully!");
                 } catch(e) {
@@ -134,7 +134,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
               className="h-8 text-xs font-semibold gap-1.5"
               onClick={() => {
                 try {
-                  const dateStr = format(new Date(), "PP");
+                  const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
                   exportJournalToExcel([group], dateStr, `Journal_Entry_${group.jeNo}.xlsx`);
                   toast.success("Excel exported successfully!");
                 } catch(e) {
@@ -209,7 +209,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                     ))}
                     {/* TOTAL */}
                     <TableRow className="bg-muted/30 hover:bg-muted/30 border-t-2 border-border/80">
-                      <TableCell colSpan={2} className="py-3 font-black text-xs text-foreground">TOTAL</TableCell>
+                      <TableCell colSpan={3} className="py-3 font-black text-xs text-foreground">TOTAL</TableCell>
                       <TableCell className="py-3 text-right font-black text-xs tabular-nums">
                         ₱{formatNumber(group.totalDebit)}
                       </TableCell>

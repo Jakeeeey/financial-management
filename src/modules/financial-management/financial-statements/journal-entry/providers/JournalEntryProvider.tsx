@@ -10,7 +10,8 @@ import {
 import { 
   groupJournalEntries, 
   calculateAnalytics, 
-  filterJournalEntries 
+  filterJournalEntries,
+  sortJournalEntryGroups
 } from "../services/journal-entry.helpers";
 import { toast } from "sonner";
 
@@ -42,20 +43,63 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
   const [error, setError] = React.useState<string | null>(null);
   const [currentPage, setCurrentPage] = React.useState(0);
   const [pageSize, setPageSize] = React.useState(10);
-  const [filters, setFilters] = React.useState<FilterState>({
-    search: "",
-    startDate: "2025-01-01",
-    endDate: "2025-12-30",
-    presetRange: "Yearly",
-    branch: "All Branches",
-    division: "All Divisions",
-    department: "All Departments",
-    entryType: "All Entry Types",
-    coa: "All Accounts",
-    sourceModule: "All Source Modules",
-    showPostedOnly: false,
-    status: "All Statuses",
+  const [filters, setFilters] = React.useState<FilterState>(() => {
+    const now = new Date();
+    return {
+      search: "",
+      startDate: `${now.getFullYear()}-01-01`,
+      endDate: `${now.getFullYear()}-12-31`,
+      presetRange: "Yearly",
+      selectedMonth: now.getMonth(),
+      selectedQuarter: Math.floor(now.getMonth() / 3) + 1,
+      selectedYear: now.getFullYear(),
+      branch: "All Branches",
+      division: "All Divisions",
+      department: "All Departments",
+      entryType: "All Entry Types",
+      coa: "All Accounts",
+      sourceModule: "All Source Modules",
+      showPostedOnly: false,
+      status: "All Statuses",
+      sortField: "date",
+      sortOrder: "desc"
+    };
   });
+
+  // Synchronize startDate and endDate based on preset range selections
+  React.useEffect(() => {
+    if (filters.presetRange === "Custom") return;
+
+    let start = new Date(filters.selectedYear, 0, 1);
+    let end = new Date(filters.selectedYear, 11, 31);
+
+    if (filters.presetRange === "Monthly") {
+      start = new Date(filters.selectedYear, filters.selectedMonth, 1);
+      end = new Date(filters.selectedYear, filters.selectedMonth + 1, 0);
+    } else if (filters.presetRange === "Quarterly") {
+      const startMonth = (filters.selectedQuarter - 1) * 3;
+      start = new Date(filters.selectedYear, startMonth, 1);
+      end = new Date(filters.selectedYear, startMonth + 3, 0);
+    }
+
+    const formatDateLocal = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const startStr = formatDateLocal(start);
+    const endStr = formatDateLocal(end);
+
+    if (startStr !== filters.startDate || endStr !== filters.endDate) {
+      setFilters(prev => ({
+        ...prev,
+        startDate: startStr,
+        endDate: endStr
+      }));
+    }
+  }, [filters.presetRange, filters.selectedMonth, filters.selectedQuarter, filters.selectedYear]);
 
   const fetchData = React.useCallback(async () => {
     setIsLoading(true);
@@ -89,10 +133,11 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
   const { filteredGroups, analytics } = React.useMemo(() => {
     const filtered = filterJournalEntries(entries, filters);
     const groups = groupJournalEntries(filtered);
-    const summary = calculateAnalytics(filtered, groups);
+    const sortedGroups = sortJournalEntryGroups(groups, filters);
+    const summary = calculateAnalytics(filtered, sortedGroups);
     
     return { 
-      filteredGroups: groups, 
+      filteredGroups: sortedGroups, 
       analytics: summary 
     };
   }, [entries, filters]);
@@ -117,11 +162,15 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
   }, [entries]);
 
   const resetFilters = () => {
+    const now = new Date();
     setFilters({
       search: "",
-      startDate: "2025-01-01",
-      endDate: "2025-12-30",
+      startDate: `${now.getFullYear()}-01-01`,
+      endDate: `${now.getFullYear()}-12-31`,
       presetRange: "Yearly",
+      selectedMonth: now.getMonth(),
+      selectedQuarter: Math.floor(now.getMonth() / 3) + 1,
+      selectedYear: now.getFullYear(),
       branch: "All Branches",
       division: "All Divisions",
       department: "All Departments",
@@ -130,6 +179,8 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
       sourceModule: "All Source Modules",
       showPostedOnly: false,
       status: "All Statuses",
+      sortField: "date",
+      sortOrder: "desc"
     });
   };
 

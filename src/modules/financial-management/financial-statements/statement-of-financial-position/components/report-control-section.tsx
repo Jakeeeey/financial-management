@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ interface Props {
 
 export function ReportControlSection({ validation, ratios }: Props) {
     const isBalanced = validation.isBalanced;
+    const { refresh, resetFilters, isLoading } = useBalanceSheet();
     const [isComparisonEnabled, setIsComparisonEnabled] = useState(true);
     const [dataBasis, setDataBasis] = useState("as-of");
     const [comparisonBasis, setComparisonBasis] = useState("match");
@@ -362,10 +364,10 @@ export function ReportControlSection({ validation, ratios }: Props) {
 
                         {/* Buttons */}
                         <div className="flex items-center gap-3 pt-6 border-t border-border mt-2 mt-auto">
-                            <Button variant="default" className="rounded-full px-8 h-9 text-xs font-bold shadow-sm transition-all focus-visible:ring-primary/50">
-                                Generate Report
+                            <Button variant="default" className="rounded-full px-8 h-9 text-xs font-bold shadow-sm transition-all focus-visible:ring-primary/50" onClick={() => refresh()} disabled={isLoading}>
+                                {isLoading ? "Loading..." : "Generate Report"}
                             </Button>
-                            <Button variant="outline" className="rounded-full px-8 h-9 text-xs font-bold border-input text-foreground hover:bg-accent transition-all">
+                            <Button variant="outline" className="rounded-full px-8 h-9 text-xs font-bold border-input text-foreground hover:bg-accent transition-all" onClick={() => resetFilters()} disabled={isLoading}>
                                 Clear Filters
                             </Button>
                         </div>

@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { format } from "date-fns";
 import { JournalEntryGroup } from "../types";
 
 const COMPANY_NAME = "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
@@ -22,11 +23,17 @@ const buildExportData = (groups: JournalEntryGroup[]) => {
   let sumCredit = 0;
 
   groups.forEach((group) => {
-    sumDebit += group.totalDebit;
-    sumCredit += group.totalCredit;
-
     const debitEntries = group.entries.filter((e) => e.debit > 0);
     const creditEntries = group.entries.filter((e) => e.credit > 0);
+
+    const currentDebitTotal = Number(debitEntries.reduce((sum, e) => sum + e.debit, 0).toFixed(2));
+    const currentCreditTotal = Number(creditEntries.reduce((sum, e) => sum + e.credit, 0).toFixed(2));
+    const netBalance = Number((currentDebitTotal - currentCreditTotal).toFixed(2));
+
+    sumDebit = Number((sumDebit + currentDebitTotal).toFixed(2));
+    sumCredit = Number((sumCredit + currentCreditTotal).toFixed(2));
+
+    const formattedDate = group.transactionDate ? format(new Date(group.transactionDate), "yyyy-MM-dd") : "";
 
     // Row 1: Debits
     const lastDebitIdx = Math.max(0, debitEntries.length - 1);
@@ -34,14 +41,14 @@ const buildExportData = (groups: JournalEntryGroup[]) => {
       const isFirst = idx === 0;
       const isLast = idx === lastDebitIdx;
       rows.push([
-        isFirst ? group.transactionDate : "",
+        isFirst ? formattedDate : "",
         isFirst ? group.sourceModule.split(" ")[0] : "",
         isFirst ? group.jeNo : "",
         entry.accountTitle,
         isFirst ? (group.description || "N/A") : `- ${entry.accountTitle} distribution`,
         entry.debit,
         "",
-        isLast ? group.totalDebit : "",
+        isLast ? currentDebitTotal : "",
       ]);
     });
 
@@ -57,14 +64,14 @@ const buildExportData = (groups: JournalEntryGroup[]) => {
         `- ${entry.accountTitle} distribution`,
         "",
         entry.credit,
-        isLast ? (group.totalDebit - group.totalCredit) : "",
+        isLast ? netBalance : "",
       ]);
     });
   });
 
   // Total Row
   rows.push([
-    "TOTAL", "", "", "", "", sumDebit, sumCredit, (sumDebit - sumCredit)
+    "TOTAL", "", "", "", "", sumDebit, sumCredit, Number((sumDebit - sumCredit).toFixed(2))
   ]);
 
   return rows;

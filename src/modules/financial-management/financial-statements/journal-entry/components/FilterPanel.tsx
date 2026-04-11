@@ -76,13 +76,13 @@ export default function FilterPanel({ filters, setFilters, uniqueSourceModules, 
         </div>
 
         {filters.presetRange !== "Custom" ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
              <Select 
                 value={filters.presetRange} 
                 onValueChange={(v) => updateFilter("presetRange", v as PresetRange)}
             >
               <SelectTrigger className="h-9">
-                <SelectValue placeholder="Select period" />
+                <SelectValue placeholder="Select period type" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="Monthly">Monthly</SelectItem>
@@ -90,9 +90,108 @@ export default function FilterPanel({ filters, setFilters, uniqueSourceModules, 
                 <SelectItem value="Yearly">Yearly</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-[10px] text-muted-foreground bg-muted/50 p-2 rounded italic">
-                Active Range: {filters.presetRange} - {format(new Date(), "MMMM yyyy")}
-            </p>
+
+            <div className="space-y-3 pt-1">
+                {filters.presetRange === "Monthly" && (
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-muted-foreground/70 uppercase">Month</Label>
+                            <Select 
+                                value={filters.selectedMonth.toString()} 
+                                onValueChange={(v) => updateFilter("selectedMonth", parseInt(v))}
+                            >
+                                <SelectTrigger className="h-9 text-[11px] bg-background">
+                                    <SelectValue placeholder="Month" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {Array.from({ length: 12 }).map((_, i) => (
+                                        <SelectItem key={i} value={i.toString()} className="text-[11px]">
+                                            {format(new Date(2000, i, 1), "MMMM")}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-muted-foreground/70 uppercase">Year</Label>
+                            <Select 
+                                value={filters.selectedYear.toString()} 
+                                onValueChange={(v) => updateFilter("selectedYear", parseInt(v))}
+                            >
+                                <SelectTrigger className="h-9 text-[11px] bg-background">
+                                    <SelectValue placeholder="Year" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {[2024, 2025, 2026, 2027].map((y) => (
+                                        <SelectItem key={y} value={y.toString()} className="text-[11px]">{y}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                )}
+
+                {filters.presetRange === "Quarterly" && (
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-muted-foreground/70 uppercase">Quarter</Label>
+                            <Select 
+                                value={filters.selectedQuarter.toString()} 
+                                onValueChange={(v) => updateFilter("selectedQuarter", parseInt(v))}
+                            >
+                                <SelectTrigger className="h-9 text-[11px] bg-background">
+                                    <SelectValue placeholder="Quarter" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {[1, 2, 3, 4].map((q) => (
+                                        <SelectItem key={q} value={q.toString()} className="text-[11px]">Q{q}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-muted-foreground/70 uppercase">Year</Label>
+                            <Select 
+                                value={filters.selectedYear.toString()} 
+                                onValueChange={(v) => updateFilter("selectedYear", parseInt(v))}
+                            >
+                                <SelectTrigger className="h-9 text-[11px] bg-background">
+                                    <SelectValue placeholder="Year" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {[2024, 2025, 2026, 2027].map((y) => (
+                                        <SelectItem key={y} value={y.toString()} className="text-[11px]">{y}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                )}
+
+                {filters.presetRange === "Yearly" && (
+                    <div className="space-y-1">
+                        <Label className="text-[10px] font-bold text-muted-foreground/70 uppercase">Reporting Year</Label>
+                        <Select 
+                            value={filters.selectedYear.toString()} 
+                            onValueChange={(v) => updateFilter("selectedYear", parseInt(v))}
+                        >
+                            <SelectTrigger className="h-9 text-[11px] bg-background">
+                                <SelectValue placeholder="Year" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {[2024, 2025, 2026, 2027].map((y) => (
+                                    <SelectItem key={y} value={y.toString()} className="text-[11px]">{y}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+                
+                <p className="text-[10px] text-primary/70 font-semibold flex items-center gap-1.5 mt-1 px-1">
+                    <CalendarIcon className="h-3 w-3" />
+                    {format(new Date(filters.startDate), "MMM d, yyyy")} - {format(new Date(filters.endDate), "MMM d, yyyy")}
+                </p>
+            </div>
           </div>
         ) : (
           <div className="grid gap-2">

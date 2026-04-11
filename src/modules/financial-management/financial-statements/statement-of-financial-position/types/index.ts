@@ -14,11 +14,13 @@ export interface ReportFilters {
     comparisonPeriod?: string;
 }
 
-export type AccountType = "Assets" | "Liabilities" | "Equity";
-export type AccountGroup = 
-    | "Current Assets" | "Non-Current Assets" 
-    | "Current Liabilities" | "Non-Current Liabilities" 
-    | "Share Capital" | "Retained Earnings";
+export type AccountType = "Assets" | "Liabilities" | "Equity" | string;
+export type AccountGroup =
+    | "Current Assets" | "Non-Current Assets"
+    | "Current Liabilities" | "Non-Current Liabilities"
+    | "Equity" | "Equity (Current Net Income)"
+    | "Share Capital" | "Retained Earnings"
+    | string;
 
 export interface FinancialAccount {
     id: string;
