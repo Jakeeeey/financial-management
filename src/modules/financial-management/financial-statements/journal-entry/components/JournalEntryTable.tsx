@@ -90,8 +90,8 @@ export default function JournalEntryTable({
       {/* Dynamic Table Header */}
       <div className="bg-background rounded-xl border p-5 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="space-y-1">
-            <h2 className="text-base font-semibold tracking-tight text-foreground uppercase">Journal Entry Analysis</h2>
-            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-md border border-dashed border-muted-foreground/30">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground uppercase">Journal Entry Analysis</h2>
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-md border border-dashed border-muted-foreground/30">
                 <span className="text-primary/70 uppercase tracking-wider">Period:</span>
                 <span className="text-foreground">
                     {format(new Date(startDate), "MMMM d, yyyy")} — {format(new Date(endDate), "MMMM d, yyyy")}
@@ -100,10 +100,10 @@ export default function JournalEntryTable({
         </div>
         <div className="flex flex-col items-end gap-1.5 p-3 bg-slate-950 rounded-lg border border-slate-800 shadow-inner">
             <div className="flex items-center gap-2">
-                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] font-medium tracking-wide uppercase py-0 px-2 h-4">Live Analytics</Badge>
+                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs font-medium tracking-wide uppercase py-0 px-2 h-4">Live Analytics</Badge>
                 <div className="h-1 w-1 rounded-full bg-emerald-500 animate-pulse" />
             </div>
-            <div className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">
+            <div className="text-xs font-medium text-slate-400 uppercase tracking-wide">
                 Basis: <span className="text-slate-100 italic">Accrual</span> | View: <span className="text-indigo-400">Analytics</span>
             </div>
         </div>
@@ -114,7 +114,7 @@ export default function JournalEntryTable({
           <TableHeader className="bg-muted/30 text-foreground border-b border-border">
             <TableRow className="hover:bg-muted/50">
               <TableHead 
-                className="w-[100px] text-xs font-semibold uppercase tracking-wide py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                className="w-[100px] text-sm font-semibold uppercase tracking-wide py-3 cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => onSort("date")}
               >
                 <div className="flex items-center gap-1">
@@ -127,7 +127,7 @@ export default function JournalEntryTable({
                 </div>
               </TableHead>
               <TableHead 
-                className="w-[100px] text-xs font-semibold uppercase tracking-wide py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                className="w-[100px] text-sm font-semibold uppercase tracking-wide py-3 cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => onSort("postingDate")}
               >
                 <div className="flex items-center gap-1">
@@ -139,10 +139,10 @@ export default function JournalEntryTable({
                   )}
                 </div>
               </TableHead>
-              <TableHead className="w-[70px] text-xs font-semibold uppercase tracking-wide text-center py-3">Type</TableHead>
-              <TableHead className="w-[120px] text-xs font-semibold uppercase tracking-wide py-3">Ref / JE No.</TableHead>
+              <TableHead className="w-[70px] text-sm font-semibold uppercase tracking-wide text-center py-3">Type</TableHead>
+              <TableHead className="w-[120px] text-sm font-semibold uppercase tracking-wide py-3">Ref / JE No.</TableHead>
               <TableHead 
-                className="w-[180px] text-xs font-semibold uppercase tracking-wide py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                className="w-[180px] text-sm font-semibold uppercase tracking-wide py-3 cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => onSort("accountTitle")}
               >
                 <div className="flex items-center gap-1">
@@ -154,12 +154,12 @@ export default function JournalEntryTable({
                   )}
                 </div>
               </TableHead>
-              <TableHead className="min-w-[200px] text-xs font-semibold uppercase tracking-wide py-3">Description / Narrative</TableHead>
-              <TableHead className="w-[100px] text-xs font-semibold uppercase tracking-wide py-3">Division</TableHead>
-              <TableHead className="w-[100px] text-xs font-semibold uppercase tracking-wide py-3">Department</TableHead>
-              <TableHead className="w-[100px] text-xs font-semibold uppercase tracking-wide py-3">Source</TableHead>
+              <TableHead className="min-w-[200px] text-sm font-semibold uppercase tracking-wide py-3">Description / Narrative</TableHead>
+              <TableHead className="w-[100px] text-sm font-semibold uppercase tracking-wide py-3">Division</TableHead>
+              <TableHead className="w-[100px] text-sm font-semibold uppercase tracking-wide py-3">Department</TableHead>
+              <TableHead className="w-[100px] text-sm font-semibold uppercase tracking-wide py-3">Source</TableHead>
               <TableHead 
-                className="w-[100px] text-xs font-semibold uppercase tracking-wide text-right py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                className="w-[100px] text-sm font-semibold uppercase tracking-wide text-right py-3 cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => onSort("debit")}
               >
                 <div className="flex items-center justify-end gap-1">
@@ -172,7 +172,7 @@ export default function JournalEntryTable({
                 </div>
               </TableHead>
               <TableHead 
-                className="w-[100px] text-xs font-semibold uppercase tracking-wide text-right py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                className="w-[100px] text-sm font-semibold uppercase tracking-wide text-right py-3 cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => onSort("credit")}
               >
                 <div className="flex items-center justify-end gap-1">
@@ -185,7 +185,7 @@ export default function JournalEntryTable({
                 </div>
               </TableHead>
               <TableHead 
-                className="w-[100px] text-xs font-semibold uppercase tracking-wide text-right py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                className="w-[100px] text-sm font-semibold uppercase tracking-wide text-right py-3 cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => onSort("balance")}
               >
                 <div className="flex items-center justify-end gap-1">
@@ -197,7 +197,7 @@ export default function JournalEntryTable({
                   )}
                 </div>
               </TableHead>
-              <TableHead className="w-[100px] text-xs font-semibold uppercase tracking-wide text-right py-3">Status</TableHead>
+              <TableHead className="w-[100px] text-sm font-semibold uppercase tracking-wide text-right py-3">Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -239,7 +239,7 @@ export default function JournalEntryTable({
                   <div className="flex flex-col gap-2">
                     {entriesToRender.map((e, idx) => (
                       <div key={idx} className={cn(
-                        "h-[40px] flex items-center text-xs overflow-hidden",
+                        "h-[40px] flex items-center text-sm overflow-hidden",
                         isDescCol ? "text-muted-foreground w-full max-w-[280px]" : "font-medium text-foreground w-full",
                         isCredit && !isDescCol && "pl-6 text-muted-foreground/80"
                       )}>
@@ -251,7 +251,7 @@ export default function JournalEntryTable({
                               </span>
                             </div>
                           ) : (
-                            <span className="italic text-muted-foreground text-xs truncate w-full block leading-tight">
+                            <span className="italic text-muted-foreground text-sm truncate w-full block leading-tight">
                               - {e.accountTitle} distribution
                             </span>
                           )
@@ -268,7 +268,7 @@ export default function JournalEntryTable({
                 return (
                   <div className="flex flex-col gap-2">
                     {entriesToRender.map((e, idx) => (
-                      <div key={idx} className="h-[40px] flex justify-end items-center text-xs font-medium text-foreground/90">
+                      <div key={idx} className="h-[40px] flex justify-end items-center text-sm font-medium text-foreground/90">
                         {e[field] > 0 ? formatNumber(e[field]) : ""}
                       </div>
                     ))}
@@ -283,18 +283,18 @@ export default function JournalEntryTable({
                     onClick={() => onDrillDown(group)}
                     className="cursor-pointer transition-colors border-b border-border hover:bg-muted/50 group/debit"
                   >
-                    <TableCell className="align-top py-4 font-medium text-xs text-foreground group-hover/debit:bg-muted/20">
+                    <TableCell className="align-top py-4 font-medium text-sm text-foreground group-hover/debit:bg-muted/20">
                       {group.transactionDate ? format(new Date(group.transactionDate), "yyyy-MM-dd") : "-"}
                     </TableCell>
-                    <TableCell className="align-top py-4 font-medium text-xs text-muted-foreground group-hover/debit:bg-muted/20">
+                    <TableCell className="align-top py-4 font-medium text-sm text-muted-foreground group-hover/debit:bg-muted/20">
                       {group.postingDate ? format(new Date(group.postingDate), "yyyy-MM-dd") : "-"}
                     </TableCell>
                     <TableCell className="align-top py-4 text-center group-hover/debit:bg-muted/20">
-                      <Badge variant="outline" className="text-[10px] font-medium shadow-sm border-border px-2 py-0 h-5">
+                      <Badge variant="outline" className="text-xs font-medium shadow-sm border-border px-2 py-0 h-5">
                         {group.sourceModule.split(" ")[0]}
                       </Badge>
                     </TableCell>
-                    <TableCell className="align-top py-4 font-mono text-xs font-semibold text-foreground group-hover/debit:text-primary group-hover/debit:bg-muted/20">
+                    <TableCell className="align-top py-4 font-mono text-sm font-semibold text-foreground group-hover/debit:text-primary group-hover/debit:bg-muted/20">
                       <div className="flex items-center gap-1.5">
                         {group.jeNo}
                         {group.isImbalanced && <AlertCircle className="h-3.5 w-3.5 text-rose-500" />}
@@ -308,14 +308,14 @@ export default function JournalEntryTable({
                       {renderDistributionStrStack(debitEntries, true, false)}
                     </TableCell>
 
-                    <TableCell className="align-top py-4 text-xs font-medium text-muted-foreground group-hover/debit:bg-muted/20">
+                    <TableCell className="align-top py-4 text-sm font-medium text-muted-foreground group-hover/debit:bg-muted/20">
                       {group.divisionName || group.division || "-"}
                     </TableCell>
-                    <TableCell className="align-top py-4 text-xs font-medium text-muted-foreground group-hover/debit:bg-muted/20">
+                    <TableCell className="align-top py-4 text-sm font-medium text-muted-foreground group-hover/debit:bg-muted/20">
                       {group.departmentName || group.department || "-"}
                     </TableCell>
 
-                    <TableCell className="align-top py-4 text-xs font-medium text-muted-foreground group-hover/debit:bg-muted/20">
+                    <TableCell className="align-top py-4 text-sm font-medium text-muted-foreground group-hover/debit:bg-muted/20">
                       {group.sourceModule || "-"}
                     </TableCell>
 
@@ -330,7 +330,7 @@ export default function JournalEntryTable({
                           debitEntries.map((_, i) => (
                             <div key={i} className="h-[40px] flex justify-end items-center">
                               {i === debitEntries.length - 1 ? (
-                                <span className="text-xs font-semibold text-foreground">
+                                <span className="text-sm font-semibold text-foreground">
                                   {formatNumber(currentDebitTotal)}
                                 </span>
                               ) : (
@@ -340,14 +340,14 @@ export default function JournalEntryTable({
                           ))
                         ) : (
                           <div className="h-[40px] flex justify-end items-center">
-                            <span className="text-xs font-semibold text-foreground">0.00</span>
+                            <span className="text-sm font-semibold text-foreground">0.00</span>
                           </div>
                         )}
                       </div>
                     </TableCell>
                     <TableCell className="align-top py-4 text-right group-hover/debit:bg-muted/20">
                       <div className={cn(
-                        "inline-flex items-center px-3 py-0.5 rounded-full text-xs font-medium border shadow-sm",
+                        "inline-flex items-center px-3 py-0.5 rounded-full text-sm font-medium border shadow-sm",
                         statusClasses
                       )}>
                         {isKnown ? group.status : statusStr.toUpperCase()}
@@ -389,11 +389,11 @@ export default function JournalEntryTable({
                             <div key={i} className="h-[40px] flex justify-end items-center">
                               {i === creditEntries.length - 1 ? (
                                 Math.abs(totalNetBalance) > 0.001 ? (
-                                  <span className="text-xs font-semibold text-rose-600">
+                                  <span className="text-sm font-semibold text-rose-600">
                                     {formatNumber(totalNetBalance)}
                                   </span>
                                 ) : (
-                                  <span className="text-xs font-medium text-muted-foreground">0.00</span>
+                                  <span className="text-sm font-medium text-muted-foreground">0.00</span>
                                 )
                               ) : (
                                 <span className="invisible">&nbsp;</span>
@@ -402,7 +402,7 @@ export default function JournalEntryTable({
                           ))
                         ) : (
                           <div className="h-[40px] flex justify-end items-center">
-                            <span className="text-xs font-medium text-muted-foreground">0.00</span>
+                            <span className="text-sm font-medium text-muted-foreground">0.00</span>
                           </div>
                         )}
                       </div>
@@ -425,13 +425,13 @@ export default function JournalEntryTable({
 
       {/* Pagination Controls — matches NewDataTable visual */}
       <div className="flex items-center justify-between px-2">
-        <div className="flex-1 text-xs text-muted-foreground font-medium">
+        <div className="flex-1 text-sm text-muted-foreground font-medium">
           Showing {totalGroupCount === 0 ? 0 : currentPage * pageSize + 1}-{Math.min((currentPage + 1) * pageSize, totalGroupCount)} of{" "}
           {totalGroupCount} group(s).
         </div>
         <div className="flex items-center space-x-6 lg:space-x-8">
           <div className="flex items-center space-x-2">
-            <p className="text-xs font-medium">Rows per page</p>
+            <p className="text-sm font-medium">Rows per page</p>
             <Select
               value={`${pageSize}`}
               onValueChange={(value) => onPageSizeChange(Number(value))}
@@ -448,7 +448,7 @@ export default function JournalEntryTable({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex w-[100px] items-center justify-center text-xs font-medium">
+          <div className="flex w-[100px] items-center justify-center text-sm font-medium">
             Page {currentPage + 1} of {pageCount}
           </div>
           <div className="flex items-center space-x-2">

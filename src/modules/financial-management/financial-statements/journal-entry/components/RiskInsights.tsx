@@ -37,7 +37,7 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
       <Card className="border shadow-sm bg-background/50 backdrop-blur-sm overflow-hidden whitespace-nowrap">
         <CardHeader className="py-3 px-6 flex flex-row items-center gap-2 border-b bg-muted/20">
           <Activity className="h-4 w-4 text-primary" />
-          <CardTitle className="text-xs font-semibold uppercase tracking-wide text-foreground">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-foreground">
             Status Breakdown
           </CardTitle>
         </CardHeader>
@@ -48,12 +48,12 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
                 key={status} 
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border shadow-sm"
               >
-                <span className="text-xs font-medium text-muted-foreground">{status}:</span>
-                <span className="text-xs font-semibold text-foreground">{count}</span>
+                <span className="text-sm font-medium text-muted-foreground">{status}:</span>
+                <span className="text-sm font-semibold text-foreground">{count}</span>
               </div>
             ))}
             {statusEntries.length === 0 && (
-              <span className="text-xs text-muted-foreground">No status data available</span>
+              <span className="text-sm text-muted-foreground">No status data available</span>
             )}
           </div>
         </CardContent>
@@ -64,10 +64,10 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
         <CardHeader className="py-3 px-6 flex flex-row items-center justify-between border-b border-rose-100 bg-rose-50/50">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-rose-600" />
-            <CardTitle className="text-xs font-semibold uppercase tracking-wide text-rose-900">
+            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-rose-900">
               High-Risk Journal Entries
             </CardTitle>
-            <Badge className="bg-rose-600 text-white border-none text-[10px] h-4 px-2 font-medium ml-1">
+            <Badge className="bg-rose-600 text-white border-none text-xs h-4 px-2 font-medium ml-1">
               Risk Audit ACTIVE
             </Badge>
           </div>
@@ -83,7 +83,7 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
                >
                  <ChevronLeft className="h-3 w-3" />
                </Button>
-               <span className="text-[10px] font-semibold text-rose-800 px-1">
+               <span className="text-xs font-semibold text-rose-800 px-1">
                  {riskPage + 1} / {totalRiskPages}
                </span>
                <Button 
@@ -106,7 +106,7 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
                 className="flex items-center justify-between px-6 py-4 hover:bg-rose-50/30 transition-colors group"
               >
                 <div className="flex flex-col items-start">
-                  <span className="text-xs font-medium text-muted-foreground">
+                  <span className="text-sm font-medium text-muted-foreground">
                     {entry.jeNo}
                   </span>
                 </div>
@@ -114,7 +114,7 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
                 <div className="flex flex-wrap justify-end gap-1.5">
                   {entry.riskReasons.map((reason, rIdx) => (
                     <React.Fragment key={rIdx}>
-                      <span className="text-xs font-semibold text-foreground">
+                      <span className="text-sm font-semibold text-foreground">
                         {reason}
                       </span>
                       {rIdx < entry.riskReasons.length - 1 && (
@@ -131,8 +131,8 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
                  <div className="h-10 w-10 rounded-full bg-emerald-50 flex items-center justify-center mb-2">
                     <Zap className="h-5 w-5 text-emerald-500" />
                  </div>
-                 <p className="text-xs font-semibold text-emerald-700">Audit Clean</p>
-                 <p className="text-xs mt-1 text-muted-foreground">No high-risk indicators detected in current filters.</p>
+                 <p className="text-sm font-semibold text-emerald-700">Audit Clean</p>
+                 <p className="text-sm mt-1 text-muted-foreground">No high-risk indicators detected in current filters.</p>
               </div>
             )}
           </div>

@@ -93,7 +93,7 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className={cn(
-              "text-[10px] font-semibold uppercase tracking-wide",
+              "text-xs font-semibold uppercase tracking-wide",
               card.destructive ? "text-destructive-foreground/90" : "text-muted-foreground"
             )}>
               {card.title}
@@ -103,9 +103,9 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-lg font-semibold tracking-tight">{card.value}</div>
+            <div className="text-xl font-semibold tracking-tight">{card.value}</div>
             <p className={cn(
-              "text-[10px] mt-1 truncate",
+              "text-xs mt-1 truncate",
               card.destructive ? "text-destructive-foreground/80 font-medium" : "text-muted-foreground"
             )}>
               {card.description}

@@ -109,14 +109,14 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
         
         {/* ── HEADER BAR ── */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-background shrink-0">
-          <DialogTitle className="text-lg font-bold text-foreground">
+          <DialogTitle className="text-xl font-bold text-foreground">
             Journal Entry Detail · <span className="font-mono text-muted-foreground">{group.jeNo}</span>
           </DialogTitle>
           <div className="flex items-center gap-2">
             <Button 
               variant="outline" 
               size="sm" 
-              className="h-8 text-xs font-semibold gap-1.5"
+              className="h-9 text-sm font-semibold gap-1.5"
               onClick={() => {
                 try {
                   const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
@@ -131,7 +131,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
             </Button>
             <Button 
               size="sm" 
-              className="h-8 text-xs font-semibold gap-1.5"
+              className="h-9 text-sm font-semibold gap-1.5"
               onClick={() => {
                 try {
                   const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
@@ -145,7 +145,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
               <FileDown className="w-3.5 h-3.5" /> Export Excel
             </Button>
             <DialogClose asChild>
-              <Button size="sm" className="h-8 text-xs font-semibold px-4">
+              <Button size="sm" className="h-9 text-sm font-semibold px-4">
                 Close
               </Button>
             </DialogClose>
@@ -175,45 +175,45 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50 hover:bg-muted/50 border-b border-border">
-                      <TableHead className="text-[11px] font-bold text-muted-foreground w-[100px] py-2.5">Account No.</TableHead>
-                      <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5">Account Title</TableHead>
-                      <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5">Description</TableHead>
-                      <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5 text-right">Debit</TableHead>
-                      <TableHead className="text-[11px] font-bold text-muted-foreground py-2.5 text-right">Credit</TableHead>
+                      <TableHead className="text-xs font-bold text-muted-foreground w-[100px] py-2.5">Account No.</TableHead>
+                      <TableHead className="text-xs font-bold text-muted-foreground py-2.5">Account Title</TableHead>
+                      <TableHead className="text-xs font-bold text-muted-foreground py-2.5">Description</TableHead>
+                      <TableHead className="text-xs font-bold text-muted-foreground py-2.5 text-right">Debit</TableHead>
+                      <TableHead className="text-xs font-bold text-muted-foreground py-2.5 text-right">Credit</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {group.entries.map((e, i) => (
                       <TableRow key={i} className="hover:bg-muted/50 border-b border-border/60">
-                        <TableCell className="py-3 text-xs font-mono text-muted-foreground">
+                        <TableCell className="py-3 text-sm font-mono text-muted-foreground">
                           {e.accountNumber || "N/A"}
                         </TableCell>
-                        <TableCell className="py-3 text-xs font-semibold text-foreground">
+                        <TableCell className="py-3 text-sm font-semibold text-foreground">
                           {e.accountTitle}
                         </TableCell>
-                        <TableCell className="py-3 text-xs text-muted-foreground">
+                        <TableCell className="py-3 text-sm text-muted-foreground">
                           {group.description}
                           {i === 0 && (
-                            <span className="block text-[10px] italic text-muted-foreground/80 mt-0.5">
+                            <span className="block text-xs italic text-muted-foreground/80 mt-0.5">
                               - {e.accountTitle} distribution
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="py-3 text-xs font-semibold tabular-nums text-right">
+                        <TableCell className="py-3 text-sm font-semibold tabular-nums text-right">
                           {e.debit > 0 ? `₱${formatNumber(e.debit)}` : ""}
                         </TableCell>
-                        <TableCell className="py-3 text-xs font-semibold tabular-nums text-right">
+                        <TableCell className="py-3 text-sm font-semibold tabular-nums text-right">
                           {e.credit > 0 ? `₱${formatNumber(e.credit)}` : ""}
                         </TableCell>
                       </TableRow>
                     ))}
                     {/* TOTAL */}
                     <TableRow className="bg-muted/30 hover:bg-muted/30 border-t-2 border-border/80">
-                      <TableCell colSpan={3} className="py-3 font-black text-xs text-foreground">TOTAL</TableCell>
-                      <TableCell className="py-3 text-right font-black text-xs tabular-nums">
+                      <TableCell colSpan={3} className="py-3 font-black text-sm text-foreground">TOTAL</TableCell>
+                      <TableCell className="py-3 text-right font-black text-sm tabular-nums">
                         ₱{formatNumber(group.totalDebit)}
                       </TableCell>
-                      <TableCell className="py-3 text-right font-black text-xs tabular-nums">
+                      <TableCell className="py-3 text-right font-black text-sm tabular-nums">
                         ₱{formatNumber(group.totalCredit)}
                       </TableCell>
                     </TableRow>
@@ -226,10 +226,10 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                 
                 {/* Drill-through Context */}
                 <div className="border border-border rounded-lg p-4 bg-background">
-                  <h3 className="text-xs font-bold text-foreground flex items-center gap-1.5 mb-3">
+                  <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5 mb-3">
                     <ShieldCheck className="w-3.5 h-3.5 text-muted-foreground" /> Drill-through Context
                   </h3>
-                  <dl className="space-y-2.5 text-[11px]">
+                  <dl className="space-y-2.5 text-xs">
                     <ContextRow label="Source Module:" value={drillThrough.sourceModule} />
                     <ContextRow label="Source Report:" value={drillThrough.sourceReport} />
                     <ContextRow label="Source Line:" value={drillThrough.sourceLine} bold />
@@ -240,7 +240,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
 
                 {/* Audit Trail */}
                 <div className="border border-border rounded-lg p-4 bg-background">
-                  <h3 className="text-xs font-bold text-foreground flex items-center gap-1.5 mb-3">
+                  <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5 mb-3">
                     <Clock className="w-3.5 h-3.5 text-muted-foreground" /> Audit Trail
                   </h3>
                   <div className="space-y-0">
@@ -261,20 +261,20 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                         <div className="pb-4 flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
                             <span className={cn(
-                              "text-[10px] font-bold uppercase px-1.5 py-0.5 rounded",
+                              "text-xs font-bold uppercase px-1.5 py-0.5 rounded",
                               audit.action === "Post"
                                 ? "bg-emerald-50 max-dark:bg-emerald-900/30 text-emerald-700 max-dark:text-emerald-400"
                                 : "bg-muted text-muted-foreground"
                             )}>
                               {audit.action}
                             </span>
-                            <span className="text-[10px] text-muted-foreground whitespace-nowrap flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1">
                               <Clock className="w-2.5 h-2.5" />
                               {format(audit.timestamp, "yyyy-MM-dd HH:mm")}
                             </span>
                           </div>
-                          <p className="text-[11px] font-semibold text-foreground mt-1">{audit.user}</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">{audit.note}</p>
+                          <p className="text-xs font-semibold text-foreground mt-1">{audit.user}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{audit.note}</p>
                         </div>
                       </div>
                     ))}
@@ -301,9 +301,9 @@ function ParamCard({ label, value, highlight, className }: {
       "border border-border rounded-lg px-3 py-2 bg-background min-w-[100px]",
       className
     )}>
-      <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">{label}</div>
+      <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{label}</div>
       <div className={cn(
-        "text-[11px] mt-0.5",
+        "text-sm mt-0.5",
         highlight ? "font-bold text-foreground" : "font-medium text-foreground/80"
       )}>{value}</div>
     </div>
@@ -324,9 +324,9 @@ function StatusParamCard({ label, value }: { label: string; value: string }) {
 
   return (
     <div className="border border-border rounded-lg px-3 py-2 bg-background min-w-[100px] flex flex-col justify-center">
-      <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-0.5">{label}</div>
+      <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-0.5">{label}</div>
       <div>
-        <span className={cn("inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border", statusClasses)}>
+        <span className={cn("inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border", statusClasses)}>
           {value}
         </span>
       </div>
@@ -339,9 +339,9 @@ function ContextRow({ label, value, bold, link }: {
 }) {
   return (
     <div>
-      <dt className="text-muted-foreground font-medium text-[10px]">{label}</dt>
+      <dt className="text-muted-foreground font-medium text-xs">{label}</dt>
       <dd className={cn(
-        "mt-0.5",
+        "mt-0.5 text-xs",
         link ? "text-indigo-600 dark:text-indigo-400 font-semibold cursor-pointer hover:underline flex items-center gap-1" : "",
         bold ? "font-bold text-foreground" : "font-medium text-foreground/80"
       )}>

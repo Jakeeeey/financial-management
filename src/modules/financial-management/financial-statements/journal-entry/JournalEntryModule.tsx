@@ -97,20 +97,20 @@ function JournalEntryDashboard() {
       {/* Header Section */}
       <div className="bg-background px-6 py-4 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 shadow-sm">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
              Journal Entry Analysis
-             <Badge variant="secondary" className="text-[10px] uppercase font-medium py-0 h-4">Analytics Dashboard</Badge>
+             <Badge variant="secondary" className="text-xs uppercase font-medium py-0 h-4">Analytics Dashboard</Badge>
           </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Real-time audit, validation, and multi-line accounting distribution tracking.
           </p>
         </div>
         <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => handleExport("PDF")}>
+            <Button variant="outline" size="sm" className="h-9 text-sm" onClick={() => handleExport("PDF")}>
                 <Printer className="mr-2 h-3.5 w-3.5" />
                 Export PDF
             </Button>
-            <Button size="sm" className="h-9 text-xs shadow-md" onClick={() => handleExport("Excel")}>
+            <Button size="sm" className="h-9 text-sm shadow-md" onClick={() => handleExport("Excel")}>
                 <FileDown className="mr-2 h-3.5 w-3.5" />
                 Export Excel
             </Button>
@@ -179,7 +179,7 @@ function Badge({ variant = "default", className = "", children }: any) {
     };
     return (
         <span className={cn(
-            "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+            "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
             variants[variant],
             className
         )}>
