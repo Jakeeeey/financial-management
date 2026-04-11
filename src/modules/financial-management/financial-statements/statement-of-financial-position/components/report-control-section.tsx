@@ -19,6 +19,8 @@ import { Separator } from "@/components/ui/separator";
 import { Filter, CalendarIcon, CheckCircle2, AlertTriangle, Download, FileSpreadsheet, Lock } from "lucide-react";
 import { ValidationStatus, KeyRatios } from "../types";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { CertificationModal } from "./CertificationModal";
 
 interface Props {
     validation: ValidationStatus;
@@ -27,10 +29,63 @@ interface Props {
 
 export function ReportControlSection({ validation, ratios }: Props) {
     const isBalanced = validation.isBalanced;
-    const { refresh, resetFilters, isLoading } = useBalanceSheet();
-    const [isComparisonEnabled, setIsComparisonEnabled] = useState(true);
-    const [dataBasis, setDataBasis] = useState("as-of");
-    const [comparisonBasis, setComparisonBasis] = useState("match");
+    const { refresh, resetFilters, isLoading, filters, setFilters } = useBalanceSheet();
+    const [isCertifyModalOpen, setIsCertifyModalOpen] = useState(false);
+
+    const updateFilter = (updates: Partial<typeof filters>) => {
+        setFilters(prev => ({ ...prev, ...updates }));
+    };
+
+    const handleBasisChange = (basis: typeof filters.dataBasis) => {
+        const today = new Date();
+        const year = today.getFullYear();
+        let startDate = filters.startDate;
+        let endDate = filters.endDate;
+
+        if (basis === "as-of") {
+            startDate = `${year}-01-01`;
+            endDate = today.toISOString().split("T")[0];
+        } else if (basis === "annually") {
+            startDate = `${year}-01-01`;
+            endDate = `${year}-12-31`;
+        } else if (basis === "monthly") {
+            const month = String(today.getMonth() + 1).padStart(2, "0");
+            startDate = `${year}-${month}-01`;
+            const lastDay = new Date(year, today.getMonth() + 1, 0).getDate();
+            endDate = `${year}-${month}-${lastDay}`;
+        } else if (basis === "quarterly") {
+            const quarter = Math.floor(today.getMonth() / 3) + 1;
+            const startMonth = String((quarter - 1) * 3 + 1).padStart(2, "0");
+            const endMonth = String(quarter * 3).padStart(2, "0");
+            startDate = `${year}-${startMonth}-01`;
+            const lastDay = new Date(year, quarter * 3, 0).getDate();
+            endDate = `${year}-${endMonth}-${lastDay}`;
+        }
+
+        const newFilters: Partial<typeof filters> = { dataBasis: basis, startDate, endDate };
+        
+        // If comparison is set to match, sync comparison dates too
+        if (filters.comparisonBasis === "match") {
+            const priorYear = parseInt(startDate.split("-")[0]) - 1;
+            newFilters.comparisonStartDate = startDate.replace(startDate.split("-")[0], String(priorYear));
+            newFilters.comparisonEndDate = endDate.replace(endDate.split("-")[0], String(priorYear));
+        }
+
+        updateFilter(newFilters);
+    };
+
+    const handleComparisonBasisChange = (basis: typeof filters.comparisonBasis) => {
+        let updates: Partial<typeof filters> = { comparisonBasis: basis };
+        
+        if (basis === "match") {
+            const yearStr = filters.startDate.split("-")[0];
+            const priorYear = parseInt(yearStr) - 1;
+            updates.comparisonStartDate = filters.startDate.replace(yearStr, String(priorYear));
+            updates.comparisonEndDate = filters.endDate.replace(yearStr, String(priorYear));
+        }
+        
+        updateFilter(updates);
+    };
 
     const formatVariance = (variance: number) => {
         if (variance > 0) return `+${variance.toFixed(2)}`;
@@ -78,15 +133,27 @@ export function ReportControlSection({ validation, ratios }: Props) {
                         <Badge variant="secondary" className="rounded-full px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider">
                             Validated
                         </Badge>
-                        <Button variant="outline" className="rounded-full shadow-sm h-9 px-4 text-xs font-bold">
+                        <Button 
+                            variant="ghost" 
+                            className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold bg-zinc-950 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+                            onClick={() => toast.info("Feature is coming soon")}
+                        >
                             <Download className="w-3.5 h-3.5 mr-2" />
                             Export PDF
                         </Button>
-                        <Button variant="outline" className="rounded-full shadow-sm h-9 px-4 text-xs font-bold">
+                        <Button 
+                            variant="ghost" 
+                            className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold bg-zinc-950 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+                            onClick={() => toast.info("Feature is coming soon")}
+                        >
                             <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />
                             Export Excel
                         </Button>
-                        <Button variant="secondary" className="rounded-full shadow-sm h-9 px-4 text-xs font-bold border border-input">
+                        <Button 
+                            variant="default" 
+                            className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold"
+                            onClick={() => setIsCertifyModalOpen(true)}
+                        >
                             <Lock className="w-3.5 h-3.5 mr-2" />
                             Certify Statement
                         </Button>
@@ -111,7 +178,7 @@ export function ReportControlSection({ validation, ratios }: Props) {
                                 <div className="space-y-4">
                                     <div className="space-y-2">
                                         <Label className="text-xs font-bold text-foreground">Date Selection</Label>
-                                        <Select value={dataBasis} onValueChange={setDataBasis}>
+                                        <Select value={filters.dataBasis} onValueChange={handleBasisChange}>
                                             <SelectTrigger className="w-full sm:w-[280px] h-9 text-xs font-bold border-input bg-card">
                                                 <SelectValue placeholder="Select basis..." />
                                             </SelectTrigger>
@@ -127,52 +194,101 @@ export function ReportControlSection({ validation, ratios }: Props) {
 
                                     {/* Conditional Sub-inputs for Data Selection */}
                                     <div className="flex flex-wrap gap-2 pt-1">
-                                        {dataBasis === "manual" && (
+                                        {filters.dataBasis === "manual" && (
                                             <>
                                                 <div className="relative w-full sm:w-[150px]">
-                                                    <Input placeholder="From" defaultValue="01/01/2026" className="h-9 text-xs font-medium border-input pr-10 bg-card" />
-                                                    <CalendarIcon className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                                                    <Input 
+                                                        type="date"
+                                                        value={filters.startDate} 
+                                                        onChange={(e) => updateFilter({ startDate: e.target.value })}
+                                                        className="h-9 text-xs font-medium border-input bg-card" 
+                                                    />
                                                 </div>
                                                 <div className="relative w-full sm:w-[150px]">
-                                                    <Input placeholder="To" defaultValue="03/31/2026" className="h-9 text-xs font-medium border-input pr-10 bg-card" />
-                                                    <CalendarIcon className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                                                    <Input 
+                                                        type="date"
+                                                        value={filters.endDate} 
+                                                        onChange={(e) => updateFilter({ endDate: e.target.value })}
+                                                        className="h-9 text-xs font-medium border-input bg-card" 
+                                                    />
                                                 </div>
                                             </>
                                         )}
 
-                                        {dataBasis === "as-of" && (
+                                        {filters.dataBasis === "as-of" && (
                                             <div className="relative w-full sm:w-[220px]">
-                                                <Input defaultValue="03/31/2026" className="h-9 text-xs font-medium border-input pr-10 bg-card" />
-                                                <CalendarIcon className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                                                <Input 
+                                                    type="date"
+                                                    value={filters.endDate} 
+                                                    onChange={(e) => updateFilter({ endDate: e.target.value })}
+                                                    className="h-9 text-xs font-medium border-input bg-card" 
+                                                />
                                             </div>
                                         )}
 
-                                        {dataBasis === "monthly" && (
+                                        {filters.dataBasis === "monthly" && (
                                             <>
-                                                <Select defaultValue="03">
+                                                <Select 
+                                                    value={filters.endDate.split("-")[1]} 
+                                                    onValueChange={(val) => {
+                                                        const year = filters.endDate.split("-")[0];
+                                                        const lastDay = new Date(parseInt(year), parseInt(val), 0).getDate();
+                                                        updateFilter({ 
+                                                            startDate: `${year}-${val}-01`,
+                                                            endDate: `${year}-${val}-${lastDay}` 
+                                                        });
+                                                    }}
+                                                >
                                                     <SelectTrigger className="w-[120px] h-9 text-xs font-medium border-input bg-card">
                                                         <SelectValue placeholder="Month" />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        <SelectItem value="03">March</SelectItem>
-                                                        {/* Other months would be here */}
+                                                        {["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"].map(m => (
+                                                            <SelectItem key={m} value={m}>
+                                                                {new Date(2000, parseInt(m)-1).toLocaleString('default', { month: 'long' })}
+                                                            </SelectItem>
+                                                        ))}
                                                     </SelectContent>
                                                 </Select>
-                                                <Select defaultValue="2026">
+                                                <Select 
+                                                    value={filters.endDate.split("-")[0]} 
+                                                    onValueChange={(val) => {
+                                                        const month = filters.endDate.split("-")[1];
+                                                        const lastDay = new Date(parseInt(val), parseInt(month), 0).getDate();
+                                                        updateFilter({ 
+                                                            startDate: `${val}-${month}-01`,
+                                                            endDate: `${val}-${month}-${lastDay}` 
+                                                        });
+                                                    }}
+                                                >
                                                     <SelectTrigger className="w-[100px] h-9 text-xs font-medium border-input bg-card">
                                                         <SelectValue placeholder="Year" />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        <SelectItem value="2026">2026</SelectItem>
-                                                        <SelectItem value="2025">2025</SelectItem>
+                                                        {["2024", "2025", "2026", "2027"].map(y => (
+                                                            <SelectItem key={y} value={y}>{y}</SelectItem>
+                                                        ))}
                                                     </SelectContent>
                                                 </Select>
                                             </>
                                         )}
 
-                                        {dataBasis === "quarterly" && (
+                                        {filters.dataBasis === "quarterly" && (
                                             <>
-                                                <Select defaultValue="q1">
+                                                <Select 
+                                                    value={`q${Math.ceil(parseInt(filters.endDate.split("-")[1])/3)}`}
+                                                    onValueChange={(val) => {
+                                                        const q = parseInt(val.charAt(1));
+                                                        const year = filters.endDate.split("-")[0];
+                                                        const startMonth = String((q - 1) * 3 + 1).padStart(2, "0");
+                                                        const endMonth = String(q * 3).padStart(2, "0");
+                                                        const lastDay = new Date(parseInt(year), q * 3, 0).getDate();
+                                                        updateFilter({
+                                                            startDate: `${year}-${startMonth}-01`,
+                                                            endDate: `${year}-${endMonth}-${lastDay}`
+                                                        });
+                                                    }}
+                                                >
                                                     <SelectTrigger className="w-[140px] h-9 text-xs font-medium border-input bg-card">
                                                         <SelectValue placeholder="Quarter" />
                                                     </SelectTrigger>
@@ -183,25 +299,45 @@ export function ReportControlSection({ validation, ratios }: Props) {
                                                         <SelectItem value="q4">4th Quarter</SelectItem>
                                                     </SelectContent>
                                                 </Select>
-                                                <Select defaultValue="2026">
+                                                <Select 
+                                                    value={filters.endDate.split("-")[0]}
+                                                    onValueChange={(val) => {
+                                                        const startMonth = filters.startDate.split("-")[1];
+                                                        const endMonth = filters.endDate.split("-")[1];
+                                                        const lastDay = new Date(parseInt(val), parseInt(endMonth), 0).getDate();
+                                                        updateFilter({
+                                                            startDate: `${val}-${startMonth}-01`,
+                                                            endDate: `${val}-${endMonth}-${lastDay}`
+                                                        });
+                                                    }}
+                                                >
                                                     <SelectTrigger className="w-[100px] h-9 text-xs font-medium border-input bg-card">
                                                         <SelectValue placeholder="Year" />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        <SelectItem value="2026">2026</SelectItem>
+                                                        {["2024", "2025", "2026", "2027"].map(y => (
+                                                            <SelectItem key={y} value={y}>{y}</SelectItem>
+                                                        ))}
                                                     </SelectContent>
                                                 </Select>
                                             </>
                                         )}
 
-                                        {dataBasis === "annually" && (
-                                            <Select defaultValue="2026">
+                                        {filters.dataBasis === "annually" && (
+                                            <Select 
+                                                value={filters.endDate.split("-")[0]}
+                                                onValueChange={(val) => updateFilter({ 
+                                                    startDate: `${val}-01-01`, 
+                                                    endDate: `${val}-12-31` 
+                                                })}
+                                            >
                                                 <SelectTrigger className="w-[120px] h-9 text-xs font-medium border-input bg-card">
                                                     <SelectValue placeholder="Year" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="2026">2026</SelectItem>
-                                                    <SelectItem value="2025">2025</SelectItem>
+                                                    {["2024", "2025", "2026", "2027"].map(y => (
+                                                        <SelectItem key={y} value={y}>{y}</SelectItem>
+                                                    ))}
                                                 </SelectContent>
                                             </Select>
                                         )}
@@ -211,12 +347,14 @@ export function ReportControlSection({ validation, ratios }: Props) {
                                 {/* Division */}
                                 <div className="space-y-2">
                                     <Label className="text-xs font-bold text-foreground">Division</Label>
-                                    <Select defaultValue="all">
+                                    <Select value={filters.divisionName || "all"} onValueChange={(val) => updateFilter({ divisionName: val === "all" ? "" : val })}>
                                         <SelectTrigger className="w-full sm:w-[220px] h-9 text-xs font-medium border-input">
                                             <SelectValue placeholder="All Divisions" />
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="all">All Divisions</SelectItem>
+                                            <SelectItem value="Main Office">Main Office</SelectItem>
+                                            <SelectItem value="Branch A">Branch A</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -224,12 +362,14 @@ export function ReportControlSection({ validation, ratios }: Props) {
                                 {/* Department */}
                                 <div className="space-y-2">
                                     <Label className="text-xs font-bold text-foreground">Department</Label>
-                                    <Select defaultValue="all">
+                                    <Select value={filters.departmentName || "all"} onValueChange={(val) => updateFilter({ departmentName: val === "all" ? "" : val })}>
                                         <SelectTrigger className="w-full sm:w-[150px] h-9 text-xs font-medium border-input">
                                             <SelectValue placeholder="All Departments" />
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="all">All Departments</SelectItem>
+                                            <SelectItem value="Finance">Finance</SelectItem>
+                                            <SelectItem value="Operations">Operations</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -238,119 +378,70 @@ export function ReportControlSection({ validation, ratios }: Props) {
                                 <div className="flex items-center gap-2 pt-2">
                                     <Checkbox
                                         id="comparison"
-                                        checked={isComparisonEnabled}
-                                        onCheckedChange={(checked) => setIsComparisonEnabled(!!checked)}
+                                        checked={filters.includeComparison}
+                                        onCheckedChange={(checked) => updateFilter({ includeComparison: !!checked })}
                                         className="h-4 w-4 rounded border-input data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary"
                                     />
                                     <Label
                                         htmlFor="comparison"
                                         className={cn(
                                             "text-xs font-bold cursor-pointer transition-colors",
-                                            isComparisonEnabled ? "text-primary font-bold" : "text-muted-foreground"
+                                            filters.includeComparison ? "text-primary font-bold" : "text-muted-foreground"
                                         )}
                                     >
                                         Enable comparison
                                     </Label>
                                 </div>
 
-                                {isComparisonEnabled ? (
+                                {filters.includeComparison ? (
                                     <div className="space-y-4 p-4 bg-muted/20 border border-border rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
                                         {/* Comparison Period Basis Selector */}
                                         <div className="space-y-2">
                                             <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Comparison Period</Label>
-                                            <Select value={comparisonBasis} onValueChange={setComparisonBasis}>
+                                            <Select value={filters.comparisonBasis} onValueChange={handleComparisonBasisChange}>
                                                 <SelectTrigger className="w-full sm:w-[280px] h-9 text-xs font-bold border-input bg-card">
                                                     <SelectValue placeholder="Select basis..." />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="match">Match Current Date Selection</SelectItem>
+                                                    <SelectItem value="match">Match Current Date Selection (Prior Year)</SelectItem>
                                                     <SelectItem value="as-of">As of Date</SelectItem>
                                                     <SelectItem value="manual">Manual Date Range</SelectItem>
-                                                    <SelectItem value="monthly">Monthly</SelectItem>
-                                                    <SelectItem value="quarterly">Quarterly</SelectItem>
-                                                    <SelectItem value="annually">Annually</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
 
                                         {/* Conditional Sub-inputs based on selection */}
                                         <div className="flex flex-wrap gap-2 pt-1">
-                                            {comparisonBasis === "manual" && (
+                                            {filters.comparisonBasis === "manual" && (
                                                 <>
                                                     <div className="relative w-full sm:w-[150px]">
-                                                        <Input placeholder="From" defaultValue="01/01/2026" className="h-9 text-xs font-medium border-input pr-10 bg-card" />
-                                                        <CalendarIcon className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                                                        <Input 
+                                                            type="date"
+                                                            value={filters.comparisonStartDate} 
+                                                            onChange={(e) => updateFilter({ comparisonStartDate: e.target.value })}
+                                                            className="h-9 text-xs font-medium border-input bg-card" 
+                                                        />
                                                     </div>
                                                     <div className="relative w-full sm:w-[150px]">
-                                                        <Input placeholder="To" defaultValue="03/31/2026" className="h-9 text-xs font-medium border-input pr-10 bg-card" />
-                                                        <CalendarIcon className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                                                        <Input 
+                                                            type="date"
+                                                            value={filters.comparisonEndDate} 
+                                                            onChange={(e) => updateFilter({ comparisonEndDate: e.target.value })}
+                                                            className="h-9 text-xs font-medium border-input bg-card" 
+                                                        />
                                                     </div>
                                                 </>
                                             )}
 
-                                            {comparisonBasis === "as-of" && (
+                                            {filters.comparisonBasis === "as-of" && (
                                                 <div className="relative w-full sm:w-[220px]">
-                                                    <Input defaultValue="03/31/2025" className="h-9 text-xs font-medium border-input pr-10 bg-card" />
-                                                    <CalendarIcon className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                                                    <Input 
+                                                        type="date"
+                                                        value={filters.comparisonEndDate} 
+                                                        onChange={(e) => updateFilter({ comparisonEndDate: e.target.value })}
+                                                        className="h-9 text-xs font-medium border-input bg-card" 
+                                                    />
                                                 </div>
-                                            )}
-
-                                            {comparisonBasis === "monthly" && (
-                                                <>
-                                                    <Select defaultValue="03">
-                                                        <SelectTrigger className="w-[120px] h-9 text-xs font-medium border-input bg-card">
-                                                            <SelectValue placeholder="Month" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="03">March</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Select defaultValue="2025">
-                                                        <SelectTrigger className="w-[100px] h-9 text-xs font-medium border-input bg-card">
-                                                            <SelectValue placeholder="Year" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="2025">2025</SelectItem>
-                                                            <SelectItem value="2024">2024</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                </>
-                                            )}
-
-                                            {comparisonBasis === "quarterly" && (
-                                                <>
-                                                    <Select defaultValue="q1">
-                                                        <SelectTrigger className="w-[140px] h-9 text-xs font-medium border-input bg-card">
-                                                            <SelectValue placeholder="Quarter" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="q1">1st Quarter</SelectItem>
-                                                            <SelectItem value="q2">2nd Quarter</SelectItem>
-                                                            <SelectItem value="q3">3rd Quarter</SelectItem>
-                                                            <SelectItem value="q4">4th Quarter</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                    <Select defaultValue="2025">
-                                                        <SelectTrigger className="w-[100px] h-9 text-xs font-medium border-input bg-card">
-                                                            <SelectValue placeholder="Year" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="2025">2025</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                </>
-                                            )}
-
-                                            {comparisonBasis === "annually" && (
-                                                <Select defaultValue="2025">
-                                                    <SelectTrigger className="w-[120px] h-9 text-xs font-medium border-input bg-card">
-                                                        <SelectValue placeholder="Year" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="2025">2025</SelectItem>
-                                                        <SelectItem value="2024">2024</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
                                             )}
                                         </div>
                                     </div>
@@ -364,10 +455,10 @@ export function ReportControlSection({ validation, ratios }: Props) {
 
                         {/* Buttons */}
                         <div className="flex items-center gap-3 pt-6 border-t border-border mt-2 mt-auto">
-                            <Button variant="default" className="rounded-full px-8 h-9 text-xs font-bold shadow-sm transition-all focus-visible:ring-primary/50" onClick={() => refresh()} disabled={isLoading}>
+                            <Button variant="default" className="rounded-lg px-8 h-9 text-xs font-bold shadow-sm transition-all focus-visible:ring-primary/50" onClick={() => refresh()} disabled={isLoading}>
                                 {isLoading ? "Loading..." : "Generate Report"}
                             </Button>
-                            <Button variant="outline" className="rounded-full px-8 h-9 text-xs font-bold border-input text-foreground hover:bg-accent transition-all" onClick={() => resetFilters()} disabled={isLoading}>
+                            <Button variant="outline" className="rounded-lg px-8 h-9 text-xs font-bold border-input text-foreground hover:bg-accent transition-all" onClick={() => resetFilters()} disabled={isLoading}>
                                 Clear Filters
                             </Button>
                         </div>
@@ -433,6 +524,10 @@ export function ReportControlSection({ validation, ratios }: Props) {
                     </div>
                 </div>
             </CardContent>
+            <CertificationModal 
+                isOpen={isCertifyModalOpen} 
+                onOpenChange={setIsCertifyModalOpen} 
+            />
         </Card>
     );
 }

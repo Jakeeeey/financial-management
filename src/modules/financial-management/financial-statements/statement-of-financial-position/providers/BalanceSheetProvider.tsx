@@ -82,35 +82,43 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   const [error, setError] = React.useState<string | null>(null);
   const [filters, setFilters] = React.useState<BalanceSheetFilterState>(DEFAULT_FILTERS);
 
-  const fetchData = React.useCallback(async () => {
+  const filtersRef = React.useRef(filters);
+  React.useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+
+  const fetchData = React.useCallback(async (overrideFilters?: BalanceSheetFilterState) => {
+    const currentFilters = overrideFilters || filtersRef.current;
     setIsLoading(true);
     setError(null);
 
     try {
       const query = new URLSearchParams();
-      query.set("startDate", filters.startDate);
-      query.set("endDate", filters.endDate);
+      query.set("startDate", currentFilters.startDate);
+      query.set("endDate", currentFilters.endDate);
 
-      if (filters.status) {
-        query.set("status", filters.status);
+      if (currentFilters.status) {
+        query.set("status", currentFilters.status);
       }
-      if (filters.includeComparison) {
+      if (currentFilters.includeComparison) {
         query.set("includeComparison", "true");
-        if (filters.comparisonStartDate) {
-          query.set("comparisonStartDate", filters.comparisonStartDate);
+        if (currentFilters.comparisonStartDate) {
+          query.set("comparisonStartDate", currentFilters.comparisonStartDate);
         }
-        if (filters.comparisonEndDate) {
-          query.set("comparisonEndDate", filters.comparisonEndDate);
+        if (currentFilters.comparisonEndDate) {
+          query.set("comparisonEndDate", currentFilters.comparisonEndDate);
         }
       }
-      if (filters.divisionName) {
-        query.set("divisionName", filters.divisionName);
+      if (currentFilters.divisionName) {
+        query.set("divisionName", currentFilters.divisionName);
       }
-      if (filters.departmentName) {
-        query.set("departmentName", filters.departmentName);
+      if (currentFilters.departmentName) {
+        query.set("departmentName", currentFilters.departmentName);
       }
 
-      const url = `/api/fm/financial-statements/balance-sheet?${query.toString()}`;
+      // Add cache-busting timestamp
+      const url = `/api/fm/financial-statements/balance-sheet?${query.toString()}&t=${Date.now()}`;
+      console.log("Fetching Balance Sheet:", url);
       const res = await fetch(url);
 
       if (!res.ok) {
@@ -132,20 +140,12 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
     } finally {
       setIsLoading(false);
     }
-  }, [
-    filters.startDate,
-    filters.endDate,
-    filters.status,
-    filters.includeComparison,
-    filters.comparisonStartDate,
-    filters.comparisonEndDate,
-    filters.divisionName,
-    filters.departmentName,
-  ]);
+  }, []);
 
   React.useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Derived: Map entries → FinancialAccount[] for the interactive table ───
   const accounts: FinancialAccount[] = React.useMemo(() => {

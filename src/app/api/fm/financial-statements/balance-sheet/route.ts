@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getBalanceSheet } from "@/modules/financial-management/financial-statements/statement-of-financial-position/services/balance-sheet.service";
 
+export const dynamic = "force-dynamic";
+
 /**
  * Proxy API route for the Balance Sheet external endpoint.
  * Secures the external API by injecting the VOS access token from cookies.
