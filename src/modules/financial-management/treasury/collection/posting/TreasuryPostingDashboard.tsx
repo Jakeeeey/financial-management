@@ -17,7 +17,7 @@ interface TreasuryPostingDashboardProps {
     };
 }
 
-export default function TreasuryPostingDashboard({ currentUser }: TreasuryPostingDashboardProps) {
+export default function TreasuryPostingDashboard({}: TreasuryPostingDashboardProps) {
     const {
         queue, isLoading, isPosting, refreshQueue,
         selectedPouch, isLoadingDetails, isReviewSheetOpen, setIsReviewSheetOpen,
