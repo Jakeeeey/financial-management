@@ -105,9 +105,74 @@ function SummaryCardItem({
     );
 }
 
+function CardSkeleton() {
+    return (
+        <div className="flex-1 min-w-[200px] border border-border bg-card rounded-2xl p-5 shadow-sm animate-pulse h-[140px]">
+            <div className="h-4 w-24 bg-muted rounded mb-4"></div>
+            <div className="h-7 w-32 bg-muted rounded mb-6"></div>
+            <div className="h-3 w-40 bg-muted rounded"></div>
+        </div>
+    );
+}
+
+function EmptyCard({ title, icon, subtitle }: { title: string, icon: React.ReactNode, subtitle: string }) {
+    return (
+        <div className="flex-1 min-w-[200px] border border-dashed border-border bg-card/50 rounded-2xl p-5 py-6 shadow-sm flex flex-col justify-between h-[140px]">
+            <div className="flex items-start justify-between">
+                <div>
+                    <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">{title}</h4>
+                    <div className="text-2xl font-bold text-muted-foreground/30 mb-2">—</div>
+                </div>
+                <div className="p-2 rounded-full bg-muted/30 opacity-50">
+                    {icon}
+                </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{subtitle}</p>
+        </div>
+    );
+}
+
 export function SummaryCards({ validation }: Props) {
-    const { summary, comparisonSummary, filters } = useBalanceSheet();
+    const { summary, comparisonSummary, filters, isLoading, isInitialLoad } = useBalanceSheet();
     const isComparisonEnabled = filters.includeComparison;
+
+    if (isLoading) {
+        return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <CardSkeleton />
+                <CardSkeleton />
+                <CardSkeleton />
+                <CardSkeleton />
+            </div>
+        );
+    }
+
+    if (isInitialLoad) {
+        return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <EmptyCard 
+                    title="Total Assets" 
+                    icon={<BarChart3 className="w-5 h-5 text-muted-foreground" />} 
+                    subtitle="Current period assets" 
+                />
+                <EmptyCard 
+                    title="Total Liabilities" 
+                    icon={<ShieldCheck className="w-5 h-5 text-muted-foreground" />} 
+                    subtitle="Current period obligations" 
+                />
+                <EmptyCard 
+                    title="Total Equity" 
+                    icon={<FileText className="w-5 h-5 text-muted-foreground" />} 
+                    subtitle="Owner's interest" 
+                />
+                <EmptyCard 
+                    title="Balance Variance" 
+                    icon={<AlertCircle className="w-5 h-5 text-muted-foreground" />} 
+                    subtitle="Accounting equation check" 
+                />
+            </div>
+        );
+    }
 
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

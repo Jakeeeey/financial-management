@@ -16,8 +16,6 @@ import {
 import { toast } from "sonner";
 
 interface JournalEntryContextType {
-  entries: JournalEntry[];
-  filteredGroups: JournalEntryGroup[];
   paginatedGroups: JournalEntryGroup[];
   analytics: AnalyticsSummary;
   filters: FilterState;
@@ -38,18 +36,43 @@ interface JournalEntryContextType {
 const JournalEntryContext = React.createContext<JournalEntryContextType | undefined>(undefined);
 
 export function JournalEntryProvider({ children }: { children: React.ReactNode }) {
-  const [entries, setEntries] = React.useState<JournalEntry[]>([]);
+  const [paginatedGroups, setPaginatedGroups] = React.useState<JournalEntryGroup[]>([]);
+  const [analytics, setAnalytics] = React.useState<AnalyticsSummary>({
+    jeCount: 0,
+    totalDebit: 0,
+    totalCredit: 0,
+    netBalance: 0,
+    largestEntry: 0,
+    imbalancedCount: 0,
+    postedCount: 0,
+    unpostedCount: 0,
+    statusBreakdown: {},
+    highRiskEntries: []
+  });
+  const [uniqueSourceModules, setUniqueSourceModules] = React.useState<string[]>(["All Source Modules"]);
+  const [totalGroupCount, setTotalGroupCount] = React.useState(0);
+  const [pageCount, setPageCount] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [currentPage, setCurrentPage] = React.useState(0);
   const [pageSize, setPageSize] = React.useState(10);
   const [filters, setFilters] = React.useState<FilterState>(() => {
     const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    const format = (date: Date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
     return {
       search: "",
-      startDate: `${now.getFullYear()}-01-01`,
-      endDate: `${now.getFullYear()}-12-31`,
-      presetRange: "Yearly",
+      startDate: format(firstDay),
+      endDate: format(lastDay),
+      presetRange: "Monthly",
       selectedMonth: now.getMonth(),
       selectedQuarter: Math.floor(now.getMonth() / 3) + 1,
       selectedYear: now.getFullYear(),
@@ -105,8 +128,18 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     setIsLoading(true);
     setError(null);
     try {
-      // Use local API proxy instead of direct external IP
-      const url = `/api/fm/financial-statements/journal-entry?startDate=${filters.startDate}&endDate=${filters.endDate}`;
+      const query = new URLSearchParams();
+      query.set("page", currentPage.toString());
+      query.set("pageSize", pageSize.toString());
+      
+      // Add all filters to query string
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          query.set(key, value.toString());
+        }
+      });
+
+      const url = `/api/fm/financial-statements/journal-entry?${query.toString()}`;
       const res = await fetch(url);
       
       if (!res.ok) {
@@ -114,8 +147,15 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
           throw new Error(errData.error || "Failed to fetch ledger entries");
       }
       
-      const data = await res.json();
-      setEntries(Array.isArray(data) ? data : []);
+      const response = await res.json();
+      
+      // Update state with server response
+      setPaginatedGroups(response.data || []);
+      setAnalytics(response.analytics);
+      setTotalGroupCount(response.metadata.totalGroups);
+      setPageCount(response.metadata.totalPages);
+      setUniqueSourceModules(["All Source Modules", ...(response.metadata.uniqueSourceModules || [])]);
+      
     } catch (e: any) {
       console.error("Journal Entry Fetch Error:", e);
       setError(e.message);
@@ -123,51 +163,40 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     } finally {
       setIsLoading(false);
     }
-  }, [filters.startDate, filters.endDate]);
+  }, [filters, currentPage, pageSize]);
 
   React.useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Derived state: Filtered entries and grouped data
-  const { filteredGroups, analytics } = React.useMemo(() => {
-    const filtered = filterJournalEntries(entries, filters);
-    const groups = groupJournalEntries(filtered);
-    const sortedGroups = sortJournalEntryGroups(groups, filters);
-    const summary = calculateAnalytics(filtered, sortedGroups);
-    
-    return { 
-      filteredGroups: sortedGroups, 
-      analytics: summary 
-    };
-  }, [entries, filters]);
-
-  // Reset page to 0 when filters change
+  // Reset page to 0 when filters change (except for pagination handled keys)
+  // We handle this carefully to avoid infinite loops
+  const prevFiltersRef = React.useRef(filters);
   React.useEffect(() => {
-    setCurrentPage(0);
+    // If anything other than date bounds changed (which are handled by the date effects), reset page
+    if (JSON.stringify(prevFiltersRef.current) !== JSON.stringify(filters)) {
+      setCurrentPage(0);
+      prevFiltersRef.current = filters;
+    }
   }, [filters]);
-
-  const pageCount = Math.max(1, Math.ceil(filteredGroups.length / pageSize));
-
-  // Paginated slice of groups for the current page
-  const paginatedGroups = React.useMemo(() => {
-    const start = currentPage * pageSize;
-    return filteredGroups.slice(start, start + pageSize);
-  }, [filteredGroups, currentPage, pageSize]);
-
-  // Extract unique sorted Source Modules for filtering
-  const uniqueSourceModules = React.useMemo(() => {
-    const modules = new Set(entries.map((e) => e.sourceModule).filter(Boolean));
-    return ["All Source Modules", ...Array.from(modules).sort()];
-  }, [entries]);
 
   const resetFilters = () => {
     const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    const format = (date: Date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
     setFilters({
       search: "",
-      startDate: `${now.getFullYear()}-01-01`,
-      endDate: `${now.getFullYear()}-12-31`,
-      presetRange: "Yearly",
+      startDate: format(firstDay),
+      endDate: format(lastDay),
+      presetRange: "Monthly",
       selectedMonth: now.getMonth(),
       selectedQuarter: Math.floor(now.getMonth() / 3) + 1,
       selectedYear: now.getFullYear(),
@@ -190,8 +219,6 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
   };
 
   const value = {
-    entries,
-    filteredGroups,
     paginatedGroups,
     analytics,
     filters,
@@ -204,7 +231,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     currentPage,
     pageSize,
     pageCount,
-    totalGroupCount: filteredGroups.length,
+    totalGroupCount,
     setCurrentPage,
     setPageSize: handleSetPageSize,
   };

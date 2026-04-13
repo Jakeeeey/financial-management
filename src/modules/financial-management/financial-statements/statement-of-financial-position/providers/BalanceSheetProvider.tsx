@@ -25,6 +25,7 @@ interface BalanceSheetContextType {
   filters: BalanceSheetFilterState;
   setFilters: React.Dispatch<React.SetStateAction<BalanceSheetFilterState>>;
   isLoading: boolean;
+  isInitialLoad: boolean;
   error: string | null;
 
   // Actions
@@ -78,7 +79,8 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   const [comparisonEntries, setComparisonEntries] = React.useState<BalanceSheetEntry[]>([]);
   const [summary, setSummary] = React.useState<BalanceSheetSummary | null>(null);
   const [comparisonSummary, setComparisonSummary] = React.useState<BalanceSheetSummary | null>(null);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [isInitialLoad, setIsInitialLoad] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [filters, setFilters] = React.useState<BalanceSheetFilterState>(DEFAULT_FILTERS);
 
@@ -90,6 +92,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
   const fetchData = React.useCallback(async (overrideFilters?: BalanceSheetFilterState) => {
     const currentFilters = overrideFilters || filtersRef.current;
     setIsLoading(true);
+    setIsInitialLoad(false);
     setError(null);
 
     try {
@@ -162,10 +165,12 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
+  /* 
   React.useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  */
 
   // ─── Derived: Map entries → FinancialAccount[] for the interactive table ───
   const accounts: FinancialAccount[] = React.useMemo(() => {
@@ -241,6 +246,11 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
 
   const resetFilters = () => {
     setFilters(DEFAULT_FILTERS);
+    setEntries([]);
+    setComparisonEntries([]);
+    setSummary(null);
+    setComparisonSummary(null);
+    setIsInitialLoad(true);
   };
 
   const value: BalanceSheetContextType = {
@@ -254,6 +264,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
     filters,
     setFilters,
     isLoading,
+    isInitialLoad,
     error,
     refresh: fetchData,
     resetFilters,

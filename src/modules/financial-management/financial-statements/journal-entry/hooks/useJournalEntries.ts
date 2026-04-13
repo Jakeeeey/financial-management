@@ -11,9 +11,8 @@ export function useJournalEntries() {
   
   return {
     // Data
-    entries: context.entries,
-    groups: context.filteredGroups,
     paginatedGroups: context.paginatedGroups,
+    groups: context.paginatedGroups,
     analytics: context.analytics,
     uniqueSourceModules: context.uniqueSourceModules,
     

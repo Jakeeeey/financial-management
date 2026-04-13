@@ -42,7 +42,6 @@ export default function JournalEntryModule() {
 
 function JournalEntryDashboard() {
   const { 
-    groups, 
     paginatedGroups,
     analytics, 
     filters, 
@@ -63,20 +62,41 @@ function JournalEntryDashboard() {
   const [selectedGroup, setSelectedGroup] = React.useState<JournalEntryGroup | null>(null);
   const [isDetailOpen, setIsDetailOpen] = React.useState(false);
 
-  const handleExport = (type: "PDF" | "Excel") => {
+  const handleExport = async (type: "PDF" | "Excel") => {
     const formattedStart = format(new Date(filters.startDate), "MMM d, yyyy");
     const formattedEnd = format(new Date(filters.endDate), "MMM d, yyyy");
     const dateRangeText = `${formattedStart} to ${formattedEnd}`;
+    
+    // Create toast with loading state
+    const toastId = toast.loading(`Preparing ${type} export for the entire range...`);
+
     try {
+      // Build query string for FULL dataset (ignoring pagination pageSize)
+      const query = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) query.set(key, value.toString());
+      });
+      query.set("page", "0");
+      query.set("pageSize", "100000"); // Request a very large page for export
+
+      const url = `/api/fm/financial-statements/journal-entry?${query.toString()}`;
+      const res = await fetch(url);
+      
+      if (!res.ok) throw new Error("Failed to fetch data for export");
+      
+      const response = await res.json();
+      const allGroups = response.data || [];
+
       if (type === "Excel") {
-        exportJournalToExcel(groups, dateRangeText, "General_Journal_Export.xlsx");
-        toast.success("Excel exported successfully!");
+        exportJournalToExcel(allGroups, dateRangeText, "General_Journal_Export.xlsx");
+        toast.success("Excel exported successfully!", { id: toastId });
       } else {
-        exportJournalToPdf(groups, dateRangeText, "General_Journal_Export.pdf");
-        toast.success("PDF exported successfully!");
+        exportJournalToPdf(allGroups, dateRangeText, "General_Journal_Export.pdf");
+        toast.success("PDF exported successfully!", { id: toastId });
       }
     } catch (err) {
-      toast.error(`Failed to export ${type}`);
+      console.error("Export Error:", err);
+      toast.error(`Failed to export ${type}`, { id: toastId });
     }
   };
 

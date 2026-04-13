@@ -8,16 +8,7 @@ import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { Loader2 } from "lucide-react";
 
 function StatementContent() {
-    const { accounts, validation, ratios, isLoading, error } = useBalanceSheet();
-
-    if (isLoading) {
-        return (
-            <div className="flex flex-col items-center justify-center py-24 gap-4">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground font-medium">Loading financial statement...</p>
-            </div>
-        );
-    }
+    const { validation, ratios, error } = useBalanceSheet();
 
     if (error) {
         return (
@@ -29,7 +20,7 @@ function StatementContent() {
     }
 
     return (
-        <>
+        <div className="flex flex-col gap-6 animate-in fade-in duration-500">
             {/* Top Container: Header + Filters + Validation/Ratios */}
             <ReportControlSection validation={validation} ratios={ratios} />
 
@@ -37,8 +28,8 @@ function StatementContent() {
             <SummaryCards validation={validation} />
 
             {/* Bottom: Main Table */}
-            <InteractiveStatementTable accounts={accounts} />
-        </>
+            <InteractiveStatementTable />
+        </div>
     );
 }
 

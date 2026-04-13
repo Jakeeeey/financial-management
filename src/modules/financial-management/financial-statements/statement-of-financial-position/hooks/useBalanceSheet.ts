@@ -25,6 +25,7 @@ export function useBalanceSheet() {
     filters: context.filters,
     setFilters: context.setFilters,
     isLoading: context.isLoading,
+    isInitialLoad: context.isInitialLoad,
     error: context.error,
 
     // Actions
