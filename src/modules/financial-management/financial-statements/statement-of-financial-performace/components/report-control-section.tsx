@@ -17,20 +17,15 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Filter, Download, FileSpreadsheet, Lock } from "lucide-react";
-import { KeyRatiosSchema } from "../types";
-import { z } from "zod";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { format } from "date-fns";
 import { CertificationModal } from "./CertificationModal";
-
-type Ratios = z.infer<typeof KeyRatiosSchema>;
+import { exportToExcel, exportToPdf } from "../services/export.service";
 
 export function ReportControlSection() {
-    const { refresh, resetFilters, isLoading, filters, setFilters, data, validation } = useFinancialPerformance();
+    const { refresh, resetFilters, isLoading, isInitialLoad, filters, setFilters, data, validation } = useFinancialPerformance();
     const [isCertifyModalOpen, setIsCertifyModalOpen] = useState(false);
-
-    const ratios = data?.ratios;
-    const comparisonRatios = data?.comparisonRatios;
 
     const updateFilter = (updates: Partial<typeof filters>) => {
         setFilters(prev => ({ ...prev, ...updates }));
@@ -86,9 +81,9 @@ export function ReportControlSection() {
                 <span className="text-[9px] text-muted-foreground font-medium uppercase tracking-wider">{subtitle}</span>
                 <div className="flex items-center justify-between mt-3">
                     <span className="text-2xl font-bold tracking-tight text-foreground">
-                        {current.toFixed(1)}%
+                        {isInitialLoad ? "—" : `${current.toFixed(1)}%`}
                     </span>
-                    {(priorValue !== undefined || variance !== 0) && (
+                    {!isInitialLoad && (priorValue !== undefined || variance !== 0) && (
                         <div className="flex items-center gap-1.5">
                             {isPositive && <span className="text-foreground text-[10px]">▲</span>}
                             {isNegative && <span className="text-foreground text-[10px]">▼</span>}
@@ -108,6 +103,55 @@ export function ReportControlSection() {
         );
     };
 
+    const getComparisonLabel = () => {
+        if (!filters.includeComparison) return "";
+        if (filters.comparisonBasis === "monthly") return `Past FS (${new Date(filters.comparisonStartDate).toLocaleString('default', { month: 'long' })} ${filters.comparisonStartDate.split("-")[0]})`;
+        if (filters.comparisonBasis === "quarterly") {
+             const startMonth = parseInt(filters.comparisonStartDate.split("-")[1]);
+             const q = Math.ceil(startMonth / 3);
+             return `Past FS (Q${q} ${filters.comparisonStartDate.split("-")[0]})`;
+        }
+        return `Past FS (${filters.comparisonStartDate.split("-")[0]})`;
+    };
+
+    const getDateRangeText = () => {
+        try {
+            const startStr = format(new Date(filters.startDate), "MMM d, yyyy");
+            const endStr = format(new Date(filters.endDate), "MMM d, yyyy");
+            return `${startStr} to ${endStr}`;
+        } catch (e) {
+            return `${filters.startDate} to ${filters.endDate}`;
+        }
+    };
+
+    const handleExportPdf = () => {
+        if (!data || isInitialLoad) {
+            toast.error("Please generate a report first");
+            return;
+        }
+        exportToPdf(
+            data,
+            getDateRangeText(),
+            filters.includeComparison,
+            getComparisonLabel(),
+            filters.taxRate
+        );
+    };
+
+    const handleExportExcel = () => {
+        if (!data || isInitialLoad) {
+            toast.error("Please generate a report first");
+            return;
+        }
+        exportToExcel(
+            data,
+            getDateRangeText(),
+            filters.includeComparison,
+            getComparisonLabel(),
+            filters.taxRate
+        );
+    };
+
     return (
         <Card className="shadow-none border border-border overflow-hidden bg-card mb-6">
             <CardContent className="p-0">
@@ -121,26 +165,33 @@ export function ReportControlSection() {
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        <Badge variant="secondary" className={cn("rounded-full px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider", validation.isCertified ? "bg-success/20 text-success" : "bg-success/10 text-success")}>
+                        <div className={cn(
+                            "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all shadow-sm",
+                            validation.isCertified 
+                                ? "bg-success/20 text-success border-success/30 shadow-success/10" 
+                                : "bg-success/10 text-success border-success/20 shadow-success/5"
+                        )}>
                             {validation.isCertified ? "Certified" : "Validated"}
-                        </Badge>
+                        </div>
                         <Button 
                             variant="outline" 
-                            className="rounded-full shadow-sm h-9 px-4 text-xs font-bold"
-                            onClick={() => toast.info("Export PDF is coming soon")}
+                            className="rounded-xl shadow-sm h-9 px-4 text-xs font-bold"
+                            onClick={handleExportPdf}
+                            disabled={isInitialLoad || isLoading}
                         >
                             Export PDF
                         </Button>
                         <Button 
                             variant="outline" 
-                            className="rounded-full shadow-sm h-9 px-4 text-xs font-bold"
-                            onClick={() => toast.info("Export Excel is coming soon")}
+                            className="rounded-xl shadow-sm h-9 px-4 text-xs font-bold"
+                            onClick={handleExportExcel}
+                            disabled={isInitialLoad || isLoading}
                         >
                             Export Excel
                         </Button>
                         <Button 
                             variant="default" 
-                            className="rounded-full shadow-sm h-9 px-6 text-xs font-bold"
+                            className="rounded-xl shadow-sm h-9 px-6 text-xs font-bold"
                             onClick={() => setIsCertifyModalOpen(true)}
                             disabled={validation.isCertified}
                         >
@@ -539,26 +590,26 @@ export function ReportControlSection() {
                             <RatioItem
                                 title="Gross Profit Margin"
                                 subtitle="Gross Profit ÷ Revenue"
-                                value={ratios?.grossProfitMargin}
-                                priorValue={comparisonRatios?.grossProfitMargin}
+                                value={data?.grossProfitMargin}
+                                priorValue={data?.comparisonData?.grossProfitMargin}
                             />
                             <RatioItem
                                 title="Operating Expense Ratio"
                                 subtitle="Operating Expenses ÷ Revenue"
-                                value={ratios?.operatingExpenseRatio}
-                                priorValue={comparisonRatios?.operatingExpenseRatio}
+                                value={data?.operatingExpenseRatio}
+                                priorValue={data?.comparisonData?.operatingExpenseRatio}
                             />
                             <RatioItem
                                 title="Net Profit Margin"
                                 subtitle="Net Income ÷ Revenue"
-                                value={ratios?.netProfitMargin}
-                                priorValue={comparisonRatios?.netProfitMargin}
+                                value={data?.netProfitMargin}
+                                priorValue={data?.comparisonData?.netProfitMargin}
                             />
                             <RatioItem
                                 title="Effective Tax Rate"
                                 subtitle="Income Tax Expense ÷ Income Before Tax"
-                                value={ratios?.effectiveTaxRate}
-                                priorValue={comparisonRatios?.effectiveTaxRate}
+                                value={data?.effectiveTaxRate}
+                                priorValue={data?.comparisonData?.effectiveTaxRate}
                             />
                         </div>
                     </div>

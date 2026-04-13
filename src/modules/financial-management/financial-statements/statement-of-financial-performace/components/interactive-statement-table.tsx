@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFinancialPerformance } from "../hooks/useFinancialPerformance";
-import { FinancialPerformanceEntry, FinancialPerformanceSummary } from "../types";
+import { FinancialPerformanceEntry, FinancialPerformanceResponse } from "../types";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -63,7 +63,7 @@ const formatVarianceAmount = (variance: number) => {
 };
 
 export function InteractiveStatementTable() {
-    const { data, filters, isLoading } = useFinancialPerformance();
+    const { data, filters, isLoading, isInitialLoad } = useFinancialPerformance();
     const [activeTab, setActiveTab] = useState("summary");
     const [searchQuery, setSearchQuery] = useState("");
 
@@ -89,11 +89,38 @@ export function InteractiveStatementTable() {
         );
     }
 
+    if (isInitialLoad) {
+        return (
+            <div className="space-y-4">
+                <div className="h-10 w-48 bg-muted rounded-full mx-auto sm:mx-0 opacity-50"></div>
+                <Card className="h-[600px] flex flex-col items-center justify-center border-border border-dashed shadow-sm bg-card/50">
+                    <div className="bg-muted p-4 rounded-full mb-4">
+                        <svg className="w-8 h-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                    </div>
+                    <h3 className="text-xl font-bold text-foreground mb-2">No Statement Generated</h3>
+                    <p className="text-muted-foreground text-sm max-w-md text-center">
+                        Please adjust the filters above and click "Generate Report" to view the Statement of Financial Performance.
+                    </p>
+                </Card>
+            </div>
+        );
+    }
+
     if (!data) return null;
 
-    const summary = data.summary;
-    const comparisonSummary = data.comparisonSummary;
+    const summary = data;
+    const comparisonSummary = data.comparisonData;
     const includeComparison = filters.includeComparison && !!comparisonSummary;
+
+    // Helper to get total of a specific section in entries
+    const getSectionTotal = (sourceData: FinancialPerformanceResponse | undefined, sectionName: string) => {
+        if (!sourceData || !sourceData.entries) return undefined;
+        return sourceData.entries
+            .filter(e => e.reportSection === sectionName)
+            .reduce((acc, curr) => acc + curr.amount, 0);
+    };
 
     // ----- SUMMARY VIEW RENDERER -----
     const SummaryRow = ({
@@ -169,14 +196,14 @@ export function InteractiveStatementTable() {
 
     // ----- DETAIL VIEW RENDERER -----
     const renderDetailGroup = (typeLabel: string, typeKey: string) => {
-        const filteredEntries = data.entries.filter(e => {
-            if (e.type !== typeKey) return false;
+        const filteredEntries = data.entries.filter((e: FinancialPerformanceEntry) => {
+            if (e.reportSection !== typeKey) return false;
             // Search filter
             if (searchQuery) {
                 const q = searchQuery.toLowerCase();
-                return e.account.toLowerCase().includes(q) || 
-                       e.division.toLowerCase().includes(q) || 
-                       e.department.toLowerCase().includes(q);
+                return e.accountTitle.toLowerCase().includes(q) || 
+                       (e.division || "").toLowerCase().includes(q) || 
+                       (e.department || "").toLowerCase().includes(q);
             }
             return true;
         });
@@ -190,12 +217,12 @@ export function InteractiveStatementTable() {
                         {typeLabel}
                     </TableCell>
                 </TableRow>
-                {filteredEntries.map(entry => (
-                    <TableRow key={entry.id} className="border-0 hover:bg-muted/30">
-                        <TableCell className="py-3 px-4 text-muted-foreground font-medium">{entry.type}</TableCell>
-                        <TableCell className="py-3 px-4 font-bold text-foreground">{entry.account}</TableCell>
-                        <TableCell className="py-3 px-4 text-muted-foreground">{entry.division}</TableCell>
-                        <TableCell className="py-3 px-4 text-muted-foreground">{entry.department}</TableCell>
+                {filteredEntries.map((entry: FinancialPerformanceEntry, idx: number) => (
+                    <TableRow key={`${entry.glCode}-${idx}`} className="border-0 hover:bg-muted/30">
+                        <TableCell className="py-3 px-4 text-muted-foreground font-medium">{entry.reportSection}</TableCell>
+                        <TableCell className="py-3 px-4 font-bold text-foreground">{entry.accountTitle}</TableCell>
+                        <TableCell className="py-3 px-4 text-muted-foreground">{entry.division || "-"}</TableCell>
+                        <TableCell className="py-3 px-4 text-muted-foreground">{entry.department || "-"}</TableCell>
                         <TableCell className="py-3 px-4 text-right tabular-nums font-medium">
                             {formatAccAmount(entry.amount, entry.amount < 0)}
                         </TableCell>
@@ -258,48 +285,59 @@ export function InteractiveStatementTable() {
                                 </TableHeader>
                                 <TableBody className="bg-card">
                                     {/* --- SALES --- */}
-                                    <SummaryRow label="Gross Sales" currentValue={summary.grossSales} priorValue={comparisonSummary?.grossSales} isBold hasBorderTop={false} />
-                                    <SummaryRow label="Less: Sales Returns" currentValue={summary.salesReturns} priorValue={comparisonSummary?.salesReturns} isIndented isNegativeFormat />
-                                    <SummaryRow label="Less: Trade Discounts" currentValue={summary.tradeDiscounts} priorValue={comparisonSummary?.tradeDiscounts} isIndented isNegativeFormat />
-                                    <SummaryRow label="Less: Bad Orders" currentValue={summary.badOrders} priorValue={comparisonSummary?.badOrders} isIndented isNegativeFormat />
+                                    <SummaryRow label="Gross Sales" currentValue={Math.abs(summary.totalRevenue)} priorValue={comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) : undefined} isBold hasBorderTop={false} />
                                     
-                                    <SummaryRow label="Total Deductions" currentValue={summary.totalDeductions} priorValue={comparisonSummary?.totalDeductions} isBold hasBorderTop isNegativeFormat />
-                                    <SummaryRow label="Net Sales" currentValue={summary.netSales} priorValue={comparisonSummary?.netSales} isBold hasBorderTop hasBorderBottom />
+                                    {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Contra Revenue").map((entry: FinancialPerformanceEntry, idx: number) => {
+                                        const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
+                                        return (
+                                            <SummaryRow 
+                                                key={`sales-${entry.glCode}-${idx}`} 
+                                                label={`Less: ${entry.accountTitle}`} 
+                                                currentValue={entry.amount} 
+                                                priorValue={compEntry?.amount} 
+                                                isIndented 
+                                                isNegativeFormat 
+                                            />
+                                        );
+                                    })}
+
+                                    <SummaryRow 
+                                        label="Total Deductions" 
+                                        currentValue={getSectionTotal(summary, "Contra Revenue")} 
+                                        priorValue={getSectionTotal(comparisonSummary, "Contra Revenue")} 
+                                        isBold hasBorderTop isNegativeFormat 
+                                    />
+                                    
+                                    <SummaryRow 
+                                        label="Net Sales" 
+                                        currentValue={Math.abs(summary.totalRevenue) - Math.abs(getSectionTotal(summary, "Contra Revenue") || 0)} 
+                                        priorValue={comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) - Math.abs(getSectionTotal(comparisonSummary, "Contra Revenue") || 0) : undefined} 
+                                        isBold hasBorderTop hasBorderBottom 
+                                    />
                                     
                                     {/* --- COGS --- */}
                                     <SummaryRow 
                                         label="Cost of Goods Sold" 
-                                        currentValue={summary.costOfGoodsSold} 
-                                        priorValue={comparisonSummary?.costOfGoodsSold} 
+                                        currentValue={summary.totalCostOfSales} 
+                                        priorValue={comparisonSummary?.totalCostOfSales} 
                                         isBold 
                                         expandable 
                                         sectionKey="cogs" 
                                     />
                                     {expandedSections.cogs && (
                                         <>
-                                            <SummaryRow label="Beginning Inventory" currentValue={summary.cogsBreakdown.beginningInventory} priorValue={comparisonSummary?.cogsBreakdown.beginningInventory} isIndented />
-                                            <SummaryRow label="Purchases" currentValue={summary.cogsBreakdown.purchases} priorValue={comparisonSummary?.cogsBreakdown.purchases} isIndented />
-                                            <SummaryRow label="Add: Freight In" currentValue={summary.cogsBreakdown.freightIn} priorValue={comparisonSummary?.cogsBreakdown.freightIn} isIndented />
-                                            <SummaryRow 
-                                                label="Total Purchases" 
-                                                currentValue={summary.cogsBreakdown.purchases + summary.cogsBreakdown.freightIn} 
-                                                priorValue={comparisonSummary ? comparisonSummary.cogsBreakdown.purchases + comparisonSummary.cogsBreakdown.freightIn : undefined} 
-                                                isBold isIndented hasBorderTop 
-                                            />
-                                            <SummaryRow label="Less: Purchase Returns" currentValue={summary.cogsBreakdown.purchaseReturns} priorValue={comparisonSummary?.cogsBreakdown.purchaseReturns} isIndented />
-                                            <SummaryRow 
-                                                label="Net Purchases" 
-                                                currentValue={summary.cogsBreakdown.purchases + summary.cogsBreakdown.freightIn - summary.cogsBreakdown.purchaseReturns} 
-                                                priorValue={comparisonSummary ? comparisonSummary.cogsBreakdown.purchases + comparisonSummary.cogsBreakdown.freightIn - comparisonSummary.cogsBreakdown.purchaseReturns : undefined} 
-                                                isBold isIndented hasBorderTop 
-                                            />
-                                            <SummaryRow 
-                                                label="Goods Available for Sale" 
-                                                currentValue={summary.cogsBreakdown.beginningInventory + summary.cogsBreakdown.purchases + summary.cogsBreakdown.freightIn - summary.cogsBreakdown.purchaseReturns} 
-                                                priorValue={comparisonSummary ? comparisonSummary.cogsBreakdown.beginningInventory + comparisonSummary.cogsBreakdown.purchases + comparisonSummary.cogsBreakdown.freightIn - comparisonSummary.cogsBreakdown.purchaseReturns : undefined} 
-                                                isBold isIndented hasBorderTop 
-                                            />
-                                            <SummaryRow label="Less: Ending Inventory" currentValue={summary.cogsBreakdown.endingInventory} priorValue={comparisonSummary?.cogsBreakdown.endingInventory} isIndented isNegativeFormat />
+                                            {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Purchases / Cost of Sales").map((entry: FinancialPerformanceEntry, idx: number) => {
+                                                const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
+                                                return (
+                                                    <SummaryRow 
+                                                        key={`cogs-${entry.glCode}-${idx}`} 
+                                                        label={entry.accountTitle} 
+                                                        currentValue={entry.amount} 
+                                                        priorValue={compEntry?.amount} 
+                                                        isIndented 
+                                                    />
+                                                );
+                                            })}
                                         </>
                                     )}
 
@@ -308,8 +346,8 @@ export function InteractiveStatementTable() {
                                     {/* --- EXPENSES --- */}
                                     <SummaryRow 
                                         label="Operating Expenses" 
-                                        currentValue={summary.operatingExpenses} 
-                                        priorValue={comparisonSummary?.operatingExpenses} 
+                                        currentValue={summary.totalOperatingExpenses} 
+                                        priorValue={comparisonSummary?.totalOperatingExpenses} 
                                         isBold 
                                         expandable 
                                         sectionKey="opex" 
@@ -317,12 +355,12 @@ export function InteractiveStatementTable() {
                                     />
                                     {expandedSections.opex && (
                                         <>
-                                            {data.entries.filter(e => e.type === "Operating Expenses").map(entry => {
-                                                const compEntry = data.comparisonEntries?.find(c => c.account === entry.account);
+                                            {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Operating Expenses").map((entry: FinancialPerformanceEntry, idx: number) => {
+                                                const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
                                                     <SummaryRow 
-                                                        key={entry.id} 
-                                                        label={entry.account} 
+                                                        key={`opex-${entry.glCode}-${idx}`} 
+                                                        label={entry.accountTitle} 
                                                         currentValue={entry.amount} 
                                                         priorValue={compEntry?.amount} 
                                                         isIndented 
@@ -335,8 +373,8 @@ export function InteractiveStatementTable() {
                                     {/* --- OTHER INC/EXP --- */}
                                     <SummaryRow 
                                         label="Other Expense" 
-                                        currentValue={summary.otherExpense} 
-                                        priorValue={comparisonSummary?.otherExpense} 
+                                        currentValue={summary.totalOtherExpense} 
+                                        priorValue={comparisonSummary?.totalOtherExpense} 
                                         isBold 
                                         expandable 
                                         sectionKey="otherExp" 
@@ -344,12 +382,12 @@ export function InteractiveStatementTable() {
                                     />
                                     {expandedSections.otherExp && (
                                         <>
-                                            {data.entries.filter(e => e.type === "Other Expense").map(entry => {
-                                                const compEntry = data.comparisonEntries?.find(c => c.account === entry.account);
+                                            {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Other Expense").map((entry: FinancialPerformanceEntry, idx: number) => {
+                                                const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
                                                     <SummaryRow 
-                                                        key={entry.id} 
-                                                        label={entry.account} 
+                                                        key={`oexp-${entry.glCode}-${idx}`} 
+                                                        label={entry.accountTitle} 
                                                         currentValue={entry.amount} 
                                                         priorValue={compEntry?.amount} 
                                                         isIndented 
@@ -361,20 +399,20 @@ export function InteractiveStatementTable() {
 
                                     <SummaryRow 
                                         label="Other Income" 
-                                        currentValue={summary.otherIncome} 
-                                        priorValue={comparisonSummary?.otherIncome} 
+                                        currentValue={summary.totalOtherIncome} 
+                                        priorValue={comparisonSummary?.totalOtherIncome} 
                                         isBold 
                                         expandable 
                                         sectionKey="otherInc" 
                                     />
                                     {expandedSections.otherInc && (
                                         <>
-                                            {data.entries.filter(e => e.type === "Other Income").map(entry => {
-                                                const compEntry = data.comparisonEntries?.find(c => c.account === entry.account);
+                                            {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Other Income").map((entry: FinancialPerformanceEntry, idx: number) => {
+                                                const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
                                                     <SummaryRow 
-                                                        key={entry.id} 
-                                                        label={entry.account} 
+                                                        key={`oinc-${entry.glCode}-${idx}`} 
+                                                        label={entry.accountTitle} 
                                                         currentValue={entry.amount} 
                                                         priorValue={compEntry?.amount} 
                                                         isIndented 
@@ -384,11 +422,16 @@ export function InteractiveStatementTable() {
                                         </>
                                     )}
 
-                                    <SummaryRow label="Net Other Income (Loss)" currentValue={summary.netOtherIncome} priorValue={comparisonSummary?.netOtherIncome} isBold hasBorderTop />
+                                    <SummaryRow 
+                                        label="Net Other Income (Loss)" 
+                                        currentValue={summary.totalOtherIncome - summary.totalOtherExpense} 
+                                        priorValue={comparisonSummary ? comparisonSummary.totalOtherIncome - comparisonSummary.totalOtherExpense : undefined} 
+                                        isBold hasBorderTop 
+                                    />
                                     
                                     {/* --- FINAL --- */}
                                     <SummaryRow label="Income Before Tax" currentValue={summary.incomeBeforeTax} priorValue={comparisonSummary?.incomeBeforeTax} isBold hasBorderTop />
-                                    <SummaryRow label={`Tax (${filters.taxRate}%)`} currentValue={summary.taxExpense} priorValue={comparisonSummary?.taxExpense} isIndented isNegativeFormat hasBorderBottom />
+                                    <SummaryRow label={`Tax (${filters.taxRate}%)`} currentValue={summary.incomeTaxExpense} priorValue={comparisonSummary?.incomeTaxExpense} isIndented isNegativeFormat hasBorderBottom />
                                     
                                     {/* Final output table row custom style */}
                                     <TableRow className="bg-zinc-950 hover:bg-zinc-900 border-0 shadow-lg group transition-colors">
@@ -420,11 +463,11 @@ export function InteractiveStatementTable() {
                         <div className="p-5 sm:p-6 lg:p-8 bg-card border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div>
                                 <h2 className="text-xl font-bold tracking-tight text-foreground">Detail View</h2>
-                                <p className="text-sm text-muted-foreground mt-1 font-medium">Grouped by type for review and validation</p>
+                                <p className="text-sm text-muted-foreground mt-1 font-medium">Grouped by section for review and validation</p>
                             </div>
                             <div className="w-full md:w-[350px]">
                                 <Input 
-                                    placeholder="Search account, type, division, or department..."
+                                    placeholder="Search account, section, division, or department..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="h-10 text-sm border-input rounded-xl bg-card transition-all focus-visible:ring-1 w-full"
@@ -436,7 +479,7 @@ export function InteractiveStatementTable() {
                             <Table className="min-w-[1000px] w-full text-sm">
                                 <TableHeader className="bg-background sticky top-0 z-10 shadow-sm border-b border-border">
                                     <TableRow className="hover:bg-background border-0">
-                                        <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[15%]">Type</TableHead>
+                                        <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[15%]">Section</TableHead>
                                         <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[35%]">Account</TableHead>
                                         <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[15%]">Division</TableHead>
                                         <TableHead className="py-4 px-4 font-bold text-muted-foreground w-[15%]">Department</TableHead>
@@ -452,13 +495,13 @@ export function InteractiveStatementTable() {
                                     {renderDetailGroup("Other Expense", "Other Expense")}
 
                                     {/* Floating specific row for Net Income to stand out */}
-                                    {data.summary && (
+                                    {data && (
                                         <TableRow className="bg-zinc-950 hover:bg-zinc-900 border-0 sticky bottom-0 z-10 shadow-lg shadow-zinc-900/50">
                                             <TableCell colSpan={4} className="py-4 px-4 font-bold text-zinc-50 text-base rounded-bl-lg">
                                                 Net Income
                                             </TableCell>
                                             <TableCell className="py-4 px-4 text-right tabular-nums text-zinc-50 font-bold text-base rounded-br-lg">
-                                                {formatAccAmount(data.summary.netIncome)}
+                                                {formatAccAmount(data.netIncome)}
                                             </TableCell>
                                         </TableRow>
                                     )}

@@ -1,62 +1,41 @@
 import { z } from "zod";
 
 export const FinancialPerformanceEntrySchema = z.object({
-  id: z.string(),
-  type: z.string(), // Sales, Purchases / Cost of Sales, Operating Expenses, Other Income, Other Expense
-  account: z.string(),
-  division: z.string(),
-  department: z.string(),
+  glCode: z.string().nullable().optional(),
+  accountTitle: z.string(),
+  accountType: z.string().nullable().optional(),
+  division: z.string().nullable().optional(),
+  department: z.string().nullable().optional(),
+  reportSection: z.string().nullable().optional(),
   amount: z.number(),
-  // For hierarchical grouping in summary view (optional, can be derived, but good to have)
-  parentGroupId: z.string().optional(),
 });
 
-export const FinancialPerformanceSummarySchema = z.object({
-  grossSales: z.number(),
-  salesReturns: z.number(),
-  tradeDiscounts: z.number(),
-  badOrders: z.number(),
-  totalDeductions: z.number(), // derived but can be from backend
-  netSales: z.number(),
-  costOfGoodsSold: z.number(),
-  cogsBreakdown: z.object({
-    beginningInventory: z.number(),
-    purchases: z.number(),
-    freightIn: z.number(),
-    purchaseReturns: z.number(),
-    endingInventory: z.number(),
-  }),
+export const FinancialPerformanceResponseSchema = z.object({
+  entries: z.array(FinancialPerformanceEntrySchema),
+  totalRevenue: z.number(),
+  totalCostOfSales: z.number(),
   grossProfit: z.number(),
-  operatingExpenses: z.number(),
-  otherExpense: z.number(),
-  otherIncome: z.number(),
-  netOtherIncome: z.number(),
+  totalOperatingExpenses: z.number(),
+  operatingIncome: z.number(),
+  totalOtherIncome: z.number(),
+  totalOtherExpense: z.number(),
   incomeBeforeTax: z.number(),
-  taxExpense: z.number(),
+  incomeTaxExpense: z.number(),
   netIncome: z.number(),
-});
-
-export const KeyRatiosSchema = z.object({
+  taxRateUsed: z.number(),
   grossProfitMargin: z.number(),
   operatingExpenseRatio: z.number(),
   netProfitMargin: z.number(),
   effectiveTaxRate: z.number(),
 });
 
-export const FinancialPerformanceResponseSchema = z.object({
-  entries: z.array(FinancialPerformanceEntrySchema),
-  summary: FinancialPerformanceSummarySchema,
-  ratios: KeyRatiosSchema,
-  comparisonEntries: z.array(FinancialPerformanceEntrySchema).optional(),
-  comparisonSummary: FinancialPerformanceSummarySchema.optional(),
-  comparisonRatios: KeyRatiosSchema.optional(),
-});
-
 // ─── Inferred TypeScript types ───
 export type FinancialPerformanceEntry = z.infer<typeof FinancialPerformanceEntrySchema>;
-export type FinancialPerformanceSummary = z.infer<typeof FinancialPerformanceSummarySchema>;
-export type KeyRatiosData = z.infer<typeof KeyRatiosSchema>;
-export type FinancialPerformanceResponse = z.infer<typeof FinancialPerformanceResponseSchema>;
+export type FinancialPerformanceResponseData = z.infer<typeof FinancialPerformanceResponseSchema>;
+
+export interface FinancialPerformanceResponse extends FinancialPerformanceResponseData {
+  comparisonData?: FinancialPerformanceResponseData;
+}
 
 // ─── Filter state managed by the provider ───
 export interface FinancialPerformanceFilterState {
