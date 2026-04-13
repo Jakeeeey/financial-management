@@ -12,7 +12,8 @@ import { NavUser } from "../../_components/nav-user";
 
 import { cookies } from "next/headers";
 
-import ComingSoon from "@/app/(financial-management)/fm/_components/ComingSoon";
+// 🚀 FIX: Import the new DisbursementModule instead of ComingSoon
+import DisbursementModule from "@/modules/financial-management/treasury/disbursement/DisbursementModule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,8 +81,8 @@ export default async function Page() {
 
     return (
         // ✅ UI ONLY: avoid page-level scroll container; prevent horizontal overflow
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            {/* ? Topbar is fixed in place because ONLY <main> scrolls */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-50/30">
+            {/* 📌 Topbar is fixed in place because ONLY <main> scrolls */}
             <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
                 <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4 overflow-hidden">
                     <SidebarTrigger className="-ml-1 shrink-0" />
@@ -118,7 +119,8 @@ export default async function Page() {
 
             {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-                <ComingSoon />
+                {/* 🚀 FIX: Render the Disbursement Module here */}
+                <DisbursementModule />
             </main>
         </div>
     );

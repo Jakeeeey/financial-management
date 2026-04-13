@@ -11,6 +11,7 @@ import { useBulkApproval } from "./hooks/useBulkApproval";
 import DraftListTable from "./components/DraftListTable";
 import VoteModal from "./components/VoteModal";
 import { ActivityFeed } from "./components/ActivityFeed";
+import { DateRangePicker } from "../components/DateRangePicker";
 
 export default function BulkApprovalModule() {
   const {
@@ -33,6 +34,8 @@ export default function BulkApprovalModule() {
     openVoteModal,
     closeModal,
     onVoteComplete,
+    dateRange,
+    setDateRange,
   } = useBulkApproval();
 
   if (unauthorized) {
@@ -76,14 +79,17 @@ export default function BulkApprovalModule() {
               : "Multi-tier consensus approval for disbursement drafts."}
           </p>
         </div>
-        <Button
-          className="rounded-full shadow-lg font-bold tracking-wide shadow-primary/20 active:scale-95 transition-all"
-          onClick={() => window.location.reload()}
-          disabled={loading}
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          <DateRangePicker date={dateRange} setDate={setDateRange} />
+          <Button
+            className="rounded-full shadow-lg font-bold tracking-wide shadow-primary/20 active:scale-95 transition-all"
+            onClick={() => window.location.reload()}
+            disabled={loading}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Main Content */}
