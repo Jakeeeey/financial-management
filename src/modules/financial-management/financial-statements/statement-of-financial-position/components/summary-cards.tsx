@@ -94,7 +94,7 @@ function SummaryCardItem({
                                 </div>
                             </>
                         ) : (
-                            <div className="text-[10px] text-muted-foreground italic mt-2 bg-muted/30 p-2 rounded text-center">
+                            <div className="text-xs text-muted-foreground italic mt-2 bg-muted/30 p-2 rounded text-center">
                                 Enable comparison in filters to see variance against a prior period.
                             </div>
                         )}

@@ -41,7 +41,7 @@ export function InteractiveStatementTable({ accounts }: Props) {
                 return (
                     <div className="flex flex-col mt-1 mb-1">
                         <span className="font-medium">{item.account}</span>
-                        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mt-0.5">
+                        <span className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">
                             {item.type} &bull; {item.group}
                         </span>
                     </div>

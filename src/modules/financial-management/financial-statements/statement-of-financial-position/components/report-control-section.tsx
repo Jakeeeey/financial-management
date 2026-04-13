@@ -100,12 +100,12 @@ export function ReportControlSection({ validation, ratios }: Props) {
         return (
             <div className="flex flex-col gap-1">
                 <span className="text-sm font-bold tracking-tight">{title}</span>
-                <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{subtitle}</span>
+                <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">{subtitle}</span>
                 <span className="text-2xl font-bold tracking-tight text-primary mt-1">
                     {value.toFixed(2)}x
                 </span>
                 <span
-                    className={cn("text-[10px] font-bold flex items-center gap-1 transition-colors", {
+                    className={cn("text-xs font-bold flex items-center gap-1 transition-colors", {
                         "text-success": isPositive,
                         "text-destructive": isNegative,
                         "text-muted-foreground": isNeutral,
@@ -123,14 +123,14 @@ export function ReportControlSection({ validation, ratios }: Props) {
                 {/* ─── ROW 1: Module Name + Action Buttons (full width) ─── */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-6 lg:px-8 bg-card transition-colors">
                     <div>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-bold">Business Analytics / Financial Management</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1 font-bold">Business Analytics / Financial Management</p>
                         <h2 className="text-2xl font-bold tracking-tight text-foreground">Statement of Financial Position</h2>
                         <p className="text-xs text-muted-foreground mt-1 max-w-[700px] leading-relaxed">
                             Dynamic balance sheet prototype with period selection, comparison view, validation checks, managerial certification, and account-level drill-down.
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        <Badge variant="secondary" className="rounded-full px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider">
+                        <Badge variant="secondary" className="rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider">
                             Validated
                         </Badge>
                         <Button 
@@ -397,7 +397,7 @@ export function ReportControlSection({ validation, ratios }: Props) {
                                     <div className="space-y-4 p-4 bg-muted/20 border border-border rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
                                         {/* Comparison Period Basis Selector */}
                                         <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Comparison Period</Label>
+                                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Comparison Period</Label>
                                             <Select value={filters.comparisonBasis} onValueChange={handleComparisonBasisChange}>
                                                 <SelectTrigger className="w-full sm:w-[280px] h-9 text-xs font-bold border-input bg-card">
                                                     <SelectValue placeholder="Select basis..." />
@@ -446,7 +446,7 @@ export function ReportControlSection({ validation, ratios }: Props) {
                                         </div>
                                     </div>
                                 ) : (
-                                    <p className="text-[11px] text-muted-foreground leading-relaxed p-4 bg-muted/10 border border-border rounded-lg mt-2 transition-colors">
+                                    <p className="text-xs text-muted-foreground leading-relaxed p-4 bg-muted/10 border border-border rounded-lg mt-2 transition-colors">
                                         Comparison is disabled. The report will show current-period balances only.
                                     </p>
                                 )}
@@ -477,10 +477,10 @@ export function ReportControlSection({ validation, ratios }: Props) {
                                 <div>
                                     <h4 className="font-bold text-sm tracking-tight text-foreground">Accounting Equation Check</h4>
                                     <p className="text-xs text-muted-foreground mt-1 mb-2 font-medium">
-                                        Total Assets &ndash; (Total Liabilities + Equity) = &#8369;
-                                        {validation.variance.toFixed(2)}
+                                        Total Assets &ndash; (Total Liabilities + Equity) = {validation.variance < 0 ? "-" : ""}
+                                        &#8369;{Math.abs(validation.variance).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </p>
-                                    <p className={cn("text-[11px] font-bold uppercase tracking-wider", isBalanced ? "text-success" : "text-destructive")}>
+                                    <p className={cn("text-xs font-bold uppercase tracking-wider", isBalanced ? "text-success" : "text-destructive")}>
                                         {isBalanced ? "Report is balanced and ready for review." : "The Financial Statement Generated is not Balanced."}
                                     </p>
                                 </div>

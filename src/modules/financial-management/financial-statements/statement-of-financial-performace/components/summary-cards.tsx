@@ -52,15 +52,15 @@ export function SummaryCards() {
   }
 
   if (isInitialLoad) {
-     return (
-        <div className="flex flex-wrap gap-4 mb-6">
-          <EmptyCard title="Total Sales" subtitle="Before deductions" />
-          <EmptyCard title="COGS" subtitle="Cost of goods sold" />
-          <EmptyCard title="Total Expenses" subtitle="Operating + Other expenses" />
-          <EmptyCard title="Net Other Income (Loss)" subtitle="Income vs Expense" />
-          <EmptyCard title="Net Income" subtitle="After tax" />
-        </div>
-     );
+    return (
+      <div className="flex flex-wrap gap-4 mb-6">
+        <EmptyCard title="Total Sales" subtitle="Before deductions" />
+        <EmptyCard title="COGS" subtitle="Cost of goods sold" />
+        <EmptyCard title="Total Expenses" subtitle="Operating + Other expenses" />
+        <EmptyCard title="Net Other Income (Loss)" subtitle="Income vs Expense" />
+        <EmptyCard title="Net Income" subtitle="After tax" />
+      </div>
+    );
   }
 
   return (
@@ -72,7 +72,7 @@ export function SummaryCards() {
       </div>
 
       <div className="flex-1 min-w-[200px] border border-border bg-card rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
-        <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">COGS</h4>
+        <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Cost of Goods Sold</h4>
         <div className="text-2xl font-bold text-foreground mb-4">{formatAmount(cogs)}</div>
         <p className="text-xs text-muted-foreground font-medium">Cost of goods sold</p>
       </div>

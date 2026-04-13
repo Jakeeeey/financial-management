@@ -128,10 +128,30 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
 
       const data = await res.json();
 
-      setEntries(Array.isArray(data.entries) ? data.entries : []);
-      setComparisonEntries(Array.isArray(data.comparisonEntries) ? data.comparisonEntries : []);
-      setSummary(data.summary || null);
-      setComparisonSummary(data.comparisonSummary || null);
+      const safeAbs = (num: any) => (typeof num === "number" ? Math.abs(num) : 0);
+      
+      const normalizeEntries = (entries: any[]) => 
+        entries.map(e => ({ ...e, amount: safeAbs(e.amount) }));
+        
+      const normalizeSummary = (s: any) => {
+        if (!s) return null;
+        let variance = safeAbs(s.totalAssets) - (safeAbs(s.totalLiabilities) + safeAbs(s.totalEquity));
+        // Handle floating point precision issues
+        variance = Math.round(variance * 100) / 100;
+        
+        return {
+          ...s,
+          totalAssets: safeAbs(s.totalAssets),
+          totalLiabilities: safeAbs(s.totalLiabilities),
+          totalEquity: safeAbs(s.totalEquity),
+          balanceVariance: variance
+        };
+      };
+
+      setEntries(Array.isArray(data.entries) ? normalizeEntries(data.entries) : []);
+      setComparisonEntries(Array.isArray(data.comparisonEntries) ? normalizeEntries(data.comparisonEntries) : []);
+      setSummary(normalizeSummary(data.summary));
+      setComparisonSummary(normalizeSummary(data.comparisonSummary));
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Unknown error";
       console.error("Balance Sheet Fetch Error:", e);
