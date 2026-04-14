@@ -118,7 +118,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
   const isOverBatchLimit = expenseLimit > 0 && totalSelected > expenseLimit;
 
   function rowBgClass(expense: ExpenseDraftRow): string {
-    if (!selectedIds.has(expense.id)) return "opacity-50 grayscale-[0.5]";
+    if (!selectedIds.has(expense.id)) return "";
     if (isOverBatchLimit) {
       return "bg-red-100/80 dark:bg-red-900/40 border-l-4 border-l-red-600 font-medium";
     }
@@ -177,13 +177,13 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
   const salesman = detail?.salesman;
   const userName = salesman?.user
     ? [salesman.user.user_fname, salesman.user.user_mname, salesman.user.user_lname]
-        .filter(Boolean).join(" ")
+      .filter(Boolean).join(" ")
     : salesman?.salesman_name ?? "—";
 
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-        <DialogContent className="max-w-6xl max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden border-none shadow-2xl">
+        <DialogContent className="sm:!max-w-[45vw] max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden border-none shadow-2xl">
           <DialogHeader className="px-6 py-4 bg-primary text-primary-foreground shrink-0 relative overflow-hidden">
             <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
               <FileText size={120} />
@@ -325,7 +325,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
                         detail.expenses.map((expense, idx) => (
                           <TableRow
                             key={expense.id}
-                            className={`group cursor-pointer transition-all border-b-muted/40 ${rowBgClass(expense)} hover:opacity-100`}
+                            className={`group cursor-pointer transition-all border-b-muted/40 ${rowBgClass(expense)}`}
                             onClick={() => toggle(expense.id)}
                           >
                             <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
@@ -370,7 +370,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          setPreviewUrl(`/api/assets?id=${expense.attachment_url}`);
+                                          setPreviewUrl(`/api/fm/expense-assets?id=${expense.attachment_url}`);
                                         }}
                                         className="inline-flex p-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all shadow-sm cursor-pointer"
                                       >
@@ -402,7 +402,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
               {/* Footer / Submission Area */}
               <div className="px-6 py-5 bg-background shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.1)] shrink-0 border-t flex flex-col gap-4">
                 <div className="flex flex-col md:flex-row md:items-end gap-6">
-                  <div className="flex-1 space-y-2">
+                  <div className="flex-1 min-w-0 space-y-2">
                     <div className="flex items-center gap-2">
                       <label className="text-[11px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
                         Disbursement Remarks <span className="text-red-600 font-bold">*</span>
@@ -420,7 +420,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
                       value={remarks}
                       onChange={(e) => setRemarks(e.target.value)}
                       placeholder="Provide a justification for this batch of expenses..."
-                      className="min-h-[90px] max-h-[90px] resize-none border-2 focus:border-primary transition-all shadow-sm font-medium"
+                      className="min-h-[90px] max-h-[90px] w-full resize-none border-2 focus:border-primary transition-all shadow-sm font-medium break-all"
                       disabled={submitting}
                     />
                     <p className="text-[10px] text-muted-foreground italic">

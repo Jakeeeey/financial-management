@@ -25,13 +25,17 @@ async function apiFetch(url: string, init?: RequestInit): Promise<unknown> {
   return data;
 }
 
-export async function listSalesmenWithExpenses(): Promise<SalesmanExpenseRow[]> {
-  const data = await apiFetch(`${BASE}?resource=salesmen`);
+export async function listSalesmenWithExpenses(startDate?: string, endDate?: string): Promise<SalesmanExpenseRow[]> {
+  let url = `${BASE}?resource=salesmen`;
+  if (startDate && endDate) url += `&start_date=${startDate}&end_date=${endDate}`;
+  const data = await apiFetch(url);
   return ((data as { data?: SalesmanExpenseRow[] })?.data ?? []) as SalesmanExpenseRow[];
 }
 
-export async function getSalesmanExpenses(salesmanId: number): Promise<SalesmanExpenseDetail> {
-  const data = await apiFetch(`${BASE}?resource=expenses&salesman_id=${salesmanId}`);
+export async function getSalesmanExpenses(salesmanId: number, startDate?: string, endDate?: string): Promise<SalesmanExpenseDetail> {
+  let url = `${BASE}?resource=expenses&salesman_id=${salesmanId}`;
+  if (startDate && endDate) url += `&start_date=${startDate}&end_date=${endDate}`;
+  const data = await apiFetch(url);
   return data as SalesmanExpenseDetail;
 }
 

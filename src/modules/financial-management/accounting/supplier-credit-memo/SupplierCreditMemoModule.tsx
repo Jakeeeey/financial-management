@@ -13,22 +13,16 @@ import { AddMemoModal }   from "./components/AddMemoModal";
 
 export default function SupplierCreditMemoModule() {
   const [showAddModal, setShowAddModal] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const {
     memos, loading, error,
     filters, updateFilter, clearFilters, hasFilters,
+    showToast,
     stats, refetch,
   } = useSupplierCreditMemo();
 
   const { suppliers } = useSuppliers();
   const { accounts  } = useChartOfAccounts();
-
-  const handleAddSuccess = (message: string) => {
-    setToast({ message, type: "success" });
-    setTimeout(() => setToast(null), 3500);
-    refetch();
-  };
 
   if (loading && memos.length === 0) return (
     <div className="p-4 md:p-6 space-y-4">
@@ -61,17 +55,6 @@ export default function SupplierCreditMemoModule() {
         </p>
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div className={`px-4 py-3 rounded-lg text-sm flex items-center gap-3 border ${
-          toast.type === "success"
-            ? "bg-muted border-border text-foreground"
-            : "bg-red-500/10 border-red-500/20 text-red-700"
-        }`}>
-          {toast.message}
-        </div>
-      )}
-
       {/* Filters row — New Credit Memo button is inside, far right */}
       <MemoFiltersBar
         filters={filters}
@@ -99,10 +82,9 @@ export default function SupplierCreditMemoModule() {
       {showAddModal && (
         <AddMemoModal
           onClose={() => setShowAddModal(false)}
-          onSuccess={handleAddSuccess}
+          onSuccess={msg => { showToast(msg, "success"); refetch(); }}
         />
       )}
-
     </div>
   );
 }

@@ -29,8 +29,8 @@ export async function PATCH(
   const { id } = await params;
 
   try {
-    const body = await request.json() as { title?: string; description?: string; tax_type?: string; due_date?: string; status?: string; reminder_date?: string };
-    const { title, description, tax_type, due_date, status, reminder_date } = body;
+    const body = await request.json() as Record<string, unknown>;
+    const { title, description, tax_type, due_date, status, reminder_date, bir_form, filing_frequency, due_date_rule, actual_filing_date, payment_date, amount_paid } = body;
 
     // All fields optional for PATCH
     const updateData: Record<string, unknown> = {};
@@ -40,6 +40,12 @@ export async function PATCH(
     if (due_date !== undefined) updateData.due_date = due_date;
     if (status !== undefined) updateData.status = status;
     if (reminder_date !== undefined) updateData.reminder_date = reminder_date || null;
+    if (bir_form !== undefined) updateData.bir_form = bir_form || null;
+    if (filing_frequency !== undefined) updateData.filing_frequency = filing_frequency || null;
+    if (due_date_rule !== undefined) updateData.due_date_rule = due_date_rule || null;
+    if (actual_filing_date !== undefined) updateData.actual_filing_date = actual_filing_date || null;
+    if (payment_date !== undefined) updateData.payment_date = payment_date || null;
+    if (amount_paid !== undefined) updateData.amount_paid = amount_paid ? Number(amount_paid) : null;
 
     const res = await fetch(`${DIRECTUS_URL}/items/tax_activities/${id}`, {
       method:  'PATCH',

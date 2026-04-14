@@ -34,12 +34,14 @@ export async function checkMyAccess(): Promise<{
   return (data as { data: { approver_id: number; division_id: number; approver_heirarchy: number }[] }).data;
 }
 
-export async function listDrafts(): Promise<{ 
+export async function listDrafts(startDate?: string, endDate?: string): Promise<{ 
   data: DraftRow[]; 
   myLevel: number;
   levelsByDivision: Record<number, number[]>;
 }> {
-  const data = await apiFetch(`${BASE}?resource=drafts`);
+  let url = `${BASE}?resource=drafts`;
+  if (startDate && endDate) url += `&start_date=${startDate}&end_date=${endDate}`;
+  const data = await apiFetch(url);
   return data as { 
     data: DraftRow[]; 
     myLevel: number;
