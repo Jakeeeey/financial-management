@@ -167,7 +167,6 @@ export function AddMemoModal({ onClose, onSuccess }: AddMemoModalProps) {
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 bg-primary/10 text-primary border-primary/20">
                   Credit
                 </Badge>
-                <span className="text-xs text-muted-foreground">type = 1 · status = Available</span>
               </div>
               <h2 className="text-base font-semibold tracking-tight">New Supplier Credit Memo</h2>
               <p className="text-xs text-muted-foreground mt-0.5">

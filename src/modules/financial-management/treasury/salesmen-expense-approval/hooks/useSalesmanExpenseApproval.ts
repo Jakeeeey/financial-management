@@ -3,6 +3,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { startOfMonth, endOfMonth, format } from "date-fns";
+import type { DateRange } from "react-day-picker";
 
 import type { SalesmanExpenseRow, SalesmanExpenseDetail, ApprovalLog } from "../type";
 import * as api from "../providers/fetchProvider";
@@ -14,10 +16,24 @@ export function useSalesmanExpenseApproval() {
   const [logsLoading, setLogsLoading] = React.useState(false);
   const [unauthorized, setUnauthorized] = React.useState(false);
 
+  // Date filter
+  const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date()),
+  });
+
   // Search & Pagination state
   const [q, setQ] = React.useState("");
   const [page, setPage] = React.useState(1);
   const pageSize = 5; // User requested 5 rows height
+
+  const startDateStr = React.useMemo(() => 
+    dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined
+  , [dateRange]);
+
+  const endDateStr = React.useMemo(() => 
+    dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined
+  , [dateRange]);
 
   const [modalOpen, setModalOpen] = React.useState(false);
   const [modalLoading, setModalLoading] = React.useState(false);
@@ -44,7 +60,7 @@ export function useSalesmanExpenseApproval() {
     try {
       setLoading(true);
       const [data] = await Promise.all([
-        api.listSalesmenWithExpenses(),
+        api.listSalesmenWithExpenses(startDateStr, endDateStr),
         loadLogs(),
       ]);
       setRows(data);
@@ -58,11 +74,15 @@ export function useSalesmanExpenseApproval() {
     } finally {
       setLoading(false);
     }
-  }, [loadLogs]);
+  }, [loadLogs, startDateStr, endDateStr]);
 
   React.useEffect(() => {
     load();
   }, [load]);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [dateRange]);
 
   // Client-side filtering
   const filteredRows = React.useMemo(() => {
@@ -89,7 +109,7 @@ export function useSalesmanExpenseApproval() {
     setModalOpen(true);
     setModalLoading(true);
     try {
-      const detail = await api.getSalesmanExpenses(row.id);
+      const detail = await api.getSalesmanExpenses(row.id, startDateStr, endDateStr);
       setSalesmanDetail(detail);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load expenses");
@@ -129,6 +149,8 @@ export function useSalesmanExpenseApproval() {
     closeModal,
     onConfirmed,
     unauthorized,
+    dateRange,
+    setDateRange,
   };
 }
 
