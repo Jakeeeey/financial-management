@@ -3,6 +3,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { startOfMonth, endOfMonth, format } from "date-fns";
+import type { DateRange } from "react-day-picker";
 
 import type { DraftRow, DraftDetail, LogDraft } from "../type";
 import * as api from "../providers/fetchProvider";
@@ -17,10 +19,24 @@ export function useBulkApproval() {
   const [logs, setLogs] = React.useState<LogDraft[]>([]);
   const [logsLoading, setLogsLoading] = React.useState(false);
 
+  // Date filter
+  const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date()),
+  });
+
   // Search & pagination
   const [q, setQ] = React.useState("");
   const [page, setPage] = React.useState(1);
   const pageSize = 8;
+
+  const startDateStr = React.useMemo(() => 
+    dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined
+  , [dateRange]);
+
+  const endDateStr = React.useMemo(() => 
+    dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined
+  , [dateRange]);
 
   // Vote modal
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -48,7 +64,7 @@ export function useBulkApproval() {
     try {
       setLoading(true);
       const [result] = await Promise.all([
-        api.listDrafts(),
+        api.listDrafts(startDateStr, endDateStr),
         loadLogs(),
       ]);
       setDrafts(result.data);
@@ -64,11 +80,15 @@ export function useBulkApproval() {
     } finally {
       setLoading(false);
     }
-  }, [loadLogs]);
+  }, [loadLogs, startDateStr, endDateStr]);
 
   React.useEffect(() => {
     load();
   }, [load]);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [dateRange]);
 
   // Client-side filter
   const filteredDrafts = React.useMemo(() => {
@@ -138,5 +158,7 @@ export function useBulkApproval() {
     openVoteModal,
     closeModal,
     onVoteComplete,
+    dateRange,
+    setDateRange,
   };
 }
