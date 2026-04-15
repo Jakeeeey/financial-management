@@ -372,6 +372,7 @@ export async function GET(req: NextRequest) {
             "priceC",
             "priceD",
             "priceE",
+            "cost_per_unit",
         ].join(",");
 
         let supplierProductIds: number[] | null = null;

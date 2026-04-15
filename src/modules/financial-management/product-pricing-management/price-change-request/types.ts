@@ -29,6 +29,24 @@ export type PriceChangeRequestRow = {
     reject_reason?: string | null;
 };
 
+export type CostChangeRequestRow = {
+    request_id: number;
+    product_id: number | ProductRef;
+    current_cost?: number | null;
+    proposed_cost: number;
+    status: PCRStatus;
+
+    requested_by: number;
+    requested_at: string;
+
+    approved_by?: number | null;
+    approved_at?: string | null;
+
+    rejected_by?: number | null;
+    rejected_at?: string | null;
+    reject_reason?: string | null;
+};
+
 export type ListMeta = {
     total_count?: number;
 };
@@ -47,6 +65,12 @@ export type CreatePCRPayload = {
     product_id: number;
     price_type_id: number;
     proposed_price: number;
+};
+
+export type CreateCCRPayload = {
+    product_id: number;
+    proposed_cost: number;
+    current_cost?: number | null;
 };
 
 export type ActionPayload =
