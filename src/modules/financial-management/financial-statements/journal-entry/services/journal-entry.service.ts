@@ -4,9 +4,18 @@ import { JournalEntry, JournalEntryListSchema } from "../types";
  * Server-side service for fetching general ledger entries from the master database.
  * This service directly communicates with the external backend API.
  */
-export async function getJournalEntries(startDate: string, endDate: string, token?: string): Promise<JournalEntry[]> {
+export async function getJournalEntries(
+  startDate: string,
+  endDate: string,
+  token?: string,
+  accountNumber?: string
+): Promise<JournalEntry[]> {
   const API_BASE = "http://100.81.225.79:8086/api/view-general-ledger-master/filter";
-  const url = `${API_BASE}?startDate=${startDate}&endDate=${endDate}`;
+  let url = `${API_BASE}?startDate=${startDate}&endDate=${endDate}`;
+
+  if (accountNumber) {
+    url += `&accountNumber=${accountNumber}`;
+  }
 
   try {
     const headers: Record<string, string> = {

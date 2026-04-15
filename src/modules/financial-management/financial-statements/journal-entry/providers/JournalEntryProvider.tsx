@@ -124,9 +124,8 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     }
   }, [filters.presetRange, filters.selectedMonth, filters.selectedQuarter, filters.selectedYear]);
 
+  const lastFetchedQueryRef = React.useRef<string>("");
   const fetchData = React.useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
     try {
       const query = new URLSearchParams();
       query.set("page", currentPage.toString());
@@ -139,7 +138,17 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
         }
       });
 
-      const url = `/api/fm/financial-statements/journal-entry?${query.toString()}`;
+      const queryString = query.toString();
+
+      // Guard: Don't refetch if parameters haven't changed
+      if (lastFetchedQueryRef.current === queryString && paginatedGroups.length > 0) {
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+
+      const url = `/api/fm/financial-statements/journal-entry?${queryString}`;
       const res = await fetch(url);
       
       if (!res.ok) {
@@ -156,6 +165,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
       setPageCount(response.metadata.totalPages);
       setUniqueSourceModules(["All Source Modules", ...(response.metadata.uniqueSourceModules || [])]);
       
+      lastFetchedQueryRef.current = queryString;
     } catch (e: any) {
       console.error("Journal Entry Fetch Error:", e);
       setError(e.message);
@@ -163,7 +173,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     } finally {
       setIsLoading(false);
     }
-  }, [filters, currentPage, pageSize]);
+  }, [filters, currentPage, pageSize, paginatedGroups.length]);
 
   React.useEffect(() => {
     fetchData();
@@ -218,7 +228,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     setCurrentPage(0);
   };
 
-  const value = {
+  const value = React.useMemo(() => ({
     paginatedGroups,
     analytics,
     filters,
@@ -234,7 +244,19 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     totalGroupCount,
     setCurrentPage,
     setPageSize: handleSetPageSize,
-  };
+  }), [
+    paginatedGroups, 
+    analytics, 
+    filters, 
+    uniqueSourceModules, 
+    isLoading, 
+    error, 
+    fetchData, 
+    currentPage, 
+    pageSize, 
+    pageCount, 
+    totalGroupCount
+  ]);
 
   return (
     <JournalEntryContext.Provider value={value}>

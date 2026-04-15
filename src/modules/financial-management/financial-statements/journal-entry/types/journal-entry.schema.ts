@@ -64,6 +64,7 @@ export interface FilterState {
   sourceModule: string;
   showPostedOnly: boolean;
   status: string;
+  accountNumber?: string;
   sortField: string;
   sortOrder: "asc" | "desc" | null;
 }

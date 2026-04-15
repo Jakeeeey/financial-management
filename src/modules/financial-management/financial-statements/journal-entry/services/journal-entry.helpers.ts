@@ -212,6 +212,7 @@ export function filterJournalEntries(entries: JournalEntry[], filters: FilterSta
       if (!match) return false;
     }
     
+    if (filters.accountNumber && e.accountNumber !== filters.accountNumber) return false;
     if (filters.division !== "All Divisions" && e.division !== filters.division) return false;
     if (filters.department !== "All Departments" && e.department !== filters.department) return false;
     if (filters.status !== "All Statuses" && e.status !== filters.status) return false;

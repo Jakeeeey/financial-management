@@ -13,12 +13,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AnalyticsSummary } from "../types";
 import { cn, formatCurrency } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface SummaryCardsProps {
   data: AnalyticsSummary;
+  loading?: boolean;
 }
 
-export default function SummaryCards({ data }: SummaryCardsProps) {
+export default function SummaryCards({ data, loading }: SummaryCardsProps) {
   const cards = [
     {
       title: "Journal Entry Count",
@@ -103,13 +105,28 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-semibold tracking-tight">{card.value}</div>
-            <p className={cn(
-              "text-xs mt-1 truncate",
-              card.destructive ? "text-destructive-foreground/80 font-medium" : "text-muted-foreground"
-            )}>
-              {card.description}
-            </p>
+            {loading ? (
+              <div className="space-y-2">
+                <Skeleton className={cn(
+                  "h-7 w-full max-w-[140px]",
+                  card.destructive ? "bg-white/20" : "bg-muted"
+                )} />
+                <Skeleton className={cn(
+                  "h-3 w-full max-w-[100px]",
+                  card.destructive ? "bg-white/20" : "bg-muted"
+                )} />
+              </div>
+            ) : (
+              <>
+                <div className="text-xl font-semibold tracking-tight">{card.value}</div>
+                <p className={cn(
+                  "text-xs mt-1 truncate",
+                  card.destructive ? "text-destructive-foreground/80 font-medium" : "text-muted-foreground"
+                )}>
+                  {card.description}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       ))}

@@ -41,3 +41,14 @@ export interface TrialBalanceSummaryData {
   accountCount: number;
   isBalanced: boolean;
 }
+
+// ─── Drill-down item from the trial-balance/drill-down endpoint ───
+export interface TrialBalanceDrillDownItem {
+  journalEntryId: string;
+  date: string;
+  description: string;
+  debit: number;
+  credit: number;
+  source: string;
+  postedBy: string | null;
+}

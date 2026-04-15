@@ -96,3 +96,52 @@ export async function getTrialBalance(
     throw error;
   }
 }
+
+/**
+ * Fetch drill-down transaction details for a specific GL account.
+ */
+interface FetchDrillDownParams {
+  glCode: string;
+  startDate: string;
+  endDate: string;
+}
+
+export async function getTrialBalanceDrillDown(
+  params: FetchDrillDownParams,
+  token?: string
+) {
+  const API_BASE = "http://100.81.225.79:8086/api/trial-balance/drill-down";
+
+  const query = new URLSearchParams();
+  query.set("glCode", params.glCode);
+  query.set("startDate", params.startDate);
+  query.set("endDate", params.endDate);
+
+  const url = `${API_BASE}?${query.toString()}`;
+
+  try {
+    const headers: Record<string, string> = {
+      "cache-no-store": "true",
+    };
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch drill-down: ${response.statusText}`);
+    }
+
+    const json = await response.json();
+    return json.data ?? [];
+  } catch (error) {
+    console.error("Trial Balance Drill-Down Service Error:", error);
+    throw error;
+  }
+}

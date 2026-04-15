@@ -149,7 +149,7 @@ function JournalEntryDashboard() {
         {/* Right Content Area */}
         <div className="flex-1 overflow-y-auto space-y-6 pr-1 custom-scrollbar">
           {/* Summary Stats */}
-          <SummaryCards data={analytics} />
+          <SummaryCards data={analytics} loading={isLoading} />
 
           {/* New Risk Oversight Section */}
           {!isLoading && <RiskInsights data={analytics} />}

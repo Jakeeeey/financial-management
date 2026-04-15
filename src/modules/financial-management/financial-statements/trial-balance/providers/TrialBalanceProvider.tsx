@@ -46,44 +46,52 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
   const [error, setError] = React.useState<string | null>(null);
   const [filters, setFilters] = React.useState<TrialBalanceFilterState>(DEFAULT_FILTERS);
 
+  const lastFetchedQueryRef = React.useRef<string>("");
   const fetchData = React.useCallback(async () => {
+    // Build query string for the local proxy
+    const query = new URLSearchParams();
+    query.set("startDate", filters.startDate);
+    query.set("endDate", filters.endDate);
+
+    if (filters.status !== "all") {
+      query.set("status", filters.status);
+    }
+    if (filters.accountCategory !== "all") {
+      query.set("accountCategory", filters.accountCategory);
+    }
+    if (filters.reviewFlag !== "all") {
+      query.set("reviewFlag", filters.reviewFlag);
+    }
+    if (filters.search) {
+      query.set("search", filters.search);
+    }
+    if (filters.divisionName) {
+      query.set("divisionName", filters.divisionName);
+    }
+    if (filters.departmentName) {
+      query.set("departmentName", filters.departmentName);
+    }
+    if (filters.postedOnly) {
+      query.set("postedOnly", "true");
+    }
+    if (filters.sourceModule.length > 0) {
+      for (const mod of filters.sourceModule) {
+        query.append("sourceModule", mod);
+      }
+    }
+
+    const queryString = query.toString();
+    
+    // Guard: Don't refetch if the query is identical to the last successful fetch
+    if (lastFetchedQueryRef.current === queryString && items.length > 0) {
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
-      // Build query string for the local proxy
-      const query = new URLSearchParams();
-      query.set("startDate", filters.startDate);
-      query.set("endDate", filters.endDate);
-
-      if (filters.status !== "all") {
-        query.set("status", filters.status);
-      }
-      if (filters.accountCategory !== "all") {
-        query.set("accountCategory", filters.accountCategory);
-      }
-      if (filters.reviewFlag !== "all") {
-        query.set("reviewFlag", filters.reviewFlag);
-      }
-      if (filters.search) {
-        query.set("search", filters.search);
-      }
-      if (filters.divisionName) {
-        query.set("divisionName", filters.divisionName);
-      }
-      if (filters.departmentName) {
-        query.set("departmentName", filters.departmentName);
-      }
-      if (filters.postedOnly) {
-        query.set("postedOnly", "true");
-      }
-      if (filters.sourceModule.length > 0) {
-        for (const mod of filters.sourceModule) {
-          query.append("sourceModule", mod);
-        }
-      }
-
-      const url = `/api/fm/financial-statements/trial-balance?${query.toString()}`;
+      const url = `/api/fm/financial-statements/trial-balance?${queryString}`;
       const res = await fetch(url);
 
       if (!res.ok) {
@@ -93,6 +101,7 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
 
       const data = await res.json();
       setItems(Array.isArray(data) ? data : []);
+      lastFetchedQueryRef.current = queryString;
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Unknown error";
       console.error("Trial Balance Fetch Error:", e);
@@ -112,6 +121,7 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
     filters.departmentName,
     filters.postedOnly,
     filters.sourceModule,
+    items.length,
   ]);
 
   React.useEffect(() => {
@@ -137,7 +147,7 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
     setFilters(DEFAULT_FILTERS);
   };
 
-  const value: TrialBalanceContextType = {
+  const value = React.useMemo(() => ({
     items,
     summary,
     filters,
@@ -146,7 +156,7 @@ export function TrialBalanceProvider({ children }: { children: React.ReactNode }
     error,
     refresh: fetchData,
     resetFilters,
-  };
+  }), [items, summary, filters, isLoading, error, fetchData]);
 
   return (
     <TrialBalanceContext.Provider value={value}>
