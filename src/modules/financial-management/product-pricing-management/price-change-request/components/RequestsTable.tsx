@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { ListMeta, PriceChangeRequestRow } from "../types";
+import type { ListMeta, PriceChangeRequestRow, CostChangeRequestRow } from "../types";
 import { productLabel, priceTypeLabel } from "../utils/labels";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -40,8 +40,9 @@ function getTotalPages(meta: ListMeta | null | undefined, pageSize: number, curr
 }
 
 type Props = {
-    rows: PriceChangeRequestRow[];
+    rows: (PriceChangeRequestRow | CostChangeRequestRow)[];
     mode: "approver" | "mine" | "all";
+    requestType?: "price" | "cost";
     acting?: boolean;
     onApprove?: (id: number) => void;
     onReject?: (id: number) => void;
@@ -61,7 +62,8 @@ type Props = {
 };
 
 export default function RequestsTable(props: Props) {
-    const rows = React.useMemo<PriceChangeRequestRow[]>(
+    const requestType = props.requestType ?? "price";
+    const rows = React.useMemo<(PriceChangeRequestRow | CostChangeRequestRow)[]>(
         () => props.rows ?? [],
         [props.rows],
     );
@@ -99,7 +101,7 @@ export default function RequestsTable(props: Props) {
     const allPageSelected = selectableIds.length > 0 && selectedOnPageCount === selectableIds.length;
     const somePageSelected = selectedOnPageCount > 0 && selectedOnPageCount < selectableIds.length;
 
-    const colSpan = props.mode === "approver" ? 8 : 7;
+    const colSpan = (props.mode === "approver" ? 8 : 7) - (requestType === "cost" ? 1 : 0);
 
     return (
         <div className="rounded-xl border bg-background">
@@ -118,7 +120,7 @@ export default function RequestsTable(props: Props) {
                         )}
                         <TableHead className="w-[110px]">Request #</TableHead>
                         <TableHead>Product</TableHead>
-                        <TableHead className="w-[90px]">Type</TableHead>
+                        {requestType === "price" && <TableHead className="w-[90px]">Type</TableHead>}
                         <TableHead className="w-[140px] text-right">Proposed</TableHead>
                         <TableHead className="w-[140px]">Status</TableHead>
                         <TableHead className="w-[170px]">Requested At</TableHead>
@@ -131,6 +133,10 @@ export default function RequestsTable(props: Props) {
                         const id = Number(r.request_id);
                         const isPending = r.status === "PENDING";
                         const isSelected = selectedIdSet.has(id);
+
+                        const proposedValue = requestType === "cost" 
+                            ? (r as CostChangeRequestRow).proposed_cost 
+                            : (r as PriceChangeRequestRow).proposed_price;
 
                         return (
                             <TableRow key={id}>
@@ -145,10 +151,10 @@ export default function RequestsTable(props: Props) {
                                     </TableCell>
                                 )}
 
-                                <TableCell className="font-medium">PCR-{id}</TableCell>
-                                <TableCell className="max-w-[420px] truncate">{productLabel(r)}</TableCell>
-                                <TableCell>{priceTypeLabel(r)}</TableCell>
-                                <TableCell className="text-right">{fmt(r.proposed_price)}</TableCell>
+                                <TableCell className="font-medium">{requestType === "cost" ? "CCR" : "PCR"}-{id}</TableCell>
+                                <TableCell className="max-w-[420px] truncate">{productLabel(r as PriceChangeRequestRow)}</TableCell>
+                                {requestType === "price" && <TableCell>{priceTypeLabel(r as PriceChangeRequestRow)}</TableCell>}
+                                <TableCell className="text-right">{fmt(proposedValue)}</TableCell>
                                 <TableCell>
                                     <Badge variant={r.status === "PENDING" ? "default" : r.status === "APPROVED" ? "secondary" : "outline"}>
                                         {r.status}

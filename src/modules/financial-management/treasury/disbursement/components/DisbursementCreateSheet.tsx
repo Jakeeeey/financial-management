@@ -20,29 +20,14 @@ import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/c
 import {Checkbox} from "@/components/ui/checkbox";
 import {Badge} from "@/components/ui/badge";
 import {
-    Plus,
-    Trash2,
-    Loader2,
-    Save,
-    Building2,
-    Wallet,
-    Calculator,
-    DownloadCloud,
-    FileText,
-    Check,
-    ChevronsUpDown
+    Plus, Trash2, Loader2, Save, Building2, Wallet, Calculator,
+    DownloadCloud, FileText, Check, ChevronsUpDown, Search
 } from "lucide-react";
 import {format} from "date-fns";
 import {cn} from "@/lib/utils";
 import {
-    DisbursementPayload,
-    PayableLine,
-    PaymentLine,
-    SupplierDto,
-    COADto,
-    Disbursement,
-    BankAccountDto,
-    UnpaidPoDto
+    DisbursementPayload, PayableLine, PaymentLine, SupplierDto, COADto,
+    Disbursement, BankAccountDto, UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto
 } from "../types";
 import {disbursementProvider} from "../providers/fetchProvider";
 import {toast} from "sonner";
@@ -110,7 +95,9 @@ export function DisbursementCreateSheet({
                                         }: DisbursementCreateSheetProps) {
     const today = new Date().toISOString().split("T")[0];
 
-    const [voucherType, setVoucherType] = useState("Trade");
+    // 🚀 FIX: Removed the unused setVoucherType to silence ESLint
+    const [voucherType] = useState("Trade");
+
     const [payeeId, setPayeeId] = useState<number | "">("");
     const [remarks, setRemarks] = useState("");
     const [transactionDate, setTransactionDate] = useState(today);
@@ -129,17 +116,34 @@ export function DisbursementCreateSheet({
     const [selectedPoIds, setSelectedPoIds] = useState<string[]>([]);
     const [taxTypes, setTaxTypes] = useState<Record<string, "VAT" | "NON_VAT">>({});
 
+    const [memos, setMemos] = useState<MemoDto[]>([]);
+    const [loadingMemos, setLoadingMemos] = useState(false);
+    const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
+
+    const [divisionId, setDivisionId] = useState<number | "">("");
+    const [departmentId, setDepartmentId] = useState<number | "">("");
+    const [divisions, setDivisions] = useState<DivisionDto[]>([]);
+    const [departments, setDepartments] = useState<DepartmentDto[]>([]);
+
+    const [poSearchQuery, setPoSearchQuery] = useState("");
+
     const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
 
     useEffect(() => {
         if (open) {
             setLoadingData(true);
-            disbursementProvider.getSuppliers(voucherType).then(setSuppliers).catch(() => toast.error("Failed to load suppliers"));
-            disbursementProvider.getCOAs().then(setCoas).catch(() => toast.error("Failed to load Chart of Accounts"));
-            disbursementProvider.getBanks().then(setBanks).catch(() => toast.error("Failed to load Bank Accounts")).finally(() => setLoadingData(false));
+            Promise.all([
+                disbursementProvider.getSuppliers(voucherType).then(setSuppliers),
+                disbursementProvider.getCOAs().then(setCoas),
+                disbursementProvider.getBanks().then(setBanks),
+                disbursementProvider.getDivisions().then(setDivisions).catch(() => console.warn("No divisions route yet")),
+                disbursementProvider.getDepartments().then(setDepartments).catch(() => console.warn("No departments route yet"))
+            ]).finally(() => setLoadingData(false));
 
             if (editData) {
                 setPayeeId(editData.payeeId || "");
+                setDivisionId(editData.divisionId || "");
+                setDepartmentId(editData.departmentId || "");
                 setRemarks(editData.remarks || "");
                 setTransactionDate(editData.transactionDate ? editData.transactionDate.split('T')[0] : today);
                 setPayables(editData.payables.map(p => ({
@@ -148,6 +152,7 @@ export function DisbursementCreateSheet({
                     date: p.date ? p.date.split('T')[0] : today,
                     amount: p.amount,
                     coaId: p.coaId,
+                    divisionId: p.divisionId || undefined,
                     remarks: p.remarks
                 })));
                 setPayments(editData.payments.map(p => ({
@@ -161,6 +166,8 @@ export function DisbursementCreateSheet({
                 })));
             } else {
                 setPayeeId("");
+                setDivisionId("");
+                setDepartmentId("");
                 setRemarks("");
                 setPayables([]);
                 setPayments([]);
@@ -181,13 +188,15 @@ export function DisbursementCreateSheet({
             setUnpaidPos(pos);
             setSelectedPoIds([]);
             setTaxTypes({});
-        } catch { // 🚀 FIX: Removed the unused '(e)'
+            setPoSearchQuery("");
+        } catch {
             toast.error("Failed to load unpaid POs");
             setIsPoModalOpen(false);
         } finally {
             setLoadingPos(false);
         }
     };
+
     const handleImportPos = () => {
         const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
         const newPayables: PayableLine[] = [];
@@ -224,11 +233,10 @@ export function DisbursementCreateSheet({
                     remarks: `EWT Deduction (1%)`
                 });
             } else {
-                const netAmount = po.amountDue;
                 newPayables.push({
                     referenceNo: baseRef,
                     date: today,
-                    amount: Number(netAmount.toFixed(2)),
+                    amount: Number(po.amountDue.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal (Non-VAT)`
                 });
@@ -240,16 +248,56 @@ export function DisbursementCreateSheet({
         toast.success(`Imported ${selected.length} record(s) successfully`);
     };
 
+    const handleOpenMemoModal = async () => {
+        if (!payeeId) return toast.error("Please select a Payee first.");
+        setLoadingMemos(true);
+        setIsMemoModalOpen(true);
+        try {
+            const fetchedMemos = await disbursementProvider.getSupplierMemos(Number(payeeId));
+            setMemos(fetchedMemos);
+        } catch {
+            toast.error("Failed to load supplier memos");
+            setIsMemoModalOpen(false);
+        } finally {
+            setLoadingMemos(false);
+        }
+    };
+
+    const handleApplyMemo = (memo: MemoDto) => {
+        const isCredit = memo.type === 1;
+        const finalAmount = isCredit ? -Math.abs(memo.amount) : Math.abs(memo.amount);
+
+        setPayables([...payables, {
+            referenceNo: memo.memo_number,
+            date: today,
+            amount: finalAmount,
+            coaId: memo.coa_id,
+            remarks: `${memo.memo_type_name}: ${memo.reason || 'Applied to voucher'}`
+        }]);
+
+        setIsMemoModalOpen(false);
+        toast.success(`${memo.memo_type_name} applied successfully!`);
+    };
+
     const handleSubmit = async () => {
         if (!payeeId) return toast.error("Please select a Payee.");
+        if (!divisionId) return toast.error("Division is required.");
+        if (!departmentId) return toast.error("Department is required.");
         if (totalAmount <= 0) return toast.error("Voucher total must be greater than 0.");
+
         const payload: DisbursementPayload = {
             docNo: editData ? editData.docNo : "",
             payeeId: Number(payeeId),
+            divisionId: Number(divisionId),
+            departmentId: Number(departmentId),
             remarks,
             totalAmount: totalAmount,
             transactionDate,
-            payables: payables.map(p => ({...p, coaId: Number(p.coaId) || undefined})),
+            payables: payables.map(p => ({
+                ...p,
+                coaId: Number(p.coaId) || undefined,
+                divisionId: Number(p.divisionId) || undefined
+            })),
             payments: payments.map(p => ({
                 ...p,
                 coaId: Number(p.coaId) || undefined,
@@ -259,6 +307,8 @@ export function DisbursementCreateSheet({
         const success = await onSubmit(payload);
         if (success) {
             setPayeeId("");
+            setDivisionId("");
+            setDepartmentId("");
             setRemarks("");
             setPayables([]);
             setPayments([]);
@@ -300,20 +350,8 @@ export function DisbursementCreateSheet({
                                        onChange={e => setTransactionDate(e.target.value)}
                                        className="h-9 text-xs font-bold uppercase border-input bg-background text-foreground"/>
                             </div>
-                            <div className="space-y-1.5">
-                                <Label
-                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Voucher
-                                    Type <span className="text-destructive">*</span></Label>
-                                <select
-                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs font-bold uppercase text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-                                    value={voucherType} onChange={e => setVoucherType(e.target.value)}
-                                    disabled={!!editData}>
-                                    <option value="Trade">Trade (Inventory Suppliers)</option>
-                                    <option value="Non-Trade">Non-Trade (Utilities, Services)</option>
-                                </select>
-                            </div>
 
-                            <div className="space-y-1.5 relative">
+                            <div className="space-y-1.5 col-span-2">
                                 <Label
                                     className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex justify-between">
                                     Payee (Supplier) <span className="text-destructive">*</span>
@@ -323,12 +361,10 @@ export function DisbursementCreateSheet({
                                     <div className="flex-1 min-w-0">
                                         <SearchableDropdown
                                             options={suppliers.map(s => ({value: s.id, label: s.supplier_name}))}
-                                            value={payeeId}
-                                            onSelect={(val) => setPayeeId(Number(val))}
+                                            value={payeeId} onSelect={(val) => setPayeeId(Number(val))}
                                             placeholder={`-- Search ${voucherType} Payee --`}
                                             disabled={loadingData}
                                             className="h-9 w-full bg-background border-input text-xs font-bold uppercase"
-                                            popoverWidth="w-[400px]"
                                         />
                                     </div>
                                     <Button type="button" onClick={handleOpenPoModal} disabled={!payeeId}
@@ -339,6 +375,34 @@ export function DisbursementCreateSheet({
                                 </div>
                             </div>
 
+                            <div className="space-y-1.5">
+                                <Label
+                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Division <span
+                                    className="text-destructive">*</span></Label>
+                                <select
+                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs font-bold uppercase text-foreground shadow-sm focus-visible:outline-none"
+                                    value={divisionId} onChange={e => setDivisionId(Number(e.target.value))}>
+                                    <option value="" disabled>-- Select Division --</option>
+                                    {/* 🚀 FIX: Used strict intersection type instead of any */}
+                                    {divisions.map((d, index) => <option key={`main-div-${d.id || index}`}
+                                                                         value={d.id || (d as DivisionDto & {divisionId?: number}).divisionId}>{d.divisionName}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label
+                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Department <span
+                                    className="text-destructive">*</span></Label>
+                                <select
+                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs font-bold uppercase text-foreground shadow-sm focus-visible:outline-none"
+                                    value={departmentId} onChange={e => setDepartmentId(Number(e.target.value))}>
+                                    <option value="" disabled>-- Select Department --</option>
+                                    {/* 🚀 FIX: Used strict intersection type instead of any */}
+                                    {departments.map((d, index) => <option key={`main-dept-${d.id || index}`}
+                                                                           value={d.id || (d as DepartmentDto & {departmentId?: number}).departmentId}>{d.departmentName}</option>)}
+                                </select>
+                            </div>
+
                             <div className="space-y-1.5 col-span-2">
                                 <Label
                                     className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Particulars
@@ -347,6 +411,7 @@ export function DisbursementCreateSheet({
                                        className="h-9 text-xs border-input bg-background text-foreground"
                                        placeholder="What is this payment for?"/>
                             </div>
+
                             <div className="space-y-1.5 col-span-2 pt-2 border-t border-border mt-2">
                                 <Label
                                     className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex justify-between items-center">
@@ -386,70 +451,105 @@ export function DisbursementCreateSheet({
                                                         className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Ref
                                                         No (PO)</TableHead>
                                                     <TableHead
-                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[350px]">Chart
+                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[200px]">Chart
                                                         of Account</TableHead>
                                                     <TableHead
-                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[150px]">Amount</TableHead>
-                                                    <TableHead className="w-[50px]"></TableHead>
+                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[130px]">Division</TableHead>
+                                                    <TableHead
+                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[180px]">Remarks</TableHead>
+                                                    <TableHead
+                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Amount</TableHead>
+                                                    <TableHead className="w-[40px]"></TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
                                                 {payables.length === 0 ? (
-                                                    <TableRow><TableCell colSpan={4}
+                                                    <TableRow><TableCell colSpan={6}
                                                                          className="text-center text-xs text-muted-foreground py-8 font-medium">No
                                                         payables added.</TableCell></TableRow>
                                                 ) : payables.map((p, i) => (
                                                     <TableRow key={i} className="border-border hover:bg-muted/50">
-                                                        <TableCell className="p-2"><Input
-                                                            className="h-8 text-xs uppercase bg-background"
-                                                            placeholder="Invoice / PO No." value={p.referenceNo}
-                                                            onChange={e => {
-                                                                const n = [...payables];
-                                                                n[i].referenceNo = e.target.value;
-                                                                setPayables(n);
-                                                            }}/></TableCell>
-                                                        <TableCell className="p-2">
+                                                        <TableCell className="p-2 align-top pt-3">
+                                                            <Input className="h-8 text-xs uppercase bg-background"
+                                                                   placeholder="Invoice/PO" value={p.referenceNo}
+                                                                   onChange={e => {
+                                                                       const n = [...payables];
+                                                                       n[i].referenceNo = e.target.value;
+                                                                       setPayables(n);
+                                                                   }}/>
+                                                        </TableCell>
+                                                        <TableCell className="p-2 align-top pt-3">
                                                             <SearchableDropdown
                                                                 options={coas.map(c => ({
-                                                                    value: c.coaId,
+                                                                    value: c.coaId || 0,
                                                                     label: `${c.glCode || 'NO-CODE'} - ${c.accountTitle}`
                                                                 }))}
-                                                                value={p.coaId || ""}
-                                                                onSelect={(val) => {
-                                                                    const n = [...payables];
-                                                                    n[i].coaId = Number(val);
-                                                                    setPayables(n);
-                                                                }}
-                                                                placeholder="Search GL Account..."
+                                                                value={p.coaId || ""} onSelect={(val) => {
+                                                                const n = [...payables];
+                                                                n[i].coaId = Number(val);
+                                                                setPayables(n);
+                                                            }}
+                                                                placeholder="Search GL..."
                                                                 className="h-8 w-full bg-background border-input text-[11px] font-medium"
-                                                                popoverWidth="w-[450px]"
+                                                                popoverWidth="w-[350px]"
                                                             />
                                                         </TableCell>
-                                                        <TableCell className="p-2">
+                                                        <TableCell className="p-2 align-top pt-3">
+                                                            <select
+                                                                className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-[10px] font-bold uppercase text-foreground shadow-sm"
+                                                                value={p.divisionId || ""} onChange={e => {
+                                                                const n = [...payables];
+                                                                n[i].divisionId = Number(e.target.value);
+                                                                setPayables(n);
+                                                            }}>
+                                                                <option value="" disabled>Division</option>
+                                                                {/* 🚀 FIX: Used strict intersection type instead of any */}
+                                                                {divisions.map((d, index) => <option
+                                                                    key={`line-div-${i}-${d.id || index}`}
+                                                                    value={d.id || (d as DivisionDto & {divisionId?: number}).divisionId}>{d.divisionName}</option>)}
+                                                            </select>
+                                                        </TableCell>
+                                                        <TableCell className="p-2 align-top pt-3">
+                                                            <Input className="h-8 text-[10px] bg-background"
+                                                                   placeholder="Line remarks..." value={p.remarks || ""}
+                                                                   onChange={e => {
+                                                                       const n = [...payables];
+                                                                       n[i].remarks = e.target.value;
+                                                                       setPayables(n);
+                                                                   }}/>
+                                                        </TableCell>
+                                                        <TableCell className="p-2 align-top pt-3">
                                                             <Input type="number"
                                                                    className={`h-8 text-xs font-bold bg-background ${p.amount < 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-500'}`}
                                                                    value={p.amount || ""} onChange={e => {
                                                                 const n = [...payables];
                                                                 n[i].amount = Number(e.target.value);
                                                                 setPayables(n);
-                                                            }}
-                                                            />
+                                                            }}/>
                                                         </TableCell>
-                                                        <TableCell className="p-2 text-right"><Button variant="ghost"
-                                                                                                      size="icon"
-                                                                                                      className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                                                                                                      onClick={() => setPayables(payables.filter((_, idx) => idx !== i))}><Trash2
-                                                            className="w-4 h-4"/></Button></TableCell>
+                                                        <TableCell className="p-2 text-right align-top pt-3">
+                                                            <Button variant="ghost" size="icon"
+                                                                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                                                                    onClick={() => setPayables(payables.filter((_, idx) => idx !== i))}><Trash2
+                                                                className="w-4 h-4"/></Button>
+                                                        </TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>
                                         </Table>
                                     </div>
-                                    <Button variant="outline" size="sm"
-                                            className="w-full text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border"
-                                            onClick={handleAddPayable}>
-                                        <Plus className="w-3.5 h-3.5 mr-2"/> Add Manual Payable
-                                    </Button>
+                                    <div className="flex gap-2 w-full">
+                                        <Button variant="outline" size="sm"
+                                                className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border"
+                                                onClick={handleAddPayable}>
+                                            <Plus className="w-3.5 h-3.5 mr-2"/> Add Manual Payable
+                                        </Button>
+                                        <Button variant="outline" size="sm"
+                                                className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-purple-600 hover:bg-purple-50 hover:text-purple-700 border-purple-200 dark:border-purple-800/50 dark:hover:bg-purple-900/20"
+                                                onClick={handleOpenMemoModal}>
+                                            <FileText className="w-3.5 h-3.5 mr-2"/> Apply Credit/Debit Memo
+                                        </Button>
+                                    </div>
                                 </TabsContent>
 
                                 <TabsContent value="payments" className="p-4 m-0 space-y-4">
@@ -490,27 +590,25 @@ export function DisbursementCreateSheet({
                                                                         value: b.bankId,
                                                                         label: `${b.bankName} - ${b.accountNumber}`
                                                                     }))}
-                                                                    value={p.bankId || ""}
-                                                                    onSelect={(val) => {
-                                                                        const n = [...payments];
-                                                                        n[i].bankId = Number(val);
-                                                                        setPayments(n);
-                                                                    }}
+                                                                    value={p.bankId || ""} onSelect={(val) => {
+                                                                    const n = [...payments];
+                                                                    n[i].bankId = Number(val);
+                                                                    setPayments(n);
+                                                                }}
                                                                     placeholder="Search Bank Account..."
                                                                     className="h-8 w-full border-primary/20 bg-primary/5 text-[11px] font-bold text-foreground"
                                                                     popoverWidth="w-[350px]"
                                                                 />
                                                                 <SearchableDropdown
                                                                     options={coas.filter(c => c.isPayment || c.isPaymentDuplicate).map(c => ({
-                                                                        value: c.coaId,
+                                                                        value: c.coaId || 0,
                                                                         label: `${c.glCode || 'NO-CODE'} - ${c.accountTitle}`
                                                                     }))}
-                                                                    value={p.coaId || ""}
-                                                                    onSelect={(val) => {
-                                                                        const n = [...payments];
-                                                                        n[i].coaId = Number(val);
-                                                                        setPayments(n);
-                                                                    }}
+                                                                    value={p.coaId || ""} onSelect={(val) => {
+                                                                    const n = [...payments];
+                                                                    n[i].coaId = Number(val);
+                                                                    setPayments(n);
+                                                                }}
                                                                     placeholder="Search General Ledger Code..."
                                                                     className="h-8 w-full bg-background border-input text-[11px] font-medium"
                                                                     popoverWidth="w-[450px]"
@@ -569,7 +667,7 @@ export function DisbursementCreateSheet({
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
                             <DownloadCloud className="w-5 h-5 text-amber-500"/>
-                            Pull Pending Records
+                            Pending Records
                         </DialogTitle>
                         <DialogDescription
                             className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
@@ -577,7 +675,18 @@ export function DisbursementCreateSheet({
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="max-h-[400px] overflow-y-auto border border-border rounded-md mt-4">
+                    {/* SEARCH BAR */}
+                    <div className="mt-2 flex items-center gap-2 bg-muted/50 p-2 rounded-md border border-border">
+                        <Search className="w-4 h-4 text-muted-foreground ml-2"/>
+                        <Input
+                            placeholder="Search by PO # or Invoice #..."
+                            value={poSearchQuery}
+                            onChange={(e) => setPoSearchQuery(e.target.value)}
+                            className="h-8 text-xs font-bold uppercase bg-background border-none shadow-none focus-visible:ring-0"
+                        />
+                    </div>
+
+                    <div className="max-h-[350px] overflow-y-auto border border-border rounded-md mt-2">
                         <Table>
                             <TableHeader className="bg-muted sticky top-0 z-10 shadow-sm">
                                 <TableRow className="border-border">
@@ -586,11 +695,11 @@ export function DisbursementCreateSheet({
                                         className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">PO
                                         Number</TableHead>
                                     <TableHead
-                                        className="text-[10px] font-black uppercase tracking-widest text-primary">Record
-                                        / Type</TableHead>
+                                        className="text-[10px] font-black uppercase tracking-widest text-primary">Invoice
+                                        #</TableHead>
                                     <TableHead
                                         className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-[160px]">Tax
-                                        Treatment</TableHead>
+                                        Classification</TableHead>
                                     <TableHead
                                         className="text-[10px] font-black uppercase tracking-widest text-right text-muted-foreground">Amount</TableHead>
                                 </TableRow>
@@ -601,12 +710,18 @@ export function DisbursementCreateSheet({
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2
                                         className="w-5 h-5 animate-spin mx-auto mb-2"/> Loading
                                         Records...</TableCell></TableRow>
-                                ) : unpaidPos.length === 0 ? (
+                                ) : unpaidPos.filter(po =>
+                                    po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
+                                    (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()))
+                                ).length === 0 ? (
                                     <TableRow><TableCell colSpan={5}
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground">No
-                                        pending records found for this supplier.</TableCell></TableRow>
+                                        matching records found.</TableCell></TableRow>
                                 ) : (
-                                    unpaidPos.map(po => (
+                                    unpaidPos.filter(po =>
+                                        po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
+                                        (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()))
+                                    ).map(po => (
                                         <TableRow key={po.uniqueKey}
                                                   className="cursor-pointer hover:bg-muted/50 border-border"
                                                   onClick={() => {
@@ -617,20 +732,18 @@ export function DisbursementCreateSheet({
                                                       }
                                                   }}>
                                             <TableCell className="text-center">
-                                                <Checkbox
-                                                    checked={selectedPoIds.includes(po.uniqueKey)}
-                                                    onCheckedChange={(checked) => {
-                                                        if (checked) {
-                                                            setSelectedPoIds([...selectedPoIds, po.uniqueKey]);
-                                                            if (!taxTypes[po.uniqueKey]) setTaxTypes(prev => ({
-                                                                ...prev,
-                                                                [po.uniqueKey]: "VAT"
-                                                            }));
-                                                        } else {
-                                                            setSelectedPoIds(selectedPoIds.filter(id => id !== po.uniqueKey));
-                                                        }
-                                                    }}
-                                                />
+                                                <Checkbox checked={selectedPoIds.includes(po.uniqueKey)}
+                                                          onCheckedChange={(checked) => {
+                                                              if (checked) {
+                                                                  setSelectedPoIds([...selectedPoIds, po.uniqueKey]);
+                                                                  if (!taxTypes[po.uniqueKey]) setTaxTypes(prev => ({
+                                                                      ...prev,
+                                                                      [po.uniqueKey]: "VAT"
+                                                                  }));
+                                                              } else {
+                                                                  setSelectedPoIds(selectedPoIds.filter(id => id !== po.uniqueKey));
+                                                              }
+                                                          }}/>
                                             </TableCell>
                                             <TableCell
                                                 className="font-bold text-xs uppercase flex flex-col gap-1 text-foreground mt-1.5 border-none">
@@ -647,7 +760,6 @@ export function DisbursementCreateSheet({
                                                         With Order</Badge>}
                                                 </div>
                                             </TableCell>
-
                                             <TableCell onClick={(e) => e.stopPropagation()}>
                                                 <select
                                                     className="h-7 w-full rounded-sm border border-input bg-background px-1 text-[10px] font-bold text-foreground shadow-sm disabled:opacity-30"
@@ -656,13 +768,11 @@ export function DisbursementCreateSheet({
                                                         ...taxTypes,
                                                         [po.uniqueKey]: e.target.value as "VAT" | "NON_VAT"
                                                     })}
-                                                    disabled={!selectedPoIds.includes(po.uniqueKey)}
-                                                >
+                                                    disabled={!selectedPoIds.includes(po.uniqueKey)}>
                                                     <option value="VAT">VAT Registered</option>
                                                     <option value="NON_VAT">Non-Registered (No VAT)</option>
                                                 </select>
                                             </TableCell>
-
                                             <TableCell
                                                 className="text-xs font-black text-right text-emerald-600 dark:text-emerald-500">₱ {po.amountDue.toLocaleString('en-US', {minimumFractionDigits: 2})}</TableCell>
                                         </TableRow>
@@ -680,6 +790,87 @@ export function DisbursementCreateSheet({
                             Import {selectedPoIds.length} Record(s)
                         </Button>
                     </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* 🚀 MEMO MODAL */}
+            <Dialog open={isMemoModalOpen} onOpenChange={setIsMemoModalOpen}>
+                <DialogContent className="sm:max-w-[700px] bg-background border-border">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
+                            <FileText className="w-5 h-5 text-purple-500"/>
+                            Available Supplier Memos
+                        </DialogTitle>
+                        <DialogDescription
+                            className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                            {/* 🚀 FIX: Escaped the apostrophe */}
+                            Select a Credit or Debit memo to apply to this voucher&apos;s payables.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="max-h-[400px] overflow-y-auto border border-border rounded-md mt-4">
+                        <Table>
+                            <TableHeader className="bg-muted sticky top-0 z-10 shadow-sm">
+                                <TableRow className="border-border">
+                                    <TableHead
+                                        className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Memo
+                                        No</TableHead>
+                                    <TableHead
+                                        className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Type
+                                        / Date</TableHead>
+                                    <TableHead
+                                        className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">GL
+                                        Account & Reason</TableHead>
+                                    <TableHead
+                                        className="text-[10px] font-black uppercase tracking-widest text-right text-muted-foreground">Amount</TableHead>
+                                    <TableHead className="w-[80px]"></TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {loadingMemos ? (
+                                    <TableRow><TableCell colSpan={5}
+                                                         className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2
+                                        className="w-5 h-5 animate-spin mx-auto mb-2"/> Fetching
+                                        Memos...</TableCell></TableRow>
+                                ) : memos.length === 0 ? (
+                                    <TableRow><TableCell colSpan={5}
+                                                         className="h-24 text-center text-sm font-medium text-muted-foreground">No
+                                        available memos found for this supplier.</TableCell></TableRow>
+                                ) : (
+                                    memos.map(memo => (
+                                        <TableRow key={memo.id} className="hover:bg-muted/50 border-border">
+                                            <TableCell
+                                                className="font-bold text-xs uppercase text-foreground">{memo.memo_number}</TableCell>
+                                            <TableCell>
+                                                <Badge variant="outline"
+                                                       className={`text-[9px] uppercase ${memo.type === 1 ? 'text-emerald-600 border-emerald-200 bg-emerald-50' : 'text-red-600 border-red-200 bg-red-50'}`}>
+                                                    {memo.memo_type_name}
+                                                </Badge>
+                                                <div
+                                                    className="text-[9px] text-muted-foreground mt-1 font-medium">{format(new Date(memo.date), "MMM dd, yyyy")}</div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div
+                                                    className="text-[10px] font-black uppercase text-foreground">{memo.account_title}</div>
+                                                <div
+                                                    className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[180px]">{memo.reason || "N/A"}</div>
+                                            </TableCell>
+                                            <TableCell
+                                                className={`text-xs font-black text-right ${memo.type === 1 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                {memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <Button size="sm" onClick={() => handleApplyMemo(memo)}
+                                                        className="h-7 text-[10px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white">
+                                                    Apply
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
                 </DialogContent>
             </Dialog>
         </>
