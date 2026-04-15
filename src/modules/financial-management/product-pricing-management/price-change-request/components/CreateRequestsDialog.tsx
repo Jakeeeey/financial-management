@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 
 import * as api from "../providers/pcrApi";
 
-type PriceTypeOption = { price_type_id: number; price_type_name: string };
+type PriceTypeOption = { price_type_id: number; price_type_name?: string };
 type ProductPriceField = "price_per_unit" | "priceA" | "priceB" | "priceC" | "priceD" | "priceE";
 
 function safeInt(v: unknown): number {
@@ -48,7 +48,7 @@ function formatPHP(n: number | null | undefined) {
     });
 }
 
-function pickCurrentPriceField(priceTypeName: string): ProductPriceField {
+function pickCurrentPriceField(priceTypeName?: string): ProductPriceField {
     const t = (priceTypeName || "").trim().toLowerCase();
 
     if (/\bprice\s*a\b/.test(t) || /\btier\s*a\b/.test(t) || t === "a" || t.endsWith(" a")) return "priceA";

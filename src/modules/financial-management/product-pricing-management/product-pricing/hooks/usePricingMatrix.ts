@@ -384,7 +384,7 @@ export function usePricingMatrix(args: {
             const message = error instanceof Error ? error.message : "Failed to save changes";
             toast.error(message);
         }
-    }, [dirty, dirtyErrors, tierIdMap, refresh]);
+    }, [dirty, dirtyErrors, tierIdMap, refresh, rows]);
 
     const discardAll = useCallback(() => {
         setDirty(new Map());

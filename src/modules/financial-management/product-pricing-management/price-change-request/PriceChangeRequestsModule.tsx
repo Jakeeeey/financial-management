@@ -10,6 +10,7 @@ import { Loader2, RefreshCw, Plus, CheckCheck, X } from "lucide-react";
 import RequestsTable from "./components/RequestsTable";
 import { RejectDialog } from "./components/RejectDialog";
 import CreateRequestDialog from "./components/CreateRequestsDialog";
+import { PriceTypeRef } from "./types";
 
 import { usePCRList } from "./hooks/usePCR";
 import { usePCRActions } from "./hooks/usePCRActions";
@@ -59,7 +60,7 @@ export function PriceChangeRequestsModule() {
     );
 }
 
-function RequestManager({ type, priceTypes }: { type: "price" | "cost"; priceTypes?: any[] }) {
+function RequestManager({ type, priceTypes }: { type: "price" | "cost"; priceTypes?: PriceTypeRef[] }) {
     const inbox = usePCRList({ status: "PENDING", page_size: 50, page: 1, requestType: type });
     const mine = usePCRList({ status: "", page_size: 50, page: 1, requestType: type });
 
