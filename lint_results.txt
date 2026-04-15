@@ -1,9 +1,0 @@
-
-C:\Users\mark_\financial-management-dev\src\app\api\assets\route.ts
-  30:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
-
-C:\Users\mark_\financial-management-dev\src\modules\financial-management\treasury\salesmen-expense-approval\SalesmenExpenseApprovalModule.tsx
-  10:10  warning  'FolderOpen' is defined but never used  @typescript-eslint/no-unused-vars
-
-✖ 2 problems (1 error, 1 warning)
-
