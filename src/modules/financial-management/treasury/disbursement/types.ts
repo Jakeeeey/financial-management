@@ -40,7 +40,8 @@ export interface Disbursement {
     dateCreated?: string;
     dateApproved?: string;
     datePosted?: string;
-
+    divisionId?: number;     // 🚀 NEW: Needed for Edit Mode
+    departmentId?: number;   // 🚀 NEW: Needed for Edit Mode
     divisionName?: string;
     departmentName?: string;
     status: string;
@@ -63,6 +64,16 @@ export interface DisbursementPayload {
 
     payables: PayableLine[];
     payments: PaymentLine[];
+}
+
+export interface DivisionDto {
+    id: number;
+    divisionName: string;
+}
+
+export interface DepartmentDto {
+    id: number;
+    departmentName: string;
 }
 
 export interface SupplierDto {
@@ -100,4 +111,16 @@ export interface UnpaidPoDto {
     date: string;
     amountDue: number;
     type: string; // 🚀 NEW
+}
+// Add this interface to your types file
+export interface MemoDto {
+    id: number;
+    memo_number: string;
+    type: number;
+    memo_type_name: string;
+    date: string;
+    amount: number;
+    reason: string | null;
+    coa_id: number;
+    account_title: string;
 }

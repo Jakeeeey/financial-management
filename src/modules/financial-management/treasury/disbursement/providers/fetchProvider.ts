@@ -8,7 +8,7 @@ import {
     SupplierDto,
     COADto,
     BankAccountDto,
-    UnpaidPoDto
+    UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto
 } from "../types";
 
 const API_BASE = "/api/fm/treasury/disbursements";
@@ -17,12 +17,16 @@ const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
 export const disbursementProvider = {
     getDisbursements: async (
         page: number = 0, size: number = 20, type: string = "All",
-        supplier: string = "", startDate: string = "", endDate: string = ""
+        supplier: string = "", startDate: string = "", endDate: string = "",
+        status: string = "All", divisionId: string = "", departmentId: string = "", docNo: string = ""
     ): Promise<PaginatedResponse<Disbursement>> => {
-        let url = `${API_BASE}?page=${page}&size=${size}&type=${encodeURIComponent(type)}`;
+        let url = `${API_BASE}?page=${page}&size=${size}&type=${encodeURIComponent(type)}&status=${encodeURIComponent(status)}`;
         if (supplier) url += `&supplier=${encodeURIComponent(supplier)}`;
         if (startDate) url += `&startDate=${encodeURIComponent(startDate)}`;
         if (endDate) url += `&endDate=${encodeURIComponent(endDate)}`;
+        if (divisionId) url += `&divisionId=${divisionId}`;
+        if (departmentId) url += `&departmentId=${departmentId}`;
+        if (docNo) url += `&docNo=${encodeURIComponent(docNo)}`;
 
         const res = await fetch(url);
         if (!res.ok) throw new Error("Failed to fetch disbursements");
@@ -66,7 +70,7 @@ export const disbursementProvider = {
     },
 
     getBanks: async (): Promise<BankAccountDto[]> => {
-        const res = await fetch("/api/fm/treasury/banks");
+        const res = await fetch("/api/fm/treasury/bank-accounts/active");
         if (!res.ok) throw new Error("Failed to fetch banks");
         return res.json();
     },
@@ -83,6 +87,24 @@ export const disbursementProvider = {
     getUnpaidPos: async (supplierId: number): Promise<UnpaidPoDto[]> => {
         const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`);
         if (!res.ok) throw new Error("Failed to fetch unpaid POs");
+        return res.json();
+    },
+    getSupplierMemos: async (supplierId: number): Promise<MemoDto[]> => {
+        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`);
+        if (!res.ok) throw new Error("Failed to fetch supplier memos");
+        return res.json();
+    },
+    getDivisions: async (): Promise<DivisionDto[]> => {
+        // Replace with your actual division API route if different
+        const res = await fetch("/api/fm/setup/divisions");
+        if (!res.ok) throw new Error("Failed to fetch divisions");
+        return res.json();
+    },
+
+    getDepartments: async (): Promise<DepartmentDto[]> => {
+        // Replace with your actual department API route if different
+        const res = await fetch("/api/fm/setup/departments");
+        if (!res.ok) throw new Error("Failed to fetch departments");
         return res.json();
     },
 };
