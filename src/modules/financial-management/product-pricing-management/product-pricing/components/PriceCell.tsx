@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { formatPHP } from "../utils/format";
 
 type Props = {
-    value: number | null;
+    value: number | string | null;
     dirty: boolean;
     error: string | null;
     onChange: (raw: string) => void;
@@ -15,6 +15,15 @@ type Props = {
 
 export default function PriceCell(props: Props) {
     const { value, dirty, error, onChange } = props;
+
+    // For display in formatPHP, we need a number. 
+    // If it's a string, we parse it. If empty/invalid, we use null.
+    const numericValue = React.useMemo(() => {
+        if (value === null || value === "") return null;
+        if (typeof value === "number") return value;
+        const parsed = parseFloat(value);
+        return isNaN(parsed) ? null : parsed;
+    }, [value]);
 
     return (
         <div className="flex h-12 flex-col justify-center gap-1">
@@ -30,7 +39,11 @@ export default function PriceCell(props: Props) {
                 )}
             />
             <div className="truncate text-[10px] leading-none text-muted-foreground">
-                {error ? <span className="text-destructive">{error}</span> : formatPHP(value)}
+                {error ? (
+                    <span className="text-destructive">{error}</span>
+                ) : (
+                    formatPHP(numericValue)
+                )}
             </div>
         </div>
     );

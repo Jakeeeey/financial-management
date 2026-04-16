@@ -140,7 +140,7 @@ export function DisbursementCreateSheet({
         if (open && transactionTypeId) {
             setLoadingData(true);
             const typeString = transactionTypeId === 1 ? "Trade" : "Non-Trade";
-
+            
             disbursementProvider.getSuppliers(typeString)
                 .then(setSuppliers)
                 .finally(() => setLoadingData(false));
@@ -302,7 +302,7 @@ export function DisbursementCreateSheet({
 
         const payload: DisbursementPayload = {
             docNo: editData ? editData.docNo : undefined,
-            transactionTypeId: Number(transactionTypeId),
+            transactionTypeId: Number(transactionTypeId), 
             payeeId: Number(payeeId),
             divisionId: Number(divisionId),
             departmentId: Number(departmentId),
@@ -363,7 +363,7 @@ export function DisbursementCreateSheet({
                                 </Label>
                                 <select
                                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs font-bold uppercase text-foreground shadow-sm focus-visible:outline-none"
-                                    value={transactionTypeId}
+                                    value={transactionTypeId} 
                                     onChange={e => {
                                         // 🚀 UX FIX: Clear the payee and tables when the user switches transaction types manually!
                                         setTransactionTypeId(Number(e.target.value));

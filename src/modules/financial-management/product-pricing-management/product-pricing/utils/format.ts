@@ -10,12 +10,12 @@ export function formatPHP(amount: number | null): string {
         style: "currency",
         currency: "PHP",
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 4,
     }).format(amount);
 }
 
 export function clampMoney(v: number | null): number | null {
     if (v === null) return null;
-    const rounded = Math.round(v * 100) / 100;
+    const rounded = Math.round(v * 10000) / 10000;
     return rounded;
 }
