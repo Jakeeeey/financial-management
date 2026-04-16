@@ -93,9 +93,7 @@ export function DisbursementCreateSheet({
                                         }: DisbursementCreateSheetProps) {
     const today = new Date().toISOString().split("T")[0];
 
-    // 🚀 FIXED: Replaced voucherType string with the actual Transaction Type ID state
     const [transactionTypeId, setTransactionTypeId] = useState<number | "">(1);
-
     const [payeeId, setPayeeId] = useState<number | "">("");
     const [remarks, setRemarks] = useState("");
     const [transactionDate, setTransactionDate] = useState(today);
@@ -127,19 +125,32 @@ export function DisbursementCreateSheet({
 
     const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
 
+    // 🚀 EFFECT 1: Fetch STATIC reference data only once when the sheet opens
     useEffect(() => {
         if (open) {
-            setLoadingData(true);
-            Promise.all([
-                disbursementProvider.getSuppliers("Trade").then(setSuppliers),
-                disbursementProvider.getCOAs().then(setCoas),
-                disbursementProvider.getBanks().then(setBanks),
-                disbursementProvider.getDivisions().then(setDivisions).catch(() => console.warn("No divisions route yet")),
-                disbursementProvider.getDepartments().then(setDepartments).catch(() => console.warn("No departments route yet"))
-            ]).finally(() => setLoadingData(false));
+            disbursementProvider.getCOAs().then(setCoas);
+            disbursementProvider.getBanks().then(setBanks);
+            disbursementProvider.getDivisions().then(setDivisions).catch(() => console.warn("No divisions route"));
+            disbursementProvider.getDepartments().then(setDepartments).catch(() => console.warn("No departments route"));
+        }
+    }, [open]);
 
+    // 🚀 EFFECT 2: Fetch SUPPLIERS dynamically based on Transaction Type!
+    useEffect(() => {
+        if (open && transactionTypeId) {
+            setLoadingData(true);
+            const typeString = transactionTypeId === 1 ? "Trade" : "Non-Trade";
+            
+            disbursementProvider.getSuppliers(typeString)
+                .then(setSuppliers)
+                .finally(() => setLoadingData(false));
+        }
+    }, [open, transactionTypeId]);
+
+    // 🚀 EFFECT 3: Hydrate the form if we are Editing, or reset if we are Creating
+    useEffect(() => {
+        if (open) {
             if (editData) {
-                // 🚀 FIXED: Safely map the incoming transactionTypeName back to an ID (1 for Trade, 2 for Non-Trade)
                 const isNonTrade = editData.transactionTypeName?.toUpperCase().includes("NON");
                 setTransactionTypeId(isNonTrade ? 2 : 1);
 
@@ -289,10 +300,9 @@ export function DisbursementCreateSheet({
         if (!departmentId) return toast.error("Department is required.");
         if (totalAmount <= 0) return toast.error("Voucher total must be greater than 0.");
 
-        // 🚀 FIXED: Payload now flawlessly matches the required types
         const payload: DisbursementPayload = {
             docNo: editData ? editData.docNo : undefined,
-            transactionTypeId: Number(transactionTypeId),
+            transactionTypeId: Number(transactionTypeId), 
             payeeId: Number(payeeId),
             divisionId: Number(divisionId),
             departmentId: Number(departmentId),
@@ -310,9 +320,7 @@ export function DisbursementCreateSheet({
                 bankId: Number(p.bankId) || undefined
             })),
         };
-
         const success = await onSubmit(payload);
-
         if (success) {
             setTransactionTypeId(1);
             setPayeeId("");
@@ -328,14 +336,13 @@ export function DisbursementCreateSheet({
     return (
         <>
             <Sheet open={open} onOpenChange={onOpenChange}>
-                <SheetContent className="sm:max-w-[950px] w-full p-0 flex flex-col bg-background overflow-hidden border-l border-border">
+                <SheetContent
+                    className="sm:max-w-[950px] w-full p-0 flex flex-col bg-background overflow-hidden border-l border-border">
                     <SheetHeader className="p-6 border-b border-border bg-card shrink-0">
-                        <SheetTitle className="text-xl font-black uppercase text-foreground">
-                            {editData ? `Edit Draft: ${editData.docNo}` : "New Disbursement Voucher"}
-                        </SheetTitle>
-                        <SheetDescription className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                            {editData ? "Update voucher details and line items." : "Draft a new voucher, select a payee, and assign financial entries."}
-                        </SheetDescription>
+                        <SheetTitle
+                            className="text-xl font-black uppercase text-foreground">{editData ? `Edit Draft: ${editData.docNo}` : "New Disbursement Voucher"}</SheetTitle>
+                        <SheetDescription
+                            className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{editData ? "Update voucher details and line items." : "Draft a new voucher, select a payee, and assign financial entries."}</SheetDescription>
                     </SheetHeader>
 
                     <div className="flex-1 overflow-y-auto p-6 scrollbar-thin space-y-6">
@@ -356,7 +363,14 @@ export function DisbursementCreateSheet({
                                 </Label>
                                 <select
                                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs font-bold uppercase text-foreground shadow-sm focus-visible:outline-none"
-                                    value={transactionTypeId} onChange={e => setTransactionTypeId(Number(e.target.value))}>
+                                    value={transactionTypeId} 
+                                    onChange={e => {
+                                        // 🚀 UX FIX: Clear the payee and tables when the user switches transaction types manually!
+                                        setTransactionTypeId(Number(e.target.value));
+                                        setPayeeId("");
+                                        setUnpaidPos([]);
+                                        setMemos([]);
+                                    }}>
                                     <option value="" disabled>-- Select Type --</option>
                                     <option value={1}>Trade</option>
                                     <option value={2}>Non-Trade</option>
@@ -379,7 +393,7 @@ export function DisbursementCreateSheet({
                                             options={suppliers.map(s => ({value: s.id, label: s.supplier_name}))}
                                             value={payeeId} onSelect={(val) => setPayeeId(Number(val))}
                                             placeholder={`-- Search Payee --`}
-                                            disabled={loadingData}
+                                            disabled={loadingData || !transactionTypeId}
                                             className="h-9 w-full bg-background border-input text-xs font-bold uppercase"
                                         />
                                     </div>
