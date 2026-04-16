@@ -165,14 +165,16 @@ export function ReportControlSection() {
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        <div className={cn(
-                            "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all shadow-sm",
-                            validation.isCertified 
-                                ? "bg-success/20 text-success border-success/30 shadow-success/10" 
-                                : "bg-success/10 text-success border-success/20 shadow-success/5"
-                        )}>
-                            {validation.isCertified ? "Certified" : "Validated"}
-                        </div>
+                        {false && (
+                            <div className={cn(
+                                "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all shadow-sm",
+                                validation.isCertified 
+                                    ? "bg-success/20 text-success border-success/30 shadow-success/10" 
+                                    : "bg-success/10 text-success border-success/20 shadow-success/5"
+                            )}>
+                                {validation.isCertified ? "Certified" : "Validated"}
+                            </div>
+                        )}
                         <Button 
                             variant="outline" 
                             className="rounded-xl shadow-sm h-9 px-4 text-xs font-bold"
@@ -189,14 +191,16 @@ export function ReportControlSection() {
                         >
                             Export Excel
                         </Button>
-                        <Button 
-                            variant="default" 
-                            className="rounded-xl shadow-sm h-9 px-6 text-xs font-bold"
-                            onClick={() => setIsCertifyModalOpen(true)}
-                            disabled={validation.isCertified}
-                        >
-                            Certify Statement
-                        </Button>
+                        {false && (
+                            <Button 
+                                variant="default" 
+                                className="rounded-xl shadow-sm h-9 px-6 text-xs font-bold"
+                                onClick={() => setIsCertifyModalOpen(true)}
+                                disabled={validation.isCertified}
+                            >
+                                Certify Statement
+                            </Button>
+                        )}
                     </div>
                 </div>
 

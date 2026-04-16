@@ -130,9 +130,11 @@ export function ReportControlSection({ validation, ratios }: Props) {
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        <Badge variant="secondary" className="rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider">
-                            Validated
-                        </Badge>
+                        {false && (
+                            <Badge variant="secondary" className="rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider">
+                                Validated
+                            </Badge>
+                        )}
                         <Button 
                             variant="ghost" 
                             className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold bg-zinc-950 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
@@ -149,14 +151,16 @@ export function ReportControlSection({ validation, ratios }: Props) {
                             <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />
                             Export Excel
                         </Button>
-                        <Button 
-                            variant="default" 
-                            className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold"
-                            onClick={() => setIsCertifyModalOpen(true)}
-                        >
-                            <Lock className="w-3.5 h-3.5 mr-2" />
-                            Certify Statement
-                        </Button>
+                        {false && (
+                            <Button 
+                                variant="default" 
+                                className="rounded-lg shadow-sm h-9 px-4 text-xs font-bold"
+                                onClick={() => setIsCertifyModalOpen(true)}
+                            >
+                                <Lock className="w-3.5 h-3.5 mr-2" />
+                                Certify Statement
+                            </Button>
+                        )}
                     </div>
                 </div>
 

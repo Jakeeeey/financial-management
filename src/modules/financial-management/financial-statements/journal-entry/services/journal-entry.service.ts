@@ -54,3 +54,37 @@ export async function getJournalEntries(
     throw error;
   }
 }
+
+export async function getJournalEntryDrillDown(
+  jeNo: string,
+  token?: string
+): Promise<any> {
+  const API_BASE = "http://100.81.225.79:8086/api/journal-entry/drill-down";
+  const url = `${API_BASE}?jeNo=${jeNo}`;
+
+  try {
+    const headers: Record<string, string> = {
+        'cache-no-store': 'true'
+    };
+
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+        method: "GET",
+        headers,
+        cache: 'no-store'
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Failed to fetch drill down data: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Journal Entry Drill Down Service Error:", error);
+    throw error;
+  }
+}
