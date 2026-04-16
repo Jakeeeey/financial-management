@@ -10,23 +10,12 @@ import { Loader2, RefreshCw, Plus, CheckCheck, X } from "lucide-react";
 import RequestsTable from "./components/RequestsTable";
 import { RejectDialog } from "./components/RejectDialog";
 import CreateRequestDialog from "./components/CreateRequestsDialog";
+import { PriceTypeRef } from "./types";
 
 import { usePCRList } from "./hooks/usePCR";
 import { usePCRActions } from "./hooks/usePCRActions";
 
 export function PriceChangeRequestsModule() {
-    const inbox = usePCRList({ status: "PENDING", page_size: 50, page: 1 });
-    const mine = usePCRList({ status: "", page_size: 50, page: 1 });
-
-    const [rejectingId, setRejectingId] = React.useState<number | null>(null);
-    const [createOpen, setCreateOpen] = React.useState(false);
-    const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
-
-    const actions = usePCRActions(() => {
-        inbox.refresh();
-        mine.refresh();
-    });
-
     const priceTypes = React.useMemo(
         () => [
             { price_type_id: 16, price_type_name: "A" },
@@ -37,6 +26,52 @@ export function PriceChangeRequestsModule() {
         ],
         [],
     );
+
+    return (
+        <div className="space-y-3">
+            <Card className="rounded-2xl">
+                <CardHeader className="flex flex-row items-center justify-between gap-3">
+                    <div className="space-y-1">
+                        <CardTitle>Price Change Requests</CardTitle>
+                        <div className="text-sm text-muted-foreground">
+                            Create requests and approve/reject to apply price updates.
+                        </div>
+                    </div>
+                </CardHeader>
+
+                <CardContent className="space-y-4">
+                    <Tabs defaultValue="price">
+                        <TabsList className="mb-2">
+                            <TabsTrigger value="price">Price Type</TabsTrigger>
+                            <TabsTrigger value="cost">List Price</TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="price">
+                            <RequestManager type="price" priceTypes={priceTypes} />
+                        </TabsContent>
+
+                        <TabsContent value="cost">
+                            <RequestManager type="cost" />
+                        </TabsContent>
+                    </Tabs>
+                </CardContent>
+            </Card>
+        </div>
+    );
+}
+
+function RequestManager({ type, priceTypes }: { type: "price" | "cost"; priceTypes?: PriceTypeRef[] }) {
+    const inbox = usePCRList({ status: "PENDING", page_size: 50, page: 1, requestType: type });
+    const mine = usePCRList({ status: "", page_size: 50, page: 1, requestType: type });
+
+    const [createOpen, setCreateOpen] = React.useState(false);
+    const [rejectingId, setRejectingId] = React.useState<number | null>(null);
+    const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
+
+    const actions = usePCRActions(() => {
+        inbox.refresh();
+        mine.refresh();
+    }, type);
 
     const pendingInboxIds = React.useMemo(
         () =>
@@ -98,172 +133,166 @@ export function PriceChangeRequestsModule() {
 
     return (
         <div className="space-y-3">
-            <Card className="rounded-2xl">
-                <CardHeader className="flex flex-row items-center justify-between gap-3">
-                    <div className="space-y-1">
-                        <CardTitle>Price Change Requests</CardTitle>
-                        <div className="text-sm text-muted-foreground">
-                            Create requests and approve/reject to apply price updates.
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        <Button onClick={() => setCreateOpen(true)}>
+            <div className="flex items-center justify-between gap-2">
+                <div>
+                    {type === "price" && (
+                        <Button size="sm" onClick={() => setCreateOpen(true)}>
                             <Plus className="mr-2 h-4 w-4" />
                             New Request
                         </Button>
+                    )}
+                </div>
 
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                clearSelection();
-                                inbox.refresh();
-                                mine.refresh();
-                            }}
-                            disabled={inbox.loading || mine.loading}
-                        >
-                            {inbox.loading || mine.loading ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                            )}
-                            Refresh
-                        </Button>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                        clearSelection();
+                        inbox.refresh();
+                        mine.refresh();
+                    }}
+                    disabled={inbox.loading || mine.loading}
+                >
+                    {inbox.loading || mine.loading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                    )}
+                    Refresh
+                </Button>
+            </div>
+
+            <Tabs defaultValue="inbox">
+                <TabsList>
+                    <TabsTrigger value="inbox">Approvals Inbox</TabsTrigger>
+                    <TabsTrigger value="mine">My Requests</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="inbox" className="space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <Input
+                            placeholder={`Search ${type === "cost" ? "CCR" : "PCR"} # / product...`}
+                            value={inbox.query.q ?? ""}
+                            onChange={(e) =>
+                                inbox.setQuery((q) => ({
+                                    ...q,
+                                    q: e.target.value,
+                                    page: 1,
+                                }))
+                            }
+                            className="sm:max-w-md"
+                        />
+                        <div className="text-sm text-muted-foreground">Total: {inbox.total.toLocaleString()}</div>
                     </div>
-                </CardHeader>
 
-                <CardContent className="space-y-3">
-                    <Tabs defaultValue="inbox">
-                        <TabsList>
-                            <TabsTrigger value="inbox">Approvals Inbox</TabsTrigger>
-                            <TabsTrigger value="mine">My Requests</TabsTrigger>
-                        </TabsList>
+                    <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="text-sm text-muted-foreground">
+                            {selectedIds.length > 0 ? (
+                                <>
+                                    <span className="font-medium text-foreground">{selectedIds.length}</span> request(s) selected
+                                </>
+                            ) : (
+                                "Select pending requests to approve them in one save."
+                            )}
+                        </div>
 
-                        <TabsContent value="inbox" className="space-y-3">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                <Input
-                                    placeholder="Search PCR # / product name / product code..."
-                                    value={inbox.query.q ?? ""}
-                                    onChange={(e) =>
-                                        inbox.setQuery((q) => ({
-                                            ...q,
-                                            q: e.target.value,
-                                            page: 1,
-                                        }))
-                                    }
-                                    className="sm:max-w-md"
-                                />
-                                <div className="text-sm text-muted-foreground">Total: {inbox.total.toLocaleString()}</div>
-                            </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={clearSelection}
+                                disabled={actions.acting || selectedIds.length === 0}
+                            >
+                                <X className="mr-2 h-4 w-4" />
+                                Clear
+                            </Button>
 
-                            <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="text-sm text-muted-foreground">
-                                    {selectedIds.length > 0 ? (
-                                        <>
-                                            <span className="font-medium text-foreground">{selectedIds.length}</span> request(s) selected
-                                        </>
-                                    ) : (
-                                        "Select pending requests to approve them in one save."
-                                    )}
-                                </div>
+                            <Button
+                                onClick={handleApproveSelected}
+                                disabled={actions.acting || selectedIds.length === 0}
+                            >
+                                {actions.acting ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <CheckCheck className="mr-2 h-4 w-4" />
+                                )}
+                                Approve Selected
+                            </Button>
+                        </div>
+                    </div>
 
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Button
-                                        variant="outline"
-                                        onClick={clearSelection}
-                                        disabled={actions.acting || selectedIds.length === 0}
-                                    >
-                                        <X className="mr-2 h-4 w-4" />
-                                        Clear
-                                    </Button>
+                    <RequestsTable
+                        rows={inbox.rows}
+                        mode="approver"
+                        requestType={type}
+                        acting={actions.acting}
+                        onApprove={(id) => actions.approve(id)}
+                        onReject={(id) => setRejectingId(id)}
+                        meta={{ total_count: inbox.total }}
+                        page={Number(inbox.query.page ?? 1)}
+                        pageSize={Number(inbox.query.page_size ?? 50)}
+                        onPageChange={(page) =>
+                            inbox.setQuery((q) => ({
+                                ...q,
+                                page,
+                            }))
+                        }
+                        onPageSizeChange={(page_size) =>
+                            inbox.setQuery((q) => ({
+                                ...q,
+                                page_size,
+                                page: 1,
+                            }))
+                        }
+                        footerItemLabel="requests"
+                        selectedIds={selectedIds}
+                        onToggleSelect={toggleSelect}
+                        onToggleSelectAllPage={toggleSelectAllPage}
+                    />
+                </TabsContent>
 
-                                    <Button
-                                        onClick={handleApproveSelected}
-                                        disabled={actions.acting || selectedIds.length === 0}
-                                    >
-                                        {actions.acting ? (
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        ) : (
-                                            <CheckCheck className="mr-2 h-4 w-4" />
-                                        )}
-                                        Approve Selected
-                                    </Button>
-                                </div>
-                            </div>
+                <TabsContent value="mine" className="space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <Input
+                            placeholder={`Search ${type === "cost" ? "CCR" : "PCR"} # / product...`}
+                            value={mine.query.q ?? ""}
+                            onChange={(e) =>
+                                mine.setQuery((q) => ({
+                                    ...q,
+                                    q: e.target.value,
+                                    page: 1,
+                                }))
+                            }
+                            className="sm:max-w-md"
+                        />
+                        <div className="text-sm text-muted-foreground">Total: {mine.total.toLocaleString()}</div>
+                    </div>
 
-                            <RequestsTable
-                                rows={inbox.rows}
-                                mode="approver"
-                                acting={actions.acting}
-                                onApprove={(id) => actions.approve(id)}
-                                onReject={(id) => setRejectingId(id)}
-                                meta={{ total_count: inbox.total }}
-                                page={Number(inbox.query.page ?? 1)}
-                                pageSize={Number(inbox.query.page_size ?? 50)}
-                                onPageChange={(page) =>
-                                    inbox.setQuery((q) => ({
-                                        ...q,
-                                        page,
-                                    }))
-                                }
-                                onPageSizeChange={(page_size) =>
-                                    inbox.setQuery((q) => ({
-                                        ...q,
-                                        page_size,
-                                        page: 1,
-                                    }))
-                                }
-                                footerItemLabel="requests"
-                                selectedIds={selectedIds}
-                                onToggleSelect={toggleSelect}
-                                onToggleSelectAllPage={toggleSelectAllPage}
-                            />
-                        </TabsContent>
-
-                        <TabsContent value="mine" className="space-y-3">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                <Input
-                                    placeholder="Search PCR # / product..."
-                                    value={mine.query.q ?? ""}
-                                    onChange={(e) =>
-                                        mine.setQuery((q) => ({
-                                            ...q,
-                                            q: e.target.value,
-                                            page: 1,
-                                        }))
-                                    }
-                                    className="sm:max-w-md"
-                                />
-                                <div className="text-sm text-muted-foreground">Total: {mine.total.toLocaleString()}</div>
-                            </div>
-
-                            <RequestsTable
-                                rows={mine.rows}
-                                mode="mine"
-                                acting={actions.acting}
-                                onCancel={(id) => actions.cancel(id)}
-                                meta={{ total_count: mine.total }}
-                                page={Number(mine.query.page ?? 1)}
-                                pageSize={Number(mine.query.page_size ?? 50)}
-                                onPageChange={(page) =>
-                                    mine.setQuery((q) => ({
-                                        ...q,
-                                        page,
-                                    }))
-                                }
-                                onPageSizeChange={(page_size) =>
-                                    mine.setQuery((q) => ({
-                                        ...q,
-                                        page_size,
-                                        page: 1,
-                                    }))
-                                }
-                                footerItemLabel="requests"
-                            />
-                        </TabsContent>
-                    </Tabs>
-                </CardContent>
-            </Card>
+                    <RequestsTable
+                        rows={mine.rows}
+                        mode="mine"
+                        requestType={type}
+                        acting={actions.acting}
+                        onCancel={(id) => actions.cancel(id)}
+                        meta={{ total_count: mine.total }}
+                        page={Number(mine.query.page ?? 1)}
+                        pageSize={Number(mine.query.page_size ?? 50)}
+                        onPageChange={(page) =>
+                            mine.setQuery((q) => ({
+                                ...q,
+                                page,
+                            }))
+                        }
+                        onPageSizeChange={(page_size) =>
+                            mine.setQuery((q) => ({
+                                ...q,
+                                page_size,
+                                page: 1,
+                            }))
+                        }
+                        footerItemLabel="requests"
+                    />
+                </TabsContent>
+            </Tabs>
 
             <RejectDialog
                 open={rejectingId != null}
@@ -279,7 +308,7 @@ export function PriceChangeRequestsModule() {
             <CreateRequestDialog
                 open={createOpen}
                 onOpenChange={setCreateOpen}
-                priceTypes={priceTypes}
+                priceTypes={priceTypes || []}
                 onCreated={() => {
                     inbox.refresh();
                     mine.refresh();
