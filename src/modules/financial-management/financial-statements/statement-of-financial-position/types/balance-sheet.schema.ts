@@ -29,10 +29,19 @@ export const BalanceSheetResponseSchema = z.object({
   comparisonSummary: BalanceSheetSummarySchema.optional(),
 });
 
+export const DrillDownEntrySchema = z.object({
+  source: z.string(),
+  reference: z.string(),
+  date: z.string(),
+  description: z.string(),
+  amount: z.number(),
+});
+
 // ─── Inferred TypeScript types ───
 export type BalanceSheetEntry = z.infer<typeof BalanceSheetEntrySchema>;
 export type BalanceSheetSummary = z.infer<typeof BalanceSheetSummarySchema>;
 export type BalanceSheetResponse = z.infer<typeof BalanceSheetResponseSchema>;
+export type DrillDownEntry = z.infer<typeof DrillDownEntrySchema>;
 
 // ─── Filter state managed by the provider ───
 export interface BalanceSheetFilterState {

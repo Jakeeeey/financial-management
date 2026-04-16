@@ -1,4 +1,5 @@
-import { BalanceSheetResponse, BalanceSheetResponseSchema } from "../types/balance-sheet.schema";
+import { BalanceSheetResponse, BalanceSheetResponseSchema, DrillDownEntry, DrillDownEntrySchema } from "../types/balance-sheet.schema";
+import { z } from "zod";
 
 /**
  * Server-side service for fetching balance sheet data from the external backend API.
@@ -84,3 +85,61 @@ export async function getBalanceSheet(
     throw error;
   }
 }
+
+interface FetchDrillDownParams {
+  glCode: string;
+  startDate: string;
+  endDate: string;
+}
+
+export async function getBalanceSheetDrillDown(
+  params: FetchDrillDownParams,
+  token?: string
+): Promise<DrillDownEntry[]> {
+  const API_BASE = "http://100.81.225.79:8086/api/balance-sheet/drill-down";
+  const query = new URLSearchParams();
+  query.set("glCode", params.glCode);
+  query.set("startDate", params.startDate);
+  query.set("endDate", params.endDate);
+
+  const url = `${API_BASE}?${query.toString()}`;
+
+  try {
+    const headers: Record<string, string> = {
+      "cache-no-store": "true",
+    };
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch drill-down data: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    // The API returns an object like { data: [...] } based on standard patterns or just an array.
+    // Based on User prompt, it has "data": [...]
+    const drillDownData = data.data || data;
+
+    const validated = z.array(DrillDownEntrySchema).safeParse(drillDownData);
+
+    if (!validated.success) {
+      console.error("Drill-Down data validation failed:", validated.error);
+      return drillDownData as DrillDownEntry[];
+    }
+
+    return validated.data;
+  } catch (error) {
+    console.error("Drill-Down Service Error:", error);
+    throw error;
+  }
+}
+

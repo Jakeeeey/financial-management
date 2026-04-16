@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,8 @@ import {
   Download, 
   FileSpreadsheet,
   RotateCcw,
-  Filter
+  Filter,
+  Loader2
 } from "lucide-react";
 import { TrialBalanceItem, TrialBalanceDrillDownItem } from "../types/trial-balance.schema";
 import { Label } from "@/components/ui/label";
@@ -94,6 +95,8 @@ const columns: ColumnDef<TrialBalanceDrillDownItem>[] = [
   },
 ];
 
+const MIN_LOADING_DELAY = 800;
+
 export function TrialBalanceDrillDown({
   account,
   onBack,
@@ -104,6 +107,7 @@ export function TrialBalanceDrillDown({
   const { filters } = useTrialBalanceContext();
   const [lines, setLines] = useState<TrialBalanceDrillDownItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isApplyingFilters, setIsApplyingFilters] = useState(false);
 
   // Draft States (Inputs)
   const [draftSearchQuery, setDraftSearchQuery] = useState("");
@@ -111,35 +115,44 @@ export function TrialBalanceDrillDown({
   const [draftStartDate, setDraftStartDate] = useState(filters.startDate);
   const [draftEndDate, setDraftEndDate] = useState(filters.endDate);
 
-  // Active States (Applied to API / Data filtering)
+  // Active States (Applied)
   const [activeSearchQuery, setActiveSearchQuery] = useState("");
   const [activeMinAmount, setActiveMinAmount] = useState("");
   const [activeStartDate, setActiveStartDate] = useState(filters.startDate);
   const [activeEndDate, setActiveEndDate] = useState(filters.endDate);
+
+  const toastIdRef = useRef<string | number | undefined>(undefined);
 
   const formatAmount = (val: number) => {
     if (val === 0) return "—";
     return formatCurrency(val);
   };
 
+  // Core fetch function
+  const fetchDrillDown = async (startDate: string, endDate: string) => {
+    const query = new URLSearchParams();
+    query.set("glCode", account.glCode);
+    query.set("startDate", startDate);
+    query.set("endDate", endDate);
+
+    const url = `/api/fm/financial-statements/trial-balance/drill-down?${query.toString()}`;
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      throw new Error("Failed to fetch drill-down records.");
+    }
+
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  };
+
+  // Initial load
   useEffect(() => {
-    async function fetchDrillDown() {
+    async function initialFetch() {
       setIsLoading(true);
       try {
-        const query = new URLSearchParams();
-        query.set("glCode", account.glCode);
-        query.set("startDate", activeStartDate);
-        query.set("endDate", activeEndDate);
-
-        const url = `/api/fm/financial-statements/trial-balance/drill-down?${query.toString()}`;
-        const res = await fetch(url);
-
-        if (!res.ok) {
-           throw new Error("Failed to fetch drill-down records.");
-        }
-
-        const data = await res.json();
-        setLines(Array.isArray(data) ? data : []);
+        const data = await fetchDrillDown(activeStartDate, activeEndDate);
+        setLines(data);
       } catch (err: any) {
         toast.error(`Error loading records: ${err.message}`);
         setLines([]);
@@ -148,8 +161,8 @@ export function TrialBalanceDrillDown({
       }
     }
 
-    fetchDrillDown();
-  }, [account.glCode, activeStartDate, activeEndDate]);
+    initialFetch();
+  }, [account.glCode]); // Only on initial mount / account change
 
   const filteredLines = useMemo(() => {
       return lines.filter(line => {
@@ -174,11 +187,39 @@ export function TrialBalanceDrillDown({
       });
   }, [lines, activeSearchQuery, activeMinAmount]);
 
-  const handleApplyFilters = () => {
-    setActiveSearchQuery(draftSearchQuery);
-    setActiveMinAmount(draftMinAmount);
-    setActiveStartDate(draftStartDate);
-    setActiveEndDate(draftEndDate);
+  const handleApplyFilters = async () => {
+    setIsApplyingFilters(true);
+    const loadingToastId = toast.loading("Applying filters...");
+    toastIdRef.current = loadingToastId;
+
+    const startTime = Date.now();
+    const datesChanged = draftStartDate !== activeStartDate || draftEndDate !== activeEndDate;
+
+    try {
+      if (datesChanged) {
+        // Dates changed — need to refetch from API
+        const data = await fetchDrillDown(draftStartDate, draftEndDate);
+        setLines(data);
+        setActiveStartDate(draftStartDate);
+        setActiveEndDate(draftEndDate);
+      }
+
+      // Apply client-side filters
+      setActiveSearchQuery(draftSearchQuery);
+      setActiveMinAmount(draftMinAmount);
+
+      // Ensure minimum visual delay for the skeleton pulse
+      const elapsed = Date.now() - startTime;
+      if (elapsed < MIN_LOADING_DELAY) {
+        await new Promise(resolve => setTimeout(resolve, MIN_LOADING_DELAY - elapsed));
+      }
+
+      toast.success("Filters applied successfully.", { id: loadingToastId });
+    } catch (err: any) {
+      toast.error(`Failed to apply filters: ${err.message}`, { id: loadingToastId });
+    } finally {
+      setIsApplyingFilters(false);
+    }
   };
 
   const handleExportExcel = () => {
@@ -204,18 +245,18 @@ export function TrialBalanceDrillDown({
   };
 
   const handleReset = () => {
-    // Reset Drafts
     setDraftSearchQuery("");
     setDraftMinAmount("");
     setDraftStartDate(filters.startDate);
     setDraftEndDate(filters.endDate);
     
-    // Reset Actives
     setActiveSearchQuery("");
     setActiveMinAmount("");
     setActiveStartDate(filters.startDate);
     setActiveEndDate(filters.endDate);
   };
+
+  const showSkeleton = isLoading || isApplyingFilters;
 
   return (
     <div className="flex flex-col h-full bg-background animate-in fade-in slide-in-from-right-4 duration-300">
@@ -269,6 +310,7 @@ export function TrialBalanceDrillDown({
                   className="h-9 pl-8 text-xs" 
                   value={draftSearchQuery}
                   onChange={(e) => setDraftSearchQuery(e.target.value)}
+                  disabled={isApplyingFilters}
                 />
               </div>
             </div>
@@ -282,6 +324,7 @@ export function TrialBalanceDrillDown({
                 className="h-9 text-xs" 
                 value={draftMinAmount}
                 onChange={(e) => setDraftMinAmount(e.target.value)}
+                disabled={isApplyingFilters}
               />
             </div>
 
@@ -293,32 +336,49 @@ export function TrialBalanceDrillDown({
                   className="h-8 text-xs" 
                   value={draftStartDate} 
                   onChange={(e) => setDraftStartDate(e.target.value)}
+                  disabled={isApplyingFilters}
                 />
                 <Input 
                   type="date" 
                   className="h-8 text-xs" 
                   value={draftEndDate} 
                   onChange={(e) => setDraftEndDate(e.target.value)}
+                  disabled={isApplyingFilters}
                 />
               </div>
               <p className="text-[10px] text-muted-foreground">Initialized from Trial Balance config</p>
             </div>
 
-            <Button size="sm" variant="default" className="w-full justify-center gap-2 h-8 text-xs mt-2" onClick={handleApplyFilters}>
-              <Filter className="h-3.5 w-3.5" />
-              Apply Filters
+            <Button 
+              size="sm" 
+              variant="default" 
+              className="w-full justify-center gap-2 h-8 text-xs mt-2" 
+              onClick={handleApplyFilters}
+              disabled={isApplyingFilters}
+            >
+              {isApplyingFilters ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Applying...
+                </>
+              ) : (
+                <>
+                  <Filter className="h-3.5 w-3.5" />
+                  Apply Filters
+                </>
+              )}
             </Button>
 
             <div className="pt-4 border-t flex flex-col gap-2">
-              <Button size="sm" variant="default" className="justify-start gap-2 h-8 text-xs" onClick={handleReset}>
+              <Button size="sm" variant="default" className="justify-start gap-2 h-8 text-xs" onClick={handleReset} disabled={isApplyingFilters}>
                 <RotateCcw className="h-3.5 w-3.5" />
                 Reset Workspace
               </Button>
-              <Button size="sm" variant="default" className="justify-start gap-2 h-8 text-xs" onClick={handleExportExcel}>
+              <Button size="sm" variant="default" className="justify-start gap-2 h-8 text-xs" onClick={handleExportExcel} disabled={isApplyingFilters}>
                 <FileSpreadsheet className="h-3.5 w-3.5" />
                 Export Excel
               </Button>
-              <Button size="sm" variant="default" className="justify-start gap-2 h-8 text-xs" onClick={handleExportCSV}>
+              <Button size="sm" variant="default" className="justify-start gap-2 h-8 text-xs" onClick={handleExportCSV} disabled={isApplyingFilters}>
                 <Download className="h-3.5 w-3.5" />
                 Export CSV
               </Button>
@@ -329,13 +389,13 @@ export function TrialBalanceDrillDown({
         <div className="flex-1 min-w-0 flex flex-col">
           <DataTable 
             columns={columns}
-            data={filteredLines}
-            isLoading={isLoading}
+            data={showSkeleton ? [] : filteredLines}
+            isLoading={showSkeleton}
             emptyTitle="No records found"
             emptyDescription="There are no transactions for this account in the selected date range."
             actionComponent={
               <Badge variant="outline" className="h-8 px-3 font-medium bg-background">
-                {filteredLines.length} Lines
+                {showSkeleton ? "..." : filteredLines.length} Lines
               </Badge>
             }
           />

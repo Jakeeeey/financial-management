@@ -5,11 +5,20 @@ import { ColumnDef } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { FinancialAccount } from "../types";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
+import { DrillDownModal } from "./DrillDownModal";
 
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
 
 export function InteractiveStatementTable() {
     const { accounts, isLoading, isInitialLoad } = useBalanceSheet();
+    const [selectedAccount, setSelectedAccount] = useState<FinancialAccount | null>(null);
+    const [isDrillDownOpen, setIsDrillDownOpen] = useState(false);
+
+    const handleDrillDown = (account: FinancialAccount) => {
+        setSelectedAccount(account);
+        setIsDrillDownOpen(true);
+    };
     const formatCurrency = (value: number) => {
         return `\u20B1${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
@@ -84,9 +93,14 @@ export function InteractiveStatementTable() {
         {
             id: "actions",
             header: () => <div className="text-right">Action</div>,
-            cell: () => (
+            cell: ({ row }) => (
                 <div className="text-right">
-                    <Button variant="outline" size="sm" className="h-8 rounded-full text-xs font-normal">
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-8 rounded-full text-xs font-normal"
+                        onClick={() => handleDrillDown(row.original)}
+                    >
                         Drill Down
                     </Button>
                 </div>
@@ -145,6 +159,12 @@ export function InteractiveStatementTable() {
                     emptyDescription="Try adjusting your filters or search."
                 />
             </CardContent>
+            
+            <DrillDownModal 
+                isOpen={isDrillDownOpen}
+                onOpenChange={setIsDrillDownOpen}
+                account={selectedAccount}
+            />
         </Card>
     );
 }
