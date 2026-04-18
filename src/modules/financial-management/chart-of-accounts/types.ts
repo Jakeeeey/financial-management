@@ -93,6 +93,13 @@ export type UserRow = {
   user_lname: string;
   user_email?: string | null;
   user_image?: string | null;
+
+  // Aliases for more flexible mapping without any-casting
+  id?: number;
+  first_name?: string;
+  last_name?: string;
+  firstname?: string;
+  lastname?: string;
 };
 
 

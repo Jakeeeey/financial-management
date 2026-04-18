@@ -100,13 +100,13 @@ export default function ChartOfAccountsTable(props: {
                     const idStr = String(addedBy);
                     const u = users.find((x) => 
                       String(x.user_id) === idStr || 
-                      String((x as any).id) === idStr
+                      String(x.id) === idStr
                     );
 
                     if (!u) return "-";
 
-                    const fname = u.user_fname || (u as any).first_name || (u as any).firstname || "";
-                    const lname = u.user_lname || (u as any).last_name || (u as any).lastname || "";
+                    const fname = u.user_fname || u.first_name || u.firstname || "";
+                    const lname = u.user_lname || u.last_name || u.lastname || "";
                     
                     const fullName = [fname, lname].filter(Boolean).join(" ");
                     return fullName || "-";

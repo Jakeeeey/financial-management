@@ -109,8 +109,8 @@ export function useChartOfAccounts() {
       const body = {
         ...payload,
         added_by: payload.added_by || currentUser?.id || null,
-      };
-      await api.createCOA(body as any);
+      } as Parameters<typeof api.createCOA>[0];
+      await api.createCOA(body);
       toast.success("Account created");
       setCreateOpen(false);
       setPage(1);
@@ -125,8 +125,8 @@ export function useChartOfAccounts() {
       const body = {
         ...payload,
         added_by: currentUser?.id || payload.added_by || null,
-      };
-      await api.updateCOA(id, body as any);
+      } as Parameters<typeof api.updateCOA>[1];
+      await api.updateCOA(id, body);
       toast.success("Changes saved");
       closeEdit();
       await load();

@@ -21,8 +21,6 @@ export default function ChartOfAccountsModule() {
 
 
 
-  // Matches your screenshot behavior (Added By field shows Loading...)
-  const addedByLabel = "Loading...";
 
   return (
     <div className="space-y-4">
