@@ -79,6 +79,7 @@ export default function COAFormDialog(props: {
     description?: string | null;
     is_payment?: 0 | 1;
     isPayment?: 0 | 1;
+    added_by?: number | null;
   }) => Promise<void> | void;
 
   onUpdate: (
@@ -92,6 +93,7 @@ export default function COAFormDialog(props: {
       description?: string | null;
       is_payment?: 0 | 1;
       isPayment?: 0 | 1;
+      added_by?: number | null;
     },
   ) => Promise<void> | void;
 }) {

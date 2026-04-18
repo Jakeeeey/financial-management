@@ -86,5 +86,14 @@ export type PaymentMethodRow = {
   coa_id: number;
 };
 
+export type UserRow = {
+  user_id: number;
+  user_fname: string;
+  user_mname?: string | null;
+  user_lname: string;
+  user_email?: string | null;
+  user_image?: string | null;
+};
+
 
 export type COAUpdatePayload = Partial<COACreatePayload>;

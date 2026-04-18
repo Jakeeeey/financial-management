@@ -64,6 +64,7 @@ export default function ChartOfAccountsModule() {
             loading={coa.loading}
             accountTypes={coa.accountTypes}
             balanceTypes={coa.balanceTypes}
+            users={coa.users}
             onEdit={(row) => coa.openEdit(row)}
           />
 
@@ -118,7 +119,7 @@ export default function ChartOfAccountsModule() {
         balanceTypes={coa.balanceTypes}
         bsisTypes={coa.bsisTypes}
         lookupsLoading={coa.lookupsLoading}
-        addedByLabel={addedByLabel}
+        addedByLabel={coa.currentUser?.name || "Loading..."}
         onCreate={coa.create}
         onUpdate={async () => { }}
       />
@@ -133,7 +134,7 @@ export default function ChartOfAccountsModule() {
         balanceTypes={coa.balanceTypes}
         bsisTypes={coa.bsisTypes}
         lookupsLoading={coa.lookupsLoading}
-        addedByLabel={addedByLabel}
+        addedByLabel={coa.currentUser?.name || "Loading..."}
         onCreate={async () => { }}
         onUpdate={async (id, payload) => {
           await coa.update(id, payload);

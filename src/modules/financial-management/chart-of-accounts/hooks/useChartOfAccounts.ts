@@ -4,7 +4,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import type { AccountTypeRow, BalanceTypeRow, BSISTypeRow, COARow } from "../types";
+import type { AccountTypeRow, BalanceTypeRow, BSISTypeRow, COARow, UserRow } from "../types";
 import * as api from "../providers/fetchProvider";
 
 type EditState =
@@ -23,22 +23,44 @@ export function useChartOfAccounts() {
   const [accountTypes, setAccountTypes] = React.useState<AccountTypeRow[]>([]);
   const [balanceTypes, setBalanceTypes] = React.useState<BalanceTypeRow[]>([]);
   const [bsisTypes, setBsisTypes] = React.useState<BSISTypeRow[]>([]);
+  const [users, setUsers] = React.useState<UserRow[]>([]);
   const [lookupsLoading, setLookupsLoading] = React.useState(true);
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editState, setEditState] = React.useState<EditState>({ open: false, row: null });
 
+  const [currentUser, setCurrentUser] = React.useState<{ id: number | null; name: string } | null>(null);
+
+  React.useEffect(() => {
+    async function loadMe() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data?.id) {
+          const name = [data.user_fname, data.user_lname].filter(Boolean).join(" ") || data.user_email || "User";
+          setCurrentUser({ id: Number(data.id), name });
+        }
+      } catch (e) {
+        console.error("Failed to load session user", e);
+      }
+    }
+    loadMe();
+  }, []);
+
   const loadLookups = React.useCallback(async () => {
     try {
       setLookupsLoading(true);
-      const [a, b, c] = await Promise.all([
+      const [a, b, c, u] = await Promise.all([
         api.listAccountTypes(),
         api.listBalanceTypes(),
         api.listBSISTypes(),
+        api.listUsers(),
       ]);
       setAccountTypes(a);
       setBalanceTypes(b);
       setBsisTypes(c);
+      setUsers(u);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load lookups");
     } finally {
@@ -84,7 +106,11 @@ export function useChartOfAccounts() {
 
   async function create(payload: Parameters<typeof api.createCOA>[0]) {
     try {
-      await api.createCOA(payload);
+      const body = {
+        ...payload,
+        added_by: payload.added_by || currentUser?.id || null,
+      };
+      await api.createCOA(body as any);
       toast.success("Account created");
       setCreateOpen(false);
       setPage(1);
@@ -96,7 +122,11 @@ export function useChartOfAccounts() {
 
   async function update(id: number, payload: Parameters<typeof api.updateCOA>[1]) {
     try {
-      await api.updateCOA(id, payload);
+      const body = {
+        ...payload,
+        added_by: currentUser?.id || payload.added_by || null,
+      };
+      await api.updateCOA(id, body as any);
       toast.success("Changes saved");
       closeEdit();
       await load();
@@ -143,6 +173,7 @@ export function useChartOfAccounts() {
     accountTypes,
     balanceTypes,
     bsisTypes,
+    users,
     lookupsLoading,
 
     // dialogs
@@ -157,5 +188,8 @@ export function useChartOfAccounts() {
     create,
     update,
     remove,
+
+    // session
+    currentUser,
   };
 }
