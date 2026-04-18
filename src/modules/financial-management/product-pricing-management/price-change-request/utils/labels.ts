@@ -1,10 +1,10 @@
-import type { PriceChangeRequestRow } from "../types";
+import type { PriceChangeRequestRow, CostChangeRequestRow } from "../types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
 }
 
-export function productLabel(r: PriceChangeRequestRow) {
+export function productLabel(r: PriceChangeRequestRow | CostChangeRequestRow) {
     const product = r.product_id;
 
     if (isRecord(product)) {

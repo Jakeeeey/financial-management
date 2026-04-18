@@ -1,8 +1,10 @@
 import type {
     ActionPayload,
     CreatePCRPayload,
+    CreateCCRPayload,
     ListQuery,
     PriceChangeRequestRow,
+    CostChangeRequestRow,
     ListMeta,
 } from "../types";
 
@@ -82,6 +84,36 @@ export async function createRequest(payload: CreatePCRPayload) {
 
 export async function actionRequest(payload: ActionPayload) {
     return http<{ data: PriceChangeRequestRow }>(`/api/fm/product-pricing/price-change-requests/actions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function listCostRequests(query: ListQuery) {
+    const sp = new URLSearchParams();
+    if (query.status) sp.set("status", query.status);
+    if (query.q) sp.set("q", query.q);
+    if (query.product_id) sp.set("product_id", String(query.product_id));
+    if (query.requested_by) sp.set("requested_by", String(query.requested_by));
+    sp.set("page", String(query.page ?? 1));
+    sp.set("page_size", String(query.page_size ?? 50));
+
+    return http<{ data: CostChangeRequestRow[]; meta: ListMeta | null }>(
+        `/api/fm/product-pricing/cost-change-requests?${sp.toString()}`,
+    );
+}
+
+export async function createCostRequest(payload: CreateCCRPayload) {
+    return http<{ data: CostChangeRequestRow }>(`/api/fm/product-pricing/cost-change-requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function actionCostRequest(payload: ActionPayload) {
+    return http<{ data: CostChangeRequestRow }>(`/api/fm/product-pricing/cost-change-requests/actions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

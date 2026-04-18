@@ -1,7 +1,9 @@
-import { useState, useCallback, useEffect } from "react";
-import { Disbursement, DisbursementPayload, SupplierDto } from "../types";
-import { disbursementProvider } from "../providers/fetchProvider";
-import { toast } from "sonner";
+"use client";
+
+import {useState, useCallback, useEffect} from "react";
+import {Disbursement, DisbursementPayload, SupplierDto, DivisionDto, DepartmentDto} from "../types";
+import {disbursementProvider} from "../providers/fetchProvider";
+import {toast} from "sonner";
 
 export function useDisbursement() {
     const [data, setData] = useState<Disbursement[]>([]);
@@ -17,33 +19,45 @@ export function useDisbursement() {
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
 
+    // 🚀 NEW FILTER STATES
+    const [statusFilter, setStatusFilter] = useState("All");
+    const [divisionFilter, setDivisionFilter] = useState("");
+    const [departmentFilter, setDepartmentFilter] = useState("");
+    const [docNoSearch, setDocNoSearch] = useState("");
+
     const [filterSuppliers, setFilterSuppliers] = useState<SupplierDto[]>([]);
+    const [divisions, setDivisions] = useState<DivisionDto[]>([]);
+    const [departments, setDepartments] = useState<DepartmentDto[]>([]);
 
     useEffect(() => {
-        const fetchAllSuppliers = async () => {
+        const fetchFilterData = async () => {
             try {
-                const [trade, nonTrade] = await Promise.all([
+                const [trade, nonTrade, divs, depts] = await Promise.all([
                     disbursementProvider.getSuppliers("Trade"),
-                    disbursementProvider.getSuppliers("Non-Trade")
+                    disbursementProvider.getSuppliers("Non-Trade"),
+                    disbursementProvider.getDivisions().catch(() => []),
+                    disbursementProvider.getDepartments().catch(() => [])
                 ]);
-                const combined = [...trade, ...nonTrade].sort((a, b) =>
-                    a.supplier_name.localeCompare(b.supplier_name)
-                );
-                setFilterSuppliers(combined);
-            } catch { // 🚀 FIX: Removed unused 'e'
-                console.error("Failed to load filter suppliers");
+                setFilterSuppliers([...trade, ...nonTrade].sort((a, b) => a.supplier_name.localeCompare(b.supplier_name)));
+                setDivisions(divs);
+                setDepartments(depts);
+            } catch {
+                console.error("Failed to load filter data");
             }
         };
-        fetchAllSuppliers();
+        fetchFilterData();
     }, []);
 
-    const fetchList = useCallback(async (pageNum: number, type: string, search: string, start: string, end: string) => {
+    const fetchList = useCallback(async (
+        pageNum: number, type: string, search: string, start: string, end: string,
+        status: string, divId: string, deptId: string, docNo: string
+    ) => {
         setLoading(true);
         try {
-            const response = await disbursementProvider.getDisbursements(pageNum, size, type, search, start, end);
+            const response = await disbursementProvider.getDisbursements(pageNum, size, type, search, start, end, status, divId, deptId, docNo);
             setData(response.content);
             setTotalPages(response.totalPages);
-        } catch { // 🚀 FIX: Removed unused 'error'
+        } catch {
             toast.error("Failed to load disbursements");
         } finally {
             setLoading(false);
@@ -51,13 +65,25 @@ export function useDisbursement() {
     }, [size]);
 
     useEffect(() => {
-        fetchList(page, activeType, supplierSearch, startDate, endDate);
+        fetchList(page, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, activeType]);
 
     const applyFilters = () => {
         setPage(0);
-        fetchList(0, activeType, supplierSearch, startDate, endDate);
+        fetchList(0, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
+    };
+
+    const clearFilters = () => {
+        setSupplierSearch("");
+        setStartDate("");
+        setEndDate("");
+        setStatusFilter("All");
+        setDivisionFilter("");
+        setDepartmentFilter("");
+        setDocNoSearch("");
+        setPage(0);
+        fetchList(0, activeType, "", "", "", "All", "", "", "");
     };
 
     const handleTabChange = (type: string) => {
@@ -69,10 +95,10 @@ export function useDisbursement() {
         setActionLoading(true);
         try {
             await disbursementProvider.createDisbursement(payload);
-            toast.success("Disbursement created successfully");
-            fetchList(0, activeType, supplierSearch, startDate, endDate);
+            toast.success("Voucher created successfully");
+            applyFilters();
             return true;
-        } catch { // 🚀 FIX: Removed unused 'error'
+        } catch {
             toast.error("Creation failed");
             return false;
         } finally {
@@ -84,11 +110,11 @@ export function useDisbursement() {
         setActionLoading(true);
         try {
             await disbursementProvider.updateDisbursement(id, payload);
-            toast.success("Disbursement updated successfully");
-            fetchList(page, activeType, supplierSearch, startDate, endDate);
+            toast.success("Voucher updated successfully");
+            applyFilters();
             return true;
-        } catch (error: unknown) { // 🚀 FIX: Changed 'any' to 'unknown'
-            const msg = error instanceof Error ? error.message : "Failed to update";
+        } catch (error: unknown) { // 🚀 FIX: Replaced 'any'
+            const msg = error instanceof Error ? error.message : "Update failed";
             toast.error(msg);
             return false;
         } finally {
@@ -101,10 +127,10 @@ export function useDisbursement() {
         try {
             await disbursementProvider.updateStatus(id, status);
             toast.success(`Status updated to ${status}`);
-            fetchList(page, activeType, supplierSearch, startDate, endDate);
+            applyFilters();
             return true;
-        } catch (error: unknown) { // 🚀 FIX: Changed 'any' to 'unknown'
-            const msg = error instanceof Error ? error.message : "Failed to update status";
+        } catch (error: unknown) { // 🚀 FIX: Replaced 'any'
+            const msg = error instanceof Error ? error.message : "Status update failed";
             toast.error(msg);
             return false;
         } finally {
@@ -113,16 +139,36 @@ export function useDisbursement() {
     };
 
     return {
-        data, loading, actionLoading,
-        page, setPage, totalPages,
-        activeType, handleTabChange,
-        supplierSearch, setSupplierSearch,
-        startDate, setStartDate,
-        endDate, setEndDate,
-        update,
-        applyFilters,
+        data,
+        loading,
+        actionLoading,
+        page,
+        setPage,
+        totalPages,
+        activeType,
+        handleTabChange,
+        supplierSearch,
+        setSupplierSearch,
+        startDate,
+        setStartDate,
+        endDate,
+        setEndDate,
+        statusFilter,
+        setStatusFilter,
+        divisionFilter,
+        setDivisionFilter,
+        departmentFilter,
+        setDepartmentFilter,
+        docNoSearch,
+        setDocNoSearch,
         filterSuppliers,
-        refresh: () => fetchList(page, activeType, supplierSearch, startDate, endDate),
-        create, changeStatus
+        divisions,
+        departments,
+        applyFilters,
+        clearFilters,
+        refresh: applyFilters,
+        create,
+        update,
+        changeStatus
     };
 }

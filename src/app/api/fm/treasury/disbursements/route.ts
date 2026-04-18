@@ -17,37 +17,39 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = searchParams.get("page") || "0";
     const size = searchParams.get("size") || "20";
-    const type = searchParams.get("type") || "";
-
-    // 🚀 NEW: Catch the supplier and date filters
+    const type = searchParams.get("type") || "All";
     const supplier = searchParams.get("supplier") || "";
     const startDate = searchParams.get("startDate") || "";
     const endDate = searchParams.get("endDate") || "";
 
-    let targetUrl = `${getSpringBaseUrl()}/api/disbursements?page=${page}&size=${size}`;
+    // 🚀 NEW FILTERS
+    const status = searchParams.get("status") || "All";
+    const divisionId = searchParams.get("divisionId") || "";
+    const departmentId = searchParams.get("departmentId") || "";
+    const docNo = searchParams.get("docNo") || "";
 
-    if (type && type !== "All") targetUrl += `&type=${encodeURIComponent(type)}`;
+    let targetUrl = `${getSpringBaseUrl()}/api/disbursements?page=${page}&size=${size}&type=${encodeURIComponent(type)}&status=${encodeURIComponent(status)}`;
+
     if (supplier) targetUrl += `&supplier=${encodeURIComponent(supplier)}`;
     if (startDate) targetUrl += `&startDate=${encodeURIComponent(startDate)}`;
     if (endDate) targetUrl += `&endDate=${encodeURIComponent(endDate)}`;
+    if (divisionId) targetUrl += `&divisionId=${divisionId}`;
+    if (departmentId) targetUrl += `&departmentId=${departmentId}`;
+    if (docNo) targetUrl += `&docNo=${encodeURIComponent(docNo)}`;
 
     try {
         const springRes = await fetch(targetUrl, {
             method: "GET",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
-            },
+            headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
             cache: "no-store",
         });
-
         if (!springRes.ok) throw new Error(await springRes.text());
         return NextResponse.json(await springRes.json());
     } catch (err: unknown) {
-        return NextResponse.json({ message: "BFF Error", detail: (err instanceof Error ? err.message : String(err)) }, { status: 502 });
+        const message = err instanceof Error ? err.message : 'An unknown error occurred';
+        return NextResponse.json({ message }, { status: 500 });
     }
 }
-
 export async function POST(request: NextRequest) {
     const cookieStore = await cookies();
     const token = cookieStore.get("vos_access_token")?.value;
@@ -70,6 +72,7 @@ export async function POST(request: NextRequest) {
         if (!springRes.ok) throw new Error(await springRes.text());
         return NextResponse.json(await springRes.json());
     } catch (err: unknown) {
-        return NextResponse.json({ message: "BFF Error", detail: (err instanceof Error ? err.message : String(err)) }, { status: 502 });
+        const errorMessage = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Unknown error occurred';
+        return NextResponse.json({ message: "BFF Error", detail: errorMessage }, { status: 502 });
     }
 }

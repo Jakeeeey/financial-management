@@ -1,5 +1,8 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -7,32 +10,33 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Supplier } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
-import { useRepresentatives } from "@/modules/financial-management/supplier-registration/hooks/useRepresentatives";
-import { RepresentativeCard } from "./view-representative-details";
-import { AddRepresentativeForm } from "../forms/add-representative-form";
-import { useState } from "react";
-import {
-  MapPin,
-  CreditCard,
-  Plus,
-  Phone,
-  Mail,
-  Hash,
-  X,
-  Package,
-} from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useRepresentatives } from "@/modules/financial-management/supplier-registration/hooks/useRepresentatives";
+import { Supplier } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
+import {
+  CreditCard,
+  Hash,
+  Mail,
+  MapPin,
+  Package,
+  Phone,
+  Plus,
+  X,
+} from "lucide-react";
+import Image from "next/image";
+import { useState } from "react";
 import { useSupplierProducts } from "../../hooks/useSupplierProduct";
+import { AddRepresentativeForm } from "../forms/add-representative-form";
 import { ManageProductsModal } from "./manage-products-modal";
+import { RepresentativeCard } from "./view-representative-details";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+
 interface SupplierDetailsModalProps {
   supplier: Supplier | null;
   open: boolean;
@@ -85,8 +89,6 @@ export function SupplierDetailsModal({
     refresh();
   };
 
-
-
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="w-full sm:max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -116,11 +118,22 @@ export function SupplierDetailsModal({
             <CardHeader>
               <div className="flex flex-row">
                 <div className="flex flex-1 gap-4">
-                  <div className="h-14 w-14 rounded-full flex items-center justify-center border">
-                    <span className="text-lg font-bold text-muted-foreground">
-                      {supplier.supplier_name.charAt(0)}
-                    </span>
-                  </div>
+                  {supplier.supplier_image ? (
+                    <Image
+                      src={`${API_BASE_URL}/assets/${supplier.supplier_image}`}
+                      alt={supplier.supplier_name}
+                      width={56}
+                      height={56}
+                      className="h-14 w-14 rounded-full object-cover border aspect-square"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="h-14 w-14 rounded-full flex items-center justify-center border">
+                      <span className="text-lg font-bold text-muted-foreground">
+                        {supplier.supplier_name.charAt(0)}
+                      </span>
+                    </div>
+                  )}
                   <div>
                     <div className="flex font-medium">
                       <span className="mr-4"> {supplier.supplier_name}</span>
@@ -182,7 +195,7 @@ export function SupplierDetailsModal({
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <div className="relative h-12 w-12 rounded-full bg-muted-foreground border-2 border-white flex items-center justify-center text-white text-xs font-bold cursor-pointer  z-10">
+                              <div className="relative h-12 w-12 rounded-full bg-muted-foreground border-2 border-white flex items-center justify-center text-xs font-bold cursor-pointer  z-10">
                                 +{representatives.length - 5}
                               </div>
                             </TooltipTrigger>
@@ -191,7 +204,7 @@ export function SupplierDetailsModal({
                                 {representatives.slice(5).map((rep) => (
                                   <div
                                     key={rep.id}
-                                    className="text-xs text-white flex items-center justify-between gap-4"
+                                    className="text-xs flex items-center justify-between gap-4"
                                   >
                                     <span>
                                       {rep.first_name} {rep.last_name}
