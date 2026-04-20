@@ -19,7 +19,7 @@ import { format } from "date-fns";
 interface MasterListProps {
     data: CollectionSummary[];
     isLoading: boolean;
-    state: CashieringState; // 🚀 Pass state to access loadPouchForEdit
+    state: CashieringState;
 }
 
 export default function CashieringMasterList({ data, isLoading, state }: MasterListProps) {
@@ -50,7 +50,7 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                     {data.length === 0 ? (
                         <TableRow>
                             <TableCell colSpan={6} className="h-24 text-center text-muted-foreground italic">
-                                No collection pouches found.
+                                No collection pouches found matching the filters.
                             </TableCell>
                         </TableRow>
                     ) : (
@@ -87,15 +87,19 @@ export default function CashieringMasterList({ data, isLoading, state }: MasterL
                                 <TableCell className="text-right">
                                     {col.status === "Draft" ? (
                                         <Button
+                                            type="button" // 🚀 FIX: Prevent form submission reload
                                             variant="ghost"
                                             size="sm"
                                             className="h-8 w-8 p-0 hover:text-primary"
-                                            onClick={() => state.loadPouchForEdit(Number(col.id))}
+                                            onClick={(e) => {
+                                                e.preventDefault(); // 🚀 FIX: Forcefully stop browser navigation
+                                                state.loadPouchForEdit(Number(col.id));
+                                            }}
                                         >
                                             <Edit2 size={14} />
                                         </Button>
                                     ) : (
-                                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 opacity-50 cursor-not-allowed">
+                                        <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 opacity-50 cursor-not-allowed">
                                             <Eye size={14} />
                                         </Button>
                                     )}

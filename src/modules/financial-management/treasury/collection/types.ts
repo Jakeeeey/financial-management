@@ -131,6 +131,8 @@ export interface CashieringState {
     isSheetOpen: boolean;
     setIsSheetOpen: (open: boolean) => void;
     isLoading: boolean;
+    isSheetLoading: boolean;
+    isSubmitting: boolean;
     editingId: number | null;
     masterList: CollectionSummary[];
     salesmen: Salesman[];
