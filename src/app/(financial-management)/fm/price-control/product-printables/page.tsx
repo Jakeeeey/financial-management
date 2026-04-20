@@ -8,12 +8,11 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { NavUser } from "../../_components/nav-user";
+import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 
 import { cookies } from "next/headers";
 
-// ✅ Wire the module you asked for
-import ComingSoon from "../../_components/ComingSoon";
+import { ProductPrintablesModule } from "@/modules/financial-management/product-pricing-management/product-printables";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +37,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 
 function pickString(obj: Record<string, unknown> | null | undefined, keys: string[]): string {
     for (const k of keys) {
-        const v = obj ? obj[k] : undefined;
+        const v = obj?.[k];
         if (typeof v === "string" && v.trim()) return v.trim();
     }
     return "";
@@ -80,12 +79,13 @@ export default async function Page() {
     const headerUser = buildHeaderUserFromToken(token);
 
     return (
-        // ✅ UI ONLY: avoid page-level scroll container; prevent horizontal overflow
+        // ✅ This fills the RIGHT column provided by SidebarInset (which is now fixed-height).
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            {/* ? Topbar is fixed in place because ONLY <main> scrolls */}
+            {/* ✅ Topbar is fixed in place because ONLY <main> scrolls */}
             <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
                 <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4 overflow-hidden">
                     <SidebarTrigger className="-ml-1 shrink-0" />
+
                     <Separator
                         orientation="vertical"
                         className="hidden sm:block mr-2 data-[orientation=vertical]:h-4 shrink-0"
@@ -93,19 +93,13 @@ export default async function Page() {
 
                     <div className="min-w-0 overflow-hidden">
                         <Breadcrumb>
-                            <BreadcrumbList className="min-w-0 overflow-hidden">
-                                <BreadcrumbItem className="hidden md:block shrink-0">
-                                    <BreadcrumbLink href="#">FM</BreadcrumbLink>
+                            <BreadcrumbList>
+                                <BreadcrumbItem className="hidden md:block">
+                                    <BreadcrumbLink href="#">Printables</BreadcrumbLink>
                                 </BreadcrumbItem>
-                                <BreadcrumbSeparator className="hidden md:block shrink-0" />
-                                <BreadcrumbItem className="hidden md:block shrink-0">
-                                    <BreadcrumbLink href="#">Supplier Management</BreadcrumbLink>
-                                </BreadcrumbItem>
-                                <BreadcrumbSeparator className="hidden md:block shrink-0" />
-                                <BreadcrumbItem className="min-w-0 overflow-hidden">
-                                    <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                                        Delivery Terms
-                                    </BreadcrumbPage>
+                                <BreadcrumbSeparator className="hidden md:block" />
+                                <BreadcrumbItem>
+                                    <BreadcrumbPage>Product Printables</BreadcrumbPage>
                                 </BreadcrumbItem>
                             </BreadcrumbList>
                         </Breadcrumb>
@@ -117,10 +111,11 @@ export default async function Page() {
                 </div>
             </header>
 
-            {/* ✅ UI ONLY: remove ScrollArea so the page doesn't scroll; the table card handles scrolling */}
+            {/* ✅ Only content scrolls inside RIGHT column */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-                <ComingSoon />
+                <ProductPrintablesModule />
             </main>
         </div>
     );
 }
+

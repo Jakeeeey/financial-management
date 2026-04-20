@@ -53,6 +53,8 @@ const EMPTY_FILTERS: PricingFilters = {
     supplier_scope: "ALL",
     active_only: true,
     missing_tier: false,
+    price_type_ids: [],
+    show_list_price: false,
 };
 
 function safeStr(v: unknown): string {
@@ -232,6 +234,7 @@ function normalizePrintRow(value: unknown): ProductRow | null {
         priceC: toNumberOrZero(value.priceC),
         priceD: toNumberOrZero(value.priceD),
         priceE: toNumberOrZero(value.priceE),
+        cost_per_unit: toNullableNumber(value.cost_per_unit),
     };
 }
 
@@ -492,7 +495,7 @@ export default function PricingMatrixView() {
             }
 
             const assembled: MatrixRow[] = [];
-            const EMPTY_PIVOT = { A: null, B: null, C: null, D: null, E: null };
+            const EMPTY_PIVOT = { A: null, B: null, C: null, D: null, E: null, LIST: null };
 
             for (const [groupId, variants] of groups.entries()) {
                 const display = variants.find(v => v.product_id === groupId) || variants[0];
@@ -572,6 +575,7 @@ export default function PricingMatrixView() {
                         brands={scopedBrands}
                         units={scopedUnits}
                         suppliers={lookups.suppliers}
+                        priceTypes={pt.priceTypes}
                     />
                 </div>
 

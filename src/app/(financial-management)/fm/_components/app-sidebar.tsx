@@ -1,5 +1,3 @@
-"use client";
-
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -387,185 +385,15 @@ const data = {
             ],
         },
 
-        {
-            title: "Financial Statements",
-            url: "#",
-            icon: FileBarChart,
-            isActive: true,
-            items: [
-                {
-                    title: "Journal Entry",
-                    url: "/fm/financial-statements/journal-entry",
-                    icon: NotebookPen,
-                },
-                {
-                    title: "Trial Balance",
-                    url: "/fm/financial-statements/trial-balance",
-                    icon: Scale,
-                },
-                {
-                    title: "Statement of Financial Position",
-                    url: "/fm/financial-statements/statement-of-financial-position",
-                    icon: Landmark,
-                },
-                {
-                    title: "Statement of Financial Performance",
-                    url: "/fm/financial-statements/statement-of-financial-performance",
-                    icon: TrendingUp,
-                },
-                {
-                    title: "Statement of Cash Flow",
-                    url: "/fm/financial-statements/statement-of-cash-flow",
-                    icon: RefreshCcw,
-                },
-                {
-                    title: "Statement of Changes in Equity",
-                    url: "/fm/financial-statements/statement-of-changes-in-equity",
-                    icon: Layers,
-                },
-            ]
-        },
-        {
-            title: "Reports",
-            url: "#",
-            icon: FileSpreadsheet,
-            isActive: true,
-            items: [
-                {
-                    title: "EWT",
-                    url: "/fm/reports/ewt",
-                    icon: FileText,
-                },
-                {
-                    title: "CWT",
-                    url: "/fm/reports/cwt",
-                    icon: Files,
-                },
-                {
-                    title: "VAT",
-                    url: "#",
-                    icon: Percent,
-                    items: [
-                        {
-                            title: "VAT Selling",
-                            url: "/fm/reports/vat/vat-selling",
-                            icon: ArrowUpRight,
-                        },
-                        {
-                            title: "VAT Purchases",
-                            url: "/fm/reports/vat/vat-purchases",
-                            icon: ArrowDownRight,
-                        }
-                    ]
-                },
-                {
-                    title: "FWT",
-                    url: "/fm/reports/fwt",
-                    icon: FileCheck2,
-                },
-                {
-                    title: "Tax Calendar",
-                    url: "/fm/reports/tax-calendar",
-                    icon: CalendarDays,
-                }
-            ],
-        },
-        {
-            title: "File Management",
-            url: "#",
-            icon: FolderTree,
-            items: [
-                {
-                    title: "Discount",
-                    url: "#",
-                    icon: BadgePercent,
-                    items: [
-                        {
-                            title: "Discount Type",
-                            url: "/fm/file-management/discount/discount-type",
-                            icon: Tag,
-                        },
-                        {
-                            title: "Line Discount",
-                            url: "/fm/file-management/discount/line-discount",
-                            icon: Tags,
-                        },
-                    ],
-                },
-            ],
-        },
+export async function AppSidebar(props: ComponentProps<typeof Sidebar>) {
+    // 1. Fetch data on the server using the shared action
+    const items = await getSidebarNavigation("fm");
 
-    ],
-};
-
-export function AppSidebar({
-                               className,
-                               ...props
-                           }: React.ComponentProps<typeof Sidebar>) {
     return (
-        <Sidebar
-            {...props}
-            className={cn(
-                "border-r border-sidebar-border/60 dark:border-white/20",
-                "shadow-sm dark:shadow-[0_0_0_1px_rgba(255,255,255,0.10),0_16px_40px_-24px_rgba(0,0,0,0.9)]",
-                className
-            )}
-        >
-            <SidebarHeader>
-                <SidebarMenu>
-                    <SidebarMenuItem>
-                        <SidebarMenuButton size="lg" asChild>
-                            <Link href="/main-dashboard">
-                                <div className="flex aspect-square size-10 items-center justify-center overflow-hidden">
-                                    <Image
-                                        src="/vertex_logo_black.png"
-                                        alt="VOS Logo"
-                                        width={40}
-                                        height={40}
-                                        className="h-9 w-10 object-contain"
-                                        priority
-                                    />
-                                </div>
-
-                                <div className="grid flex-1 text-left text-sm leading-tight">
-                                    <span className="truncate font-medium">VOS Web</span>
-                                    <span className="truncate text-xs text-muted-foreground">
-                    Financial Management
-                  </span>
-                                </div>
-                            </Link>
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
-                </SidebarMenu>
-            </SidebarHeader>
-
-            <Separator/>
-
-            <SidebarContent>
-                <div className="px-4 pt-3 pb-2 text-xs font-medium text-muted-foreground">
-                    Platform
-                </div>
-
-                <ScrollArea
-                    className={cn(
-                        "min-h-0 flex-1",
-                        "[&_[data-radix-scroll-area-viewport]>div]:block",
-                        "[&_[data-radix-scroll-area-viewport]>div]:w-full",
-                        "[&_[data-radix-scroll-area-viewport]>div]:min-w-0"
-                    )}
-                >
-                    <div className="w-full min-w-0">
-                        <NavMain items={data.navMain}/>
-                    </div>
-                </ScrollArea>
-            </SidebarContent>
-
-            <SidebarFooter className="p-0">
-                <Separator/>
-                <div className="py-3 text-center text-xs text-muted-foreground">
-                    VOS Web v2.0
-                </div>
-            </SidebarFooter>
-        </Sidebar>
+        <AppSidebarClient 
+            {...props} 
+            initialItems={items} 
+            subsystemTitle="Financial Management"
+        />
     );
 }

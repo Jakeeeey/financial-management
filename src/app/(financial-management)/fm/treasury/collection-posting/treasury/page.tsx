@@ -6,11 +6,11 @@ import {
     BreadcrumbPage,
     BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import {Separator} from "@/components/ui/separator";
-import {SidebarTrigger} from "@/components/ui/sidebar";
-import {NavUser} from "../../../_components/nav-user";
+import { Separator } from "@/components/ui/separator";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 
-import {cookies} from "next/headers";
+import { cookies } from "next/headers";
 
 // 🚀 IMPORT THE NEW MODULE
 import TreasuryPostingDashboard from "@/modules/financial-management/treasury/collection/posting/TreasuryPostingDashboard";

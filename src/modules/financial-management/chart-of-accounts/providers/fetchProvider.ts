@@ -11,6 +11,7 @@ import type {
   DirectusSingleResponse,
   FindingRow,
   PaymentMethodRow,
+  UserRow,
 } from "../types";
 
 const API = "/api/fm/chart-of-accounts";
@@ -177,4 +178,11 @@ export async function deletePaymentMethod(method_id: number): Promise<void> {
   const res = await fetch(`${API}?${sp.toString()}`, { method: "DELETE" });
   const data = await safeJson(res);
   if (!res.ok) throw new Error(errMsg(data));
+}
+
+export async function listUsers(): Promise<UserRow[]> {
+  const res = await fetch(`${API}?resource=user&limit=-1`, { cache: "no-store" });
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(errMsg(data));
+  return (data?.data ?? []) as UserRow[];
 }
