@@ -5,14 +5,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-    ArrowRightLeft, FilterX, CheckCircle2,Loader2, Hourglass, Layers
+    FilterX, CheckCircle2,Loader2, Hourglass, Layers
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { fetchProvider } from "../../providers/fetchProvider";
 import { format, isWithinInterval, subDays, startOfDay, endOfDay, parseISO, isValid } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
-// 🚀 NEW: Strictly defined interface for the Settlement Queue
+// 🚀 IMPORT the Command Center component
+import SettlementCommandCenter from "./SettlementCommandCenter";
+
 export interface SettlementQueueItem {
     id: number;
     docNo?: string;
@@ -28,7 +31,6 @@ export interface SettlementQueueItem {
 }
 
 export default function SettlementMasterList() {
-    // 🚀 FIX: Replaced any[] with SettlementQueueItem[]
     const [collections, setCollections] = useState<SettlementQueueItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -39,41 +41,39 @@ export default function SettlementMasterList() {
     const [customStart, setCustomStart] = useState(format(subDays(new Date(), 30), "yyyy-MM-dd"));
     const [customEnd, setCustomEnd] = useState(format(new Date(), "yyyy-MM-dd"));
 
-    // 🚀 NEW: Operation Tab State
     const [activeOperationTab, setActiveOperationTab] = useState<string>("All");
+
+    const [isCommandCenterOpen, setIsCommandCenterOpen] = useState(false);
+    const [selectedPouchId, setSelectedPouchId] = useState<number | null>(null);
 
     useEffect(() => {
         const fetchSettlementQueue = async () => {
             setIsLoading(true);
             try {
-                // 🚀 FIX: Replaced any[] with SettlementQueueItem[]
                 const data = await fetchProvider.get<SettlementQueueItem[]>("/api/fm/treasury/collections/settlement-queue");
                 setCollections(data || []);
-            } catch (error: unknown) { // 🚀 FIX: Replaced 'any' with 'unknown'
+            } catch (error: unknown) {
                 console.error("Fetch Error:", error instanceof Error ? error.message : "Unknown error");
             } finally {
                 setIsLoading(false);
             }
         };
         fetchSettlementQueue();
-    }, []);
+    }, [isCommandCenterOpen]);
 
-    // 🚀 FIX: Typed the parameter instead of using 'any'
     const parseAnyDate = (col: SettlementQueueItem): Date | null => {
         const val = col.date || col.collectionDate || col.collection_date;
         if (!val) return null;
         if (Array.isArray(val)) return new Date(val[0], val[1] - 1, val[2], val[3] || 0, val[4] || 0);
-        const d = new Date(val as string | number); // Safe cast for the Date constructor
+        const d = new Date(val as string | number);
         return isValid(d) ? d : null;
     };
 
-    // 🚀 NEW: Extract unique operations dynamically
     const uniqueOperations = useMemo(() => {
         const ops = new Set(collections.map(col => col.operationName || "Unassigned Operation"));
         return Array.from(ops).sort();
     }, [collections]);
 
-    // 🚀 UPDATED: Added Operation Tab Filtering
     const filteredCollections = useMemo(() => {
         return collections.filter(col => {
             const docNo = (col.docNo || "").toLowerCase();
@@ -106,32 +106,13 @@ export default function SettlementMasterList() {
     }, [collections, searchTerm, salesmanFilter, dateRangeMode, customStart, customEnd, activeOperationTab]);
 
     const handleOpenSettlement = (id: number) => {
-        const w = window.screen.availWidth;
-        const h = window.screen.availHeight;
-        window.open(`/fm/treasury/collection-posting/settlement/${id}`, `S_${id}`,
-            `width=${w},height=${h},left=0,top=0,resizable=yes,scrollbars=yes`);
+        setSelectedPouchId(id);
+        setIsCommandCenterOpen(true);
     };
 
     return (
         <div className="h-[calc(100vh-80px)] flex flex-col bg-muted/10 p-6 space-y-4">
 
-            {/* Header */}
-            <div className="bg-card border border-border p-6 rounded-xl flex justify-between items-center shadow-sm shrink-0">
-                <div className="flex items-center gap-4">
-                    <div className="bg-primary/10 p-3 rounded-lg text-primary">
-                        <ArrowRightLeft size={24}/>
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-black italic tracking-tight">VOS SETTLEMENT QUEUE</h1>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">AR Allocation & Reconciliation</p>
-                    </div>
-                </div>
-                <Badge className="font-mono text-xs px-4 py-1" variant="secondary">
-                    {filteredCollections.length} POUCHES
-                </Badge>
-            </div>
-
-            {/* Filters */}
             <div className="bg-card border border-border p-5 rounded-xl shadow-sm flex flex-wrap gap-6 items-end shrink-0">
                 <div className="flex-1 min-w-[250px] space-y-2">
                     <label className="text-[10px] font-black uppercase text-muted-foreground">Search</label>
@@ -162,7 +143,7 @@ export default function SettlementMasterList() {
                     setSearchTerm("");
                     setSalesmanFilter("all");
                     setDateRangeMode("all");
-                    setActiveOperationTab("All"); // Reset tab too
+                    setActiveOperationTab("All");
                 }} className="h-10 w-10">
                     <FilterX size={18}/>
                 </Button>
@@ -205,7 +186,6 @@ export default function SettlementMasterList() {
                 </div>
             )}
 
-            {/* Main Table */}
             <div className="flex-1 bg-card rounded-xl border border-border shadow-xl overflow-hidden flex flex-col">
                 <div className="flex-1 overflow-y-auto scrollbar-thin">
                     <Table>
@@ -285,6 +265,26 @@ export default function SettlementMasterList() {
                     </Table>
                 </div>
             </div>
+
+            <Dialog open={isCommandCenterOpen} onOpenChange={setIsCommandCenterOpen}>
+                <DialogContent 
+                    className="!p-0 !rounded-xl !border !border-border !bg-background !flex !flex-col !shadow-2xl !overflow-hidden" 
+                    style={{
+                        width: '95vw',
+                        maxWidth: '1400px',
+                        height: '90vh',
+                        maxHeight: '900px'
+                    }}
+                    showCloseButton={false}>
+                    <DialogTitle className="sr-only">Settlement Command Center</DialogTitle>
+                    {selectedPouchId && (
+                        <SettlementCommandCenter
+                            id={selectedPouchId}
+                            onClose={() => setIsCommandCenterOpen(false)}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

@@ -192,7 +192,21 @@ const data = {
                             title: "Treasury",
                             url: "/fm/treasury/collection-posting/treasury",
                             icon: Shovel
-                        }, {title: "Reports", url: "/fm/treasury/collection-posting/reports", icon: FileSpreadsheet}
+                        }, {
+                            title: "Reports", url: "#", icon: FileSpreadsheet,
+                            items: [
+                                {
+                                    title: "Daily Report",
+                                    url: "/fm/treasury/collection-posting/reports/daily-collection-report",
+                                    icon: Coins
+                                },
+                                {
+                                    title: "Collection Overview",
+                                    url: "/fm/treasury/collection-posting/reports/collection-overview",
+                                    icon: Coins
+                                }
+                            ]
+                        }
 
                     ]
                 },
