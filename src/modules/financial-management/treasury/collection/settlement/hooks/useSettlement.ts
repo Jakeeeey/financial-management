@@ -1,10 +1,9 @@
 "use client";
 
 import {useState, useEffect, useCallback} from "react";
-import {UnpaidInvoice, SettlementAllocation} from "../../types";
+import {UnpaidInvoice, SettlementAllocation, PaymentHistory} from "../../types";
 import {fetchProvider} from "../../providers/fetchProvider";
 
-// 🚀 NEW: Strict API response shapes to replace "any"
 export interface RawCashBucket {
     amount?: number;
     paymentMethod?: string;
@@ -23,6 +22,15 @@ export interface RawAllocation {
     invoiceNo?: string;
     invoiceId?: number;
     sourceTempId?: string;
+    originalAmount?: number;
+    remainingBalance?: number;
+    totalPayments?: number;
+    totalMemos?: number;
+    totalReturns?: number;
+    transactionDate?: string;
+    dueDate?: string;
+    agingDays?: number;
+    history?: PaymentHistory[];
 }
 
 export interface RawTreasuryPouch {
@@ -94,7 +102,6 @@ export function useSettlement(pouchId: string | number) {
             setWallet([]);
             setCredits([]);
 
-            // 🚀 FIX: Typed the API response
             const pouch = await fetchProvider.get<RawTreasuryPouch>(`/api/fm/treasury/collections/${pouchId}`);
             if (!pouch) return;
 
@@ -108,7 +115,6 @@ export function useSettlement(pouchId: string | number) {
             const currentSalesmanId = pouch.salesmanId || null;
             setSalesmanId(currentSalesmanId);
 
-            // 🚀 FIX: Typed the API response
             const salesmen = await fetchProvider.get<RawSalesman[]>("/api/fm/treasury/salesmen");
             setSalesmanName(salesmen?.find(s => s.id === currentSalesmanId)?.salesmanName || `Owner ID: ${currentSalesmanId}`);
 
@@ -123,7 +129,6 @@ export function useSettlement(pouchId: string | number) {
             const newWallet: WalletItem[] = [];
             const newCredits: WalletItem[] = [];
 
-            // 🚀 FIX: Typed the iterator to RawCashBucket
             pouch.cashBuckets?.forEach((b: RawCashBucket, idx: number) => {
                 const safeAmount = Math.abs(b.amount || 0);
 
@@ -167,7 +172,6 @@ export function useSettlement(pouchId: string | number) {
             }
 
             try {
-                // 🚀 FIX: Typed the API response & removed unused memoError var
                 const memos = await fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/memos/available?salesmanId=${currentSalesmanId}`);
                 memos?.forEach(m => {
                     const remainingMemoAmount = (m.amount || 0) - (m.appliedAmount || 0);
@@ -182,12 +186,11 @@ export function useSettlement(pouchId: string | number) {
                         });
                     }
                 });
-            } catch (e: unknown ) {
+            } catch (e: unknown) {
                 console.warn("Could not load memos", e);
             }
 
             try {
-                // 🚀 FIX: Typed the API response & removed unused returnError var
                 const returns = await fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/returns/available?salesmanId=${currentSalesmanId}`);
                 returns?.forEach(r => {
                     if (!r.isApplied) {
@@ -201,7 +204,7 @@ export function useSettlement(pouchId: string | number) {
                         });
                     }
                 });
-            } catch (e : unknown) {
+            } catch (e: unknown) {
                 console.warn("Could not load returns", e);
             }
 
@@ -212,7 +215,6 @@ export function useSettlement(pouchId: string | number) {
                 const existingAllocations: SettlementAllocation[] = [];
                 const existingCartMap: Map<number, UnpaidInvoice> = new Map();
 
-                // 🚀 FIX: Typed the iterator to RawAllocation
                 pouch.allocations.forEach((alloc: RawAllocation) => {
                     const mappedAlloc: SettlementAllocation = {
                         invoiceId: alloc.invoiceId || 0,
@@ -221,23 +223,24 @@ export function useSettlement(pouchId: string | number) {
                         amountApplied: Math.abs(alloc.amountApplied || 0),
                         allocationType: alloc.allocationType || "CASH",
                         sourceTempId: alloc.sourceTempId || "CASH_SUMMARY",
-                        originalAmount: 0,
-                        remainingBalance: 0,
-                        totalPayments: 0,
-                        totalMemos: 0,
-                        totalReturns: 0,
-                        transactionDate: "",
-                        dueDate: "",
-                        agingDays: 0,
-                        history: []
+                        originalAmount: alloc.originalAmount || 0,
+                        remainingBalance: alloc.remainingBalance || 0,
+                        totalPayments: alloc.totalPayments || 0,
+                        totalMemos: alloc.totalMemos || 0,
+                        totalReturns: alloc.totalReturns || 0,
+                        transactionDate: alloc.transactionDate || "",
+                        dueDate: alloc.dueDate || "",
+                        agingDays: alloc.agingDays || 0,
+                        history: alloc.history || []
                     };
 
                     existingAllocations.push(mappedAlloc);
 
                     if (alloc.invoiceId && !existingCartMap.has(alloc.invoiceId)) {
-                        // Cast the allocation as an invoice just to satisfy the map seed
-                        // Real historical data comes from the route invoices endpoint anyway
-                        existingCartMap.set(alloc.invoiceId, { ...mappedAlloc, id: alloc.invoiceId } as unknown as UnpaidInvoice);
+                        existingCartMap.set(alloc.invoiceId, {
+                            ...mappedAlloc,
+                            id: alloc.invoiceId
+                        } as unknown as UnpaidInvoice);
                     }
                 });
 
@@ -278,7 +281,6 @@ export function useSettlement(pouchId: string | number) {
         fetchData();
     }, [fetchData]);
 
-    // 🚀 FIX: Replaced 'any' with Partial<UnpaidInvoice>
     const addToCart = (invoice: Partial<UnpaidInvoice>) => {
         const safeId = invoice.id || (invoice as unknown as { invoiceId: number }).invoiceId;
         if (safeId && !cartInvoices.some(inv => inv.id === safeId)) {
@@ -298,6 +300,12 @@ export function useSettlement(pouchId: string | number) {
         }
     };
 
+    // 🚀 NEW: Lets you delete an adjustment or EWT from the wallet
+    const deleteWalletItem = (itemId: string) => {
+        setWallet(prev => prev.filter(w => w.id !== itemId));
+        setAllocations(prev => prev.filter(a => a.sourceTempId !== itemId));
+    };
+
     const loadRouteInvoices = async () => {
         if (!salesmanId || !collectionDate) {
             alert("Cannot load route: Missing Salesman ID or Collection Date.");
@@ -309,12 +317,17 @@ export function useSettlement(pouchId: string | number) {
                 `/api/fm/treasury/collections/route-invoices?salesmanId=${salesmanId}&date=${collectionDate}`
             );
 
-            const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === (inv.id || (inv as unknown as {invoiceId:number}).invoiceId)));
+            const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === (inv.id || (inv as unknown as {
+                invoiceId: number
+            }).invoiceId)));
 
             if (cleanResults.length > 0) {
                 setCartInvoices(prev => [
                     ...prev,
-                    ...cleanResults.map(inv => ({...inv, id: inv.id || (inv as unknown as {invoiceId:number}).invoiceId}))
+                    ...cleanResults.map(inv => ({
+                        ...inv,
+                        id: inv.id || (inv as unknown as { invoiceId: number }).invoiceId
+                    }))
                 ]);
             } else {
                 alert("No additional pending invoices found for this route on or before " + collectionDate);
@@ -381,7 +394,8 @@ export function useSettlement(pouchId: string | number) {
         });
     };
 
-    const createEwt = async (amount: number, referenceNo: string, invoiceId: number) => {
+    // 🚀 FIXED: Made invoiceId optional so it can be pooled!
+    const createEwt = async (amount: number, referenceNo: string, invoiceId?: number | null) => {
         try {
             const tempEwtId = `ewt-new-${Date.now()}`;
 
@@ -520,6 +534,6 @@ export function useSettlement(pouchId: string | number) {
         isLoading, wallet, credits, cartInvoices, allocations, salesmanName, salesmanId, findings, docNo, isPosted,
         isLoadingRoute,
         addToCart, removeFromCart, clearCart, loadRouteInvoices,
-        getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement
+        getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement, deleteWalletItem // 🚀 Added to returns
     };
 }
