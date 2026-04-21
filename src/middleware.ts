@@ -172,7 +172,7 @@ export async function middleware(req: NextRequest) {
                     const [subData, modData, allModsData, userData] = await Promise.all([
                         subRes.json(),
                         modRes.json(),
-                        allModsData.json(),
+                        allModsRes.json(),
                         userRes.json()
                     ]);
 
