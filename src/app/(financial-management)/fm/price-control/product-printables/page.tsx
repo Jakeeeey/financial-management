@@ -12,8 +12,7 @@ import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 
 import { cookies } from "next/headers";
 
-// âœ… Wire the module you asked for
-import ChangePasswordPage from "@/modules/financial-management/change-password/ChangePasswordPage";
+import { ProductPrintablesModule } from "@/modules/financial-management/product-pricing-management/product-printables";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +37,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 
 function pickString(obj: Record<string, unknown> | null | undefined, keys: string[]): string {
     for (const k of keys) {
-        const v = obj ? obj[k] : undefined;
+        const v = obj?.[k];
         if (typeof v === "string" && v.trim()) return v.trim();
     }
     return "";
@@ -73,16 +72,16 @@ function buildHeaderUserFromToken(token: string | null | undefined) {
 }
 
 export default async function Page() {
-    // âœ… Next.js 16: cookies() is async
+    // ✅ Next.js 16: cookies() is async
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
 
     const headerUser = buildHeaderUserFromToken(token);
 
     return (
-        // âœ… This fills the RIGHT column provided by SidebarInset (which is now fixed-height).
+        // ✅ This fills the RIGHT column provided by SidebarInset (which is now fixed-height).
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            {/* âœ… Topbar is fixed in place because ONLY <main> scrolls */}
+            {/* ✅ Topbar is fixed in place because ONLY <main> scrolls */}
             <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
                 <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4 overflow-hidden">
                     <SidebarTrigger className="-ml-1 shrink-0" />
@@ -94,15 +93,13 @@ export default async function Page() {
 
                     <div className="min-w-0 overflow-hidden">
                         <Breadcrumb>
-                            <BreadcrumbList className="min-w-0 overflow-hidden">
-                                <BreadcrumbItem className="hidden md:block shrink-0">
-                                    <BreadcrumbLink href="#">HRM</BreadcrumbLink>
+                            <BreadcrumbList>
+                                <BreadcrumbItem className="hidden md:block">
+                                    <BreadcrumbLink href="#">Printables</BreadcrumbLink>
                                 </BreadcrumbItem>
-                                <BreadcrumbSeparator className="hidden md:block shrink-0" />
-                                <BreadcrumbItem className="min-w-0 overflow-hidden">
-                                    <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                                        Change Password
-                                    </BreadcrumbPage>
+                                <BreadcrumbSeparator className="hidden md:block" />
+                                <BreadcrumbItem>
+                                    <BreadcrumbPage>Product Printables</BreadcrumbPage>
                                 </BreadcrumbItem>
                             </BreadcrumbList>
                         </Breadcrumb>
@@ -114,9 +111,11 @@ export default async function Page() {
                 </div>
             </header>
 
-            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 bg-muted/20">
-                <ChangePasswordPage />
+            {/* ✅ Only content scrolls inside RIGHT column */}
+            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
+                <ProductPrintablesModule />
             </main>
         </div>
     );
 }
+
