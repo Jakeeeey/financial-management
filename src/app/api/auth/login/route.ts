@@ -1,38 +1,14 @@
 // src/app/api/auth/login/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { decodeJwtPayload, pickTokenFromPayload, COOKIE_NAME, COOKIE_MAX_AGE_CAP } from "@/lib/auth-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const COOKIE_NAME = "vos_access_token";
-const COOKIE_MAX_AGE_CAP = 60 * 60 * 24 * 7; // 7 days cap
 
-function pickToken(payload: unknown): string | null {
-    if (!payload) return null;
-    if (typeof payload === "string") return payload.trim() || null;
-    const p = payload as Record<string, unknown>;
-    const t = p?.token ?? p?.accessToken ?? p?.access_token ?? p?.jwt;
-    return typeof t === "string" && t.trim() ? t.trim() : null;
-}
-
-// Base64URL decode for JWT header/payload (no verification)
-function b64urlDecodeToJson(part: string): Record<string, unknown> | null {
-    try {
-        let s = part.replace(/-/g, "+").replace(/_/g, "/");
-        // pad to multiple of 4
-        while (s.length % 4) s += "=";
-        const json = Buffer.from(s, "base64").toString("utf8");
-        return JSON.parse(json);
-    } catch {
-        return null;
-    }
-}
 
 function cookieMaxAgeFromJwt(token: string): number {
-    const parts = token.split(".");
-    if (parts.length < 2) return COOKIE_MAX_AGE_CAP;
-
-    const payload = b64urlDecodeToJson(parts[1]);
+    const payload = decodeJwtPayload(token);
     const exp = Number(payload?.exp); // exp is usually seconds since epoch
     const now = Math.floor(Date.now() / 1000);
 
@@ -48,6 +24,13 @@ function normalizeLoginErrorMessage(status: number): string {
     if (status === 401) return "Credentials invalid.";
     if (status >= 500) return "Server is down, please contact Administrator.";
     return `Login failed (HTTP ${status}).`;
+}
+
+/**
+ * Artificial delay to thwart brute-force attempts.
+ */
+async function throttle() {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
 }
 
 export async function POST(req: NextRequest) {
@@ -90,15 +73,15 @@ export async function POST(req: NextRequest) {
             cache: "no-store",
         });
     } catch (err: unknown) {
+        const errorInfo = err as { cause?: { code?: string; message?: string }; code?: string; message?: string };
         // ✅ Log details server-side only
-        const e = err as Record<string, unknown>;
-        const cause = e?.cause as Record<string, unknown> | undefined;
         console.error("[auth/login] Upstream fetch error:", {
-            code: cause?.code || e?.code,
-            message: cause?.message || e?.message,
+            code: errorInfo?.cause?.code || errorInfo?.code,
+            message: errorInfo?.cause?.message || errorInfo?.message,
         });
 
         // ✅ Return generic message to client (no internal URL/IP)
+        await throttle();
         return NextResponse.json(
             { ok: false, message: "Server is down, please contact Administrator." },
             { status: 502 }
@@ -123,10 +106,11 @@ export async function POST(req: NextRequest) {
             status: springRes.status,
         });
 
+        await throttle();
         return NextResponse.json({ ok: false, message: msg }, { status: springRes.status });
     }
 
-    const token = pickToken(data);
+    const token = pickTokenFromPayload(data as Record<string, unknown> | string | null);
     if (!token) {
         console.error("[auth/login] Login OK but no token returned by upstream.");
         return NextResponse.json(
@@ -145,6 +129,9 @@ export async function POST(req: NextRequest) {
         value: token,
         httpOnly: true,
         sameSite: "lax",
+        // secure: process.env.NODE_ENV === "production",
+
+        // for development only to allow cookies to work on http
         secure: process.env.NODE_ENV === "production",
         path: "/",
         maxAge: cookieMaxAgeFromJwt(token),
