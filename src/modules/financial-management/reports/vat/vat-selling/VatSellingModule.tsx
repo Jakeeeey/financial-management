@@ -10,7 +10,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { SearchableSelect } from '@/components/ui/searchable-select';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { DollarSign, TrendingUp, FileText, X, Download } from 'lucide-react';
 import { useVATSelling } from './hooks/useVATSelling';
 import { VATSaleLineChart } from './components/VATSaleLineChart';
@@ -223,28 +225,34 @@ export default function VatSellingModule() {
             className="h-auto border-0 p-0 text-xs focus-visible:ring-0 shadow-none w-[130px] bg-transparent"
           />
         </div>
-        {/* Customer — searchable combobox */}
-        <SearchableSelect
-          options={[
-            { value: '__all__', label: 'All Customers' },
-            ...customerOptions.map((name) => ({ value: name, label: name })),
-          ]}
+        <Select
           value={customer || '__all__'}
           onValueChange={(val) => { setCustomer(val === '__all__' ? '' : val); setPage(1); }}
-          placeholder="All Customers"
-          className="h-9 w-[220px] text-xs"
-        />
-        {/* Supplier — searchable combobox */}
-        <SearchableSelect
-          options={[
-            { value: '__all__', label: 'All Suppliers' },
-            ...supplierOptions.map((name) => ({ value: name, label: name })),
-          ]}
+        >
+          <SelectTrigger className="h-9 w-[220px] text-xs">
+            <SelectValue placeholder="All Customers" />
+          </SelectTrigger>
+          <SelectContent className="max-h-60">
+            <SelectItem value="__all__" className="text-xs text-muted-foreground">All Customers</SelectItem>
+            {customerOptions.map((name) => (
+              <SelectItem key={name} value={name} className="text-xs">{name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
           value={supplier || '__all__'}
           onValueChange={(val) => { setSupplier(val === '__all__' ? '' : val); setPage(1); }}
-          placeholder="All Suppliers"
-          className="h-9 w-[220px] text-xs"
-        />
+        >
+          <SelectTrigger className="h-9 w-[220px] text-xs">
+            <SelectValue placeholder="All Suppliers" />
+          </SelectTrigger>
+          <SelectContent className="max-h-60">
+            <SelectItem value="__all__" className="text-xs text-muted-foreground">All Suppliers</SelectItem>
+            {supplierOptions.map((name) => (
+              <SelectItem key={name} value={name} className="text-xs">{name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {isFiltered && (
           <Button variant="ghost" size="sm" onClick={clearFilters}
             className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1.5">

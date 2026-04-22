@@ -11,7 +11,6 @@ import { Input } from '@/components/ui/input';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { SearchableSelect } from '@/components/ui/searchable-select';
 import { PhilippinePeso, TrendingDown, FileText, X, Download } from 'lucide-react';
 import { useAccountsPayable } from './hooks/useAccountsPayable';
 import { MetricCard }       from './components/MetricCard';
@@ -28,10 +27,13 @@ const STATUS_OPTIONS: APStatus[] = [
   'Paid', 'Unpaid', 'Partially Paid', 'Unpaid | Overdue', 'Partially Paid | Overdue',
 ];
 
-// Only Trade records are shown (refNo does not start with 'NT')
-function isTradeRecord(refNo: string): boolean {
-  return !refNo.toUpperCase().startsWith('NT');
+type TxType = 'All' | 'Trade' | 'Non-Trade';
+
+function getTxType(refNo: string): 'Trade' | 'Non-Trade' {
+  return refNo.toUpperCase().startsWith('NT') ? 'Non-Trade' : 'Trade';
 }
+
+const TX_TABS: TxType[] = ['All', 'Trade', 'Non-Trade'];
 
 export default function AccountsPayableModule() {
   const { loading, error, records } = useAccountsPayable();
@@ -41,22 +43,24 @@ export default function AccountsPayableModule() {
   const [dateTo,   setDateTo]   = useState('');
   const [supplier, setSupplier] = useState('');
   const [status,   setStatus]   = useState('');
+  const [txType,   setTxType]   = useState<TxType>('All');
 
-  // Base set — trade records only
-  const tradeRecords = useMemo(
-    () => records.filter((r) => isTradeRecord(r.refNo)),
+  const supplierOptions = useMemo(
+    () => Array.from(new Set(records.map((r) => r.supplier).filter(Boolean))).sort(),
     [records]
   );
 
-  const supplierOptions = useMemo(
-    () => Array.from(new Set(tradeRecords.map((r) => r.supplier).filter(Boolean))).sort(),
-    [tradeRecords]
+  // Step 1 — filter by transaction type (NT prefix = Non-Trade, everything else = Trade)
+  const byType = useMemo(() =>
+    txType === 'All' ? records : records.filter(r => getTxType(r.refNo) === txType),
+    [records, txType]
   );
 
-  const isFiltered = !!(dateFrom || dateTo || supplier || status);
+  // Step 2 — filter by date / supplier / status
+  const isFiltered = !!(dateFrom || dateTo || supplier || status || txType !== 'All');
 
   const filteredRecords = useMemo(() => {
-    return tradeRecords.filter((r) => {
+    return byType.filter((r) => {
       const recDate = (r.invoiceDate || r.dueDate || '').split(' ')[0];
       if (dateFrom && recDate && recDate < dateFrom) return false;
       if (dateTo   && recDate && recDate > dateTo)   return false;
@@ -64,7 +68,7 @@ export default function AccountsPayableModule() {
       if (status   && r.status   !== status)          return false;
       return true;
     });
-  }, [tradeRecords, dateFrom, dateTo, supplier, status]);
+  }, [byType, dateFrom, dateTo, supplier, status]);
 
   const displayRecords      = filteredRecords;
   const displayMetrics      = useMemo(() => deriveMetrics(filteredRecords),       [filteredRecords]);
@@ -72,9 +76,15 @@ export default function AccountsPayableModule() {
   const displaySupplierData = useMemo(() => buildSupplierData(filteredRecords),   [filteredRecords]);
   const displayStatusData   = useMemo(() => buildStatusData(filteredRecords),     [filteredRecords]);
 
+  const tradeCount    = records.filter(r => getTxType(r.refNo) === 'Trade').length;
+  const nonTradeCount = records.filter(r => getTxType(r.refNo) === 'Non-Trade').length;
+
   const clearFilters = () => {
-    setDateFrom(''); setDateTo(''); setSupplier(''); setStatus(''); setPage(1);
+    setDateFrom(''); setDateTo(''); setSupplier(''); setStatus('');
+    setTxType('All'); setPage(1);
   };
+
+  const handleTxType = (t: TxType) => { setTxType(t); setPage(1); };
 
   const exportToPDF = () => {
     const doc   = new jsPDF({ orientation: 'landscape' });
@@ -102,7 +112,7 @@ export default function AccountsPayableModule() {
     doc.setFontSize(7.5);
     doc.setTextColor(120, 120, 120);
     doc.text(
-      `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Supplier: ${supplier || 'All'}   Status: ${status || 'All'}`,
+      `Type: ${txType}   From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Supplier: ${supplier || 'All'}   Status: ${status || 'All'}`,
       14, 26
     );
     doc.text(
@@ -117,11 +127,12 @@ export default function AccountsPayableModule() {
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
       head: [[
-        'Ref. No.', 'Supplier', 'Invoice No.', 'Invoice Date', 'Due Date',
+        'Ref. No.', 'Type', 'Supplier', 'Invoice No.', 'Invoice Date', 'Due Date',
         'Amount Payable (PHP)', 'Amount Paid (PHP)', 'Outstanding Balance (PHP)', 'Aging (Days)', 'Status',
       ]],
       body: displayRecords.map((r) => [
         r.refNo,
+        getTxType(r.refNo),
         r.supplier,
         r.invoiceNo !== '—' ? r.invoiceNo : '',
         r.invoiceDate ? r.invoiceDate.split(' ')[0] : '—',
@@ -187,6 +198,30 @@ export default function AccountsPayableModule() {
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2 w-full min-w-0">
 
+        {/* Transaction type toggle — All / Trade / Non-Trade */}
+        <div className="flex items-center rounded-md border border-border bg-background h-9 p-1 gap-0.5 shrink-0">
+          {TX_TABS.map(t => {
+            const isActive = txType === t;
+            const count    = t === 'All' ? records.length : t === 'Trade' ? tradeCount : nonTradeCount;
+            return (
+              <button
+                key={t}
+                onClick={() => handleTxType(t)}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                {t}
+                <span className={`text-[10px] font-semibold ${isActive ? 'opacity-70' : 'opacity-50'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Date From */}
         <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 h-9">
           <span className="text-xs font-medium text-muted-foreground shrink-0">From</span>
@@ -209,17 +244,21 @@ export default function AccountsPayableModule() {
           />
         </div>
 
-        {/* Supplier — searchable combobox, trade only */}
-        <SearchableSelect
-          options={[
-            { value: '__all__', label: 'All Suppliers' },
-            ...supplierOptions.map((name) => ({ value: name, label: name })),
-          ]}
+        {/* Supplier */}
+        <Select
           value={supplier || '__all__'}
           onValueChange={(val) => { setSupplier(val === '__all__' ? '' : val); setPage(1); }}
-          placeholder="All Suppliers"
-          className="h-9 w-[180px] text-xs"
-        />
+        >
+          <SelectTrigger className="h-9 w-[180px] text-xs">
+            <SelectValue placeholder="All Suppliers" />
+          </SelectTrigger>
+          <SelectContent className="max-h-60">
+            <SelectItem value="__all__" className="text-xs text-muted-foreground">All Suppliers</SelectItem>
+            {supplierOptions.map((name) => (
+              <SelectItem key={name} value={name} className="text-xs">{name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         {/* Status */}
         <Select
@@ -265,7 +304,7 @@ export default function AccountsPayableModule() {
       {isFiltered && (
         <p className="text-xs text-muted-foreground -mt-4">
           Showing <span className="font-semibold text-foreground">{displayRecords.length}</span>{' '}
-          of <span className="font-semibold text-foreground">{tradeRecords.length}</span> trade records
+          of <span className="font-semibold text-foreground">{records.length}</span> records
         </p>
       )}
 
