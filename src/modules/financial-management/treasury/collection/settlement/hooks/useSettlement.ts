@@ -1,10 +1,10 @@
-"use client";
-
 import {useState, useEffect, useCallback} from "react";
 import {UnpaidInvoice, SettlementAllocation, PaymentHistory} from "../../types";
 import {fetchProvider} from "../../providers/fetchProvider";
 
 export interface RawCashBucket {
+    detailId?: number; // 🚀 Explicit DB ID
+    findingId?: number;
     amount?: number;
     paymentMethod?: string;
     balanceTypeId?: number;
@@ -64,6 +64,7 @@ export interface WalletItem {
     label: string;
     originalAmount: number;
     dbId?: number;
+    findingId?: number;
     customerName?: string;
     balanceTypeId?: number;
     isLocal?: boolean;
@@ -140,7 +141,9 @@ export function useSettlement(pouchId: string | number) {
                         type: "EWT",
                         label: b.referenceNo ? `Form 2307: ${b.referenceNo}` : 'Form 2307',
                         originalAmount: safeAmount,
-                        balanceTypeId: 2
+                        customerName: b.referenceNo,
+                        balanceTypeId: 2,
+                        dbId: b.detailId // 🚀 Direct mapping
                     });
                 } else if (b.tempId && b.tempId.startsWith("adj-")) {
                     newWallet.push({
@@ -148,7 +151,10 @@ export function useSettlement(pouchId: string | number) {
                         type: "ADJUSTMENT",
                         label: b.referenceNo || 'Adjustment',
                         originalAmount: safeAmount,
-                        balanceTypeId: b.balanceTypeId || 1
+                        customerName: b.referenceNo,
+                        balanceTypeId: b.balanceTypeId || 1,
+                        dbId: b.detailId,
+                        findingId: b.findingId
                     });
                 } else {
                     newWallet.push({
@@ -246,7 +252,6 @@ export function useSettlement(pouchId: string | number) {
 
                 const finalInvoices = Array.from(existingCartMap.values()).map(inv => {
                     const myAllocs = existingAllocations.filter(a => a.invoiceId === inv.id);
-
                     const myPayments = myAllocs.filter(a => ["CASH", "CHECK", "EWT", "ADJUSTMENT"].includes(a.allocationType)).reduce((s, a) => s + a.amountApplied, 0);
                     const myMemos = myAllocs.filter(a => a.allocationType === "MEMO").reduce((s, a) => s + a.amountApplied, 0);
                     const myReturns = myAllocs.filter(a => a.allocationType === "RETURN").reduce((s, a) => s + a.amountApplied, 0);
@@ -281,6 +286,68 @@ export function useSettlement(pouchId: string | number) {
         fetchData();
     }, [fetchData]);
 
+    const editWalletItem = async (itemId: string, updatedFields: Partial<WalletItem>) => {
+        const item = wallet.find(w => w.id === itemId);
+        if (!item) return;
+
+        if (!item.isLocal && (item.type === "ADJUSTMENT" || item.type === "EWT")) {
+            const dbId = item.dbId; // 🚀 Safe ID Usage
+            if (!dbId) return alert("Database ID missing. Cannot update.");
+
+            try {
+                const endpoint = item.type === "EWT" ? `/api/fm/treasury/ewts/${dbId}` : `/api/fm/treasury/adjustments/${dbId}`;
+                const payload = item.type === "EWT" ? {
+                    amount: updatedFields.originalAmount,
+                    referenceNo: updatedFields.customerName
+                } : {
+                    findingId: updatedFields.findingId, // 🚀 Ensure this is explicitly sent!
+                    amount: updatedFields.originalAmount,
+                    balanceTypeId: updatedFields.balanceTypeId,
+                    remarks: updatedFields.customerName
+                };
+                await fetchProvider.put(endpoint, payload);
+            } catch (e) {
+                console.error("Update failed", e);
+                alert("Failed to update record in database. Ensure PUT endpoints exist.");
+                return;
+            }
+        }
+
+        setWallet(prev => prev.map(w => w.id === itemId ? {...w, ...updatedFields} : w));
+
+        if (updatedFields.originalAmount !== undefined) {
+            setAllocations(prev => prev.map(a => {
+                if (a.sourceTempId === itemId && a.amountApplied > updatedFields.originalAmount!) {
+                    return {...a, amountApplied: updatedFields.originalAmount!};
+                }
+                return a;
+            }));
+        }
+    };
+
+    const deleteWalletItem = async (itemId: string, type: string) => {
+        const item = wallet.find(w => w.id === itemId);
+        if (!item) return;
+
+        if (!item.isLocal && (type === "ADJUSTMENT" || type === "EWT")) {
+            if (!confirm("This will permanently delete the record from the database. Continue?")) return;
+            const dbId = item.dbId; // 🚀 Safe ID Usage
+            if (!dbId) return alert("Database ID missing. Cannot delete.");
+
+            try {
+                const endpoint = type === "EWT" ? `/api/fm/treasury/ewts/${dbId}` : `/api/fm/treasury/adjustments/${dbId}`;
+                await fetchProvider.delete(endpoint);
+            } catch (e) {
+                console.error("Delete failed", e);
+                alert("Failed to delete record from database.");
+                return;
+            }
+        }
+
+        setWallet(prev => prev.filter(w => w.id !== itemId));
+        setAllocations(prev => prev.filter(a => a.sourceTempId !== itemId));
+    };
+
     const addToCart = (invoice: Partial<UnpaidInvoice>) => {
         const safeId = invoice.id || (invoice as unknown as { invoiceId: number }).invoiceId;
         if (safeId && !cartInvoices.some(inv => inv.id === safeId)) {
@@ -298,12 +365,6 @@ export function useSettlement(pouchId: string | number) {
             setCartInvoices([]);
             setAllocations([]);
         }
-    };
-
-    // 🚀 NEW: Lets you delete an adjustment or EWT from the wallet
-    const deleteWalletItem = (itemId: string) => {
-        setWallet(prev => prev.filter(w => w.id !== itemId));
-        setAllocations(prev => prev.filter(a => a.sourceTempId !== itemId));
     };
 
     const loadRouteInvoices = async () => {
@@ -394,7 +455,6 @@ export function useSettlement(pouchId: string | number) {
         });
     };
 
-    // 🚀 FIXED: Made invoiceId optional so it can be pooled!
     const createEwt = async (amount: number, referenceNo: string, invoiceId?: number | null) => {
         try {
             const tempEwtId = `ewt-new-${Date.now()}`;
@@ -530,10 +590,11 @@ export function useSettlement(pouchId: string | number) {
             console.error(err);
         }
     };
+
     return {
         isLoading, wallet, credits, cartInvoices, allocations, salesmanName, salesmanId, findings, docNo, isPosted,
-        isLoadingRoute,
-        addToCart, removeFromCart, clearCart, loadRouteInvoices,
-        getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement, deleteWalletItem // 🚀 Added to returns
+        isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices,
+        getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
+        deleteWalletItem, editWalletItem
     };
 }

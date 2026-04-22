@@ -3,8 +3,28 @@
 import React, {useState, useEffect, useMemo} from "react";
 import {useSettlement, WalletItem} from "../hooks/useSettlement";
 import {
-    Receipt, ShieldCheck, Wallet, Save, Search, ChevronDown, Plus, X,
-    Loader2, History, Info, Percent, Trash2, Lock, Printer, Wand2, Truck, CheckCircle2, FileText, ChevronsUpDown, Check
+    Receipt,
+    ShieldCheck,
+    Wallet,
+    Save,
+    Search,
+    ChevronDown,
+    Plus,
+    X,
+    Loader2,
+    History,
+    Info,
+    Percent,
+    Trash2,
+    Lock,
+    Printer,
+    Wand2,
+    Truck,
+    CheckCircle2,
+    FileText,
+    ChevronsUpDown,
+    Check,
+    Edit2
 } from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter} from "@/components/ui/table";
@@ -23,33 +43,26 @@ interface SettlementCommandCenterProps {
 
 export default function SettlementCommandCenter({id, onClose}: SettlementCommandCenterProps) {
     const {
-        isLoading,
-        wallet,
-        credits,
-        cartInvoices,
-        allocations,
-        salesmanName,
-        salesmanId,
-        findings,
-        docNo,
-        isPosted,
-        isLoadingRoute,
-        loadRouteInvoices,
-        addToCart,
-        removeFromCart,
-        clearCart,
-        getUsedAmount,
-        getInvoiceApplied,
-        handleAllocate,
-        createAdjustment,
-        createEwt,
-        submitSettlement,
-        deleteWalletItem
+        isLoading, wallet, credits, cartInvoices, allocations, salesmanName, salesmanId, findings, docNo, isPosted,
+        isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart,
+        getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
+        deleteWalletItem, editWalletItem
     } = useSettlement(id);
 
     const [searchOpen, setSearchOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [searchResults, setSearchResults] = useState<UnpaidInvoice[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
 
-    // Adj State
+    // Edit State for Wallet Items
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editAmt, setEditAmt] = useState("");
+    const [editRef, setEditRef] = useState("");
+    const [editFId, setEditFId] = useState<number | "">("");
+    const [editBalType, setEditBalType] = useState<number>(2);
+    const [editAccountOpen, setEditAccountOpen] = useState(false); // 🚀 Added for Autocomplete
+
+    // Adj & EWT Create State
     const [adjOpen, setAdjOpen] = useState(false);
     const [adjFindingId, setAdjFindingId] = useState<number | "">("");
     const [adjAccountOpen, setAdjAccountOpen] = useState(false);
@@ -59,14 +72,9 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
     const [adjBalanceType, setAdjBalanceType] = useState<number>(2);
     const [isCreatingAdj, setIsCreatingAdj] = useState(false);
 
-    // Global EWT State
     const [ewtOpen, setEwtOpen] = useState(false);
     const [globalEwtAmount, setGlobalEwtAmount] = useState("");
     const [globalEwtRef, setGlobalEwtRef] = useState("");
-
-    const [searchQuery, setSearchQuery] = useState("");
-    const [searchResults, setSearchResults] = useState<UnpaidInvoice[]>([]);
-    const [isSearching, setIsSearching] = useState(false);
 
     useEffect(() => {
         if (!searchQuery || searchQuery.trim().length < 2 || isPosted) {
@@ -193,6 +201,7 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
 
         let borderLeft = "border-l-emerald-500";
         let badgeColor = "default";
+
         if (w.type === "CHECK") {
             borderLeft = "border-l-blue-500";
             badgeColor = "secondary";
@@ -214,22 +223,142 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
             badgeColor = w.balanceTypeId === 1 ? "destructive" : "outline";
         }
 
+        // 🚀 THE NEW PRETTY INLINE EDIT WITH AUTOCOMPLETE
+        if (editingId === w.id) {
+            return (
+                <div key={`edit-${w.id}`}
+                     className="p-3 rounded-xl border shadow-md bg-card border-primary/40 space-y-3 animate-in fade-in zoom-in-95 duration-200 relative overflow-hidden">
+                    <div className="flex justify-between items-center pb-2 border-b border-border/50">
+                        <span
+                            className="text-[11px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
+                            <Edit2 size={12}/> Edit {w.type}
+                        </span>
+                        <Button variant="ghost" size="icon"
+                                className="h-5 w-5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                                onClick={() => setEditingId(null)}>
+                            <X size={12}/>
+                        </Button>
+                    </div>
+
+                    <div className="space-y-2.5">
+                        {w.type === "ADJUSTMENT" && (
+                            <>
+                                <div className="flex gap-2">
+                                    <Button size="sm" variant={editBalType === 2 ? "default" : "outline"}
+                                            onClick={() => setEditBalType(2)}
+                                            className={`h-7 w-1/2 text-[10px] font-black tracking-widest uppercase ${editBalType === 2 ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'text-muted-foreground'}`}>Shortage</Button>
+                                    <Button size="sm" variant={editBalType === 1 ? "default" : "outline"}
+                                            onClick={() => setEditBalType(1)}
+                                            className={`h-7 w-1/2 text-[10px] font-black tracking-widest uppercase ${editBalType === 1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'text-muted-foreground'}`}>Overage</Button>
+                                </div>
+
+                                <Popover open={editAccountOpen} onOpenChange={setEditAccountOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button variant="outline" role="combobox"
+                                                className={cn("w-full h-8 justify-between text-xs font-bold bg-muted/30 hover:bg-muted/50", !editFId && "text-muted-foreground border-dashed")}>
+                                            <span className="truncate">
+                                                {editFId ? findings?.find((f) => f.id === editFId)?.findingName : "Search Ledger Account..."}
+                                            </span>
+                                            <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50"/>
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[280px] p-0 shadow-xl" align="start">
+                                        <Command>
+                                            <CommandInput placeholder="Type to search..." className="text-xs h-8"/>
+                                            <CommandList>
+                                                <CommandEmpty
+                                                    className="py-2 text-xs text-center text-muted-foreground">No
+                                                    account found.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {findings?.map((f) => (
+                                                        <CommandItem key={f.id} value={f.findingName} onSelect={() => {
+                                                            setEditFId(f.id);
+                                                            setEditAccountOpen(false);
+                                                        }} className="text-xs cursor-pointer py-1.5">
+                                                            <Check
+                                                                className={cn("mr-2 h-3 w-3 text-primary", editFId === f.id ? "opacity-100" : "opacity-0")}/>
+                                                            {f.findingName}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </>
+                        )}
+                        <div className="relative">
+                            <span
+                                className="absolute left-2.5 top-2 text-[10px] font-black text-muted-foreground">₱</span>
+                            <Input type="number" value={editAmt} onChange={e => setEditAmt(e.target.value)}
+                                   placeholder="0.00"
+                                   className="h-8 pl-6 text-xs font-mono font-black shadow-inner bg-muted/20"/>
+                        </div>
+                        <Input value={editRef} onChange={e => setEditRef(e.target.value)}
+                               placeholder={w.type === "EWT" ? "Form 2307 Reference No." : "Remarks / Reason"}
+                               className="h-8 text-xs bg-muted/20 shadow-inner"/>
+                    </div>
+
+                    <Button
+                        size="sm"
+                        className="w-full h-8 text-[10px] font-black tracking-widest uppercase bg-primary hover:bg-primary/90 text-white mt-1 shadow-md transition-transform active:scale-95"
+                        onClick={() => {
+                            const numAmt = parseFloat(editAmt);
+                            if (isNaN(numAmt) || numAmt <= 0) return alert("Please enter a valid amount greater than 0.");
+                            if (w.type === "ADJUSTMENT" && !editFId) return alert("Please select a ledger account.");
+
+                            const label = w.type === "EWT" ? `Form 2307: ${editRef}` : (findings.find(f => f.id === editFId)?.findingName || "Adjustment");
+
+                            editWalletItem(w.id, {
+                                originalAmount: numAmt,
+                                customerName: editRef,
+                                findingId: w.type === "ADJUSTMENT" ? Number(editFId) : undefined, // 🚀 Changed from dbId to findingId
+                                balanceTypeId: w.type === "ADJUSTMENT" ? editBalType : 2,
+                                label
+                            });
+
+                            setEditingId(null);
+                        }}
+                    >
+                        <Save size={12} className="mr-1.5"/> Confirm Update
+                    </Button>
+                </div>
+            );
+        }
+
         return (
             <div key={`source-${w.id}`}
-                 className={`p-3 rounded-lg border shadow-sm transition-all ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : `bg-background border-border border-l-4 ${borderLeft}`}`}>
+                 className={`p-3 rounded-lg border shadow-sm transition-all group ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : `bg-background border-border border-l-4 ${borderLeft}`}`}>
                 <div className="flex justify-between items-start mb-1">
                     <span
-                        className={`text-[11px] font-black uppercase tracking-widest truncate pr-2 ${w.type === 'ADJUSTMENT' ? (w.balanceTypeId === 1 ? 'text-red-700' : 'text-purple-700') : ''}`}>{w.label}</span>
+                        className={`text-[11px] font-black uppercase tracking-widest truncate pr-2 ${w.type === 'ADJUSTMENT' ? (w.balanceTypeId === 1 ? 'text-red-700' : 'text-purple-700') : ''}`}>
+                        {w.label}
+                    </span>
                     <div className="flex items-center gap-1 shrink-0">
                         <Badge variant={badgeColor as "default" | "secondary" | "destructive" | "outline"}
-                               className={`text-[8px] uppercase px-1.5 py-0 h-4 ${w.type === 'ADJUSTMENT' && w.balanceTypeId === 2 ? 'border-purple-200 text-purple-700 bg-purple-50' : (w.type === 'EWT' ? 'border-teal-200 text-teal-700 bg-teal-50' : '')}`}>{w.type}
+                               className={`text-[8px] uppercase px-1.5 py-0 h-4 ${w.type === 'ADJUSTMENT' && w.balanceTypeId === 2 ? 'border-purple-200 text-purple-700 bg-purple-50' : (w.type === 'EWT' ? 'border-teal-200 text-teal-700 bg-teal-50' : '')}`}>
+                            {w.type}
                         </Badge>
-                        {w.isLocal && !isPosted && (
-                            <button onClick={() => deleteWalletItem(w.id)}
-                                    className="text-muted-foreground hover:text-destructive transition-colors ml-1"
-                                    title="Remove Item">
-                                <Trash2 size={12}/>
-                            </button>
+
+                        {!isPosted && (w.type === "ADJUSTMENT" || w.type === "EWT") && (
+                            <div
+                                className="flex items-center ml-1 border-l border-border/50 pl-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => {
+                                    setEditingId(w.id);
+                                    setEditAmt(w.originalAmount.toString());
+                                    setEditRef(w.customerName || "");
+                                    setEditFId(w.findingId || ""); // 🚀 CHANGED FROM dbId TO findingId
+                                    setEditBalType(w.balanceTypeId || 2);
+                                }} className="text-muted-foreground hover:text-blue-500 transition-colors p-0.5"
+                                        title="Edit Item">
+                                    <Edit2 size={12}/>
+                                </button>
+                                <button onClick={() => deleteWalletItem(w.id, w.type)}
+                                        className="text-muted-foreground hover:text-destructive transition-colors p-0.5"
+                                        title="Remove Item">
+                                    <Trash2 size={12}/>
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -264,10 +393,8 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
 
     return (
         <div className="w-full h-full flex flex-col bg-muted/10 overflow-hidden">
-            {/* Header / Balance Bar */}
             <div
                 className="bg-card border-b border-border p-5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 shadow-sm shrink-0">
-
                 <div className="flex items-start lg:items-center gap-4 w-full lg:w-auto">
                     {onClose && (
                         <Button variant="ghost" size="icon" onClick={onClose}
@@ -349,13 +476,9 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
                 </div>
             </div>
 
-            {/* 🚀 THE FLEX FIX: flex-1 min-h-0 allows the grid children to actually scroll instead of breaking the page height! */}
             <div
                 className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 lg:p-6 overflow-y-auto lg:overflow-hidden">
-
-                {/* LEFT SIDE: SPLIT WALLET AND CREDITS */}
                 <div className="col-span-1 lg:col-span-4 flex flex-col gap-4 overflow-hidden lg:h-full">
-                    {/* SECTION 1: ACTUAL POUCH FUNDS */}
                     <div
                         className="bg-card rounded-xl border border-border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
                         <div
@@ -429,8 +552,7 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
                                                 </h4>
                                                 <p className="text-[11px] font-bold text-muted-foreground leading-tight">
                                                     Select whether this variance increases the physical assets
-                                                    (Shortage) or
-                                                    decreases them (Overage).
+                                                    (Shortage) or decreases them (Overage).
                                                 </p>
                                             </div>
 
@@ -440,18 +562,14 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
                                                         className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Variance
                                                         Type</label>
                                                     <div className="flex gap-2">
-                                                        <Button
-                                                            variant={adjBalanceType === 2 ? "default" : "outline"}
-                                                            onClick={() => setAdjBalanceType(2)}
-                                                            className={`h-8 w-1/2 text-xs font-bold ${adjBalanceType === 2 ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'text-muted-foreground'}`}
-                                                        >
+                                                        <Button variant={adjBalanceType === 2 ? "default" : "outline"}
+                                                                onClick={() => setAdjBalanceType(2)}
+                                                                className={`h-8 w-1/2 text-xs font-bold ${adjBalanceType === 2 ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'text-muted-foreground'}`}>
                                                             Shortage (Debit)
                                                         </Button>
-                                                        <Button
-                                                            variant={adjBalanceType === 1 ? "default" : "outline"}
-                                                            onClick={() => setAdjBalanceType(1)}
-                                                            className={`h-8 w-1/2 text-xs font-bold ${adjBalanceType === 1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'text-muted-foreground'}`}
-                                                        >
+                                                        <Button variant={adjBalanceType === 1 ? "default" : "outline"}
+                                                                onClick={() => setAdjBalanceType(1)}
+                                                                className={`h-8 w-1/2 text-xs font-bold ${adjBalanceType === 1 ? 'bg-red-600 hover:bg-red-700 text-white' : 'text-muted-foreground'}`}>
                                                             Overage (Credit)
                                                         </Button>
                                                     </div>
@@ -516,9 +634,8 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
                                                     className="w-full mt-2 font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white"
                                                     disabled={!adjFindingId || adjAmount === "" || parseFloat(adjAmount) === 0 || isNaN(parseFloat(adjAmount)) || isCreatingAdj}
                                                     onClick={handleCreateAdjustment}>
-                                                    {isCreatingAdj ?
-                                                        <Loader2 size={16}
-                                                                 className="animate-spin"/> : "Inject into Pouch"}
+                                                    {isCreatingAdj ? <Loader2 size={16}
+                                                                              className="animate-spin"/> : "Inject into Pouch"}
                                                 </Button>
                                             </div>
                                         </PopoverContent>
@@ -531,7 +648,6 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
                         </div>
                     </div>
 
-                    {/* SECTION 2: CUSTOMER CREDITS */}
                     <div
                         className="bg-card rounded-xl border border-border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
                         <div
@@ -552,7 +668,6 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
                     </div>
                 </div>
 
-                {/* RIGHT SIDE: THE INVOICE CART */}
                 <div
                     className="col-span-1 lg:col-span-8 bg-card rounded-xl border border-border shadow-sm flex flex-col overflow-hidden lg:h-full min-h-0">
                     <div className="bg-blue-500/10 p-4 border-b border-blue-500/20 flex flex-col gap-3 shrink-0">
@@ -831,7 +946,6 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
                                                             <Wand2 size={12} strokeWidth={3}/>
                                                         </Button>
 
-                                                        {/* 🚀 Legacy Auto-Calculate EWT */}
                                                         <Button size="icon" variant="ghost"
                                                                 onClick={() => handleAutoCalculateEWT(inv)}
                                                                 title="Auto-Generate Form 2307"
@@ -865,7 +979,8 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
                                                                         <h5 className="text-[10px] font-black uppercase tracking-widest text-emerald-600 flex items-center border-b pb-1">
                                                                             <Wallet size={12}
                                                                                     className="mr-1"/> Physical Funds &
-                                                                            EWT</h5>
+                                                                            EWT
+                                                                        </h5>
                                                                         {wallet.length === 0 ? (
                                                                             <p className="text-[10px] text-muted-foreground italic">No
                                                                                 funds available.</p>
@@ -913,7 +1028,8 @@ export default function SettlementCommandCenter({id, onClose}: SettlementCommand
                                                                         <h5 className="text-[10px] font-black uppercase tracking-widest text-purple-600 flex items-center border-b pb-1">
                                                                             <Percent size={12}
                                                                                      className="mr-1"/> Credits
-                                                                            (Memos/Returns)</h5>
+                                                                            (Memos/Returns)
+                                                                        </h5>
                                                                         {credits.filter(c => c.customerName === inv.customerName).length === 0 ? (
                                                                             <p className="text-[10px] text-muted-foreground italic">No
                                                                                 credits for this customer.</p>
