@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import type { COARow, AccountTypeRow, BalanceTypeRow } from "../types";
+import type { COARow, AccountTypeRow, BalanceTypeRow, UserRow } from "../types";
 
 import {
   Table,
@@ -40,9 +40,10 @@ export default function ChartOfAccountsTable(props: {
   loading: boolean;
   accountTypes: AccountTypeRow[];
   balanceTypes: BalanceTypeRow[];
+  users: UserRow[];
   onEdit: (row: COARow) => void;
 }) {
-  const { rows, loading, accountTypes, balanceTypes, onEdit } = props;
+  const { rows, loading, accountTypes, balanceTypes, users, onEdit } = props;
 
   return (
     <div className="w-full overflow-hidden rounded-md border bg-background">
@@ -91,7 +92,26 @@ export default function ChartOfAccountsTable(props: {
                 <TableCell className="uppercase">
                   {byIdLabel(balanceTypes, r.balance_type, (x) => x.balance_name)}
                 </TableCell>
-                <TableCell>{r.added_by ?? "-"}</TableCell>
+                <TableCell>
+                  {(() => {
+                    const addedBy = r.added_by;
+                    if (!addedBy) return "-";
+                    
+                    const idStr = String(addedBy);
+                    const u = users.find((x) => 
+                      String(x.user_id) === idStr || 
+                      String(x.id) === idStr
+                    );
+
+                    if (!u) return "-";
+
+                    const fname = u.user_fname || u.first_name || u.firstname || "";
+                    const lname = u.user_lname || u.last_name || u.lastname || "";
+                    
+                    const fullName = [fname, lname].filter(Boolean).join(" ");
+                    return fullName || "-";
+                  })()}
+                </TableCell>
                 <TableCell>{formatMDY(r.date_added)}</TableCell>
                 <TableCell className="text-right">
                   <Button

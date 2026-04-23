@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import {useState, useEffect, useCallback} from "react";
 import {
     CashieringState,
     CurrentUser,
@@ -9,7 +9,7 @@ import {
     Denomination,
     COA
 } from "../../types";
-import { fetchProvider } from "../../providers/fetchProvider";
+import {fetchProvider} from "../../providers/fetchProvider";
 
 interface PouchDetailResponse {
     id: number;
@@ -30,6 +30,8 @@ interface PouchDetailResponse {
 export function useCashiering(currentUser: CurrentUser): CashieringState {
     const [isSheetOpen, setIsSheetOpen] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [isSheetLoading, setIsSheetLoading] = useState<boolean>(false); // 🚀 NEW
+    const [isSubmitting, setIsSubmitting] = useState<boolean>(false); // 🚀 NEW
     const [editingId, setEditingId] = useState<number | null>(null);
 
     const [masterList, setMasterList] = useState<CollectionSummary[]>([]);
@@ -90,7 +92,10 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
 
     const loadPouchForEdit = useCallback(async (id: number) => {
         if (!id || isNaN(id)) return;
-        setIsLoading(true);
+
+        setIsSheetLoading(true); // 🚀 Use the new state
+        setIsSheetOpen(true);    // 🚀 UX FIX: Open immediately so the user sees the slide-in animation!
+
         try {
             const pouch = await fetchProvider.get<PouchDetailResponse>(`/api/fm/treasury/collections/${id}`);
             if (pouch) {
@@ -99,7 +104,10 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
                 setCollectionDate(pouch.collectionDate.split('T')[0]);
                 setRemarks(pouch.remarks || "");
 
-                const newDenoms: Record<number, number> = denominationMaster.reduce((acc, d) => ({...acc, [d.id]: 0}), {});
+                const newDenoms: Record<number, number> = denominationMaster.reduce((acc, d) => ({
+                    ...acc,
+                    [d.id]: 0
+                }), {});
                 pouch.cashBuckets?.filter((b) => b.coaId === 1).forEach((bucket) => {
                     const denomId = parseInt(bucket.tempId.replace("cash-", ""));
                     if (!isNaN(denomId)) newDenoms[denomId] = bucket.quantity;
@@ -123,7 +131,7 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
             console.error("Hydration Error:", err);
             alert("Could not load pouch details.");
         } finally {
-            setIsLoading(false);
+            setIsSheetLoading(false); // 🚀 Turn off sheet loading
         }
     }, [denominationMaster]);
 
@@ -161,6 +169,8 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
         if (!salesmanId) return alert("Please select a route owner.");
         if (grandTotal <= 0) return alert("Cannot save an empty pouch.");
 
+        setIsSubmitting(true); // 🚀 Turn on submission loading
+
         const payload = {
             salesmanId: parseInt(salesmanId),
             collectedBy: parseInt(currentUser.id) || 1,
@@ -196,16 +206,18 @@ export function useCashiering(currentUser: CurrentUser): CashieringState {
                 fetchInitialData();
             }
         } catch (error) {
-            // 🚀 FIXED: Logged 'error' to satisfy ESLint
             console.error("Submission Error:", error);
             alert("Error securing pouch.");
+        }
+        finally {
+            setIsSubmitting(false);
         }
     };
 
     return {
-        isSheetOpen, setIsSheetOpen, masterList, salesmen, isLoading, salesmanId, setSalesmanId,
+        isSheetOpen, setIsSheetOpen,isSheetLoading, isSubmitting, masterList, salesmen, isLoading, salesmanId, setSalesmanId,
         collectionDate, setCollectionDate, remarks, setRemarks, denominations, handleDenomChange,
         denominationMaster, checks, banks, coas, addCheck, updateCheck, removeCheck, totalCash,
-        totalChecks, grandTotal, handleSubmit, loadPouchForEdit, resetForm,editingId
+        totalChecks, grandTotal, handleSubmit, loadPouchForEdit, resetForm, editingId
     };
 }
