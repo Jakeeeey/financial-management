@@ -28,6 +28,8 @@ export interface SearchableSelectProps {
     className?: string;
 }
 
+const VISIBLE_LIMIT = 100;
+
 export function SearchableSelect({
     options,
     value,
@@ -37,46 +39,68 @@ export function SearchableSelect({
     className,
 }: SearchableSelectProps) {
     const [open, setOpen] = React.useState(false);
+    const [search, setSearch] = React.useState("");
 
-    // Find the label for the current value
-    const selectedLabel = React.useMemo(() => {
-        return options.find((opt) => opt.value === value)?.label;
-    }, [options, value]);
+    // Resolve display label for current value
+    const selectedLabel = React.useMemo(
+        () => options.find((opt) => opt.value === value)?.label,
+        [options, value]
+    );
+
+    // Client-side filter + cap — prevents flooding the DOM with thousands of nodes
+    const visibleOptions = React.useMemo(() => {
+        const q = search.trim().toLowerCase();
+        if (!q) return options.slice(0, VISIBLE_LIMIT);
+        const filtered = options.filter((opt) =>
+            opt.label.toLowerCase().includes(q)
+        );
+        return filtered.slice(0, VISIBLE_LIMIT);
+    }, [options, search]);
+
+    const handleOpenChange = (next: boolean) => {
+        setOpen(next);
+        if (!next) setSearch(""); // clear search when closed
+    };
 
     return (
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover open={open} onOpenChange={handleOpenChange}>
             <PopoverTrigger asChild>
                 <Button
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
-                    className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
+                    className={cn(
+                        "w-full justify-between",
+                        !value && "text-muted-foreground",
+                        className
+                    )}
                     disabled={disabled}
                 >
-                    {selectedLabel || placeholder}
+                    <span className="truncate flex-1 text-left">
+                        {selectedLabel || placeholder}
+                    </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command>
-                    <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
+                {/* shouldFilter=false: we handle filtering ourselves above */}
+                <Command shouldFilter={false}>
+                    <CommandInput
+                        placeholder={`Search ${placeholder.toLowerCase()}...`}
+                        value={search}
+                        onValueChange={setSearch}
+                    />
                     <CommandList>
                         <CommandEmpty>No results found.</CommandEmpty>
                         <CommandGroup>
-                            {options.map((opt) => (
+                            {visibleOptions.map((opt) => (
                                 <CommandItem
                                     key={opt.value}
-                                    value={opt.label} // Use label for searching
+                                    value={opt.value}
                                     onSelect={() => {
-                                        // We need to map back to the ID/value since CommandItem uses text content or value prop
-                                        // Here we used label as value for search, so we find the option by label and call onValueChange with its value
-                                        // However, simpler is to use the option.value if unique, but Command compares normalized search.
-                                        // Let's stick to using the opt.value if we want precise selection.
-                                        // Re-eval: onSelect returns the value prop (opt.label).
-                                        // Actually, let's use the option value but ensure standard shadcn pattern.
-
                                         onValueChange(opt.value);
                                         setOpen(false);
+                                        setSearch("");
                                     }}
                                 >
                                     <Check
@@ -89,6 +113,11 @@ export function SearchableSelect({
                                 </CommandItem>
                             ))}
                         </CommandGroup>
+                        {options.length > VISIBLE_LIMIT && search.trim() === "" && (
+                            <p className="py-2 px-4 text-[10px] text-muted-foreground font-bold uppercase tracking-widest text-center opacity-60 border-t">
+                                Showing {VISIBLE_LIMIT} of {options.length.toLocaleString()} — type to narrow down
+                            </p>
+                        )}
                     </CommandList>
                 </Command>
             </PopoverContent>
