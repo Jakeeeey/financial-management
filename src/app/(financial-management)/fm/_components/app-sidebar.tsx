@@ -9,9 +9,9 @@ export async function AppSidebar(props: ComponentProps<typeof Sidebar>) {
     const items = await getSidebarNavigation("fm");
 
     return (
-        <AppSidebarClient 
-            {...props} 
-            initialItems={items} 
+        <AppSidebarClient
+            {...props}
+            initialItems={items}
             subsystemTitle="Financial Management"
         />
     );
