@@ -29,7 +29,8 @@ import { MemoApprovalRow, Supplier, Customer, Salesman, ChartOfAccount } from ".
 import { ApprovalDetailModal } from "./ApprovalDetailModal";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { MultiSearchableSelect } from "@/components/ui/multi-searchable-select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { MultiSearchableSelect } from "./MultiSearchableSelect";
 import {
     Pagination,
     PaginationContent,
