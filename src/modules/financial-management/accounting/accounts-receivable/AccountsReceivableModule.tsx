@@ -10,6 +10,7 @@ import { AlertCircle, Clock, PhilippinePeso, X, Download } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useAccountsReceivable } from './hooks/useAccountsReceivable';
 import { MetricCard } from './components/MetricCard';
 import { AgingChart } from './components/AgingChart';
@@ -268,20 +269,17 @@ export default function AccountsReceivableModule() {
           />
         </div>
 
-        <Select
-          value={customer || '__all__'}
-          onValueChange={(val) => { setCustomer(val === '__all__' ? '' : val); setPage(1); }}
-        >
-          <SelectTrigger className="h-9 w-[160px] text-xs">
-            <SelectValue placeholder="All Customers" />
-          </SelectTrigger>
-          <SelectContent className="max-h-60">
-            <SelectItem value="__all__" className="text-xs text-muted-foreground">All Customers</SelectItem>
-            {customerOptions.map((name) => (
-              <SelectItem key={name} value={name} className="text-xs">{name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Customer (searchable) */}
+        <SearchableSelect
+          value={customer}
+          onValueChange={(val) => { setCustomer(val); setPage(1); }}
+          placeholder="All Customers"
+          className="h-9 w-[180px] text-xs"
+          options={[
+            { value: '', label: 'All Customers' },
+            ...customerOptions.map((name) => ({ value: name, label: name })),
+          ]}
+        />
 
         <Select
           value={branch || '__all__'}
@@ -298,20 +296,17 @@ export default function AccountsReceivableModule() {
           </SelectContent>
         </Select>
 
-        <Select
-          value={salesman || '__all__'}
-          onValueChange={(val) => { setSalesman(val === '__all__' ? '' : val); setPage(1); }}
-        >
-          <SelectTrigger className="h-9 w-[150px] text-xs">
-            <SelectValue placeholder="All Salesmen" />
-          </SelectTrigger>
-          <SelectContent className="max-h-60">
-            <SelectItem value="__all__" className="text-xs text-muted-foreground">All Salesmen</SelectItem>
-            {salesmanOptions.map((name) => (
-              <SelectItem key={name} value={name} className="text-xs">{name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Salesman (searchable) */}
+        <SearchableSelect
+          value={salesman}
+          onValueChange={(val) => { setSalesman(val); setPage(1); }}
+          placeholder="All Salesmen"
+          className="h-9 w-[180px] text-xs"
+          options={[
+            { value: '', label: 'All Salesmen' },
+            ...salesmanOptions.map((name) => ({ value: name, label: name })),
+          ]}
+        />
 
         {isFiltered && (
           <Button variant="ghost" size="sm" onClick={clearFilters}

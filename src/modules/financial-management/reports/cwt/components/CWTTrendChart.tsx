@@ -34,7 +34,17 @@ export function CWTTrendChart({ data }: CWTTrendChartProps) {
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis dataKey="month" tick={{ fontSize: 11 }} />
             <YAxis tickFormatter={formatPeso} tick={{ fontSize: 11 }} width={80} />
-            <Tooltip formatter={(v: number) => formatPeso(v)} />
+            <Tooltip
+              formatter={(v: number) => formatPeso(v)}
+              contentStyle={{
+                backgroundColor: 'hsl(var(--popover))',
+                borderColor: 'hsl(var(--border))',
+                color: 'hsl(var(--popover-foreground))',
+                borderRadius: '8px',
+                fontSize: '12px',
+              }}
+              labelStyle={{ color: 'hsl(var(--muted-foreground))' }}
+            />
             <Area
               type="monotone"
               dataKey="amount"

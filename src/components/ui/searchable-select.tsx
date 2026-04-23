@@ -50,7 +50,7 @@ export function SearchableSelect({
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
-                    className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
+                    className={cn("w-full justify-between overflow-hidden", !value && "text-muted-foreground", className)}
                     disabled={disabled}
                 >
 

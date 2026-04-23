@@ -19,10 +19,6 @@ import type { APRecord, APStatus } from '../types';
 
 const PAGE_SIZE = 10;
 
-function getTxType(refNo: string): 'Trade' | 'Non-Trade' {
-  return refNo.toUpperCase().startsWith('NT') ? 'Non-Trade' : 'Trade';
-}
-
 // Inline styles — avoids Tailwind JIT purging dynamic class strings
 const STATUS_STYLES: Record<string, { bg: string; color: string; border: string }> = {
   'Paid':                     { bg: 'rgba(16,185,129,0.1)',  color: '#059669', border: 'rgba(16,185,129,0.2)'  },
@@ -31,11 +27,6 @@ const STATUS_STYLES: Record<string, { bg: string; color: string; border: string 
   'Overdue':                  { bg: 'rgba(220,38,38,0.1)',   color: '#b91c1c', border: 'rgba(220,38,38,0.2)'   },
   'Unpaid | Overdue':         { bg: 'rgba(239,68,68,0.1)',   color: '#dc2626', border: 'rgba(239,68,68,0.2)'   },
   'Partially Paid | Overdue': { bg: 'rgba(249,115,22,0.1)',  color: '#ea580c', border: 'rgba(249,115,22,0.2)'  },
-};
-
-const TX_TYPE_STYLES: Record<'Trade' | 'Non-Trade', { bg: string; color: string; border: string }> = {
-  'Trade':     { bg: 'rgba(59,130,246,0.12)', color: '#2563eb', border: 'rgba(59,130,246,0.3)' },
-  'Non-Trade': { bg: 'rgba(168,85,247,0.12)', color: '#7c3aed', border: 'rgba(168,85,247,0.3)' },
 };
 
 function StatusPill({ status }: { status: APStatus }) {
@@ -51,19 +42,6 @@ function StatusPill({ status }: { status: APStatus }) {
       style={{ background: style.bg, color: style.color, borderColor: style.border }}
     >
       {status}
-    </span>
-  );
-}
-
-function TxPill({ refNo }: { refNo: string }) {
-  const type  = getTxType(refNo);
-  const style = TX_TYPE_STYLES[type];
-  return (
-    <span
-      className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border ml-1.5 shrink-0"
-      style={{ background: style.bg, color: style.color, borderColor: style.border }}
-    >
-      {type === 'Trade' ? 'TR' : 'NT'}
     </span>
   );
 }
@@ -139,12 +117,9 @@ export function APTable({ records, page, setPage }: APTableProps) {
               paged.map((r, i) => (
                 <TableRow key={`${r.id}-${i}`} className="border-border/40 hover:bg-muted/20">
 
-                  {/* Ref. No. + TR/NT pill */}
+                  {/* Ref. No. */}
                   <TableCell className="font-bold text-primary text-xs py-3 pl-6 whitespace-nowrap">
-                    <span className="flex items-center">
-                      {r.refNo}
-                      <TxPill refNo={r.refNo} />
-                    </span>
+                    {r.refNo}
                   </TableCell>
 
                   <TableCell className="text-xs text-muted-foreground py-3 whitespace-nowrap">
