@@ -17,6 +17,8 @@ type MatrixOptions = {
     selectedTemplate?: PdfTemplate;
     companyData?: PdfData | null;
     selectedPriceTypeIds?: string[];
+    printedBy?: string;
+    filterSummary?: string;
 };
 
 type PdfCell = {
@@ -75,14 +77,16 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
         selectedTemplate,
         companyData,
         selectedPriceTypeIds = [],
-        priceTypes = []
+        priceTypes = [],
+        printedBy = "System User",
+        filterSummary = ""
     } = options;
 
     const allPriceTypes = priceTypes || [];
-    
+
     // Determine active tiers based on selection
     // Map -1 to "ListPrice" and others to A-E based on their position among non-synthetic types
-    const activeTiers = allPriceTypes.length > 0 
+    const activeTiers = allPriceTypes.length > 0
         ? allPriceTypes
             .filter(pt => selectedPriceTypeIds.length === 0 || selectedPriceTypeIds.includes(String(pt.price_type_id)))
             .map(pt => {
@@ -97,9 +101,9 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
                 };
             })
             .filter(t => t.key != null)
-        : TIERS.map((key, i) => ({ 
-            key, 
-            label: allPriceTypes?.[i]?.price_type_name || `PRICE TYPE ${key}` 
+        : TIERS.map((key, i) => ({
+            key,
+            label: allPriceTypes?.[i]?.price_type_name || `PRICE TYPE ${key}`
         })).slice(0, 5);
 
     const usedUnits = units
@@ -112,19 +116,19 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
     // --- Dynamic Layout Optimization ---
     const totalCols = 3 + (activeTiers.length * uomCount);
     let dynamicFontSize = fontSize;
-    let dynamicPadding = 4;
+    let dynamicPadding = 1.0;
     let nameW = 56;
     let extraW = 28;
 
     if (totalCols > 15) {
         dynamicFontSize = 6;
-        dynamicPadding = 2.5;
+        dynamicPadding = 0.8;
         nameW = 45;
         extraW = 24;
     }
     if (totalCols > 25) {
         dynamicFontSize = 5.5;
-        dynamicPadding = 1.8;
+        dynamicPadding = 0.6;
         nameW = 40;
         extraW = 20;
     }
@@ -146,9 +150,9 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
 
     // --- Header Construction (2 rows) ---
     const headRow1: PdfCell[] = [
+        { content: "Brand", rowSpan: 2, styles: { valign: "middle", halign: "center" } },
+        { content: "Category", rowSpan: 2, styles: { valign: "middle", halign: "center" } },
         { content: "Product Name", rowSpan: 2, styles: { valign: "middle", fontStyle: "bold", halign: "center" } },
-        { content: "Category",     rowSpan: 2, styles: { valign: "middle", halign: "center" } },
-        { content: "Brand",        rowSpan: 2, styles: { valign: "middle", halign: "center" } },
     ];
 
     for (const tier of activeTiers) {
@@ -186,9 +190,9 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
     // --- Body Construction ---
     const body = rows.map((row) => {
         const cells: (string | PdfCell)[] = [
-            { content: row.display.product_name || "—", styles: { fontStyle: "bold" } },
+            row.brand_name || "—",
             row.category_name || "—",
-            row.brand_name || "—"
+            { content: row.display.product_name || "—", styles: { fontStyle: "bold" } }
         ];
 
         for (const tier of activeTiers) {
@@ -206,23 +210,109 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
     });
 
     const generated = `${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
-    
+
     let y = 40;
 
     if (selectedTemplate) {
-        y = await PdfEngine.applyTemplate(doc, selectedTemplate.name, companyData || null);
+        let templateHeaderEnd = await PdfEngine.applyTemplate(doc, selectedTemplate.name, companyData || null);
         if (tplConfig?.bodyStart != null) {
-            y = tplConfig.bodyStart;
+            templateHeaderEnd = tplConfig.bodyStart;
         }
-    } else {
-        doc.setFontSize(16);
-        doc.setTextColor(0);
-        doc.text(title, finalMargins.left, finalMargins.top);
 
-        y = finalMargins.top + 5;
-        doc.setFontSize(9);
+        // Create a clear gap for metadata and push table down
+        const metadataHeight = filterSummary ? 12 : 8;
+        const metadataTop = templateHeaderEnd - 3; // Shift up to hug the header line
+        y = metadataTop + metadataHeight + 1; // Table starts immediately after metadata
+
+        // Add metadata even with template
+        doc.setFontSize(8.5);
+        doc.setTextColor(60);
+
+        let currentX = finalMargins.left;
+
+        // Add a subtle title for the metadata section
+        doc.setFont("helvetica", "bold");
+        doc.text("REPORT INFORMATION", currentX, metadataTop);
+
+        doc.setDrawColor(220);
+        doc.setLineWidth(0.2);
+        doc.line(currentX, metadataTop + 2, doc.internal.pageSize.getWidth() - finalMargins.right, metadataTop + 2);
+
+        const metaLineY = metadataTop + 7;
+        doc.setFont("helvetica", "bold");
+        doc.text("Printed Date:", currentX, metaLineY);
+        currentX += doc.getTextWidth("Printed Date: ") + 1.5;
+        doc.setFont("helvetica", "normal");
+        doc.text(generated, currentX, metaLineY);
+        currentX += doc.getTextWidth(generated) + 8;
+
+        doc.setFont("helvetica", "bold");
+        doc.text("Generated By:", currentX, metaLineY);
+        currentX += doc.getTextWidth("Generated By: ") + 1.5;
+        doc.setFont("helvetica", "normal");
+        doc.text(printedBy, currentX, metaLineY);
+
+        if (filterSummary) {
+            const filterY = metaLineY + 5;
+            doc.setFont("helvetica", "bold");
+            doc.text("Active Criteria:", finalMargins.left, filterY);
+            doc.setFont("helvetica", "normal");
+            const filterX = finalMargins.left + doc.getTextWidth("Active Criteria: ") + 1.5;
+            const splitFilters = doc.splitTextToSize(filterSummary, doc.internal.pageSize.getWidth() - filterX - finalMargins.right);
+            doc.text(splitFilters, filterX, filterY);
+        }
+
+        // Reset for table
+        doc.setFont("helvetica", "normal");
+    } else {
+        doc.setFontSize(22);
+        doc.setTextColor(0, 51, 102); // Professional Dark Blue
+        doc.setFont("helvetica", "bold");
+        doc.text(title.toUpperCase(), finalMargins.left, finalMargins.top + 5);
+
+        doc.setFontSize(10);
         doc.setTextColor(100);
-        doc.text(`Generated: ${generated} | Total Products: ${rows.length}`, finalMargins.left, y);
+        doc.setFont("helvetica", "normal");
+        doc.text("OFFICIAL PRODUCT PRICING MATRIX REPORT", finalMargins.left, finalMargins.top + 11);
+
+        y = finalMargins.top + 20;
+
+        // Metadata Block
+        doc.setDrawColor(230);
+        doc.setFillColor(248, 250, 252);
+        const metaHeight = filterSummary ? 18 : 12;
+        doc.roundedRect(finalMargins.left, y - 5, doc.internal.pageSize.getWidth() - finalMargins.left - finalMargins.right, metaHeight, 1, 1, "FD");
+
+        doc.setFontSize(9);
+        doc.setTextColor(70);
+
+        let currentX = finalMargins.left + 5;
+        doc.setFont("helvetica", "bold");
+        doc.text("REPORT DATE:", currentX, y);
+        currentX += doc.getTextWidth("REPORT DATE: ") + 2;
+        doc.setFont("helvetica", "normal");
+        doc.text(generated, currentX, y);
+        currentX += doc.getTextWidth(generated) + 12;
+
+        doc.setFont("helvetica", "bold");
+        doc.text("PREPARED BY:", currentX, y);
+        currentX += doc.getTextWidth("PREPARED BY: ") + 2;
+        doc.setFont("helvetica", "normal");
+        doc.text(printedBy, currentX, y);
+
+        if (filterSummary) {
+            y += 6;
+            doc.setFont("helvetica", "bold");
+            doc.text("FILTER CRITERIA:", finalMargins.left + 5, y);
+            doc.setFont("helvetica", "normal");
+            const filterX = finalMargins.left + 5 + doc.getTextWidth("FILTER CRITERIA: ") + 2;
+            const splitFilters = doc.splitTextToSize(filterSummary, doc.internal.pageSize.getWidth() - filterX - finalMargins.right - 5);
+            doc.text(splitFilters, filterX, y);
+            y += (splitFilters.length * 3.5);
+        } else {
+            y += 4;
+        }
+
         y += 5;
 
         if (supplier) {
@@ -250,7 +340,7 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
     }
 
     autoTable(doc, {
-        startY: y + 5,
+        startY: y + 1,
         head: [headRow1, headRow2],
         body,
         theme: "grid",
@@ -267,12 +357,12 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
             fontStyle: "bold",
         },
         columnStyles: {
-            0: { cellWidth: nameW },
+            0: { cellWidth: extraW },
             1: { cellWidth: extraW },
-            2: { cellWidth: extraW }
+            2: { cellWidth: nameW }
         },
-        margin: { 
-            left: finalMargins.left, 
+        margin: {
+            left: finalMargins.left,
             right: finalMargins.right,
             top: finalMargins.top,
             bottom: bodyEnd != null

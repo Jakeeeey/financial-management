@@ -10,7 +10,6 @@ import PrintablesMatrixTable from "./PrintablesMatrixTable";
 import PrintLabelsDialog from "./PrintLabelsDialog";
 import { Button } from "@/components/ui/button";
 import { Printer, ChevronLeft, ChevronRight } from "lucide-react";
-
 import { toast } from "sonner";
 
 function pickId(v: string | number | null | undefined | Record<string, unknown>): number | null {
@@ -19,7 +18,7 @@ function pickId(v: string | number | null | undefined | Record<string, unknown>)
     return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-export default function ProductPrintablesView() {
+export default function ProductPrintablesView({ userName }: { userName?: string }) {
     const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
     const { categories, brands, units, suppliers, priceTypes, loading: lookupsLoading } = useLookups(filters);
     const { matrixRows, usedUnitIds, loading: productsLoading, resetFilters } = useProductPrintables(filters, setFilters, categories, brands);
@@ -27,6 +26,34 @@ export default function ProductPrintablesView() {
     const [isPrinting, setIsPrinting] = React.useState(false);
     const [allMatrixRows, setAllMatrixRows] = React.useState<MatrixRow[]>([]);
     const [allUsedUnitIds, setAllUsedUnitIds] = React.useState<Set<number>>(new Set());
+    const [currentUser, setCurrentUser] = React.useState<string>(userName || "System User");
+
+    React.useEffect(() => {
+        if (userName) {
+            setCurrentUser(userName);
+        }
+    }, [userName]);
+
+    const filterSummary = React.useMemo(() => {
+        const parts: string[] = [];
+        if (filters.q) parts.push(`Search: "${filters.q}"`);
+        
+        if (filters.category_ids.length) {
+            const names = filters.category_ids.map(id => categories.find(c => String(c.category_id) === String(id))?.category_name).filter(Boolean);
+            if (names.length) parts.push(`Categories: ${names.join(", ")}`);
+        }
+        if (filters.brand_ids.length) {
+            const names = filters.brand_ids.map(id => brands.find(b => String(b.brand_id) === String(id))?.brand_name).filter(Boolean);
+            if (names.length) parts.push(`Brands: ${names.join(", ")}`);
+        }
+        if (filters.supplier_ids.length) {
+            const names = filters.supplier_ids.map(id => suppliers.find(s => String(s.id) === String(id))?.supplier_name).filter(Boolean);
+            if (names.length) parts.push(`Suppliers: ${names.join(", ")}`);
+        }
+        
+        parts.push(`Status: ${filters.active_only ? "Active Only" : "All"}`);
+        return parts.join(" | ");
+    }, [filters, categories, brands, suppliers]);
 
     const handlePrintAll = async () => {
         setIsPrinting(true);
@@ -200,6 +227,8 @@ export default function ProductPrintablesView() {
                 usedUnitIds={allUsedUnitIds}
                 supplier={filters.supplier_ids.length === 1 ? suppliers.find(s => String(s.id) === filters.supplier_ids[0]) : null}
                 selectedPriceTypeIds={filters.price_type_ids}
+                printedBy={currentUser}
+                filterSummary={filterSummary}
             />
         </div>
     );
