@@ -70,9 +70,9 @@ export default function PrintablesMatrixTable({
                     
                     {/* Level 2: Price Tiers (Selected) */}
                     <TableRow className="border-b border-[#D1D5DB]">
-                        <TableHead className="font-bold sticky left-0 z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[180px] text-[10px] uppercase text-[#374151]">Product Name</TableHead>
-                        <TableHead className="font-bold sticky left-[180px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[120px] text-[10px] uppercase text-[#374151]">Category</TableHead>
-                        <TableHead className="font-bold sticky left-[300px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[120px] text-[10px] uppercase text-[#374151]">Brand</TableHead>
+                        <TableHead className="font-bold sticky left-0 z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[120px] text-[10px] uppercase text-[#374151]">Brand</TableHead>
+                        <TableHead className="font-bold sticky left-[120px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[120px] text-[10px] uppercase text-[#374151]">Category</TableHead>
+                        <TableHead className="font-bold sticky left-[240px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[180px] text-[10px] uppercase text-[#374151]">Product Name</TableHead>
                         {activePriceTypes.map((pt, i) => (
                             <TableHead 
                                 key={pt.price_type_id} 
@@ -90,8 +90,8 @@ export default function PrintablesMatrixTable({
                     {/* Level 3: Units (BOX, PCS, etc.) */}
                     <TableRow className="border-b border-[#D1D5DB]">
                         <TableHead className="sticky left-0 z-30 bg-[#F9FAFB] border-r border-[#D1D5DB]"></TableHead>
-                        <TableHead className="sticky left-[180px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB]"></TableHead>
-                        <TableHead className="sticky left-[300px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB]"></TableHead>
+                        <TableHead className="sticky left-[120px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB]"></TableHead>
+                        <TableHead className="sticky left-[240px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB]"></TableHead>
                         {activePriceTypes.map((pt) => (
                             <React.Fragment key={pt.price_type_id}>
                                 {visibleUnits.length > 0 ? visibleUnits.map((u) => (
@@ -111,14 +111,14 @@ export default function PrintablesMatrixTable({
                 <TableBody>
                     {rows.map((row) => (
                         <TableRow key={row.group_id} className="hover:bg-[#F3F4F6] transition-colors border-b border-[#E5E7EB]">
-                            <TableCell className="font-semibold sticky left-0 bg-white z-10 border-r border-[#D1D5DB] py-2 text-[11px] text-[#111827]">
-                                {row.display.product_name}
+                            <TableCell className="sticky left-0 bg-white z-10 border-r border-[#D1D5DB] py-2 text-[10px] text-[#4B5563]">
+                                {row.brand_name}
                             </TableCell>
-                            <TableCell className="sticky left-[180px] bg-white z-10 border-r border-[#D1D5DB] py-2 text-[10px] text-[#4B5563]">
+                            <TableCell className="sticky left-[120px] bg-white z-10 border-r border-[#D1D5DB] py-2 text-[10px] text-[#4B5563]">
                                 {row.category_name}
                             </TableCell>
-                            <TableCell className="sticky left-[300px] bg-white z-10 border-r border-[#D1D5DB] py-2 text-[10px] text-[#4B5563]">
-                                {row.brand_name}
+                            <TableCell className="font-semibold sticky left-[240px] bg-white z-10 border-r border-[#D1D5DB] py-2 text-[11px] text-[#111827]">
+                                {row.display.product_name}
                             </TableCell>
                             {activePriceTypes.map((pt, i) => {
                                 // If synthetic List Price (ID -1), use ListPrice key
