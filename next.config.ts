@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
     /* config options here */
-    allowedDevOrigins: ['msi-andrie', '100.119.3.44'],
+    allowedDevOrigins: ['msi-andrie'],
 };
 
 export default nextConfig;
