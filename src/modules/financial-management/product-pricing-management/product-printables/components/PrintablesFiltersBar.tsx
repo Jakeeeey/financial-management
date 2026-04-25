@@ -204,53 +204,107 @@ export default function PrintablesFiltersBar({
                         Active Filters:
                     </div>
                     {filters.q && (
-                        <Badge variant="secondary" className="gap-1 rounded-lg px-2 py-0.5 bg-primary/5 text-primary border-primary/20">
+                        <Badge variant="secondary" className="gap-1 rounded-lg px-2 py-0.5 bg-primary/5 text-primary border-primary/20 pr-1">
                             Search: {filters.q}
-                            <X className="w-3 h-3 cursor-pointer hover:text-destructive" onClick={() => setFilters(prev => ({ ...prev, q: "", page: 1 }))} />
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setFilters(prev => ({ ...prev, q: "", page: 1 }));
+                                }}
+                                className="ml-1 p-0.5 rounded-md hover:bg-primary/10 transition-colors"
+                            >
+                                <X className="w-3 h-3" />
+                            </button>
                         </Badge>
                     )}
                     {(filters.category_ids || []).map(id => {
                         const name = categories.find(c => String(c.category_id) === id)?.category_name;
                         return (
-                            <Badge key={id} variant="secondary" className="gap-1 rounded-lg px-2 py-0.5">
+                            <Badge key={id} variant="secondary" className="gap-1 rounded-lg px-2 py-0.5 pr-1">
                                 Cat: {name || id}
-                                <X className="w-3 h-3 cursor-pointer hover:text-destructive" onClick={() => removeFilter("category_ids", id)} />
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeFilter("category_ids", id);
+                                    }}
+                                    className="ml-1 p-0.5 rounded-md hover:bg-muted-foreground/10 transition-colors"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
                             </Badge>
                         );
                     })}
                     {(filters.brand_ids || []).map(id => {
                         const name = brands.find(b => String(b.brand_id) === id)?.brand_name;
                         return (
-                            <Badge key={id} variant="secondary" className="gap-1 rounded-lg px-2 py-0.5">
+                            <Badge key={id} variant="secondary" className="gap-1 rounded-lg px-2 py-0.5 pr-1">
                                 Brand: {name || id}
-                                <X className="w-3 h-3 cursor-pointer hover:text-destructive" onClick={() => removeFilter("brand_ids", id)} />
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeFilter("brand_ids", id);
+                                    }}
+                                    className="ml-1 p-0.5 rounded-md hover:bg-muted-foreground/10 transition-colors"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
                             </Badge>
                         );
                     })}
                     {(filters.unit_ids || []).map(id => {
                         const name = units.find(u => String(u.unit_id) === id)?.unit_shortcut;
                         return (
-                            <Badge key={id} variant="secondary" className="gap-1 rounded-lg px-2 py-0.5">
+                            <Badge key={id} variant="secondary" className="gap-1 rounded-lg px-2 py-0.5 pr-1">
                                 Unit: {name || id}
-                                <X className="w-3 h-3 cursor-pointer hover:text-destructive" onClick={() => removeFilter("unit_ids", id)} />
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeFilter("unit_ids", id);
+                                    }}
+                                    className="ml-1 p-0.5 rounded-md hover:bg-muted-foreground/10 transition-colors"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
                             </Badge>
                         );
                     })}
                     {(filters.supplier_ids || []).map(id => {
                         const name = suppliers.find(s => String(s.id) === id)?.supplier_name;
                         return (
-                            <Badge key={id} variant="secondary" className="gap-1 rounded-lg px-2 py-0.5 bg-orange-50 text-orange-700 border-orange-200">
+                            <Badge key={id} variant="secondary" className="gap-1 rounded-lg px-2 py-0.5 bg-orange-50 text-orange-700 border-orange-200 pr-1">
                                 Supplier: {name || id}
-                                <X className="w-3 h-3 cursor-pointer hover:text-destructive" onClick={() => removeFilter("supplier_ids", id)} />
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeFilter("supplier_ids", id);
+                                    }}
+                                    className="ml-1 p-0.5 rounded-md hover:bg-orange-200/50 transition-colors"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
                             </Badge>
                         );
                     })}
                     {(filters.price_type_ids || []).map(id => {
                         const name = priceTypes.find(pt => String(pt.price_type_id) === id)?.price_type_name;
                         return (
-                            <Badge key={id} variant="secondary" className="gap-1 rounded-lg px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200">
+                            <Badge key={id} variant="secondary" className="gap-1 rounded-lg px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 pr-1">
                                 Price: {name || id}
-                                <X className="w-3 h-3 cursor-pointer hover:text-destructive" onClick={() => removeFilter("price_type_ids", id)} />
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeFilter("price_type_ids", id);
+                                    }}
+                                    className="ml-1 p-0.5 rounded-md hover:bg-blue-200/50 transition-colors"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
                             </Badge>
                         );
                     })}

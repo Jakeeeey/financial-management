@@ -38,21 +38,20 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
         const parts: string[] = [];
         if (filters.q) parts.push(`Search: "${filters.q}"`);
         
-        if (filters.category_ids.length) {
-            const names = filters.category_ids.map(id => categories.find(c => String(c.category_id) === String(id))?.category_name).filter(Boolean);
-            if (names.length) parts.push(`Categories: ${names.join(", ")}`);
+        if (filters.supplier_ids.length) {
+            const names = filters.supplier_ids.map(id => suppliers.find(s => String(s.id) === String(id))?.supplier_name).filter(Boolean);
+            if (names.length) parts.push(`Suppliers: ${names.join(", ")}`);
         }
         if (filters.brand_ids.length) {
             const names = filters.brand_ids.map(id => brands.find(b => String(b.brand_id) === String(id))?.brand_name).filter(Boolean);
             if (names.length) parts.push(`Brands: ${names.join(", ")}`);
         }
-        if (filters.supplier_ids.length) {
-            const names = filters.supplier_ids.map(id => suppliers.find(s => String(s.id) === String(id))?.supplier_name).filter(Boolean);
-            if (names.length) parts.push(`Suppliers: ${names.join(", ")}`);
+        if (filters.category_ids.length) {
+            const names = filters.category_ids.map(id => categories.find(c => String(c.category_id) === String(id))?.category_name).filter(Boolean);
+            if (names.length) parts.push(`Categories: ${names.join(", ")}`);
         }
         
-        parts.push(`Status: ${filters.active_only ? "Active Only" : "All"}`);
-        return parts.join(" | ");
+        return parts.join("\n");
     }, [filters, categories, brands, suppliers]);
 
     const handlePrintAll = async () => {
