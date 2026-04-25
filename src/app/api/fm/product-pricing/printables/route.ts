@@ -111,8 +111,9 @@ export async function GET(req: NextRequest) {
 
             const groupIds = new Set<number>();
             for (const item of productInfoRes.data) {
-                // If this product has a parent, the root is the parent; otherwise it IS the root
-                groupIds.add(item.parent_id ?? item.product_id);
+                // If this product has a parent (> 0), the root is the parent; otherwise it IS the root
+                const gid = pickId(item.parent_id) ?? item.product_id;
+                groupIds.add(gid);
             }
 
             if (groupIds.size > 0) {
