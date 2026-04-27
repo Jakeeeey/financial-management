@@ -34,9 +34,22 @@ type Props = {
     usedUnitIds: Set<number>;
     supplier?: Supplier | null;
     selectedPriceTypeIds?: string[];
+    printedBy?: string;
+    filterSummary?: string;
 };
 
-export default function PrintLabelsDialog({ open, onOpenChange, rows, priceTypes, units, usedUnitIds, supplier, selectedPriceTypeIds = [] }: Props) {
+export default function PrintLabelsDialog({ 
+    open, 
+    onOpenChange, 
+    rows, 
+    priceTypes, 
+    units, 
+    usedUnitIds, 
+    supplier, 
+    selectedPriceTypeIds = [],
+    printedBy,
+    filterSummary
+}: Props) {
     const [templates, setTemplates] = React.useState<PdfTemplate[]>([]);
     const [selectedTemplateId, setSelectedTemplateId] = React.useState<string>("none");
     const [companyData, setCompanyData] = React.useState<CompanyData | null>(null);
@@ -79,7 +92,9 @@ export default function PrintLabelsDialog({ open, onOpenChange, rows, priceTypes
             supplier,
             selectedTemplate,
             companyData,
-            selectedPriceTypeIds
+            selectedPriceTypeIds,
+            printedBy,
+            filterSummary
         });
         onOpenChange(false);
     };
