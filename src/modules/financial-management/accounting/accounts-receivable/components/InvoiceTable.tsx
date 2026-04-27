@@ -1,5 +1,4 @@
 // src/modules/financial-management/accounting/accounts-receivable/components/InvoiceTable.tsx
-// Paginated invoice details table — with search bar across all columns.
 
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,12 +17,12 @@ import type { Invoice } from '../types';
 
 const PAGE_SIZE = 10;
 
-// Inline styles to avoid Tailwind JIT purging dynamic classes
 const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
-  'Paid':             { bg: 'rgba(16,185,129,0.1)',  color: '#059669' },
-  'Overdue':          { bg: 'rgba(239,68,68,0.1)',   color: '#dc2626' },
-  'Partially Paid':   { bg: 'rgba(245,158,11,0.1)',  color: '#d97706' },
-  'Unpaid':           { bg: 'rgba(100,116,139,0.1)', color: '#64748b' },
+  'Paid':           { bg: 'rgba(16,185,129,0.1)',  color: '#059669' },
+  'Overdue':        { bg: 'rgba(239,68,68,0.1)',   color: '#dc2626' },
+  'Partially Paid': { bg: 'rgba(245,158,11,0.1)',  color: '#d97706' },
+  'Unpaid':         { bg: 'rgba(100,116,139,0.1)', color: '#64748b' },
+  'Due':            { bg: 'rgba(100,116,139,0.1)', color: '#64748b' },
 };
 
 function StatusPill({ status }: { status: string }) {
@@ -36,6 +35,24 @@ function StatusPill({ status }: { status: string }) {
       {status}
     </span>
   );
+}
+
+/**
+ * Color for the aging day count.
+ *
+ * Only called when aging >= 0 (i.e. actually overdue).
+ *   0 days  → amber  (due today — overdue but freshest)
+ *   1–30    → slate  (default muted)
+ *   31–60   → amber
+ *   61–90   → orange-red
+ *   91+     → red
+ */
+function agingColor(aging: number): string {
+  if (aging === 0)  return '#f59e0b';
+  if (aging > 90)   return '#dc2626';
+  if (aging > 60)   return '#ef4444';
+  if (aging > 30)   return '#f59e0b';
+  return '#64748b'; // 1–30 days: slate
 }
 
 interface InvoiceTableProps {
@@ -85,9 +102,6 @@ export function InvoiceTable({ invoices, page, setPage }: InvoiceTableProps) {
       </CardHeader>
 
       <CardContent className="p-0">
-        {/* Column order matches notepad:
-            Invoice # | Order no. | Customer | Salesman | Branch |
-            Invoice Date | Due Date | Net Receivable | Paid | Outstanding | Overdue | Status */}
         <Table className="w-full table-fixed">
           <TableHeader>
             <TableRow className="bg-muted/50">
@@ -117,21 +131,18 @@ export function InvoiceTable({ invoices, page, setPage }: InvoiceTableProps) {
               paged.map((inv, i) => (
                 <TableRow key={`${inv.invoiceNo ?? ''}-${i}`} className="border-border/40 hover:bg-muted/20">
 
-                  {/* Invoice # */}
                   <TableCell className="py-3 pl-4">
                     <span className="font-bold text-primary text-xs truncate block w-full" title={inv.invoiceNo}>
                       {inv.invoiceNo}
                     </span>
                   </TableCell>
 
-                  {/* Order No. */}
                   <TableCell className="py-3">
                     <span className="text-xs text-muted-foreground truncate block w-full" title={inv.orderId}>
                       {inv.orderId || <span className="text-muted-foreground/40">—</span>}
                     </span>
                   </TableCell>
 
-                  {/* Customer — truncated with tooltip */}
                   <TableCell className="py-3">
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -143,59 +154,54 @@ export function InvoiceTable({ invoices, page, setPage }: InvoiceTableProps) {
                     </Tooltip>
                   </TableCell>
 
-                  {/* Salesman */}
                   <TableCell className="py-3">
                     <span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.salesman}>
                       {inv.salesman || <span className="text-muted-foreground/40">—</span>}
                     </span>
                   </TableCell>
 
-                  {/* Branch */}
                   <TableCell className="py-3">
                     <span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.branch}>
                       {inv.branch || <span className="text-muted-foreground/40">—</span>}
                     </span>
                   </TableCell>
 
-                  {/* Invoice Date */}
                   <TableCell className="py-3">
                     <span className="text-[11px] text-muted-foreground whitespace-nowrap block">
                       {formatDate(inv.invoiceDate)}
                     </span>
                   </TableCell>
 
-                  {/* Due Date */}
                   <TableCell className="py-3">
                     <span className="text-[11px] text-muted-foreground whitespace-nowrap block">
                       {formatDate(inv.due)}
                     </span>
                   </TableCell>
 
-                  {/* Net Receivable */}
                   <TableCell className="py-3 text-right">
                     <span className="text-xs font-medium">{formatPeso(inv.netReceivable)}</span>
                   </TableCell>
 
-                  {/* Paid */}
                   <TableCell className="py-3 text-right">
                     <span className="text-xs font-medium">{formatPeso(inv.totalPaid)}</span>
                   </TableCell>
 
-                  {/* Outstanding */}
                   <TableCell className="py-3 text-right">
                     <span className="text-xs font-bold text-primary">{formatPeso(inv.outstanding)}</span>
                   </TableCell>
 
-                  {/* Overdue (days) */}
+                  {/*
+                    Overdue column display rules:
+                    - null         → no due date at all → show dash
+                    - negative     → due in the future → show dash (not yet overdue)
+                    - 0            → due today → show "0d" in amber
+                    - positive     → N days past due → show Nd with escalating color
+                  */}
                   <TableCell className="py-3 text-center">
-                    {inv.overdue !== null && inv.overdue > 0 ? (
+                    {inv.overdue !== null && inv.overdue >= 0 ? (
                       <span
-                        className="text-xs font-semibold"
-                        style={{
-                          color: inv.overdue > 90 ? '#dc2626' :
-                                 inv.overdue > 60 ? '#ef4444' :
-                                 inv.overdue > 30 ? '#f59e0b' : '#64748b'
-                        }}
+                        className={`text-xs ${inv.overdue > 30 ? 'font-semibold' : ''}`}
+                        style={{ color: agingColor(inv.overdue) }}
                       >
                         {inv.overdue}d
                       </span>
@@ -204,7 +210,6 @@ export function InvoiceTable({ invoices, page, setPage }: InvoiceTableProps) {
                     )}
                   </TableCell>
 
-                  {/* Status */}
                   <TableCell className="py-3 pr-4">
                     <StatusPill status={inv.status} />
                   </TableCell>

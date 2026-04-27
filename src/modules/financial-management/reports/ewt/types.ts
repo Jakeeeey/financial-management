@@ -1,43 +1,44 @@
-// ewt/types.ts
+// types.ts
 // All TypeScript interfaces and types for the EWT module.
 
 export interface RawEWTRow {
-  // Actual API fields
-  invoiceNo?:     string;
-  invoiceDate?:   string;
-  customer?:      string;
-  grossAmount?:   number;
-  taxableAmount?: number;
-  ewt?:           number | string;
-  // Fallback aliases
-  id?:            string;
-  invoice_number?: string;
-  customerName?:  string;
-  client?:        string;
-  amount?:        number | string;
-  date?:          string;
-  createdAt?:     string;
-  status?:        string;
-  [key: string]:  unknown;
+  docNo?:           string;
+  supplier?:        string;
+  cwt?:             number | string;
+  transactionDate?: string;
+  grossAmount?:     number;
+  taxableAmount?:   number;
+  [key: string]: unknown;
 }
 
 export interface EWTRecord {
-  id:            string;
-  customer:      string;
-  amount:        number;
+  id:            string;  // docNo
+  invoiceNo:     string;  // docNo
+  customerName:  string;  // supplier
+  invoiceDate:   string;  // transactionDate (raw string)
   grossAmount:   number;
   taxableAmount: number;
-  date:          string;
-  status:        string;
+  displayAmount: number;  // EWT as number
+  dateObj:       Date;    // parsed transactionDate for filtering
 }
 
-export interface AggregatedEntry {
+export interface EWTMetrics {
+  totalAmount:       number;
+  totalTransactions: number;
+}
+
+export interface PieEntry {
   name:  string;
   value: number;
 }
 
-export interface EWTMetrics {
-  totalAmount:  number;
-  averageEwt:   number;
-  totalRecords: number;
+export interface TrendEntry {
+  month:  string;
+  amount: number;
+}
+
+export interface BarEntry {
+  name:   string;
+  amount: number;
+  count:  number;
 }
