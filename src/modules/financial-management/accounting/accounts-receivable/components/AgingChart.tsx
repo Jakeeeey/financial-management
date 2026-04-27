@@ -36,6 +36,14 @@ export function AgingChart({ data, isFiltered = false }: AgingChartProps) {
               />
               <Tooltip
                 formatter={(val: number) => [formatPeso(val), 'Amount']}
+                contentStyle={{
+                  backgroundColor: 'hsl(var(--popover))',
+                  borderColor: 'hsl(var(--border))',
+                  color: 'hsl(var(--popover-foreground))',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                }}
+                labelStyle={{ color: 'hsl(var(--muted-foreground))' }}
               />
               <Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
             </BarChart>
