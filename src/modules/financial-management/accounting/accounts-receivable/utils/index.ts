@@ -56,6 +56,7 @@ export function transformInvoices(data: RawInvoiceRow[]): {
     const outstanding   = Number(row.outstandingBalance ?? row.outstanding ?? (netReceivable - totalPaid));
     const branch        = String(row.branch   ?? row.branchName   ?? 'Unknown');
     const salesman      = String(row.salesman ?? row.salesmanName ?? 'Unknown');
+    const division      = String(row.division ?? '—');
     const due           = String(row.calculatedDueDate ?? row.dueDate ?? row.due ?? '');
 
     // aging: null = no due date, negative = future, 0 = due today, positive = past due
@@ -97,6 +98,7 @@ export function transformInvoices(data: RawInvoiceRow[]): {
       overdue: aging, // null | negative (future) | 0 (today) | positive (past due)
       branch,
       salesman,
+      division,
       status,
     };
   });
