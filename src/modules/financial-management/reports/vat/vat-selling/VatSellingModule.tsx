@@ -228,7 +228,7 @@ export default function VatSellingModule() {
           value={customer}
           onValueChange={(val) => { setCustomer(val); setPage(1); }}
           placeholder="All Customers"
-          className="h-9 w-[220px] text-xs"
+          className="h-9 w-[220px] text-xs !block text-left truncate relative pr-8 [&_svg]:absolute [&_svg]:right-3 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
           options={[
             { value: '', label: 'All Customers' },
             ...customerOptions.map((name) => ({ value: name, label: name })),
@@ -239,7 +239,7 @@ export default function VatSellingModule() {
           value={supplier}
           onValueChange={(val) => { setSupplier(val); setPage(1); }}
           placeholder="All Suppliers"
-          className="h-9 w-[220px] text-xs"
+          className="h-9 w-[220px] text-xs !block text-left truncate relative pr-8 [&_svg]:absolute [&_svg]:right-3 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
           options={[
             { value: '', label: 'All Suppliers' },
             ...supplierOptions.map((name) => ({ value: name, label: name })),

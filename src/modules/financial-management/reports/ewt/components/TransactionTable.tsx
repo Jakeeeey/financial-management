@@ -1,5 +1,5 @@
 // components/TransactionTable.tsx
-// Paginated detailed transaction table for CWT records — with search bar.
+// Paginated detailed transaction table for EWT records — with search bar.
 
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,12 +11,12 @@ import {
 } from '@/components/ui/pagination';
 import { Search } from 'lucide-react';
 import { formatPeso, formatDate, getPageNumbers } from '../utils';
-import type { CWTRecord } from '../types';
+import type { EWTRecord } from '../types';
 
 const PAGE_SIZE = 10;
 
 interface TransactionTableProps {
-  records: CWTRecord[];
+  records: EWTRecord[];
   page: number;
   setPage: (p: number | ((prev: number) => number)) => void;
 }
@@ -71,7 +71,7 @@ export function TransactionTable({ records, page, setPage }: TransactionTablePro
               <TableHead className="text-xs font-bold py-4">Supplier</TableHead>
               <TableHead className="text-xs font-bold py-4 text-right">Gross Amount</TableHead>
               <TableHead className="text-xs font-bold py-4 text-right">Taxable Amount</TableHead>
-              <TableHead className="text-xs font-bold py-4 text-right">CWT Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">EWT Amount</TableHead>
               <TableHead className="text-xs font-bold py-4 pr-6">Transaction Date</TableHead>
             </TableRow>
           </TableHeader>

@@ -116,19 +116,20 @@ export default function AccountsPayableModule() {
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
       head: [[
-        'Ref. No.', 'Supplier', 'Invoice No.', 'Invoice Date', 'Due Date',
+        'Ref. No.', 'Supplier', 'Invoice No.', 'Division', 'Invoice Date', 'Due Date',
         'Amount Payable (PHP)', 'Amount Paid (PHP)', 'Outstanding Balance (PHP)', 'Aging (Days)', 'Status',
       ]],
       body: displayRecords.map((r) => [
         r.refNo,
         r.supplier,
         r.invoiceNo !== '—' ? r.invoiceNo : '',
+        r.division,
         r.invoiceDate ? r.invoiceDate.split(' ')[0] : '—',
         r.dueDate     ? r.dueDate.split(' ')[0]     : '—',
         r.amountPayable.toLocaleString('en-PH',      { minimumFractionDigits: 2 }),
         r.amountPaid.toLocaleString('en-PH',         { minimumFractionDigits: 2 }),
         r.outstandingBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
-        r.aging > 0 ? r.aging : 0,
+        Math.max(0, r.aging ?? 0),
         r.status,
       ]),
       margin: { left: 14, right: 14 },
@@ -213,7 +214,7 @@ export default function AccountsPayableModule() {
           value={supplier}
           onValueChange={(val) => { setSupplier(val); setPage(1); }}
           placeholder="All Suppliers"
-          className="h-9 w-[180px] text-xs"
+          className="h-9 w-[180px] text-xs !block text-left truncate relative pr-8 [&_svg]:absolute [&_svg]:right-3 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
           options={[
             { value: '', label: 'All Suppliers' },
             ...supplierOptions.map((name) => ({ value: name, label: name })),

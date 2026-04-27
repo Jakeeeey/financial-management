@@ -274,7 +274,7 @@ export default function AccountsReceivableModule() {
           value={customer}
           onValueChange={(val) => { setCustomer(val); setPage(1); }}
           placeholder="All Customers"
-          className="h-9 w-[180px] text-xs"
+          className="h-9 w-[180px] text-xs !block text-left truncate relative pr-8 [&_svg]:absolute [&_svg]:right-3 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
           options={[
             { value: '', label: 'All Customers' },
             ...customerOptions.map((name) => ({ value: name, label: name })),
@@ -301,7 +301,7 @@ export default function AccountsReceivableModule() {
           value={salesman}
           onValueChange={(val) => { setSalesman(val); setPage(1); }}
           placeholder="All Salesmen"
-          className="h-9 w-[180px] text-xs"
+          className="h-9 w-[180px] text-xs !block text-left truncate relative pr-8 [&_svg]:absolute [&_svg]:right-3 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
           options={[
             { value: '', label: 'All Salesmen' },
             ...salesmanOptions.map((name) => ({ value: name, label: name })),
