@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useState, useRef, useCallback } from "react";
+import { useForm, FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { SupplierFormSchema } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
+import {
+  usePaymentTerms,
+  useDeliveryTerms,
+} from "@/modules/financial-management/supplier-registration/hooks/useTerms";
+import { Term } from "@/modules/financial-management/supplier-registration/services/terms";
+import { SupplierFormSchema, SupplierFormValues } from "@/modules/financial-management/supplier-registration/types/supplier.schema";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -15,17 +20,15 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox } from "../ui/Combobox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
+import Image from "next/image";
+
+const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 interface AddSupplierFormProps {
   onSuccess: () => void;
@@ -35,6 +38,38 @@ interface AddSupplierFormProps {
 export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState("contact");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const validateAndSetFile = useCallback((file: File) => {
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error(`File too large. Maximum size is 2 MB (got ${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+      return;
+    }
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      toast.error(`Invalid file type. Allowed: JPEG, PNG, WebP, GIF`);
+      return;
+    }
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => setImagePreview(e.target?.result as string);
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) validateAndSetFile(file);
+  }, [validateAndSetFile]);
+
+  const clearImage = useCallback(() => {
+    setSelectedFile(null);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
 
   const form = useForm({
     resolver: zodResolver(SupplierFormSchema),
@@ -63,15 +98,40 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
     },
   });
 
-  const onSubmit = async (data: unknown) => {
+  const { paymentTerms, isLoading: isLoadingPayment } = usePaymentTerms();
+  const { deliveryTerms, isLoading: isLoadingDelivery } = useDeliveryTerms();
+
+  const onSubmit = async (data: SupplierFormValues) => {
     setIsSubmitting(true);
     try {
+      let imageId = "";
+
+      // Upload image first if selected
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("folder_name", "supplier_profile_image");
+
+        const uploadRes = await fetch("/api/supplier-registration/supplier-image-upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        const uploadResult = await uploadRes.json();
+
+        if (!uploadRes.ok) {
+          throw new Error(uploadResult.error || "Image upload failed");
+        }
+
+        imageId = uploadResult.data?.id || "";
+      }
+
       const response = await fetch("/api/supplier-registration/suppliers", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, supplier_image: imageId }),
       });
 
       const result = await response.json();
@@ -80,8 +140,8 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
         throw new Error(result.error || "Failed to create supplier");
       }
 
-      toast.success("Supplier created successfully");
       form.reset();
+      clearImage();
       onSuccess();
     } catch (error) {
       toast.error(
@@ -92,9 +152,59 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
     }
   };
 
+  const onInvalid = useCallback((errors: FieldErrors<SupplierFormValues>) => {
+    const fieldTabMap: Record<string, string> = {
+      supplier_name: "contact",
+      supplier_shortcut: "contact",
+      supplier_type: "contact",
+      contact_person: "contact",
+      email_address: "contact",
+      phone_number: "contact",
+      preferred_communication_method: "contact",
+      address: "location",
+      brgy: "location",
+      city: "location",
+      state_province: "location",
+      postal_code: "location",
+      country: "location",
+      tin_number: "business",
+      bank_details: "business",
+      notes_or_comments: "business",
+      agreement_or_contract: "business",
+      supplier_image: "business",
+      payment_terms: "terms",
+      delivery_terms: "terms",
+    };
+
+    const errorTabs = new Set<string>();
+    let firstTabWithError: string | null = null;
+
+    Object.keys(errors).forEach((field) => {
+      const tab = fieldTabMap[field];
+      if (tab) {
+        errorTabs.add(tab);
+        if (!firstTabWithError) firstTabWithError = tab;
+      }
+    });
+
+    if (errorTabs.size > 0) {
+      const tabNames = Array.from(errorTabs)
+        .map((t) => t.charAt(0).toUpperCase() + t.slice(1))
+        .join(", ");
+      toast.error(`Please check these tabs for missing fields: ${tabNames}`);
+
+      if (firstTabWithError) {
+        setActiveTab(firstTabWithError);
+      }
+    }
+  }, []);
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form
+        onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+        className="space-y-6"
+      >
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="contact">Contact Info</TabsTrigger>
@@ -149,23 +259,19 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Supplier Type{" "}
-                        <span className="text-destructive">*</span>
+                        Supplier Type <span className="text-destructive">*</span>
                       </FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select supplier type" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="TRADE">TRADE</SelectItem>
-                          <SelectItem value="NON-TRADE">NON-TRADE</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <Combobox
+                          options={[
+                            { value: "TRADE", label: "TRADE" },
+                            { value: "NON-TRADE", label: "NON-TRADE" },
+                          ]}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder="Select supplier type"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -176,7 +282,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="contact_person"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Person</FormLabel>
+                      <FormLabel>
+                        Contact Person <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input
                           placeholder="Enter contact person name"
@@ -248,7 +356,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="address"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Address</FormLabel>
+                      <FormLabel>
+                        Address <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="Street address" {...field} />
                       </FormControl>
@@ -263,7 +373,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                     name="brgy"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Barangay</FormLabel>
+                        <FormLabel>
+                          Barangay <span className="text-destructive">*</span>
+                        </FormLabel>
                         <FormControl>
                           <Input placeholder="Barangay name" {...field} />
                         </FormControl>
@@ -277,7 +389,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                     name="city"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>City</FormLabel>
+                        <FormLabel>
+                          City <span className="text-destructive">*</span>
+                        </FormLabel>
                         <FormControl>
                           <Input placeholder="City name" {...field} />
                         </FormControl>
@@ -293,7 +407,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                     name="state_province"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Province</FormLabel>
+                        <FormLabel>
+                          Province <span className="text-destructive">*</span>
+                        </FormLabel>
                         <FormControl>
                           <Input placeholder="Province name" {...field} />
                         </FormControl>
@@ -307,7 +423,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                     name="postal_code"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Postal Code</FormLabel>
+                        <FormLabel>
+                          Postal Code <span className="text-destructive">*</span>
+                        </FormLabel>
                         <FormControl>
                           <Input placeholder="e.g., 2300" {...field} />
                         </FormControl>
@@ -322,11 +440,12 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="country"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Country</FormLabel>
+                      <FormLabel>
+                        Country <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="Philippines" {...field} />
                       </FormControl>
-                      <FormDescription>Default: Philippines</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -344,7 +463,9 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="tin_number"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>TIN Number</FormLabel>
+                      <FormLabel>
+                        TIN Number <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="9-12 digits" {...field} />
                       </FormControl>
@@ -404,22 +525,67 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="supplier_image"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Supplier Image URL</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Image URL" {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        URL to supplier logo or image
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {/* Supplier Profile Image Upload */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Supplier Profile Image</label>
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    onDrop={handleDrop}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 cursor-pointer transition-colors ${
+                      isDragging
+                        ? "border-primary bg-primary/5"
+                        : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50"
+                    }`}
+                  >
+                    {imagePreview ? (
+                      <div className="relative">
+                        <Image
+                          src={imagePreview}
+                          alt="Preview"
+                          width={128}
+                          height={128}
+                          className="h-32 w-32 rounded-lg object-cover aspect-square"
+                          unoptimized
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); clearImage(); }}
+                          className="absolute -top-2 -right-2 rounded-full bg-destructive p-1 text-destructive-foreground hover:bg-destructive/80"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                        <p className="text-xs text-muted-foreground mt-2 text-center">
+                          Click to replace
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="rounded-full bg-muted p-3 mb-2">
+                          <Upload className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <p className="text-sm font-medium">Click or drag to upload</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          JPEG, PNG, WebP, GIF • Max 2 MB
+                        </p>
+                      </>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) validateAndSetFile(file);
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Upload a supplier logo or profile image
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -433,11 +599,23 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="payment_terms"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Payment Terms</FormLabel>
+                      <FormLabel>
+                        Payment Terms <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., Cash On Delivery, Net 30"
-                          {...field}
+                        <Combobox
+                          options={paymentTerms.map((term: Term) => ({
+                            value: term.name,
+                            label: term.name,
+                          }))}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder={
+                            isLoadingPayment
+                              ? "Loading terms..."
+                              : "Select payment terms"
+                          }
+                          disabled={isLoadingPayment}
                         />
                       </FormControl>
                       <FormMessage />
@@ -450,11 +628,23 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   name="delivery_terms"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Delivery Terms</FormLabel>
+                      <FormLabel>
+                        Delivery Terms <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., Delivery, Pickup"
-                          {...field}
+                        <Combobox
+                          options={deliveryTerms.map((term: Term) => ({
+                            value: term.name,
+                            label: term.name,
+                          }))}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder={
+                            isLoadingDelivery
+                              ? "Loading terms..."
+                              : "Select delivery terms"
+                          }
+                          disabled={isLoadingDelivery}
                         />
                       </FormControl>
                       <FormMessage />

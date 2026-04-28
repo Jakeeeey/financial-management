@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import type { ProductTierKey, Unit } from "../types";
+import type { PriceType, PricingFilters, ProductTierKey, Unit } from "../types";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -132,10 +132,12 @@ type PricingMatrixLike = {
     setPage: (page: number) => void;
     setPageSize: (pageSize: number) => void;
 
-    getCellValue: (productId: number, tier: ProductTierKey, base: number | null) => number | null;
+    getCellValue: (productId: number, tier: ProductTierKey, base: number | null) => number | string | null;
     isDirty: (productId: number, tier: ProductTierKey) => boolean;
     getError: (productId: number, tier: ProductTierKey) => string | null | undefined;
     setCell: (productId: number, tier: ProductTierKey, raw: unknown) => void;
+    priceTypes: PriceType[];
+    filters: PricingFilters;
 };
 type Props = {
     matrix: PricingMatrixLike;
@@ -146,11 +148,13 @@ function unitLabel(u: Unit) {
 }
 
 const TIER_STYLES = [
-    { head: "bg-sky-50 dark:bg-sky-950/35", cell: "bg-sky-50/60 dark:bg-sky-950/15", border: "border-sky-200/60 dark:border-sky-900/40" },
-    { head: "bg-emerald-50 dark:bg-emerald-950/35", cell: "bg-emerald-50/60 dark:bg-emerald-950/15", border: "border-emerald-200/60 dark:border-emerald-900/40" },
-    { head: "bg-violet-50 dark:bg-violet-950/35", cell: "bg-violet-50/60 dark:bg-violet-950/15", border: "border-violet-200/60 dark:border-violet-900/40" },
-    { head: "bg-amber-50 dark:bg-amber-950/35", cell: "bg-amber-50/60 dark:bg-amber-950/15", border: "border-amber-200/60 dark:border-amber-900/40" },
-    { head: "bg-rose-50 dark:bg-rose-950/35", cell: "bg-rose-50/60 dark:bg-rose-950/15", border: "border-rose-200/60 dark:border-rose-900/40" },
+    { head: "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200", cell: "bg-slate-50/50 hover:bg-slate-100/80 dark:bg-slate-950/20", border: "border-slate-200 dark:border-slate-800" }, // LIST
+    { head: "bg-indigo-50 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200", cell: "bg-indigo-50/30 hover:bg-indigo-100/50 dark:bg-indigo-950/20", border: "border-indigo-100 dark:border-indigo-900" }, // A
+    { head: "bg-sky-50 text-sky-800 dark:bg-sky-950 dark:text-sky-200", cell: "bg-sky-50/30 hover:bg-sky-100/50 dark:bg-sky-950/20", border: "border-sky-100 dark:border-sky-900" },
+    { head: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200", cell: "bg-emerald-50/30 hover:bg-emerald-100/50 dark:bg-emerald-950/20", border: "border-emerald-100 dark:border-emerald-900" },
+    { head: "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200", cell: "bg-amber-50/30 hover:bg-amber-100/50 dark:bg-amber-950/20", border: "border-amber-100 dark:border-amber-900" },
+    { head: "bg-rose-50 text-rose-800 dark:bg-rose-950 dark:text-rose-200", cell: "bg-rose-50/30 hover:bg-rose-100/50 dark:bg-rose-950/20", border: "border-rose-100 dark:border-rose-900" },
+    { head: "bg-fuchsia-50 text-fuchsia-800 dark:bg-fuchsia-950 dark:text-fuchsia-200", cell: "bg-fuchsia-50/30 hover:bg-fuchsia-100/50 dark:bg-fuchsia-950/20", border: "border-fuchsia-100 dark:border-fuchsia-900" },
 ] as const;
 
 function tierStyle(tierIndex: number) {
@@ -191,22 +195,25 @@ function toErrorString(err: unknown): string | null {
     }
 }
 
-const LEFT_COL_WIDTHS = [120, 140, 360, 160, 160] as const;
+const LEFT_COL_WIDTHS = [400, 150, 150] as const;
 const LEFT_TABLE_WIDTH = LEFT_COL_WIDTHS.reduce((a, b) => a + b, 0);
 const PRICE_COL_WIDTH = 140;
-const LEFT_ROW_H = 64.1;
-const RIGHT_ROW_H = 56;
+
+const HEAD_ROW_H = 40;
+const SUBHEAD_ROW_H = 36;
+const BODY_ROW_H = 80;
 
 function LoadingLeftBody({ rowCount }: { rowCount: number }) {
     return (
         <>
             {Array.from({ length: rowCount }).map((_, i) => (
                 <PTableRow key={`lsk-${i}`} className="hover:bg-transparent">
-                    <PTableCell className="h-[56px] w-[120px]"><Skeleton className="h-4 w-[80px]" /></PTableCell>
-                    <PTableCell className="h-[56px] w-[140px]"><Skeleton className="h-4 w-[110px]" /></PTableCell>
-                    <PTableCell className="h-[56px] w-[360px]"><Skeleton className="h-4 w-[260px]" /></PTableCell>
-                    <PTableCell className="h-[56px] w-[160px]"><Skeleton className="h-4 w-[120px]" /></PTableCell>
-                    <PTableCell className="h-[56px] w-[160px]"><Skeleton className="h-4 w-[100px]" /></PTableCell>
+                    <PTableCell className="h-[80px] w-[400px]">
+                        <Skeleton className="mb-1.5 h-4 w-[260px]" />
+                        <Skeleton className="h-3 w-[160px]" />
+                    </PTableCell>
+                    <PTableCell className="h-[80px] w-[150px]"><Skeleton className="h-4 w-[120px]" /></PTableCell>
+                    <PTableCell className="h-[80px] w-[150px]"><Skeleton className="h-4 w-[100px]" /></PTableCell>
                 </PTableRow>
             ))}
         </>
@@ -219,7 +226,7 @@ function LoadingRightBody({ rowCount, priceCols }: { rowCount: number; priceCols
             {Array.from({ length: rowCount }).map((_, i) => (
                 <PTableRow key={`rsk-${i}`} className="hover:bg-transparent">
                     {Array.from({ length: priceCols }).map((__, j) => (
-                        <PTableCell key={`rskc-${i}-${j}`} className="h-[56px] border-l align-top">
+                        <PTableCell key={`rskc-${i}-${j}`} className="h-[80px] border-l align-top">
                             <Skeleton className="h-8 w-full rounded-md" />
                             <Skeleton className="mt-2 h-3 w-[56px]" />
                         </PTableCell>
@@ -231,9 +238,28 @@ function LoadingRightBody({ rowCount, priceCols }: { rowCount: number; priceCols
 }
 
 export default function PricingTable({ matrix }: Props) {
-    const tiers = matrix.TIERS;
     const usedUnits: Unit[] = Array.isArray(matrix.usedUnits) ? matrix.usedUnits : [];
     const uomCount = Math.max(1, usedUnits.length);
+
+    const tiers = React.useMemo(() => {
+        const selectedIds = matrix.filters.price_type_ids;
+        const showList = matrix.filters.show_list_price;
+
+        // If nothing is specifically selected, show everything (Default)
+        if (selectedIds.length === 0 && !showList) {
+            return [...matrix.TIERS];
+        }
+
+        // Otherwise show only what is selected
+        const selectedNames = matrix.priceTypes
+            .filter((pt) => selectedIds.includes(pt.price_type_id))
+            .map((pt) => pt.price_type_name);
+
+        return matrix.TIERS.filter((t) => {
+            if (t === "LIST") return showList;
+            return selectedNames.includes(t);
+        });
+    }, [matrix.TIERS, matrix.filters.show_list_price, matrix.filters.price_type_ids, matrix.priceTypes]);
 
     const rows: MatrixRow[] = Array.isArray(matrix.rows) ? matrix.rows : [];
     const meta: MatrixMeta = matrix.meta ?? {};
@@ -253,8 +279,8 @@ export default function PricingTable({ matrix }: Props) {
     const canPrev = !loading && page > 1 && totalGroups > 0;
     const canNext = !loading && page < totalPages && totalGroups > 0;
 
-    const headCellBase = "h-10 whitespace-nowrap border-b text-[12px] font-semibold text-foreground/80 align-middle";
-    const subHeadCellBase = "h-9 whitespace-nowrap border-b text-[11px] font-medium text-foreground/70 align-middle";
+    const headCellBase = "whitespace-nowrap border-b text-[12px] font-semibold text-foreground/80 p-0";
+    const subHeadCellBase = "whitespace-nowrap border-b text-[11px] font-medium text-foreground/70 p-0";
 
     const [hoverKey, setHoverKey] = React.useState<string | null>(null);
 
@@ -395,26 +421,30 @@ export default function PricingTable({ matrix }: Props) {
                                     <col style={{ width: LEFT_COL_WIDTHS[0] }} />
                                     <col style={{ width: LEFT_COL_WIDTHS[1] }} />
                                     <col style={{ width: LEFT_COL_WIDTHS[2] }} />
-                                    <col style={{ width: LEFT_COL_WIDTHS[3] }} />
-                                    <col style={{ width: LEFT_COL_WIDTHS[4] }} />
                                 </colgroup>
 
                                 <PTableHeader>
-                                    <PTableRow>
-                                        <PTableHead className={headCellBase}>Code</PTableHead>
-                                        <PTableHead className={headCellBase}>Barcode</PTableHead>
-                                        <PTableHead className={headCellBase}>Product</PTableHead>
-                                        <PTableHead className={headCellBase}>Category</PTableHead>
-                                        <PTableHead className={cn(headCellBase, "border-r")}>Brand</PTableHead>
+                                    <PTableRow style={{ height: HEAD_ROW_H }}>
+                                        <PTableHead className={headCellBase}>
+                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Product</div>
+                                        </PTableHead>
+                                        <PTableHead className={headCellBase}>
+                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Category</div>
+                                        </PTableHead>
+                                        <PTableHead className={cn(headCellBase, "border-r")}>
+                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Brand</div>
+                                        </PTableHead>
                                     </PTableRow>
 
-                                    <PTableRow>
-                                        {Array.from({ length: 5 }).map((_, i) => (
+                                    <PTableRow style={{ height: SUBHEAD_ROW_H }}>
+                                        {Array.from({ length: 3 }).map((_, i) => (
                                             <PTableHead
                                                 key={`left-sp-${i}`}
-                                                className={cn(subHeadCellBase, i === 4 ? "border-r" : "")}
+                                                className={cn(subHeadCellBase, i === 2 ? "border-r" : "")}
                                             >
-                                                <span className="sr-only">Spacer</span>
+                                                <div style={{ height: SUBHEAD_ROW_H }} className="px-3">
+                                                    <span className="sr-only">Spacer</span>
+                                                </div>
                                             </PTableHead>
                                         ))}
                                     </PTableRow>
@@ -427,8 +457,6 @@ export default function PricingTable({ matrix }: Props) {
                                 <col style={{ width: LEFT_COL_WIDTHS[0] }} />
                                 <col style={{ width: LEFT_COL_WIDTHS[1] }} />
                                 <col style={{ width: LEFT_COL_WIDTHS[2] }} />
-                                <col style={{ width: LEFT_COL_WIDTHS[3] }} />
-                                <col style={{ width: LEFT_COL_WIDTHS[4] }} />
                             </colgroup>
 
                             <PTableBody className={cn(loading && rows.length > 0 && "pmx-loading-row")}>
@@ -442,22 +470,43 @@ export default function PricingTable({ matrix }: Props) {
                                         return (
                                             <PTableRow
                                                 key={`L-${groupKey}`}
-                                                className={cn(`h-[${LEFT_ROW_H}px]`, hovered ? "bg-muted/30" : "hover:bg-muted/30")}
+                                                className={cn(hovered ? "bg-muted/30" : "hover:bg-muted/30")}
+                                                style={{ height: BODY_ROW_H }}
                                                 onMouseEnter={() => setHoverKey(groupKey)}
                                                 onMouseLeave={() => setHoverKey(null)}
                                             >
-                                                <PTableCell className={`h-[64.1px] w-[120px] truncate text-sm align-middle`}>{display.product_code ?? "—"}</PTableCell>
-                                                <PTableCell className={`h-[64.1px] w-[140px] truncate text-sm text-muted-foreground align-middle`}>{display.barcode ?? "—"}</PTableCell>
-                                                <PTableCell className={`h-[64.1px] w-[360px] truncate text-sm font-medium align-middle`}>{display.product_name ?? "—"}</PTableCell>
-                                                <PTableCell className={`h-[64.1px] w-[160px] truncate text-sm align-middle`}>{r.category_name ?? "—"}</PTableCell>
-                                                <PTableCell className={`h-[64.1px] w-[160px] truncate text-sm align-middle`}>{r.brand_name ?? "—"}</PTableCell>
+                                                <PTableCell className="p-0 border-b" style={{ width: LEFT_COL_WIDTHS[0], height: BODY_ROW_H }}>
+                                                    <div style={{ height: BODY_ROW_H }} className="flex flex-col justify-center gap-1.5 px-3">
+                                                        <span className="text-[13px] font-semibold leading-tight text-foreground/90 whitespace-normal">
+                                                            {display.product_name ?? "—"}
+                                                        </span>
+                                                        <div className="flex items-center gap-2 text-[11px] leading-none text-muted-foreground/80">
+                                                            <span className="flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 border border-muted-foreground/10 truncate">
+                                                                Code: <span className="font-medium text-foreground/80">{display.product_code ?? "—"}</span>
+                                                            </span>
+                                                            <span className="flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 border border-muted-foreground/10 truncate">
+                                                                Barcode: <span className="font-medium text-foreground/80">{display.barcode ?? "—"}</span>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </PTableCell>
+                                                <PTableCell className="p-0 border-b overflow-hidden" style={{ width: LEFT_COL_WIDTHS[1], height: BODY_ROW_H }}>
+                                                    <div style={{ height: BODY_ROW_H }} className="flex items-center px-3 truncate text-[13px] text-muted-foreground">
+                                                        {r.category_name ?? "—"}
+                                                    </div>
+                                                </PTableCell>
+                                                <PTableCell className="p-0 border-b overflow-hidden" style={{ width: LEFT_COL_WIDTHS[2], height: BODY_ROW_H }}>
+                                                    <div style={{ height: BODY_ROW_H }} className="flex items-center px-3 truncate text-[13px] text-muted-foreground">
+                                                        {r.brand_name ?? "—"}
+                                                    </div>
+                                                </PTableCell>
                                             </PTableRow>
                                         );
                                     })}
 
                                 {!loading && totalGroups === 0 ? (
                                     <PTableRow>
-                                        <PTableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                                        <PTableCell colSpan={3} className="py-10 text-center text-muted-foreground">
                                             No products found.
                                         </PTableCell>
                                     </PTableRow>
@@ -474,7 +523,7 @@ export default function PricingTable({ matrix }: Props) {
                                     className="w-max"
                                     style={{ transform: `translateX(${-metrics.scrollLeft}px)` }}
                                 >
-                                    <PTable className="pmx-table w-max table-fixed">
+                                    <PTable className="pmx-table w-max table-fixed border-t-0">
                                         <colgroup>
                                             {tiers.map((_, ti) =>
                                                 Array.from({ length: uomCount }).map((__, ui) => (
@@ -484,7 +533,7 @@ export default function PricingTable({ matrix }: Props) {
                                         </colgroup>
 
                                         <PTableHeader>
-                                            <PTableRow>
+                                            <PTableRow style={{ height: HEAD_ROW_H }}>
                                                 {tiers.map((t, ti) => {
                                                     const st = tierStyle(ti);
                                                     return (
@@ -499,13 +548,15 @@ export default function PricingTable({ matrix }: Props) {
                                                             )}
                                                             colSpan={uomCount}
                                                         >
-                                                            {t}
+                                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center justify-center">
+                                                                {t === "LIST" ? "List Price" : t}
+                                                            </div>
                                                         </PTableHead>
                                                     );
                                                 })}
                                             </PTableRow>
 
-                                            <PTableRow>
+                                            <PTableRow style={{ height: SUBHEAD_ROW_H }}>
                                                 {tiers.map((t, ti) => {
                                                     const st = tierStyle(ti);
 
@@ -521,7 +572,7 @@ export default function PricingTable({ matrix }: Props) {
                                                                     ti === 0 ? "" : "border-l"
                                                                 )}
                                                             >
-                                                                UOM
+                                                                <div style={{ height: SUBHEAD_ROW_H }} className="flex items-center justify-center">UOM</div>
                                                             </PTableHead>
                                                         );
                                                     }
@@ -537,7 +588,7 @@ export default function PricingTable({ matrix }: Props) {
                                                                 ti === 0 && uIndex === 0 ? "" : "border-l"
                                                             )}
                                                         >
-                                                            {unitLabel(u)}
+                                                            <div style={{ height: SUBHEAD_ROW_H }} className="flex items-center justify-center">{unitLabel(u)}</div>
                                                         </PTableHead>
                                                     ));
                                                 })}
@@ -572,7 +623,8 @@ export default function PricingTable({ matrix }: Props) {
                                                 return (
                                                     <PTableRow
                                                         key={`R-${groupKey}`}
-                                                        className={cn(`h-[${RIGHT_ROW_H}px]`, hovered ? "bg-muted/30" : "hover:bg-muted/30")}
+                                                        className={cn(hovered ? "bg-muted/30" : "hover:bg-muted/30")}
+                                                        style={{ height: BODY_ROW_H }}
                                                         onMouseEnter={() => setHoverKey(groupKey)}
                                                         onMouseLeave={() => setHoverKey(null)}
                                                     >
@@ -583,9 +635,10 @@ export default function PricingTable({ matrix }: Props) {
                                                                 return (
                                                                     <PTableCell
                                                                         key={`${groupKey}-${String(tier)}-none`}
-                                                                        className={cn(`h-[${RIGHT_ROW_H}px] text-center text-muted-foreground`, st.cell, st.border, ti === 0 ? "" : "border-l")}
+                                                                        className={cn("p-0 text-center border-b text-muted-foreground", st.cell, st.border, ti === 0 ? "" : "border-l")}
+                                                                        style={{ height: BODY_ROW_H, width: PRICE_COL_WIDTH }}
                                                                     >
-                                                                        —
+                                                                        <div style={{ height: BODY_ROW_H }} className="flex items-center justify-center">—</div>
                                                                     </PTableCell>
                                                                 );
                                                             }
@@ -600,9 +653,10 @@ export default function PricingTable({ matrix }: Props) {
                                                                     return (
                                                                         <PTableCell
                                                                             key={`${groupKey}-${String(tier)}-${String(uomId)}-na`}
-                                                                            className={cn(`h-[${RIGHT_ROW_H}px] text-center text-muted-foreground`, st.cell, st.border, borderL)}
+                                                                            className={cn("p-0 text-center border-b text-muted-foreground", st.cell, st.border, borderL)}
+                                                                            style={{ height: BODY_ROW_H, width: PRICE_COL_WIDTH }}
                                                                         >
-                                                                            —
+                                                                            <div style={{ height: BODY_ROW_H }} className="flex items-center justify-center">—</div>
                                                                         </PTableCell>
                                                                     );
                                                                 }
@@ -612,29 +666,35 @@ export default function PricingTable({ matrix }: Props) {
                                                                     return (
                                                                         <PTableCell
                                                                             key={`${groupKey}-${String(tier)}-${String(uomId)}-bad`}
-                                                                            className={cn(`h-[${RIGHT_ROW_H}px] text-center text-muted-foreground`, st.cell, st.border, borderL)}
+                                                                            className={cn("p-0 text-center border-b text-muted-foreground", st.cell, st.border, borderL)}
+                                                                            style={{ height: BODY_ROW_H, width: PRICE_COL_WIDTH }}
                                                                         >
-                                                                            —
+                                                                            <div style={{ height: BODY_ROW_H }} className="flex items-center justify-center">—</div>
                                                                         </PTableCell>
                                                                     );
                                                                 }
 
                                                                 const base = toNullableNumber(variant.tiers?.[tier]);
-                                                                const val = toNullableNumber(matrix.getCellValue(variantProductId, tier, base));
+                                                                const val = matrix.getCellValue(variantProductId, tier, base);
                                                                 const dirty = matrix.isDirty(variantProductId, tier);
                                                                 const err = toErrorString(matrix.getError(variantProductId, tier));
 
                                                                 return (
                                                                     <PTableCell
                                                                         key={`${groupKey}-${String(tier)}-${String(uomId)}`}
-                                                                        className={cn(`h-[${RIGHT_ROW_H}px] align-top`, st.cell, st.border, borderL)}
+                                                                        className={cn("p-0 border-b", st.cell, st.border, borderL)}
+                                                                        style={{ height: BODY_ROW_H, width: PRICE_COL_WIDTH }}
                                                                     >
-                                                                        <PriceCell
-                                                                            value={val}
-                                                                            dirty={dirty}
-                                                                            error={err}
-                                                                            onChange={(raw) => matrix.setCell(variantProductId, tier, raw)}
-                                                                        />
+                                                                        <div style={{ height: BODY_ROW_H }} className="flex items-center justify-center px-3">
+                                                                            <div className="w-full">
+                                                                                <PriceCell
+                                                                                    value={val}
+                                                                                    dirty={dirty}
+                                                                                    error={err}
+                                                                                    onChange={(raw) => matrix.setCell(variantProductId, tier, raw)}
+                                                                                />
+                                                                            </div>
+                                                                        </div>
                                                                     </PTableCell>
                                                                 );
                                                             });

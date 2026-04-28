@@ -79,6 +79,7 @@ export default function COAFormDialog(props: {
     description?: string | null;
     is_payment?: 0 | 1;
     isPayment?: 0 | 1;
+    added_by?: number | null;
   }) => Promise<void> | void;
 
   onUpdate: (
@@ -92,6 +93,7 @@ export default function COAFormDialog(props: {
       description?: string | null;
       is_payment?: 0 | 1;
       isPayment?: 0 | 1;
+      added_by?: number | null;
     },
   ) => Promise<void> | void;
 }) {
@@ -279,9 +281,9 @@ export default function COAFormDialog(props: {
         {isEdit ? (
           <>
             {/* LEFT = Account Fields, RIGHT = Extras */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-x-10 gap-y-6 md:grid-cols-2">
               {/* LEFT: account fields */}
-              <div className="space-y-4">
+              <div className="min-w-0 space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">
                     Account Title <span className="text-destructive">*</span>
@@ -294,13 +296,15 @@ export default function COAFormDialog(props: {
                     BS/IS Type <span className="text-destructive">*</span>
                   </label>
                   <Select value={bsisCode} onValueChange={setBsisCode} disabled={lookupsLoading}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a BS/IS type" />
+                    <SelectTrigger className="w-full">
+                      <div className="truncate text-left">
+                        <SelectValue placeholder="Select a BS/IS type" />
+                      </div>
                     </SelectTrigger>
                     <SelectContent>
                       {bsisTypes.map((x) => (
                         <SelectItem key={x.id} value={String(x.id)}>
-                          {x.bsis_code}
+                          <span className="truncate">{x.bsis_code}</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -312,13 +316,15 @@ export default function COAFormDialog(props: {
                     Account Type <span className="text-destructive">*</span>
                   </label>
                   <Select value={accountType} onValueChange={setAccountType} disabled={lookupsLoading}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select an account type" />
+                    <SelectTrigger className="w-full">
+                      <div className="truncate text-left">
+                        <SelectValue placeholder="Select an account type" />
+                      </div>
                     </SelectTrigger>
                     <SelectContent>
                       {accountTypes.map((x) => (
                         <SelectItem key={x.id} value={String(x.id)}>
-                          {x.account_name}
+                          <span className="truncate">{x.account_name}</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -330,13 +336,15 @@ export default function COAFormDialog(props: {
                     Balance Type <span className="text-destructive">*</span>
                   </label>
                   <Select value={balanceType} onValueChange={setBalanceType} disabled={lookupsLoading}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a balance type" />
+                    <SelectTrigger className="w-full">
+                      <div className="truncate text-left">
+                        <SelectValue placeholder="Select a balance type" />
+                      </div>
                     </SelectTrigger>
                     <SelectContent>
                       {balanceTypes.map((x) => (
                         <SelectItem key={x.id} value={String(x.id)}>
-                          {x.balance_name}
+                          <span className="truncate">{x.balance_name}</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -359,7 +367,7 @@ export default function COAFormDialog(props: {
               </div>
 
               {/* RIGHT: extras */}
-              <div className="space-y-4">
+              <div className="min-w-0 space-y-4 border-l pl-2 md:pl-6">
                 <div className="flex items-center gap-2">
                   <Checkbox checked={isPayment} onCheckedChange={(v) => setIsPayment(v === true)} id="is-payment" />
                   <label
@@ -491,13 +499,15 @@ export default function COAFormDialog(props: {
                 BS/IS Type <span className="text-destructive">*</span>
               </label>
               <Select value={bsisCode} onValueChange={setBsisCode} disabled={lookupsLoading}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a BS/IS type" />
+                <SelectTrigger className="w-full">
+                  <div className="truncate text-left">
+                    <SelectValue placeholder="Select a BS/IS type" />
+                  </div>
                 </SelectTrigger>
                 <SelectContent>
                   {bsisTypes.map((x) => (
                     <SelectItem key={x.id} value={String(x.id)}>
-                      {x.bsis_code}
+                      <span className="truncate">{x.bsis_code}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -509,13 +519,15 @@ export default function COAFormDialog(props: {
                 Account Type <span className="text-destructive">*</span>
               </label>
               <Select value={accountType} onValueChange={setAccountType} disabled={lookupsLoading}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an account type" />
+                <SelectTrigger className="w-full">
+                  <div className="truncate text-left">
+                    <SelectValue placeholder="Select an account type" />
+                  </div>
                 </SelectTrigger>
                 <SelectContent>
                   {accountTypes.map((x) => (
                     <SelectItem key={x.id} value={String(x.id)}>
-                      {x.account_name}
+                      <span className="truncate">{x.account_name}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -527,13 +539,15 @@ export default function COAFormDialog(props: {
                 Balance Type <span className="text-destructive">*</span>
               </label>
               <Select value={balanceType} onValueChange={setBalanceType} disabled={lookupsLoading}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a balance type" />
+                <SelectTrigger className="w-full">
+                  <div className="truncate text-left">
+                    <SelectValue placeholder="Select a balance type" />
+                  </div>
                 </SelectTrigger>
                 <SelectContent>
                   {balanceTypes.map((x) => (
                     <SelectItem key={x.id} value={String(x.id)}>
-                      {x.balance_name}
+                      <span className="truncate">{x.balance_name}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>

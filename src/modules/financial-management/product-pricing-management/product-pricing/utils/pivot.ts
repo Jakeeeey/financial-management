@@ -32,7 +32,7 @@ export function pivotPrices(
         if (!key) continue;
 
         if (!out.has(r.product_id)) {
-            out.set(r.product_id, { A: null, B: null, C: null, D: null, E: null });
+            out.set(r.product_id, { A: null, B: null, C: null, D: null, E: null, LIST: null });
         }
         out.get(r.product_id)![key] = r.price;
     }
