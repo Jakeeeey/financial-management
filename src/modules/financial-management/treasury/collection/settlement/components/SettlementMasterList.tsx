@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
     FilterX, CheckCircle2, Loader2, Hourglass, Layers, Search, Calendar, Activity,
-    ChevronRight, LayoutDashboard, CircleDashed
+    ChevronRight, LayoutDashboard, CircleDashed, ArrowUp, ArrowDown, ArrowUpDown
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { fetchProvider } from "../../providers/fetchProvider";
@@ -47,7 +47,10 @@ export default function SettlementMasterList() {
     const [isLoading, setIsLoading] = useState(true);
 
     const [searchTerm, setSearchTerm] = useState("");
-    const [statusFilter, setStatusFilter] = useState("all"); // 🚀 NEW Status Filter State
+    const [statusFilter, setStatusFilter] = useState("all");
+
+    const [sortField, setSortField] = useState<keyof SettlementQueueItem | null>("date");
+    const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
     const [dateRangeMode, setDateRangeMode] = useState("all");
     const [customStart, setCustomStart] = useState(format(subDays(new Date(), 30), "yyyy-MM-dd"));
@@ -81,6 +84,16 @@ export default function SettlementMasterList() {
         return isValid(d) ? d : null;
     };
 
+
+    const handleSort = (field: keyof SettlementQueueItem) => {
+        if (sortField === field) {
+            setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+        } else {
+            setSortField(field);
+            setSortDirection("asc");
+        }
+    };
+
     const uniqueOperations = useMemo(() => {
         const ops = new Set(collections.map(col => col.operationName || "Unassigned Operation"));
         return Array.from(ops).sort();
@@ -99,7 +112,7 @@ export default function SettlementMasterList() {
             // 2. Operation Filter
             const matchesOperation = activeOperationTab === "All" || opName === activeOperationTab;
 
-            // 3. Status Filter 🚀
+            // 3. Status Filter
             const status = getCollectionStatus(col);
             const matchesStatus = statusFilter === "all" || status === statusFilter;
 
@@ -124,14 +137,49 @@ export default function SettlementMasterList() {
         });
     }, [collections, searchTerm, statusFilter, dateRangeMode, customStart, customEnd, activeOperationTab]);
 
-    // 🚀 Calculate Quick Stats for Header
+    const sortedCollections = useMemo(() => {
+        if (!sortField) return filteredCollections;
+
+        return [...filteredCollections].sort((a, b) => {
+            const aVal = a[sortField];
+            const bVal = b[sortField];
+
+            if (aVal == null && bVal == null) return 0;
+            if (aVal == null) return 1;
+            if (bVal == null) return -1;
+
+            // Special handling for date fields
+            if (sortField === "date" || sortField === "collectionDate" || sortField === "collection_date") {
+                const aDate = parseAnyDate(a);
+                const bDate = parseAnyDate(b);
+                if (!aDate && !bDate) return 0;
+                if (!aDate) return 1;
+                if (!bDate) return -1;
+                const modifier = sortDirection === "asc" ? 1 : -1;
+                return (aDate.getTime() - bDate.getTime()) * modifier;
+            }
+
+            // Special handling for numeric fields
+            if (typeof aVal === "number" && typeof bVal === "number") {
+                const modifier = sortDirection === "asc" ? 1 : -1;
+                return (aVal - bVal) * modifier;
+            }
+
+            // String comparison
+            const modifier = sortDirection === "asc" ? 1 : -1;
+            const aStr = String(aVal).toLowerCase();
+            const bStr = String(bVal).toLowerCase();
+            return aStr > bStr ? modifier : -modifier;
+        });
+    }, [filteredCollections, sortField, sortDirection]);
+
     const stats = useMemo(() => {
-        return filteredCollections.reduce((acc, col) => {
+        return sortedCollections.reduce((acc, col) => {
             acc.totalFloat += col.pouchAmount || 0;
             acc.unsettledFloat += Math.abs(col.discrepancy || 0);
             return acc;
         }, { totalFloat: 0, unsettledFloat: 0 });
-    }, [filteredCollections]);
+    }, [sortedCollections]);
 
     const handleOpenSettlement = (id: number) => {
         setSelectedPouchId(id);
@@ -141,7 +189,6 @@ export default function SettlementMasterList() {
     return (
         <div className="h-[calc(100vh-80px)] flex flex-col bg-muted/10 p-6 space-y-5 overflow-hidden">
 
-            {/* 🚀 Sleek Header Dashboard */}
             <div className="flex flex-col md:flex-row justify-between gap-4 items-start md:items-end shrink-0">
                 <div>
                     <h1 className="text-2xl font-black tracking-tight text-foreground flex items-center gap-2">
@@ -155,7 +202,7 @@ export default function SettlementMasterList() {
                 <div className="flex gap-4 bg-card border border-border p-3 rounded-xl shadow-sm">
                     <div className="flex flex-col px-4 border-r border-border/50">
                         <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Total Pouches</span>
-                        <span className="text-lg font-mono font-black text-foreground">{filteredCollections.length}</span>
+                        <span className="text-lg font-mono font-black text-foreground">{sortedCollections.length}</span>
                     </div>
                     <div className="flex flex-col px-4 border-r border-border/50">
                         <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Total Pouch Value</span>
@@ -168,7 +215,6 @@ export default function SettlementMasterList() {
                 </div>
             </div>
 
-            {/* 🚀 Filter Control Panel */}
             <div className="bg-card border border-border p-4 rounded-xl shadow-sm flex flex-wrap gap-4 items-center shrink-0 relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
 
@@ -229,7 +275,6 @@ export default function SettlementMasterList() {
                 </Button>
             </div>
 
-            {/* Operation Chips */}
             {collections.length > 0 && (
                 <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none shrink-0 mask-edges">
                     <div className="flex items-center gap-1.5 text-muted-foreground pr-3 border-r border-border shrink-0">
@@ -269,15 +314,61 @@ export default function SettlementMasterList() {
 
             {/* 🚀 Main Data Table */}
             <div className="flex-1 bg-card rounded-xl border border-border shadow-xl overflow-hidden flex flex-col min-h-0">
-                <div className="flex-1 overflow-y-auto scrollbar-thin">
-                    <Table>
-                        <TableHeader className="bg-muted/80 sticky top-0 z-10 border-b backdrop-blur-md">
+                {/* 🚀 FIX: Shattering the hidden boundary to allow the table header to stick! */}
+                <div className="flex-1 overflow-y-auto scrollbar-thin relative [&_div.relative.w-full.overflow-auto]:!overflow-visible">
+                    <Table className="relative min-w-[800px]">
+                        <TableHeader className="bg-muted/90 backdrop-blur-md sticky top-0 z-20 shadow-sm outline outline-1 outline-border">
                             <TableRow>
-                                <TableHead className="font-black text-[10px] uppercase pl-6 py-4">Doc No</TableHead>
-                                <TableHead className="font-black text-[10px] uppercase">Route Owner</TableHead>
-                                <TableHead className="font-black text-[10px] uppercase">Settlement Status</TableHead>
-                                <TableHead className="text-right font-black text-[10px] uppercase">Pouch Value</TableHead>
-                                <TableHead className="text-right font-black text-[10px] uppercase pr-10">Remaining Float</TableHead>
+                                <TableHead className="font-black text-[10px] uppercase pl-6 py-4 cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => handleSort("docNo")}>
+                                    <div className="flex items-center gap-1">
+                                        <span>Doc No</span>
+                                        {sortField === "docNo" ? (
+                                            sortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
+                                        ) : (
+                                            <ArrowUpDown className="h-3 w-3 text-muted-foreground opacity-50" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead className="font-black text-[10px] uppercase cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => handleSort("salesmanName")}>
+                                    <div className="flex items-center gap-1">
+                                        <span>Route Owner</span>
+                                        {sortField === "salesmanName" ? (
+                                            sortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
+                                        ) : (
+                                            <ArrowUpDown className="h-3 w-3 text-muted-foreground opacity-50" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead className="font-black text-[10px] uppercase cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => handleSort("discrepancy")}>
+                                    <div className="flex items-center gap-1">
+                                        <span>Settlement Status</span>
+                                        {sortField === "discrepancy" ? (
+                                            sortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
+                                        ) : (
+                                            <ArrowUpDown className="h-3 w-3 text-muted-foreground opacity-50" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead className="text-right font-black text-[10px] uppercase cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => handleSort("pouchAmount")}>
+                                    <div className="flex items-center gap-1 justify-end">
+                                        <span>Pouch Value</span>
+                                        {sortField === "pouchAmount" ? (
+                                            sortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
+                                        ) : (
+                                            <ArrowUpDown className="h-3 w-3 text-muted-foreground opacity-50" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead className="text-right font-black text-[10px] uppercase pr-10 cursor-pointer hover:bg-muted/80 transition-colors" onClick={() => handleSort("discrepancy")}>
+                                    <div className="flex items-center gap-1 justify-end">
+                                        <span>Remaining Float</span>
+                                        {sortField === "discrepancy" ? (
+                                            sortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
+                                        ) : (
+                                            <ArrowUpDown className="h-3 w-3 text-muted-foreground opacity-50" />
+                                        )}
+                                    </div>
+                                </TableHead>
                                 <TableHead className="w-[120px]"></TableHead>
                             </TableRow>
                         </TableHeader>
@@ -291,7 +382,7 @@ export default function SettlementMasterList() {
                                         </div>
                                     </TableCell>
                                 </TableRow>
-                            ) : filteredCollections.length === 0 ? (
+                            ) : sortedCollections.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={6} className="h-[40vh] text-center">
                                         <div className="flex flex-col items-center justify-center text-muted-foreground gap-3 opacity-60">
@@ -301,7 +392,7 @@ export default function SettlementMasterList() {
                                         </div>
                                     </TableCell>
                                 </TableRow>
-                            ) : filteredCollections.map((col) => {
+                            ) : sortedCollections.map((col) => {
                                 const pouchTotal = col.pouchAmount || 0;
                                 const remaining = Math.abs(col.discrepancy || 0);
                                 const status = getCollectionStatus(col);
