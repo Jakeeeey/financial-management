@@ -16,6 +16,7 @@ export interface RawInvoiceRow {
   daysOverdue?: number;
   branch?: string;
   salesman?: string;
+  division?: string;
   isPosted?: number;
   // Fallback aliases
   id?: string;
@@ -41,6 +42,7 @@ export interface Invoice {
   overdue: number | null;
   branch: string;
   salesman: string;
+  division: string;
   status: 'Paid' | 'Overdue' | 'Due';
 }
 

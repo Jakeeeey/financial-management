@@ -32,12 +32,13 @@ export interface APRecord {
   refNo:              string;
   supplier:           string;
   invoiceNo:          string;
+  division:           string;
   invoiceDate:        string;
   dueDate:            string;
   amountPayable:      number;
   amountPaid:         number;
   outstandingBalance: number;
-  aging:              number;
+  aging:              number | null; // null = no due date, negative = future, 0 = today, positive = past due
   status:             APStatus;
 }
 

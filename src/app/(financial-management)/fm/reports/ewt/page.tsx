@@ -12,7 +12,7 @@ import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 
 import { cookies } from "next/headers";
 
-// ✅ Wire the module you asked for
+// ✅ Wire the module
 import EWTModules from "@/modules/financial-management/reports/ewt/EWTModule";
 
 export const runtime = "nodejs";

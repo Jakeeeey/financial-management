@@ -1,5 +1,3 @@
-"use client";
-
 import {useState, useEffect, useCallback} from "react";
 import {UnpaidInvoice, SettlementAllocation, PaymentHistory} from "../../types";
 import {fetchProvider} from "../../providers/fetchProvider";

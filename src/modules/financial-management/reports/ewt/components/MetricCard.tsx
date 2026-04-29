@@ -1,5 +1,5 @@
 // components/MetricCard.tsx
-// Reusable stat card for the CWT metrics row.
+// Reusable stat card for the EWT metrics row.
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 

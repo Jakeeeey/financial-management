@@ -198,6 +198,11 @@ export default function SettlementMasterList() {
                         Manage and allocate physical collections to accounts receivable.
                     </p>
                 </div>
+            </div>
+
+            {/* 🚀 Filter Control Panel */}
+            <div className="bg-card border border-border p-4 rounded-xl shadow-sm flex flex-wrap gap-4 items-center shrink-0 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
 
                 <div className="flex gap-4 bg-card border border-border p-3 rounded-xl shadow-sm">
                     <div className="flex flex-col px-4 border-r border-border/50">
@@ -275,6 +280,7 @@ export default function SettlementMasterList() {
                 </Button>
             </div>
 
+            {/* Operation Chips */}
             {collections.length > 0 && (
                 <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none shrink-0 mask-edges">
                     <div className="flex items-center gap-1.5 text-muted-foreground pr-3 border-r border-border shrink-0">
