@@ -1,42 +1,46 @@
-// types.ts
+// cwt/types.ts
 // All TypeScript interfaces and types for the CWT module.
 
 export interface RawCWTRow {
+  // EWT API fields (this module reads from EWT endpoint)
   docNo?:           string;
   supplier?:        string;
-  cwt?:             number | string;
+  ewt?:             number | string;
   transactionDate?: string;
-  [key: string]: unknown;
+  grossAmount?:     number;
+  taxableAmount?:   number;
+  // Fallback aliases
+  invoiceNo?:       string;
+  invoiceDate?:     string;
+  customer?:        string;
+  id?:              string;
+  invoice_number?:  string;
+  customerName?:    string;
+  client?:          string;
+  amount?:          number | string;
+  date?:            string;
+  createdAt?:       string;
+  status?:          string;
+  [key: string]:    unknown;
 }
 
 export interface CWTRecord {
-  id:            string;  // docNo
-  invoiceNo:     string;  // docNo
-  customerName:  string;  // supplier
-  invoiceDate:   string;  // transactionDate (raw string)
+  id:            string;
+  customer:      string;
+  amount:        number;
   grossAmount:   number;
   taxableAmount: number;
-  displayAmount: number;  // cwt as number
-  dateObj:       Date;    // parsed transactionDate for filtering
+  date:          string;
+  status:        string;
 }
 
-export interface CWTMetrics {
-  totalAmount:       number;
-  totalTransactions: number;
-}
-
-export interface PieEntry {
+export interface AggregatedEntry {
   name:  string;
   value: number;
 }
 
-export interface TrendEntry {
-  month:  string;
-  amount: number;
-}
-
-export interface BarEntry {
-  name:   string;
-  amount: number;
-  count:  number;
+export interface CWTMetrics {
+  totalAmount:  number;
+  averageCwt:   number;
+  totalRecords: number;
 }
