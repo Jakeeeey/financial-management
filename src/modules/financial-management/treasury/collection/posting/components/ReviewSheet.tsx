@@ -136,7 +136,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                 expectedPhysicalCash += amt;
             }
 
-            const customer = a.customerName || "Unknown Customer";
+            const customer = a.customerName || "No Assigned Customer";
             if (!groupedAllocations[customer]) groupedAllocations[customer] = [];
             groupedAllocations[customer].push(a);
         });

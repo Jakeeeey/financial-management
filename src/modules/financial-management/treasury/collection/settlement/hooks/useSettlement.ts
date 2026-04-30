@@ -198,7 +198,7 @@ export function useSettlement(pouchId: string | number) {
                         label: b.referenceNo ? `Check/Remittance: ${b.referenceNo}` : 'No Ref',
                         originalAmount: safeAmount,
                         balanceTypeId: 2,
-                        customerName: b.customerName || b.customerCode, // 🚀 Use the real name!
+                        customerName: b.customerName || b.customerCode,
                         invoiceId: b.invoiceId,
                         dbId: b.detailId
                     });
@@ -493,13 +493,10 @@ export function useSettlement(pouchId: string | number) {
                 const inv = cartInvoices.find(i => i.id === invoiceId);
 
                 if (wItem && inv) {
-                    let finalAmount = safeInput;
-
-                    if (wItem.type === "MEMO" || wItem.type === "RETURN") {
-                        const walletUsedElsewhere = prev.filter(a => a.sourceTempId === sourceId && a.invoiceId !== invoiceId).reduce((sum, a) => sum + a.amountApplied, 0);
-                        const walletAvailable = Math.max(0, Math.abs(wItem.originalAmount) - walletUsedElsewhere);
-                        finalAmount = Math.min(safeInput, walletAvailable);
-                    }
+                    // 🚀 THE ULTIMATE FIX: Hard enforce MAX allocation based on available asset pool for ALL PAYMENT TYPES!
+                    const walletUsedElsewhere = prev.filter(a => a.sourceTempId === sourceId && a.invoiceId !== invoiceId).reduce((sum, a) => sum + a.amountApplied, 0);
+                    const walletAvailable = Math.max(0, Math.abs(wItem.originalAmount) - walletUsedElsewhere);
+                    const finalAmount = Math.min(safeInput, walletAvailable);
 
                     if (finalAmount > 0.009) {
                         filtered.push({
