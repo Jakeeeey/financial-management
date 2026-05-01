@@ -1,5 +1,5 @@
-// components/EWTRecordsTable.tsx
-// Paginated EWT records table with invoice breakdown — with search bar.
+// components/CWTRecordsTable.tsx
+// Paginated CWT records table with invoice breakdown — with search bar.
 
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,12 +11,12 @@ import {
 } from '@/components/ui/pagination';
 import { Search } from 'lucide-react';
 import { getPageNumbers } from '../utils';
-import type { EWTRecord } from '../types';
+import type { CWTRecord } from '../types';
 
 const PAGE_SIZE = 10;
 
-interface EWTRecordsTableProps {
-  records: EWTRecord[];
+interface CWTRecordsTableProps {
+  records: CWTRecord[];
   page: number;
   setPage: (p: number | ((prev: number) => number)) => void;
 }
@@ -24,7 +24,7 @@ interface EWTRecordsTableProps {
 const fmt = (n: number) =>
   `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export function EWTRecordsTable({ records, page, setPage }: EWTRecordsTableProps) {
+export function CWTRecordsTable({ records, page, setPage }: CWTRecordsTableProps) {
   const [search, setSearch] = useState('');
 
   const q = search.trim().toLowerCase();
@@ -53,7 +53,7 @@ export function EWTRecordsTable({ records, page, setPage }: EWTRecordsTableProps
     <Card className="shadow-none border-border overflow-hidden">
       <CardHeader className="bg-muted/30 border-b border-border/50 flex flex-row items-center justify-between gap-4">
         <div className="shrink-0">
-          <CardTitle className="text-sm font-bold uppercase">EWT Records</CardTitle>
+          <CardTitle className="text-sm font-bold uppercase">CWT Records</CardTitle>
         </div>
         <div className="relative w-full max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -76,7 +76,7 @@ export function EWTRecordsTable({ records, page, setPage }: EWTRecordsTableProps
               <TableHead className="text-xs font-bold py-4">Customer</TableHead>
               <TableHead className="text-xs font-bold py-4 text-right">Gross Amount</TableHead>
               <TableHead className="text-xs font-bold py-4 text-right">Taxable Amount</TableHead>
-              <TableHead className="text-xs font-bold py-4 text-right">EWT Amount</TableHead>
+              <TableHead className="text-xs font-bold py-4 text-right">CWT Amount</TableHead>
               <TableHead className="text-xs font-bold py-4 pr-6">Invoice Date</TableHead>
             </TableRow>
           </TableHeader>

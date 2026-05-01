@@ -70,28 +70,31 @@ export default function PrintablesMatrixTable({
                     
                     {/* Level 2: Price Tiers (Selected) */}
                     <TableRow className="border-b border-[#D1D5DB]">
-                        <TableHead className="font-bold sticky left-0 z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[180px] text-[10px] uppercase text-[#374151]">Product Name</TableHead>
-                        <TableHead className="font-bold sticky left-[180px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[120px] text-[10px] uppercase text-[#374151]">Category</TableHead>
-                        <TableHead className="font-bold sticky left-[300px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[120px] text-[10px] uppercase text-[#374151]">Brand</TableHead>
-                        {activePriceTypes.map((pt, i) => (
-                            <TableHead 
-                                key={pt.price_type_id} 
-                                colSpan={visibleUnits.length || 1} 
-                                className={cn(
-                                    "text-center font-black text-xs border-r border-[#D1D5DB] py-1.5",
-                                    groupColors[i % groupColors.length]
-                                )}
-                            >
-                                {pt.price_type_name}
-                            </TableHead>
-                        ))}
+                        <TableHead className="font-bold sticky left-0 z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[120px] text-[10px] uppercase text-[#374151]">Brand</TableHead>
+                        <TableHead className="font-bold sticky left-[120px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[120px] text-[10px] uppercase text-[#374151]">Category</TableHead>
+                        <TableHead className="font-bold sticky left-[240px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB] min-w-[180px] text-[10px] uppercase text-[#374151]">Product Name</TableHead>
+                        {activePriceTypes.map((pt) => {
+                            const absoluteIndex = priceTypes.indexOf(pt);
+                            return (
+                                <TableHead 
+                                    key={pt.price_type_id} 
+                                    colSpan={visibleUnits.length || 1} 
+                                    className={cn(
+                                        "text-center font-black text-xs border-r border-[#D1D5DB] py-1.5",
+                                        groupColors[absoluteIndex !== -1 ? absoluteIndex % groupColors.length : 0]
+                                    )}
+                                >
+                                    {pt.price_type_name}
+                                </TableHead>
+                            );
+                        })}
                     </TableRow>
 
                     {/* Level 3: Units (BOX, PCS, etc.) */}
                     <TableRow className="border-b border-[#D1D5DB]">
                         <TableHead className="sticky left-0 z-30 bg-[#F9FAFB] border-r border-[#D1D5DB]"></TableHead>
-                        <TableHead className="sticky left-[180px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB]"></TableHead>
-                        <TableHead className="sticky left-[300px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB]"></TableHead>
+                        <TableHead className="sticky left-[120px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB]"></TableHead>
+                        <TableHead className="sticky left-[240px] z-30 bg-[#F9FAFB] border-r border-[#D1D5DB]"></TableHead>
                         {activePriceTypes.map((pt) => (
                             <React.Fragment key={pt.price_type_id}>
                                 {visibleUnits.length > 0 ? visibleUnits.map((u) => (
@@ -111,19 +114,20 @@ export default function PrintablesMatrixTable({
                 <TableBody>
                     {rows.map((row) => (
                         <TableRow key={row.group_id} className="hover:bg-[#F3F4F6] transition-colors border-b border-[#E5E7EB]">
-                            <TableCell className="font-semibold sticky left-0 bg-white z-10 border-r border-[#D1D5DB] py-2 text-[11px] text-[#111827]">
-                                {row.display.product_name}
-                            </TableCell>
-                            <TableCell className="sticky left-[180px] bg-white z-10 border-r border-[#D1D5DB] py-2 text-[10px] text-[#4B5563]">
-                                {row.category_name}
-                            </TableCell>
-                            <TableCell className="sticky left-[300px] bg-white z-10 border-r border-[#D1D5DB] py-2 text-[10px] text-[#4B5563]">
+                            <TableCell className="sticky left-0 bg-white z-10 border-r border-[#D1D5DB] py-2 text-[10px] text-[#4B5563]">
                                 {row.brand_name}
                             </TableCell>
-                            {activePriceTypes.map((pt, i) => {
+                            <TableCell className="sticky left-[120px] bg-white z-10 border-r border-[#D1D5DB] py-2 text-[10px] text-[#4B5563]">
+                                {row.category_name}
+                            </TableCell>
+                            <TableCell className="font-semibold sticky left-[240px] bg-white z-10 border-r border-[#D1D5DB] py-2 text-[11px] text-[#111827]">
+                                {row.display.product_name}
+                            </TableCell>
+                            {activePriceTypes.map((pt) => {
                                 // If synthetic List Price (ID -1), use ListPrice key
-                                // Otherwise, calculate its A-E mapping based on its position among non-synthetic price types
-                                const nonSyntheticIndex = activePriceTypes.slice(0, i).filter(p => p.price_type_id !== -1).length;
+                                // Otherwise, calculate its A-E mapping based on its position in the FULL price types list
+                                const fullIndex = priceTypes.indexOf(pt);
+                                const nonSyntheticIndex = priceTypes.slice(0, fullIndex).filter(p => p.price_type_id !== -1).length;
                                 const ptSuffix = pt.price_type_id === -1 ? "ListPrice" : (["A", "B", "C", "D", "E"][nonSyntheticIndex] || "A");
                                 
                                 return (

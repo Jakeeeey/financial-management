@@ -1,56 +1,61 @@
 "use client";
 
-import React, {useState, useEffect} from "react";
-import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription} from "@/components/ui/sheet";
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-    DialogFooter
-} from "@/components/ui/dialog";
-import {Popover, PopoverContent, PopoverTrigger} from "@/components/ui/popover";
-import {Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList} from "@/components/ui/command";
-import {Button} from "@/components/ui/button";
-import {Input} from "@/components/ui/input";
-import {Label} from "@/components/ui/label";
-import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs";
-import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
-import {Checkbox} from "@/components/ui/checkbox";
-import {Badge} from "@/components/ui/badge";
+import React, { useState, useEffect } from "react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
     Plus, Trash2, Loader2, Save, Building2, Wallet, Calculator,
     DownloadCloud, FileText, Check, ChevronsUpDown, Search
 } from "lucide-react";
-import {format} from "date-fns";
-import {cn} from "@/lib/utils";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 import {
     DisbursementPayload, PayableLine, PaymentLine, SupplierDto, COADto,
     Disbursement, BankAccountDto, UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto
 } from "../types";
-import {disbursementProvider} from "../providers/fetchProvider";
-import {toast} from "sonner";
+import { disbursementProvider } from "../providers/fetchProvider";
+import { toast } from "sonner";
+
+// 🚀 FIX 1: Extended interface to strictly type the incoming API data
+export interface ExtendedDisbursement extends Disbursement {
+    payeeId?: number;
+    divisionId?: number;
+    departmentId?: number;
+}
 
 interface DisbursementCreateSheetProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onSubmit: (payload: DisbursementPayload) => Promise<boolean>;
     loading: boolean;
-    editData?: Disbursement | null;
+    editData?: ExtendedDisbursement | null;
 }
 
-function SearchableDropdown({options, value, onSelect, placeholder, disabled, className, popoverWidth = "w-[400px]"}: {
-    options: { label: string; value: number | string }[];
-    value: number | string;
-    onSelect: (val: number | string) => void;
+// 🚀 FIX 2: Strict Generic Types for the Dropdown! No more 'any' or silent mismatches.
+interface SearchableDropdownProps<T extends string | number> {
+    options: { label: string; value: T }[];
+    value: T | "";
+    onSelect: (val: T) => void;
     placeholder: string;
     disabled?: boolean;
     className?: string;
     popoverWidth?: string;
-}) {
+}
+
+function SearchableDropdown<T extends string | number>({
+                                                           options, value, onSelect, placeholder, disabled, className, popoverWidth = "w-[400px]"
+                                                       }: SearchableDropdownProps<T>) {
     const [open, setOpen] = useState(false);
-    const selectedLabel = options.find((o) => o.value === value)?.label || placeholder;
+    const selectedLabel = options.find((o) => String(o.value) === String(value))?.label || placeholder;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -67,12 +72,12 @@ function SearchableDropdown({options, value, onSelect, placeholder, disabled, cl
                     <CommandList className="max-h-[250px] scrollbar-thin">
                         <CommandEmpty className="py-4 text-center text-xs text-muted-foreground">No results found.</CommandEmpty>
                         <CommandGroup>
-                            {options.map((opt) => (
-                                <CommandItem key={opt.value} value={opt.label} onSelect={() => {
+                            {options.map((opt, index) => (
+                                <CommandItem key={`${opt.value}-${index}`} value={opt.label} onSelect={() => {
                                     onSelect(opt.value);
                                     setOpen(false);
                                 }} className="text-xs cursor-pointer">
-                                    <Check className={cn("mr-2 h-4 w-4 text-primary", value === opt.value ? "opacity-100" : "opacity-0")}/>
+                                    <Check className={cn("mr-2 h-4 w-4 text-primary", String(value) === String(opt.value) ? "opacity-100" : "opacity-0")}/>
                                     {opt.label}
                                 </CommandItem>
                             ))}
@@ -84,13 +89,7 @@ function SearchableDropdown({options, value, onSelect, placeholder, disabled, cl
     );
 }
 
-export function DisbursementCreateSheet({
-                                            open,
-                                            onOpenChange,
-                                            onSubmit,
-                                            loading,
-                                            editData
-                                        }: DisbursementCreateSheetProps) {
+export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading, editData }: DisbursementCreateSheetProps) {
     const today = new Date().toISOString().split("T")[0];
 
     const [transactionTypeId, setTransactionTypeId] = useState<number | "">(1);
@@ -125,7 +124,7 @@ export function DisbursementCreateSheet({
 
     const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
 
-    // 🚀 EFFECT 1: Fetch STATIC reference data only once when the sheet opens
+    // Initial Data Fetching
     useEffect(() => {
         if (open) {
             disbursementProvider.getCOAs().then(setCoas);
@@ -135,30 +134,31 @@ export function DisbursementCreateSheet({
         }
     }, [open]);
 
-    // 🚀 EFFECT 2: Fetch SUPPLIERS dynamically based on Transaction Type!
+    // Supplier Fetching based on Transaction Type
     useEffect(() => {
         if (open && transactionTypeId) {
             setLoadingData(true);
             const typeString = transactionTypeId === 1 ? "Trade" : "Non-Trade";
-
             disbursementProvider.getSuppliers(typeString)
                 .then(setSuppliers)
                 .finally(() => setLoadingData(false));
         }
     }, [open, transactionTypeId]);
 
-    // 🚀 EFFECT 3: Hydrate the form if we are Editing, or reset if we are Creating
+    // Main Hydration Logic
     useEffect(() => {
         if (open) {
             if (editData) {
                 const isNonTrade = editData.transactionTypeName?.toUpperCase().includes("NON");
                 setTransactionTypeId(isNonTrade ? 2 : 1);
 
-                setPayeeId(editData.payeeId || "");
-                setDivisionId(editData.divisionId || "");
-                setDepartmentId(editData.departmentId || "");
+                // Directly extract IDs from the payload if they exist
+                setPayeeId(editData.payeeId ? Number(editData.payeeId) : "");
+                setDivisionId(editData.divisionId ? Number(editData.divisionId) : "");
+                setDepartmentId(editData.departmentId ? Number(editData.departmentId) : "");
                 setRemarks(editData.remarks || "");
                 setTransactionDate(editData.transactionDate ? editData.transactionDate.split('T')[0] : today);
+
                 setPayables(editData.payables.map(p => ({
                     id: p.id,
                     referenceNo: p.referenceNo || "",
@@ -178,7 +178,7 @@ export function DisbursementCreateSheet({
                     remarks: p.remarks
                 })));
             } else {
-                setTransactionTypeId(1); // Default to Trade
+                setTransactionTypeId(1);
                 setPayeeId("");
                 setDivisionId("");
                 setDepartmentId("");
@@ -189,6 +189,29 @@ export function DisbursementCreateSheet({
             }
         }
     }, [open, editData, today]);
+
+    // 🚀 FIX 3: Auto-Resolving Hooks to prevent Race Conditions!
+    // If the API missed the IDs, these will forcefully map them using the Names once the lists finish loading.
+    useEffect(() => {
+        if (open && editData && !payeeId && editData.payeeName && suppliers.length > 0) {
+            const match = suppliers.find(s => s.supplier_name.toLowerCase() === editData.payeeName?.toLowerCase());
+            if (match) setPayeeId(match.id);
+        }
+    }, [open, editData, payeeId, suppliers]);
+
+    useEffect(() => {
+        if (open && editData && !divisionId && editData.divisionName && divisions.length > 0) {
+            const match = divisions.find(d => d.divisionName.toLowerCase() === editData.divisionName?.toLowerCase());
+            if (match) setDivisionId(match.id);
+        }
+    }, [open, editData, divisionId, divisions]);
+
+    useEffect(() => {
+        if (open && editData && !departmentId && editData.departmentName && departments.length > 0) {
+            const match = departments.find(d => d.departmentName.toLowerCase() === editData.departmentName?.toLowerCase());
+            if (match) setDepartmentId(match.id);
+        }
+    }, [open, editData, departmentId, departments]);
 
     const handleAddPayable = () => setPayables([...payables, {referenceNo: "", date: today, amount: 0, remarks: ""}]);
     const handleAddPayment = () => setPayments([...payments, {checkNo: "", date: today, amount: 0, remarks: ""}]);
@@ -225,35 +248,11 @@ export function DisbursementCreateSheet({
                 const netAmount = po.amountDue / (1 + VAT_RATE);
                 const vatAmount = netAmount * VAT_RATE;
                 const ewtAmount = netAmount * EWT_RATE;
-                newPayables.push({
-                    referenceNo: baseRef,
-                    date: today,
-                    amount: Number(netAmount.toFixed(2)),
-                    coaId: 8,
-                    remarks: `Principal Net of VAT`
-                });
-                newPayables.push({
-                    referenceNo: baseRef,
-                    date: today,
-                    amount: Number(vatAmount.toFixed(2)),
-                    coaId: 9,
-                    remarks: `Input VAT (12%)`
-                });
-                newPayables.push({
-                    referenceNo: baseRef,
-                    date: today,
-                    amount: -Number(ewtAmount.toFixed(2)),
-                    coaId: 38,
-                    remarks: `EWT Deduction (1%)`
-                });
+                newPayables.push({ referenceNo: baseRef, date: today, amount: Number(netAmount.toFixed(2)), coaId: 8, remarks: `Principal Net of VAT` });
+                newPayables.push({ referenceNo: baseRef, date: today, amount: Number(vatAmount.toFixed(2)), coaId: 9, remarks: `Input VAT (12%)` });
+                newPayables.push({ referenceNo: baseRef, date: today, amount: -Number(ewtAmount.toFixed(2)), coaId: 38, remarks: `EWT Deduction (1%)` });
             } else {
-                newPayables.push({
-                    referenceNo: baseRef,
-                    date: today,
-                    amount: Number(po.amountDue.toFixed(2)),
-                    coaId: 8,
-                    remarks: `Principal (Non-VAT)`
-                });
+                newPayables.push({ referenceNo: baseRef, date: today, amount: Number(po.amountDue.toFixed(2)), coaId: 8, remarks: `Principal (Non-VAT)` });
             }
         });
 
@@ -365,7 +364,6 @@ export function DisbursementCreateSheet({
                                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs font-bold uppercase text-foreground shadow-sm focus-visible:outline-none"
                                     value={transactionTypeId}
                                     onChange={e => {
-                                        // 🚀 UX FIX: Clear the payee and tables when the user switches transaction types manually!
                                         setTransactionTypeId(Number(e.target.value));
                                         setPayeeId("");
                                         setUnpaidPos([]);
@@ -389,9 +387,9 @@ export function DisbursementCreateSheet({
                                 </Label>
                                 <div className="flex gap-2">
                                     <div className="flex-1 min-w-0">
-                                        <SearchableDropdown
+                                        <SearchableDropdown<number>
                                             options={suppliers.map(s => ({value: s.id, label: s.supplier_name}))}
-                                            value={payeeId} onSelect={(val) => setPayeeId(Number(val))}
+                                            value={payeeId as number | ""} onSelect={(val) => setPayeeId(val)}
                                             placeholder={`-- Search Payee --`}
                                             disabled={loadingData || !transactionTypeId}
                                             className="h-9 w-full bg-background border-input text-xs font-bold uppercase"
@@ -405,22 +403,22 @@ export function DisbursementCreateSheet({
 
                             <div className="space-y-1.5">
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Division <span className="text-destructive">*</span></Label>
-                                <select
-                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs font-bold uppercase text-foreground shadow-sm focus-visible:outline-none"
-                                    value={divisionId} onChange={e => setDivisionId(Number(e.target.value))}>
-                                    <option value="" disabled>-- Select Division --</option>
-                                    {divisions.map((d, index) => <option key={`main-div-${d.id || index}`} value={d.id || (d as DivisionDto & {divisionId?: number}).divisionId}>{d.divisionName}</option>)}
-                                </select>
+                                <SearchableDropdown<number>
+                                    options={divisions.map(d => ({value: d.id, label: d.divisionName}))}
+                                    value={divisionId as number | ""} onSelect={(val) => setDivisionId(val)}
+                                    placeholder="-- Search Division --"
+                                    className="h-9 w-full bg-background border-input text-xs font-bold uppercase text-foreground shadow-sm"
+                                />
                             </div>
 
                             <div className="space-y-1.5">
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Department <span className="text-destructive">*</span></Label>
-                                <select
-                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs font-bold uppercase text-foreground shadow-sm focus-visible:outline-none"
-                                    value={departmentId} onChange={e => setDepartmentId(Number(e.target.value))}>
-                                    <option value="" disabled>-- Select Department --</option>
-                                    {departments.map((d, index) => <option key={`main-dept-${d.id || index}`} value={d.id || (d as DepartmentDto & {departmentId?: number}).departmentId}>{d.departmentName}</option>)}
-                                </select>
+                                <SearchableDropdown<number>
+                                    options={departments.map(d => ({value: d.id, label: d.departmentName}))}
+                                    value={departmentId as number | ""} onSelect={(val) => setDepartmentId(val)}
+                                    placeholder="-- Search Department --"
+                                    className="h-9 w-full bg-background border-input text-xs font-bold uppercase text-foreground shadow-sm"
+                                />
                             </div>
 
                             <div className="space-y-1.5 col-span-2">
@@ -455,7 +453,6 @@ export function DisbursementCreateSheet({
                                                 <TableRow className="border-border">
                                                     <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Ref No (PO)</TableHead>
                                                     <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[200px]">Chart of Account</TableHead>
-                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[130px]">Division</TableHead>
                                                     <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[180px]">Remarks</TableHead>
                                                     <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Amount</TableHead>
                                                     <TableHead className="w-[40px]"></TableHead>
@@ -463,25 +460,18 @@ export function DisbursementCreateSheet({
                                             </TableHeader>
                                             <TableBody>
                                                 {payables.length === 0 ? (
-                                                    <TableRow><TableCell colSpan={6} className="text-center text-xs text-muted-foreground py-8 font-medium">No payables added.</TableCell></TableRow>
+                                                    <TableRow><TableCell colSpan={5} className="text-center text-xs text-muted-foreground py-8 font-medium">No payables added.</TableCell></TableRow>
                                                 ) : payables.map((p, i) => (
                                                     <TableRow key={i} className="border-border hover:bg-muted/50">
                                                         <TableCell className="p-2 align-top pt-3">
                                                             <Input className="h-8 text-xs uppercase bg-background" placeholder="Invoice/PO" value={p.referenceNo} onChange={e => { const n = [...payables]; n[i].referenceNo = e.target.value; setPayables(n); }}/>
                                                         </TableCell>
                                                         <TableCell className="p-2 align-top pt-3">
-                                                            <SearchableDropdown
+                                                            <SearchableDropdown<number>
                                                                 options={coas.map(c => ({ value: c.coaId || 0, label: `${c.glCode || 'NO-CODE'} - ${c.accountTitle}` }))}
-                                                                value={p.coaId || ""} onSelect={(val) => { const n = [...payables]; n[i].coaId = Number(val); setPayables(n); }}
+                                                                value={p.coaId || ""} onSelect={(val) => { const n = [...payables]; n[i].coaId = val; setPayables(n); }}
                                                                 placeholder="Search GL..." className="h-8 w-full bg-background border-input text-[11px] font-medium" popoverWidth="w-[350px]"
                                                             />
-                                                        </TableCell>
-                                                        <TableCell className="p-2 align-top pt-3">
-                                                            <select className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-[10px] font-bold uppercase text-foreground shadow-sm"
-                                                                    value={p.divisionId || ""} onChange={e => { const n = [...payables]; n[i].divisionId = Number(e.target.value); setPayables(n); }}>
-                                                                <option value="" disabled>Division</option>
-                                                                {divisions.map((d, index) => <option key={`line-div-${i}-${d.id || index}`} value={d.id || (d as DivisionDto & {divisionId?: number}).divisionId}>{d.divisionName}</option>)}
-                                                            </select>
                                                         </TableCell>
                                                         <TableCell className="p-2 align-top pt-3">
                                                             <Input className="h-8 text-[10px] bg-background" placeholder="Line remarks..." value={p.remarks || ""} onChange={e => { const n = [...payables]; n[i].remarks = e.target.value; setPayables(n); }}/>
@@ -528,14 +518,14 @@ export function DisbursementCreateSheet({
                                                         <TableCell className="p-2 align-top pt-3"><Input className="h-8 text-xs uppercase bg-background" placeholder="e.g. CHK-123" value={p.checkNo} onChange={e => { const n = [...payments]; n[i].checkNo = e.target.value; setPayments(n); }}/></TableCell>
                                                         <TableCell className="p-2 align-top">
                                                             <div className="flex flex-col gap-2 pt-3">
-                                                                <SearchableDropdown
+                                                                <SearchableDropdown<number>
                                                                     options={banks.map(b => ({ value: b.bankId, label: `${b.bankName} - ${b.accountNumber}` }))}
-                                                                    value={p.bankId || ""} onSelect={(val) => { const n = [...payments]; n[i].bankId = Number(val); setPayments(n); }}
+                                                                    value={p.bankId || ""} onSelect={(val) => { const n = [...payments]; n[i].bankId = val; setPayments(n); }}
                                                                     placeholder="Search Bank Account..." className="h-8 w-full border-primary/20 bg-primary/5 text-[11px] font-bold text-foreground" popoverWidth="w-[350px]"
                                                                 />
-                                                                <SearchableDropdown
+                                                                <SearchableDropdown<number>
                                                                     options={coas.filter(c => c.isPayment || c.isPaymentDuplicate).map(c => ({ value: c.coaId || 0, label: `${c.glCode || 'NO-CODE'} - ${c.accountTitle}` }))}
-                                                                    value={p.coaId || ""} onSelect={(val) => { const n = [...payments]; n[i].coaId = Number(val); setPayments(n); }}
+                                                                    value={p.coaId || ""} onSelect={(val) => { const n = [...payments]; n[i].coaId = val; setPayments(n); }}
                                                                     placeholder="Search General Ledger Code..." className="h-8 w-full bg-background border-input text-[11px] font-medium" popoverWidth="w-[450px]"
                                                                 />
                                                             </div>

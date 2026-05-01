@@ -147,9 +147,23 @@ export async function GET(req: NextRequest) {
 
         if (shouldScopeBySupplier) {
             const ppsJson = await fetchDirectus<{ data: Record<string, unknown>[] }>(`${DIRECTUS_URL}/items/${PRODUCT_PER_SUPPLIER}?limit=-1&fields=product_id&filter[supplier_id][_in]=${supplierIds.join(",")}`);
-            universeProductIds = (ppsJson.data ?? [])
+            const directIds = (ppsJson.data ?? [])
                 .map((r) => Number(r.product_id))
                 .filter(n => Number.isFinite(n) && n > 0);
+            
+            if (directIds.length === 0) {
+                return NextResponse.json({ data: { categories: [], brands: [], units: [], suppliers } });
+            }
+
+            // Also fetch child products (parent_id in the directly linked product IDs)
+            const childrenJson = await fetchDirectus<{ data: Record<string, unknown>[] }>(
+                `${DIRECTUS_URL}/items/${PRODUCTS}?limit=-1&fields=product_id&filter[parent_id][_in]=${directIds.join(",")}`
+            );
+            const childIds = (childrenJson.data ?? [])
+                .map((r) => Number(r.product_id))
+                .filter(n => Number.isFinite(n) && n > 0);
+
+            universeProductIds = Array.from(new Set([...directIds, ...childIds]));
             
             if (universeProductIds.length === 0) {
                 return NextResponse.json({ data: { categories: [], brands: [], units: [], suppliers } });
