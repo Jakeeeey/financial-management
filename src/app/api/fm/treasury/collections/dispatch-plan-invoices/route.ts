@@ -14,13 +14,11 @@ export async function GET(request: NextRequest) {
 
     if (!token) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
-    // 🚀 PRO-TIP: request.nextUrl.search automatically contains the exact
-    // query string React sent (e.g., "?salesmanId=123" or "?salesmanId=123&customerId=456")
-    // If there are no params, it's just an empty string "".
+    // 🚀 Automatically grabs the ?planId=X query parameter
     const queryString = request.nextUrl.search;
 
-    // We just glue it to the end! Clean and zero chance of a dangling '&'
-    const targetUrl = `${getSpringBaseUrl()}/api/v1/collections/unpaid-invoices${queryString}`;
+    // ⚠️ Ensure this matches the @GetMapping path in your Spring Boot CollectionController
+    const targetUrl = `${getSpringBaseUrl()}/api/v1/collections/dispatch-plan-invoices${queryString}`;
 
     try {
         const springRes = await fetch(targetUrl, {
@@ -40,9 +38,9 @@ export async function GET(request: NextRequest) {
         const data = await springRes.json();
         return NextResponse.json(data);
     } catch (err: unknown) {
-        console.error("[BFF GET Ledger Exception]:", err);
+        console.error("[BFF GET Dispatch Invoices Exception]:", err);
         return NextResponse.json({
-            message: "BFF Error",
+            message: "BFF Error fetching Dispatch Invoices",
             detail: (err instanceof Error ? err.message : String(err))
         }, { status: 502 });
     }
