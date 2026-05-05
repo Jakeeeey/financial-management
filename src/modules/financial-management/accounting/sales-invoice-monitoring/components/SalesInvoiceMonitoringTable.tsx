@@ -34,6 +34,7 @@ interface SalesInvoiceMonitoringTableProps {
   sortBy: SortKey;
   sortOrder: SortOrder;
   onSortChange: (key: SortKey) => void;
+  onRowClick?: (row: SalesInvoiceMonitoringRow) => void;
   onPageChange: (value: number | ((prev: number) => number)) => void;
 }
 
@@ -47,6 +48,7 @@ export function SalesInvoiceMonitoringTable({
   sortBy,
   sortOrder,
   onSortChange,
+  onRowClick,
   onPageChange,
 }: SalesInvoiceMonitoringTableProps) {
   const renderSortIcon = (key: SortKey) => {
@@ -142,7 +144,28 @@ export function SalesInvoiceMonitoringTable({
               </TableRow>
             ) : (
               rows.map((row) => (
-                <TableRow key={row.id} className="hover:bg-muted/30">
+                <TableRow
+                  key={row.id}
+                  className={
+                    onRowClick
+                      ? "hover:bg-muted/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      : "hover:bg-muted/30"
+                  }
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  role={onRowClick ? "button" : undefined}
+                  tabIndex={onRowClick ? 0 : undefined}
+                  aria-label={onRowClick ? `View invoice ${row.invoiceNo}` : undefined}
+                  onKeyDown={
+                    onRowClick
+                      ? (event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onRowClick(row);
+                          }
+                        }
+                      : undefined
+                  }
+                >
                   <TableCell className="text-xs font-medium">{row.invoiceNo}</TableCell>
                   <TableCell className="text-xs">{row.customerName}</TableCell>
                   <TableCell className="text-xs">{row.salesman}</TableCell>
