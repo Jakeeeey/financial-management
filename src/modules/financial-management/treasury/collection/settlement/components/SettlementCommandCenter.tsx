@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useSettlement } from "../hooks/useSettlement";
 import {
     Receipt, ShieldCheck, Wallet, Save, ChevronDown, Plus, X, Loader2,
-    Percent, Trash2, Lock, Printer, Wand2, Truck, ChevronsUpDown, Check, Layers, MapPin, Calendar, FileText, CheckCircle2
+    Percent, Trash2, Lock, Printer, Wand2, Truck, ChevronsUpDown, Check, Layers, MapPin, Calendar, FileText, CheckCircle2, Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -16,7 +16,6 @@ import { UnpaidInvoice } from "../../types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-// 🚀 IMPORTS OF MODULAR FILES
 import SettlementInvoiceCartTable from "./SettlementInvoiceCartTable";
 import WalletAssetCard from "./WalletAssetCard";
 import InvoiceSearchPopover from "./InvoiceSearchPopover";
@@ -29,10 +28,9 @@ export interface SettlementCommandCenterProps {
 export default function SettlementCommandCenter({ id, onClose }: SettlementCommandCenterProps) {
     const {
         isLoading, wallet, credits, cartInvoices, allocations, salesmanName, salesmanId, findings, docNo, isPosted,
-        isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart,
+        isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
-        deleteWalletItem, editWalletItem,
-        dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate
+        deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate
     } = useSettlement(id);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -44,6 +42,9 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
     const [isSearching, setIsSearching] = useState(false);
 
     const [creditSearch, setCreditSearch] = useState("");
+    const [externalCreditInput, setExternalCreditInput] = useState("");
+    const [externalCreditType, setExternalCreditType] = useState<"MEMO" | "RETURN">("MEMO");
+    const [isFetchingExternal, setIsFetchingExternal] = useState(false);
 
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editAmt, setEditAmt] = useState("");
@@ -117,7 +118,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         return () => clearTimeout(delayDebounceFn);
     }, [searchQuery, salesmanId, cartInvoices, isPosted]);
 
-    // 🚀 THE FIX: We split them into THREE distinct pillars of truth!
     const pouchTotal = useMemo(() => wallet.filter(w => w.type === 'CASH' || w.type === 'CHECK').reduce((sum, w) => sum + w.originalAmount, 0), [wallet]);
     const ewtTotal = useMemo(() => wallet.filter(w => w.type === 'EWT').reduce((sum, w) => sum + w.originalAmount, 0), [wallet]);
     const varianceTotal = useMemo(() => wallet.filter(w => w.type === 'ADJUSTMENT').reduce((sum, w) => w.balanceTypeId === 1 ? sum - w.originalAmount : sum + w.originalAmount, 0), [wallet]);
@@ -127,9 +127,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         return source?.balanceTypeId === 1 ? sum - a.amountApplied : sum + a.amountApplied;
     }, 0), [allocations, wallet]);
 
-    // Unallocated dynamically combines all three pillars
     const remainingToAllocate = (pouchTotal + ewtTotal + varianceTotal) - totalAllocated;
-
     const cartTotalBalance = useMemo(() => cartInvoices.reduce((sum, inv) => sum + (inv.remainingBalance || 0), 0), [cartInvoices]);
     const cartTotalAppliedSession = useMemo(() => allocations.reduce((sum, a) => sum + a.amountApplied, 0), [allocations]);
 
@@ -185,6 +183,22 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         const netOfVat = inv.remainingBalance / 1.12;
         const refNo = prompt(`Generate Form 2307 for ${inv.invoiceNo}\n\nEnter Reference Number:`, `2307-${inv.invoiceNo}`);
         if (refNo) createEwt(netOfVat * 0.01, refNo, inv.id);
+    };
+
+    const handleFetchExternalCredit = async () => {
+        const creditId = parseInt(externalCreditInput.trim(), 10);
+        if (isNaN(creditId)) return toast.error("Please enter a valid numeric Document ID.");
+
+        setIsFetchingExternal(true);
+        const success = await fetchAndInjectExternalCredit(creditId, externalCreditType);
+        setIsFetchingExternal(false);
+
+        if (success) {
+            toast.success("External credit successfully pulled into wallet!");
+            setExternalCreditInput("");
+        } else {
+            toast.error("Credit not found, invalid, or already fully applied.");
+        }
     };
 
     if (isLoading) return <div className="p-10 flex h-full items-center justify-center text-center animate-pulse font-bold text-muted-foreground uppercase tracking-widest">Initializing Command Center...</div>;
@@ -285,7 +299,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                 </div>
             </div>
 
-            {/* MAIN WORKSPACE - Ultra-compact styling applied here */}
+            {/* MAIN WORKSPACE */}
             <div className={cn(
                 "flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 lg:p-4 overflow-y-auto lg:overflow-hidden transition-all duration-500",
                 (isSubmitting || isSuccess) ? "opacity-60 blur-[1px] pointer-events-none grayscale-[20%]" : "opacity-100"
@@ -349,8 +363,42 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
 
                     <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
                         <div className="bg-purple-500/10 py-2 px-3 border-b border-purple-500/20 flex flex-col gap-1.5 shrink-0">
-                            <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase tracking-widest text-purple-700 dark:text-purple-400 flex items-center gap-1.5"><Percent size={12}/> Available Credits</span><Badge variant="outline" className="text-[7px] font-black bg-purple-50 border-purple-200 text-purple-700 py-0 h-3.5 leading-none">OPTIONAL</Badge></div>
-                            <Input placeholder="Search by customer, memo no..." value={creditSearch} onChange={(e) => setCreditSearch(e.target.value)} className="h-6 text-[10px] font-bold shadow-inner bg-background border-purple-200 focus-visible:ring-purple-500 px-2"/>
+
+                            {/* 🚀 THE UI FIX: Global Fetch Bar added here! */}
+                            <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-purple-700 dark:text-purple-400 flex items-center gap-1.5"><Percent size={12}/> Available Credits</span>
+                                {!isPosted && (
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button size="sm" variant="outline" className="h-5 text-[8px] px-1.5 font-black uppercase tracking-widest text-purple-600 border-purple-200 hover:bg-purple-50 gap-1"><Search size={8} strokeWidth={3}/> Fetch Remote</Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[280px] p-4 space-y-3 shadow-xl border-purple-200" align="start">
+                                            <div className="space-y-0.5 mb-2 border-b border-border/50 pb-2">
+                                                <h4 className="font-black text-xs text-foreground flex items-center gap-1.5"><Search size={14} className="text-purple-500"/> Fetch Cross-Entity Credit</h4>
+                                                <p className="text-[9px] font-bold text-muted-foreground leading-tight">Pull a specific Memo or Return into the wallet even if the customer isn't in the cart.</p>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Document Type</label>
+                                                    <div className="flex gap-1.5">
+                                                        <Button variant={externalCreditType === "MEMO" ? "default" : "outline"} onClick={() => setExternalCreditType("MEMO")} className={`h-7 w-1/2 text-[10px] font-bold ${externalCreditType === "MEMO" ? 'bg-purple-600 text-white' : 'text-muted-foreground'}`}>Memo</Button>
+                                                        <Button variant={externalCreditType === "RETURN" ? "default" : "outline"} onClick={() => setExternalCreditType("RETURN")} className={`h-7 w-1/2 text-[10px] font-bold ${externalCreditType === "RETURN" ? 'bg-orange-600 text-white border-orange-200' : 'text-muted-foreground'}`}>Return</Button>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Document ID</label>
+                                                    <Input type="number" placeholder="E.g. 152" value={externalCreditInput} onChange={(e) => setExternalCreditInput(e.target.value)} className="h-7 text-xs font-mono"/>
+                                                </div>
+                                                <Button className="w-full mt-1 h-7 text-[9px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white" disabled={isFetchingExternal || !externalCreditInput} onClick={handleFetchExternalCredit}>
+                                                    {isFetchingExternal ? <Loader2 size={12} className="animate-spin"/> : "Pull into Wallet"}
+                                                </Button>
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                )}
+                            </div>
+
+                            <Input placeholder="Search local pool..." value={creditSearch} onChange={(e) => setCreditSearch(e.target.value)} className="h-6 text-[10px] font-bold shadow-inner bg-background border-purple-200 focus-visible:ring-purple-500 px-2"/>
                         </div>
                         <div className="p-2 flex-1 overflow-y-auto space-y-1.5 scrollbar-thin">
                             {filteredCredits.length === 0 ? <p className="text-[10px] text-center text-muted-foreground font-bold uppercase pt-6 italic">No matching credits</p> : filteredCredits.map(c => {
