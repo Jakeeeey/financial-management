@@ -385,9 +385,9 @@ export async function GET(req: NextRequest) {
                 allSupplierProductIds.push(...ids);
             }
 
-            supplierProductIds = uniqNums(allSupplierProductIds);
+            const directIds = uniqNums(allSupplierProductIds);
 
-            if (supplierProductIds.length === 0) {
+            if (directIds.length === 0) {
                 const emptyMeta: ProductsMeta = {
                     page,
                     pageSize: groupPageSize,
@@ -398,6 +398,20 @@ export async function GET(req: NextRequest) {
 
                 return NextResponse.json({ data: [], meta: emptyMeta });
             }
+
+            // Also fetch child products (variants) whose parent_id is in the direct supplier product IDs
+            const childrenUrl = `${DIRECTUS_URL}/items/${PRODUCTS}?limit=-1&fields=product_id&filter[parent_id][_in]=${directIds.join(",")}`;
+            const { ok: childOk, text: childText } = await fetchDirectusRaw(childrenUrl);
+            const childIds: number[] = [];
+            if (childOk) {
+                const childJson = JSON.parse(childText) as { data?: { product_id: number }[] };
+                for (const c of childJson.data ?? []) {
+                    const n = Number(c.product_id);
+                    if (Number.isFinite(n) && n > 0) childIds.push(n);
+                }
+            }
+
+            supplierProductIds = uniqNums([...directIds, ...childIds]);
         }
 
         const fetchAllMatching = async (): Promise<ProductRow[]> => {

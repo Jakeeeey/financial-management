@@ -9,16 +9,20 @@ export { default } from './EWTModule';
 export type {
   RawEWTRow,
   EWTRecord,
-  AggregatedEntry,
   EWTMetrics,
+  PieEntry,
+  TrendEntry,
+  BarEntry,
 } from './types';
 
 // Utils
 export {
   formatPeso,
+  formatDate,
   transformEWTRows,
-  aggregateByCustomer,
-  deriveMetrics,
+  buildPieData,
+  buildTrendData,
+  buildBarData,
   getPageNumbers,
 } from './utils';
 
@@ -28,4 +32,6 @@ export { useEWT } from './hooks/useEWT';
 // Components
 export { EWTBarChart } from './components/EWTBarChart';
 export { EWTPieChart } from './components/EWTPieChart';
-export { EWTRecordsTable } from './components/EWTRecordsTable';
+export { EWTTrendChart } from './components/EWTTrendChart';
+export { MetricCard } from './components/MetricCard';
+export { TransactionTable } from './components/TransactionTable';

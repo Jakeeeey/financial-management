@@ -104,22 +104,30 @@ export async function GET(req: NextRequest) {
                 return NextResponse.json({ data: [], meta: { total_groups: 0, total_pages: 0 } });
             }
 
-            // Fetch parent_id info for these pids to include all variations in the group
+            // Step 1: Determine group root IDs for the supplier-linked products
             const productInfoRes = await fetchDirectus<{ data: { product_id: number, parent_id: number | null }[] }>(
                 `${DIRECTUS_URL}/items/${PRODUCTS}?filter[product_id][_in]=${pids.join(",")}&fields=product_id,parent_id&limit=-1`
             );
 
             const groupIds = new Set<number>();
             for (const item of productInfoRes.data) {
-                groupIds.add(item.parent_id ?? item.product_id);
+                // If this product has a parent (> 0), the root is the parent; otherwise it IS the root
+                const gid = pickId(item.parent_id) ?? item.product_id;
+                groupIds.add(gid);
             }
 
             if (groupIds.size > 0) {
                 const gidArr = Array.from(groupIds);
-                // We want to fetch any product where its product_id IS a group ID OR its parent_id IS a group ID
-                params.set(`filter[_and][${andIdx}][_or][0][product_id][_in]`, gidArr.join(","));
-                params.set(`filter[_and][${andIdx}][_or][1][parent_id][_in]`, gidArr.join(","));
-                andIdx += 1;
+
+                // Step 2: Fetch all children (products whose parent_id is one of our group roots)
+                const childrenRes = await fetchDirectus<{ data: { product_id: number }[] }>(
+                    `${DIRECTUS_URL}/items/${PRODUCTS}?filter[parent_id][_in]=${gidArr.join(",")}&fields=product_id&limit=-1`
+                );
+                const childIds = childrenRes.data.map(c => c.product_id).filter(id => Number.isFinite(id) && id > 0);
+
+                // Step 3: Build the full set of product IDs (roots + children)
+                const allIds = Array.from(new Set([...gidArr, ...childIds]));
+                addAnd("[product_id][_in]", allIds.join(","));
             } else {
                 addAnd("[product_id][_in]", pids.join(","));
             }

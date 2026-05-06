@@ -17,6 +17,8 @@ type MatrixOptions = {
     selectedTemplate?: PdfTemplate;
     companyData?: PdfData | null;
     selectedPriceTypeIds?: string[];
+    printedBy?: string;
+    filterSummary?: string;
 };
 
 type PdfCell = {
@@ -75,14 +77,16 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
         selectedTemplate,
         companyData,
         selectedPriceTypeIds = [],
-        priceTypes = []
+        priceTypes = [],
+        printedBy = "System User",
+        filterSummary = ""
     } = options;
 
     const allPriceTypes = priceTypes || [];
-    
+
     // Determine active tiers based on selection
     // Map -1 to "ListPrice" and others to A-E based on their position among non-synthetic types
-    const activeTiers = allPriceTypes.length > 0 
+    const activeTiers = allPriceTypes.length > 0
         ? allPriceTypes
             .filter(pt => selectedPriceTypeIds.length === 0 || selectedPriceTypeIds.includes(String(pt.price_type_id)))
             .map(pt => {
@@ -97,9 +101,9 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
                 };
             })
             .filter(t => t.key != null)
-        : TIERS.map((key, i) => ({ 
-            key, 
-            label: allPriceTypes?.[i]?.price_type_name || `PRICE TYPE ${key}` 
+        : TIERS.map((key, i) => ({
+            key,
+            label: allPriceTypes?.[i]?.price_type_name || `PRICE TYPE ${key}`
         })).slice(0, 5);
 
     const usedUnits = units
@@ -112,19 +116,19 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
     // --- Dynamic Layout Optimization ---
     const totalCols = 3 + (activeTiers.length * uomCount);
     let dynamicFontSize = fontSize;
-    let dynamicPadding = 4;
+    let dynamicPadding = 1.0;
     let nameW = 56;
     let extraW = 28;
 
     if (totalCols > 15) {
         dynamicFontSize = 6;
-        dynamicPadding = 2.5;
+        dynamicPadding = 0.8;
         nameW = 45;
         extraW = 24;
     }
     if (totalCols > 25) {
         dynamicFontSize = 5.5;
-        dynamicPadding = 1.8;
+        dynamicPadding = 0.6;
         nameW = 40;
         extraW = 20;
     }
@@ -146,9 +150,9 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
 
     // --- Header Construction (2 rows) ---
     const headRow1: PdfCell[] = [
+        { content: "Brand", rowSpan: 2, styles: { valign: "middle", halign: "center" } },
+        { content: "Category", rowSpan: 2, styles: { valign: "middle", halign: "center" } },
         { content: "Product Name", rowSpan: 2, styles: { valign: "middle", fontStyle: "bold", halign: "center" } },
-        { content: "Category",     rowSpan: 2, styles: { valign: "middle", halign: "center" } },
-        { content: "Brand",        rowSpan: 2, styles: { valign: "middle", halign: "center" } },
     ];
 
     for (const tier of activeTiers) {
@@ -186,9 +190,9 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
     // --- Body Construction ---
     const body = rows.map((row) => {
         const cells: (string | PdfCell)[] = [
-            { content: row.display.product_name || "—", styles: { fontStyle: "bold" } },
+            row.brand_name || "—",
             row.category_name || "—",
-            row.brand_name || "—"
+            { content: row.display.product_name || "—", styles: { fontStyle: "bold" } }
         ];
 
         for (const tier of activeTiers) {
@@ -206,23 +210,187 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
     });
 
     const generated = `${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
-    
+
     let y = 40;
 
     if (selectedTemplate) {
-        y = await PdfEngine.applyTemplate(doc, selectedTemplate.name, companyData || null);
+        let templateHeaderEnd = await PdfEngine.applyTemplate(doc, selectedTemplate.name, companyData || null);
         if (tplConfig?.bodyStart != null) {
-            y = tplConfig.bodyStart;
+            templateHeaderEnd = tplConfig.bodyStart;
         }
-    } else {
-        doc.setFontSize(16);
-        doc.setTextColor(0);
-        doc.text(title, finalMargins.left, finalMargins.top);
 
-        y = finalMargins.top + 5;
-        doc.setFontSize(9);
+        // Create a clear gap for metadata and push table down
+        const metadataHeight = filterSummary ? 12 : 8;
+        const metadataTop = templateHeaderEnd - 3; // Shift up to hug the header line
+        y = metadataTop + metadataHeight + 1; // Table starts immediately after metadata
+
+        // Add metadata even with template
+        doc.setFontSize(8.5);
+        doc.setTextColor(60);
+
+        const pageWidth = doc.internal.pageSize.getWidth();
+
+        const row1Y = metadataTop;
+        // TOP: "PRICE LIST REPORT" title
+        doc.setFont("helvetica", "bold");
+        doc.text("PRICE LIST REPORT", finalMargins.left, row1Y);
+
+        // Divider below the title
+        doc.setDrawColor(220);
+        doc.setLineWidth(0.2);
+        doc.line(finalMargins.left, row1Y + 2, pageWidth - finalMargins.right, row1Y + 2);
+
+        // Start metadata below the divider
+        let metaY = row1Y + 7;
+        const filterLines = filterSummary ? filterSummary.split("\n") : [];
+        const rightData = [
+            { label: "Generated at:", value: generated },
+            { label: "Generated By:", value: printedBy }
+        ];
+
+        // 1. Pre-calculate right block positioning
+        doc.setFont("helvetica", "bold");
+        const genAtLabelW = doc.getTextWidth("Generated at:");
+        const genByLabelW = doc.getTextWidth("Generated By:");
+        const maxRightLabelW = Math.max(genAtLabelW, genByLabelW) + 2;
+
+        doc.setFont("helvetica", "normal");
+        const genAtValueW = doc.getTextWidth(generated);
+        const genByValueW = doc.getTextWidth(printedBy);
+        const rightBlockW = maxRightLabelW + Math.max(genAtValueW, genByValueW);
+        const rightX = pageWidth - finalMargins.right - rightBlockW;
+
+        // 2. Pre-calculate filter label width
+        let maxFilterLabelW = 0;
+        if (filterLines.length > 0) {
+            doc.setFont("helvetica", "bold");
+            for (const line of filterLines) {
+                const colonIndex = line.indexOf(":");
+                if (colonIndex !== -1) {
+                    maxFilterLabelW = Math.max(maxFilterLabelW, doc.getTextWidth(line.substring(0, colonIndex + 1)));
+                }
+            }
+            maxFilterLabelW += 2;
+        }
+
+        // 3. Render both side-by-side
+        const maxMetaRows = Math.max(filterLines.length, rightData.length);
+        const metaRowStep = 4.5;
+
+        for (let i = 0; i < maxMetaRows; i++) {
+            // Left: Filters
+            if (i < filterLines.length) {
+                const line = filterLines[i];
+                const colonIndex = line.indexOf(":");
+                if (colonIndex !== -1) {
+                    const label = line.substring(0, colonIndex + 1);
+                    const value = line.substring(colonIndex + 1);
+                    doc.setFont("helvetica", "bold");
+                    doc.text(label, finalMargins.left, metaY);
+                    doc.setFont("helvetica", "normal");
+                    doc.text(value, finalMargins.left + maxFilterLabelW, metaY);
+                } else {
+                    doc.setFont("helvetica", "normal");
+                    doc.text(line, finalMargins.left, metaY);
+                }
+            }
+
+            // Right: Generation Info
+            if (i < rightData.length) {
+                const item = rightData[i];
+                doc.setFont("helvetica", "bold");
+                doc.text(item.label, rightX, metaY);
+                doc.setFont("helvetica", "normal");
+                doc.text(item.value, rightX + maxRightLabelW, metaY);
+            }
+
+            metaY += metaRowStep;
+        }
+        
+        // Update y for table start
+        y = Math.max(y, metaY + 2);
+
+        // Reset for table
+        doc.setFont("helvetica", "normal");
+    } else {
+        doc.setFontSize(22);
+        doc.setTextColor(0, 51, 102); // Professional Dark Blue
+        doc.setFont("helvetica", "bold");
+        doc.text(title.toUpperCase(), finalMargins.left, finalMargins.top + 5);
+
+        doc.setFontSize(10);
         doc.setTextColor(100);
-        doc.text(`Generated: ${generated} | Total Products: ${rows.length}`, finalMargins.left, y);
+        doc.setFont("helvetica", "normal");
+        doc.text("OFFICIAL PRODUCT PRICING MATRIX REPORT", finalMargins.left, finalMargins.top + 11);
+
+        y = finalMargins.top + 20;
+
+        // Metadata Block
+        doc.setDrawColor(230);
+        doc.setFillColor(248, 250, 252);
+        const metaHeight = filterSummary ? 18 : 12;
+        doc.roundedRect(finalMargins.left, y - 5, doc.internal.pageSize.getWidth() - finalMargins.left - finalMargins.right, metaHeight, 1, 1, "FD");
+
+        doc.setFontSize(9);
+        doc.setTextColor(70);
+
+        let currentX = finalMargins.left + 5;
+        doc.setFont("helvetica", "bold");
+        doc.text("REPORT DATE:", currentX, y);
+        currentX += doc.getTextWidth("REPORT DATE: ") + 2;
+        doc.setFont("helvetica", "normal");
+        doc.text(generated, currentX, y);
+        currentX += doc.getTextWidth(generated) + 12;
+
+        doc.setFont("helvetica", "bold");
+        doc.text("PREPARED BY:", currentX, y);
+        currentX += doc.getTextWidth("PREPARED BY: ") + 2;
+        doc.setFont("helvetica", "normal");
+        doc.text(printedBy, currentX, y);
+
+        if (filterSummary) {
+            y += 6;
+            const filterLines = filterSummary.split("\n");
+            
+            // Calculate max label width for filters
+            let maxFilterLabelW = 0;
+            doc.setFont("helvetica", "bold");
+            for (const line of filterLines) {
+                const colonIndex = line.indexOf(":");
+                if (colonIndex !== -1) {
+                    const label = line.substring(0, colonIndex + 1);
+                    maxFilterLabelW = Math.max(maxFilterLabelW, doc.getTextWidth(label));
+                }
+            }
+            maxFilterLabelW += 2;
+
+            const availableWidth = doc.internal.pageSize.getWidth() - finalMargins.left - finalMargins.right - 10;
+
+            for (const line of filterLines) {
+                const colonIndex = line.indexOf(":");
+                if (colonIndex !== -1) {
+                    const label = line.substring(0, colonIndex + 1);
+                    const value = line.substring(colonIndex + 1);
+                    
+                    doc.setFont("helvetica", "bold");
+                    doc.text(label, finalMargins.left + 5, y);
+                    
+                    doc.setFont("helvetica", "normal");
+                    const valueX = finalMargins.left + 5 + maxFilterLabelW;
+                    const splitValue = doc.splitTextToSize(value, availableWidth - maxFilterLabelW);
+                    doc.text(splitValue, valueX, y);
+                    y += (Math.max(1, splitValue.length) * 4);
+                } else {
+                    doc.setFont("helvetica", "normal");
+                    const splitLines = doc.splitTextToSize(line, availableWidth);
+                    doc.text(splitLines, finalMargins.left + 5, y);
+                    y += (splitLines.length * 4);
+                }
+            }
+        } else {
+            y += 4;
+        }
+
         y += 5;
 
         if (supplier) {
@@ -250,7 +418,7 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
     }
 
     autoTable(doc, {
-        startY: y + 5,
+        startY: y + 1,
         head: [headRow1, headRow2],
         body,
         theme: "grid",
@@ -267,12 +435,12 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
             fontStyle: "bold",
         },
         columnStyles: {
-            0: { cellWidth: nameW },
+            0: { cellWidth: extraW },
             1: { cellWidth: extraW },
-            2: { cellWidth: extraW }
+            2: { cellWidth: nameW }
         },
-        margin: { 
-            left: finalMargins.left, 
+        margin: {
+            left: finalMargins.left,
             right: finalMargins.right,
             top: finalMargins.top,
             bottom: bodyEnd != null
