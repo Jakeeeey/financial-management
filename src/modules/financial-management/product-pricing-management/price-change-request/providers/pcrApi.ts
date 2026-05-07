@@ -64,8 +64,11 @@ export async function listRequests(query: ListQuery) {
     if (query.status) sp.set("status", query.status);
     if (query.q) sp.set("q", query.q);
     if (query.product_id) sp.set("product_id", String(query.product_id));
+    if (query.supplier_id) sp.set("supplier_id", String(query.supplier_id));
     if (query.price_type_id) sp.set("price_type_id", String(query.price_type_id));
     if (query.requested_by) sp.set("requested_by", String(query.requested_by));
+    if (query.date_from) sp.set("date_from", query.date_from);
+    if (query.date_to) sp.set("date_to", query.date_to);
     sp.set("page", String(query.page ?? 1));
     sp.set("page_size", String(query.page_size ?? 50));
 
@@ -95,7 +98,10 @@ export async function listCostRequests(query: ListQuery) {
     if (query.status) sp.set("status", query.status);
     if (query.q) sp.set("q", query.q);
     if (query.product_id) sp.set("product_id", String(query.product_id));
+    if (query.supplier_id) sp.set("supplier_id", String(query.supplier_id));
     if (query.requested_by) sp.set("requested_by", String(query.requested_by));
+    if (query.date_from) sp.set("date_from", query.date_from);
+    if (query.date_to) sp.set("date_to", query.date_to);
     sp.set("page", String(query.page ?? 1));
     sp.set("page_size", String(query.page_size ?? 50));
 
