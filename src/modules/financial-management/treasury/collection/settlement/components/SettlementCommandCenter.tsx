@@ -185,19 +185,20 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         if (refNo) createEwt(netOfVat * 0.01, refNo, inv.id);
     };
 
+    // 🚀 THE FIX: Pass the string document number safely to the hook!
     const handleFetchExternalCredit = async () => {
-        const creditId = parseInt(externalCreditInput.trim(), 10);
-        if (isNaN(creditId)) return toast.error("Please enter a valid numeric Document ID.");
+        const docNo = externalCreditInput.trim();
+        if (!docNo) return toast.error("Please enter a valid Document Number.");
 
         setIsFetchingExternal(true);
-        const success = await fetchAndInjectExternalCredit(creditId, externalCreditType);
+        const success = await fetchAndInjectExternalCredit(docNo, externalCreditType);
         setIsFetchingExternal(false);
 
         if (success) {
             toast.success("External credit successfully pulled into wallet!");
             setExternalCreditInput("");
         } else {
-            toast.error("Credit not found, invalid, or already fully applied.");
+            toast.error("Document not found, invalid, or already fully applied.");
         }
     };
 
@@ -221,13 +222,11 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
 
                 <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 lg:gap-3 bg-muted/50 p-1.5 px-2.5 rounded-lg border border-border w-full lg:w-auto overflow-x-auto scrollbar-none">
 
-                    {/* PILLAR 1: Physical Pouch */}
                     <div className="flex flex-col border-r pr-2 lg:pr-3 border-border/50 shrink-0">
                         <span className="text-[8px] font-black uppercase text-muted-foreground tracking-tighter leading-none mb-0.5">Physical Pouch</span>
                         <span className="text-sm font-black font-mono text-foreground truncate leading-none">₱{pouchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                     </div>
 
-                    {/* PILLAR 2: EWT Holdings */}
                     {ewtTotal > 0 && (
                         <div className="flex flex-col border-r pr-2 lg:pr-3 border-border/50 shrink-0 animate-in fade-in slide-in-from-left-2">
                             <span className="text-[8px] font-black uppercase text-teal-600 tracking-tighter leading-none mb-0.5">EWT Holdings</span>
@@ -237,7 +236,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                         </div>
                     )}
 
-                    {/* PILLAR 3: Session Variance */}
                     {Math.abs(varianceTotal) > 0.001 && (
                         <div className="flex flex-col border-r pr-2 lg:pr-3 border-border/50 shrink-0 animate-in fade-in slide-in-from-left-2">
                             <span className={cn("text-[8px] font-black uppercase tracking-tighter leading-none mb-0.5", varianceTotal > 0 ? "text-purple-600" : "text-red-600")}>
@@ -364,7 +362,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                     <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
                         <div className="bg-purple-500/10 py-2 px-3 border-b border-purple-500/20 flex flex-col gap-1.5 shrink-0">
 
-                            {/* 🚀 THE UI FIX: Global Fetch Bar added here! */}
                             <div className="flex justify-between items-center">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-purple-700 dark:text-purple-400 flex items-center gap-1.5"><Percent size={12}/> Available Credits</span>
                                 {!isPosted && (
@@ -375,7 +372,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                                         <PopoverContent className="w-[280px] p-4 space-y-3 shadow-xl border-purple-200" align="start">
                                             <div className="space-y-0.5 mb-2 border-b border-border/50 pb-2">
                                                 <h4 className="font-black text-xs text-foreground flex items-center gap-1.5"><Search size={14} className="text-purple-500"/> Fetch Cross-Entity Credit</h4>
-                                                <p className="text-[9px] font-bold text-muted-foreground leading-tight">Pull a specific Memo or Return into the wallet even if the customer isn't in the cart.</p>
+                                                <p className="text-[9px] font-bold text-muted-foreground leading-tight">Pull a specific Memo or Return into the wallet even if the customer isn&apos;t in the cart.</p>
                                             </div>
                                             <div className="space-y-2">
                                                 <div className="flex flex-col gap-1">
@@ -386,8 +383,9 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col gap-1">
-                                                    <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Document ID</label>
-                                                    <Input type="number" placeholder="E.g. 152" value={externalCreditInput} onChange={(e) => setExternalCreditInput(e.target.value)} className="h-7 text-xs font-mono"/>
+                                                    <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Document No.</label>
+                                                    {/* 🚀 THE FIX: Input is now text to support alphanumeric document numbers! */}
+                                                    <Input type="text" placeholder="E.g. CM-152" value={externalCreditInput} onChange={(e) => setExternalCreditInput(e.target.value)} className="h-7 text-xs font-mono uppercase"/>
                                                 </div>
                                                 <Button className="w-full mt-1 h-7 text-[9px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white" disabled={isFetchingExternal || !externalCreditInput} onClick={handleFetchExternalCredit}>
                                                     {isFetchingExternal ? <Loader2 size={12} className="animate-spin"/> : "Pull into Wallet"}

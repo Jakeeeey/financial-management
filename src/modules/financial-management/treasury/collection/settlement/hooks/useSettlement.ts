@@ -243,8 +243,6 @@ export function useSettlement(pouchId: string | number) {
         const fetchCreditsByCustomers = async () => {
             const uniqueCustomers = Array.from(new Set(cartInvoices.map(inv => inv.customerName).filter(Boolean)));
 
-            // 🚀 The UI will also manually trigger external credit fetching, so we don't clear it
-            // if they explicitly added an external credit. We just append the auto-fetched ones.
             if (uniqueCustomers.length === 0) return;
 
             try {
@@ -281,7 +279,7 @@ export function useSettlement(pouchId: string | number) {
         };
 
         fetchCreditsByCustomers();
-    }, [JSON.stringify(cartInvoices.map(i => i.customerName).sort())]);
+    }, [cartInvoices]);
 
     useEffect(() => {
         if (!salesmanId || !dispatchDate) return;
@@ -292,12 +290,13 @@ export function useSettlement(pouchId: string | number) {
             .finally(() => setIsLoadingPlans(false));
     }, [salesmanId, dispatchDate]);
 
-    // 🚀 NEW FUNCTION: Manually fetch a specific credit from outside the cart!
-    const fetchAndInjectExternalCredit = async (creditId: number, type: "MEMO" | "RETURN") => {
+    // 🚀 THE FIX: Now safely searches using a String document number!
+    const fetchAndInjectExternalCredit = async (documentNo: string, type: "MEMO" | "RETURN") => {
         try {
+            const safeDocNo = encodeURIComponent(documentNo.trim());
             const endpoint = type === "MEMO"
-                ? `/api/fm/treasury/memos/${creditId}`
-                : `/api/fm/treasury/returns/${creditId}`;
+                ? `/api/fm/treasury/memos/search?documentNo=${safeDocNo}`
+                : `/api/fm/treasury/returns/search?documentNo=${safeDocNo}`;
 
             const data = await fetchProvider.get<RawMemoOrReturn>(endpoint);
             if (!data) return false;
@@ -326,7 +325,6 @@ export function useSettlement(pouchId: string | number) {
             return false;
         }
     };
-
 
     const editWalletItem = async (itemId: string, updatedFields: Partial<WalletItem>) => {
         const item = wallet.find(w => w.id === itemId);
