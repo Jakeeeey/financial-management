@@ -16,7 +16,6 @@ export interface PostingQueueItem {
     adjustmentCredit: number;
 }
 
-// 🚀 NEW: A strict interface for the raw API response so we don't use 'any'
 interface RawQueueItem {
     id?: number;
     docNo?: string;
@@ -30,25 +29,31 @@ interface RawQueueItem {
     adjustmentCredit?: number;
 }
 
-// 🚀 NEW: Define the combined detail type that the ReviewSheet expects
+// 🚀 FIXED: Now perfectly matches the Spring Boot CashieringRequestDto!
 export interface TreasuryPouchDetail extends PostingQueueItem {
     remarks?: string;
     cashBuckets?: {
-        amount?: number;
-        paymentMethod?: string;
-        balanceTypeId?: number;
+        detailId?: number;
+        tempId?: string;
+        paymentMethodId?: number;
+        coaId?: number;
+        bankId?: number | null;
+        customerCode?: string;
+        invoiceId?: number;
         referenceNo?: string;
-        bankName?: string;
-        checkNo?: string;
-        checkDate?: string;
+        amount?: number;
+        chequeDate?: string | null;
+        quantity?: number;
+        findingId?: number;
+        balanceTypeId?: number;
     }[];
     allocations?: {
         amountApplied?: number;
         allocationType?: string;
+        sourceTempId?: string;
         customerName?: string;
         invoiceNo?: string;
         invoiceId?: string | number;
-        referenceNo?: string;
     }[];
 }
 
@@ -64,7 +69,6 @@ export function usePosting() {
     const fetchQueue = useCallback(async () => {
         setIsLoading(true);
         try {
-            // 🚀 Perfectly typed GET request
             const data = await fetchProvider.get<RawQueueItem[]>("/api/fm/treasury/collections/posting-queue");
 
             const formattedQueue: PostingQueueItem[] = (data || []).map((item) => ({
@@ -97,13 +101,9 @@ export function usePosting() {
         setIsLoadingDetails(true);
         setSelectedPouch(null);
         try {
-            // 1. Fetch the deep anatomical breakdown
             const details = await fetchProvider.get<Partial<TreasuryPouchDetail>>(`/api/fm/treasury/collections/${id}`);
-
-            // 2. Find the perfectly formatted summary data from our queue
             const queueSummaryData = queue.find(q => q.id === id);
 
-            // 3. MERGE THEM!
             if (queueSummaryData) {
                 setSelectedPouch({
                     ...details,
@@ -134,7 +134,6 @@ export function usePosting() {
             setIsReviewSheetOpen(false);
             await fetchQueue();
         } catch (err: unknown) {
-            // 🚀 Safely check if the unknown error has a message property
             const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
             alert(`Failed to post pouch: ${errorMessage}`);
         } finally {

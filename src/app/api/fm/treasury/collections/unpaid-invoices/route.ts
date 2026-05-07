@@ -14,14 +14,13 @@ export async function GET(request: NextRequest) {
 
     if (!token) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
-    // Grab query params to pass to Spring Boot
-    const searchParams = request.nextUrl.searchParams;
-    const salesmanId = searchParams.get("salesmanId");
-    const customerId = searchParams.get("customerId");
+    // 🚀 PRO-TIP: request.nextUrl.search automatically contains the exact
+    // query string React sent (e.g., "?salesmanId=123" or "?salesmanId=123&customerId=456")
+    // If there are no params, it's just an empty string "".
+    const queryString = request.nextUrl.search;
 
-    let targetUrl = `${getSpringBaseUrl()}/api/v1/collections/unpaid-invoices?`;
-    if (salesmanId) targetUrl += `salesmanId=${salesmanId}&`;
-    if (customerId) targetUrl += `customerId=${customerId}`;
+    // We just glue it to the end! Clean and zero chance of a dangling '&'
+    const targetUrl = `${getSpringBaseUrl()}/api/v1/collections/unpaid-invoices${queryString}`;
 
     try {
         const springRes = await fetch(targetUrl, {

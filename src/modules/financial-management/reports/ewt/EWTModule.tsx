@@ -1,60 +1,71 @@
 "use client";
 
+// EWTModule.tsx
+// Main module — layout and composition only. Filters drive all charts + table.
+
 import { useState, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, TrendingUp, Receipt, X, Download } from 'lucide-react';
+import { LayoutDashboard, TrendingUp, BarChart2, X, Download } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useEWT } from './hooks/useEWT';
-import { EWTBarChart } from './components/EWTBarChart';
+import { MetricCard } from './components/MetricCard';
 import { EWTPieChart } from './components/EWTPieChart';
-import { EWTRecordsTable } from './components/EWTRecordsTable';
-import { aggregateByCustomer, deriveMetrics } from './utils';
+import { EWTTrendChart } from './components/EWTTrendChart';
+import { EWTBarChart } from './components/EWTBarChart';
+import { TransactionTable } from './components/TransactionTable';
+import { buildPieData, buildTrendData, buildBarData, formatDate } from './utils';
 import type { EWTMetrics } from './types';
 
 export default function EWTModule() {
-  const { loading, error, records, metrics, aggregated } = useEWT();
+  const { loading, error, records, metrics, pieData, trendData, barData } = useEWT();
 
   const [page, setPage]         = useState(1);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo]     = useState('');
-  const [customer, setCustomer] = useState('');
+  const [supplier, setSupplier] = useState('');
 
-  const isFiltered = !!(dateFrom || dateTo || customer);
+  const isFiltered = !!(dateFrom || dateTo || supplier);
 
-  const customerOptions = useMemo(
-    () => Array.from(new Set(records.map((r) => r.customer).filter((c) => c && c !== 'Unknown'))).sort(),
+  const supplierOptions = useMemo(
+    () => Array.from(new Set(records.map((r) => r.customerName).filter(Boolean))).sort(),
     [records]
   );
 
   const filtered = useMemo(() => {
     if (!isFiltered) return records;
     return records.filter((r) => {
-      // r.date is already stripped to YYYY-MM-DD by transformEWTRows
-      if (r.date !== '-') {
-        if (dateFrom && r.date < dateFrom) return false;
-        if (dateTo   && r.date > dateTo)   return false;
-      }
-      if (customer && r.customer !== customer) return false;
+      if (dateFrom && r.dateObj < new Date(dateFrom))             return false;
+      if (dateTo   && r.dateObj > new Date(dateTo + 'T23:59:59')) return false;
+      if (supplier && r.customerName !== supplier)                 return false;
       return true;
     });
-  }, [records, dateFrom, dateTo, customer, isFiltered]);
+  }, [records, dateFrom, dateTo, supplier, isFiltered]);
 
-  const filteredMetrics    = useMemo((): EWTMetrics => isFiltered ? deriveMetrics(filtered)        : metrics,    [filtered, isFiltered, metrics]);
-  const filteredAggregated = useMemo(()              => isFiltered ? aggregateByCustomer(filtered) : aggregated, [filtered, isFiltered, aggregated]);
+  const filteredMetrics = useMemo((): EWTMetrics => {
+    if (!isFiltered) return metrics;
+    return {
+      totalAmount:       filtered.reduce((s, r) => s + r.displayAmount, 0),
+      totalTransactions: filtered.length,
+    };
+  }, [filtered, isFiltered, metrics]);
 
-  const displayMetrics    = filteredMetrics;
-  const displayAggregated = filteredAggregated;
-  const displayRecords    = isFiltered ? filtered : records;
-  const pieTotal          = displayAggregated.reduce((s, d) => s + d.value, 0);
+  const filteredPieData   = useMemo(() => isFiltered ? buildPieData(filtered)   : pieData,   [filtered, isFiltered, pieData]);
+  const filteredTrendData = useMemo(() => isFiltered ? buildTrendData(filtered)  : trendData, [filtered, isFiltered, trendData]);
+  const filteredBarData   = useMemo(() => isFiltered ? buildBarData(filtered)    : barData,   [filtered, isFiltered, barData]);
 
-  const clearFilters = () => { setDateFrom(''); setDateTo(''); setCustomer(''); setPage(1); };
+  const displayMetrics   = filteredMetrics;
+  const displayPieData   = filteredPieData;
+  const displayTrendData = filteredTrendData;
+  const displayBarData   = filteredBarData;
+  const displayRecords   = isFiltered ? filtered : records;
+
+  const clearFilters = () => { setDateFrom(''); setDateTo(''); setSupplier(''); setPage(1); };
 
   const exportToPDF = () => {
     const doc   = new jsPDF({ orientation: 'landscape' });
@@ -87,7 +98,7 @@ export default function EWTModule() {
     doc.setFontSize(7.5);
     doc.setTextColor(120, 120, 120);
     doc.text(
-      `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Customer: ${customer || 'All'}`,
+      `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Supplier: ${supplier || 'All'}`,
       14, 26
     );
     doc.text(
@@ -102,14 +113,14 @@ export default function EWTModule() {
       headStyles: { fillColor: [24, 24, 27], fontSize: 7, textColor: 255 },
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
-      head: [['Invoice No.', 'Customer', 'Gross Amount (PHP)', 'Taxable Amount (PHP)', 'EWT Amount (PHP)', 'Date']],
+      head: [['Doc No.', 'Supplier', 'Gross Amount (PHP)', 'Taxable Amount (PHP)', 'EWT Amount (PHP)', 'Transaction Date']],
       body: displayRecords.map((r) => [
-        r.id,
-        r.customer,
+        r.invoiceNo,
+        r.customerName,
         r.grossAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
         r.taxableAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
-        r.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
-        r.date,
+        r.displayAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
+        formatDate(r.invoiceDate),
       ]),
       margin: { left: 14, right: 14 },
     });
@@ -147,8 +158,11 @@ export default function EWTModule() {
   );
 
   if (error) return (
-    <div className="p-8 m-8 border border-red-500/20 bg-red-500/5 rounded-lg text-center">
-      <p className="text-red-500 font-medium text-sm">Error: {error}</p>
+    <div className="p-8 text-center m-8 border border-red-500/20 bg-red-500/5 rounded-lg">
+      <p className="text-red-500 font-medium">Error: {error}</p>
+      <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
+        Retry Connection
+      </Button>
     </div>
   );
 
@@ -159,7 +173,8 @@ export default function EWTModule() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Expanded Withholding Tax (EWT)</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Comprehensive summary of tax deductions from customer invoices and revenue distribution</p>
+          Comprehensive analysis of tax credits, supplier distribution, and monthly trends
+        </p>
       </div>
 
       {/* Filter bar */}
@@ -183,15 +198,15 @@ export default function EWTModule() {
           />
         </div>
         <Select
-          value={customer || '__all__'}
-          onValueChange={(val) => { setCustomer(val === '__all__' ? '' : val); setPage(1); }}
+          value={supplier || '__all__'}
+          onValueChange={(val) => { setSupplier(val === '__all__' ? '' : val); setPage(1); }}
         >
-          <SelectTrigger className="h-9 w-[220px] text-xs">
-            <SelectValue placeholder="All Customers" />
+          <SelectTrigger className="h-9 w-[240px] text-xs">
+            <SelectValue placeholder="All Suppliers" />
           </SelectTrigger>
           <SelectContent className="max-h-60">
-            <SelectItem value="__all__" className="text-xs text-muted-foreground">All Customers</SelectItem>
-            {customerOptions.map((name) => (
+            <SelectItem value="__all__" className="text-xs text-muted-foreground">All Suppliers</SelectItem>
+            {supplierOptions.map((name) => (
               <SelectItem key={name} value={name} className="text-xs">{name}</SelectItem>
             ))}
           </SelectContent>
@@ -202,7 +217,6 @@ export default function EWTModule() {
             <X className="h-3.5 w-3.5" /> Clear
           </Button>
         )}
-
         <Button
           variant="outline"
           size="sm"
@@ -222,59 +236,38 @@ export default function EWTModule() {
         </p>
       )}
 
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="shadow-none">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Total Invoices</CardTitle>
-            <FileText className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">{displayMetrics.totalRecords}</div>
-            <p className="text-[10px] text-muted-foreground mt-1">Total records loaded</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-none">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Total EWT Amount</CardTitle>
-            <Receipt className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">
-              ₱{displayMetrics.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Across {displayMetrics.totalRecords} invoices
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-none">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Average EWT</CardTitle>
-            <TrendingUp className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold">
-              ₱{(displayMetrics.totalRecords > 0
-                ? Math.round((displayMetrics.totalAmount / displayMetrics.totalRecords) * 100) / 100
-                : 0
-              ).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Per invoice average</p>
-          </CardContent>
-        </Card>
+      {/* Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <MetricCard
+          title="Report Period"
+          value={dateFrom || dateTo ? `${dateFrom || '—'} → ${dateTo || '—'}` : 'All Dates'}
+          icon={<LayoutDashboard className="h-4 w-4 text-primary" />}
+        />
+        <MetricCard
+          title="Total Transactions"
+          value={displayMetrics.totalTransactions}
+          sub={`${displayMetrics.totalTransactions} records loaded`}
+          icon={<BarChart2 className="h-4 w-4 text-primary" />}
+        />
+        <MetricCard
+          title="Total EWT Amount"
+          value={`₱${displayMetrics.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+          sub={`Across ${displayMetrics.totalTransactions} transactions`}
+          icon={<TrendingUp className="h-4 w-4 text-primary" />}
+        />
       </div>
 
-      {/* Charts */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <EWTBarChart data={displayAggregated} />
-        <EWTPieChart data={displayAggregated} pieTotal={pieTotal} />
+      {/* Charts Row 1 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <EWTPieChart data={displayPieData} totalAmount={displayMetrics.totalAmount} />
+        <EWTTrendChart data={displayTrendData} />
       </div>
+
+      {/* Charts Row 2 */}
+      <EWTBarChart data={displayBarData} />
 
       {/* Table */}
-      <EWTRecordsTable records={displayRecords} page={page} setPage={setPage} />
+      <TransactionTable records={displayRecords} page={page} setPage={setPage} />
 
     </div>
   );
