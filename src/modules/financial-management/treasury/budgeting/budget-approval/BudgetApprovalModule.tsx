@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Check, X, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
+import { Check, X, RefreshCw, CheckCircle2, XCircle, FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     Card,
@@ -38,23 +38,28 @@ function BudgetApprovalContent() {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 md:p-6">
             {/* Header Section */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h1 className="text-2xl font-black tracking-tighter uppercase">
-                        Budget Approval
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1 font-medium">
-                        Review, approve, or reject pending department budgets
-                    </p>
+                <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-primary/10 rounded-2xl">
+                        <FileCheck className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-black tracking-tighter uppercase leading-none">
+                            Budget Approval
+                        </h1>
+                        <p className="text-sm text-muted-foreground mt-1 font-medium">
+                            Review, approve, or reject pending department budgets
+                        </p>
+                    </div>
                 </div>
                 <div className="flex items-center gap-2">
                     <Button
                         size="sm"
                         variant="outline"
                         onClick={clearFilters}
-                        className="h-9 px-3 text-xs gap-1.5 active:scale-95 transition-transform"
+                        title="Reset Filters"
+                        className="h-9 w-9 p-0 rounded-xl border-border/50 active:scale-95 transition-transform"
                     >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        Reset Filters
+                        <RefreshCw className="h-4 w-4 text-muted-foreground" />
                     </Button>
                 </div>
             </div>

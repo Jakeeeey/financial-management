@@ -35,7 +35,6 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 }
 
 function pickString(obj: Record<string, unknown> | null | undefined, keys: string[]): string {
-    if (!obj) return "";
     for (const k of keys) {
         const v = obj ? obj[k] : undefined;
         if (typeof v === "string" && v.trim()) return v.trim();

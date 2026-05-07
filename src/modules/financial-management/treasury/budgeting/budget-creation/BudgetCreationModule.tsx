@@ -3,7 +3,7 @@
 "use client";
 
 import React from "react";
-import { Plus, Send, RefreshCw, History } from "lucide-react";
+import { Plus, Send, RefreshCw, History, FileChartColumn, PlusCircle, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import {
@@ -48,20 +48,45 @@ function CreateBudgetContent() {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 md:p-6">
             {/* Header Section */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h1 className="text-2xl font-black tracking-tighter uppercase">
-                        Budget Creation
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1 font-medium">
-                        Setup and manage department budgets for approval
-                    </p>
+                <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-primary/10 rounded-2xl">
+                        <PlusCircle className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-black tracking-tighter uppercase leading-none">
+                            Budget Creation
+                        </h1>
+                        <p className="text-sm text-muted-foreground mt-1 font-medium">
+                            Setup and manage department budgets for approval
+                        </p>
+                    </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Link href="/fm/treasury/budgeting/budget-dashboard">
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-9 px-3 text-xs gap-1.5 border-primary/20 hover:bg-primary/5 hover:text-primary active:scale-95 transition-transform rounded-xl"
+                        >
+                            <LayoutDashboard className="h-3.5 w-3.5" />
+                            Dashboard
+                        </Button>
+                    </Link>
+                    <Link href="/fm/treasury/budgeting/budget-reports">
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-9 px-3 text-xs gap-1.5 border-primary/20 hover:bg-primary/5 hover:text-primary active:scale-95 transition-transform rounded-xl"
+                        >
+                            <FileChartColumn className="h-3.5 w-3.5" />
+                            Reports
+                        </Button>
+                    </Link>
                     <Link href="/fm/treasury/budgeting/budget-audit-trail">
                         <Button
                             size="sm"
                             variant="outline"
-                            className="h-9 px-3 text-xs gap-1.5 border-primary/20 hover:bg-primary/5 hover:text-primary active:scale-95 transition-transform"
+                            className="h-9 px-3 text-xs gap-1.5 border-primary/20 hover:bg-primary/5 hover:text-primary active:scale-95 transition-transform rounded-xl"
                         >
                             <History className="h-3.5 w-3.5" />
                             Audit Trail
@@ -69,20 +94,20 @@ function CreateBudgetContent() {
                     </Link>
                     <Button
                         size="sm"
-                        variant="outline"
-                        onClick={clearFilters}
-                        className="h-9 px-3 text-xs gap-1.5 active:scale-95 transition-transform"
-                    >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        Reset
-                    </Button>
-                    <Button
-                        size="sm"
                         onClick={openModal}
                         className="h-9 px-4 text-xs gap-2 font-bold rounded-xl shadow-sm active:scale-95 transition-transform"
                     >
                         <Plus className="h-4 w-4" />
                         Create Budget
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={clearFilters}
+                        title="Reset Filters"
+                        className="h-9 w-9 p-0 rounded-xl border-border/50 active:scale-95 transition-transform"
+                    >
+                        <RefreshCw className="h-4 w-4 text-muted-foreground" />
                     </Button>
                 </div>
             </div>
