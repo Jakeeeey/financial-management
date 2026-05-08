@@ -2,21 +2,27 @@ import React, { useMemo } from "react";
 import {
     Lock, Loader2, Wallet, Receipt, Calculator, User,
     Calendar, Briefcase, MapPin, MessageSquare, ShieldAlert, CheckCircle2,
-    Banknote, Percent, Undo2, FileSignature
+    Banknote, Percent, Undo2, FileSignature, Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 
-// 🚀 NEW: Strictly defined Types to replace "any"
 export interface CashBucket {
-    amount?: number;
-    paymentMethod?: string;
-    balanceTypeId?: number;
+    detailId?: number;
+    tempId?: string;
+    paymentMethodId?: number;
+    coaId?: number;
+    bankId?: number | null;
+    customerCode?: string;
+    invoiceId?: number;
     referenceNo?: string;
-    bankName?: string;
-    checkNo?: string;
-    checkDate?: string;
+    amount?: number;
+    chequeDate?: string | null;
+    quantity?: number;
+    findingId?: number;
+    balanceTypeId?: number;
+    resolvedType?: string;
 }
 
 export interface PouchAllocation {
@@ -46,7 +52,7 @@ interface ReviewSheetProps {
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
     isLoading: boolean;
-    pouch: TreasuryPouch | null; // 🚀 Replaced unknown with our strict type
+    pouch: TreasuryPouch | null;
     isPosting: boolean;
     onPost: (id: number, docNo: string, shortageAmount: number) => void;
 }
@@ -54,24 +60,68 @@ interface ReviewSheetProps {
 export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting, onPost }: ReviewSheetProps) {
 
     const reviewMath = useMemo(() => {
-        if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, groupedAllocations: {} as Record<string, PouchAllocation[]>, totalCash: 0, totalChecks: 0 };
+        if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, groupedAllocations: {} as Record<string, PouchAllocation[]>, totalCash: 0, totalChecks: 0, nonCashBuckets: [] as CashBucket[], cashDenominations: [] as CashBucket[] };
 
         let physical = 0;
         let totalCash = 0;
         let totalChecks = 0;
+        const nonCashBuckets: CashBucket[] = [];
+        const cashDenominations: CashBucket[] = [];
 
         pouch.cashBuckets?.forEach((b) => {
             const amt = Math.abs(b.amount || 0);
-            const method = (b.paymentMethod || "CASH").toUpperCase();
+            const tempId = String(b.tempId || "").toLowerCase();
+            const refNo = String(b.referenceNo || "").toLowerCase();
 
-            if (b.balanceTypeId === 1) {
+            // 🚀 COMPLETELY REMOVED THE ROGUE STRING. STRICT ID MATCHING ONLY.
+            let typeLabel = "ADJUSTMENT";
+
+            // 1. CASH (Method ID 1 or COA 1)
+            const isCash = b.coaId === 1 || b.paymentMethodId === 1 || tempId.startsWith("cash") || refNo.includes(" x ") || refNo === "cash_summary" || refNo === "physical cash";
+
+            if (isCash) {
+                typeLabel = "CASH";
+            }
+            // 2. CHECK (Method ID 2)
+            else if (tempId.startsWith("chk") || b.paymentMethodId === 2) {
+                typeLabel = "CHECK";
+            }
+            // 3. EWT (Method ID 10)
+            else if (tempId.startsWith("ewt") || b.paymentMethodId === 10) {
+                typeLabel = "EWT";
+            }
+            // 4. OTHER METHODS
+            else if (b.paymentMethodId != null) {
+                typeLabel = `METHOD_${b.paymentMethodId}`;
+            }
+
+            const isCredit = b.balanceTypeId === 1;
+
+            // APPLY TO GRAND PHYSICAL TOTAL
+            if (isCredit) {
                 physical -= amt;
             } else {
                 physical += amt;
-                if (method === "CHECK" || method === "CHEQUE") totalChecks += amt;
-                else if (method === "CASH") totalCash += amt;
+            }
+
+            // MERGE OR SEPARATE BASED ON TYPE
+            if (typeLabel === "CASH") {
+                if (isCredit) totalCash -= amt;
+                else totalCash += amt;
+
+                // Push to hover tooltip breakdown (skip the summary row)
+                if (refNo !== "cash_summary" && amt > 0) {
+                    cashDenominations.push(b);
+                }
+            } else {
+                // Non-cash items stay separated
+                if (typeLabel === "CHECK" && !isCredit) totalChecks += amt;
+                nonCashBuckets.push({ ...b, resolvedType: typeLabel });
             }
         });
+
+        // Sort denominations highest to lowest
+        cashDenominations.sort((a, b) => (b.amount || 0) - (a.amount || 0));
 
         let totalApplied = 0;
         let expectedPhysicalCash = 0;
@@ -81,12 +131,12 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
             const amt = Math.abs(a.amountApplied || 0);
             totalApplied += amt;
 
-            const typeStr = (a.allocationType || "PAYMENT").toUpperCase();
+            const typeStr = String(a.allocationType || "PAYMENT").toUpperCase();
             if (!typeStr.includes("EWT") && !typeStr.includes("TAX") && !typeStr.includes("MEMO") && !typeStr.includes("CM") && !typeStr.includes("DM") && !typeStr.includes("RETURN") && !typeStr.includes("RTN")) {
                 expectedPhysicalCash += amt;
             }
 
-            const customer = a.customerName || "Unknown Customer";
+            const customer = a.customerName || "No Assigned Customer";
             if (!groupedAllocations[customer]) groupedAllocations[customer] = [];
             groupedAllocations[customer].push(a);
         });
@@ -94,7 +144,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
         const variance = expectedPhysicalCash - physical;
 
         return {
-            physical, totalCash, totalChecks,
+            physical, totalCash, totalChecks, nonCashBuckets, cashDenominations,
             applied: totalApplied,
             variance: Math.abs(variance),
             isShortage: variance > 0.01,
@@ -198,29 +248,86 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                             <Wallet size={16} /> 1. Declared Physical Assets
                                         </h4>
                                         <div className="text-[9px] font-bold text-muted-foreground uppercase flex gap-3 text-right">
-                                            <span>Cash: <span className="text-foreground">₱{reviewMath.totalCash.toLocaleString(undefined, {minimumFractionDigits:2})}</span></span>
+                                            <span>Cash: <span className="text-foreground">₱{Math.abs(reviewMath.totalCash).toLocaleString(undefined, {minimumFractionDigits:2})}</span></span>
                                             <span>Checks: <span className="text-foreground">₱{reviewMath.totalChecks.toLocaleString(undefined, {minimumFractionDigits:2})}</span></span>
                                         </div>
                                     </div>
 
                                     <div className="space-y-2.5">
                                         {pouch.cashBuckets?.length === 0 && <p className="text-xs text-muted-foreground italic bg-card p-4 rounded-xl border border-dashed text-center font-bold">No assets declared in this pouch.</p>}
-                                        {pouch.cashBuckets?.map((b, i) => {
+
+                                        {/* MERGED CASH ROW */}
+                                        {reviewMath.totalCash !== 0 && (
+                                            <div className={`relative group cursor-help flex justify-between items-center p-3.5 rounded-xl border bg-card shadow-sm transition-all hover:shadow-md hover:border-emerald-300 ${reviewMath.totalCash < 0 ? 'border-red-200' : 'border-border'}`}>
+
+                                                {/* THE HOVER TOOLTIP */}
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 hidden group-hover:block w-56 bg-popover border border-border shadow-2xl rounded-xl p-4 z-50 animate-in fade-in zoom-in-95">
+                                                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 border-8 border-transparent border-t-popover drop-shadow-sm"></div>
+                                                    <h5 className="text-[9px] font-black uppercase text-muted-foreground tracking-widest border-b border-border pb-1.5 mb-2.5">Denomination Breakdown</h5>
+                                                    <div className="space-y-1.5 max-h-[200px] overflow-y-auto scrollbar-thin">
+                                                        {reviewMath.cashDenominations.length === 0 ? (
+                                                            <p className="text-[10px] text-muted-foreground italic text-center">No breakdown saved.</p>
+                                                        ) : reviewMath.cashDenominations.map((denom, idx) => {
+                                                            const parts = denom.referenceNo?.split('x') || [];
+                                                            const faceValue = parts[0]?.trim() || "Cash";
+                                                            const qty = denom.quantity || parts[1]?.trim() || "?";
+                                                            const isCred = denom.balanceTypeId === 1;
+
+                                                            return (
+                                                                <div key={idx} className="flex justify-between items-center text-xs">
+                                                                    <div className="flex gap-2 items-baseline">
+                                                                        <span className={`font-bold ${isCred ? 'text-red-500' : 'text-foreground'}`}>{faceValue}</span>
+                                                                        <span className="text-[9px] font-black text-muted-foreground/60">x{qty}</span>
+                                                                    </div>
+                                                                    <span className={`font-mono font-bold ${isCred ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                                        {isCred ? "-" : ""}₱{Math.abs(denom.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <div className="flex justify-between items-center mt-2.5 pt-2 border-t border-border">
+                                                        <span className="text-[9px] font-black uppercase text-muted-foreground">Net Cash</span>
+                                                        <span className={`font-mono font-black text-sm ${reviewMath.totalCash < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                            {reviewMath.totalCash < 0 ? "-" : ""}₱{Math.abs(reviewMath.totalCash).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                                                        Physical Cash (Merged) <Info size={12} className="text-muted-foreground opacity-50 ml-1" />
+                                                    </span>
+                                                    <span className="text-[9px] font-bold text-muted-foreground uppercase mt-0.5 flex flex-wrap gap-2">
+                                                        <span>Type: CASH</span>
+                                                        <span>• Hover for Breakdown</span>
+                                                    </span>
+                                                </div>
+                                                <span className={`font-mono font-black text-base ${reviewMath.totalCash < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                    {reviewMath.totalCash < 0 ? "-" : ""}₱{Math.abs(reviewMath.totalCash).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        {/* NON-CASH BUCKETS */}
+                                        {reviewMath.nonCashBuckets.map((b, i) => {
                                             const isCredit = b.balanceTypeId === 1;
-                                            const isCheck = (b.paymentMethod || "").toUpperCase() === "CHECK";
+                                            const typeLabel = b.resolvedType || "ADJUSTMENT";
+                                            const isCheck = typeLabel === "CHECK";
+
                                             return (
                                                 <div key={i} className={`flex justify-between items-center p-3.5 rounded-xl border bg-card shadow-sm transition-all hover:shadow-md ${isCredit ? 'border-red-200' : 'border-border'}`}>
                                                     <div className="flex flex-col">
                                                         <span className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                                                            {b.referenceNo || "Physical Cash"}
+                                                            {b.referenceNo || typeLabel}
                                                         </span>
                                                         <span className="text-[9px] font-bold text-muted-foreground uppercase mt-0.5 flex flex-wrap gap-2">
-                                                            <span>Type: {b.paymentMethod || "CASH"}</span>
+                                                            <span className={isCredit ? "text-red-600 font-black" : ""}>Type: {typeLabel}</span>
                                                             {isCheck && (
                                                                 <>
-                                                                    {b.bankName && <span>• Bank: <span className="text-foreground">{b.bankName}</span></span>}
-                                                                    {b.checkNo && <span>• Chk#: <span className="text-foreground">{b.checkNo}</span></span>}
-                                                                    {b.checkDate && <span>• Date: <span className="text-foreground">{b.checkDate}</span></span>}
+                                                                    {b.bankId != null && <span>• Bank ID: <span className="text-foreground">{b.bankId}</span></span>}
+                                                                    {b.referenceNo && <span>• Ref/Chk#: <span className="text-foreground">{b.referenceNo}</span></span>}
+                                                                    {b.chequeDate && <span>• Date: <span className="text-foreground">{b.chequeDate.split('T')[0]}</span></span>}
                                                                 </>
                                                             )}
                                                         </span>

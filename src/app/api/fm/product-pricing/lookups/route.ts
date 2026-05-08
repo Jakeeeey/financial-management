@@ -249,6 +249,7 @@ export async function GET(req: NextRequest) {
         supplierParams.set("fields", "id,supplier_name,supplier_shortcut,isActive");
         supplierParams.set("sort", "supplier_name");
         supplierParams.set("filter[isActive][_eq]", "1");
+        supplierParams.set("filter[supplier_type][_eq]", "TRADE");
 
         const [catJson, brandJson, unitJson, supplierJson] = await Promise.all([
             fetchDirectus<{ data: DirectusCategory[] }>(`${DIRECTUS_URL}/items/${CATEGORIES}?${catParams.toString()}`),
@@ -276,7 +277,7 @@ export async function GET(req: NextRequest) {
                 `${DIRECTUS_URL}/items/${PRODUCT_PER_SUPPLIER}?${ppsParams.toString()}`,
             );
 
-            const productIds = uniqById(
+            const directIds = uniqById(
                 (Array.isArray(ppsJson.data) ? ppsJson.data : [])
                     .map((row) => ({ product_id: row.product_id }))
                     .filter((row) => row.product_id != null),
@@ -285,13 +286,21 @@ export async function GET(req: NextRequest) {
                 .map((row) => Number(row.product_id))
                 .filter((n) => Number.isFinite(n));
 
-            if (productIds.length === 0) {
+            if (directIds.length === 0) {
                 return NextResponse.json({
                     data: { categories: [], brands: [], units: [], suppliers },
                 });
             }
 
-            universeProductIds = productIds;
+            // Also fetch child products (variants) whose parent_id is in the direct supplier product IDs
+            const childrenJson = await fetchDirectus<{ data: { product_id: number }[] }>(
+                `${DIRECTUS_URL}/items/${PRODUCTS}?limit=-1&fields=product_id&filter[parent_id][_in]=${directIds.join(",")}`
+            );
+            const childIds = (childrenJson.data ?? [])
+                .map((r) => Number(r.product_id))
+                .filter((n) => Number.isFinite(n) && n > 0);
+
+            universeProductIds = Array.from(new Set([...directIds, ...childIds]));
         }
 
         const needsCascade =

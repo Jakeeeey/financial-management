@@ -53,7 +53,9 @@ export function SearchableSelect({
                     className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
                     disabled={disabled}
                 >
+
                     {selectedLabel || placeholder}
+
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
@@ -68,13 +70,6 @@ export function SearchableSelect({
                                     key={opt.value}
                                     value={opt.label} // Use label for searching
                                     onSelect={() => {
-                                        // We need to map back to the ID/value since CommandItem uses text content or value prop
-                                        // Here we used label as value for search, so we find the option by label and call onValueChange with its value
-                                        // However, simpler is to use the option.value if unique, but Command compares normalized search.
-                                        // Let's stick to using the opt.value if we want precise selection.
-                                        // Re-eval: onSelect returns the value prop (opt.label).
-                                        // Actually, let's use the option value but ensure standard shadcn pattern.
-
                                         onValueChange(opt.value);
                                         setOpen(false);
                                     }}
