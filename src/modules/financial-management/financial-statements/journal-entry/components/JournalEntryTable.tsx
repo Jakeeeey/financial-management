@@ -98,13 +98,13 @@ export default function JournalEntryTable({
                 </span>
             </div>
         </div>
-        <div className="flex flex-col items-end gap-1.5 p-3 bg-slate-950 rounded-lg border border-slate-800 shadow-inner">
+        <div className="flex flex-col items-end gap-1.5 p-3 bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 shadow-inner transition-colors">
             <div className="flex items-center gap-2">
-                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs font-medium tracking-wide uppercase py-0 px-2 h-4">Live Analytics</Badge>
+                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-xs font-medium tracking-wide uppercase py-0 px-2 h-4">Live Analytics</Badge>
                 <div className="h-1 w-1 rounded-full bg-emerald-500 animate-pulse" />
             </div>
-            <div className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-                Basis: <span className="text-slate-100 italic">Accrual</span> | View: <span className="text-indigo-400">Analytics</span>
+            <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                Basis: <span className="text-slate-900 dark:text-slate-100 italic">Accrual</span> | View: <span className="text-indigo-600 dark:text-indigo-400">Analytics</span>
             </div>
         </div>
       </div>
@@ -205,20 +205,20 @@ export default function JournalEntryTable({
               // Determine status colors based on hardcoded rules
               const statusStr = (group.status || "").trim();
               const statusLower = statusStr.toLowerCase();
-              let statusClasses = "border-slate-200 text-slate-500 bg-white"; // default
+              let statusClasses = "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50"; // default
 
               if (statusLower === "approved") {
-                statusClasses = "border-blue-200 text-blue-700 bg-blue-50";
+                statusClasses = "border-blue-200 dark:border-blue-900/50 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20";
               } else if (statusLower === "posted") {
-                statusClasses = "border-emerald-200 text-emerald-700 bg-emerald-50";
+                statusClasses = "border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20";
               } else if (statusLower === "for review") {
-                statusClasses = "border-amber-200 text-amber-700 bg-amber-50";
+                statusClasses = "border-amber-200 dark:border-amber-900/50 text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20";
               } else if (statusLower === "draft") {
-                statusClasses = "border-slate-200 text-slate-700 bg-slate-50";
+                statusClasses = "border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50";
               } else if (statusLower === "dispatched") {
-                statusClasses = "border-indigo-200 text-indigo-700 bg-indigo-50";
+                statusClasses = "border-indigo-200 dark:border-indigo-900/50 text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20";
               } else if (statusLower === "voided" || statusLower === "cancelled") {
-                statusClasses = "border-rose-200 text-rose-700 bg-rose-50";
+                statusClasses = "border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20";
               }
 
               const isKnown = ['draft', 'approved', 'posted', 'for review', 'dispatched', 'voided', 'cancelled'].includes(statusLower);
@@ -411,9 +411,9 @@ export default function JournalEntryTable({
                   </TableRow>
 
                   {/* ROW 3: RECORD BOUNDARY SEPARATOR (REVERTED) */}
-                  <TableRow style={{ backgroundColor: '#0f172a' }}>
+                  <TableRow className="bg-muted/30 dark:bg-slate-900/50 border-none pointer-events-none">
                     <TableCell colSpan={13} className="p-0 border-none">
-                      <div style={{ width: '100%', height: '2px', backgroundColor: '#0f172a' }} />
+                      <div className="w-full h-[1px] bg-border/50" />
                     </TableCell>
                   </TableRow>
                 </React.Fragment>

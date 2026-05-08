@@ -10,7 +10,7 @@ export async function getJournalEntries(
   token?: string,
   accountNumber?: string
 ): Promise<JournalEntry[]> {
-  const API_BASE = "http://100.81.225.79:8086/api/view-general-ledger-master/filter";
+  const API_BASE = `${process.env.SPRING_API_BASE_URL}/api/view-general-ledger-master/filter`;
   let url = `${API_BASE}?startDate=${startDate}&endDate=${endDate}`;
 
   if (accountNumber) {
@@ -19,33 +19,33 @@ export async function getJournalEntries(
 
   try {
     const headers: Record<string, string> = {
-        'cache-no-store': 'true'
+      'cache-no-store': 'true'
     };
 
     if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     const response = await fetch(url, {
-        method: "GET",
-        headers,
-        cache: 'no-store'
+      method: "GET",
+      headers,
+      cache: 'no-store'
     });
-    
+
     if (!response.ok) {
-        throw new Error(`Failed to fetch journal entries: ${response.statusText}`);
+      throw new Error(`Failed to fetch journal entries: ${response.statusText}`);
     }
 
     const data = await response.json();
-    
+
     // Validate the response data using Zod
     const validated = JournalEntryListSchema.safeParse(data);
-    
+
     if (!validated.success) {
-        console.error("Data validation failed:", validated.error);
-        // Fallback to returning raw data if validation fails in a non-breaking way, 
-        // but log the schema mismatch for maintenance.
-        return data as JournalEntry[];
+      console.error("Data validation failed:", validated.error);
+      // Fallback to returning raw data if validation fails in a non-breaking way, 
+      // but log the schema mismatch for maintenance.
+      return data as JournalEntry[];
     }
 
     return validated.data;
@@ -59,26 +59,26 @@ export async function getJournalEntryDrillDown(
   jeNo: string,
   token?: string
 ): Promise<any> {
-  const API_BASE = "http://100.81.225.79:8086/api/journal-entry/drill-down";
+  const API_BASE = `${process.env.SPRING_API_BASE_URL}/api/journal-entry/drill-down`;
   const url = `${API_BASE}?jeNo=${jeNo}`;
 
   try {
     const headers: Record<string, string> = {
-        'cache-no-store': 'true'
+      'cache-no-store': 'true'
     };
 
     if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     const response = await fetch(url, {
-        method: "GET",
-        headers,
-        cache: 'no-store'
+      method: "GET",
+      headers,
+      cache: 'no-store'
     });
-    
+
     if (!response.ok) {
-        throw new Error(`Failed to fetch drill down data: ${response.statusText}`);
+      throw new Error(`Failed to fetch drill down data: ${response.statusText}`);
     }
 
     const data = await response.json();

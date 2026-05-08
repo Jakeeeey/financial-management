@@ -22,7 +22,7 @@ export async function getTrialBalance(
   params: FetchTrialBalanceParams,
   token?: string
 ): Promise<TrialBalanceItem[]> {
-  const API_BASE = "http://100.81.225.79:8086/api/trial-balance";
+  const API_BASE = `${process.env.SPRING_API_BASE_URL}/api/trial-balance`;
 
   // Build query string
   const query = new URLSearchParams();
@@ -110,7 +110,7 @@ export async function getTrialBalanceDrillDown(
   params: FetchDrillDownParams,
   token?: string
 ) {
-  const API_BASE = "http://100.81.225.79:8086/api/trial-balance/drill-down";
+  const API_BASE = `${process.env.SPRING_API_BASE_URL}/api/trial-balance/drill-down`;
 
   const query = new URLSearchParams();
   query.set("glCode", params.glCode);

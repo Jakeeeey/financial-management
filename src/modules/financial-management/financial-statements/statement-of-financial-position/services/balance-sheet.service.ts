@@ -21,7 +21,7 @@ export async function getBalanceSheet(
   params: FetchBalanceSheetParams,
   token?: string
 ): Promise<BalanceSheetResponse> {
-  const API_BASE = "http://100.81.225.79:8086/api/balance-sheet";
+  const API_BASE = `${process.env.SPRING_API_BASE_URL}/api/balance-sheet`;
 
   // Build query string
   const query = new URLSearchParams();
@@ -96,7 +96,7 @@ export async function getBalanceSheetDrillDown(
   params: FetchDrillDownParams,
   token?: string
 ): Promise<DrillDownEntry[]> {
-  const API_BASE = "http://100.81.225.79:8086/api/balance-sheet/drill-down";
+  const API_BASE = `${process.env.SPRING_API_BASE_URL}/api/balance-sheet/drill-down`;
   const query = new URLSearchParams();
   query.set("glCode", params.glCode);
   query.set("startDate", params.startDate);
@@ -124,7 +124,7 @@ export async function getBalanceSheetDrillDown(
     }
 
     const data = await response.json();
-    
+
     // The API returns an object like { data: [...] } based on standard patterns or just an array.
     // Based on User prompt, it has "data": [...]
     const drillDownData = data.data || data;

@@ -46,7 +46,7 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
             {statusEntries.map(([status, count]) => (
               <div 
                 key={status} 
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border shadow-sm"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border shadow-sm"
               >
                 <span className="text-sm font-medium text-muted-foreground">{status}:</span>
                 <span className="text-sm font-semibold text-foreground">{count}</span>
@@ -60,11 +60,11 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
       </Card>
 
       {/* 2. High-Risk Journal Entries */}
-      <Card className="border border-rose-200/50 shadow-sm bg-rose-50/10 overflow-hidden">
-        <CardHeader className="py-3 px-6 flex flex-row items-center justify-between border-b border-rose-100 bg-rose-50/50">
+      <Card className="border border-rose-200/50 dark:border-rose-900/50 shadow-sm bg-rose-50/10 dark:bg-rose-950/20 overflow-hidden">
+        <CardHeader className="py-3 px-6 flex flex-row items-center justify-between border-b border-rose-100 dark:border-rose-900/50 bg-rose-50/50 dark:bg-rose-950/50">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-rose-600" />
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-rose-900">
+            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-rose-900 dark:text-rose-200">
               High-Risk Journal Entries
             </CardTitle>
             <Badge className="bg-rose-600 text-white border-none text-xs h-4 px-2 font-medium ml-1">
@@ -83,7 +83,7 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
                >
                  <ChevronLeft className="h-3 w-3" />
                </Button>
-               <span className="text-xs font-semibold text-rose-800 px-1">
+               <span className="text-xs font-semibold text-rose-800 dark:text-rose-300 px-1">
                  {riskPage + 1} / {totalRiskPages}
                </span>
                <Button 
@@ -99,11 +99,11 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
           )}
         </CardHeader>
         <CardContent className="p-0">
-          <div className="divide-y divide-rose-100/30">
+          <div className="divide-y divide-rose-100/30 dark:divide-rose-900/30">
             {currentRiskItems.map((entry, idx) => (
               <div 
                 key={entry.jeNo + idx} 
-                className="flex items-center justify-between px-6 py-4 hover:bg-rose-50/30 transition-colors group"
+                className="flex items-center justify-between px-6 py-4 hover:bg-rose-50/30 dark:hover:bg-rose-900/20 transition-colors group"
               >
                 <div className="flex flex-col items-start">
                   <span className="text-sm font-medium text-muted-foreground">
@@ -127,11 +127,11 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
             ))}
             
             {highRisk.length === 0 && (
-              <div className="py-12 flex flex-col items-center justify-center text-muted-foreground bg-emerald-50/5">
-                 <div className="h-10 w-10 rounded-full bg-emerald-50 flex items-center justify-center mb-2">
+              <div className="py-12 flex flex-col items-center justify-center text-muted-foreground bg-emerald-50/5 dark:bg-emerald-950/5">
+                 <div className="h-10 w-10 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center mb-2">
                     <Zap className="h-5 w-5 text-emerald-500" />
                  </div>
-                 <p className="text-sm font-semibold text-emerald-700">Audit Clean</p>
+                 <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Audit Clean</p>
                  <p className="text-sm mt-1 text-muted-foreground">No high-risk indicators detected in current filters.</p>
               </div>
             )}

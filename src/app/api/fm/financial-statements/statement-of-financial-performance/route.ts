@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-const API_BASE_URL = "http://100.81.225.79:8086/api";
+const API_BASE_URL = `${process.env.SPRING_API_BASE_URL}/api`;
 const COOKIE_NAME = "vos_access_token";
 
 export async function GET(request: NextRequest) {
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!searchParams.has("status") || searchParams.get("status") === "") {
-        searchParams.set("status", "Posted");
+      searchParams.set("status", "Posted");
     }
 
     const backendUrl = `${API_BASE_URL}/income-statement?${searchParams.toString()}`;
