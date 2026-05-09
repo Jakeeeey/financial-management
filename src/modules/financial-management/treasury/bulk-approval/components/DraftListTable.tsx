@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, FolderOpen, Search, CheckCircle2, Clock, LockKeyhole } from "lucide-react";
+import { Loader2, FolderOpen, Search, CheckCircle2, Clock, LockKeyhole, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -62,7 +62,7 @@ function TierProgress({ current, max, approversPerLevel }: {
               className={`flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-black transition-all shrink-0
                 ${isDone ? "bg-emerald-500 text-white" :
                   isActive ? "bg-primary text-primary-foreground animate-pulse" :
-                  "bg-muted text-muted-foreground border border-muted-foreground/20"}`}
+                    "bg-muted text-muted-foreground border border-muted-foreground/20"}`}
             >
               {isDone ? <CheckCircle2 className="h-2.5 w-2.5" /> : level}
             </div>
@@ -76,19 +76,35 @@ function TierProgress({ current, max, approversPerLevel }: {
   );
 }
 
-function StatusBadge({ status, current_tier }: { status: string; current_tier: number }) {
+function StatusBadge({ status, current_tier, has_concern }: { status: string; current_tier: number; has_concern?: boolean }) {
   const s = status.toUpperCase();
-  if (s === "SUBMITTED" || s.startsWith("PENDING")) {
-    return (
-      <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200 gap-0.5 text-[10px] px-1.5 py-0">
-        <Clock className="h-2.5 w-2.5" />
-        Lvl {current_tier}
-      </Badge>
-    );
-  }
-  if (s === "APPROVED") return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] px-1.5 py-0">Approved</Badge>;
-  if (s === "REJECTED") return <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0">Rejected</Badge>;
-  return <Badge variant="outline" className="text-[10px] px-1.5 py-0">{status}</Badge>;
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      {s === "SUBMITTED" || s.startsWith("PENDING") ? (
+        <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200 gap-0.5 text-[10px] px-1.5 py-0">
+          <Clock className="h-2.5 w-2.5" />
+          Lvl {current_tier}
+        </Badge>
+      ) : s === "APPROVED" ? (
+        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] px-1.5 py-0 shadow-sm">Approved</Badge>
+      ) : s === "REJECTED" ? (
+        <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0 shadow-sm">Rejected</Badge>
+      ) : s === "WITH CONCERN" || s === "WITH_CONCERN" ? (
+        <Badge className="bg-orange-100 text-orange-800 border-orange-200 gap-1 text-[10px] px-1.5 py-0 shadow-sm animate-pulse">
+          <AlertTriangle className="h-2.5 w-2.5" />
+          With Concern
+        </Badge>
+      ) : (
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0">{status}</Badge>
+      )}
+      {has_concern && (
+        <Badge className="bg-amber-500/15 text-amber-700 border-amber-400/30 text-[9px] px-1 py-0 gap-0.5 font-black">
+          <AlertTriangle className="h-2 w-2" />
+          Concern
+        </Badge>
+      )}
+    </div>
+  );
 }
 
 export default function DraftListTable(props: Props) {
@@ -150,7 +166,7 @@ export default function DraftListTable(props: Props) {
               <TableHead className="text-center text-xs">#</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-tight">Doc No</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-tight">Division</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-tight">Payee</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-tight">Salesman</TableHead>
               <TableHead className="text-right text-xs font-bold uppercase tracking-tight">Amount</TableHead>
               <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Date</TableHead>
               <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Status</TableHead>
@@ -172,7 +188,11 @@ export default function DraftListTable(props: Props) {
               rows.map((row, idx) => (
                 <TableRow
                   key={row.id}
-                  className="hover:bg-muted/30 transition-colors group"
+                  className={`transition-colors group
+                    ${row.has_concern
+                      ? "bg-amber-50/40 hover:bg-amber-50/70 border-l-2 border-l-amber-400"
+                      : "hover:bg-muted/30"
+                    }`}
                 >
                   <TableCell className="text-center text-muted-foreground text-xs font-mono">
                     {(page - 1) * 8 + idx + 1}
@@ -191,14 +211,13 @@ export default function DraftListTable(props: Props) {
                       {row.division_name || "N/A"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="overflow-hidden">
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-bold text-xs truncate block" title={row.payee_name}>
-                        {row.payee_name}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground italic truncate block">
-                        {row.encoder_name}
-                      </span>
+                  <TableCell>
+                    <div className="font-semibold text-foreground">
+                      {row.encoder_name}
+                    </div>
+
+                    <div className="text-xs text-muted-foreground italic">
+                      Payee: {row.payee_name}
                     </div>
                   </TableCell>
                   <TableCell className="text-right font-black tabular-nums text-xs overflow-hidden">
@@ -211,7 +230,7 @@ export default function DraftListTable(props: Props) {
                   </TableCell>
                   <TableCell className="text-center overflow-hidden">
                     <div className="flex justify-center">
-                      <StatusBadge status={row.status} current_tier={row.current_tier} />
+                      <StatusBadge status={row.status} current_tier={row.current_tier} has_concern={row.has_concern} />
                     </div>
                   </TableCell>
                   <TableCell className="overflow-hidden">

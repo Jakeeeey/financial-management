@@ -30,13 +30,13 @@ export function useBulkApproval() {
   const [page, setPage] = React.useState(1);
   const pageSize = 8;
 
-  const startDateStr = React.useMemo(() => 
+  const startDateStr = React.useMemo(() =>
     dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined
-  , [dateRange]);
+    , [dateRange]);
 
-  const endDateStr = React.useMemo(() => 
+  const endDateStr = React.useMemo(() =>
     dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined
-  , [dateRange]);
+    , [dateRange]);
 
   // Vote modal
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -126,6 +126,19 @@ export function useBulkApproval() {
     }
   }
 
+  async function refreshDetail() {
+    if (!selectedDraftId) return;
+    setModalLoading(true);
+    try {
+      const detail = await api.getDraftDetail(selectedDraftId);
+      setDraftDetail(detail);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to refresh draft details");
+    } finally {
+      setModalLoading(false);
+    }
+  }
+
   function closeModal() {
     setModalOpen(false);
     setSelectedDraftId(null);
@@ -158,6 +171,7 @@ export function useBulkApproval() {
     openVoteModal,
     closeModal,
     onVoteComplete,
+    refreshDetail,
     dateRange,
     setDateRange,
   };

@@ -21,88 +21,69 @@ export interface DirectusCOA {
   account_title: string;
 }
 
-export interface DirectusDisbursementDraft {
+/** Match vos_database.expense_draft */
+export interface ExpenseDraft {
   id: number;
-  doc_no: string;
-  payee: number;
-  total_amount: number;
-  remarks: string;
-  status: string;
-  approval_version: number;
+  header_id: number;
+  encoded_by: number;
+  particulars: number;
+  division_id: number;
+  payee_id: number | null;
+  encoded_date: string | null;
   transaction_date: string;
-  division_id: number;
-  transaction_type: number;
-  encoder_id: number;
-  approver_id: number | null;
-  date_created: string;
-}
-
-export interface DirectusDisbursementPayableDraft {
-  id: number;
-  disbursement_id: number;
-  division_id: number;
-  reference_no: string;
-  coa_id: number;
   amount: number;
-  remarks: string;
-  date: string;
-  expense_id?: number | { attachment_url?: string; attatchment_url?: string };
-}
-
-export interface DirectusDisbursementDraftApprover {
-  id: number;
-  approver_id: number;
-  division_id: number;
-  approver_heirarchy: number;
-}
-
-export interface DirectusDisbursementDraftApproval {
-  id: number;
-  draft_id: number;
-  approver_id: number;
-  status: "DRAFT" | "APPROVED" | "REJECTED";
+  payee: string | null;
+  attachment_url: string | null;
+  status: "Drafts" | "Approved" | "Rejected" | "With Concern";
+  drafted_at: string | null;
+  rejected_at: string | null;
+  approved_at: string | null;
   remarks: string | null;
   version: number;
-  created_at: string;
+  feedback: string | null;
+  return_to: string | null;
 }
 
-export interface DirectusDisbursementDraftLog {
-  log_id: number;
-  editor_id: number;
-  edit_reason: string;
-  payload_snapshot: string;
-  created_at: string;
-}
-
-export interface DirectusDisbursementPayableDraftLog {
+/** Match vos_database.disbursement_draft */
+export interface DisbursementDraft {
   id: number;
-  log_id: number;
-  coa_id: number;
-  original_amount: number;
-  new_amount: number;
-  remarks: string;
-  date: string;
-  reference_no: string;
+  doc_no: string;
+  transaction_type: number | null;
+  payee: number | null;
+  remarks: string | null;
+  total_amount: number;
+  paid_amount: number;
+  encoder_id: number;
+  approver_id: number | null;
+  posted_by: number | null;
+  date_updated: string;
+  date_created: string;
+  isPosted: number;
+  transaction_date: string | null;
+  date_approved: string | null;
+  date_posted: string | null;
+  division_id: number | null;
+  department_id: number | null;
+  fund_source_id: number | null;
+  supporting_documents_url: string | null;
+  status: string;
+  version: number;
+  approval_version: number;
 }
 
-export interface DirectusExpenseDraft {
+/** Match vos_database.disbursement_payables_draft */
+export interface DisbursementPayableDraft {
   id: number;
-  attachment_url: string | null;
-  attatchment_url: string | null;
-}
-
-export interface DirectusExpenseDraftLog {
-  log_id: number;
-  expense_id: number;
-  action: string;
-  changed_by: number;
-  changed_at: string;
+  disbursement_id: number | null;
+  expense_id: number | null;
+  division_id: number | null;
+  reference_no: string | null;
+  date: string | null;
+  coa_id: number | null;
   amount: number;
   remarks: string | null;
-  particulars: number;
-  status: string;
-  attachment_url?: string;
-  attatchment_url?: string;
+  version: number;
+  date_created: string | null;
 }
 
 export interface SalesmanExpenseRow {
@@ -114,23 +95,29 @@ export interface SalesmanExpenseRow {
   division_name: string | null;
   draft_count: number;
   rejected_count: number;
+  week_start?: string;
+  week_end?: string;
+  week_label?: string;
 }
 
 export interface ExpenseDraftRow {
   id: number;
+  header_id: number;
   encoded_by: number;
   particulars: number;
-  particulars_name: string; // from chart_of_accounts.account_title
-  transaction_date: string; // YYYY-MM-DD
+  particulars_name: string;
+  transaction_date: string;
   amount: number;
   payee: string | null;
   payee_id: number | null;
   attachment_url: string | null;
-  status: "Drafts" | "Approved" | "Rejected";
+  status: "Drafts" | "Approved" | "Rejected" | "With Concern";
   drafted_at: string | null;
   rejected_at: string | null;
   approved_at: string | null;
   remarks: string | null;
+  version: number;
+  feedback: string | null;
 }
 
 export interface SalesmanUserInfo {
@@ -159,14 +146,16 @@ export interface SalesmanExpenseDetail {
   expenses: ExpenseDraftRow[];
 }
 
-export interface ConfirmExpensesPayload {
-  selected_ids: number[];
-  all_ids: number[];
+export interface ItemDecision {
+  status: "Approved" | "Rejected" | "With Concern";
   remarks: string;
-  salesman_user_id: number;
+}
+
+export interface BatchApprovalPayload {
   salesman_id: number;
-  device_time: string;
-  edited_amounts?: Record<number, number>; // Maps expense_id -> new amount
+  remarks: string;
+  item_decisions: Record<number, ItemDecision>;
+  edited_amounts?: { id: number; amount: number }[];
 }
 
 export interface TreasuryVote {
@@ -184,11 +173,10 @@ export interface DraftLog {
   old_total: number;
   new_total: number;
   created_at: string;
-  payables?: ApprovalLogDetail[]; // For now, we only need the variance
 }
 
 export interface ExpenseLog {
-  id: number;
+  log_id: number;
   expense_id: number;
   action: string;
   editor_name: string;
@@ -197,6 +185,7 @@ export interface ExpenseLog {
   remarks: string | null;
   particulars: string;
   status: string;
+  version: number;
 }
 
 export interface ApprovalLog {

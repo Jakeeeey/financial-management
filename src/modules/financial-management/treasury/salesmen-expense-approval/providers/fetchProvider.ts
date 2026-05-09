@@ -4,7 +4,7 @@
 import type {
   SalesmanExpenseRow,
   SalesmanExpenseDetail,
-  ConfirmExpensesPayload,
+  BatchApprovalPayload,
   ApprovalLog,
   ApprovalLogDetail,
 } from "../type";
@@ -39,8 +39,8 @@ export async function getSalesmanExpenses(salesmanId: number, startDate?: string
   return data as SalesmanExpenseDetail;
 }
 
-export async function confirmExpenses(
-  payload: ConfirmExpensesPayload
+export async function submitBatchApproval(
+  payload: BatchApprovalPayload
 ): Promise<{ ok: boolean; disbursement_id: number | null; doc_no?: string }> {
   const data = await apiFetch(BASE, {
     method: "POST",
@@ -57,5 +57,10 @@ export async function getApprovalLogs(): Promise<ApprovalLog[]> {
 
 export async function getApprovalLogDetails(disbursementId: number): Promise<ApprovalLogDetail[]> {
   const data = (await apiFetch(`${BASE}?resource=log-details&disbursement_id=${disbursementId}`)) as { data: ApprovalLogDetail[] };
+  return data.data;
+}
+
+export async function getAvailableWeeks(): Promise<{ week_start: string; week_label: string }[]> {
+  const data = (await apiFetch(`${BASE}?resource=available-weeks`)) as { data: { week_start: string; week_label: string }[] };
   return data.data;
 }

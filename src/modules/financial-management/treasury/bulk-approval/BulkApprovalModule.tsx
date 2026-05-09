@@ -34,6 +34,7 @@ export default function BulkApprovalModule() {
     openVoteModal,
     closeModal,
     onVoteComplete,
+    refreshDetail,
     dateRange,
     setDateRange,
   } = useBulkApproval();
@@ -75,8 +76,8 @@ export default function BulkApprovalModule() {
             {Object.keys(levelsByDivision).length > 1
               ? `You have active approval roles across ${Object.keys(levelsByDivision).length} divisions.`
               : myLevel > 0
-              ? `You are a Level ${myLevel} approver — cast your vote on pending drafts.`
-              : "Multi-tier consensus approval for disbursement drafts."}
+                ? `You are a Level ${myLevel} approver — cast your vote on pending drafts.`
+                : "Multi-tier consensus approval for disbursement drafts."}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -143,6 +144,7 @@ export default function BulkApprovalModule() {
         detail={draftDetail}
         onClose={closeModal}
         onVoteComplete={onVoteComplete}
+        onRefreshDetail={refreshDetail}
       />
     </div>
   );

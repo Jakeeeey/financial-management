@@ -72,17 +72,18 @@ export default function SalesmanExpenseTable(props: Props) {
         <Table className="w-full table-fixed">
           <colgroup>
             <col className="w-9" />
-            <col className="w-[35%]" />
+            <col className="w-[30%]" />
+            <col className="w-[15%]" />
             <col className="w-[20%]" />
-            <col className="w-[12%]" />
-            <col className="w-[12%]" />
-            <col className="w-[12%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
           </colgroup>
           <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm shadow-sm">
             <TableRow className="bg-muted/50">
               <TableHead className="text-center text-xs">#</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-tight">Name</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-tight">Division</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-tight">Week</TableHead>
               <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Draft</TableHead>
               <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Rejected</TableHead>
               <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Action</TableHead>
@@ -91,7 +92,7 @@ export default function SalesmanExpenseTable(props: Props) {
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-[340px] text-center">
+                <TableCell colSpan={7} className="h-[340px] text-center">
                   <div className="flex flex-col items-center justify-center gap-3 text-muted-foreground">
                     <FolderOpen className="h-10 w-10 opacity-30" />
                     <p className="text-sm font-medium">No salesmen with pending expenses.</p>
@@ -101,7 +102,7 @@ export default function SalesmanExpenseTable(props: Props) {
             ) : (
               rows.map((row, idx) => (
                 <TableRow
-                  key={row.id}
+                  key={`${row.employee_id}_${row.division_id}_${row.week_start}`}
                   className="hover:bg-muted/30 transition-colors group"
                 >
                   <TableCell className="text-center text-muted-foreground text-xs font-mono">
@@ -110,6 +111,9 @@ export default function SalesmanExpenseTable(props: Props) {
                   <TableCell className="overflow-hidden">
                     <span className="font-bold text-xs truncate block" title={row.salesman_name}>
                       {row.salesman_name}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-mono block">
+                      {row.salesman_code}
                     </span>
                   </TableCell>
                   <TableCell className="overflow-hidden">
@@ -124,6 +128,15 @@ export default function SalesmanExpenseTable(props: Props) {
                     ) : (
                       <span className="text-muted-foreground text-[10px]">—</span>
                     )}
+                  </TableCell>
+                  <TableCell className="overflow-hidden">
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] font-black bg-primary/5 text-primary border-primary/20 px-2 py-0.5 max-w-full block truncate"
+                      title={row.week_label}
+                    >
+                      {row.week_label}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-center overflow-hidden">
                     {row.draft_count > 0 ? (

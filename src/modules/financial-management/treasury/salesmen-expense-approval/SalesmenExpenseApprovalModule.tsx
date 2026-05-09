@@ -12,7 +12,7 @@ import { useSalesmanExpenseApproval } from "./hooks/useSalesmanExpenseApproval";
 import SalesmanExpenseTable from "./components/SalesmanExpenseTable";
 import ExpenseApprovalModal from "./components/ExpenseApprovalModal";
 import { ApprovalLogTable } from "./components/ApprovalLogTable";
-import { DateRangePicker } from "../components/DateRangePicker";
+import { WeekPicker } from "./components/WeekPicker";
 
 export default function SalesmenExpenseApprovalModule() {
   const {
@@ -33,8 +33,9 @@ export default function SalesmenExpenseApprovalModule() {
     closeModal,
     onConfirmed,
     unauthorized,
-    dateRange,
-    setDateRange,
+    selectedWeek,
+    setSelectedWeek,
+    availableWeeks,
   } = useSalesmanExpenseApproval();
 
   if (unauthorized) {
@@ -74,7 +75,11 @@ export default function SalesmenExpenseApprovalModule() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <DateRangePicker date={dateRange} setDate={setDateRange} />
+          <WeekPicker 
+            selectedWeek={selectedWeek} 
+            onWeekSelect={setSelectedWeek} 
+            availableWeeks={availableWeeks}
+          />
           <Button
             className="rounded-full shadow-lg font-bold tracking-wide shadow-primary/20 active:scale-95 transition-all"
             onClick={() => window.location.reload()}

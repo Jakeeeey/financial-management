@@ -3,11 +3,13 @@
 
 import * as React from "react";
 import {
-  Loader2, AlertCircle, FileText, CheckCircle2, XCircle, Clock, 
-  ShieldCheck, ChevronRight, X, PanelRightOpen, PanelRightClose, 
-  History, ExternalLink
+  Loader2, AlertCircle, FileText, CheckCircle2, XCircle, Clock,
+  ShieldCheck, ChevronRight, X, PanelRightOpen, PanelRightClose,
+  History, ExternalLink, Hash, Briefcase as BriefcaseIcon, CheckSquare, Info,
+  AlertTriangle, RefreshCw, MessageSquareWarning, Send, Check, User, Building2, Wallet
 } from "lucide-react";
 import { toast } from "sonner";
+import { format } from "date-fns";
 
 import {
   Dialog,
@@ -18,6 +20,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Tooltip,
   TooltipContent,
@@ -33,7 +44,8 @@ interface Props {
   loading: boolean;
   detail: DraftDetail | null;
   onClose: () => void;
-  onVoteComplete: () => void;
+  onVoteComplete: (draftId: number, status: string, nextTier?: number) => void;
+  onRefreshDetail: () => void;
 }
 
 function formatCurrency(amount: number) {
@@ -43,664 +55,611 @@ function formatCurrency(amount: number) {
 function formatDate(d: string | null) {
   if (!d) return "—";
   try {
-    return new Date(d + "T00:00:00").toLocaleDateString("en-PH", {
+    const dateObj = d.includes("T") ? new Date(d) : new Date(d + "T00:00:00");
+    if (isNaN(dateObj.getTime())) return d;
+    return dateObj.toLocaleDateString("en-PH", {
       year: "numeric", month: "short", day: "numeric",
     });
   } catch { return d; }
 }
 
-function VoteStatusIcon({ status }: { status: string }) {
-  if (status === "APPROVED") return <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
-  if (status === "REJECTED") return <XCircle className="h-3 w-3 text-red-500" />;
-  return <Clock className="h-3 w-3 text-amber-500" />;
-}
-
-function formatDateTime(d: string) {
-  if (!d) return "—";
-  try {
-    return new Date(d).toLocaleString("en-PH", {
-      year: "numeric", month: "short", day: "numeric",
-      hour: "2-digit", minute: "2-digit",
-    });
-  } catch { return d; }
-}
-
-function ParseTierLabel(status: string): number {
-  if (!status) return 1;
-  const s = status.toUpperCase();
-  if (s === "SUBMITTED") return 1;
-  const m = s.match(/PENDING_L(\d+)/);
-  if (m) return parseInt(m[1], 10);
-  return 1;
-}
-
-export default function VoteModal({ open, loading, detail, onClose, onVoteComplete }: Props) {
+export default function VoteModal({ open, loading, detail, onClose, onVoteComplete, onRefreshDetail }: Props) {
   const [remarks, setRemarks] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
-  const [confirmAction, setConfirmAction] = React.useState<"APPROVED" | "REJECTED" | null>(null);
-  const [showTiers, setShowTiers] = React.useState(true);
   const [editedAmounts, setEditedAmounts] = React.useState<Record<number, string>>({});
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
+
+  // itemDecisions now defaults to PENDING (Explicit Verification Pattern)
+  const [itemDecisions, setItemDecisions] = React.useState<Record<number, "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING">>({});
+  const [showItemRemarks, setShowItemRemarks] = React.useState<Record<number, string>>({});
+  const [pendingFeedbackItems, setPendingFeedbackItems] = React.useState<{ id: number; coa_name: string; status: "REJECTED" | "WITH_CONCERN" }[] | null>(null);
 
   React.useEffect(() => {
-    if (open) {
+    if (open && detail) {
       setRemarks("");
-      setConfirmAction(null);
       setEditedAmounts({});
+
+      const initialRemarks: Record<number, string> = {};
+
+      // Initialize with PENDING state for regular items, keep WITH_CONCERN for flagged ones
+      const payableInit = detail.payables.reduce(
+        (acc, p) => {
+          initialRemarks[p.id] = (p as any).feedback || "";
+          return {
+            ...acc,
+            [p.id]: (p as any).is_concern ? ("WITH_CONCERN" as const) : ("PENDING" as const)
+          };
+        }, {}
+      ) || {};
+
+      const concernInit = detail.concern_items?.reduce(
+        (acc, ci) => {
+          initialRemarks[-ci.expense_id] = ci.feedback || "";
+          return { ...acc, [-ci.expense_id]: "WITH_CONCERN" as const };
+        }, {}
+      ) || {};
+
+      setItemDecisions({ ...payableInit, ...concernInit });
+      setShowItemRemarks(initialRemarks);
+      setPendingFeedbackItems(null);
     }
   }, [open, detail]);
 
+  const combinedItems = React.useMemo(() => {
+    if (!detail) return [];
+    const items = detail.payables.map(p => ({
+      ...p,
+      is_concern: (p as any).is_concern || false,
+      feedback: (p as any).feedback || null
+    }));
+    const existingIds = new Set(items.map(i => i.id));
+    (detail.concern_items || []).forEach(ci => {
+      const negId = -ci.expense_id;
+      if (!existingIds.has(negId)) {
+        items.push({
+          id: negId, coa_id: -1, coa_name: ci.coa_name, amount: ci.amount, remarks: ci.remarks,
+          date: ci.transaction_date, reference_no: null, attachment_url: ci.attachment_url,
+          is_concern: true, feedback: ci.feedback
+        } as any);
+      }
+    });
+    return items;
+  }, [detail]);
+
+  // Total amount ONLY for APPROVED items (Verified Only)
   const currentTotalAmount = React.useMemo(() => {
-    if (!detail) return 0;
-    const { payables, draft } = detail;
-    if (!payables || payables.length === 0) return Number(draft.total_amount);
-    return payables.reduce((acc, p) => {
+    return combinedItems.reduce((acc, p) => {
+      if (itemDecisions[p.id] !== "APPROVED") return acc;
       const val = editedAmounts[p.id];
       return acc + (val !== undefined && val !== "" ? Number(val) : Number(p.amount));
     }, 0);
-  }, [detail, editedAmounts]);
-  
-  const isAnyItemModified = React.useMemo(() => {
-    if (!detail) return false;
-    return Object.entries(editedAmounts).some(([id, val]) => {
-      const p = detail.payables.find(item => item.id === Number(id));
-      return p && (val !== "" && Number(val) !== Number(p.amount));
+  }, [combinedItems, editedAmounts, itemDecisions]);
+
+  const approvedCount = React.useMemo(() => {
+    return Object.values(itemDecisions).filter(s => s === "APPROVED").length;
+  }, [itemDecisions]);
+
+  const setItemStatus = (id: number, status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
+    setItemDecisions(prev => ({ ...prev, [id]: prev[id] === status ? "PENDING" : status }));
+  };
+
+  const toggleGroupStatus = (groupItems: any[], status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
+    setItemDecisions(prev => {
+      const next = { ...prev };
+      groupItems.forEach(item => { next[item.id] = status; });
+      return next;
     });
-  }, [detail, editedAmounts]);
+  };
+
+  const approveAll = () => {
+    const next = { ...itemDecisions };
+    combinedItems.forEach(item => { if (item.id > 0) next[item.id] = "APPROVED"; });
+    setItemDecisions(next);
+  };
+
+  const uncheckAll = () => {
+    const next = { ...itemDecisions };
+    combinedItems.forEach(item => { if (item.id > 0) next[item.id] = "PENDING"; });
+    setItemDecisions(next);
+  };
+
+  const groupedPayables = React.useMemo(() => {
+    const groups: Record<string, { coa_name: string; coa_id: number; weeks: Record<string, any[]> }> = {};
+    combinedItems.forEach(p => {
+      const gk = p.coa_name || `COA #${p.coa_id}`;
+      if (!groups[gk]) groups[gk] = { coa_name: gk, coa_id: p.coa_id, weeks: {} };
+      let wk = "undated";
+      if (p.date) {
+        const d = new Date(p.date + "T00:00:00");
+        const ws = new Date(d); ws.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+        wk = format(ws, "yyyy-MM-dd");
+      }
+      if (!groups[gk].weeks[wk]) groups[gk].weeks[wk] = [];
+      groups[gk].weeks[wk].push(p);
+    });
+    return Object.values(groups).map(g => ({
+      coa_name: g.coa_name, coa_id: g.coa_id,
+      weeks: Object.entries(g.weeks).map(([wk, items]) => {
+        if (wk === "undated") return { weekKey: "undated", weekLabel: "Undated", weekStart: null, items };
+        const s = new Date(wk); const e = new Date(s); e.setDate(s.getDate() + 6);
+        return { weekKey: wk, weekLabel: `${format(s, "MMM d")} - ${format(e, "MMM d, yyyy")}`, weekStart: s, items };
+      }).sort((a, b) => (b.weekStart?.getTime() ?? 0) - (a.weekStart?.getTime() ?? 0)),
+    }));
+  }, [combinedItems]);
+
+  const activeGroup = React.useMemo(() => {
+    if (!selectedGroupId) return null;
+    for (const g of groupedPayables)
+      for (const w of g.weeks)
+        if (`${g.coa_name}-${w.weekKey}` === selectedGroupId) return { ...w, coa_name: g.coa_name };
+    return null;
+  }, [selectedGroupId, groupedPayables]);
+
+  React.useEffect(() => {
+    if (!selectedGroupId && groupedPayables.length > 0) {
+      const firstGroup = groupedPayables[0];
+      if (firstGroup.weeks.length > 0) setSelectedGroupId(`${firstGroup.coa_name}-${firstGroup.weeks[0].weekKey}`);
+    }
+  }, [groupedPayables, selectedGroupId]);
+
+  const derivedStatus = React.useMemo(() => {
+    const vals = Object.entries(itemDecisions).filter(([id]) => Number(id) > 0).map(([, s]) => s);
+    if (vals.some(s => s === "WITH_CONCERN")) return "WITH_CONCERN";
+    if (vals.length > 0 && vals.every(s => s === "REJECTED")) return "REJECTED";
+    return "APPROVED";
+  }, [itemDecisions]);
+
+  const hasPendingItems = React.useMemo(() => {
+    return Object.values(itemDecisions).some(s => s === "PENDING");
+  }, [itemDecisions]);
+
+  const hasMissingFeedback = React.useMemo(() => {
+    if (!detail) return false;
+    return combinedItems.some(p => 
+      (itemDecisions[p.id] === "REJECTED" || itemDecisions[p.id] === "WITH_CONCERN") && 
+      !(showItemRemarks[p.id]?.trim())
+    );
+  }, [combinedItems, itemDecisions, showItemRemarks]);
 
   if (!detail) return null;
+  const { draft, payables } = detail;
+  const currentTier = draft.current_tier || 1;
 
-  const { draft, payables, approvers_by_level, my_level, my_vote, can_vote } = detail;
-  const currentTier = draft.current_tier ?? ParseTierLabel(draft.status);
-  const maxLevel = draft.max_level ?? 1;
+  const [processingItem, setProcessingItem] = React.useState<number | null>(null);
 
-  const isRejectionSubmittable = confirmAction === "REJECTED" && remarks.trim().length >= 10;
-  const isApprovalSubmittable = confirmAction === "APPROVED";
+  const handleSingleItemVote = async (p: any) => {
+    if (!detail) return;
+    const status = itemDecisions[p.id];
+    const feedback = showItemRemarks[p.id];
+
+    if (status === "PENDING" || !status) return;
+    if (!feedback?.trim()) return toast.warning("Feedback is required for this decision.");
+
+    setProcessingItem(p.id);
+    try {
+      const payloadItemDecisions: Record<number, { status: "APPROVED" | "REJECTED" | "WITH_CONCERN"; remarks: string }> = {
+        [p.id]: { status: status as any, remarks: feedback.trim() }
+      };
+
+      // For a single item negative decision, the overall consensus for THIS vote record can be its own status
+      // or we can stick to the derivedStatus logic which the backend uses to transition the draft.
+      // If we are rejecting 1 item out of many, the draft should stay at the current tier or advance (APPROVED).
+      // The backend logic: if (remainingCount > 0) finalVoteStatus = "APPROVED";
+      
+      await api.submitVote({
+        draft_id: detail.draft.id,
+        status: status === "WITH_CONCERN" ? "WITH_CONCERN" : "APPROVED",
+        remarks: `Individual decision for item #${p.id}: ${status}`,
+        item_decisions: payloadItemDecisions,
+      });
+
+      toast.success(`Decision for item #${p.id} recorded.`);
+      onRefreshDetail();
+    } catch (e: any) {
+      toast.error(e.message || "Failed to submit decision.");
+    } finally {
+      setProcessingItem(null);
+    }
+  };
 
   async function handleVote() {
-    if (!detail || !confirmAction) return;
+    if (!detail) return;
+    if (!remarks.trim()) return toast.warning("Approval remarks are required for the audit trail.");
 
-    if (confirmAction === "REJECTED" && remarks.trim().length < 10) {
-      toast.warning("Rejection reason must be at least 10 characters.");
-      return;
-    }
+    const missingFeedback = combinedItems
+      .filter(p => (itemDecisions[p.id] === "REJECTED" || itemDecisions[p.id] === "WITH_CONCERN"))
+      .filter(p => !(showItemRemarks[p.id]?.trim()))
+      .map(p => ({ id: p.id, coa_name: p.coa_name, status: itemDecisions[p.id] as any }));
+
+    if (missingFeedback.length > 0) { setPendingFeedbackItems(missingFeedback); return; }
 
     setSubmitting(true);
     try {
-      const payloadEditedPayables = payables.map(p => {
-        const edited = editedAmounts[p.id];
-        if (edited !== undefined && Number(edited) !== Number(p.amount)) {
-          return { id: p.id, amount: Number(edited) };
+      const payloadEditedPayables = payables
+        .map((p) => {
+          if (itemDecisions[p.id] !== "APPROVED") return null;
+
+          const edited = editedAmounts[p.id];
+
+          if (
+            edited !== undefined &&
+            edited !== "" &&
+            Number(edited) !== Number(p.amount)
+          ) {
+            return {
+              id: p.id,
+              amount: Number(edited),
+            };
+          }
+
+          return null;
+        })
+        .filter((item): item is { id: number; amount: number } => item !== null);
+
+      const payloadItemDecisions: Record<
+        number,
+        {
+          status: "APPROVED" | "REJECTED" | "WITH_CONCERN";
+          remarks: string;
         }
-        return null;
-      }).filter(Boolean) as { id: number; amount: number }[];
+      > = {};
 
-      const adjustmentSummary = payloadEditedPayables.map(ep => {
-        const p = payables.find(item => item.id === ep.id);
-        return `[ADJUSTED] ${p?.coa_name || "Item"}: ${formatCurrency(Number(p?.amount))} -> ${formatCurrency(ep.amount)}`;
-      }).join(" | ");
+      Object.entries(itemDecisions).forEach(([idStr, status]) => {
+        const id = Number(idStr);
 
-      const finalRemarks = adjustmentSummary 
-        ? `${adjustmentSummary}${remarks.trim() ? " | User Remarks: " + remarks.trim() : ""}` 
-        : remarks.trim();
+        if (status === "PENDING") return;
+
+        const isVirtualOrConcernItem = id < 0;
+        const shouldSendDecision = status !== "APPROVED" || isVirtualOrConcernItem;
+
+        if (!shouldSendDecision) return;
+
+        payloadItemDecisions[id] = {
+          status,
+          remarks:
+            showItemRemarks[id]?.trim() ||
+            (status === "REJECTED"
+              ? "Item rejected."
+              : status === "WITH_CONCERN"
+                ? "Concern raised."
+                : "Cleared."),
+        };
+      });
 
       const result = await api.submitVote({
         draft_id: draft.id,
-        status: confirmAction,
-        remarks: finalRemarks || undefined,
+        status: derivedStatus,
+        remarks: remarks.trim(),
         edited_payables: payloadEditedPayables.length > 0 ? payloadEditedPayables : undefined,
+        item_decisions: Object.keys(payloadItemDecisions).length > 0 ? payloadItemDecisions : undefined,
       });
 
-      if (result.result === "APPROVED") {
-        toast.success(`Draft fully approved! Posted as ${result.doc_no ?? "live disbursement"}.`, {
-          description: result.message,
-        });
-      } else if (result.result === "TIER_ADVANCED") {
-        toast.success(`Level ${currentTier} complete! Advanced to Level ${result.next_tier}.`, {
-          description: result.message,
-        });
-      } else if (result.result === "VOTE_RECORDED") {
-        toast.info("Your approval has been recorded.", { description: result.message });
-      } else if (result.result === "REJECTED") {
-        toast.error("Draft has been rejected.", { description: result.message });
-      }
+      if (result.result === "APPROVED") toast.success("Draft fully approved!");
+      else if (result.result === "TIER_ADVANCED") toast.success(`Advanced to Level ${result.next_tier}.`);
+      else toast.info("Vote recorded.");
 
-      onVoteComplete();
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Vote submission failed");
-    } finally {
-      setSubmitting(false);
-    }
+      onVoteComplete(draft.id, derivedStatus, result.next_tier);
+    } catch (e: any) { toast.error(e.message); } finally { setSubmitting(false); }
   }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-[1250px] w-[98vw] max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden border-none shadow-2xl rounded-xl">
-        <DialogTitle className="sr-only">Verification & Approval - {draft.doc_no}</DialogTitle>
-        <DialogDescription className="sr-only">Review details and vote on the treasury disbursement draft for {draft.payee_name}.</DialogDescription>
-        {/* Header */}
-        {/* Performance & Minimalist Header */}
-        <div className="px-8 py-5 bg-background border-b relative overflow-hidden shrink-0">
-          <div className="flex items-center justify-between gap-6 relative z-10">
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-3">
-                <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                <h2 className="text-xl font-black tracking-tight text-foreground/90">Verification & Approval</h2>
-              </div>
-              <div className="flex items-center gap-3 text-[11px] font-bold text-muted-foreground/60 uppercase tracking-widest pl-5">
-                <span className="font-mono text-primary/80">#{draft.doc_no}</span>
-                <span className="opacity-20 text-[10px]">•</span>
-                <span>{draft.payee_name}</span>
-                <span className="opacity-20 text-[10px]">•</span>
-                <span>{formatDate(draft.transaction_date)}</span>
-              </div>
-            </div>
+      <DialogContent className="sm:!max-w-[95vw] sm:!w-[95vw] h-[95vh] flex flex-col gap-0 p-0 overflow-hidden border-none shadow-2xl rounded-2xl">
+        <DialogTitle className="sr-only">Verification & Approval</DialogTitle>
+        <DialogDescription className="sr-only">Batch review modal</DialogDescription>
 
-            {/* Middle: Process Hub */}
-            <div className="flex-1 hidden lg:flex items-center justify-center border-x border-muted/50 px-8 mx-4">
-              <div className="flex flex-col items-center gap-1.5">
-                <div className="flex items-center gap-2 bg-primary/5 border border-primary/10 px-3 py-1 rounded-full">
-                  <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Level {currentTier} Verification</span>
+        {/* Header Section (Blue Pattern) */}
+        <div className="px-[2vw] py-[2.5vh] bg-[#1a4f95] text-white shrink-0 relative overflow-hidden">
+          <div className="flex items-center justify-between relative z-10">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-black tracking-tight flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                  <ShieldCheck size={26} />
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-tighter">Awaiting Action From:</span>
-                  <span className="text-[10px] font-black text-foreground/70">
-                    {(approvers_by_level[currentTier] || [])
-                      .filter(a => !a.vote)
-                      .map(a => a.name)
-                      .join(", ") || "Nobody"}
-                  </span>
-                </div>
-              </div>
+                Expense Approval & Disbursement Generation
+              </h2>
+              <p className="text-[10px] text-white/70 font-black uppercase tracking-[0.2em]">
+                Review salesmen submittals and convert approved items into treasury disbursements.
+              </p>
             </div>
+            <div className="flex flex-col items-end gap-2">
+              <Badge className="bg-white/20 text-white border-white/30 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest backdrop-blur-sm shadow-xl">
+                Level {currentTier} Verification
+              </Badge>
+            </div>
+          </div>
+        </div>
 
-            <div className="flex flex-col items-end gap-0.5">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 leading-none mb-0.5 text-right w-full">Current Total</p>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black tabular-nums tracking-tighter text-primary">
-                  {formatCurrency(currentTotalAmount)}
-                </span>
-                {(currentTotalAmount !== Number(draft.total_amount) || isAnyItemModified) && (
-                  <Badge variant="secondary" className="h-5 px-1.5 bg-amber-500/10 text-amber-600 border-none uppercase font-black text-[9px] tracking-tighter align-top">MODIFIED</Badge>
-                )}
+        {/* Stats Bar Section */}
+        <div className="grid grid-cols-4 gap-6 px-[2vw] py-[2vh] bg-white border-b shadow-sm shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100 shadow-inner">
+              <User size={24} />
+            </div>
+            <div>
+              <p className="text-[9px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Salesman</p>
+              <p className="font-black text-sm text-foreground">{draft.payee_name || "Unknown"}</p>
+              <p className="text-[10px] text-muted-foreground font-mono">ID: {draft.payee_user_id || "N/A"}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 pl-6 border-l border-muted/50">
+            <div className="h-12 w-12 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 border border-purple-100 shadow-inner">
+              <Building2 size={24} />
+            </div>
+            <div>
+              <p className="text-[9px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Position & Department</p>
+              <p className="font-black text-sm text-foreground">Senior Salesman</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-tighter">{draft.division_name || "N/A"}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 pl-6 border-l border-muted/50">
+            <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100 shadow-inner">
+              <Wallet size={24} />
+            </div>
+            <div>
+              <p className="text-[9px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Budget Ceiling</p>
+              <p className="font-black text-sm text-emerald-700">{formatCurrency(4000)}</p>
+              <p className="text-[10px] text-muted-foreground italic">Applied to total selection</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 pl-6 border-l border-muted/50">
+            <div className="flex flex-col gap-1 w-full">
+              <p className="text-[9px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1 text-right"># Pending Items</p>
+              <div className="flex justify-end gap-2">
+                <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] font-black">{payables.length} Draft</Badge>
+                <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] font-black">0 Rejected</Badge>
               </div>
             </div>
           </div>
-          
-          {/* Subtle accent line */}
-          <div className="absolute bottom-0 left-0 h-[3px] w-full bg-gradient-to-r from-primary/5 via-primary/40 to-primary/5 opacity-50" />
         </div>
 
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-40 gap-6 text-muted-foreground animate-pulse">
-            <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            <span className="font-bold text-lg tracking-tight">Syncing draft details…</span>
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 animate-pulse">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <span className="font-black text-xs uppercase tracking-[0.3em] text-muted-foreground">Syncing Details...</span>
           </div>
         ) : (
-          <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-muted/5">
-
-            {/* Remarks Section (Enhanced Highlight) */}
-            {draft.remarks && (
-              <div className="px-8 py-2.5 bg-primary/[0.03] border-b flex items-center gap-4">
-                <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.25em] text-primary/40 shrink-0">
-                  <AlertCircle size={10} />
-                  <span>Draft Remarks</span>
-                </div>
-                <div className="h-3 w-[1px] bg-primary/20 shrink-0" />
-                <p className="text-[10px] font-black uppercase tracking-widest text-foreground/70 leading-relaxed">
-                  {draft.remarks}
-                </p>
-              </div>
-            )}
-
-            {/* Scrollable Body */}
-            <div className="flex-1 flex flex-col lg:flex-row gap-0 min-h-0">
-
-              {/* Left Column: Payable Table (Full Height) */}
-              <div className="flex-[3] flex flex-col min-w-0 min-h-0 bg-background relative border-r overflow-hidden shadow-sm">
-                <div className="px-6 py-3 bg-muted/10 border-b flex items-center justify-between sticky top-0 z-10 backdrop-blur-md">
-                  <div className="flex items-center gap-2 text-primary font-black uppercase tracking-[0.2em] text-[10px]">
-                    <FileText size={14} className="opacity-70" />
-                    Payables Breakdown
-                    <Badge variant="secondary" className="ml-2 h-4 px-1.5 bg-primary/10 text-primary border-none pointer-events-none">
-                      {payables.length} Items
-                    </Badge>
+          <>
+            {/* Toolbar Pattern */}
+            <div className="px-[2vw] py-4 bg-muted/5 border-b flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-8">
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-800">
+                  <FileText className="h-4 w-4 text-primary" />
+                  Encoded Expense Drafts
+                </h3>
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-2 cursor-pointer group" onClick={approveAll}>
+                    <div className="h-4 w-4 rounded border-2 border-primary flex items-center justify-center group-hover:bg-primary/10">
+                      <Check className="h-3 w-3 text-primary" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Approve All</span>
                   </div>
-                  <Button
-                    variant="ghost" 
-                    size="icon"
-                    className="h-8 w-8 hover:bg-primary/10 text-muted-foreground"
-                    onClick={() => setShowTiers(!showTiers)}
-                  >
-                    {showTiers ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-                  </Button>
+                  <div className="flex items-center gap-2 cursor-pointer group" onClick={uncheckAll}>
+                    <div className="h-4 w-4 rounded border-2 border-slate-300 flex items-center justify-center group-hover:border-primary">
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Uncheck All</span>
+                  </div>
                 </div>
+              </div>
+              <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest">
+                <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm" /> Normal</span>
+                <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm" /> Over Limit</span>
+              </div>
+            </div>
 
-                <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/40">
-                  <div className="p-4 pt-0">
-                    <table className="w-full text-left border-collapse table-fixed">
-                      <colgroup>
-                        <col className="w-10" />
-                        <col className="w-[35%]" />
-                        <col className="w-[15%]" />
-                        <col className="w-[10%]" />
-                        <col className="w-[8%]" />
-                        <col className="w-[22%]" />
-                      </colgroup>
-                      <thead className="sticky top-0 bg-background/95 backdrop-blur-md z-10">
-                        <tr className="border-b bg-muted/20">
-                          <th className="py-2.5 px-3 text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">#</th>
-                          <th className="py-2.5 px-3 text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">Account / COA</th>
-                          <th className="py-2.5 px-3 text-right text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">Amount</th>
-                          <th className="py-2.5 px-3 text-center text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">Trans Date</th>
-                          <th className="py-2.5 px-3 text-center text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">Docs</th>
-                          <th className="py-2.5 px-3 text-left text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">Audit Remarks</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y border-b">
-                        {payables.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="text-center py-20 text-muted-foreground">
-                              <div className="flex flex-col items-center gap-3 opacity-40">
-                                <FileText size={48} />
-                                <p className="text-sm font-bold uppercase tracking-widest">No payable items found.</p>
+            <div className="flex-1 flex min-h-0 bg-slate-50/50">
+              {/* Sidebar: COA Groups */}
+              <div className="w-[25vw] border-r bg-white overflow-y-auto">
+                <Table>
+                  <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
+                    <TableRow>
+                      <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 pl-8">COA Group / Week</TableHead>
+                      <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-right pr-4">Total Amount</TableHead>
+                      <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-center">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groupedPayables.map(g => g.weeks.map(w => {
+                      const gid = `${g.coa_name}-${w.weekKey}`;
+                      const isSelected = selectedGroupId === gid;
+                      const total = w.items.reduce((acc, p) => acc + Number(p.amount), 0);
+                      const isVerified = w.items.every(i => itemDecisions[i.id] !== "PENDING");
+                      return (
+                        <TableRow key={gid}
+                          className={`cursor-pointer group transition-all ${isSelected ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                          onClick={() => setSelectedGroupId(gid)}
+                        >
+                          <TableCell className="pl-8 py-4 relative">
+                            {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />}
+                            <div className="flex items-center gap-3">
+                              <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-[10px] font-black shadow-sm ${isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>
+                                #
                               </div>
-                            </td>
-                          </tr>
-                        ) : (
-                          payables.map((p, idx) => {
-                            const originalAmount = detail.expense_logs?.find(l => l.expense_id === p.id && l.action === "Edited")?.amount || p.amount;
-                            const isEdited = Number(editedAmounts[p.id] || p.amount) !== Number(originalAmount);
-
-                            return (
-                              <tr key={p.id} className="group hover:bg-muted/30 transition-colors">
-                                <td className="py-2.5 px-3 text-[10px] text-muted-foreground/40 font-mono font-bold">{idx + 1}</td>
-                                <td className="py-2.5 px-3">
-                                  <div className="flex flex-col gap-0">
-                                    <span className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate" title={p.coa_name}>{p.coa_name || "Uncategorized"}</span>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[9px] text-muted-foreground/60 font-mono uppercase tracking-tighter">#{p.coa_id}</span>
-                                      {p.reference_no && <Badge variant="outline" className="h-3.5 px-1 text-[7px] text-muted-foreground tracking-tighter font-mono rounded-sm opacity-60">REF: {p.reference_no}</Badge>}
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="py-2.5 px-3">
-                                  {can_vote && !my_vote ? (
-                                    <div className="flex flex-col items-end gap-0.5">
-                                      <input
-                                        type="number"
-                                        step="1"
-                                        className={`w-full max-w-[110px] text-right bg-background border-2 border-black/10 border-b-primary px-2 py-1.5 text-[13px] font-black tabular-nums transition-all outline-none hover:border-black/20 focus:ring-1 focus:ring-primary/20
-                                          ${isEdited ? "text-primary shadow-sm" : "text-foreground shadow-inner"}`}
-                                        value={editedAmounts[p.id] !== undefined ? editedAmounts[p.id] : p.amount}
-                                        onChange={(e) => setEditedAmounts(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                      />
-                                      {isEdited && (
-                                        <span className="text-[8px] font-black text-primary uppercase tracking-tighter italic animate-in fade-in slide-in-from-right-1 opacity-70">
-                                          {formatCurrency(Number(originalAmount))}
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="flex flex-col items-end">
-                                      <span className="text-[13px] font-black text-foreground tabular-nums tracking-tight">
-                                        {formatCurrency(Number(p.amount))}
-                                      </span>
-                                      {Number(p.amount) !== Number(originalAmount) && (
-                                        <span className="text-[8px] line-through text-muted-foreground/30 tabular-nums">
-                                          {formatCurrency(Number(originalAmount))}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <span className="text-[10px] font-bold text-muted-foreground/80 bg-muted/30 px-2 py-0.5 rounded-md whitespace-nowrap">
-                                    {p.date ? formatDate(p.date) : "—"}
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  {p.attachment_url ? (
-                                    <TooltipProvider delayDuration={0}>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`);
-                                            }}
-                                            className="inline-flex items-center justify-center h-7 w-7 rounded-lg bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all shadow-sm border border-primary/10"
-                                          >
-                                            <ExternalLink size={12} />
-                                          </button>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top">View Attachment</TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  ) : (
-                                    <span className="text-[8px] font-bold text-muted-foreground/20 italic tracking-widest">—</span>
-                                  )}
-                                </td>
-                                <td className="py-2.5 px-3">
-                                  <TooltipProvider>
-                                    <Tooltip delayDuration={0}>
-                                      <TooltipTrigger asChild>
-                                        <div className="text-[11px] text-muted-foreground font-medium italic line-clamp-2 max-w-[200px] leading-relaxed group-hover:text-foreground/80 transition-colors">
-                                          {p.remarks || <span className="opacity-30">—</span>}
-                                        </div>
-                                      </TooltipTrigger>
-                                      {p.remarks && (
-                                        <TooltipContent side="top" className="max-w-xs p-3">
-                                          <p className="text-[11px] font-semibold leading-relaxed">{p.remarks}</p>
-                                        </TooltipContent>
-                                      )}
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                              <div>
+                                <p className="text-[11px] font-black uppercase tracking-tight text-slate-800 leading-none mb-1">{g.coa_name}</p>
+                                <p className="text-[9px] font-bold text-muted-foreground">{w.weekLabel}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right py-4 pr-4">
+                            <p className="text-xs font-black tabular-nums text-slate-800">{formatCurrency(total)}</p>
+                            <p className="text-[9px] text-muted-foreground font-bold italic">{w.items.length} items</p>
+                          </TableCell>
+                          <TableCell className="text-center py-4">
+                            <Button
+                              variant={isVerified ? "outline" : "default"}
+                              className={`h-8 text-[10px] font-black uppercase px-4 rounded-lg shadow-sm ${isVerified ? "border-emerald-200 text-emerald-600 bg-emerald-50" : "bg-blue-600 text-white hover:bg-blue-700"}`}
+                              onClick={(e) => { e.stopPropagation(); toggleGroupStatus(w.items, "APPROVED"); }}
+                              disabled={submitting}
+                            >
+                              {isVerified ? <Check size={14} className="mr-1" /> : ""}
+                              {isVerified ? "Verified" : "Approve Group"}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }))}
+                  </TableBody>
+                </Table>
               </div>
 
-              {/* Right Sidebar: Tabbed Interface */}
-              {showTiers && (
-                <div className="flex-[1.5] min-w-[320px] max-w-[400px] flex flex-col min-h-0 bg-muted/10 relative border-l animate-in slide-in-from-right-2 duration-300 overflow-hidden">
-                  <div className="h-12 flex items-center px-6 border-b bg-background shrink-0">
-                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/80 flex items-center gap-2">
-                       <History size={14} /> Audit Trail & History
+              {/* Detail Table Area */}
+              <div className="flex-1 bg-white flex flex-col overflow-hidden">
+                <div className="flex-1 overflow-auto p-8 pt-0">
+                  <Table className="border rounded-2xl overflow-hidden shadow-sm">
+                    <TableHeader className="bg-slate-50/50 sticky top-0 z-10 backdrop-blur-sm border-b">
+                      <TableRow>
+                        <TableHead className="w-12 text-center text-[10px] font-black">#</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest py-4">Details (Remarks)</TableHead>
+                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4">Amount</TableHead>
+                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4 w-16">Docs</TableHead>
+                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4 w-28">Date</TableHead>
+                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4 w-20">Status</TableHead>
+                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4 w-40">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {activeGroup?.items.map((p, idx) => {
+                        const status = itemDecisions[p.id] || "PENDING";
+                        const isReadOnly = p.status === "REJECTED" || p.status === "WITH_CONCERN";
+                        return (
+                          <React.Fragment key={p.id}>
+                            <TableRow className="group hover:bg-slate-50/50 border-b border-slate-100">
+                              <TableCell className="text-center py-4 text-[10px] font-black text-slate-300 italic">{(idx + 1).toString().padStart(2, '0')}</TableCell>
+                              <TableCell className="py-4">
+                                <p className="text-xs font-black text-slate-800 leading-none mb-1">{p.remarks || "No remarks provided"}</p>
+                                <p className="text-[9px] text-muted-foreground font-mono">REF: {p.reference_no || "N/A"}</p>
+                              </TableCell>
+                              <TableCell className="py-4 text-center">
+                                <Input
+                                  type="number"
+                                  className="h-8 w-28 text-center text-xs font-black tabular-nums bg-slate-50 border-slate-200"
+                                  value={editedAmounts[p.id] || p.amount}
+                                  onChange={(e) => setEditedAmounts(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                  disabled={processingItem === p.id || submitting || isReadOnly}
+                                />
+                              </TableCell>
+                              <TableCell className="py-4 text-center">
+                                {p.attachment_url && (
+                                  <Button 
+                                    size="icon" 
+                                    variant="ghost" 
+                                    className="h-8 w-8 bg-blue-50 text-blue-600 rounded-lg" 
+                                    onClick={() => setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`)}
+                                    disabled={processingItem === p.id || submitting || isReadOnly}
+                                  >
+                                    <ExternalLink size={14} />
+                                  </Button>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-4 text-center text-[10px] font-bold text-slate-500 uppercase">{formatDate(p.date)}</TableCell>
+                              <TableCell className="py-4 text-center">
+                                <Badge className={`text-[9px] font-black h-5 px-2 uppercase ${status === "APPROVED" ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : status === "REJECTED" ? "bg-rose-50 text-rose-600 border border-rose-200" : status === "WITH_CONCERN" ? "bg-amber-50 text-amber-600 border border-amber-200" : "bg-slate-100 text-slate-400"}`}>
+                                  {status === "PENDING" ? "Draft" : status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-4 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <Button size="icon" className={`h-8 w-8 rounded-lg shadow-sm ${status === "APPROVED" ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-emerald-50"}`} onClick={() => setItemStatus(p.id, "APPROVED")} disabled={processingItem === p.id || submitting || isReadOnly}>
+                                    <Check size={16} strokeWidth={3} />
+                                  </Button>
+                                  <Button size="icon" className={`h-8 w-8 rounded-lg shadow-sm ${status === "WITH_CONCERN" ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-amber-50"}`} onClick={() => setItemStatus(p.id, "WITH_CONCERN")} disabled={processingItem === p.id || submitting || isReadOnly}>
+                                    <AlertTriangle size={14} />
+                                  </Button>
+                                  <Button size="icon" className={`h-8 w-8 rounded-lg shadow-sm ${status === "REJECTED" ? "bg-rose-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-rose-50"}`} onClick={() => setItemStatus(p.id, "REJECTED")} disabled={processingItem === p.id || submitting || isReadOnly}>
+                                    <X size={16} strokeWidth={3} />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            {(status === "REJECTED" || status === "WITH_CONCERN") && (
+                              <TableRow className={`${status === "REJECTED" ? "bg-rose-50/30" : "bg-amber-50/30"}`}>
+                                <TableCell colSpan={7} className="px-8 py-3">
+                                  <div className="flex items-center gap-4 pl-12 flex-1">
+                                    <span className={`text-[10px] font-black uppercase tracking-widest ${status === "REJECTED" ? "text-rose-600" : "text-amber-600"} shrink-0`}>Audit Feedback:</span>
+                                    <Input
+                                      placeholder="Provide mandatory reason for rejection/concern..."
+                                      className="h-8 text-xs font-medium border-2 focus:border-primary bg-white shadow-inner flex-1"
+                                      value={showItemRemarks[p.id] || ""}
+                                      onChange={(e) => setShowItemRemarks(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                      disabled={processingItem === p.id || submitting || isReadOnly}
+                                    />
+                                    <Button 
+                                      size="sm" 
+                                      className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2"
+                                      disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isReadOnly}
+                                      onClick={() => handleSingleItemVote(p)}
+                                    >
+                                      {processingItem === p.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                                      Submit Decision
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Footer Section Pattern */}
+                <div className="p-8 border-t bg-slate-50 flex items-end justify-between gap-12 relative">
+                  <div className="flex-1 space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 flex items-center gap-2">
+                      <Info size={14} className="text-blue-500" />
+                      Disbursement Remarks <span className="text-red-500 font-black">*</span>
+                    </label>
+                    <Textarea
+                      rows={4}
+                      className="bg-white border-slate-200 rounded-2xl p-4 text-sm font-medium shadow-inner resize-none focus:ring-2 focus:ring-blue-500/20"
+                      placeholder={approvedCount === 0 ? "Approve at least one item to provide batch remarks..." : "Provide a justification for this batch of expenses..."}
+                      value={remarks}
+                      onChange={(e) => setRemarks(e.target.value)}
+                      disabled={approvedCount === 0 || submitting}
+                    />
+                    <p className="text-[9px] font-bold text-slate-400 italic">
+                      Items marked <span className="text-amber-600 font-black uppercase">With Concern</span> will be returned to drafts. Items marked <span className="text-rose-600 font-black uppercase">Rejected</span> will be hard rejected.
                     </p>
                   </div>
 
-                    <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin">
-                      {/* Timeline Generator */}
-                      {(() => {
-                        const timeline: { date: string; node: React.ReactNode }[] = [];
-
-                        // 1. Add Tiers (Votes)
-                        Array.from({ length: maxLevel }, (_, i) => i + 1).forEach(level => {
-                          const approvers = approvers_by_level[level] ?? [];
-                          approvers.forEach(a => {
-                            if (a.vote) {
-                              timeline.push({
-                                date: a.vote.created_at,
-                                node: (
-                                  <div key={`vote-${a.approver_id}`} className="relative pl-6 border-l border-emerald-500/20 pb-2">
-                                    <div className="absolute -left-[4.5px] top-1 h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                                    <div className="flex flex-col gap-1">
-                                      <div className="flex items-center justify-between">
-                                        <p className="text-[10px] font-black text-emerald-700/80 uppercase tracking-tighter">Level {level} Verified</p>
-                                        <p className="text-[8px] font-bold text-muted-foreground/40">{formatDateTime(a.vote.created_at)}</p>
-                                      </div>
-                                      <p className="text-xs font-black text-foreground/90 leading-none">{a.name}</p>
-                                      {a.vote.remarks && <p className="text-[10px] font-medium italic text-muted-foreground/60">&ldquo;{a.vote.remarks}&rdquo;</p>}
-                                    </div>
-                                  </div>
-                                )
-                              });
-                            }
-                          });
-                        });
-
-                        // 2. Add Amount Variances
-                        detail.logs?.forEach(log => {
-                          const variance = log.new_total - log.old_total;
-                          timeline.push({
-                            date: log.created_at,
-                            node: (
-                              <div key={`log-${log.id}`} className="relative pl-6 border-l border-primary/20 pb-2">
-                                <div className="absolute -left-[4.5px] top-1 h-2 w-2 rounded-full bg-primary" />
-                                <div className="flex flex-col gap-1">
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-[10px] font-black text-primary/70 uppercase tracking-tighter">Budget Correction</p>
-                                    <p className="text-[8px] font-bold text-muted-foreground/40">{formatDateTime(log.created_at)}</p>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs font-black text-foreground/90">{log.editor_name}</span>
-                                    <span className={`text-[10px] font-black tabular-nums ${variance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                                      ({variance > 0 ? '+' : ''}{formatCurrency(variance)})
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] font-medium italic text-muted-foreground/60 bg-muted/30 p-1.5 rounded-md mt-1">&ldquo;{log.edit_reason}&rdquo;</p>
-                                </div>
-                              </div>
-                            )
-                          });
-                        });
-
-                        // 3. Add Item Revisions
-                        detail.expense_logs?.forEach(log => {
-                          timeline.push({
-                            date: log.changed_at,
-                            node: (
-                              <div key={`item-${log.id}`} className="relative pl-6 border-l border-primary/20 pb-2">
-                                <div className="absolute -left-[4.5px] top-1 h-2 w-2 rounded-full bg-primary" />
-                                <div className="flex flex-col gap-1">
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-[10px] font-black text-primary/60 uppercase tracking-tighter">Item Revised</p>
-                                    <p className="text-[8px] font-bold text-muted-foreground/40">{formatDateTime(log.changed_at)}</p>
-                                  </div>
-                                  <p className="text-[10px] font-black text-foreground/80 leading-none">{log.particulars}</p>
-                                  {log.remarks && (
-                                    <p className="text-[9px] font-medium italic text-muted-foreground/60 leading-snug">&ldquo;{log.remarks}&rdquo;</p>
-                                  )}
-                                  <div className="flex items-baseline gap-2 pt-0.5">
-                                    <span className="text-[10px] font-black text-primary">{formatCurrency(log.amount)}</span>
-                                    <span className="text-[8px] font-bold text-muted-foreground/40 italic">by {log.editor_name || "Approver"}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          });
-                        });
-
-                        // Sort and render
-                        const sorted = timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                        
-                        if (sorted.length === 0) {
-                          return (
-                            <div className="flex flex-col items-center justify-center py-20 opacity-20 gap-4">
-                              <ShieldCheck size={40} />
-                              <p className="text-[10px] font-black uppercase tracking-widest">No history recorded yet</p>
-                            </div>
-                          );
-                        }
-
-                        return sorted.map(item => item.node);
-                      })()}
-
+                  <div className="w-80 flex flex-col gap-4">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl space-y-4">
+                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        <span>Summary</span>
+                        <span className="text-blue-600">{approvedCount} Lines Approved</span>
+                      </div>
+                      <div className="h-[1px] bg-slate-100 w-full" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Grand Total:</span>
+                        <span className="text-2xl font-black tabular-nums text-blue-700 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
+                      </div>
+                      <Button
+                        disabled={submitting || hasPendingItems || hasMissingFeedback || !remarks.trim() || approvedCount === 0}
+                        className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-200 gap-3 active:scale-[0.98] transition-all"
+                        onClick={handleVote}
+                      >
+                        {submitting ? <Loader2 className="animate-spin" /> : <ShieldCheck size={20} />}
+                        Submit Approvals
+                      </Button>
                     </div>
+                    <button className="w-full py-2 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 hover:text-slate-600 transition-colors" onClick={onClose}>
+                      Discard and Close
+                    </button>
                   </div>
-                )}
+                </div>
               </div>
-
-            {/* Footer / Vote Area */}
-            <div className="px-6 py-4 bg-background border-t shadow-[0_-12px_32px_-12px_rgba(0,0,0,0.12)] shrink-0 relative z-30">
-              {/* Already voted */}
-              {my_vote && (
-                <div className={`flex items-center gap-3 p-3 rounded-xl mb-3 border-2 font-bold text-xs shadow-sm
-                  ${my_vote.status === "APPROVED"
-                    ? "bg-emerald-50 border-emerald-100 text-emerald-800"
-                    : "bg-red-50 border-red-100 text-red-800"}`}>
-                  <div className={`h-8 w-8 rounded-lg flex items-center justify-center
-                    ${my_vote.status === "APPROVED" ? "bg-emerald-500/10" : "bg-red-500/10"}`}>
-                    <VoteStatusIcon status={my_vote.status} />
-                  </div>
-                  <div className="flex-1">
-                    <p>You have already cast your vote: <span className="uppercase tracking-widest ml-1">{my_vote.status}</span></p>
-                    {my_vote.remarks && <p className="text-xs font-medium italic mt-0.5 opacity-70">&ldquo;{my_vote.remarks}&rdquo;</p>}
-                  </div>
-                </div>
-              )}
-
-              {/* Not yet at active tier */}
-              {!can_vote && !my_vote && (
-                <div className="flex items-center gap-3 p-3 rounded-xl mb-3 bg-muted/40 border-2 border-muted border-dashed text-xs text-muted-foreground font-bold shadow-inner">
-                  <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0">
-                    <AlertCircle className="h-4 w-4 opacity-40 text-primary" />
-                  </div>
-                  <div>
-                    <p className="uppercase tracking-wider text-[10px] opacity-60">Status: Locked</p>
-                    <p className="text-foreground/60">This draft is at <span className="text-primary">Level {currentTier}</span>. You can vote at Level {my_level}.</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Voting controls */}
-              {can_vote && !my_vote && (
-                <div className="space-y-3 max-w-4xl mx-auto">
-                  {/* Action picker */}
-                  {!confirmAction ? (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        className="flex-[3] h-10 rounded-lg font-black text-xs gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.01] border-b-2 border-emerald-800"
-                        onClick={() => setConfirmAction("APPROVED")}
-                        disabled={submitting}
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        APPROVE DRAFT
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="flex-[2] h-10 rounded-lg font-black text-xs gap-2 border-red-200 text-red-600 hover:bg-red-50 transition-all hover:border-red-300"
-                        onClick={() => setConfirmAction("REJECTED")}
-                        disabled={submitting}
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                        REJECT
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-3 animate-in fade-in zoom-in-95 duration-300">
-                      <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest
-                        ${confirmAction === "APPROVED"
-                          ? "bg-emerald-600 text-white shadow-md"
-                          : "bg-red-600 text-white shadow-md"}`}>
-                        {confirmAction === "APPROVED"
-                          ? <CheckCircle2 className="h-4 w-4" />
-                          : <XCircle className="h-4 w-4" />}
-                        Confirming: {confirmAction}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="ml-auto h-6 w-6 hover:bg-white/20 text-white"
-                          onClick={() => { setConfirmAction(null); setRemarks(""); }}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/80 flex items-center justify-between px-1">
-                          <span>
-                            {confirmAction === "REJECTED" ? (
-                              <>Reasons for Rejection <span className="text-red-600 ml-1 opacity-100">*</span></>
-                            ) : "Supplementary Remarks (optional)"}
-                          </span>
-                        </label>
-                        <Textarea
-                          value={remarks}
-                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRemarks(e.target.value)}
-                          placeholder={
-                            confirmAction === "REJECTED"
-                              ? "Please specify why you are rejecting this draft..."
-                              : "Any notes for the next approver or encoder..."
-                          }
-                          className="min-h-[80px] max-h-[100px] rounded-xl border-2 focus:border-primary transition-all font-bold text-sm p-3 shadow-sm"
-                          disabled={submitting}
-                        />
-                        {confirmAction === "REJECTED" && remarks.trim().length > 0 && remarks.trim().length < 10 && (
-                          <p className="text-[11px] text-red-600 font-black animate-in slide-in-from-left-2 px-1">
-                            {10 - remarks.trim().length} more character{10 - remarks.trim().length !== 1 ? "s" : ""} needed to confirm rejection.
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="flex gap-2">
-                        <Button
-                          className={`flex-1 h-11 rounded-xl font-black text-sm gap-2 shadow-lg transition-all border-b-2
-                            ${confirmAction === "APPROVED"
-                              ? "bg-emerald-700 hover:bg-emerald-800 text-white border-emerald-900"
-                              : "bg-red-700 hover:bg-red-800 text-white border-red-900"}`}
-                          onClick={handleVote}
-                          disabled={
-                            submitting ||
-                            (confirmAction === "REJECTED" && !isRejectionSubmittable) ||
-                            (confirmAction === "APPROVED" && !isApprovalSubmittable)
-                          }
-                        >
-                          {submitting ? (
-                            <Loader2 className="h-5 w-5 animate-spin" />
-                          ) : (
-                            <ChevronRight className="h-5 w-5" />
-                          )}
-                          {submitting
-                            ? "PROCESSING..."
-                            : `CONFIRM ${confirmAction === "APPROVED" ? "APPROVAL" : "REJECTION"}`}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          className="px-6 h-11 rounded-xl font-bold text-xs text-muted-foreground hover:text-foreground"
-                          onClick={() => { setConfirmAction(null); setRemarks(""); }}
-                          disabled={submitting}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Close if read-only */}
-              {(!can_vote || my_vote) && (
-                <Button
-                  variant="outline"
-                  className="w-full h-12 rounded-xl mt-2 font-bold uppercase tracking-widest text-xs border-muted text-muted-foreground hover:bg-muted/10 transition-all"
-                  onClick={onClose}
-                >
-                  <X className="h-4 w-4 mr-2" />
-                  Dismiss Modal
-                </Button>
-              )}
             </div>
-          </div>
+          </>
         )}
       </DialogContent>
 
-      {/* Attachment Preview Modal (Full Screen) */}
       <Dialog open={!!previewUrl} onOpenChange={(v) => !v && setPreviewUrl(null)}>
-        <DialogContent
-          showCloseButton={false}
-          className="max-w-[90vw] max-h-[85vh] w-fit p-0 overflow-hidden bg-black border-none shadow-2xl flex flex-col items-center justify-center rounded-lg"
-        >
-          <DialogTitle className="sr-only">Attachment Preview</DialogTitle>
-          <DialogDescription className="sr-only">Full-screen view of the encoded attachment document.</DialogDescription>
-          
-          <Button
-            variant="default"
-            size="icon"
-            className="absolute top-4 right-4 rounded-full bg-white text-black hover:bg-white/90 shadow-2xl transition-all active:scale-95 border-none h-10 w-10 flex items-center justify-center z-50 shadow-black/20"
-            onClick={() => setPreviewUrl(null)}
-          >
-            <X className="h-6 w-6 stroke-[2.5]" />
-          </Button>
-
-          <div className="relative group flex items-center justify-center">
-            {previewUrl && (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={previewUrl}
-                alt="Attachment Preview"
-                className="max-w-[90vw] max-h-[85vh] w-auto h-auto object-contain shadow-2xl transition-all duration-300"
-              />
-            )}
-          </div>
+        <DialogContent className="max-w-[90vw] max-h-[85vh] p-0 overflow-hidden bg-black border-none shadow-2xl">
+          <Button variant="ghost" size="icon" className="absolute top-4 right-4 text-white hover:bg-white/20" onClick={() => setPreviewUrl(null)}><X size={24} /></Button>
+          {previewUrl && <img src={previewUrl} alt="Preview" className="max-w-[90vw] max-h-[85vh] object-contain mx-auto" />}
         </DialogContent>
       </Dialog>
     </Dialog>

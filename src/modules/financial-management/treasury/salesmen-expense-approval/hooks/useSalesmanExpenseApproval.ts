@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { startOfMonth, endOfMonth, format } from "date-fns";
+import { startOfMonth, endOfMonth, format, endOfWeek } from "date-fns";
 import type { DateRange } from "react-day-picker";
 
 import type { SalesmanExpenseRow, SalesmanExpenseDetail, ApprovalLog } from "../type";
@@ -16,29 +16,33 @@ export function useSalesmanExpenseApproval() {
   const [logsLoading, setLogsLoading] = React.useState(false);
   const [unauthorized, setUnauthorized] = React.useState(false);
 
-  // Date filter
-  const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
-    from: startOfMonth(new Date()),
-    to: endOfMonth(new Date()),
-  });
-
-  // Search & Pagination state
-  const [q, setQ] = React.useState("");
-  const [page, setPage] = React.useState(1);
-  const pageSize = 5; // User requested 5 rows height
-
-  const startDateStr = React.useMemo(() => 
-    dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined
-  , [dateRange]);
-
-  const endDateStr = React.useMemo(() => 
-    dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined
-  , [dateRange]);
-
+  // Modal State
   const [modalOpen, setModalOpen] = React.useState(false);
   const [modalLoading, setModalLoading] = React.useState(false);
   const [selectedSalesman, setSelectedSalesman] = React.useState<SalesmanExpenseRow | null>(null);
   const [salesmanDetail, setSalesmanDetail] = React.useState<SalesmanExpenseDetail | null>(null);
+
+  // Filtering state
+  const [selectedWeek, setSelectedWeek] = React.useState<string>("all");
+  const [availableWeeks, setAvailableWeeks] = React.useState<{ week_start: string; week_label: string }[]>([]);
+  const [weeksLoading, setWeeksLoading] = React.useState(false);
+
+  // Search & Pagination state
+  const [q, setQ] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const pageSize = 5;
+
+  const loadWeeks = React.useCallback(async () => {
+    try {
+      setWeeksLoading(true);
+      const data = await api.getAvailableWeeks();
+      setAvailableWeeks(data);
+    } catch (e) {
+      console.error("Failed to load weeks", e);
+    } finally {
+      setWeeksLoading(false);
+    }
+  }, []);
 
   const loadLogs = React.useCallback(async () => {
     try {
@@ -59,9 +63,18 @@ export function useSalesmanExpenseApproval() {
   const load = React.useCallback(async () => {
     try {
       setLoading(true);
+      const start = selectedWeek !== "all" ? selectedWeek : undefined;
+      let end: string | undefined = undefined;
+      if (start) {
+        const d = new Date(start + "T00:00:00");
+        const wEnd = endOfWeek(d, { weekStartsOn: 1 });
+        end = format(wEnd, "yyyy-MM-dd");
+      }
+
       const [data] = await Promise.all([
-        api.listSalesmenWithExpenses(startDateStr, endDateStr),
+        api.listSalesmenWithExpenses(start, end),
         loadLogs(),
+        loadWeeks(),
       ]);
       setRows(data);
     } catch (e: unknown) {
@@ -74,7 +87,7 @@ export function useSalesmanExpenseApproval() {
     } finally {
       setLoading(false);
     }
-  }, [loadLogs, startDateStr, endDateStr]);
+  }, [loadLogs, loadWeeks, selectedWeek]);
 
   React.useEffect(() => {
     load();
@@ -82,7 +95,7 @@ export function useSalesmanExpenseApproval() {
 
   React.useEffect(() => {
     setPage(1);
-  }, [dateRange]);
+  }, [selectedWeek]);
 
   // Client-side filtering
   const filteredRows = React.useMemo(() => {
@@ -109,7 +122,10 @@ export function useSalesmanExpenseApproval() {
     setModalOpen(true);
     setModalLoading(true);
     try {
-      const detail = await api.getSalesmanExpenses(row.id, startDateStr, endDateStr);
+      // For the modal, we fetch specifically for the row's week if available
+      const start = row.week_start || (selectedWeek !== "all" ? selectedWeek : undefined);
+      const end = row.week_end;
+      const detail = await api.getSalesmanExpenses(row.id, start, end);
       setSalesmanDetail(detail);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load expenses");
@@ -149,8 +165,9 @@ export function useSalesmanExpenseApproval() {
     closeModal,
     onConfirmed,
     unauthorized,
-    dateRange,
-    setDateRange,
+    selectedWeek,
+    setSelectedWeek,
+    availableWeeks,
   };
 }
 
