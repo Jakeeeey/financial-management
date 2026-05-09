@@ -181,6 +181,7 @@ type PayableResponse = {
   reference_no: string | null;
   attachment_url: string | null;
   is_concern?: boolean;
+  is_rejected?: boolean;
   feedback?: string | null;
 };
 
@@ -1541,6 +1542,7 @@ export async function GET(req: NextRequest) {
           reference_no: p.reference_no ?? null,
           attachment_url: resolveAttachmentId(expenseObj?.attachment_url),
           is_concern: expenseObj?.status === "With Concern",
+          is_rejected: expenseObj?.status === "Rejected",
           feedback: expenseObj?.feedback ?? null,
         };
       });
@@ -2405,7 +2407,7 @@ export async function POST(req: NextRequest) {
 
       if (nextLevel > maxLevel) {
         const payDraftRes = await directusFetch(
-          `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,amount,coa_id,reference_no,date,remarks&limit=-1`
+          `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,amount,coa_id,reference_no,date,remarks,expense_id.id,expense_id.status&limit=-1`
         );
 
         const payDraftRows =
@@ -2472,14 +2474,53 @@ export async function POST(req: NextRequest) {
           return json({ error: "Failed to create live disbursement." }, { status: 500 });
         }
 
-        const livePayablesPayload = payDraftRows.map((p) => ({
-          disbursement_id: liveId,
-          amount: p.amount,
-          coa_id: toNumericId(p.coa_id),
-          reference_no: liveDocNo,
-          date: p.date,
-          remarks: p.remarks ?? null,
-        }));
+        // Filter: Only move APPROVED items to the live table. 
+        // Items with CONCERN or REJECTED are skipped here and handled below.
+        const livePayablesPayload = payDraftRows
+          .filter(p => {
+            const exp = p.expense_id as any;
+            return exp?.status === "Approved" || exp?.status === "APPROVED";
+          })
+          .map((p) => ({
+            disbursement_id: liveId,
+            amount: p.amount,
+            coa_id: toNumericId(p.coa_id),
+            reference_no: liveDocNo,
+            date: p.date,
+            remarks: p.remarks ?? null,
+          }));
+
+        // Auto-Reject Logic: Any items that are NOT explicitly "Approved" 
+        // (including Draft, With Concern, or already Rejected) are automatically 
+        // marked as REJECTED in the expense system when the final approver says "Go".
+        for (const p of payDraftRows) {
+          const exp = p.expense_id as any;
+          const currentStatus = exp?.status || "Draft";
+          
+          if (currentStatus !== "Approved" && currentStatus !== "APPROVED") {
+            const expId = toNumericId(exp.id);
+            if (expId) {
+              await directusFetch(`/items/expense_draft/${expId}`, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ status: "Rejected" }),
+              });
+
+              await createExpenseLog({
+                expenseId: expId,
+                action: "Rejected",
+                changedBy: currentUserId,
+                changedAt: nowTs,
+                amount: p.amount,
+                remarks: `[Auto-Rejected] Item was in "${currentStatus}" status during final batch approval.`,
+                status: "Rejected",
+              });
+            }
+          }
+        }
+
+        // Recalculate total amount based ONLY on the items that actually made it to the live table
+        const approvedTotal = livePayablesPayload.reduce((sum, p) => sum + toNumber(p.amount), 0);
 
         const livePayablesRes = await directusFetch(`/items/disbursement_payables`, {
           method: "POST",
@@ -2497,8 +2538,16 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             status: "Approved",
             doc_no: liveDocNo,
+            total_amount: approvedTotal,
             approval_version: currentVersion,
           }),
+        });
+
+        // Update the live disbursement total as well
+        await directusFetch(`/items/disbursement/${liveId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ total_amount: approvedTotal }),
         });
 
         return json({

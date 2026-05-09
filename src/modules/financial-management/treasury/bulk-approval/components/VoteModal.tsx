@@ -141,21 +141,42 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   }, [itemDecisions]);
 
   const setItemStatus = (id: number, status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
+    const item = combinedItems.find(i => i.id === id);
+    if (item?.is_concern || item?.is_rejected) return; // Hard lock for persistent states
+
     setItemDecisions(prev => ({ ...prev, [id]: prev[id] === status ? "PENDING" : status }));
   };
 
   const toggleGroupStatus = (groupItems: any[], status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
     setItemDecisions(prev => {
       const next = { ...prev };
-      groupItems.forEach(item => { next[item.id] = status; });
+      groupItems.forEach(item => { 
+        const isPersistentLocked = item.is_concern || item.is_rejected;
+        // Don't override if persistent lock exists OR if we are doing a mass "APPROVED" but item is locally REJECTED/CONCERN
+        const isLocallyLocked = (status === "APPROVED" && (next[item.id] === "REJECTED" || next[item.id] === "WITH_CONCERN"));
+        
+        if (!isPersistentLocked && !isLocallyLocked) {
+          next[item.id] = status; 
+        }
+      });
       return next;
     });
   };
 
   const approveAll = () => {
-    const next = { ...itemDecisions };
-    combinedItems.forEach(item => { if (item.id > 0) next[item.id] = "APPROVED"; });
-    setItemDecisions(next);
+    setItemDecisions(prev => {
+      const next = { ...prev };
+      combinedItems.forEach(item => {
+        // Skip items that are already concerns or rejected (persistent or local)
+        const isCurrentlyConcern = next[item.id] === "WITH_CONCERN" || item.is_concern;
+        const isCurrentlyRejected = next[item.id] === "REJECTED" || item.is_rejected;
+
+        if (item.id > 0 && !isCurrentlyConcern && !isCurrentlyRejected) {
+          next[item.id] = "APPROVED";
+        }
+      });
+      return next;
+    });
   };
 
   const uncheckAll = () => {
@@ -563,7 +584,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                     <TableBody>
                       {activeGroup?.items.map((p, idx) => {
                         const status = itemDecisions[p.id] || "PENDING";
-                        const isReadOnly = p.status === "REJECTED" || p.status === "WITH_CONCERN" || isInteractionDisabled;
+                        const isReadOnly = p.is_concern || p.is_rejected || (status !== "PENDING" && status !== "APPROVED") || isInteractionDisabled;
                         return (
                           <React.Fragment key={p.id}>
                             <TableRow className="group hover:bg-slate-50/50 border-b border-slate-100">

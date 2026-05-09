@@ -37,6 +37,7 @@ export interface DraftPayable {
   reference_no: string | null;
   attachment_url: string | null;
   is_concern?: boolean;
+  is_rejected?: boolean;
   feedback?: string | null;
 }
 

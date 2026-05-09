@@ -281,7 +281,7 @@ export async function GET(req: NextRequest) {
         // Let's do it in two steps for expense_logs if needed, or just fetch ALL for the logIds via payables.
 
         // Actually, let's fetch expense_ids from payables first.
-        const pResForIds = await directusFetch(`/items/disbursement_payables_draft?filter[disbursement_id][_in]=${logIds.join(",")}&fields=expense_id&limit=-1`);
+        const pResForIds = await directusFetch(`/items/disbursement_payables_draft?filter[disbursement_id][_in]=${logIds.join(",")}&fields=expense_id,disbursement_id&limit=-1`);
         const pRowsForIds = (pResForIds.data as { data?: Record<string, unknown>[] })?.data ?? [];
         const expenseIdsForAudit = [...new Set(pRowsForIds.map(pr => {
           const raw = pr.expense_id;
@@ -290,7 +290,7 @@ export async function GET(req: NextRequest) {
         }).filter(id => !isNaN(id) && id > 0))];
 
         if (expenseIdsForAudit.length > 0) {
-          const finalElRes = await directusFetch(`/items/expense_draft_logs?filter[expense_id][_in]=${expenseIdsForAudit.join(",")}&fields=log_id,expense_id,action,changed_by,changed_at,amount,remarks,particulars,status&limit=-1`);
+          const finalElRes = await directusFetch(`/items/expense_draft_logs?filter[expense_id][_in]=${expenseIdsForAudit.join(",")}&fields=log_id,expense_id,action,changed_by,changed_at,amount,remarks,particulars,status,version&limit=-1`);
           allExpenseLogs = (finalElRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
         }
 
@@ -363,7 +363,7 @@ export async function GET(req: NextRequest) {
           const expenseLogs = allExpenseLogs
             .filter(l => currentExpenseIds.includes(Number(l.expense_id)))
             .map(l => ({
-              id: Number(l.log_id),
+              log_id: Number(l.log_id),
               expense_id: Number(l.expense_id),
               action: String(l.action || ""),
               editor_name: userMap[Number(l.changed_by)] || `User #${l.changed_by}`,
@@ -372,6 +372,7 @@ export async function GET(req: NextRequest) {
               remarks: l.remarks ? String(l.remarks) : null,
               particulars: coaMapForLogs[Number(l.particulars)] || String(l.particulars || ""),
               status: String(l.status || ""),
+              version: Number(l.version || 1),
             }));
 
           return {
