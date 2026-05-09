@@ -1,7 +1,7 @@
 // src/app/api/fm/treasury/bulk-approval/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { endOfWeek, format, startOfWeek } from "date-fns";
+import { format, startOfWeek, endOfWeek } from "date-fns";
 
 export const runtime = "nodejs";
 
@@ -11,7 +11,6 @@ const STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 const COOKIE_NAME = "vos_access_token";
 
 type VoteStatus = "APPROVED" | "REJECTED" | "WITH_CONCERN";
-
 type DraftLifecycleStatus =
   | "Submitted"
   | `Pending_L${number}`
@@ -43,7 +42,6 @@ type DirectusUserRow = {
   user_email?: string | null;
 };
 
-
 type DirectusSupplierRow = {
   id?: number | string;
   user_id?: number | string | null;
@@ -62,11 +60,13 @@ type DirectusDivisionRow = {
   division_description?: string | null;
   division_code?: string | null;
 };
+
 type DirectusCoaRow = {
   coa_id?: number | string;
   gl_code?: string | null;
   account_title?: string | null;
 };
+
 type ApproverRecord = {
   id: number;
   approver_id: number;
@@ -84,7 +84,7 @@ type DirectusApproverRow = {
 type DisbursementDraftRow = {
   id: number | string;
   doc_no?: string | null;
-  payee?: number | string | DirectusUserRow | null;
+  payee?: number | string | DirectusSupplierRow | null;
   total_amount?: number | string | null;
   remarks?: string | null;
   status?: string | null;
@@ -116,12 +116,7 @@ type DisbursementPayableDraftRow = {
     id?: number | string;
     status?: string | null;
     feedback?: string | null;
-    return_to?: string | null;
-    attachment_url?:
-    | string
-    | number
-    | { id?: string; uuid?: string; directus_files_id?: string }
-    | null;
+    attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   }
   | null;
 };
@@ -135,11 +130,7 @@ type ExpenseDraftRow = {
   encoder_id?: number | string | null;
   return_to?: string | null;
   particulars?: number | string | DirectusCoaRow | null;
-  attachment_url?:
-  | string
-  | number
-  | { id?: string; uuid?: string; directus_files_id?: string }
-  | null;
+  attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   feedback?: string | null;
   status?: string | null;
 };
@@ -148,6 +139,7 @@ type ApprovalVoteRow = {
   id?: number | string;
   draft_id?: number | string | null;
   approver_id?: number | string | DirectusUserRow | null;
+  approver_heirarchy?: number | string | null;
   status?: string | null;
   remarks?: string | null;
   version?: number | string | null;
@@ -252,9 +244,7 @@ function json(body: unknown, init?: ResponseInit) {
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const h: Record<string, string> = { Accept: "application/json" };
-
   if (STATIC_TOKEN) h.Authorization = `Bearer ${STATIC_TOKEN}`;
-
   return { ...h, ...extra };
 }
 
@@ -270,10 +260,7 @@ async function directusFetch(path: string, init?: RequestInit) {
   const cookieStore = await cookies();
   const userToken = cookieStore.get(COOKIE_NAME)?.value;
 
-  const initHeaders = (init?.headers ?? {}) as Record<
-    string,
-    string | boolean | undefined
-  >;
+  const initHeaders = (init?.headers ?? {}) as Record<string, string | boolean | undefined>;
 
   const computedHeaders: Record<string, string> = {
     ...authHeaders(),
@@ -342,41 +329,38 @@ function decodeJwtSub(token: string): number | null {
   }
 }
 
-function toNumericId(val: unknown): number | null {
-  if (val === null || val === undefined) return null;
-
+function toNumericId(val: any): number | null {
+  if (val === null || val === undefined || val === "") return null;
   if (typeof val === "number") return Number.isFinite(val) ? val : null;
-
   if (typeof val === "string") {
-    const n = Number(val);
-    return Number.isFinite(n) && val.trim() !== "" ? n : null;
+    const n = parseInt(val, 10);
+    return isNaN(n) ? null : n;
   }
-
   if (typeof val === "object") {
     const obj = val as Record<string, unknown>;
-
-    const id =
-      obj.id ??
-      obj.user_id ??
+    const raw =
+      obj.division_id ??
       obj.coa_id ??
       obj.expense_id ??
-      obj.division_id ??
+      obj.user_id ??
+      obj.id ??
       obj.value;
 
-    return toNumericId(id);
+    if (raw === null || raw === undefined || raw === "" || typeof raw === "object") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
   }
-
   return null;
 }
 
 function toNumber(val: unknown, fallback = 0): number {
+  if (val === null || val === undefined || val === "") return fallback;
   const n = Number(val);
   return Number.isFinite(n) ? n : fallback;
 }
 
 function toStringOrNull(val: unknown): string | null {
   if (val === null || val === undefined) return null;
-
   const s = String(val);
   return s.trim() ? s : null;
 }
@@ -390,7 +374,6 @@ function resolveAttachmentId(val: unknown): string | null {
   if (typeof val === "object") {
     const obj = val as Record<string, unknown>;
     const id = obj.id ?? obj.uuid ?? obj.directus_files_id;
-
     return typeof id === "string" ? id : null;
   }
 
@@ -458,11 +441,7 @@ function getVirtualDraftId(params: {
   return hashVirtualKey(getVirtualDraftKey(params));
 }
 
-function buildFilterQuery(
-  filter: Record<string, unknown>,
-  fields: string,
-  extra?: Record<string, string>
-) {
+function buildFilterQuery(filter: Record<string, unknown>, fields: string, extra?: Record<string, string>) {
   const query = new URLSearchParams({
     filter: JSON.stringify(filter),
     fields,
@@ -488,7 +467,6 @@ function getUserDisplayName(row?: DirectusUserRow | null, fallback?: string) {
     .trim();
 
   if (fullName) return fullName;
-
   if (row.nickname?.trim()) return row.nickname.trim();
   if (row.user_email?.trim()) return row.user_email.trim();
 
@@ -499,11 +477,9 @@ function getDivisionName(row?: DirectusDivisionRow | null, fallback?: string) {
   if (!row) return fallback ?? "N/A";
 
   const name = row.division_name?.trim();
-
   if (name) return name;
 
   const code = row.division_code?.trim();
-
   if (code) return code;
 
   return fallback || "N/A";
@@ -512,13 +488,12 @@ function getDivisionName(row?: DirectusDivisionRow | null, fallback?: string) {
 async function getCurrentUserId(): Promise<number | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
-
   return token ? decodeJwtSub(token) : null;
 }
 
 async function getApproverRecords(userId: number): Promise<ApproverRecord[]> {
   const res = await directusFetch(
-    `/items/disbursement_draft_approver?filter[approver_id][_eq]=${userId}&filter[is_deleted][_eq]=0&fields=id,approver_id,division_id,approver_heirarchy&limit=-1&sort=-id`
+    `/items/disbursement_draft_approver?filter[approver_id][_eq]=${userId}&filter[is_deleted][_eq]=0&fields=id,approver_id,approver_heirarchy,division_id.division_id,division_id.division_name&limit=-1&sort=-id`
   );
 
   if (!res.ok) return [];
@@ -531,6 +506,7 @@ async function getApproverRecords(userId: number): Promise<ApproverRecord[]> {
       id: toNumber(r.id),
       approver_id: toNumericId(r.approver_id) ?? 0,
       division_id: toNumericId(r.division_id) ?? 0,
+      division_name: typeof r.division_id === "object" ? (r.division_id as any).division_name : `Division #${r.division_id}`,
       approver_heirarchy: toNumber(r.approver_heirarchy, 1),
     }))
     .filter((r) => r.approver_id > 0 && r.division_id > 0);
@@ -589,10 +565,7 @@ function buildLevelsByDivision(approverRecords: ApproverRecord[]) {
   const levelsByDivision: Record<number, number[]> = {};
 
   for (const record of approverRecords) {
-    if (!levelsByDivision[record.division_id]) {
-      levelsByDivision[record.division_id] = [];
-    }
-
+    if (!levelsByDivision[record.division_id]) levelsByDivision[record.division_id] = [];
     if (!levelsByDivision[record.division_id].includes(record.approver_heirarchy)) {
       levelsByDivision[record.division_id].push(record.approver_heirarchy);
     }
@@ -605,11 +578,6 @@ function buildLevelsByDivision(approverRecords: ApproverRecord[]) {
   return levelsByDivision;
 }
 
-/**
- * IMPORTANT FIX:
- * Some tables store user references as `user.id`, while others store `user.user_id`.
- * This resolver maps BOTH ids to the same display name, so the UI does not fall back to "User #371".
- */
 async function fetchUserMap(userIds: number[]) {
   const uniqueIds = [
     ...new Set(userIds.filter((id) => Number.isFinite(id) && id > 0)),
@@ -634,15 +602,12 @@ async function fetchUserMap(userIds: number[]) {
 
   for (const row of rows) {
     const userId = toNumericId(row.user_id);
-
     if (!userId) continue;
-
     map.set(userId, getUserDisplayName(row, `User #${userId}`));
   }
 
   return map;
 }
-
 
 async function fetchSupplierMap(supplierIds: number[]) {
   const uniqueIds = [
@@ -668,7 +633,6 @@ async function fetchSupplierMap(supplierIds: number[]) {
 
   for (const row of rows) {
     const supplierId = toNumericId(row.id);
-
     if (!supplierId) continue;
 
     const supplierName =
@@ -683,6 +647,7 @@ async function fetchSupplierMap(supplierIds: number[]) {
 
   return map;
 }
+
 async function fetchDivisionMap(divisionIds: number[]) {
   const uniqueIds = [
     ...new Set(divisionIds.filter((id) => Number.isFinite(id) && id > 0)),
@@ -707,9 +672,7 @@ async function fetchDivisionMap(divisionIds: number[]) {
 
   for (const row of rows) {
     const divisionId = toNumericId(row.division_id);
-
     if (!divisionId) continue;
-
     map.set(divisionId, getDivisionName(row, `Division #${divisionId}`));
   }
 
@@ -740,22 +703,17 @@ async function fetchCoaMap(coaIds: number[]) {
 
   for (const row of rows) {
     const coaId = toNumericId(row.coa_id);
-
     if (!coaId) continue;
-
     const title = row.account_title?.trim();
-
     map.set(coaId, title || `COA #${coaId}`);
   }
 
   return map;
 }
+
 async function fetchMyVotes(draftIds: number[], userId: number) {
   const uniqueIds = [...new Set(draftIds.filter((id) => id > 0))];
-  const map = new Map<
-    string,
-    { status: string; created_at: string; version: number }
-  >();
+  const map = new Map<string, { status: string; created_at: string; version: number }>();
 
   if (!uniqueIds.length) return map;
 
@@ -794,9 +752,11 @@ function canUserVote(params: {
   if (params.myVote) return false;
 
   return params.approverRecords.some(
-    (r) =>
-      r.division_id === params.divisionId &&
-      r.approver_heirarchy === params.currentTier
+    (r) => {
+      const rDivId = toNumericId(r.division_id);
+      return rDivId === params.divisionId && 
+             toNumber(r.approver_heirarchy) === params.currentTier;
+    }
   );
 }
 
@@ -820,10 +780,7 @@ async function recalcDraftTotal(draftId: number) {
   return total;
 }
 
-async function resolveVirtualItemsById(
-  virtualId: number,
-  allowedDivisionIds: number[]
-) {
+async function resolveVirtualItemsById(virtualId: number, allowedDivisionIds: number[]) {
   const res = await directusFetch(
     `/items/expense_draft?filter[status][_eq]=Approved&filter[return_to][_nnull]=true&filter[division_id][_in]=${allowedDivisionIds.join(
       ","
@@ -845,8 +802,7 @@ async function resolveVirtualItemsById(
     const encoderId = toNumericId(item.encoder_id);
     const divisionId = toNumericId(item.division_id);
     const transactionDate = toStringOrNull(item.transaction_date);
-    const tier =
-      parseInt(String(item.return_to ?? "").replace(/\D/g, ""), 10) || 1;
+    const tier = parseInt(String(item.return_to ?? "").replace(/\D/g, ""), 10) || 1;
 
     if (!encoderId || !divisionId || !transactionDate) return false;
 
@@ -888,38 +844,31 @@ async function buildVoteHistory(params: {
     level: toNumber(r.approver_heirarchy, 1),
   }));
 
+  const approverIds = approvers.map((a) => a.approver_id).filter(Boolean);
   const levelByApprover = new Map<number, number>();
-
-  for (const a of approvers) {
-    if (a.approver_id > 0) levelByApprover.set(a.approver_id, a.level);
-  }
+  for (const a of approvers) levelByApprover.set(a.approver_id, a.level);
 
   const votesRes = await directusFetch(
-    `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${params.draftId}&fields=approver_id,status,remarks,version,created_at&sort=version,created_at&limit=-1`
+    `/items/disbursement_draft_approvals?filter[draft_id][_eq]=${params.draftId}&fields=approver_id,status,remarks,version,created_at,approver_heirarchy&sort=version,created_at&limit=-1`
   );
 
   const votes =
     (votesRes.data as DirectusListResponse<ApprovalVoteRow>)?.data ?? [];
 
+  // Collect ALL relevant IDs for user resolution (approvers + voters)
   const allUserIds = new Set<number>();
-
-  for (const approver of approvers) {
-    if (approver.approver_id > 0) allUserIds.add(approver.approver_id);
-  }
-
-  for (const vote of votes) {
-    const voteApproverId = toNumericId(vote.approver_id);
-
-    if (voteApproverId) allUserIds.add(voteApproverId);
-  }
+  approvers.forEach(a => allUserIds.add(a.approver_id));
+  votes.forEach(v => {
+    const vid = toNumericId(v.approver_id);
+    if (vid) allUserIds.add(vid);
+  });
 
   const userMap = await fetchUserMap([...allUserIds]);
 
   const versionSet = new Set<number>();
   versionSet.add(params.currentVersion);
-
-  for (const vote of votes) {
-    versionSet.add(toNumber(vote.version, 1));
+  for (const v of votes) {
+    versionSet.add(toNumber(v.version, 1));
   }
 
   const rounds: LogRoundResponse[] = [...versionSet]
@@ -929,11 +878,10 @@ async function buildVoteHistory(params: {
         .filter((v) => toNumber(v.version, 1) === version)
         .map((v) => {
           const approverId = toNumericId(v.approver_id) ?? 0;
-
           return {
             approver_id: approverId,
             name: userMap.get(approverId) ?? `User #${approverId}`,
-            level: levelByApprover.get(approverId) ?? 1,
+            level: toNumber(v.approver_heirarchy) || levelByApprover.get(approverId) || 1,
             status: v.status ?? "",
             remarks: v.remarks ?? null,
             created_at: v.created_at ?? "",
@@ -943,15 +891,10 @@ async function buildVoteHistory(params: {
       const isCurrent = version === params.currentVersion;
 
       let outcome = "IN_PROGRESS";
-
       if (!isCurrent) {
-        if (roundVotes.some((v) => v.status === "REJECTED")) {
-          outcome = "REJECTED";
-        } else if (roundVotes.some((v) => v.status === "WITH_CONCERN")) {
-          outcome = "WITH_CONCERN";
-        } else {
-          outcome = "SUPERSEDED";
-        }
+        if (roundVotes.some(v => v.status === "REJECTED")) outcome = "REJECTED";
+        else if (roundVotes.some(v => v.status === "WITH_CONCERN")) outcome = "WITH_CONCERN";
+        else outcome = "SUPERSEDED";
       } else {
         if (params.draftStatus === "Approved") outcome = "FINAL_APPROVED";
         else if (params.draftStatus === "Rejected") outcome = "REJECTED";
@@ -1000,7 +943,6 @@ async function buildApproversByLevel(params: {
 
   for (const vote of votes) {
     const approverId = toNumericId(vote.approver_id);
-
     if (approverId) voteMap.set(approverId, vote);
   }
 
@@ -1100,17 +1042,14 @@ async function insertExpenseIntoPayableDraft(params: {
   });
 
   if (!res.ok) {
-    console.error(
-      `[insertExpenseIntoPayableDraft] FAILED for expense ${expenseId} into draft ${params.draftId}:`,
-      res.data
-    );
-
+    console.error(`[insertExpenseIntoPayableDraft] FAILED for expense ${expenseId} into draft ${params.draftId}:`, res.data);
     return {
       ok: false,
       error: res.data,
     };
   }
 
+  console.log(`[insertExpenseIntoPayableDraft] SUCCESS for expense ${expenseId} into draft ${params.draftId}`);
   return {
     ok: true,
     error: null,
@@ -1130,14 +1069,10 @@ async function fetchExpenseById(expenseId: number) {
 export async function GET(req: NextRequest) {
   try {
     const currentUserId = await getCurrentUserId();
-
     if (!currentUserId) return json({ error: "Unauthorized" }, { status: 401 });
 
     const approverRecords = await getApproverRecords(currentUserId);
-
-    if (!approverRecords.length) {
-      return json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!approverRecords.length) return json({ error: "Forbidden" }, { status: 403 });
 
     const myDivisionIds = [...new Set(approverRecords.map((r) => r.division_id))];
     const levelsByDivision = buildLevelsByDivision(approverRecords);
@@ -1176,9 +1111,8 @@ export async function GET(req: NextRequest) {
           ?.data ?? [];
 
       const returnedRows =
-        (returnedRes.data as DirectusListResponse<{
-          transaction_date?: string | null;
-        }>)?.data ?? [];
+        (returnedRes.data as DirectusListResponse<{ transaction_date?: string | null }>)
+          ?.data ?? [];
 
       const weeks: Record<string, { week_start: string; week_label: string }> = {};
 
@@ -1210,11 +1144,10 @@ export async function GET(req: NextRequest) {
     if (resource === "drafts") {
       const startDate = sp.get("start_date");
       const endDate = sp.get("end_date");
+      const filterDivId = toNumericId(sp.get("divisionId"));
 
       const filter: Record<string, unknown> = {
-        division_id: {
-          _in: myDivisionIds,
-        },
+        division_id: filterDivId ? { _eq: filterDivId } : { _in: myDivisionIds },
         status: {
           _nin: ["Approved", "Rejected"],
         },
@@ -1233,7 +1166,6 @@ export async function GET(req: NextRequest) {
       );
 
       const draftRes = await directusFetch(`/items/disbursement_draft?${query}`);
-
       if (!draftRes.ok) return json(draftRes.data, { status: draftRes.status });
 
       const realDrafts =
@@ -1262,9 +1194,7 @@ export async function GET(req: NextRequest) {
         "id,amount,remarks,transaction_date,division_id,encoder_id,return_to,particulars,attachment_url,feedback,status"
       );
 
-      const returnedRes = await directusFetch(
-        `/items/expense_draft?${returnedQuery}`
-      );
+      const returnedRes = await directusFetch(`/items/expense_draft?${returnedQuery}`);
 
       const returnedRows =
         (returnedRes.data as DirectusListResponse<ExpenseDraftRow>).data ?? [];
@@ -1359,8 +1289,7 @@ export async function GET(req: NextRequest) {
         const encoderId = toNumericId(item.encoder_id);
         const divisionId = toNumericId(item.division_id);
         const transactionDate = toStringOrNull(item.transaction_date);
-        const tier =
-          parseInt(String(item.return_to ?? "").replace(/\D/g, ""), 10) || 1;
+        const tier = parseInt(String(item.return_to ?? "").replace(/\D/g, ""), 10) || 1;
 
         if (!encoderId || !divisionId || !transactionDate) continue;
 
@@ -1422,7 +1351,6 @@ export async function GET(req: NextRequest) {
       const data = [...realRows, ...virtualRows].sort((a, b) => {
         const aDate = a.transaction_date ?? "";
         const bDate = b.transaction_date ?? "";
-
         return bDate.localeCompare(aDate);
       });
 
@@ -1435,7 +1363,6 @@ export async function GET(req: NextRequest) {
 
     if (resource === "draft-detail") {
       const draftIdRaw = sp.get("id") || sp.get("draft_id");
-
       if (!draftIdRaw) {
         return json({ error: "id or draft_id is required" }, { status: 400 });
       }
@@ -1447,7 +1374,6 @@ export async function GET(req: NextRequest) {
         const resolved = await resolveVirtualItemsById(draftId, myDivisionIds);
 
         if (!resolved.ok) return json(resolved.data, { status: resolved.status });
-
         if (!resolved.items.length) {
           return json({ error: "Virtual draft not found" }, { status: 404 });
         }
@@ -1455,9 +1381,7 @@ export async function GET(req: NextRequest) {
         const first = resolved.items[0];
         const encoderId = toNumericId(first.encoder_id) ?? 0;
         const divisionId = toNumericId(first.division_id) ?? 0;
-        const tier =
-          parseInt(String(first.return_to ?? "").replace(/\D/g, ""), 10) || 1;
-
+        const tier = parseInt(String(first.return_to ?? "").replace(/\D/g, ""), 10) || 1;
         const total = resolved.items.reduce(
           (sum, item) => sum + toNumber(item.amount),
           0
@@ -1511,8 +1435,7 @@ export async function GET(req: NextRequest) {
             current_tier: tier,
             max_level: maxLevelByDivision[divisionId] ?? tier,
             transaction_type: 2,
-            division_name:
-              divisionMap.get(divisionId) ?? `Division #${divisionId}`,
+            division_name: divisionMap.get(divisionId) ?? `Division #${divisionId}`,
           },
           payables,
           concern_items: [],
@@ -1746,10 +1669,7 @@ export async function GET(req: NextRequest) {
 
     if (resource === "log-detail") {
       const draftIdRaw = sp.get("draft_id") || sp.get("id");
-
-      if (!draftIdRaw) {
-        return json({ error: "draft_id is required" }, { status: 400 });
-      }
+      if (!draftIdRaw) return json({ error: "draft_id is required" }, { status: 400 });
 
       const draftId = Number(draftIdRaw);
 
@@ -1764,7 +1684,6 @@ export async function GET(req: NextRequest) {
       if (!draft) return json({ error: "Draft not found" }, { status: 404 });
 
       const divisionId = toNumericId(draft.division_id) ?? 0;
-
       if (!myDivisionIds.includes(divisionId)) {
         return json({ error: "Forbidden" }, { status: 403 });
       }
@@ -1827,11 +1746,9 @@ export async function POST(req: NextRequest) {
     }
 
     const currentUserId = await getCurrentUserId();
-
     if (!currentUserId) return json({ error: "Unauthorized" }, { status: 401 });
 
     const approverRecords = await getApproverRecords(currentUserId);
-
     if (!approverRecords.length) {
       return json(
         { error: "Forbidden: Not an authorized approver" },
@@ -1853,7 +1770,6 @@ export async function POST(req: NextRequest) {
       const resolved = await resolveVirtualItemsById(draftId, myDivisionIds);
 
       if (!resolved.ok) return json(resolved.data, { status: resolved.status });
-
       if (!resolved.items.length) {
         return json({ error: "Virtual draft items not found" }, { status: 404 });
       }
@@ -1861,26 +1777,31 @@ export async function POST(req: NextRequest) {
       const first = resolved.items[0];
       const divisionId = toNumericId(first.division_id) ?? 0;
       const encoderId = toNumericId(first.encoder_id) ?? 0;
-      const tier =
-        parseInt(String(first.return_to ?? "").replace(/\D/g, ""), 10) || 1;
+      const tier = parseInt(String(first.return_to ?? "").replace(/\D/g, ""), 10) || 1;
 
       if (!myDivisionIds.includes(divisionId)) {
         return json({ error: "Forbidden" }, { status: 403 });
       }
 
+      // RBAC: Verify user has authority for THIS division AND at least THIS tier (Virtual Drafts)
       const authorizedLevels = approverRecords
-        .filter((r) => r.division_id === divisionId)
-        .map((r) => r.approver_heirarchy);
+        .filter((r) => {
+          const rDivId = toNumericId(r.division_id);
+          return rDivId !== null && rDivId === divisionId;
+        })
+        .map((r) => toNumber(r.approver_heirarchy));
 
-      if (!authorizedLevels.includes(tier)) {
-        return json({ error: "Unauthorized tier" }, { status: 403 });
+      if (!authorizedLevels.some(lvl => lvl >= tier)) {
+        console.warn(`[POST] RBAC Failure (Virtual): User ${currentUserId} attempted to vote on Tier ${tier} for Division ${divisionId}. Authorized tiers:`, authorizedLevels);
+        return json({ 
+          error: "Unauthorized tier",
+          detail: `You are authorized for levels [${authorizedLevels.join(",")}] in this division, but these items require at least Level ${tier} approval.`
+        }, { status: 403 });
       }
 
       const initialTotal = resolved.items.reduce((sum, item) => {
         const decision = item_decisions?.[`-${toNumericId(item.id) ?? 0}`];
-
         if (decision?.status === "APPROVED") return sum + toNumber(item.amount);
-
         return sum;
       }, 0);
 
@@ -1919,7 +1840,6 @@ export async function POST(req: NextRequest) {
 
       for (const expense of resolved.items) {
         const expenseId = toNumericId(expense.id);
-
         if (!expenseId) continue;
 
         const decision = item_decisions?.[`-${expenseId}`] ?? {
@@ -1931,7 +1851,6 @@ export async function POST(req: NextRequest) {
           const insertResult = await insertExpenseIntoPayableDraft({
             draftId,
             expense,
-            referenceNo: draft.doc_no ?? `REF-${draftId}`,
           });
 
           if (!insertResult.ok) {
@@ -2027,7 +1946,6 @@ export async function POST(req: NextRequest) {
       if (!draft) return json({ error: "Draft not found" }, { status: 404 });
 
       const divisionId = toNumericId(draft.division_id) ?? 0;
-
       if (!myDivisionIds.includes(divisionId)) {
         return json({ error: "Forbidden" }, { status: 403 });
       }
@@ -2040,12 +1958,20 @@ export async function POST(req: NextRequest) {
 
     const draftDivisionId = toNumericId(draft.division_id) ?? 0;
 
+    // RBAC: Verify user has authority for THIS division AND at least THIS tier
     const authorizedLevels = approverRecords
-      .filter((r) => r.division_id === draftDivisionId)
-      .map((r) => r.approver_heirarchy);
+      .filter((r) => {
+        const rDivId = toNumericId(r.division_id);
+        return rDivId !== null && rDivId === draftDivisionId;
+      })
+      .map((r) => toNumber(r.approver_heirarchy));
 
-    if (!authorizedLevels.includes(currentTier)) {
-      return json({ error: "Unauthorized tier" }, { status: 403 });
+    if (!authorizedLevels.some(lvl => lvl === currentTier)) {
+      console.warn(`[POST] RBAC Failure: User ${currentUserId} attempted to vote on Tier ${currentTier} for Division ${draftDivisionId}. Authorized tiers:`, authorizedLevels);
+      return json({ 
+        error: "Unauthorized tier",
+        detail: `You are authorized for levels [${authorizedLevels.join(",")}] in this division, but the draft is currently at Level ${currentTier}.`
+      }, { status: 403 });
     }
 
     const existingVoteRes = await directusFetch(
@@ -2056,8 +1982,13 @@ export async function POST(req: NextRequest) {
       ((existingVoteRes.data as DirectusListResponse<ApprovalVoteRow>).data ??
         [])[0];
 
+    console.log(`[POST] Check Existing Vote: Draft=${draftId}, User=${currentUserId}, Version=${currentVersion}. Found:`, existingVote?.id || "None");
+
     if (existingVote && existingVote.status && existingVote.status !== "DRAFT") {
-      return json({ error: "Already voted" }, { status: 409 });
+      return json({ 
+        error: "Already voted",
+        detail: `A vote record already exists for this user on version ${currentVersion} of draft ${draftId}.`
+      }, { status: 409 });
     }
 
     const finalRemarks = remarks?.trim() || null;
@@ -2067,28 +1998,33 @@ export async function POST(req: NextRequest) {
     }
 
     if (item_decisions && Object.keys(item_decisions).length > 0) {
+      console.log(`[POST] Processing ${Object.keys(item_decisions).length} item decisions. isVirtual: ${isVirtual}`);
       const concernDecisions = Object.entries(item_decisions).filter(
         ([id]) => Number(id) < 0
       );
 
+      // If we are in a virtual draft, we might need to find/create a real draft to host these items
       let targetDraftId = draftId;
-
       if (isVirtual) {
+        // Find an existing "Submitted" draft for the same week/division/encoder
         const weekStart = getWeekStart(draft.transaction_date ?? "");
         const weekEnd = getWeekEndFromStart(weekStart);
         const encoderId = toNumericId(draft.encoder_id);
+
+        console.log(`[POST] Virtual draft detected. Looking for real draft in week ${weekStart} for division ${draft.division_id} / encoder ${encoderId}`);
 
         const realDraftRes = await directusFetch(
           `/items/disbursement_draft?filter[division_id][_eq]=${draft.division_id}&filter[encoder_id][_eq]=${encoderId}&filter[transaction_date][_between]=[${weekStart},${weekEnd}]&filter[status][_nin]=Approved,Rejected&limit=1`
         );
 
-        const existingDraft =
-          ((realDraftRes.data as DirectusListResponse<DisbursementDraftRow>)
-            .data ?? [])[0];
+        const existingDraft = ((realDraftRes.data as DirectusListResponse<DisbursementDraftRow>).data ?? [])[0];
 
         if (existingDraft) {
           targetDraftId = toNumericId(existingDraft.id) ?? draftId;
+          console.log(`[POST] Found existing real draft: ${targetDraftId}`);
         } else {
+          console.log(`[POST] No existing draft found. Creating new host draft...`);
+          // Create a new draft if none exists
           const newDraftRes = await directusFetch(`/items/disbursement_draft`, {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -2097,37 +2033,38 @@ export async function POST(req: NextRequest) {
               encoder_id: encoderId,
               transaction_date: draft.transaction_date,
               status: "Submitted",
-              remarks: "Auto-generated from re-approved items. [Contains Returned Items]",
+              remarks: `Auto-generated from re-approved items. [Contains Returned Items]`,
               total_amount: 0,
               approval_version: 1,
             }),
           });
 
           if (!newDraftRes.ok) {
-            return json(
-              { error: "Failed to create draft for re-approved items." },
-              { status: 500 }
-            );
+            console.error(`[POST] Failed to create auto-draft:`, newDraftRes.data);
+            return json({ error: "Failed to create draft for re-approved items." }, { status: 500 });
           }
 
-          targetDraftId =
-            toNumericId(
-              (newDraftRes.data as DirectusItemResponse<{ id: number }>).data?.id
-            ) ?? draftId;
+          targetDraftId = toNumericId((newDraftRes.data as DirectusItemResponse<{ id: number }>).data?.id) ?? draftId;
+          console.log(`[POST] Created new draft: ${targetDraftId}`);
         }
       }
 
+      console.log(`[POST] Target draft ID for item re-insertion: ${targetDraftId}`);
       const payableDecisions = Object.entries(item_decisions).filter(
         ([id]) => Number(id) > 0
       );
 
       for (const [idStr, decision] of concernDecisions) {
         const expenseId = Math.abs(Number(idStr));
+        console.log(`[POST] Processing concern decision for expense ${expenseId}: ${decision.status}`);
         const expense = await fetchExpenseById(expenseId);
-
-        if (!expense) continue;
+        if (!expense) {
+          console.warn(`[POST] Expense ${expenseId} not found in DB.`);
+          continue;
+        }
 
         if (decision.status === "APPROVED") {
+          console.log(`[POST] Attempting to re-insert expense ${expenseId} into draft ${targetDraftId}`);
           const insertResult = await insertExpenseIntoPayableDraft({
             draftId: targetDraftId,
             expense,
@@ -2239,11 +2176,9 @@ export async function POST(req: NextRequest) {
           for (const payable of culledPayables) {
             const payableId = toNumericId(payable.id);
             const expenseId = toNumericId(payable.expense_id);
-
             if (!payableId || !expenseId) continue;
 
             const decision = item_decisions[String(payableId)];
-
             if (!decision) continue;
 
             const targetStatus =
@@ -2329,42 +2264,42 @@ export async function POST(req: NextRequest) {
 
     if (item_decisions && Object.keys(item_decisions).length > 0) {
       const decisions = Object.values(item_decisions);
+      const hasApproved = decisions.some((d) => d.status === "APPROVED");
       const hasConcern = decisions.some((d) => d.status === "WITH_CONCERN");
-      const allRejected =
-        decisions.length > 0 && decisions.every((d) => d.status === "REJECTED");
+      const allRejected = decisions.length > 0 && decisions.every((d) => d.status === "REJECTED");
 
+      // Logic: If there are remaining items, it means they are approved by default
+      // even if the frontend didn't explicitly send "APPROVED" for every row.
       if (remainingCount > 0) finalVoteStatus = "APPROVED";
       else if (hasConcern) finalVoteStatus = "WITH_CONCERN";
       else if (allRejected) finalVoteStatus = "REJECTED";
     }
 
-    const approvalRecordRes = await directusFetch(
-      `/items/disbursement_draft_approvals`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          draft_id: draftId,
-          approver_id: currentUserId,
-          status: finalVoteStatus,
-          remarks: finalRemarks,
-          version: currentVersion,
-          created_at: nowTs,
-        }),
-      }
+    const myHierarchy = Math.max(
+      ...approverRecords
+        .filter(r => toNumericId(r.division_id) === draftDivisionId)
+        .map(r => toNumber(r.approver_heirarchy))
     );
 
-    if (!approvalRecordRes.ok) {
-      return json(approvalRecordRes.data, { status: approvalRecordRes.status });
-    }
+    const approvalRecordRes = await directusFetch(`/items/disbursement_draft_approvals`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        draft_id: draftId,
+        approver_id: currentUserId,
+        approver_heirarchy: myHierarchy,
+        status: finalVoteStatus,
+        remarks: finalRemarks,
+        version: currentVersion,
+        created_at: nowTs,
+      }),
+    });
 
+    // --- Audit Logging (disbursement_draft_logs) ---
     const allItemsRes = await directusFetch(
       `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date&limit=-1`
     );
-
-    const allItems =
-      (allItemsRes.data as DirectusListResponse<DisbursementPayableDraftRow>)
-        .data ?? [];
+    const allItems = (allItemsRes.data as DirectusListResponse<DisbursementPayableDraftRow>).data ?? [];
 
     const draftLogRes = await directusFetch(`/items/disbursement_draft_logs`, {
       method: "POST",
@@ -2381,14 +2316,12 @@ export async function POST(req: NextRequest) {
       }),
     });
 
-    const draftLogId = toNumericId(
-      (draftLogRes.data as DirectusItemResponse<{ id: number }>)?.data?.id
-    );
+    const draftLogId = toNumericId((draftLogRes.data as DirectusItemResponse<{ id: number }>)?.data?.id);
 
     if (draftLogId) {
-      const payableLogs = allItems.map((p) => {
+      const payableLogs = allItems.map(p => {
         const pId = toNumericId(p.id) ?? 0;
-        const edited = edited_payables?.find((e) => e.id === pId);
+        const edited = edited_payables?.find(e => e.id === pId);
         const newAmt = edited ? toNumber(edited.amount) : toNumber(p.amount);
 
         return {
@@ -2416,11 +2349,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (
-      finalVoteStatus === "REJECTED" ||
-      finalVoteStatus === "WITH_CONCERN" ||
-      remainingCount <= 0
-    ) {
+    if (finalVoteStatus === "REJECTED" || finalVoteStatus === "WITH_CONCERN" || remainingCount <= 0) {
       const draftStatus: DraftLifecycleStatus =
         finalVoteStatus === "WITH_CONCERN"
           ? "With Concern"
@@ -2522,7 +2451,10 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             doc_no: liveDocNo,
             total_amount: finalTotal,
-            division_id: draft.division_id,
+            division_id: toNumericId(draft.division_id),
+            payee: toNumericId(draft.payee),
+            encoder_id: toNumericId(draft.encoder_id),
+            remarks: finalRemarks,
             status: "Draft",
             transaction_type: draft.transaction_type,
             transaction_date: draft.transaction_date,
@@ -2532,14 +2464,12 @@ export async function POST(req: NextRequest) {
         if (!liveRes.ok) return json(liveRes.data, { status: liveRes.status });
 
         const liveId = toNumericId(
-          (liveRes.data as DirectusItemResponse<{ id?: number | string }>).data?.id
+          (liveRes.data as DirectusItemResponse<{ id?: number | string }>).data
+            ?.id
         );
 
         if (!liveId) {
-          return json(
-            { error: "Failed to create live disbursement." },
-            { status: 500 }
-          );
+          return json({ error: "Failed to create live disbursement." }, { status: 500 });
         }
 
         const livePayablesPayload = payDraftRows.map((p) => ({

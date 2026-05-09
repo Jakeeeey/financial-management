@@ -115,13 +115,12 @@ function VoteRow({ vote }: { vote: LogRound["votes"][number] }) {
       </span>
 
       <div
-        className={`shrink-0 h-7 w-7 rounded-full border font-black text-[11px] flex items-center justify-center shadow-sm transition-colors ${
-          approved
+        className={`shrink-0 h-7 w-7 rounded-full border font-black text-[11px] flex items-center justify-center shadow-sm transition-colors ${approved
             ? "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800"
             : rejected
               ? "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800"
               : "bg-muted text-muted-foreground border-muted-foreground/20 dark:bg-slate-800 dark:border-slate-700 text-muted-foreground/80"
-        }`}
+          }`}
       >
         {vote.name.charAt(0)}
       </div>
@@ -143,13 +142,12 @@ function VoteRow({ vote }: { vote: LogRound["votes"][number] }) {
       </div>
 
       <div
-        className={`shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-black uppercase tracking-wider shadow-sm ${
-          approved
+        className={`shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-black uppercase tracking-wider shadow-sm ${approved
             ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900/50 dark:text-emerald-400"
             : rejected
               ? "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900/50 dark:text-red-400"
               : "bg-muted border-muted-foreground/10 text-muted-foreground dark:bg-slate-900/50 dark:border-slate-800"
-        }`}
+          }`}
       >
         {approved ? (
           <CheckCircle2 className="h-3 w-3" />
@@ -450,11 +448,10 @@ export function ActivityFeed({ logs, loading }: Props) {
                           {itemDetails.map((item, idx) => (
                             <div
                               key={item.id}
-                              className={`flex justify-between items-center p-3 px-4 hover:bg-muted/30 dark:hover:bg-white/[0.03] transition-colors ${
-                                idx !== 0
+                              className={`flex justify-between items-center p-3 px-4 hover:bg-muted/30 dark:hover:bg-white/[0.03] transition-colors ${idx !== 0
                                   ? "border-t border-border/50 dark:border-white/5"
                                   : ""
-                              }`}
+                                }`}
                             >
                               <div className="flex flex-col min-w-0 pr-4">
                                 <span className="text-[11px] font-bold text-foreground/80 truncate">

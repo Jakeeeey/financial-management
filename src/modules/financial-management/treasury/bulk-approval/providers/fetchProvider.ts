@@ -45,6 +45,7 @@ export async function checkMyAccess(): Promise<
   {
     approver_id: number;
     division_id: number;
+    division_name: string;
     approver_heirarchy: number;
   }[]
 > {
@@ -52,6 +53,7 @@ export async function checkMyAccess(): Promise<
     data: {
       approver_id: number;
       division_id: number;
+      division_name: string;
       approver_heirarchy: number;
     }[];
   }>(`${BASE}?resource=my-access`);
@@ -61,7 +63,8 @@ export async function checkMyAccess(): Promise<
 
 export async function listDrafts(
   startDate?: string,
-  endDate?: string
+  endDate?: string,
+  divisionId?: number
 ): Promise<{
   data: DraftRow[];
   myLevel: number;
@@ -71,6 +74,10 @@ export async function listDrafts(
 
   if (startDate && endDate) {
     url += `&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
+  }
+  
+  if (divisionId) {
+    url += `&divisionId=${divisionId}`;
   }
 
   return apiFetch<{

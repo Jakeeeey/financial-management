@@ -216,17 +216,18 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
   const hasMissingFeedback = React.useMemo(() => {
     if (!detail) return false;
-    return combinedItems.some(p => 
-      (itemDecisions[p.id] === "REJECTED" || itemDecisions[p.id] === "WITH_CONCERN") && 
+    return combinedItems.some(p =>
+      (itemDecisions[p.id] === "REJECTED" || itemDecisions[p.id] === "WITH_CONCERN") &&
       !(showItemRemarks[p.id]?.trim())
     );
   }, [combinedItems, itemDecisions, showItemRemarks]);
 
+  const [processingItem, setProcessingItem] = React.useState<number | null>(null);
+
   if (!detail) return null;
   const { draft, payables } = detail;
   const currentTier = draft.current_tier || 1;
-
-  const [processingItem, setProcessingItem] = React.useState<number | null>(null);
+  const isInteractionDisabled = !!detail.my_vote || !detail.can_vote;
 
   const handleSingleItemVote = async (p: any) => {
     if (!detail) return;
@@ -246,7 +247,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       // or we can stick to the derivedStatus logic which the backend uses to transition the draft.
       // If we are rejecting 1 item out of many, the draft should stay at the current tier or advance (APPROVED).
       // The backend logic: if (remainingCount > 0) finalVoteStatus = "APPROVED";
-      
+
       await api.submitVote({
         draft_id: detail.draft.id,
         status: status === "WITH_CONCERN" ? "WITH_CONCERN" : "APPROVED",
@@ -349,6 +350,41 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         <DialogTitle className="sr-only">Verification & Approval</DialogTitle>
         <DialogDescription className="sr-only">Batch review modal</DialogDescription>
 
+        {!loading && detail && (
+          <div className="shrink-0">
+            {detail.my_vote ? (
+              <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-6 py-2.5 flex items-center justify-between animate-in slide-in-from-top duration-300">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-600">
+                    <CheckCircle2 size={18} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-emerald-700 leading-none">Decision Recorded</p>
+                    <p className="text-[11px] text-emerald-600 font-medium mt-0.5">
+                      You already approved/rejected items in Round {detail.my_vote.version} on {format(new Date(detail.my_vote.created_at), "MMM d, h:mm a")}.
+                    </p>
+                  </div>
+                </div>
+                <Badge className="bg-emerald-500 text-white border-none px-3 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm shadow-emerald-200">
+                  {detail.my_vote.status}
+                </Badge>
+              </div>
+            ) : !detail.can_vote && (
+              <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 flex items-center gap-3 animate-in slide-in-from-top duration-300">
+                <div className="h-8 w-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-600">
+                  <Clock size={18} />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-amber-700 leading-none">Awaiting Correct Tier</p>
+                  <p className="text-[11px] text-amber-600 font-medium mt-0.5">
+                    This draft is currently at <span className="font-bold underline">Level {draft.current_tier}</span>. Your level does not have voting authority for this stage.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Header Section (Blue Pattern) */}
         <div className="px-[2vw] py-[2.5vh] bg-[#1a4f95] text-white shrink-0 relative overflow-hidden">
           <div className="flex items-center justify-between relative z-10">
@@ -428,18 +464,23 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                   <FileText className="h-4 w-4 text-primary" />
                   Encoded Expense Drafts
                 </h3>
-                <div className="flex items-center gap-6">
-                  <div className="flex items-center gap-2 cursor-pointer group" onClick={approveAll}>
-                    <div className="h-4 w-4 rounded border-2 border-primary flex items-center justify-center group-hover:bg-primary/10">
-                      <Check className="h-3 w-3 text-primary" />
-                    </div>
+                <div className="flex items-center gap-3">
+                  <button 
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 hover:shadow-sm"}`}
+                    onClick={() => !isInteractionDisabled && approveAll()}
+                    disabled={isInteractionDisabled}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Approve All</span>
-                  </div>
-                  <div className="flex items-center gap-2 cursor-pointer group" onClick={uncheckAll}>
-                    <div className="h-4 w-4 rounded border-2 border-slate-300 flex items-center justify-center group-hover:border-primary">
-                    </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Uncheck All</span>
-                  </div>
+                  </button>
+                  <button 
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:shadow-sm"}`}
+                    onClick={() => !isInteractionDisabled && uncheckAll()}
+                    disabled={isInteractionDisabled}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Reset All</span>
+                  </button>
                 </div>
               </div>
               <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest">
@@ -488,13 +529,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                           </TableCell>
                           <TableCell className="text-center py-4">
                             <Button
-                              variant={isVerified ? "outline" : "default"}
-                              className={`h-8 text-[10px] font-black uppercase px-4 rounded-lg shadow-sm ${isVerified ? "border-emerald-200 text-emerald-600 bg-emerald-50" : "bg-blue-600 text-white hover:bg-blue-700"}`}
-                              onClick={(e) => { e.stopPropagation(); toggleGroupStatus(w.items, "APPROVED"); }}
-                              disabled={submitting}
+                              variant="ghost"
+                              className={`h-8 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isVerified ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 shadow-sm" : "bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-200"}`}
+                              onClick={(e) => { e.stopPropagation(); !isInteractionDisabled && toggleGroupStatus(w.items, "APPROVED"); }}
+                              disabled={submitting || isInteractionDisabled}
                             >
-                              {isVerified ? <Check size={14} className="mr-1" /> : ""}
-                              {isVerified ? "Verified" : "Approve Group"}
+                              {isVerified ? <CheckCircle2 size={14} className="mr-1.5" /> : <CheckSquare size={14} className="mr-1.5" />}
+                              {isVerified ? "Verified" : "Batch Approve"}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -522,7 +563,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                     <TableBody>
                       {activeGroup?.items.map((p, idx) => {
                         const status = itemDecisions[p.id] || "PENDING";
-                        const isReadOnly = p.status === "REJECTED" || p.status === "WITH_CONCERN";
+                        const isReadOnly = p.status === "REJECTED" || p.status === "WITH_CONCERN" || isInteractionDisabled;
                         return (
                           <React.Fragment key={p.id}>
                             <TableRow className="group hover:bg-slate-50/50 border-b border-slate-100">
@@ -542,10 +583,10 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                               </TableCell>
                               <TableCell className="py-4 text-center">
                                 {p.attachment_url && (
-                                  <Button 
-                                    size="icon" 
-                                    variant="ghost" 
-                                    className="h-8 w-8 bg-blue-50 text-blue-600 rounded-lg" 
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 bg-blue-50 text-blue-600 rounded-lg"
                                     onClick={() => setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`)}
                                     disabled={processingItem === p.id || submitting || isReadOnly}
                                   >
@@ -583,10 +624,10 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                       className="h-8 text-xs font-medium border-2 focus:border-primary bg-white shadow-inner flex-1"
                                       value={showItemRemarks[p.id] || ""}
                                       onChange={(e) => setShowItemRemarks(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                      disabled={processingItem === p.id || submitting || isReadOnly}
+                                      disabled={processingItem === p.id || submitting || isReadOnly || isInteractionDisabled}
                                     />
-                                    <Button 
-                                      size="sm" 
+                                    <Button
+                                      size="sm"
                                       className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2"
                                       disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isReadOnly}
                                       onClick={() => handleSingleItemVote(p)}
@@ -618,7 +659,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                       placeholder={approvedCount === 0 ? "Approve at least one item to provide batch remarks..." : "Provide a justification for this batch of expenses..."}
                       value={remarks}
                       onChange={(e) => setRemarks(e.target.value)}
-                      disabled={approvedCount === 0 || submitting}
+                      disabled={approvedCount === 0 || submitting || isInteractionDisabled}
                     />
                     <p className="text-[9px] font-bold text-slate-400 italic">
                       Items marked <span className="text-amber-600 font-black uppercase">With Concern</span> will be returned to drafts. Items marked <span className="text-rose-600 font-black uppercase">Rejected</span> will be hard rejected.
@@ -637,12 +678,17 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                         <span className="text-2xl font-black tabular-nums text-blue-700 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
                       </div>
                       <Button
-                        disabled={submitting || hasPendingItems || hasMissingFeedback || !remarks.trim() || approvedCount === 0}
-                        className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-200 gap-3 active:scale-[0.98] transition-all"
+                        disabled={submitting || hasPendingItems || hasMissingFeedback || !remarks.trim() || approvedCount === 0 || !!detail.my_vote || !detail.can_vote}
+                        className="w-full h-14 relative bg-gradient-to-br from-[#1e40af] via-[#2563eb] to-[#3b82f6] hover:from-[#1d4ed8] hover:to-[#2563eb] text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-[0_10px_40px_-10px_rgba(37,99,235,0.4)] border-t border-white/20 gap-3 active:scale-[0.98] transition-all disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none group overflow-hidden"
                         onClick={handleVote}
                       >
-                        {submitting ? <Loader2 className="animate-spin" /> : <ShieldCheck size={20} />}
-                        Submit Approvals
+                        <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        {submitting ? (
+                          <Loader2 className="animate-spin h-5 w-5" />
+                        ) : (
+                          <ShieldCheck size={22} className="group-hover:scale-110 transition-transform" />
+                        )}
+                        <span className="relative">Submit Final Approvals</span>
                       </Button>
                     </div>
                     <button className="w-full py-2 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 hover:text-slate-600 transition-colors" onClick={onClose}>

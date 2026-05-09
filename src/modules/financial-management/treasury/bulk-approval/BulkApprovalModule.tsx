@@ -37,6 +37,9 @@ export default function BulkApprovalModule() {
     refreshDetail,
     dateRange,
     setDateRange,
+    selectedDivisionId,
+    setSelectedDivisionId,
+    availableDivisions,
   } = useBulkApproval();
 
   if (unauthorized) {
@@ -125,6 +128,9 @@ export default function BulkApprovalModule() {
               loading={loading}
               myLevel={myLevel}
               levelsByDivision={levelsByDivision}
+              selectedDivisionId={selectedDivisionId}
+              setSelectedDivisionId={setSelectedDivisionId}
+              availableDivisions={availableDivisions}
               onAction={openVoteModal}
             />
           </div>

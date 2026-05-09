@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, FolderOpen, Search, CheckCircle2, Clock, LockKeyhole, AlertTriangle } from "lucide-react";
+import { Loader2, FolderOpen, Search, CheckCircle2, Clock, LockKeyhole, AlertTriangle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Filter } from "lucide-react";
 import type { DraftRow } from "../type";
 
 interface Props {
@@ -27,6 +35,9 @@ interface Props {
   loading: boolean;
   myLevel: number;
   levelsByDivision: Record<number, number[]>;
+  selectedDivisionId?: number;
+  setSelectedDivisionId: (v: number | undefined) => void;
+  availableDivisions: { id: number; name: string }[];
   onAction: (row: DraftRow) => void;
 }
 
@@ -108,7 +119,22 @@ function StatusBadge({ status, current_tier, has_concern }: { status: string; cu
 }
 
 export default function DraftListTable(props: Props) {
-  const { rows, totalItems, q, setQ, page, setPage, pageCount, loading, myLevel, levelsByDivision, onAction } = props;
+  const {
+    rows,
+    totalItems,
+    q,
+    setQ,
+    page,
+    setPage,
+    pageCount,
+    loading,
+    myLevel,
+    levelsByDivision,
+    selectedDivisionId,
+    setSelectedDivisionId,
+    availableDivisions,
+    onAction,
+  } = props;
 
   if (loading) {
     return (
@@ -121,18 +147,46 @@ export default function DraftListTable(props: Props) {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-2">
-      {/* Search */}
-      <div className="relative max-w-sm shrink-0">
-        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search by doc no, payee, or remarks..."
-          className="pl-8 h-8 text-xs"
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setPage(1);
-          }}
-        />
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 shrink-0">
+        <div className="relative max-w-sm flex-1 min-w-[240px]">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by doc no, payee, or remarks..."
+            className="pl-8 h-8 text-xs bg-background/60 focus:bg-background transition-colors border-muted-foreground/20"
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+
+        {availableDivisions.length > 1 && (
+          <div className="flex items-center gap-2">
+            <Select
+              value={selectedDivisionId?.toString() || "all"}
+              onValueChange={(val) => {
+                setSelectedDivisionId(val === "all" ? undefined : Number(val));
+              }}
+            >
+              <SelectTrigger className="h-8 w-[180px] text-xs bg-background/60 border-muted-foreground/20">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-3 w-3 text-muted-foreground" />
+                  <SelectValue placeholder="All Divisions" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Divisions</SelectItem>
+                {availableDivisions.map((d) => (
+                  <SelectItem key={d.id} value={d.id.toString()}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Level indicator */}
@@ -140,9 +194,9 @@ export default function DraftListTable(props: Props) {
         <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary/5 border border-primary/20 rounded-lg text-[11px] font-semibold text-primary shrink-0">
           <LockKeyhole className="h-3 w-3 shrink-0" />
           {Object.keys(levelsByDivision).length > 1 ? (
-            <span>Active approval roles in <span className="underline underline-offset-2">{Object.keys(levelsByDivision).length} divisions</span> — action buttons activate when a draft hits your tier.</span>
+            <span>Active approval roles in <span className="underline underline-offset-2">{Object.keys(levelsByDivision).length} divisions</span> — action buttons activate when a draft is at or below your tier.</span>
           ) : (
-            <span>You are a <span className="underline underline-offset-2">Level {myLevel}</span> approver — buttons active when draft reaches your tier.</span>
+            <span>You are a <span className="underline underline-offset-2">Level {myLevel}</span> approver — buttons active when draft is at or below your tier.</span>
           )}
         </div>
       )}
@@ -154,12 +208,12 @@ export default function DraftListTable(props: Props) {
             <col className="w-9" />
             <col className="w-[11%]" />
             <col className="w-[12%]" />
-            <col className="w-[22%]" />
+            <col className="w-[17%]" />
             <col className="w-[13%]" />
             <col className="w-[11%]" />
             <col className="w-[10%]" />
-            <col className="w-[13%]" />
-            <col className="w-[9%]" />
+            <col className="w-[11%]" />
+            <col className="w-[15%]" />
           </colgroup>
           <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm shadow-sm">
             <TableRow className="bg-muted/50">
@@ -171,7 +225,7 @@ export default function DraftListTable(props: Props) {
               <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Date</TableHead>
               <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Status</TableHead>
               <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Tier Progress</TableHead>
-              <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Action</TableHead>
+              <TableHead className="text-center text-[10px] font-black uppercase tracking-widest w-[110px]">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -216,9 +270,7 @@ export default function DraftListTable(props: Props) {
                       {row.encoder_name}
                     </div>
 
-                    <div className="text-xs text-muted-foreground italic">
-                      Payee: {row.payee_name}
-                    </div>
+
                   </TableCell>
                   <TableCell className="text-right font-black tabular-nums text-xs overflow-hidden">
                     <span className="block truncate" title={formatCurrency(Number(row.total_amount))}>
@@ -243,18 +295,51 @@ export default function DraftListTable(props: Props) {
                     </div>
                   </TableCell>
                   <TableCell className="text-center overflow-hidden">
-                    <Button
-                      size="sm"
-                      variant={row.can_vote ? "default" : "outline"}
-                      className={`text-[11px] h-7 px-2 rounded-full transition-all w-full max-w-[72px]
-                        ${row.can_vote
-                          ? "shadow-sm shadow-primary/20 font-bold"
-                          : "text-muted-foreground"
-                        }`}
-                      onClick={() => onAction(row)}
-                    >
-                      {row.can_vote ? "Vote" : "View"}
-                    </Button>
+                    <div className="flex flex-col items-center justify-center gap-1.5 py-1">
+                      {row.my_vote ? (
+                        <div className="flex flex-col items-center">
+                          <div className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Voted
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-3 mt-1 text-[10px] font-bold text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all rounded-lg"
+                            onClick={() => onAction(row)}
+                          >
+                            Review Details
+                          </Button>
+                        </div>
+                      ) : row.can_vote ? (
+                        <Button
+                          size="sm"
+                          className="relative h-8 px-4 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[11px] font-black uppercase tracking-wider shadow-lg shadow-blue-500/25 border-t border-white/20 hover:scale-105 active:scale-95 transition-all group overflow-hidden"
+                          onClick={() => onAction(row)}
+                        >
+                          <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <span className="relative flex items-center gap-2">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            Vote Now
+                          </span>
+                        </Button>
+                      ) : (
+                        <div className="flex flex-col items-center opacity-60 group-hover:opacity-100 transition-opacity">
+                          <div className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-inner">
+                            <Clock className="h-3 w-3" />
+                            Waiting
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-3 mt-1 text-[10px] font-bold text-muted-foreground hover:text-slate-800 transition-all rounded-lg"
+                            onClick={() => onAction(row)}
+                          >
+                            View Only
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

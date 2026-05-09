@@ -44,6 +44,9 @@ export function useBulkApproval() {
   const [draftDetail, setDraftDetail] = React.useState<DraftDetail | null>(null);
   const [selectedDraftId, setSelectedDraftId] = React.useState<number | null>(null);
 
+  const [selectedDivisionId, setSelectedDivisionId] = React.useState<number | undefined>(undefined);
+  const [availableDivisions, setAvailableDivisions] = React.useState<{ id: number; name: string }[]>([]);
+
   const loadLogs = React.useCallback(async () => {
     try {
       setLogsLoading(true);
@@ -64,7 +67,7 @@ export function useBulkApproval() {
     try {
       setLoading(true);
       const [result] = await Promise.all([
-        api.listDrafts(startDateStr, endDateStr),
+        api.listDrafts(startDateStr, endDateStr, selectedDivisionId),
         loadLogs(),
       ]);
       setDrafts(result.data);
@@ -80,7 +83,26 @@ export function useBulkApproval() {
     } finally {
       setLoading(false);
     }
-  }, [loadLogs, startDateStr, endDateStr]);
+  }, [loadLogs, startDateStr, endDateStr, selectedDivisionId]);
+
+  React.useEffect(() => {
+    async function fetchAccess() {
+      try {
+        const access = await api.checkMyAccess();
+        const divisions = access.map(a => ({
+          id: a.division_id,
+          name: a.division_name
+        }));
+        
+        // Unique divisions
+        const unique = Array.from(new Map(divisions.map(d => [d.id, d])).values());
+        setAvailableDivisions(unique);
+      } catch (e) {
+        console.error("Failed to fetch division access", e);
+      }
+    }
+    fetchAccess();
+  }, []);
 
   React.useEffect(() => {
     load();
@@ -88,7 +110,7 @@ export function useBulkApproval() {
 
   React.useEffect(() => {
     setPage(1);
-  }, [dateRange]);
+  }, [dateRange, selectedDivisionId]);
 
   // Client-side filter
   const filteredDrafts = React.useMemo(() => {
@@ -161,6 +183,9 @@ export function useBulkApproval() {
     loading,
     myLevel,
     levelsByDivision,
+    selectedDivisionId,
+    setSelectedDivisionId,
+    availableDivisions,
     unauthorized,
     logs,
     logsLoading,
