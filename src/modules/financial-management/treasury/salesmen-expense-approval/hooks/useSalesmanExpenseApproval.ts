@@ -3,8 +3,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { startOfMonth, endOfMonth, format, endOfWeek } from "date-fns";
-import type { DateRange } from "react-day-picker";
+import { format, endOfWeek } from "date-fns";
 
 import type { SalesmanExpenseRow, SalesmanExpenseDetail, ApprovalLog } from "../type";
 import * as api from "../providers/fetchProvider";
@@ -25,7 +24,7 @@ export function useSalesmanExpenseApproval() {
   // Filtering state
   const [selectedWeek, setSelectedWeek] = React.useState<string>("all");
   const [availableWeeks, setAvailableWeeks] = React.useState<{ week_start: string; week_label: string }[]>([]);
-  const [weeksLoading, setWeeksLoading] = React.useState(false);
+  const [, setWeeksLoading] = React.useState(false);
 
   // Search & Pagination state
   const [q, setQ] = React.useState("");

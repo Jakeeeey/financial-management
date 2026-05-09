@@ -330,7 +330,7 @@ function decodeJwtSub(token: string): number | null {
   }
 }
 
-function toNumericId(val: any): number | null {
+function toNumericId(val: unknown): number | null {
   if (val === null || val === undefined || val === "") return null;
   if (typeof val === "number") return Number.isFinite(val) ? val : null;
   if (typeof val === "string") {
@@ -507,7 +507,7 @@ async function getApproverRecords(userId: number): Promise<ApproverRecord[]> {
       id: toNumber(r.id),
       approver_id: toNumericId(r.approver_id) ?? 0,
       division_id: toNumericId(r.division_id) ?? 0,
-      division_name: typeof r.division_id === "object" ? (r.division_id as any).division_name : `Division #${r.division_id}`,
+      division_name: typeof r.division_id === "object" && r.division_id !== null ? (r.division_id as DirectusDivisionRow).division_name : `Division #${r.division_id}`,
       approver_heirarchy: toNumber(r.approver_heirarchy, 1),
     }))
     .filter((r) => r.approver_id > 0 && r.division_id > 0);
@@ -845,7 +845,6 @@ async function buildVoteHistory(params: {
     level: toNumber(r.approver_heirarchy, 1),
   }));
 
-  const approverIds = approvers.map((a) => a.approver_id).filter(Boolean);
   const levelByApprover = new Map<number, number>();
   for (const a of approvers) levelByApprover.set(a.approver_id, a.level);
 
@@ -1345,7 +1344,7 @@ export async function GET(req: NextRequest) {
               r.division_id === v.division_id &&
               r.approver_heirarchy === v.tier
           ),
-          has_concern: true,
+          has_concern: status.toLowerCase() === "with concern",
         })
       );
 
@@ -1415,7 +1414,8 @@ export async function GET(req: NextRequest) {
             date: item.transaction_date ?? null,
             reference_no: null,
             attachment_url: resolveAttachmentId(item.attachment_url),
-            is_concern: true,
+            is_concern: item.status === "With Concern",
+            is_rejected: item.status === "Rejected",
             feedback: item.feedback ?? null,
           };
         });
@@ -2266,7 +2266,6 @@ export async function POST(req: NextRequest) {
 
     if (item_decisions && Object.keys(item_decisions).length > 0) {
       const decisions = Object.values(item_decisions);
-      const hasApproved = decisions.some((d) => d.status === "APPROVED");
       const hasConcern = decisions.some((d) => d.status === "WITH_CONCERN");
       const allRejected = decisions.length > 0 && decisions.every((d) => d.status === "REJECTED");
 
@@ -2283,7 +2282,7 @@ export async function POST(req: NextRequest) {
         .map(r => toNumber(r.approver_heirarchy))
     );
 
-    const approvalRecordRes = await directusFetch(`/items/disbursement_draft_approvals`, {
+    await directusFetch(`/items/disbursement_draft_approvals`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -2478,7 +2477,7 @@ export async function POST(req: NextRequest) {
         // Items with CONCERN or REJECTED are skipped here and handled below.
         const livePayablesPayload = payDraftRows
           .filter(p => {
-            const exp = p.expense_id as any;
+            const exp = p.expense_id as { id?: number | string; status?: string | null } | null;
             return exp?.status === "Approved" || exp?.status === "APPROVED";
           })
           .map((p) => ({
@@ -2494,11 +2493,11 @@ export async function POST(req: NextRequest) {
         // (including Draft, With Concern, or already Rejected) are automatically 
         // marked as REJECTED in the expense system when the final approver says "Go".
         for (const p of payDraftRows) {
-          const exp = p.expense_id as any;
+          const exp = p.expense_id as { id?: number | string; status?: string | null } | null;
           const currentStatus = exp?.status || "Draft";
           
           if (currentStatus !== "Approved" && currentStatus !== "APPROVED") {
-            const expId = toNumericId(exp.id);
+            const expId = toNumericId(exp?.id);
             if (expId) {
               await directusFetch(`/items/expense_draft/${expId}`, {
                 method: "PATCH",

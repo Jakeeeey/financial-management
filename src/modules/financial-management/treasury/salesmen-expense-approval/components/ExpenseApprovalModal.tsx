@@ -3,9 +3,9 @@
 
 import * as React from "react";
 import {
-  Loader2, ExternalLink, CheckSquare, ShieldCheck, X, ChevronDown, ChevronUp, Check,
-  MessageSquareWarning, Receipt, FileText, User, Building2, Wallet, Info, AlertTriangle,
-  CheckCircle2, XCircle, Send
+  Loader2, ExternalLink, ShieldCheck, X, Check,
+  MessageSquareWarning, Receipt, User, Building2, Wallet, Info,
+  CheckCircle2, Send
 } from "lucide-react";
 import { toast } from "sonner";
 import { startOfWeek, format } from "date-fns";
@@ -227,16 +227,10 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
       toast.success(`Decision for item #${p.id} submitted.`);
       
       // Update local state to remove the item from view
-      if (detail) {
-        const nextExpenses = detail.expenses.filter(e => e.id !== p.id);
-        // We can't easily mutate props, but we can signal to parent or just wait for onConfirmed
-        // However, the user said "submit by item", so let's just trigger onConfirmed if it's the last one
-        // or better yet, if we had a way to update the detail locally.
-        // For now, refreshing the whole view is safest to maintain sync.
-        onConfirmed(); 
-      }
-    } catch (e: any) {
-      toast.error(e.message || "Failed to submit decision.");
+      // Update local state to remove the item from view
+      onConfirmed(); 
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to submit decision.");
     } finally {
       setProcessingItem(null);
     }
@@ -283,8 +277,8 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
 
       toast.success("Approvals submitted successfully.");
       onConfirmed();
-    } catch (e: any) {
-      toast.error(e.message || "Failed to submit approvals.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to submit approvals.");
     } finally {
       setSubmitting(false);
     }
@@ -636,6 +630,7 @@ export default function ExpenseApprovalModal({ open, loading, detail, onClose, o
             <X size={24} />
           </Button>
           {previewUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
             <img src={previewUrl} alt="Preview" className="max-w-[90vw] max-h-[85vh] object-contain mx-auto" />
           )}
         </DialogContent>

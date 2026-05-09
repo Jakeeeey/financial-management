@@ -13,8 +13,7 @@ import {
   startOfYear,
   eachMonthOfInterval,
   addYears,
-  subYears,
-  setMonth
+  subYears
 } from "date-fns";
 import { ChevronLeft, ChevronRight, CalendarDays, X, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -25,7 +24,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Badge } from "@/components/ui/badge";
+
 
 interface WeekPickerProps {
   selectedWeek: string; // yyyy-MM-dd

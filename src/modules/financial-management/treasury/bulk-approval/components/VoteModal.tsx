@@ -3,10 +3,10 @@
 
 import * as React from "react";
 import {
-  Loader2, AlertCircle, FileText, CheckCircle2, XCircle, Clock,
-  ShieldCheck, ChevronRight, X, PanelRightOpen, PanelRightClose,
-  History, ExternalLink, Hash, Briefcase as BriefcaseIcon, CheckSquare, Info,
-  AlertTriangle, RefreshCw, MessageSquareWarning, Send, Check, User, Building2, Wallet
+  Loader2, FileText, CheckCircle2, Clock,
+  ShieldCheck, X,
+  ExternalLink, CheckSquare, Info,
+  AlertTriangle, RefreshCw, Send, Check, User, Building2, Wallet
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -29,12 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+
 
 import type { DraftDetail } from "../type";
 import * as api from "../providers/fetchProvider";
@@ -73,7 +68,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   // itemDecisions now defaults to PENDING (Explicit Verification Pattern)
   const [itemDecisions, setItemDecisions] = React.useState<Record<number, "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING">>({});
   const [showItemRemarks, setShowItemRemarks] = React.useState<Record<number, string>>({});
-  const [pendingFeedbackItems, setPendingFeedbackItems] = React.useState<{ id: number; coa_name: string; status: "REJECTED" | "WITH_CONCERN" }[] | null>(null);
+
 
   React.useEffect(() => {
     if (open && detail) {
@@ -85,10 +80,10 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       // Initialize with PENDING state for regular items, keep WITH_CONCERN for flagged ones
       const payableInit = detail.payables.reduce(
         (acc, p) => {
-          initialRemarks[p.id] = (p as any).feedback || "";
+          initialRemarks[p.id] = p.feedback || "";
           return {
             ...acc,
-            [p.id]: (p as any).is_concern ? ("WITH_CONCERN" as const) : ("PENDING" as const)
+            [p.id]: p.is_concern ? ("WITH_CONCERN" as const) : ("PENDING" as const)
           };
         }, {}
       ) || {};
@@ -96,13 +91,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       const concernInit = detail.concern_items?.reduce(
         (acc, ci) => {
           initialRemarks[-ci.expense_id] = ci.feedback || "";
-          return { ...acc, [-ci.expense_id]: "WITH_CONCERN" as const };
+          const isStillConcern = ci.status === "With Concern";
+          return { ...acc, [-ci.expense_id]: isStillConcern ? ("WITH_CONCERN" as const) : ("PENDING" as const) };
         }, {}
       ) || {};
 
       setItemDecisions({ ...payableInit, ...concernInit });
       setShowItemRemarks(initialRemarks);
-      setPendingFeedbackItems(null);
     }
   }, [open, detail]);
 
@@ -110,8 +105,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     if (!detail) return [];
     const items = detail.payables.map(p => ({
       ...p,
-      is_concern: (p as any).is_concern || false,
-      feedback: (p as any).feedback || null
+      is_concern: p.is_concern || false,
+      feedback: p.feedback || null
     }));
     const existingIds = new Set(items.map(i => i.id));
     (detail.concern_items || []).forEach(ci => {
@@ -120,11 +115,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         items.push({
           id: negId, coa_id: -1, coa_name: ci.coa_name, amount: ci.amount, remarks: ci.remarks,
           date: ci.transaction_date, reference_no: null, attachment_url: ci.attachment_url,
-          is_concern: true, feedback: ci.feedback
-        } as any);
+          is_concern: ci.status === "With Concern",
+          is_rejected: ci.status === "Rejected",
+          feedback: ci.feedback
+        });
       }
     });
-    return items;
+    return items as (import("../type").DraftPayable & { is_concern: boolean; is_rejected?: boolean; feedback: string | null })[];
   }, [detail]);
 
   // Total amount ONLY for APPROVED items (Verified Only)
@@ -147,7 +144,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     setItemDecisions(prev => ({ ...prev, [id]: prev[id] === status ? "PENDING" : status }));
   };
 
-  const toggleGroupStatus = (groupItems: any[], status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
+  const toggleGroupStatus = (groupItems: import("../type").DraftPayable[], status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
     setItemDecisions(prev => {
       const next = { ...prev };
       groupItems.forEach(item => { 
@@ -186,7 +183,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   };
 
   const groupedPayables = React.useMemo(() => {
-    const groups: Record<string, { coa_name: string; coa_id: number; weeks: Record<string, any[]> }> = {};
+    const groups: Record<string, { coa_name: string; coa_id: number; weeks: Record<string, import("../type").DraftPayable[]> }> = {};
     combinedItems.forEach(p => {
       const gk = p.coa_name || `COA #${p.coa_id}`;
       if (!groups[gk]) groups[gk] = { coa_name: gk, coa_id: p.coa_id, weeks: {} };
@@ -241,7 +238,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       (itemDecisions[p.id] === "REJECTED" || itemDecisions[p.id] === "WITH_CONCERN") &&
       !(showItemRemarks[p.id]?.trim())
     );
-  }, [combinedItems, itemDecisions, showItemRemarks]);
+  }, [combinedItems, itemDecisions, showItemRemarks, detail]);
 
   const [processingItem, setProcessingItem] = React.useState<number | null>(null);
 
@@ -250,7 +247,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const currentTier = draft.current_tier || 1;
   const isInteractionDisabled = !!detail.my_vote || !detail.can_vote;
 
-  const handleSingleItemVote = async (p: any) => {
+  const handleSingleItemVote = async (p: import("../type").DraftPayable) => {
     if (!detail) return;
     const status = itemDecisions[p.id];
     const feedback = showItemRemarks[p.id];
@@ -261,7 +258,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     setProcessingItem(p.id);
     try {
       const payloadItemDecisions: Record<number, { status: "APPROVED" | "REJECTED" | "WITH_CONCERN"; remarks: string }> = {
-        [p.id]: { status: status as any, remarks: feedback.trim() }
+        [p.id]: { status: status as "APPROVED" | "REJECTED" | "WITH_CONCERN", remarks: feedback.trim() }
       };
 
       // For a single item negative decision, the overall consensus for THIS vote record can be its own status
@@ -278,8 +275,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
       toast.success(`Decision for item #${p.id} recorded.`);
       onRefreshDetail();
-    } catch (e: any) {
-      toast.error(e.message || "Failed to submit decision.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to submit decision.");
     } finally {
       setProcessingItem(null);
     }
@@ -292,9 +289,12 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     const missingFeedback = combinedItems
       .filter(p => (itemDecisions[p.id] === "REJECTED" || itemDecisions[p.id] === "WITH_CONCERN"))
       .filter(p => !(showItemRemarks[p.id]?.trim()))
-      .map(p => ({ id: p.id, coa_name: p.coa_name, status: itemDecisions[p.id] as any }));
+      .map(p => ({ id: p.id, coa_name: p.coa_name, status: itemDecisions[p.id] as "REJECTED" | "WITH_CONCERN" }));
 
-    if (missingFeedback.length > 0) { setPendingFeedbackItems(missingFeedback); return; }
+    if (missingFeedback.length > 0) { 
+      toast.error(`Please provide feedback for ${missingFeedback.length} items.`);
+      return; 
+    }
 
     setSubmitting(true);
     try {
@@ -362,7 +362,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       else toast.info("Vote recorded.");
 
       onVoteComplete(draft.id, derivedStatus, result.next_tier);
-    } catch (e: any) { toast.error(e.message); } finally { setSubmitting(false); }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : "An error occurred"); } finally { setSubmitting(false); }
   }
 
   return (
@@ -552,7 +552,12 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             <Button
                               variant="ghost"
                               className={`h-8 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isVerified ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 shadow-sm" : "bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-200"}`}
-                              onClick={(e) => { e.stopPropagation(); !isInteractionDisabled && toggleGroupStatus(w.items, "APPROVED"); }}
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                if (!isInteractionDisabled) {
+                                  toggleGroupStatus(w.items, "APPROVED"); 
+                                }
+                              }}
                               disabled={submitting || isInteractionDisabled}
                             >
                               {isVerified ? <CheckCircle2 size={14} className="mr-1.5" /> : <CheckSquare size={14} className="mr-1.5" />}
@@ -584,7 +589,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                     <TableBody>
                       {activeGroup?.items.map((p, idx) => {
                         const status = itemDecisions[p.id] || "PENDING";
-                        const isReadOnly = p.is_concern || p.is_rejected || (status !== "PENDING" && status !== "APPROVED") || isInteractionDisabled;
+                        const isPersistentLocked = p.is_concern || p.is_rejected;
+                        const isStatusLocked = isPersistentLocked || (status !== "PENDING" && status !== "APPROVED") || isInteractionDisabled;
                         return (
                           <React.Fragment key={p.id}>
                             <TableRow className="group hover:bg-slate-50/50 border-b border-slate-100">
@@ -599,7 +605,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                   className="h-8 w-28 text-center text-xs font-black tabular-nums bg-slate-50 border-slate-200"
                                   value={editedAmounts[p.id] || p.amount}
                                   onChange={(e) => setEditedAmounts(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                  disabled={processingItem === p.id || submitting || isReadOnly}
+                                  disabled={processingItem === p.id || submitting || isStatusLocked}
                                 />
                               </TableCell>
                               <TableCell className="py-4 text-center">
@@ -609,7 +615,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                     variant="ghost"
                                     className="h-8 w-8 bg-blue-50 text-blue-600 rounded-lg"
                                     onClick={() => setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`)}
-                                    disabled={processingItem === p.id || submitting || isReadOnly}
+                                    disabled={processingItem === p.id || submitting || isStatusLocked}
                                   >
                                     <ExternalLink size={14} />
                                   </Button>
@@ -623,13 +629,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                               </TableCell>
                               <TableCell className="py-4 text-center">
                                 <div className="flex items-center justify-center gap-1.5">
-                                  <Button size="icon" className={`h-8 w-8 rounded-lg shadow-sm ${status === "APPROVED" ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-emerald-50"}`} onClick={() => setItemStatus(p.id, "APPROVED")} disabled={processingItem === p.id || submitting || isReadOnly}>
+                                  <Button size="icon" className={`h-8 w-8 rounded-lg shadow-sm ${status === "APPROVED" ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-emerald-50"}`} onClick={() => setItemStatus(p.id, "APPROVED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
                                     <Check size={16} strokeWidth={3} />
                                   </Button>
-                                  <Button size="icon" className={`h-8 w-8 rounded-lg shadow-sm ${status === "WITH_CONCERN" ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-amber-50"}`} onClick={() => setItemStatus(p.id, "WITH_CONCERN")} disabled={processingItem === p.id || submitting || isReadOnly}>
+                                  <Button size="icon" className={`h-8 w-8 rounded-lg shadow-sm ${status === "WITH_CONCERN" ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-amber-50"}`} onClick={() => setItemStatus(p.id, "WITH_CONCERN")} disabled={processingItem === p.id || submitting || isStatusLocked}>
                                     <AlertTriangle size={14} />
                                   </Button>
-                                  <Button size="icon" className={`h-8 w-8 rounded-lg shadow-sm ${status === "REJECTED" ? "bg-rose-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-rose-50"}`} onClick={() => setItemStatus(p.id, "REJECTED")} disabled={processingItem === p.id || submitting || isReadOnly}>
+                                  <Button size="icon" className={`h-8 w-8 rounded-lg shadow-sm ${status === "REJECTED" ? "bg-rose-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-rose-50"}`} onClick={() => setItemStatus(p.id, "REJECTED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
                                     <X size={16} strokeWidth={3} />
                                   </Button>
                                 </div>
@@ -645,12 +651,12 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                       className="h-8 text-xs font-medium border-2 focus:border-primary bg-white shadow-inner flex-1"
                                       value={showItemRemarks[p.id] || ""}
                                       onChange={(e) => setShowItemRemarks(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                      disabled={processingItem === p.id || submitting || isReadOnly || isInteractionDisabled}
+                                      disabled={processingItem === p.id || submitting || isPersistentLocked || isInteractionDisabled}
                                     />
                                     <Button
                                       size="sm"
                                       className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2"
-                                      disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isReadOnly}
+                                      disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isPersistentLocked}
                                       onClick={() => handleSingleItemVote(p)}
                                     >
                                       {processingItem === p.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
@@ -726,7 +732,10 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       <Dialog open={!!previewUrl} onOpenChange={(v) => !v && setPreviewUrl(null)}>
         <DialogContent className="max-w-[90vw] max-h-[85vh] p-0 overflow-hidden bg-black border-none shadow-2xl">
           <Button variant="ghost" size="icon" className="absolute top-4 right-4 text-white hover:bg-white/20" onClick={() => setPreviewUrl(null)}><X size={24} /></Button>
-          {previewUrl && <img src={previewUrl} alt="Preview" className="max-w-[90vw] max-h-[85vh] object-contain mx-auto" />}
+          {previewUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={previewUrl} alt="Preview" className="max-w-[90vw] max-h-[85vh] object-contain mx-auto" />
+          )}
         </DialogContent>
       </Dialog>
     </Dialog>
