@@ -84,6 +84,10 @@ export interface DraftDetail {
     version: number;
   } | null;
   can_vote?: boolean;
+  attachments?: {
+    file_url: string;
+    file_name: string;
+  }[];
 }
 
 export interface LogDraft {

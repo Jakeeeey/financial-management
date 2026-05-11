@@ -116,6 +116,7 @@ type DisbursementPayableDraftRow = {
     id?: number | string;
     status?: string | null;
     feedback?: string | null;
+    header_id?: number | string | null;
     attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   }
   | null;
@@ -133,6 +134,7 @@ type ExpenseDraftRow = {
   attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   feedback?: string | null;
   status?: string | null;
+  header_id?: number | string | null;
 };
 
 type ApprovalVoteRow = {
@@ -1091,59 +1093,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    if (resource === "available-weeks") {
-      if (myDivisionIds.length === 0) return json({ data: [] });
-
-      const draftRes = await directusFetch(
-        `/items/disbursement_draft?filter[division_id][_in]=${myDivisionIds.join(
-          ","
-        )}&filter[status][_nin]=Approved,Rejected&fields=transaction_date&limit=-1`
-      );
-
-      const returnedRes = await directusFetch(
-        `/items/expense_draft?filter[status][_eq]=Approved&filter[return_to][_nnull]=true&filter[division_id][_in]=${myDivisionIds.join(
-          ","
-        )}&fields=transaction_date&limit=-1`
-      );
-
-      const draftRows =
-        (draftRes.data as DirectusListResponse<{ transaction_date?: string | null }>)
-          ?.data ?? [];
-
-      const returnedRows =
-        (returnedRes.data as DirectusListResponse<{ transaction_date?: string | null }>)
-          ?.data ?? [];
-
-      const weeks: Record<string, { week_start: string; week_label: string }> = {};
-
-      for (const row of [...draftRows, ...returnedRows]) {
-        if (!row.transaction_date) continue;
-
-        const s = startOfWeek(new Date(`${row.transaction_date}T00:00:00`), {
-          weekStartsOn: 1,
-        });
-
-        const e = endOfWeek(s, { weekStartsOn: 1 });
-        const id = format(s, "yyyy-MM-dd");
-
-        if (!weeks[id]) {
-          weeks[id] = {
-            week_start: id,
-            week_label: `${format(s, "MMM d")} - ${format(e, "d, yyyy")}`,
-          };
-        }
-      }
-
-      return json({
-        data: Object.values(weeks).sort((a, b) =>
-          b.week_start.localeCompare(a.week_start)
-        ),
-      });
-    }
 
     if (resource === "drafts") {
-      const startDate = sp.get("start_date");
-      const endDate = sp.get("end_date");
       const filterDivId = toNumericId(sp.get("divisionId"));
 
       const filter: Record<string, unknown> = {
@@ -1152,12 +1103,6 @@ export async function GET(req: NextRequest) {
           _nin: ["Approved", "Rejected"],
         },
       };
-
-      if (startDate && endDate) {
-        filter.transaction_date = {
-          _between: [startDate, endDate],
-        };
-      }
 
       const query = buildFilterQuery(
         filter,
@@ -1182,12 +1127,6 @@ export async function GET(req: NextRequest) {
           _in: myDivisionIds,
         },
       };
-
-      if (startDate && endDate) {
-        returnedFilter.transaction_date = {
-          _between: [startDate, endDate],
-        };
-      }
 
       const returnedQuery = buildFilterQuery(
         returnedFilter,
@@ -1473,7 +1412,7 @@ export async function GET(req: NextRequest) {
       }
 
       const pRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to&limit=-1`
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
       );
 
       const payablesRaw =
@@ -1488,7 +1427,7 @@ export async function GET(req: NextRequest) {
       const weekEnd = getWeekEndFromStart(weekStart);
 
       const concernRes = await directusFetch(
-        `/items/expense_draft?filter[division_id][_eq]=${divisionId}&filter[status][_in]=With Concern,Approved&filter[return_to][_starts_with]=L&filter[transaction_date][_between]=[${weekStart},${weekEnd}]&fields=id,amount,remarks,transaction_date,particulars,attachment_url,feedback,return_to,status&limit=-1`
+        `/items/expense_draft?filter[division_id][_eq]=${divisionId}&filter[status][_in]=With Concern,Approved&filter[return_to][_starts_with]=L&filter[transaction_date][_between]=[${weekStart},${weekEnd}]&fields=id,amount,remarks,transaction_date,particulars,attachment_url,feedback,return_to,status,header_id&limit=-1`
       );
 
       const rawConcerns =
@@ -1501,7 +1440,14 @@ export async function GET(req: NextRequest) {
       const payeeId = toNumericId(draft.payee) ?? 0;
       const encoderId = toNumericId(draft.encoder_id) ?? 0;
 
-      const [coaMap, supplierMap, userMap, divisionMap, voteHistory, approversByLevel] =
+      const headerIds = [
+        ...new Set([
+          ...payablesRaw.map(p => typeof p.expense_id === "object" ? toNumericId(p.expense_id?.header_id) : null),
+          ...rawConcerns.map(c => typeof c === "object" ? toNumericId(c.header_id) : null)
+        ].filter((id): id is number => Boolean(id)))
+      ];
+
+      const [coaMap, supplierMap, userMap, divisionMap, voteHistory, approversByLevel, attachmentsRes] =
         await Promise.all([
           fetchCoaMap([...coaIds, ...concernCoaIds]),
           fetchSupplierMap([payeeId]),
@@ -1518,7 +1464,12 @@ export async function GET(req: NextRequest) {
             draftId,
             currentVersion: toNumber(draft.approval_version, 1),
           }),
+          headerIds.length > 0 
+            ? directusFetch(`/items/expense_attachments?filter[header_id][_in]=${headerIds.join(",")}&fields=id,file_url,file_name&limit=-1`)
+            : Promise.resolve({ ok: true, data: { data: [] } })
         ]);
+
+      const attachments = (attachmentsRes.data as any)?.data || [];
 
       const currentTier = parseTier(draft.status ?? "Submitted");
       const approvalVersion = toNumber(draft.approval_version, 1);
@@ -1598,6 +1549,10 @@ export async function GET(req: NextRequest) {
           currentTier,
           myVote,
         }),
+        attachments: attachments.map((a: any) => ({
+          file_url: a.file_url,
+          file_name: a.file_name
+        })),
       });
     }
 
@@ -2265,15 +2220,22 @@ export async function POST(req: NextRequest) {
     let finalVoteStatus: VoteStatus = overallStatus;
 
     if (item_decisions && Object.keys(item_decisions).length > 0) {
-      const decisions = Object.values(item_decisions);
-      const hasConcern = decisions.some((d) => d.status === "WITH_CONCERN");
-      const allRejected = decisions.length > 0 && decisions.every((d) => d.status === "REJECTED");
+      const positiveDecisions = Object.entries(item_decisions)
+        .filter(([id]) => Number(id) > 0) // only real payable decisions, not concern-items (negative ids)
+        .map(([, d]) => d);
 
-      // Logic: If there are remaining items, it means they are approved by default
-      // even if the frontend didn't explicitly send "APPROVED" for every row.
-      if (remainingCount > 0) finalVoteStatus = "APPROVED";
-      else if (hasConcern) finalVoteStatus = "WITH_CONCERN";
+      const hasConcern = positiveDecisions.some((d) => d.status === "WITH_CONCERN");
+      const hasRejected = positiveDecisions.some((d) => d.status === "REJECTED");
+      const allRejected = positiveDecisions.length > 0 && positiveDecisions.every((d) => d.status === "REJECTED");
+
+      // Priority: WITH_CONCERN > REJECTED > (remaining items = APPROVED)
+      // This prevents the bug where remainingCount > 0 blindly overrides
+      // concern/rejection decisions and marks the batch as APPROVED.
+      if (hasConcern) finalVoteStatus = "WITH_CONCERN";
       else if (allRejected) finalVoteStatus = "REJECTED";
+      else if (hasRejected && remainingCount > 0) finalVoteStatus = "APPROVED"; // partial reject = still approved
+      else if (remainingCount > 0) finalVoteStatus = "APPROVED";
+      else finalVoteStatus = "REJECTED";
     }
 
     const myHierarchy = Math.max(

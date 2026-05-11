@@ -62,8 +62,6 @@ export async function checkMyAccess(): Promise<
 }
 
 export async function listDrafts(
-  startDate?: string,
-  endDate?: string,
   divisionId?: number
 ): Promise<{
   data: DraftRow[];
@@ -72,10 +70,6 @@ export async function listDrafts(
 }> {
   let url = `${BASE}?resource=drafts`;
 
-  if (startDate && endDate) {
-    url += `&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
-  }
-  
   if (divisionId) {
     url += `&divisionId=${divisionId}`;
   }
@@ -85,22 +79,6 @@ export async function listDrafts(
     myLevel: number;
     levelsByDivision: Record<number, number[]>;
   }>(url);
-}
-
-export async function getAvailableWeeks(): Promise<
-  {
-    week_start: string;
-    week_label: string;
-  }[]
-> {
-  const data = await apiFetch<{
-    data: {
-      week_start: string;
-      week_label: string;
-    }[];
-  }>(`${BASE}?resource=available-weeks`);
-
-  return data.data;
 }
 
 export async function getDraftDetail(draftId: number): Promise<DraftDetail> {

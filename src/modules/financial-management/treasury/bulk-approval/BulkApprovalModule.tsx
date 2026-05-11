@@ -10,8 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { useBulkApproval } from "./hooks/useBulkApproval";
 import DraftListTable from "./components/DraftListTable";
 import VoteModal from "./components/VoteModal";
+import FinalApprovalModal from "./components/FinalApprovalModal";
 import { ActivityFeed } from "./components/ActivityFeed";
-import { DateRangePicker } from "../components/DateRangePicker";
 
 export default function BulkApprovalModule() {
   const {
@@ -35,12 +35,15 @@ export default function BulkApprovalModule() {
     closeModal,
     onVoteComplete,
     refreshDetail,
-    dateRange,
-    setDateRange,
     selectedDivisionId,
     setSelectedDivisionId,
     availableDivisions,
   } = useBulkApproval();
+
+  const isFinalTier = React.useMemo(() => {
+    if (!draftDetail) return false;
+    return draftDetail.draft.current_tier === draftDetail.draft.max_level;
+  }, [draftDetail]);
 
   if (unauthorized) {
     return (
@@ -84,7 +87,6 @@ export default function BulkApprovalModule() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <DateRangePicker date={dateRange} setDate={setDateRange} />
           <Button
             className="rounded-full shadow-lg font-bold tracking-wide shadow-primary/20 active:scale-95 transition-all"
             onClick={() => window.location.reload()}
@@ -143,15 +145,26 @@ export default function BulkApprovalModule() {
 
       </div>
 
-      {/* Vote Modal */}
-      <VoteModal
-        open={modalOpen}
-        loading={modalLoading}
-        detail={draftDetail}
-        onClose={closeModal}
-        onVoteComplete={onVoteComplete}
-        onRefreshDetail={refreshDetail}
-      />
+      {/* Conditional Modal Rendering */}
+      {isFinalTier ? (
+        <FinalApprovalModal
+          open={modalOpen}
+          loading={modalLoading}
+          detail={draftDetail}
+          onClose={closeModal}
+          onVoteComplete={onVoteComplete}
+          onRefreshDetail={refreshDetail}
+        />
+      ) : (
+        <VoteModal
+          open={modalOpen}
+          loading={modalLoading}
+          detail={draftDetail}
+          onClose={closeModal}
+          onVoteComplete={onVoteComplete}
+          onRefreshDetail={refreshDetail}
+        />
+      )}
     </div>
   );
 }
