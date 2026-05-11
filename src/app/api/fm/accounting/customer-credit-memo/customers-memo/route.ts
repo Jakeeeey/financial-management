@@ -390,14 +390,45 @@ export async function GET(req: NextRequest) {
                     }
                 }
                 
-                // Fetch linked collections
-                const collections = await directusFetch<DirectusListResponse<CollectionMemoItem>>(
-                    `${DIRECTUS_URL}/items/collection_memos?filter[memo_id][_eq]=${id}&fields=collection_id.docNo,collection_id.id,amount`
-                );
+                // Fetch linked collections (only fields exposed in Directus)
+                const collectionFields = [
+                    "amount",
+                    "collection_id.id",
+                    "collection_id.docNo",
+                ].join(",");
+                let collectionsData: CollectionMemoItem[] = [];
+                try {
+                    const collections = await directusFetch<DirectusListResponse<CollectionMemoItem>>(
+                        `${DIRECTUS_URL}/items/collection_memos?filter[memo_id][_eq]=${id}&fields=${collectionFields}`
+                    );
+                    collectionsData = collections.data || [];
+                } catch (e) {
+                    console.warn("[Customers Memo API] Collections fetch failed:", e);
+                }
+
+                // Fetch applied invoices from customer_memo_invoices
+                const invoiceFields = [
+                    "amount",
+                    "date_applied",
+                    "invoice_id.invoice_no",
+                    "invoice_id.invoice_date",
+                    "invoice_id.due_date",
+                    "invoice_id.net_amount",
+                ].join(",");
+                let invoicesData: Record<string, unknown>[] = [];
+                try {
+                    const invoices = await directusFetch<DirectusListResponse<Record<string, unknown>>>(
+                        `${DIRECTUS_URL}/items/customer_memo_invoices?filter[memo_id][_eq]=${id}&fields=${invoiceFields}`
+                    );
+                    invoicesData = invoices.data || [];
+                } catch (e) {
+                    console.warn("[Customers Memo API] Invoices fetch failed:", e);
+                }
 
                 return NextResponse.json({
                     header: header,
-                    collections: collections.data || []
+                    collections: collectionsData,
+                    invoices: invoicesData,
                 });
             }
 

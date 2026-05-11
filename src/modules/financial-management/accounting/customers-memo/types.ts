@@ -1,5 +1,23 @@
 // src/modules/financial-management/accounting/customers-memo/types.ts
 
+export interface CompanyProfile {
+    company_id: number;
+    company_name?: string | null;
+    company_type?: string | null;
+    company_code?: string | null;
+    company_address?: string | null;
+    company_brgy?: string | null;
+    company_city?: string | null;
+    company_province?: string | null;
+    company_zipCode?: string | null;
+    company_registrationNumber?: string | null;
+    company_tin?: string | null;
+    company_dateAdmitted?: string | null;
+    company_contact?: string | null;
+    company_email?: string | null;
+    company_logo?: string | null;
+}
+
 export interface Supplier {
     id: number;
     supplier_name: string;
@@ -99,13 +117,27 @@ export interface MemoApprovalRow {
     type: number;
 }
 
+export interface DetailedMemoInvoice {
+    amount: number;
+    date_applied: string | null;
+    invoice_id: {
+        invoice_no: string;
+        invoice_date: string | null;
+        due_date: string | null;
+        net_amount: number | null;
+    } | null;
+}
+
+export interface DetailedMemoCollection {
+    amount: number;
+    collection_id: {
+        id: number;
+        docNo: string;
+    };
+}
+
 export interface DetailedMemo {
     header: MemoApprovalRow;
-    collections: {
-        collection_id: { 
-            id: number;
-            docNo: string;
-        };
-        amount: number;
-    }[];
+    collections: DetailedMemoCollection[];
+    invoices: DetailedMemoInvoice[];
 }
