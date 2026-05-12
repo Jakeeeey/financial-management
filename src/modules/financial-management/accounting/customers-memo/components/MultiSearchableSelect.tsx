@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/popover";
 
 export interface MultiSearchableSelectProps {
-    options: { value: string; label: string }[];
+    options: { value: string; label: string; subLabel?: string }[];
     value?: string[];
     onValueChange: (value: string[]) => void;
     placeholder?: string;
@@ -111,16 +111,24 @@ export function MultiSearchableSelect({
                                 return (
                                     <CommandItem
                                         key={opt.value}
-                                        value={opt.label}
+                                        value={`${opt.label} ${opt.subLabel || ""}`}
                                         onSelect={() => toggleOption(opt.value)}
+                                        className="flex items-center py-2"
                                     >
                                         <Check
                                             className={cn(
-                                                "mr-2 h-4 w-4",
+                                                "mr-2 h-3.5 w-3.5 shrink-0",
                                                 isSelected ? "opacity-100" : "opacity-0"
                                             )}
                                         />
-                                        {opt.label}
+                                        <div className="flex flex-col gap-0 overflow-hidden">
+                                            <span className="font-bold text-xs truncate leading-tight">{opt.label}</span>
+                                            {opt.subLabel && (
+                                                <span className="text-[9px] text-muted-foreground truncate uppercase tracking-widest font-medium">
+                                                    {opt.subLabel}
+                                                </span>
+                                            )}
+                                        </div>
                                     </CommandItem>
                                 );
                             })}
