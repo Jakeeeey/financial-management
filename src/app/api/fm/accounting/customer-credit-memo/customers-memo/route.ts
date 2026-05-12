@@ -26,6 +26,10 @@ type CustomerRow = {
     id: number;
     customer_name: string;
     customer_code: string;
+    store_name?: string;
+    brgy?: string;
+    city?: string;
+    province?: string;
 };
 
 type SalesmanRow = {
@@ -229,7 +233,7 @@ export async function GET(req: NextRequest) {
 
             case "customers": {
                 const result = await directusFetch<DirectusListResponse<CustomerRow>>(
-                    `${DIRECTUS_URL}/items/customer?fields=id,customer_name,customer_code&filter[isActive][_eq]=1&limit=-1&sort=customer_name`
+                    `${DIRECTUS_URL}/items/customer?fields=id,customer_name,customer_code,store_name,brgy,city,province&filter[isActive][_eq]=1&limit=-1&sort=customer_name`
                 );
                 return NextResponse.json(result);
             }
@@ -320,7 +324,7 @@ export async function GET(req: NextRequest) {
                 const fields = [
                     "id", "memo_number", "amount", "applied_amount", "reason", "status", "created_at", "type",
                     "supplier_id.id", "supplier_id.supplier_name",
-                    "customer_id.id", "customer_id.customer_name", 
+                    "customer_id.id", "customer_id.customer_name", "customer_id.store_name", "customer_id.brgy", "customer_id.city", "customer_id.province",
                     "salesman_id.id", "salesman_id.salesman_code", "salesman_id.salesman_name",
                     "chart_of_account.coa_id", "chart_of_account.gl_code", "chart_of_account.account_title",
                     "encoder_id", "encoder_id.user_fname", "encoder_id.user_lname"
@@ -364,7 +368,7 @@ export async function GET(req: NextRequest) {
                 const headerFields = [
                     "id", "memo_number", "amount", "applied_amount", "reason", "status", "created_at", "type",
                     "supplier_id.id", "supplier_id.supplier_name",
-                    "customer_id.id", "customer_id.customer_name", 
+                    "customer_id.id", "customer_id.customer_name", "customer_id.store_name", "customer_id.brgy", "customer_id.city", "customer_id.province",
                     "salesman_id.id", "salesman_id.salesman_code", "salesman_id.salesman_name",
                     "chart_of_account.coa_id", "chart_of_account.gl_code", "chart_of_account.account_title",
                     "encoder_id", "encoder_id.user_fname", "encoder_id.user_lname"
