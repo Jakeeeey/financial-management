@@ -2,10 +2,14 @@
 "use client";
 
 import type {
-  DraftRow,
-  DraftDetail,
-  LogDraft,
   ActivityLogDetail,
+  ApprovalContext,
+  DraftDetail,
+  DraftRow,
+  FinalHeaderDecisionPayload,
+  FinalHeaderGroup,
+  FinalTopSheetResponse,
+  LogDraft,
   VotePayload,
 } from "../type";
 
@@ -16,24 +20,27 @@ type ApiErrorBody = {
   message?: string;
 };
 
+async function readJsonSafely(res: Response): Promise<unknown> {
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) return null;
+  return res.json() as Promise<unknown>;
+}
+
 async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     cache: "no-store",
     ...init,
   });
 
-  const data = (await res.json()) as unknown;
+  const data = await readJsonSafely(res);
 
   if (!res.ok) {
     if (res.status === 403 || res.status === 401) {
       throw new Error("403_UNAUTHORIZED");
     }
 
-    const body = data as ApiErrorBody;
-    const msg =
-      body.message ||
-      body.error ||
-      `Request failed (${res.status})`;
+    const body = data as ApiErrorBody | null;
+    const msg = body?.message || body?.error || `Request failed (${res.status})`;
 
     throw new Error(msg);
   }
@@ -59,6 +66,14 @@ export async function checkMyAccess(): Promise<
   }>(`${BASE}?resource=my-access`);
 
   return data.data;
+}
+
+export async function getMyApprovalContexts(): Promise<ApprovalContext[]> {
+  const data = await apiFetch<{ data: ApprovalContext[] }>(
+    `${BASE}?resource=my-approval-contexts`
+  );
+
+  return data.data ?? [];
 }
 
 export async function listDrafts(
@@ -90,11 +105,11 @@ export async function getDraftDetail(draftId: number): Promise<DraftDetail> {
 export async function submitVote(payload: VotePayload): Promise<{
   ok: boolean;
   result:
-  | "APPROVED"
-  | "REJECTED"
-  | "WITH_CONCERN"
-  | "TIER_ADVANCED"
-  | "VOTE_RECORDED";
+    | "APPROVED"
+    | "REJECTED"
+    | "WITH_CONCERN"
+    | "TIER_ADVANCED"
+    | "VOTE_RECORDED";
   message: string;
   doc_no?: string;
   next_tier?: number;
@@ -102,11 +117,11 @@ export async function submitVote(payload: VotePayload): Promise<{
   return apiFetch<{
     ok: boolean;
     result:
-    | "APPROVED"
-    | "REJECTED"
-    | "WITH_CONCERN"
-    | "TIER_ADVANCED"
-    | "VOTE_RECORDED";
+      | "APPROVED"
+      | "REJECTED"
+      | "WITH_CONCERN"
+      | "TIER_ADVANCED"
+      | "VOTE_RECORDED";
     message: string;
     doc_no?: string;
     next_tier?: number;
@@ -135,4 +150,39 @@ export async function getActivityLogDetail(
   }>(`${BASE}?resource=log-detail&draft_id=${encodeURIComponent(String(draftId))}`);
 
   return data.data;
+}
+
+export async function getFinalHeaderGroups(): Promise<FinalHeaderGroup[]> {
+  const data = await apiFetch<{ data: FinalHeaderGroup[] }>(
+    `${BASE}?resource=final-header-groups`
+  );
+
+  return data.data ?? [];
+}
+
+export async function getFinalTopSheet(params: {
+  division_id: number;
+  period_from: string;
+  period_to: string;
+}): Promise<FinalTopSheetResponse> {
+  const qs = new URLSearchParams({
+    resource: "final-topsheet",
+    division_id: String(params.division_id),
+    period_from: params.period_from,
+    period_to: params.period_to,
+  });
+
+  return apiFetch<FinalTopSheetResponse>(`${BASE}?${qs.toString()}`);
+}
+
+export async function submitFinalHeaderDecision(
+  payload: FinalHeaderDecisionPayload
+): Promise<{ ok: boolean; message: string; updated_count: number; affected_encoder_count?: number; affected_encoder_ids?: number[] }> {
+  return apiFetch<{ ok: boolean; message: string; updated_count: number; affected_encoder_count?: number; affected_encoder_ids?: number[] }>(BASE, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 }

@@ -95,9 +95,9 @@ export interface SalesmanExpenseRow {
   division_name: string | null;
   draft_count: number;
   rejected_count: number;
-  week_start?: string;
-  week_end?: string;
-  week_label?: string;
+  concern_count: number;
+  pending_amount: number;
+  header_count: number;
 }
 
 export interface ExpenseDraftRow {
@@ -118,6 +118,14 @@ export interface ExpenseDraftRow {
   remarks: string | null;
   version: number;
   feedback: string | null;
+}
+
+export interface ExpenseHeader {
+  id: number;
+  period_from: string;
+  period_to: string;
+  remarks: string | null;
+  status: string;
 }
 
 export interface SalesmanUserInfo {
@@ -144,6 +152,7 @@ export interface SalesmanExpenseDetail {
   salesman: SalesmanDetail;
   expense_limit: number;
   expenses: ExpenseDraftRow[];
+  headers: ExpenseHeader[];
 }
 
 export interface ItemDecision {

@@ -60,7 +60,4 @@ export async function getApprovalLogDetails(disbursementId: number): Promise<App
   return data.data;
 }
 
-export async function getAvailableWeeks(): Promise<{ week_start: string; week_label: string }[]> {
-  const data = (await apiFetch(`${BASE}?resource=available-weeks`)) as { data: { week_start: string; week_label: string }[] };
-  return data.data;
-}
+

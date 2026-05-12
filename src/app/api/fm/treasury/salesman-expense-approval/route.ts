@@ -1,7 +1,6 @@
 // src/app/api/fm/treasury/salesman-expense-approval/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { startOfWeek, endOfWeek, format } from "date-fns";
 
 export const runtime = "nodejs";
 
@@ -11,16 +10,25 @@ const STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 const COOKIE_NAME = "vos_access_token";
 
 const PENDING_EXPENSE_STATUSES = ["Drafts", "Rejected", "With Concern"] as const;
-const ALL_EXPENSE_STATUSES = ["Drafts", "Rejected", "With Concern", "Approved"] as const;
+const ALL_EXPENSE_STATUSES = [
+  "Drafts",
+  "Rejected",
+  "With Concern",
+  "Approved",
+] as const;
 
-type ExpenseDecisionStatus = "Approved" | "Rejected" | "With Concern";
+
 
 type DirectusListResponse<T> = {
   data?: T[];
 };
 
-type DirectusItemResponse<T> = {
-  data?: T;
+
+
+type DirectusFetchResult = {
+  ok: boolean;
+  status: number;
+  data: unknown;
 };
 
 type RbacFilters = {
@@ -46,9 +54,20 @@ type UserRow = {
   user_department?: number | string | null;
 };
 
+type DepartmentRow = {
+  department_id?: number | string | null;
+  department_name?: string | null;
+  parent_division?: number | string | null;
+};
+
+type DivisionRow = {
+  division_id?: number | string | null;
+  division_name?: string | null;
+};
+
 type ExpenseDraftRow = {
   id: number;
-  header_id?: number | string | null;
+  header_id?: number | string | { id?: number | string | null } | null;
   encoded_by?: number | string | null;
   particulars?: number | string | null;
   division_id?: number | string | null;
@@ -64,6 +83,26 @@ type ExpenseDraftRow = {
   remarks?: string | null;
   version?: number | string | null;
   feedback?: string | null;
+};
+
+type EnrichedExpenseDraftRow = ExpenseDraftRow & {
+  particulars_name: string;
+};
+
+type ExpenseDraftHeaderRow = {
+  id?: number | string | null;
+  period_from?: string | null;
+  period_to?: string | null;
+  remarks?: string | null;
+  status?: string | null;
+};
+
+type FormattedExpenseDraftHeader = {
+  id: number;
+  period_from: string;
+  period_to: string;
+  remarks: string | null;
+  status: string;
 };
 
 type DisbursementDraftRow = {
@@ -82,9 +121,9 @@ type DisbursementDraftRow = {
 };
 
 type PayableDraftRow = {
-  id?: number;
-  disbursement_id?: number | string | { id?: number | string } | null;
-  expense_id?: number | string | { id?: number | string } | null;
+  id?: number | string | null;
+  disbursement_id?: number | string | { id?: number | string | null } | null;
+  expense_id?: number | string | { id?: number | string | null } | null;
   coa_id?: number | string | null;
   amount?: number | string | null;
   remarks?: string | null;
@@ -122,15 +161,36 @@ type ExpenseLogRow = {
   version?: number | string | null;
 };
 
-type EditedAmountInput = { id: number; amount: number };
 
-type PostBody = {
-  item_decisions: Record<string, { status: ExpenseDecisionStatus; remarks: string }>;
-  remarks?: string;
-  salesman_id: number;
-  all_ids?: number[];
-  salesman_user_id?: number;
-  edited_amounts?: EditedAmountInput[] | Record<string, number>;
+
+
+
+type DecodedJwtPayload = {
+  sub?: string | number;
+  user_id?: string | number;
+  id?: string | number;
+};
+
+type SalesmanSummaryRow = {
+  id: number;
+  salesman_name: string;
+  salesman_code: string | null;
+  employee_id: number;
+  division_id: number | null;
+  division_name: string | null;
+  draft_count: number;
+  rejected_count: number;
+  concern_count: number;
+  pending_amount: number;
+  header_count: number;
+};
+
+type CountBucket = {
+  draft: number;
+  rejected: number;
+  concern: number;
+  amount: number;
+  headers: Set<number>;
 };
 
 function json(body: unknown, init?: ResponseInit) {
@@ -148,10 +208,12 @@ function toNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-
+function uniquePositiveNumbers(values: unknown[]): number[] {
+  return [...new Set(values.map((value) => toNumber(value)).filter((id) => id > 0))];
+}
 
 function directusIn(values: readonly string[]): string {
-  return values.map((v) => encodeURIComponent(v)).join(",");
+  return values.map((value) => encodeURIComponent(value)).join(",");
 }
 
 function getRelationId(value: unknown): number {
@@ -166,11 +228,32 @@ function getListData<T>(payload: unknown): T[] {
   return ((payload as DirectusListResponse<T>)?.data ?? []) as T[];
 }
 
-function getItemData<T>(payload: unknown): T | undefined {
-  return (payload as DirectusItemResponse<T>)?.data;
+
+
+function withDateFilters(path: string, startDate: string | null, endDate: string | null): string {
+  let nextPath = path;
+
+  if (startDate) {
+    nextPath += `&filter[transaction_date][_gte]=${encodeURIComponent(startDate)}`;
+  }
+
+  if (endDate) {
+    nextPath += `&filter[transaction_date][_lte]=${encodeURIComponent(endDate)}`;
+  }
+
+  return nextPath;
 }
 
-async function directusFetch(path: string, init?: RequestInit) {
+function getUserFullName(user?: UserRow | null): string {
+  if (!user) return "";
+
+  return [user.user_fname, user.user_mname, user.user_lname]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+async function directusFetch(path: string, init?: RequestInit): Promise<DirectusFetchResult> {
   if (!DIRECTUS_BASE) {
     return {
       ok: false,
@@ -204,14 +287,10 @@ async function directusFetch(path: string, init?: RequestInit) {
     headers: computedHeaders,
   });
 
-  let data: unknown = null;
-  const ct = res.headers.get("content-type") || "";
-
-  if (ct.includes("application/json")) {
-    data = await res.json();
-  } else {
-    data = await res.text();
-  }
+  const contentType = res.headers.get("content-type") || "";
+  const data: unknown = contentType.includes("application/json")
+    ? await res.json()
+    : await res.text();
 
   return { ok: res.ok, status: res.status, data };
 }
@@ -222,12 +301,12 @@ function decodeJwtSub(token: string): number | null {
     if (parts.length < 2) return null;
 
     const payloadPart = parts[1];
-    const b64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const base64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
 
     const payload = JSON.parse(
       Buffer.from(padded, "base64").toString("utf8")
-    ) as Record<string, unknown>;
+    ) as DecodedJwtPayload;
 
     const sub = payload.sub ?? payload.user_id ?? payload.id;
     const n = Number(sub);
@@ -248,36 +327,7 @@ function todayManila(): string {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Manila" });
 }
 
-function getUserFullName(user: UserRow): string {
-  return `${user.user_fname ?? ""} ${user.user_lname ?? ""}`.trim();
-}
 
-function makeExpenseDecisionPatch(
-  decision: { status: ExpenseDecisionStatus; remarks: string },
-  nowTs: string
-): Record<string, unknown> {
-  const patch: Record<string, unknown> = {
-    status: decision.status,
-    feedback: decision.status !== "Approved" ? decision.remarks || null : null,
-  };
-
-  if (decision.status === "Approved") {
-    patch.approved_at = nowTs;
-    patch.rejected_at = null;
-  }
-
-  if (decision.status === "Rejected") {
-    patch.rejected_at = nowTs;
-    patch.approved_at = null;
-  }
-
-  if (decision.status === "With Concern") {
-    patch.approved_at = null;
-    patch.rejected_at = null;
-  }
-
-  return patch;
-}
 
 async function getRbacFilters(): Promise<RbacFilters | null> {
   const cookieStore = await cookies();
@@ -299,14 +349,115 @@ async function getRbacFilters(): Promise<RbacFilters | null> {
   const supRows = getListData<{ division_id?: number | string }>(supRes.data);
 
   const myDepartments = deptRows
-    .map((d) => toNumber(d.department_id))
+    .map((dept) => toNumber(dept.department_id))
     .filter((id) => id > 0);
 
   const myDivisions = supRows
-    .map((s) => toNumber(s.division_id))
+    .map((sup) => toNumber(sup.division_id))
     .filter((id) => id > 0);
 
   return { currentUserId, myDepartments, myDivisions };
+}
+
+function canAccessScope(rbac: RbacFilters, departmentId: number, divisionId: number): boolean {
+  return rbac.myDepartments.includes(departmentId) || rbac.myDivisions.includes(divisionId);
+}
+
+async function fetchUserMap(userIds: number[]): Promise<Record<number, UserRow>> {
+  const userMap: Record<number, UserRow> = {};
+
+  if (userIds.length === 0) return userMap;
+
+  const uRes = await directusFetch(
+    `/items/user?filter[user_id][_in]=${userIds.join(",")}&fields=user_id,user_fname,user_mname,user_lname,user_position,user_department&limit=-1`
+  );
+
+  const users = getListData<UserRow>(uRes.data);
+
+  for (const user of users) {
+    const userId = toNumber(user.user_id);
+    if (userId > 0) userMap[userId] = user;
+  }
+
+  return userMap;
+}
+
+async function fetchDivisionNameMap(divisionIds: number[]): Promise<Record<number, string>> {
+  const divisionNameMap: Record<number, string> = {};
+
+  if (divisionIds.length === 0) return divisionNameMap;
+
+  const divRes = await directusFetch(
+    `/items/division?filter[division_id][_in]=${divisionIds.join(",")}&fields=division_id,division_name&limit=-1`
+  );
+
+  const divisions = getListData<DivisionRow>(divRes.data);
+
+  for (const division of divisions) {
+    const divisionId = toNumber(division.division_id);
+    if (divisionId > 0) {
+      divisionNameMap[divisionId] = String(division.division_name ?? "");
+    }
+  }
+
+  return divisionNameMap;
+}
+
+async function fetchSalesmenByEmployeeIds(employeeIds: number[]): Promise<Record<number, SalesmanRow>> {
+  const salesmanMap: Record<number, SalesmanRow> = {};
+
+  if (employeeIds.length === 0) return salesmanMap;
+
+  const sRes = await directusFetch(
+    `/items/salesman?filter[employee_id][_in]=${employeeIds.join(",")}&fields=id,salesman_name,salesman_code,employee_id,division_id&limit=-1&sort=salesman_name`
+  );
+
+  const salesmen = getListData<SalesmanRow>(sRes.data);
+
+  for (const salesman of salesmen) {
+    const employeeId = toNumber(salesman.employee_id);
+    if (employeeId > 0 && !salesmanMap[employeeId]) {
+      salesmanMap[employeeId] = salesman;
+    }
+  }
+
+  return salesmanMap;
+}
+
+async function resolveSalesmanFromParam(salesmanIdParam: string): Promise<{
+  salesman: SalesmanRow | null;
+  employeeId: number;
+}> {
+  const directSalesmanRes = await directusFetch(
+    `/items/salesman?filter[id][_eq]=${encodeURIComponent(salesmanIdParam)}&fields=id,salesman_name,salesman_code,employee_id,division_id&limit=1`
+  );
+
+  const directSalesman = getListData<SalesmanRow>(directSalesmanRes.data)[0];
+
+  if (directSalesman) {
+    return {
+      salesman: directSalesman,
+      employeeId: toNumber(directSalesman.employee_id),
+    };
+  }
+
+  const byEmployeeRes = await directusFetch(
+    `/items/salesman?filter[employee_id][_eq]=${encodeURIComponent(salesmanIdParam)}&fields=id,salesman_name,salesman_code,employee_id,division_id&limit=1`
+  );
+
+  const byEmployeeSalesman = getListData<SalesmanRow>(byEmployeeRes.data)[0];
+
+  if (byEmployeeSalesman) {
+    return {
+      salesman: byEmployeeSalesman,
+      employeeId: toNumber(byEmployeeSalesman.employee_id),
+    };
+  }
+
+  return {
+    salesman: null,
+    employeeId: toNumber(salesmanIdParam),
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -336,20 +487,11 @@ export async function GET(req: NextRequest) {
         return json({ error: "Missing salesman_id" }, { status: 400 });
       }
 
-      const sRes = await directusFetch(
-        `/items/salesman?filter[id][_eq]=${salesmanId}&fields=id,salesman_name,salesman_code,employee_id,division_id&limit=1`
-      );
+      const { salesman, employeeId } = await resolveSalesmanFromParam(salesmanId);
 
-      if (!sRes.ok) return json(sRes.data, { status: sRes.status });
-
-      const salesman = getListData<SalesmanRow>(sRes.data)[0];
-
-      if (!salesman) {
-        return json({ error: "Salesman not found" }, { status: 404 });
+      if (!employeeId) {
+        return json({ error: "Salesman or encoder user not found" }, { status: 404 });
       }
-
-      const employeeId = toNumber(salesman.employee_id);
-      const salesmanDivisionId = toNumber(salesman.division_id);
 
       const uRes = await directusFetch(
         `/items/user?filter[user_id][_eq]=${employeeId}` +
@@ -357,25 +499,18 @@ export async function GET(req: NextRequest) {
       );
 
       const userInfo = getListData<UserRow>(uRes.data)[0];
-      const salesmanDeptId = userInfo?.user_department
-        ? toNumber(userInfo.user_department)
-        : 0;
+      const salesmanDeptId = toNumber(userInfo?.user_department);
+      const salesmanDivisionId = toNumber(salesman?.division_id);
 
-      const isMyDept = myDepartments.includes(salesmanDeptId);
-      const isMyDiv = myDivisions.includes(salesmanDivisionId);
-
-      if (!isMyDept && !isMyDiv) {
+      if (!canAccessScope(rbac, salesmanDeptId, salesmanDivisionId)) {
         return json({ error: "Forbidden" }, { status: 403 });
       }
 
       let expFilter =
         `/items/expense_draft?filter[encoded_by][_eq]=${employeeId}` +
-        `&filter[division_id][_eq]=${salesmanDivisionId}` +
         `&filter[status][_in]=${directusIn(ALL_EXPENSE_STATUSES)}`;
 
-      if (startDate && endDate) {
-        expFilter += `&filter[transaction_date][_between]=[${startDate},${endDate}]`;
-      }
+      expFilter = withDateFilters(expFilter, startDate, endDate);
 
       const eRes = await directusFetch(
         expFilter +
@@ -385,19 +520,20 @@ export async function GET(req: NextRequest) {
 
       if (!eRes.ok) return json(eRes.data, { status: eRes.status });
 
-      const expenses = getListData<ExpenseDraftRow>(eRes.data);
+      const rawExpenses = getListData<ExpenseDraftRow>(eRes.data);
+      const expenses = rawExpenses.filter((expense) => {
+        const expenseDivisionId = toNumber(expense.division_id);
+        return canAccessScope(rbac, salesmanDeptId, expenseDivisionId || salesmanDivisionId);
+      });
 
       const cRes = await directusFetch(
         `/items/user_expense_ceiling?filter[user_id][_eq]=${employeeId}&limit=1`
       );
 
-      const ceilingRow = getListData<{ expense_limit?: number | string }>(
-        cRes.data
-      )[0];
-
+      const ceilingRow = getListData<{ expense_limit?: number | string }>(cRes.data)[0];
       const expenseLimit = toNumber(ceilingRow?.expense_limit);
 
-      let resolvedDivisionId: number | null = null;
+      let resolvedDivisionId = salesmanDivisionId || null;
       let departmentName = "";
       let divisionName = "";
 
@@ -406,37 +542,27 @@ export async function GET(req: NextRequest) {
           `/items/department?filter[department_id][_eq]=${userInfo.user_department}&fields=department_id,department_name,parent_division&limit=1`
         );
 
-        const dept = getListData<{
-          department_id?: number | string;
-          department_name?: string;
-          parent_division?: number | string;
-        }>(dRes.data)[0];
+        const dept = getListData<DepartmentRow>(dRes.data)[0];
 
         if (dept) {
           departmentName = String(dept.department_name ?? "");
 
           if (dept.parent_division) {
             resolvedDivisionId = toNumber(dept.parent_division);
-
-            const divRes = await directusFetch(
-              `/items/division?filter[division_id][_eq]=${resolvedDivisionId}&fields=division_name&limit=1`
-            );
-
-            const div = getListData<{ division_name?: string }>(divRes.data)[0];
-
-            if (div) {
-              divisionName = String(div.division_name ?? "");
-            }
           }
         }
       }
 
-      const coaIds = [
-        ...new Set(
-          expenses.map((e) => toNumber(e.particulars)).filter((id) => id > 0)
-        ),
-      ];
+      if (resolvedDivisionId) {
+        const divRes = await directusFetch(
+          `/items/division?filter[division_id][_eq]=${resolvedDivisionId}&fields=division_name&limit=1`
+        );
 
+        const div = getListData<{ division_name?: string }>(divRes.data)[0];
+        if (div) divisionName = String(div.division_name ?? "");
+      }
+
+      const coaIds = uniquePositiveNumbers(expenses.map((expense) => expense.particulars));
       const coaMap: Record<number, string> = {};
 
       if (coaIds.length > 0) {
@@ -454,21 +580,47 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const enriched = expenses.map((e) => ({
-        ...e,
-        particulars_name: coaMap[toNumber(e.particulars)] ?? "",
+      const enriched: EnrichedExpenseDraftRow[] = expenses.map((expense) => ({
+        ...expense,
+        particulars_name: coaMap[toNumber(expense.particulars)] ?? "",
       }));
+
+      const headerIds = uniquePositiveNumbers(
+        enriched.map((expense) => getRelationId(expense.header_id))
+      );
+
+      let headers: FormattedExpenseDraftHeader[] = [];
+
+      if (headerIds.length > 0) {
+        const hRes = await directusFetch(
+          `/items/expense_draft_header?filter[id][_in]=${headerIds.join(",")}&fields=id,period_from,period_to,remarks,status&limit=-1`
+        );
+
+        headers = getListData<ExpenseDraftHeaderRow>(hRes.data).map((header) => ({
+          id: toNumber(header.id),
+          period_from: String(header.period_from ?? ""),
+          period_to: String(header.period_to ?? ""),
+          remarks: header.remarks ? String(header.remarks) : null,
+          status: String(header.status ?? ""),
+        }));
+      }
+
+      const fallbackSalesmanName = getUserFullName(userInfo) || `User #${employeeId}`;
 
       return json({
         salesman: {
-          ...salesman,
-          user: userInfo ?? null,
+          id: salesman?.id ?? employeeId,
+          salesman_name: salesman?.salesman_name ?? fallbackSalesmanName,
+          salesman_code: salesman?.salesman_code ?? String(employeeId),
+          employee_id: employeeId,
           division_id: resolvedDivisionId,
+          user: userInfo ?? null,
           department_name: departmentName,
           division_name: divisionName,
         },
         expense_limit: expenseLimit,
         expenses: enriched,
+        headers,
       });
     }
 
@@ -480,7 +632,6 @@ export async function GET(req: NextRequest) {
       if (!disbRes.ok) return json(disbRes.data, { status: disbRes.status });
 
       const logs = getListData<DisbursementDraftRow>(disbRes.data);
-
       const uids = new Set<number>();
 
       for (const log of logs) {
@@ -489,21 +640,14 @@ export async function GET(req: NextRequest) {
         if (log.approver_id) uids.add(toNumber(log.approver_id));
       }
 
+      const users = await fetchUserMap([...uids]);
       const userMap: Record<number, string> = {};
       const userDeptMap: Record<number, number> = {};
 
-      if (uids.size > 0) {
-        const uRes = await directusFetch(
-          `/items/user?filter[user_id][_in]=${[...uids].join(",")}&fields=user_id,user_fname,user_lname,user_department&limit=-1`
-        );
-
-        const users = getListData<UserRow>(uRes.data);
-
-        for (const user of users) {
-          const userId = toNumber(user.user_id);
-          userMap[userId] = getUserFullName(user);
-          userDeptMap[userId] = toNumber(user.user_department);
-        }
+      for (const [id, user] of Object.entries(users)) {
+        const userId = toNumber(id);
+        userMap[userId] = getUserFullName(user);
+        userDeptMap[userId] = toNumber(user.user_department);
       }
 
       const visibleLogs = logs
@@ -520,7 +664,7 @@ export async function GET(req: NextRequest) {
         })
         .slice(0, 50);
 
-      const logIds = visibleLogs.map((l) => toNumber(l.id)).filter((id) => id > 0);
+      const logIds = visibleLogs.map((log) => toNumber(log.id)).filter((id) => id > 0);
 
       if (logIds.length === 0) {
         return json({ data: [] });
@@ -542,13 +686,9 @@ export async function GET(req: NextRequest) {
       const allDraftLogs = getListData<DraftLogRow>(dlRes.data);
       const pRowsForIds = getListData<PayableDraftRow>(pResForIds.data);
 
-      const expenseIdsForAudit = [
-        ...new Set(
-          pRowsForIds
-            .map((pr) => getRelationId(pr.expense_id))
-            .filter((id) => id > 0)
-        ),
-      ];
+      const expenseIdsForAudit = uniquePositiveNumbers(
+        pRowsForIds.map((payable) => getRelationId(payable.expense_id))
+      );
 
       let allExpenseLogs: ExpenseLogRow[] = [];
 
@@ -560,37 +700,25 @@ export async function GET(req: NextRequest) {
         allExpenseLogs = getListData<ExpenseLogRow>(finalElRes.data);
       }
 
-      const voteUids = [
-        ...new Set(
-          [
-            ...allVotes.map((v) => toNumber(v.approver_id)),
-            ...allDraftLogs.map((l) => toNumber(l.updated_by)),
-            ...allExpenseLogs.map((l) => toNumber(l.changed_by)),
-          ].filter((id) => id > 0)
-        ),
-      ];
+      const voteUids = uniquePositiveNumbers([
+        ...allVotes.map((vote) => vote.approver_id),
+        ...allDraftLogs.map((log) => log.updated_by),
+        ...allExpenseLogs.map((log) => log.changed_by),
+      ]);
 
       const missingUids = voteUids.filter((uid) => !userMap[uid]);
 
       if (missingUids.length > 0) {
-        const uRes = await directusFetch(
-          `/items/user?filter[user_id][_in]=${missingUids.join(",")}&fields=user_id,user_fname,user_lname&limit=-1`
-        );
+        const moreUsers = await fetchUserMap(missingUids);
 
-        const users = getListData<UserRow>(uRes.data);
-
-        for (const user of users) {
-          userMap[toNumber(user.user_id)] = getUserFullName(user);
+        for (const [id, user] of Object.entries(moreUsers)) {
+          userMap[toNumber(id)] = getUserFullName(user);
         }
       }
 
-      const coaIdsForLogs = [
-        ...new Set(
-          allExpenseLogs
-            .map((l) => toNumber(l.particulars))
-            .filter((id) => id > 0)
-        ),
-      ];
+      const coaIdsForLogs = uniquePositiveNumbers(
+        allExpenseLogs.map((log) => log.particulars)
+      );
 
       const coaMapForLogs: Record<number, string> = {};
 
@@ -613,23 +741,22 @@ export async function GET(req: NextRequest) {
         const logId = toNumber(log.id);
 
         const logVotes = allVotes
-          .filter((v) => toNumber(v.draft_id) === logId)
-          .map((v) => ({
-            approver_name:
-              userMap[toNumber(v.approver_id)] || `User #${v.approver_id}`,
-            status: String(v.status ?? ""),
-            remarks: v.remarks ? String(v.remarks) : null,
-            version: toNumber(v.version, 1),
-            created_at: String(v.created_at ?? ""),
+          .filter((vote) => toNumber(vote.draft_id) === logId)
+          .map((vote) => ({
+            approver_name: userMap[toNumber(vote.approver_id)] || `User #${vote.approver_id}`,
+            status: String(vote.status ?? ""),
+            remarks: vote.remarks ? String(vote.remarks) : null,
+            version: toNumber(vote.version, 1),
+            created_at: String(vote.created_at ?? ""),
           }));
 
         const draftLogs = allDraftLogs
-          .filter((l) => toNumber(l.disbursement_id) === logId)
-          .map((l) => {
+          .filter((draftLog) => toNumber(draftLog.disbursement_id) === logId)
+          .map((draftLog) => {
             let snapshot: { old_total?: number; new_total?: number } = {};
 
             try {
-              snapshot = JSON.parse(String(l.payload_snapshot || "{}")) as {
+              snapshot = JSON.parse(String(draftLog.payload_snapshot || "{}")) as {
                 old_total?: number;
                 new_total?: number;
               };
@@ -638,37 +765,37 @@ export async function GET(req: NextRequest) {
             }
 
             return {
-              id: toNumber(l.id),
+              id: toNumber(draftLog.id),
               editor_name:
-                userMap[toNumber(l.updated_by)] || `User #${l.updated_by}`,
-              edit_reason: String(l.edit_reason || ""),
+                userMap[toNumber(draftLog.updated_by)] || `User #${draftLog.updated_by}`,
+              edit_reason: String(draftLog.edit_reason || ""),
               old_total: toNumber(snapshot.old_total),
               new_total: toNumber(snapshot.new_total),
-              created_at: String(l.log_date || ""),
+              created_at: String(draftLog.log_date || ""),
             };
           });
 
         const currentExpenseIds = pRowsForIds
-          .filter((pr) => getRelationId(pr.disbursement_id) === logId)
-          .map((pr) => getRelationId(pr.expense_id))
+          .filter((payable) => getRelationId(payable.disbursement_id) === logId)
+          .map((payable) => getRelationId(payable.expense_id))
           .filter((id) => id > 0);
 
         const expenseLogs = allExpenseLogs
-          .filter((l) => currentExpenseIds.includes(toNumber(l.expense_id)))
-          .map((l) => ({
-            log_id: toNumber(l.log_id),
-            expense_id: toNumber(l.expense_id),
-            action: String(l.action || ""),
+          .filter((expenseLog) => currentExpenseIds.includes(toNumber(expenseLog.expense_id)))
+          .map((expenseLog) => ({
+            log_id: toNumber(expenseLog.log_id),
+            expense_id: toNumber(expenseLog.expense_id),
+            action: String(expenseLog.action || ""),
             editor_name:
-              userMap[toNumber(l.changed_by)] || `User #${l.changed_by}`,
-            changed_at: String(l.changed_at || ""),
-            amount: toNumber(l.amount),
-            remarks: l.remarks ? String(l.remarks) : null,
+              userMap[toNumber(expenseLog.changed_by)] || `User #${expenseLog.changed_by}`,
+            changed_at: String(expenseLog.changed_at || ""),
+            amount: toNumber(expenseLog.amount),
+            remarks: expenseLog.remarks ? String(expenseLog.remarks) : null,
             particulars:
-              coaMapForLogs[toNumber(l.particulars)] ||
-              String(l.particulars || ""),
-            status: String(l.status || ""),
-            version: toNumber(l.version, 1),
+              coaMapForLogs[toNumber(expenseLog.particulars)] ||
+              String(expenseLog.particulars || ""),
+            status: String(expenseLog.status || ""),
+            version: toNumber(expenseLog.version, 1),
           }));
 
         return {
@@ -708,13 +835,7 @@ export async function GET(req: NextRequest) {
       if (!pRes.ok) return json(pRes.data, { status: pRes.status });
 
       const payables = getListData<PayableDraftRow>(pRes.data);
-
-      const coaIds = [
-        ...new Set(
-          payables.map((p) => toNumber(p.coa_id)).filter((id) => id > 0)
-        ),
-      ];
-
+      const coaIds = uniquePositiveNumbers(payables.map((payable) => payable.coa_id));
       const coaMap: Record<number, string> = {};
 
       if (coaIds.length > 0) {
@@ -732,108 +853,24 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const formattedPayables = payables.map((p) => ({
-        id: p.id,
-        coa_name: coaMap[toNumber(p.coa_id)] || `COA #${p.coa_id}`,
-        amount: p.amount,
-        remarks: p.remarks,
-        date: p.date,
+      const formattedPayables = payables.map((payable) => ({
+        id: payable.id,
+        coa_name: coaMap[toNumber(payable.coa_id)] || `COA #${payable.coa_id}`,
+        amount: payable.amount,
+        remarks: payable.remarks,
+        date: payable.date,
       }));
 
       return json({ data: formattedPayables });
     }
 
-    if (resource === "available-weeks") {
-      const eRes = await directusFetch(
-        `/items/expense_draft?filter[status][_in]=${directusIn(
-          PENDING_EXPENSE_STATUSES
-        )}&filter[approved_at][_null]=true&fields=transaction_date&limit=-1`
-      );
-
-      if (!eRes.ok) return json(eRes.data, { status: eRes.status });
-
-      const raw = getListData<ExpenseDraftRow>(eRes.data);
-
-      const weekMap: Record<
-        string,
-        { week_start: string; week_end: string; week_label: string }
-      > = {};
-
-      for (const exp of raw) {
-        if (!exp.transaction_date) continue;
-
-        const d = new Date(String(exp.transaction_date) + "T00:00:00");
-        const wStart = startOfWeek(d, { weekStartsOn: 1 });
-        const wEnd = endOfWeek(d, { weekStartsOn: 1 });
-        const key = format(wStart, "yyyy-MM-dd");
-
-        if (!weekMap[key]) {
-          weekMap[key] = {
-            week_start: format(wStart, "yyyy-MM-dd"),
-            week_end: format(wEnd, "yyyy-MM-dd"),
-            week_label: `${format(wStart, "MMM d")} - ${format(
-              wEnd,
-              "d, yyyy"
-            )}`,
-          };
-        }
-      }
-
-      return json({
-        data: Object.values(weekMap).sort((a, b) =>
-          b.week_start.localeCompare(a.week_start)
-        ),
-      });
-    }
-
-    const sRes = await directusFetch(
-      `/items/salesman?fields=id,salesman_name,salesman_code,employee_id,division_id&filter[isActive][_eq]=1&limit=-1&sort=salesman_name`
-    );
-
-    if (!sRes.ok) return json(sRes.data, { status: sRes.status });
-
-    const salesmen = getListData<SalesmanRow>(sRes.data);
-
-    if (salesmen.length === 0) {
-      return json({ data: [] });
-    }
-
-    const uids = [
-      ...new Set(
-        salesmen.map((s) => toNumber(s.employee_id)).filter((id) => id > 0)
-      ),
-    ];
-
-    const userDeptMap: Record<number, number> = {};
-
-    if (uids.length > 0) {
-      const uRes = await directusFetch(
-        `/items/user?filter[user_id][_in]=${uids.join(",")}&fields=user_id,user_department&limit=-1`
-      );
-
-      const users = getListData<UserRow>(uRes.data);
-
-      for (const user of users) {
-        const userId = toNumber(user.user_id);
-        const deptId = toNumber(user.user_department);
-
-        if (userId > 0 && deptId > 0) {
-          userDeptMap[userId] = deptId;
-        }
-      }
-    }
-
     let expFilterBase =
-      `/items/expense_draft?filter[status][_in]=${directusIn(
-        PENDING_EXPENSE_STATUSES
-      )}` + `&filter[approved_at][_null]=true`;
+      `/items/expense_draft?filter[status][_in]=${directusIn(PENDING_EXPENSE_STATUSES)}`;
 
-    if (startDate && endDate) {
-      expFilterBase += `&filter[transaction_date][_between]=[${startDate},${endDate}]`;
-    }
+    expFilterBase = withDateFilters(expFilterBase, startDate, endDate);
 
     const allExpRes = await directusFetch(
-      `${expFilterBase}&fields=id,encoded_by,division_id,status,transaction_date,approved_at&limit=-1`
+      `${expFilterBase}&fields=id,header_id,encoded_by,division_id,status,transaction_date,amount,approved_at&limit=-1`
     );
 
     if (!allExpRes.ok) {
@@ -841,134 +878,97 @@ export async function GET(req: NextRequest) {
     }
 
     const rawExpenses = getListData<ExpenseDraftRow>(allExpRes.data);
+    const encodedByIds = uniquePositiveNumbers(rawExpenses.map((expense) => expense.encoded_by));
+    const userMap = await fetchUserMap(encodedByIds);
 
-    const allExpenses = rawExpenses.filter((exp) => {
-      const salesmanDeptId = userDeptMap[toNumber(exp.encoded_by)] || 0;
-      const isMyDept = myDepartments.includes(salesmanDeptId);
-      const isMyDiv = myDivisions.includes(toNumber(exp.division_id));
+    const allExpenses = rawExpenses.filter((expense) => {
+      const encoderId = toNumber(expense.encoded_by);
+      const encoderDepartmentId = toNumber(userMap[encoderId]?.user_department);
+      const expenseDivisionId = toNumber(expense.division_id);
 
-      return isMyDept || isMyDiv;
+      return canAccessScope(rbac, encoderDepartmentId, expenseDivisionId);
     });
 
-    const countMap: Record<
-      string,
-      {
-        draft: number;
-        rejected: number;
-        week_start: string;
-        week_end: string;
-        week_label: string;
-      }
-    > = {};
+    if (allExpenses.length === 0) {
+      return json({ data: [] });
+    }
 
-    for (const exp of allExpenses) {
-      if (!exp.transaction_date) continue;
+    const visibleEncodedByIds = uniquePositiveNumbers(
+      allExpenses.map((expense) => expense.encoded_by)
+    );
+    const salesmanMap = await fetchSalesmenByEmployeeIds(visibleEncodedByIds);
 
-      const d = new Date(String(exp.transaction_date) + "T00:00:00");
-      const wStart = startOfWeek(d, { weekStartsOn: 1 });
-      const wEnd = endOfWeek(d, { weekStartsOn: 1 });
-      const weekKey = format(wStart, "yyyy-MM-dd");
+    const countMap: Record<string, CountBucket> = {};
 
-      const key = `${exp.encoded_by}_${exp.division_id}_${weekKey}`;
+    for (const expense of allExpenses) {
+      const encodedBy = toNumber(expense.encoded_by);
+      const divisionId = toNumber(expense.division_id);
+      const key = `${encodedBy}_${divisionId}`;
 
       if (!countMap[key]) {
         countMap[key] = {
           draft: 0,
           rejected: 0,
-          week_start: format(wStart, "yyyy-MM-dd"),
-          week_end: format(wEnd, "yyyy-MM-dd"),
-          week_label: `${format(wStart, "MMM d")} - ${format(
-            wEnd,
-            "d, yyyy"
-          )}`,
+          concern: 0,
+          amount: 0,
+          headers: new Set<number>(),
         };
       }
 
-      if (exp.status === "Drafts" || exp.status === "With Concern") {
+      if (expense.status === "Drafts") {
         countMap[key].draft += 1;
-      }
-
-      if (exp.status === "Rejected") {
+      } else if (expense.status === "With Concern") {
+        countMap[key].concern += 1;
+      } else if (expense.status === "Rejected") {
         countMap[key].rejected += 1;
       }
+
+      countMap[key].amount += toNumber(expense.amount);
+
+      const headerId = getRelationId(expense.header_id);
+      if (headerId > 0) countMap[key].headers.add(headerId);
     }
 
-    const divisionIds = [
-      ...new Set(
-        salesmen.map((s) => toNumber(s.division_id)).filter((id) => id > 0)
-      ),
-    ];
+    const divisionIds = uniquePositiveNumbers([
+      ...allExpenses.map((expense) => expense.division_id),
+      ...Object.values(salesmanMap).map((salesman) => salesman.division_id),
+    ]);
 
-    const divisionNameMap: Record<number, string> = {};
+    const divisionNameMap = await fetchDivisionNameMap(divisionIds);
 
-    if (divisionIds.length > 0) {
-      const divRes = await directusFetch(
-        `/items/division?filter[division_id][_in]=${divisionIds.join(",")}&fields=division_id,division_name&limit=-1`
-      );
-
-      const divisions = getListData<{
-        division_id?: number | string;
-        division_name?: string;
-      }>(divRes.data);
-
-      for (const div of divisions) {
-        divisionNameMap[toNumber(div.division_id)] = String(
-          div.division_name ?? ""
-        );
-      }
-    }
-
-    const result = salesmen
-      .map((s) => {
-        const employeeId = toNumber(s.employee_id);
-        const divisionId = toNumber(s.division_id);
-
-        const prefix = `${employeeId}_${divisionId}_`;
-        const relevantKeys = Object.keys(countMap).filter((key) =>
-          key.startsWith(prefix)
-        );
-
-        if (relevantKeys.length === 0) return null;
-
-        let totalDraft = 0;
-        let totalRejected = 0;
-        let weekLabel = "";
-        let weekStart = "";
-        let weekEnd = "";
-
-        for (const key of relevantKeys) {
-          totalDraft += countMap[key].draft;
-          totalRejected += countMap[key].rejected;
-
-          if (!weekLabel) {
-            weekLabel = countMap[key].week_label;
-            weekStart = countMap[key].week_start;
-            weekEnd = countMap[key].week_end;
-          }
-        }
+    const result: SalesmanSummaryRow[] = Object.entries(countMap)
+      .map(([key, bucket]) => {
+        const [encodedByRaw, divisionRaw] = key.split("_");
+        const employeeId = toNumber(encodedByRaw);
+        const expenseDivisionId = toNumber(divisionRaw);
+        const salesman = salesmanMap[employeeId];
+        const user = userMap[employeeId];
+        const salesmanDivisionId = toNumber(salesman?.division_id);
+        const finalDivisionId = expenseDivisionId || salesmanDivisionId || null;
+        const fallbackName = getUserFullName(user) || `User #${employeeId}`;
 
         return {
-          id: s.id,
-          salesman_name: s.salesman_name,
-          salesman_code: s.salesman_code,
-          employee_id: s.employee_id,
-          division_id: divisionId || null,
-          division_name: divisionId ? divisionNameMap[divisionId] ?? null : null,
-          draft_count: totalDraft,
-          rejected_count: totalRejected,
-          week_start: weekStart,
-          week_end: weekEnd,
-          week_label: weekLabel,
+          id: salesman?.id ?? employeeId,
+          salesman_name: String(salesman?.salesman_name ?? fallbackName),
+          salesman_code: salesman?.salesman_code ? String(salesman.salesman_code) : String(employeeId),
+          employee_id: employeeId,
+          division_id: finalDivisionId,
+          division_name: finalDivisionId ? divisionNameMap[finalDivisionId] ?? null : null,
+          draft_count: bucket.draft,
+          rejected_count: bucket.rejected,
+          concern_count: bucket.concern,
+          pending_amount: bucket.amount,
+          header_count: bucket.headers.size,
         };
       })
-      .filter((row): row is NonNullable<typeof row> => row !== null);
+      .sort((a, b) => a.salesman_name.localeCompare(b.salesman_name));
 
     return json({ data: result });
-  } catch (e: unknown) {
+  } catch (error: unknown) {
     return json(
       {
         error: "Server error",
-        message: e instanceof Error ? e.message : String(e),
+        message: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );
@@ -977,10 +977,161 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    type RawDecisionStatus =
+      | "Approved"
+      | "Rejected"
+      | "With Concern"
+      | "WITH_CONCERN"
+      | "WithConcern"
+      | "with_concern"
+      | "approved"
+      | "rejected";
+
+    type NormalizedDecisionStatus = "Approved" | "Rejected" | "With Concern";
+
+    type ItemDecision = {
+      status: RawDecisionStatus;
+      remarks: string;
+    };
+
+    type EditedAmountInput = {
+      id: number;
+      amount: number;
+    };
+
+    type PostBody = {
+      item_decisions: Record<string, ItemDecision>;
+      remarks?: string;
+      salesman_id: number;
+      all_ids?: number[];
+      salesman_user_id?: number;
+      edited_amounts?: EditedAmountInput[] | Record<string, number>;
+    };
+
+    type DirectusListResponse<T> = {
+      data?: T[];
+    };
+
+    type DirectusItemResponse<T> = {
+      data?: T;
+    };
+
+    type ExpenseDraftRow = {
+      id: number;
+      header_id?: number | string | null;
+      encoded_by?: number | string | null;
+      particulars?: number | string | null;
+      division_id?: number | string | null;
+      payee_id?: number | string | null;
+      transaction_date?: string | null;
+      amount?: number | string | null;
+      payee?: string | number | null;
+      attachment_url?: string | null;
+      status?: string | null;
+      drafted_at?: string | null;
+      rejected_at?: string | null;
+      approved_at?: string | null;
+      remarks?: string | null;
+      version?: number | string | null;
+      feedback?: string | null;
+    };
+
+    type SalesmanRow = {
+      id: number;
+      division_id?: number | string | null;
+      employee_id?: number | string | null;
+    };
+
+    type UserRow = {
+      user_id?: number | string | null;
+      user_department?: number | string | null;
+    };
+
+    type PayableDraftRow = {
+      id?: number | string;
+      disbursement_id?: number | string | { id?: number | string } | null;
+      expense_id?: number | string | { id?: number | string } | null;
+    };
+
+    type DisbursementDraftRow = {
+      id?: number | string;
+      doc_no?: string | null;
+      approval_version?: number | string | null;
+      total_amount?: number | string | null;
+    };
+
+    function toNumber(value: unknown, fallback = 0): number {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function getListData<T>(payload: unknown): T[] {
+      return ((payload as DirectusListResponse<T>)?.data ?? []) as T[];
+    }
+
+    function getItemData<T>(payload: unknown): T | undefined {
+      return (payload as DirectusItemResponse<T>)?.data;
+    }
+
+    function getRelationId(value: unknown): number {
+      if (typeof value === "object" && value !== null && "id" in value) {
+        return toNumber((value as { id?: unknown }).id);
+      }
+
+      return toNumber(value);
+    }
+
+    function normalizeDecisionStatus(
+      status: RawDecisionStatus
+    ): NormalizedDecisionStatus {
+      const normalized = String(status).trim().toLowerCase();
+
+      if (normalized === "approved") return "Approved";
+      if (normalized === "rejected") return "Rejected";
+
+      if (
+        normalized === "with concern" ||
+        normalized === "with_concern" ||
+        normalized === "withconcern"
+      ) {
+        return "With Concern";
+      }
+
+      throw new Error(`Invalid decision status: ${String(status)}`);
+    }
+
+    function makeExpenseDecisionPatch(
+      status: NormalizedDecisionStatus,
+      feedback: string | null,
+      nowTs: string
+    ): Record<string, unknown> {
+      const patch: Record<string, unknown> = {
+        status,
+        feedback: status !== "Approved" ? feedback : null,
+      };
+
+      if (status === "Approved") {
+        patch.approved_at = nowTs;
+        patch.rejected_at = null;
+      }
+
+      if (status === "Rejected") {
+        patch.rejected_at = nowTs;
+        patch.approved_at = null;
+      }
+
+      if (status === "With Concern") {
+        patch.approved_at = null;
+        patch.rejected_at = null;
+      }
+
+      return patch;
+    }
+
     const body = (await req.json()) as PostBody;
 
     const {
-      item_decisions: itemDecisions,
+      item_decisions: rawItemDecisions,
       remarks = "",
       salesman_id: salesmanId,
     } = body;
@@ -988,8 +1139,20 @@ export async function POST(req: NextRequest) {
     let { all_ids: allIds, salesman_user_id: salesmanUserId } = body;
     const { edited_amounts } = body;
 
-    if (!itemDecisions || Object.keys(itemDecisions).length === 0) {
+    if (!rawItemDecisions || Object.keys(rawItemDecisions).length === 0) {
       return json({ error: "No decisions provided" }, { status: 400 });
+    }
+
+    const itemDecisions: Record<
+      string,
+      { status: NormalizedDecisionStatus; remarks: string }
+    > = {};
+
+    for (const [id, decision] of Object.entries(rawItemDecisions)) {
+      itemDecisions[id] = {
+        status: normalizeDecisionStatus(decision.status),
+        remarks: decision.remarks ?? "",
+      };
     }
 
     if (!allIds || allIds.length === 0) {
@@ -998,7 +1161,10 @@ export async function POST(req: NextRequest) {
         .filter((id) => Number.isFinite(id));
     }
 
-
+    const selectedIds = Object.entries(itemDecisions)
+      .filter(([, decision]) => decision.status === "Approved")
+      .map(([id]) => Number(id))
+      .filter((id) => Number.isFinite(id));
 
     let salesmanDivisionId: number | null = null;
     let salesmanDepartmentId: number | null = null;
@@ -1006,6 +1172,10 @@ export async function POST(req: NextRequest) {
     const sRes = await directusFetch(
       `/items/salesman?filter[id][_eq]=${salesmanId}&fields=id,division_id,employee_id&limit=1`
     );
+
+    if (!sRes.ok) {
+      return json(sRes.data, { status: sRes.status });
+    }
 
     const salesman = getListData<SalesmanRow>(sRes.data)[0];
 
@@ -1025,6 +1195,10 @@ export async function POST(req: NextRequest) {
       `/items/user?filter[user_id][_eq]=${salesmanUserId}&fields=user_id,user_department&limit=1`
     );
 
+    if (!uRes.ok) {
+      return json(uRes.data, { status: uRes.status });
+    }
+
     const user = getListData<UserRow>(uRes.data)[0];
 
     if (user?.user_department) {
@@ -1043,11 +1217,13 @@ export async function POST(req: NextRequest) {
 
     const eRes = await directusFetch(
       `/items/expense_draft?filter[encoded_by][_eq]=${salesmanUserId}` +
-      `&filter[status][_in]=${directusIn(ALL_EXPENSE_STATUSES)}` +
-      `&fields=id,header_id,encoded_by,particulars,amount,transaction_date,attachment_url,remarks,division_id,payee,payee_id,status,version&limit=-1`
+      `&filter[status][_in]=Approved,Drafts,Rejected,With Concern` +
+      `&fields=id,header_id,encoded_by,particulars,amount,transaction_date,attachment_url,remarks,division_id,payee,payee_id,status,version,feedback,approved_at,rejected_at&limit=-1`
     );
 
-    if (!eRes.ok) return json(eRes.data, { status: eRes.status });
+    if (!eRes.ok) {
+      return json(eRes.data, { status: eRes.status });
+    }
 
     const allRelevantRows = getListData<ExpenseDraftRow>(eRes.data);
 
@@ -1077,7 +1253,7 @@ export async function POST(req: NextRequest) {
 
         editedIds.push(id);
 
-        const original = allDetailRows.find((e) => toNumber(e.id) === id);
+        const original = allDetailRows.find((expense) => toNumber(expense.id) === id);
 
         if (!original) continue;
 
@@ -1085,7 +1261,7 @@ export async function POST(req: NextRequest) {
         const finalStatus = decision?.status || original.status || "Drafts";
         const newVersion = toNumber(original.version, 1) + 1;
 
-        await directusFetch(`/items/expense_draft_logs`, {
+        const logRes = await directusFetch(`/items/expense_draft_logs`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -1104,13 +1280,26 @@ export async function POST(req: NextRequest) {
           }),
         });
 
+        if (!logRes.ok) {
+          return json(
+            {
+              error: "Failed to create expense audit log",
+              details: logRes.data,
+            },
+            { status: logRes.status }
+          );
+        }
+
         const updateObj: Record<string, unknown> = {
           amount: newAmount,
           version: newVersion,
         };
 
         if (decision) {
-          Object.assign(updateObj, makeExpenseDecisionPatch(decision, nowTs));
+          Object.assign(
+            updateObj,
+            makeExpenseDecisionPatch(decision.status, decision.remarks, nowTs)
+          );
         }
 
         const patchRes = await directusFetch(`/items/expense_draft/${id}`, {
@@ -1119,10 +1308,21 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify(updateObj),
         });
 
-        if (!patchRes.ok) return json(patchRes.data, { status: patchRes.status });
+        if (!patchRes.ok) {
+          return json(
+            {
+              error: "Failed to update expense draft",
+              expense_id: id,
+              attempted_update: updateObj,
+              details: patchRes.data,
+            },
+            { status: patchRes.status }
+          );
+        }
 
         original.amount = newAmount;
         original.version = newVersion;
+
         if (decision) {
           original.status = decision.status;
           original.feedback = decision.status !== "Approved" ? decision.remarks : null;
@@ -1136,11 +1336,15 @@ export async function POST(req: NextRequest) {
       if (editedIds.includes(id)) continue;
 
       const decision = itemDecisions[String(id)];
-      const original = allDetailRows.find((e) => toNumber(e.id) === id);
+      const original = allDetailRows.find((expense) => toNumber(expense.id) === id);
 
       if (!decision || !original) continue;
 
-      const updateData = makeExpenseDecisionPatch(decision, nowTs);
+      const updateData = makeExpenseDecisionPatch(
+        decision.status,
+        decision.remarks,
+        nowTs
+      );
 
       const patchRes = await directusFetch(`/items/expense_draft/${id}`, {
         method: "PATCH",
@@ -1148,7 +1352,17 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify(updateData),
       });
 
-      if (!patchRes.ok) return json(patchRes.data, { status: patchRes.status });
+      if (!patchRes.ok) {
+        return json(
+          {
+            error: "Failed to update expense draft decision",
+            expense_id: id,
+            attempted_update: updateData,
+            details: patchRes.data,
+          },
+          { status: patchRes.status }
+        );
+      }
 
       original.status = decision.status;
       original.feedback = decision.status !== "Approved" ? decision.remarks : null;
@@ -1157,10 +1371,11 @@ export async function POST(req: NextRequest) {
     }
 
     const selectedExpenses = allRelevantRows.filter((row) => {
-      const rowId = String(row.id);
-      const decision = itemDecisions[rowId];
+      const decision = itemDecisions[String(row.id)];
 
-      if (decision) return decision.status === "Approved";
+      if (decision) {
+        return decision.status === "Approved";
+      }
 
       return row.status === "Approved";
     });
@@ -1169,7 +1384,7 @@ export async function POST(req: NextRequest) {
       return json({
         ok: true,
         disbursement_id: null,
-        message: "All items processed. No approved expenses to consolidate.",
+        message: "Items updated. No approved expenses to consolidate.",
       });
     }
 
@@ -1177,14 +1392,16 @@ export async function POST(req: NextRequest) {
     let docNo: string | null = null;
     let approvalVersion = 1;
 
-    const selectedExpenseIds = selectedExpenses
-      .map((row) => toNumber(row.id))
-      .filter((id) => id > 0);
-
-    if (selectedExpenseIds.length > 0) {
+    if (selectedIds.length > 0) {
       const existingPayRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[expense_id][_in]=${selectedExpenseIds.join(",")}&fields=disbursement_id&limit=1`
+        `/items/disbursement_payables_draft?filter[expense_id][_in]=${selectedIds.join(
+          ","
+        )}&fields=disbursement_id&limit=1`
       );
+
+      if (!existingPayRes.ok) {
+        return json(existingPayRes.data, { status: existingPayRes.status });
+      }
 
       const existingPayRows = getListData<PayableDraftRow>(existingPayRes.data);
 
@@ -1198,6 +1415,10 @@ export async function POST(req: NextRequest) {
             `/items/disbursement_draft/${existingDisbursementId}?fields=id,doc_no,approval_version,total_amount`
           );
 
+          if (!dRes.ok) {
+            return json(dRes.data, { status: dRes.status });
+          }
+
           const dRow = getItemData<DisbursementDraftRow>(dRes.data);
 
           if (dRow) {
@@ -1210,13 +1431,13 @@ export async function POST(req: NextRequest) {
     }
 
     const totalAmount = selectedExpenses.reduce(
-      (sum, e) => sum + toNumber(e.amount),
+      (sum, expense) => sum + toNumber(expense.amount),
       0
     );
 
     const supportingDocs = selectedExpenses
-      .filter((e) => e.attachment_url)
-      .map((e) => e.attachment_url)
+      .filter((expense) => expense.attachment_url)
+      .map((expense) => expense.attachment_url)
       .join(",");
 
     if (disbursementId) {
@@ -1244,8 +1465,12 @@ export async function POST(req: NextRequest) {
         `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${disbursementId}&fields=id&limit=-1`
       );
 
+      if (!oldPayRes.ok) {
+        return json(oldPayRes.data, { status: oldPayRes.status });
+      }
+
       const oldPayIds = getListData<{ id?: number | string }>(oldPayRes.data)
-        .map((p) => toNumber(p.id))
+        .map((payable) => toNumber(payable.id))
         .filter((id) => id > 0);
 
       if (oldPayIds.length > 0) {
@@ -1266,6 +1491,10 @@ export async function POST(req: NextRequest) {
       const latestRes = await directusFetch(
         `/items/disbursement_draft?filter[doc_no][_starts_with]=NT-&sort=-id&limit=1&fields=doc_no`
       );
+
+      if (!latestRes.ok) {
+        return json(latestRes.data, { status: latestRes.status });
+      }
 
       const latestDoc = getListData<{ doc_no?: string }>(latestRes.data)[0]
         ?.doc_no;
@@ -1312,6 +1541,7 @@ export async function POST(req: NextRequest) {
       }
 
       const newDisb = getItemData<{ id?: number | string }>(newDisbRes.data);
+
       disbursementId = toNumber(newDisb?.id);
 
       if (!disbursementId) {
@@ -1322,16 +1552,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const payables = selectedExpenses.map((e) => ({
+    const payables = selectedExpenses.map((expense) => ({
       disbursement_id: disbursementId,
-      expense_id: toNumber(e.id),
+      expense_id: toNumber(expense.id),
       division_id: salesmanDivisionId,
       reference_no: docNo,
-      date: e.transaction_date,
-      coa_id: toNumber(e.particulars),
-      amount: toNumber(e.amount),
-      remarks: e.remarks || null,
-      version: toNumber(e.version, 1),
+      date: expense.transaction_date,
+      coa_id: toNumber(expense.particulars),
+      amount: toNumber(expense.amount),
+      remarks: expense.remarks || null,
+      version: toNumber(expense.version, 1),
       date_created: nowTs,
     }));
 
@@ -1350,11 +1580,11 @@ export async function POST(req: NextRequest) {
       disbursement_id: disbursementId,
       doc_no: docNo,
     });
-  } catch (e: unknown) {
+  } catch (error: unknown) {
     return json(
       {
         error: "Server error",
-        message: e instanceof Error ? e.message : String(e),
+        message: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );

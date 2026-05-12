@@ -139,7 +139,7 @@ export type ApprovalVoteRow = {
   created_at?: string | null;
 };
 
-export type DraftRow = {
+export type DraftRowResponse = {
   id: number;
   doc_no: string;
   payee_user_id: number;
@@ -163,7 +163,6 @@ export type DraftRow = {
   can_vote: boolean;
   has_concern?: boolean;
 };
-export type DraftRowResponse = DraftRow;
 
 export type PayableResponse = {
   id: number;
@@ -202,24 +201,22 @@ export type LogVoteResponse = {
   created_at: string;
 };
 
-export type LogRound = {
+export type LogRoundResponse = {
   version: number;
   is_current: boolean;
   outcome: string;
   votes: LogVoteResponse[];
 };
-export type LogRoundResponse = LogRound;
 
-export type ActivityLogDetail = {
+export type ActivityLogDetailResponse = {
   id: number;
   coa_name: string;
   amount: number;
   remarks: string | null;
   date: string | null;
 };
-export type ActivityLogDetailResponse = ActivityLogDetail;
 
-export type DraftRevisionLog = {
+export type DraftRevisionLogResponse = {
   id: number;
   payable_draft_id: number;
   coa_name: string | null;
@@ -231,9 +228,8 @@ export type DraftRevisionLog = {
   version: number;
   created_at: string;
 };
-export type DraftRevisionLogResponse = DraftRevisionLog;
 
-export type ExpenseRevisionLog = {
+export type ExpenseRevisionLogResponse = {
   log_id: number;
   expense_id: number;
   action: string;
@@ -245,7 +241,6 @@ export type ExpenseRevisionLog = {
   status: string;
   version: number;
 };
-export type ExpenseRevisionLogResponse = ExpenseRevisionLog;
 
 export type DisbursementPayableDraftLogRow = {
   id?: number | string;
@@ -334,8 +329,6 @@ export type FinalTopSheetCellResponse = {
   amount: number;
   count: number;
   expense_ids: number[];
-  has_concern?: boolean;
-  has_rejected?: boolean;
 };
 
 export type FinalTopSheetCoaRowResponse = {
@@ -346,7 +339,7 @@ export type FinalTopSheetCoaRowResponse = {
   cells: FinalTopSheetCellResponse[];
 };
 
-export type FinalTopSheetDetail = {
+export type FinalTopSheetDetailResponse = {
   expense_id: number;
   header_id: number;
   employee_id: number;
@@ -359,41 +352,6 @@ export type FinalTopSheetDetail = {
   remarks: string | null;
   status: string;
   attachment_url: string | null;
-};
-export type FinalTopSheetDetailResponse = FinalTopSheetDetail;
-
-export type FinalTopSheetResponse = {
-  group: FinalTopSheetGroupMetaResponse;
-  salesmen: FinalTopSheetSalesmanResponse[];
-  coa_rows: FinalTopSheetCoaRowResponse[];
-  details: FinalTopSheetDetail[];
-  grand_total: number;
-  attachments?: {
-    header_id: number;
-    file_url: string;
-    file_name: string;
-  }[];
-};
-
-export type FinalDecisionTarget = {
-  scope: "all" | "encoder" | "coa" | "cell" | "expense_ids";
-  employee_id?: number;
-  coa_id?: number;
-  expense_ids?: number[];
-};
-
-export type LogDraft = {
-  id: number;
-  doc_no: string;
-  payee_name: string;
-  encoder_name: string;
-  total_amount: number;
-  remarks: string | null;
-  status: string;
-  rounds: LogRound[];
-  revisions: DraftRevisionLog[];
-  logs?: DraftRevisionLog[]; // Alias for revisions
-  expense_logs: ExpenseRevisionLog[];
 };
 
 export type FinalTopSheetGroupMetaResponse = {

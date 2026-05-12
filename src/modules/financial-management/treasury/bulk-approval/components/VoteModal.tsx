@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import {
-  Loader2, FileText, CheckCircle2, Clock,
+  Loader2, FileText, CheckCircle2,
   ShieldCheck, X,
   ExternalLink, CheckSquare, Info,
   AlertTriangle, RefreshCw, Send, Check, User, Building2, Wallet,
@@ -50,7 +50,6 @@ interface Props {
   detail: DraftDetail | null;
   onClose: () => void;
   onVoteComplete: (draftId: number, status: string, nextTier?: number) => void;
-  onRefreshDetail: () => void;
 }
 
 function formatCurrency(amount: number) {
@@ -68,63 +67,56 @@ function formatDate(d: string | null) {
   } catch { return d; }
 }
 
-export default function VoteModal({ open, loading, detail, onClose, onVoteComplete, onRefreshDetail }: Props) {
+export default function VoteModal({ open, loading, detail, onClose, onVoteComplete }: Props) {
   const [remarks, setRemarks] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [editedAmounts, setEditedAmounts] = React.useState<Record<number, string>>({});
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [showCoverage, setShowCoverage] = React.useState(false);
-  const [api, setApi] = React.useState<CarouselApi>();
+  const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [zoom, setZoom] = React.useState(1);
   const [inlineZoom, setInlineZoom] = React.useState(1);
-  const inlineContainerRef = React.useRef<HTMLDivElement>(null);
-  const fullScreenContainerRef = React.useRef<HTMLDivElement>(null);
+  const [showConcernWarning, setShowConcernWarning] = React.useState(false);
+
+  // State-based callback refs: the element becomes a proper effect dependency,
+  // so the listener is attached only after the DOM node actually mounts
+  // (avoids the race where useEffect fires before the Radix Portal commits its content).
+  const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
+  const [fullScreenEl, setFullScreenEl] = React.useState<HTMLDivElement | null>(null);
 
   // Native wheel handler to prevent page scroll (non-passive)
   React.useEffect(() => {
+    if (!inlineEl) return;
     const handleInlineWheel = (e: WheelEvent) => {
-      if (!showCoverage) return;
       e.preventDefault();
       if (e.deltaY < 0) setInlineZoom(prev => Math.min(prev + 0.1, 3));
       else setInlineZoom(prev => Math.max(prev - 0.1, 1));
     };
-
-    const inlineEl = inlineContainerRef.current;
-    if (inlineEl) {
-      inlineEl.addEventListener("wheel", handleInlineWheel, { passive: false });
-    }
-    return () => {
-      if (inlineEl) inlineEl.removeEventListener("wheel", handleInlineWheel);
-    };
-  }, [showCoverage]);
+    inlineEl.addEventListener("wheel", handleInlineWheel, { passive: false });
+    return () => inlineEl.removeEventListener("wheel", handleInlineWheel);
+  }, [inlineEl]);
 
   React.useEffect(() => {
+    if (!fullScreenEl) return;
     const handleFullScreenWheel = (e: WheelEvent) => {
-      if (!previewUrl) return;
       e.preventDefault();
-      if (e.deltaY < 0) handleZoom(0.1);
-      else handleZoom(-0.1);
+      if (e.deltaY < 0) setZoom(prev => Math.min(Math.max(prev + 0.1, 0.5), 5));
+      else setZoom(prev => Math.min(Math.max(prev - 0.1, 0.5), 5));
     };
-
-    const fullEl = fullScreenContainerRef.current;
-    if (fullEl) {
-      fullEl.addEventListener("wheel", handleFullScreenWheel, { passive: false });
-    }
-    return () => {
-      if (fullEl) fullEl.removeEventListener("wheel", handleFullScreenWheel);
-    };
-  }, [previewUrl]);
+    fullScreenEl.addEventListener("wheel", handleFullScreenWheel, { passive: false });
+    return () => fullScreenEl.removeEventListener("wheel", handleFullScreenWheel);
+  }, [fullScreenEl]);
 
   React.useEffect(() => {
-    if (!api) return;
-    setCurrentSlide(api.selectedScrollSnap());
-    api.on("select", () => {
-      setCurrentSlide(api.selectedScrollSnap());
+    if (!carouselApi) return;
+    setCurrentSlide(carouselApi.selectedScrollSnap());
+    carouselApi.on("select", () => {
+      setCurrentSlide(carouselApi.selectedScrollSnap());
       setInlineZoom(1); // Reset zoom on slide change
     });
-  }, [api]);
+  }, [carouselApi]);
 
   const handleZoom = (delta: number) => {
     setZoom(prev => Math.min(Math.max(prev + delta, 0.5), 5));
@@ -212,13 +204,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const toggleGroupStatus = (groupItems: import("../type").DraftPayable[], status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
     setItemDecisions(prev => {
       const next = { ...prev };
-      groupItems.forEach(item => { 
+      groupItems.forEach(item => {
         const isPersistentLocked = item.is_concern || item.is_rejected;
         // Don't override if persistent lock exists OR if we are doing a mass "APPROVED" but item is locally REJECTED/CONCERN
         const isLocallyLocked = (status === "APPROVED" && (next[item.id] === "REJECTED" || next[item.id] === "WITH_CONCERN"));
-        
+
         if (!isPersistentLocked && !isLocallyLocked) {
-          next[item.id] = status; 
+          next[item.id] = status;
         }
       });
       return next;
@@ -305,7 +297,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     );
   }, [combinedItems, itemDecisions, showItemRemarks, detail]);
 
-  const [processingItem, setProcessingItem] = React.useState<number | null>(null);
+  const [processingItem] = React.useState<number | null>(null);
 
   if (!detail) return null;
   const { draft, payables } = detail;
@@ -313,33 +305,19 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const isInteractionDisabled = !!detail.my_vote || !detail.can_vote;
 
   const handleSingleItemVote = async (p: import("../type").DraftPayable) => {
-    if (!detail) return;
     const status = itemDecisions[p.id];
     const feedback = showItemRemarks[p.id];
 
     if (status === "PENDING" || !status) return;
-    if (!feedback?.trim()) return toast.warning("Feedback is required for this decision.");
-
-    setProcessingItem(p.id);
-    try {
-      const payloadItemDecisions: Record<number, { status: "APPROVED" | "REJECTED" | "WITH_CONCERN"; remarks: string }> = {
-        [p.id]: { status: status as "APPROVED" | "REJECTED" | "WITH_CONCERN", remarks: feedback.trim() }
-      };
-
-      await api.submitVote({
-        draft_id: detail.draft.id,
-        status: status === "WITH_CONCERN" ? "WITH_CONCERN" : "APPROVED",
-        remarks: `Individual decision for item #${p.id}: ${status}`,
-        item_decisions: payloadItemDecisions,
-      });
-
-      toast.success(`Decision for item #${p.id} recorded.`);
-      onRefreshDetail();
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed to submit decision.");
-    } finally {
-      setProcessingItem(null);
+    if ((status === "WITH_CONCERN" || status === "REJECTED") && !feedback?.trim()) {
+      return toast.warning("Feedback is required for this decision.");
     }
+
+    // Keep this as a local staging action only. The backend vote endpoint is
+    // intentionally submitted once per draft/version by the main Submit Decision
+    // button; calling it per line creates an approver vote immediately and causes
+    // the next line to fail with “Already voted”.
+    toast.success(`Decision for item #${p.id} staged. Submit the batch to finalize.`);
   };
 
   async function handleVote() {
@@ -351,61 +329,47 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       .filter(p => !(showItemRemarks[p.id]?.trim()))
       .map(p => ({ id: p.id, coa_name: p.coa_name, status: itemDecisions[p.id] as "REJECTED" | "WITH_CONCERN" }));
 
-    if (missingFeedback.length > 0) { 
+    if (missingFeedback.length > 0) {
       toast.error(`Please provide feedback for ${missingFeedback.length} items.`);
-      return; 
+      return;
     }
 
+    const hasWithConcern = combinedItems.some(p => itemDecisions[p.id] === "WITH_CONCERN");
+    if (hasWithConcern) {
+      setShowConcernWarning(true);
+      return;
+    }
+
+    executeSubmit();
+  }
+
+  async function executeSubmit() {
     setSubmitting(true);
+    setShowConcernWarning(false);
     try {
       const payloadEditedPayables = payables
         .map((p) => {
           if (itemDecisions[p.id] !== "APPROVED") return null;
-
           const edited = editedAmounts[p.id];
-
-          if (
-            edited !== undefined &&
-            edited !== "" &&
-            Number(edited) !== Number(p.amount)
-          ) {
-            return {
-              id: p.id,
-              amount: Number(edited),
-            };
+          if (edited !== undefined && edited !== "" && Number(edited) !== Number(p.amount)) {
+            return { id: p.id, amount: Number(edited) };
           }
-
           return null;
         })
         .filter((item): item is { id: number; amount: number } => item !== null);
 
-      const payloadItemDecisions: Record<
-        number,
-        {
-          status: "APPROVED" | "REJECTED" | "WITH_CONCERN";
-          remarks: string;
-        }
-      > = {};
+      const payloadItemDecisions: Record<number, { status: "APPROVED" | "REJECTED" | "WITH_CONCERN"; remarks: string }> = {};
 
       Object.entries(itemDecisions).forEach(([idStr, status]) => {
         const id = Number(idStr);
-
         if (status === "PENDING") return;
-
         const isVirtualOrConcernItem = id < 0;
         const shouldSendDecision = status !== "APPROVED" || isVirtualOrConcernItem;
-
         if (!shouldSendDecision) return;
 
         payloadItemDecisions[id] = {
           status,
-          remarks:
-            showItemRemarks[id]?.trim() ||
-            (status === "REJECTED"
-              ? "Item rejected."
-              : status === "WITH_CONCERN"
-                ? "Concern raised."
-                : "Cleared."),
+          remarks: showItemRemarks[id]?.trim() || (status === "REJECTED" ? "Item rejected." : status === "WITH_CONCERN" ? "Concern raised." : "Cleared."),
         };
       });
 
@@ -426,481 +390,482 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent showCloseButton={false} className="sm:!max-w-[98vw] sm:!w-[98vw] h-[95vh] bg-transparent border-none shadow-none flex items-center justify-center gap-4 p-0 overflow-visible">
-        <DialogTitle className="sr-only">Verification & Approval</DialogTitle>
-        <DialogDescription className="sr-only">Batch review modal</DialogDescription>
+    <>
+      <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+        <DialogContent showCloseButton={false} className="sm:!max-w-[98vw] sm:!w-[98vw] h-[95vh] bg-transparent border-none shadow-none flex items-center justify-center gap-4 p-0 overflow-visible">
+          <DialogTitle className="sr-only">Bulk Approval Review</DialogTitle>
+          <DialogDescription className="sr-only">Review and verify expense items before submitting your decision</DialogDescription>
 
-        {/* Coverage Plan Pane (Outside main modal but in split view) */}
-        {showCoverage && detail?.attachments && detail.attachments.length > 0 && (
-          <div className="w-[35vw] h-full bg-[#0f172a] rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] border border-white/5 flex flex-col overflow-hidden animate-in slide-in-from-left duration-500 relative">
-            <div className="p-8 pb-4 flex items-center justify-between">
-              <div>
-                <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] mb-2">
-                  Evidence Registry
-                </Badge>
-                <h3 className="text-xl font-black text-white tracking-tight">Expense Coverage Plan</h3>
+          {/* Supporting Evidence Pane (Outside main modal but in split view) */}
+          {showCoverage && detail?.attachments && detail.attachments.length > 0 && (
+            <div className="w-[35vw] h-full bg-[#0f172a] rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] border border-white/5 flex flex-col overflow-hidden animate-in slide-in-from-left duration-500 relative">
+              <div className="p-8 pb-4 flex items-center justify-between">
+                <div>
+                  <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] mb-2">
+                    Evidence Registry
+                  </Badge>
+                  <h3 className="text-xl font-black text-white tracking-tight">Supporting Evidence</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-white/40 hover:text-white hover:bg-white/10 rounded-full"
+                    onClick={() => {
+                      if (detail?.attachments?.[currentSlide]) {
+                        setPreviewUrl(`/api/fm/expense-assets?id=${detail.attachments[currentSlide].file_url}`);
+                      }
+                    }}
+                    title="View Full Screen"
+                  >
+                    <Maximize2 size={20} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-white/40 hover:text-white hover:bg-white/10 rounded-full"
+                    onClick={() => setShowCoverage(false)}
+                  >
+                    <X size={20} />
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="text-white/40 hover:text-white hover:bg-white/10 rounded-full"
-                  onClick={() => {
-                    if (detail?.attachments?.[currentSlide]) {
-                      setPreviewUrl(`/api/fm/expense-assets?id=${detail.attachments[currentSlide].file_url}`);
-                    }
-                  }}
-                  title="View Full Screen"
-                >
-                  <Maximize2 size={20} />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="text-white/40 hover:text-white hover:bg-white/10 rounded-full"
-                  onClick={() => setShowCoverage(false)}
-                >
-                  <X size={20} />
-                </Button>
-              </div>
-            </div>
 
-            <div ref={inlineContainerRef} className="flex-1 relative flex items-center justify-center p-8">
-              <Carousel setApi={setApi} opts={{ watchDrag: false }} className="w-full h-full">
-                <CarouselContent className="h-full">
-                  {detail.attachments.map((at, i) => (
-                    <CarouselItem key={i} className="flex items-center justify-center h-full">
-                      <div className="relative w-full h-full flex flex-col items-center justify-center gap-6">
-                        <div 
-                          className="relative group/img max-w-full h-[65vh] w-full flex items-center justify-center bg-black/40 rounded-3xl overflow-hidden border border-white/10 shadow-2xl"
-                        >
-                          <motion.div
-                            drag={inlineZoom > 1}
-                            dragMomentum={false}
-                            className="relative flex items-center justify-center w-full h-full"
-                            style={{ scale: inlineZoom }}
+              <div ref={setInlineEl} className="flex-1 relative flex items-center justify-center p-8">
+                <Carousel setApi={setCarouselApi} opts={{ watchDrag: false }} className="w-full h-full">
+                  <CarouselContent className="h-full">
+                    {detail.attachments.map((at, i) => (
+                      <CarouselItem key={i} className="flex items-center justify-center h-full">
+                        <div className="relative w-full h-full flex flex-col items-center justify-center gap-6">
+                          <div
+                            className="relative group/img max-w-full h-[65vh] w-full flex items-center justify-center bg-black/40 rounded-3xl overflow-hidden border border-white/10 shadow-2xl select-none"
                           >
-                            <img
-                              src={`/api/fm/expense-assets?id=${at.file_url}`}
-                              alt={at.file_name}
-                              className="max-w-full max-h-full object-contain pointer-events-none"
-                              draggable={false}
-                            />
-                          </motion.div>
+                            <motion.div
+                              drag={inlineZoom > 1}
+                              dragMomentum={false}
+                              className="relative flex items-center justify-center w-full h-full select-none"
+                              style={{ scale: inlineZoom }}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={`/api/fm/expense-assets?id=${at.file_url}`}
+                                alt={at.file_name}
+                                className="max-w-full max-h-full object-contain pointer-events-none"
+                                draggable={false}
+                              />
+                            </motion.div>
 
-                          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 p-1.5 rounded-xl opacity-0 group-hover/img:opacity-100 transition-all duration-300">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(prev => Math.min(prev + 0.25, 3))} title="Zoom In">
-                              <ZoomIn size={16} />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(prev => Math.max(prev - 0.25, 1))} title="Zoom Out">
-                              <ZoomOut size={16} />
-                            </Button>
-                            {inlineZoom > 1 && (
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(1)} title="Reset">
-                                <RotateCcw size={16} />
+                            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 p-1.5 rounded-xl opacity-0 group-hover/img:opacity-100 transition-all duration-300">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(prev => Math.min(prev + 0.25, 3))} title="Zoom In">
+                                <ZoomIn size={16} />
                               </Button>
-                            )}
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(prev => Math.max(prev - 0.25, 1))} title="Zoom Out">
+                                <ZoomOut size={16} />
+                              </Button>
+                              {inlineZoom > 1 && (
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(1)} title="Reset">
+                                  <RotateCcw size={16} />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-center">
+                            <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{at.file_name}</p>
+                            <p className="text-white/30 text-[9px] font-medium mt-1">ATTACHMENT {i + 1} OF {detail.attachments?.length}</p>
                           </div>
                         </div>
-                        <div className="flex flex-col items-center">
-                          <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{at.file_name}</p>
-                          <p className="text-white/30 text-[9px] font-medium mt-1">ATTACHMENT {i + 1} OF {detail.attachments?.length}</p>
-                        </div>
-                      </div>
-                    </CarouselItem>
-                  ))}
-                </CarouselContent>
-                <CarouselPrevious className="left-4 size-12 bg-white/5 border-white/10 text-white hover:bg-white/20 hover:scale-110 transition-all" />
-                <CarouselNext className="right-4 size-12 bg-white/5 border-white/10 text-white hover:bg-white/20 hover:scale-110 transition-all" />
-              </Carousel>
-            </div>
-            
-            <div className="p-8 pt-4 bg-black/20 border-t border-white/5">
-              <div className="flex items-center gap-4 text-white/40 text-[9px] font-black uppercase tracking-[0.2em]">
-                <ShieldCheck size={14} className="text-emerald-500" />
-                Verified Immutable Audit Trail
+                      </CarouselItem>
+                    ))}
+                  </CarouselContent>
+                  <CarouselPrevious className="left-4 size-12 bg-white/5 border-white/10 text-white hover:bg-white/20 hover:scale-110 transition-all" />
+                  <CarouselNext className="right-4 size-12 bg-white/5 border-white/10 text-white hover:bg-white/20 hover:scale-110 transition-all" />
+                </Carousel>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* Main Modal Pane */}
-        <div className={`flex flex-col bg-white rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] overflow-hidden h-full transition-all duration-500 border border-slate-200 ${showCoverage ? "w-[60vw]" : "w-[85vw]"}`}>
-          {!loading && detail && (
-            <div className="shrink-0">
-              {detail.my_vote ? (
-                <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-6 py-2.5 flex items-center justify-between animate-in slide-in-from-top duration-300">
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-600">
-                      <CheckCircle2 size={18} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-black text-emerald-700 leading-none">Decision Recorded</p>
-                      <p className="text-[11px] text-emerald-600 font-medium mt-0.5">
-                        You already approved/rejected items in Round {detail.my_vote.version} on {format(new Date(detail.my_vote.created_at), "MMM d, h:mm a")}.
-                      </p>
-                    </div>
-                  </div>
-                  <Badge className="bg-emerald-500 text-white border-none px-3 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm shadow-emerald-200">
-                    {detail.my_vote.status}
-                  </Badge>
+              <div className="p-8 pt-4 bg-black/20 border-t border-white/5">
+                <div className="flex items-center gap-4 text-white/40 text-[9px] font-black uppercase tracking-[0.2em]">
+                  <ShieldCheck size={14} className="text-emerald-500" />
+                  Verified Immutable Audit Trail
                 </div>
-              ) : !detail.can_vote && (
-                <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 flex items-center gap-3 animate-in slide-in-from-top duration-300">
-                  <div className="h-8 w-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-600">
-                    <Clock size={18} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-black text-amber-700 leading-none">Awaiting Correct Tier</p>
-                    <p className="text-[11px] text-amber-600 font-medium mt-0.5">
-                      This draft is currently at <span className="font-bold underline">Level {draft.current_tier}</span>. Your level does not have voting authority for this stage.
-                    </p>
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
           )}
 
-          {/* Header Section (Blue Pattern) */}
-          <div className="px-[2vw] py-[2.5vh] bg-[#1a4f95] text-white shrink-0 relative overflow-hidden">
-            <div className="flex items-center justify-between relative z-10">
-              <div className="space-y-1">
-                <h2 className="text-2xl font-black tracking-tight flex items-center gap-3">
-                  <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
-                    <ShieldCheck size={26} />
+          {/* Main Modal Pane */}
+          <div className={`flex flex-col bg-white rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] overflow-hidden h-full transition-all duration-500 border border-slate-200 ${showCoverage ? "w-[60vw]" : "w-[85vw]"}`}>
+            {!loading && detail && (
+              <div className="shrink-0">
+                {detail.my_vote ? (
+                  <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-6 py-2.5 flex items-center justify-between animate-in slide-in-from-top duration-300">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-600">
+                        <CheckCircle2 size={18} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-emerald-700 leading-none">Decision Recorded</p>
+                        <p className="text-[11px] text-emerald-600 font-medium mt-0.5">
+                          You already approved/rejected items in Round {detail.my_vote.version} on {format(new Date(detail.my_vote.created_at), "MMM d, h:mm a")}.
+                        </p>
+                      </div>
+                    </div>
+                    <Badge className="bg-emerald-500 text-white border-none px-3 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm shadow-emerald-200">
+                      {detail.my_vote.status}
+                    </Badge>
                   </div>
-                  Expense Approval & Disbursement Generation
-                </h2>
-                <p className="text-[10px] text-white/70 font-black uppercase tracking-[0.2em]">
-                  Review salesmen submittals and convert approved items into treasury disbursements.
+                ) : (
+                  null
+                )}
+              </div>
+            )}
+
+            {/* Header Section (Blue Pattern) */}
+            <div className="px-[2vw] py-[2.5vh] bg-[#1e40af] text-white shrink-0 relative overflow-hidden">
+              <div className="flex items-center justify-between relative z-10">
+                <div className="space-y-1">
+                  <h2 className="text-2xl font-black tracking-tight flex items-center gap-3">
+                    <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                      <ShieldCheck size={26} />
+                    </div>
+                    Expense Batch Review & Approval
+                  </h2>
+                  <p className="text-[10px] text-white/70 font-black uppercase tracking-[0.2em]">
+                    Review salesmen submittals and submit approval decisions for the current approval level.
+                  </p>
+                </div>
+                <div className="flex items-center gap-4">
+                  {detail?.attachments && detail.attachments.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`bg-white/10 text-white border-white/20 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest gap-2 h-10 px-6 rounded-2xl transition-all ${showCoverage ? "bg-white/30 border-white/40" : ""}`}
+                      onClick={() => setShowCoverage(!showCoverage)}
+                    >
+                      <FileText size={16} />
+                      {showCoverage ? "Hide Attachments" : "Show Supporting Evidence"}
+                    </Button>
+                  )}
+                  <Badge className="bg-white/20 text-white border-white/30 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest backdrop-blur-sm shadow-xl h-10 flex items-center justify-center rounded-2xl">
+                    Level {currentTier}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+            <div className="bg-blue-600/10 border-b border-blue-600/20 px-6 py-2.5 flex items-center gap-3 animate-in slide-in-from-top duration-300">
+              <div className="h-8 w-8 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-600">
+                <ShieldCheck size={18} />
+              </div>
+              <div>
+                <p className="text-sm font-black text-blue-700 leading-none">Approval Review Context</p>
+                <p className="text-[11px] text-blue-600 font-medium mt-0.5">
+                  Review the batch, verify each line item, then submit your approval decision.
                 </p>
               </div>
-              <div className="flex items-center gap-4">
-                {detail?.attachments && detail.attachments.length > 0 && (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className={`bg-white/10 text-white border-white/20 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest gap-2 h-10 px-6 rounded-2xl transition-all ${showCoverage ? "bg-white/30 border-white/40" : ""}`}
-                    onClick={() => setShowCoverage(!showCoverage)}
-                  >
-                    <FileText size={16} />
-                    {showCoverage ? "Hide Coverage Plan" : "Show Expense Coverage Plan"}
-                  </Button>
-                )}
-                <Badge className="bg-white/20 text-white border-white/30 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest backdrop-blur-sm shadow-xl h-10 flex items-center justify-center rounded-2xl">
-                  Level {currentTier} Verification
-                </Badge>
-              </div>
             </div>
-          </div>
-
-          {/* Stats Bar Section */}
-          <div className="grid grid-cols-4 gap-4 px-[1.5vw] py-[2vh] bg-white border-b shadow-sm shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100 shadow-inner">
-                <User size={20} />
-              </div>
-              <div>
-                <p className="text-[8px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Salesman</p>
-                <p className="font-black text-xs text-foreground truncate max-w-[12vw]">{draft.payee_name || "Unknown"}</p>
-                <p className="text-[9px] text-muted-foreground font-mono">ID: {draft.payee_user_id || "N/A"}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 pl-4 border-l border-muted/50">
-              <div className="h-10 w-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 border border-purple-100 shadow-inner">
-                <Building2 size={20} />
-              </div>
-              <div>
-                <p className="text-[8px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Position & Department</p>
-                <p className="font-black text-xs text-foreground truncate max-w-[10vw]">Senior Salesman</p>
-                <p className="text-[9px] text-muted-foreground uppercase tracking-tighter truncate max-w-[10vw]">{draft.division_name || "N/A"}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 pl-4 border-l border-muted/50">
-              <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100 shadow-inner">
-                <Wallet size={20} />
-              </div>
-              <div>
-                <p className="text-[8px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Budget Ceiling</p>
-                <p className="font-black text-xs text-emerald-700">{formatCurrency(4000)}</p>
-                <p className="text-[9px] text-muted-foreground italic">Applied Value</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 pl-4 border-l border-muted/50">
-              <div className="flex flex-col gap-1 w-full">
-                <p className="text-[8px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1 text-right"># Pending Items</p>
-                <div className="flex justify-end gap-1.5 flex-wrap">
-                  <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[9px] font-black px-1.5 py-0">{payables.length} Draft</Badge>
-                  <Badge className="bg-red-100 text-red-700 border-red-200 text-[9px] font-black px-1.5 py-0">0 Rejected</Badge>
+            {/* Stats Bar Section */}
+            <div className="grid grid-cols-4 gap-4 px-[1.5vw] py-[2vh] bg-white border-b shadow-sm shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100 shadow-inner">
+                  <User size={20} />
+                </div>
+                <div>
+                  <p className="text-[8px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Salesman</p>
+                  <p className="font-black text-xs text-foreground truncate max-w-[12vw]">{draft.payee_name || "Unknown"}</p>
+                  <p className="text-[9px] text-muted-foreground font-mono">ID: {draft.payee_user_id || "N/A"}</p>
                 </div>
               </div>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-4 animate-pulse">
-              <Loader2 className="h-10 w-10 animate-spin text-primary" />
-              <span className="font-black text-xs uppercase tracking-[0.3em] text-muted-foreground">Syncing Details...</span>
-            </div>
-          ) : (
-            <>
-              {/* Toolbar Pattern */}
-              <div className="px-[2vw] py-4 bg-muted/5 border-b flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-8">
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-800">
-                    <FileText className="h-4 w-4 text-primary" />
-                    Encoded Expense Drafts
-                  </h3>
-                  <div className="flex items-center gap-3">
-                    <button 
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 hover:shadow-sm"}`}
-                      onClick={() => !isInteractionDisabled && approveAll()}
-                      disabled={isInteractionDisabled}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      <span className="text-[10px] font-black uppercase tracking-widest">Approve All</span>
-                    </button>
-                    <button 
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:shadow-sm"}`}
-                      onClick={() => !isInteractionDisabled && uncheckAll()}
-                      disabled={isInteractionDisabled}
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      <span className="text-[10px] font-black uppercase tracking-widest">Reset All</span>
-                    </button>
+              <div className="flex items-center gap-3 pl-4 border-l border-muted/50">
+                <div className="h-10 w-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 border border-purple-100 shadow-inner">
+                  <Building2 size={20} />
+                </div>
+                <div>
+                  <p className="text-[8px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Context</p>
+                  <p className="font-black text-xs text-foreground truncate max-w-[10vw]">{draft.division_name || "N/A"}</p>
+                  <p className="text-[9px] text-muted-foreground uppercase tracking-tighter truncate max-w-[10vw]">BATCH: {draft.doc_no}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pl-4 border-l border-muted/50">
+                <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100 shadow-inner">
+                  <Wallet size={20} />
+                </div>
+                <div>
+                  <p className="text-[8px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Total Amount</p>
+                  <p className="font-black text-xs text-emerald-700">{formatCurrency(currentTotalAmount)}</p>
+                  <p className="text-[9px] text-muted-foreground italic">Target Value</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pl-4 border-l border-muted/50">
+                <div className="flex flex-col gap-1 w-full">
+                  <p className="text-[8px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1 text-right">Progress</p>
+                  <div className="flex justify-end gap-1.5 flex-wrap">
+                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[9px] font-black px-1.5 py-0">Approved: {approvedCount}</Badge>
+                    <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[9px] font-black px-1.5 py-0">Pending: {Object.values(itemDecisions).filter(v => v === "PENDING").length}</Badge>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest">
-                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm" /> Normal</span>
-                  <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm" /> Over Limit</span>
-                </div>
               </div>
+            </div>
 
-              <div className="flex-1 flex min-h-0 bg-slate-50/50">
-                {/* Sidebar: COA Groups */}
-                <div className="w-[20vw] border-r bg-white overflow-y-auto shrink-0">
-                  <Table>
-                    <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
-                      <TableRow>
-                        <TableHead className="text-[9px] font-black uppercase tracking-widest py-3 pl-4">COA Group</TableHead>
-                        <TableHead className="text-[9px] font-black uppercase tracking-widest py-3 text-right pr-2">Amount</TableHead>
-                        <TableHead className="text-[9px] font-black uppercase tracking-widest py-3 text-center">Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {groupedPayables.map(g => g.weeks.map(w => {
-                        const gid = `${g.coa_name}-${w.weekKey}`;
-                        const isSelected = selectedGroupId === gid;
-                        const total = w.items.reduce((acc, p) => acc + Number(p.amount), 0);
-                        const isVerified = w.items.every(i => itemDecisions[i.id] !== "PENDING");
-                        return (
-                          <TableRow key={gid}
-                            className={`cursor-pointer group transition-all ${isSelected ? "bg-blue-50" : "hover:bg-slate-50"}`}
-                            onClick={() => setSelectedGroupId(gid)}
-                          >
-                            <TableCell className="pl-4 py-3 relative">
-                              {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />}
-                              <div className="flex items-center gap-2">
-                                <div className={`h-6 w-6 shrink-0 rounded-lg flex items-center justify-center text-[8px] font-black shadow-sm ${isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>
-                                  #
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-[10px] font-black uppercase tracking-tight text-slate-800 leading-none mb-1 truncate">{g.coa_name}</p>
-                                  <p className="text-[8px] font-bold text-muted-foreground truncate">{w.weekLabel}</p>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right py-3 pr-2">
-                              <p className="text-[10px] font-black tabular-nums text-slate-800">{formatCurrency(total)}</p>
-                              <p className="text-[8px] text-muted-foreground font-bold italic">{w.items.length} items</p>
-                            </TableCell>
-                            <TableCell className="text-center py-3">
-                              <Button
-                                variant="ghost"
-                                className={`h-7 px-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${isVerified ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" : "bg-blue-600 text-white hover:bg-blue-700"}`}
-                                onClick={(e) => { 
-                                  e.stopPropagation(); 
-                                  if (!isInteractionDisabled) {
-                                    toggleGroupStatus(w.items, "APPROVED"); 
-                                  }
-                                }}
-                                disabled={submitting || isInteractionDisabled}
-                              >
-                                {isVerified ? <CheckCircle2 size={12} /> : <CheckSquare size={12} />}
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      }))}
-                    </TableBody>
-                  </Table>
+            {loading ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-4 animate-pulse">
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                <span className="font-black text-xs uppercase tracking-[0.3em] text-muted-foreground">Syncing Details...</span>
+              </div>
+            ) : (
+              <>
+                {/* Toolbar Pattern */}
+                <div className="px-[2vw] py-4 bg-muted/5 border-b flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-8">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-800">
+                      <FileText className="h-4 w-4 text-primary" />
+                      Verification Registry
+                    </h3>
+                    <div className="flex items-center gap-3">
+                      <button
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"}`}
+                        onClick={() => !isInteractionDisabled && approveAll()}
+                        disabled={isInteractionDisabled}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Approve All</span>
+                      </button>
+                      <button
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"}`}
+                        onClick={() => !isInteractionDisabled && uncheckAll()}
+                        disabled={isInteractionDisabled}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Reset</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest">
+                    <span className="flex items-center gap-2 text-amber-600 animate-pulse"><Info size={14} /> Approval Action</span>
+                  </div>
                 </div>
 
-                {/* Detail Table Area */}
-                <div className="flex-1 bg-white flex flex-col overflow-hidden">
-                  <div className="flex-1 overflow-auto p-8 pt-0">
-                    <Table className="border rounded-2xl overflow-hidden shadow-sm">
-                      <TableHeader className="bg-slate-50/50 sticky top-0 z-10 backdrop-blur-sm border-b">
+                <div className="flex-1 flex min-h-0 bg-slate-50/50">
+                  {/* Sidebar: COA Groups */}
+                  <div className="w-[20vw] border-r bg-white overflow-y-auto shrink-0">
+                    <Table>
+                      <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                         <TableRow>
-                          <TableHead className="w-10 text-center text-[9px] font-black">#</TableHead>
-                          <TableHead className="text-[9px] font-black uppercase tracking-widest py-3">Details (Remarks)</TableHead>
-                          <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-24">Amount</TableHead>
-                          <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-12">Docs</TableHead>
-                          <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-24">Date</TableHead>
-                          <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-20">Status</TableHead>
-                          <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-32">Actions</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 pl-8">Account / Period</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-right pr-4">Amount</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-center">Action</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {activeGroup?.items.map((p, idx) => {
-                          const status = itemDecisions[p.id] || "PENDING";
-                          const isPersistentLocked = p.is_concern || p.is_rejected;
-                          const isStatusLocked = isPersistentLocked || (status !== "PENDING" && status !== "APPROVED") || isInteractionDisabled;
+                        {groupedPayables.map(g => g.weeks.map(w => {
+                          const gid = `${g.coa_name}-${w.weekKey}`;
+                          const isSelected = selectedGroupId === gid;
+                          const total = w.items.reduce((acc, p) => acc + Number(p.amount), 0);
+                          const isVerified = w.items.every(i => itemDecisions[i.id] !== "PENDING");
                           return (
-                            <React.Fragment key={p.id}>
-                              <TableRow className="group hover:bg-slate-50/50 border-b border-slate-100">
-                                <TableCell className="text-center py-3 text-[9px] font-black text-slate-300 italic">{(idx + 1).toString().padStart(2, '0')}</TableCell>
-                                <TableCell className="py-3">
-                                  <p className="text-[10px] font-black text-slate-800 leading-none mb-1 line-clamp-1">{p.remarks || "No remarks provided"}</p>
-                                  <p className="text-[8px] text-muted-foreground font-mono">REF: {p.reference_no || "N/A"}</p>
-                                </TableCell>
-                                <TableCell className="py-3 text-center">
-                                  <Input
-                                    type="number"
-                                    className="h-7 w-20 text-center text-[10px] font-black tabular-nums bg-slate-50 border-slate-200"
-                                    value={editedAmounts[p.id] || p.amount}
-                                    onChange={(e) => setEditedAmounts(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                    disabled={processingItem === p.id || submitting || isStatusLocked}
-                                  />
-                                </TableCell>
-                                <TableCell className="py-4 text-center">
-                                  {p.attachment_url && (
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      className="h-8 w-8 bg-blue-50 text-blue-600 rounded-lg"
-                                      onClick={() => setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`)}
-                                      disabled={processingItem === p.id || submitting || isStatusLocked}
-                                    >
-                                      <ExternalLink size={14} />
-                                    </Button>
-                                  )}
-                                </TableCell>
-                                <TableCell className="py-4 text-center text-[10px] font-bold text-slate-500 uppercase">{formatDate(p.date)}</TableCell>
-                                <TableCell className="py-4 text-center">
-                                  <Badge className={`text-[9px] font-black h-5 px-2 uppercase ${status === "APPROVED" ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : status === "REJECTED" ? "bg-rose-50 text-rose-600 border border-rose-200" : status === "WITH_CONCERN" ? "bg-amber-50 text-amber-600 border border-amber-200" : "bg-slate-100 text-slate-400"}`}>
-                                    {status === "PENDING" ? "Draft" : status}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="py-3 text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "APPROVED" ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-emerald-50"}`} onClick={() => setItemStatus(p.id, "APPROVED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
-                                      <Check size={14} strokeWidth={3} />
-                                    </Button>
-                                    <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "WITH_CONCERN" ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-amber-50"}`} onClick={() => setItemStatus(p.id, "WITH_CONCERN")} disabled={processingItem === p.id || submitting || isStatusLocked}>
-                                      <AlertTriangle size={12} />
-                                    </Button>
-                                    <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "REJECTED" ? "bg-rose-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-rose-50"}`} onClick={() => setItemStatus(p.id, "REJECTED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
-                                      <X size={14} strokeWidth={3} />
-                                    </Button>
+                            <TableRow key={gid}
+                              className={`cursor-pointer group transition-all ${isSelected ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                              onClick={() => setSelectedGroupId(gid)}
+                            >
+                              <TableCell className="pl-4 py-3 relative">
+                                {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />}
+                                <div className="flex items-center gap-2">
+                                  <div className={`h-6 w-6 shrink-0 rounded-lg flex items-center justify-center text-[8px] font-black shadow-sm ${isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>
+                                    #
                                   </div>
-                                </TableCell>
-                              </TableRow>
-                              {(status === "REJECTED" || status === "WITH_CONCERN") && (
-                                <TableRow className={`${status === "REJECTED" ? "bg-rose-50/30" : "bg-amber-50/30"}`}>
-                                  <TableCell colSpan={7} className="px-8 py-3">
-                                    <div className="flex items-center gap-4 pl-12 flex-1">
-                                      <span className={`text-[10px] font-black uppercase tracking-widest ${status === "REJECTED" ? "text-rose-600" : "text-amber-600"} shrink-0`}>Audit Feedback:</span>
-                                      <Input
-                                        placeholder="Provide mandatory reason for rejection/concern..."
-                                        className="h-8 text-xs font-medium border-2 focus:border-primary bg-white shadow-inner flex-1"
-                                        value={showItemRemarks[p.id] || ""}
-                                        onChange={(e) => setShowItemRemarks(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                        disabled={processingItem === p.id || submitting || isPersistentLocked || isInteractionDisabled}
-                                      />
-                                      <Button
-                                        size="sm"
-                                        className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2"
-                                        disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isPersistentLocked}
-                                        onClick={() => handleSingleItemVote(p)}
-                                      >
-                                        {processingItem === p.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                                        Submit Decision
-                                      </Button>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              )}
-                            </React.Fragment>
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-black uppercase tracking-tight text-slate-800 leading-none mb-1 truncate">{g.coa_name}</p>
+                                    <p className="text-[8px] font-bold text-muted-foreground truncate">{w.weekLabel}</p>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right py-3 pr-2">
+                                <p className="text-[10px] font-black tabular-nums text-slate-800">{formatCurrency(total)}</p>
+                                <p className="text-[8px] text-muted-foreground font-bold italic">{w.items.length} units</p>
+                              </TableCell>
+                              <TableCell className="text-center py-3">
+                                <Button
+                                  variant="ghost"
+                                  className={`h-7 px-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${isVerified ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" : "bg-blue-600 text-white hover:bg-blue-700"}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!isInteractionDisabled) {
+                                      toggleGroupStatus(w.items, "APPROVED");
+                                    }
+                                  }}
+                                  disabled={submitting || isInteractionDisabled}
+                                >
+                                  {isVerified ? <CheckCircle2 size={12} /> : <CheckSquare size={12} />}
+                                </Button>
+                              </TableCell>
+                            </TableRow>
                           );
-                        })}
+                        }))}
                       </TableBody>
                     </Table>
                   </div>
 
-                  {/* Footer Section Pattern */}
-                  <div className="p-8 border-t bg-slate-50 flex items-end justify-between gap-12 relative">
-                    <div className="flex-1 space-y-3">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 flex items-center gap-2">
-                        <Info size={14} className="text-blue-500" />
-                        Disbursement Remarks <span className="text-red-500 font-black">*</span>
-                      </label>
-                      <Textarea
-                        rows={4}
-                        className="bg-white border-slate-200 rounded-2xl p-4 text-sm font-medium shadow-inner resize-none focus:ring-2 focus:ring-blue-500/20"
-                        placeholder={approvedCount === 0 ? "Approve at least one item to provide batch remarks..." : "Provide a justification for this batch of expenses..."}
-                        value={remarks}
-                        onChange={(e) => setRemarks(e.target.value)}
-                        disabled={approvedCount === 0 || submitting || isInteractionDisabled}
-                      />
-                      <p className="text-[9px] font-bold text-slate-400 italic">
-                        Items marked <span className="text-amber-600 font-black uppercase">With Concern</span> will be returned to drafts. Items marked <span className="text-rose-600 font-black uppercase">Rejected</span> will be hard rejected.
-                      </p>
+                  {/* Detail Table Area */}
+                  <div className="flex-1 bg-white flex flex-col overflow-hidden">
+                    <div className="flex-1 overflow-auto p-8 pt-0">
+                      <Table className="border rounded-2xl overflow-hidden shadow-sm">
+                        <TableHeader className="bg-slate-50/50 sticky top-0 z-10 backdrop-blur-sm border-b">
+                          <TableRow>
+                            <TableHead className="w-10 text-center text-[9px] font-black">#</TableHead>
+                            <TableHead className="text-[9px] font-black uppercase tracking-widest py-3">Remarks</TableHead>
+                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-24">Amount</TableHead>
+                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-12">Docs</TableHead>
+                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-24">Date</TableHead>
+                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-20">Status</TableHead>
+                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-32">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {activeGroup?.items.map((p, idx) => {
+                            const status = itemDecisions[p.id] || "PENDING";
+                            const isPersistentLocked = p.is_concern || p.is_rejected;
+                            const isStatusLocked = isPersistentLocked || (status !== "PENDING" && status !== "APPROVED") || isInteractionDisabled;
+                            return (
+                              <React.Fragment key={p.id}>
+                                <TableRow className="group hover:bg-slate-50/50 border-b border-slate-100">
+                                  <TableCell className="text-center py-3 text-[9px] font-black text-slate-300 italic">{(idx + 1).toString().padStart(2, '0')}</TableCell>
+                                  <TableCell className="py-3">
+                                    <p className="text-[10px] font-black text-slate-800 leading-none mb-1 line-clamp-1">{p.remarks || "No remarks"}</p>
+                                    <p className="text-[8px] text-muted-foreground font-mono">REF: {p.reference_no || "N/A"}</p>
+                                  </TableCell>
+                                  <TableCell className="py-3 text-center">
+                                    <Input
+                                      type="number"
+                                      className="h-7 w-20 text-center text-[10px] font-black tabular-nums bg-slate-50 border-slate-200"
+                                      value={editedAmounts[p.id] || p.amount}
+                                      onChange={(e) => setEditedAmounts(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                      disabled={processingItem === p.id || submitting || isStatusLocked}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="py-4 text-center">
+                                    {p.attachment_url && (
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-8 w-8 bg-blue-50 text-blue-600 rounded-lg"
+                                        onClick={() => setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`)}
+                                        disabled={processingItem === p.id || submitting || isStatusLocked}
+                                      >
+                                        <ExternalLink size={14} />
+                                      </Button>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="py-4 text-center text-[10px] font-bold text-slate-500 uppercase">{formatDate(p.date)}</TableCell>
+                                  <TableCell className="py-4 text-center">
+                                    <Badge className={`text-[9px] font-black h-5 px-2 uppercase shadow-sm ${status === "APPROVED" ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : status === "REJECTED" ? "bg-rose-50 text-rose-600 border border-rose-200" : status === "WITH_CONCERN" ? "bg-amber-50 text-amber-600 border border-amber-200" : "bg-slate-100 text-slate-400"}`}>
+                                      {status === "PENDING" ? "Pending" : status}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="py-3 text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "APPROVED" ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-emerald-50"}`} onClick={() => setItemStatus(p.id, "APPROVED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
+                                        <Check size={14} strokeWidth={3} />
+                                      </Button>
+                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "WITH_CONCERN" ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-amber-50"}`} onClick={() => setItemStatus(p.id, "WITH_CONCERN")} disabled={processingItem === p.id || submitting || isStatusLocked}>
+                                        <AlertTriangle size={12} />
+                                      </Button>
+                                      <Button size="icon" className={`h-7 w-7 rounded-lg shadow-sm ${status === "REJECTED" ? "bg-rose-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-rose-50"}`} onClick={() => setItemStatus(p.id, "REJECTED")} disabled={processingItem === p.id || submitting || isStatusLocked}>
+                                        <X size={14} strokeWidth={3} />
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                                {(status === "REJECTED" || status === "WITH_CONCERN") && (
+                                  <TableRow className={`${status === "REJECTED" ? "bg-rose-50/30" : "bg-amber-50/30"}`}>
+                                    <TableCell colSpan={7} className="px-8 py-3">
+                                      <div className="flex items-center gap-4 pl-12 flex-1">
+                                        <span className={`text-[10px] font-black uppercase tracking-widest ${status === "REJECTED" ? "text-rose-600" : "text-amber-600"} shrink-0`}>Audit Feedback:</span>
+                                        <Input
+                                          placeholder="Provide mandatory feedback for decision..."
+                                          className="h-8 text-xs font-medium border-2 focus:border-primary bg-white shadow-inner flex-1"
+                                          value={showItemRemarks[p.id] || ""}
+                                          onChange={(e) => setShowItemRemarks(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                          disabled={processingItem === p.id || submitting || isPersistentLocked || isInteractionDisabled}
+                                        />
+                                        <Button
+                                          size="sm"
+                                          className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2"
+                                          disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isPersistentLocked}
+                                          onClick={() => handleSingleItemVote(p)}
+                                        >
+                                          {processingItem === p.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                                          Submit Decision
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
                     </div>
 
-                    <div className="w-80 flex flex-col gap-4">
-                      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl space-y-4">
-                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
-                          <span>Summary</span>
-                          <span className="text-blue-600">{approvedCount} Lines Approved</span>
-                        </div>
-                        <div className="h-[1px] bg-slate-100 w-full" />
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Grand Total:</span>
-                          <span className="text-2xl font-black tabular-nums text-blue-700 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
-                        </div>
-                        <Button
-                          disabled={submitting || hasPendingItems || hasMissingFeedback || !remarks.trim() || approvedCount === 0 || !!detail.my_vote || !detail.can_vote}
-                          className="w-full h-14 relative bg-gradient-to-br from-[#1e40af] via-[#2563eb] to-[#3b82f6] hover:from-[#1d4ed8] hover:to-[#2563eb] text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-[0_10px_40px_-10px_rgba(37,99,235,0.4)] border-t border-white/20 gap-3 active:scale-[0.98] transition-all disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none group overflow-hidden"
-                          onClick={handleVote}
-                        >
-                          <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          {submitting ? (
-                            <Loader2 className="animate-spin h-5 w-5" />
-                          ) : (
-                            <ShieldCheck size={22} className="group-hover:scale-110 transition-transform" />
-                          )}
-                          <span className="relative">Submit Final Approvals</span>
-                        </Button>
+                    {/* Footer Section Pattern */}
+                    <div className="p-8 border-t bg-slate-50 flex items-end justify-between gap-12 relative">
+                      <div className="flex-1 space-y-3">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 flex items-center gap-2">
+                          <Info size={14} className="text-blue-500" />
+                          Approval Remarks <span className="text-red-500 font-black">*</span>
+                        </label>
+                        <Textarea
+                          rows={4}
+                          className="bg-white border-slate-200 rounded-2xl p-4 text-sm font-medium shadow-inner resize-none focus:ring-2 focus:ring-blue-500/20"
+                          placeholder={approvedCount === 0 ? "Approve at least one item to provide remarks..." : "State your approval remarks for this batch..."}
+                          value={remarks}
+                          onChange={(e) => setRemarks(e.target.value)}
+                          disabled={approvedCount === 0 || submitting || isInteractionDisabled}
+                        />
+                        <p className="text-[9px] font-bold text-slate-400 italic">
+                          Your remarks will be saved in the approval audit trail.
+                        </p>
                       </div>
-                      <button className="w-full py-2 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 hover:text-slate-600 transition-colors" onClick={onClose}>
-                        Discard and Close
-                      </button>
+
+                      <div className="w-80 flex flex-col gap-4">
+                        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl space-y-4">
+                          <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            <span>Decision Summary</span>
+                            <span className="text-blue-600">{approvedCount} units</span>
+                          </div>
+                          <div className="h-[1px] bg-slate-100 w-full" />
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Value:</span>
+                            <span className="text-2xl font-black tabular-nums text-blue-700 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
+                          </div>
+                          <Button
+                            disabled={submitting || hasPendingItems || hasMissingFeedback || !remarks.trim() || approvedCount === 0 || !!detail.my_vote || !detail.can_vote}
+                            className="w-full h-14 relative bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-lg border-t border-white/20 gap-3 active:scale-[0.98] transition-all disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none"
+                            onClick={handleVote}
+                          >
+                            {submitting ? (
+                              <Loader2 className="animate-spin h-5 w-5" />
+                            ) : (
+                              <ShieldCheck size={22} />
+                            )}
+                            <span>Submit Decision</span>
+                          </Button>
+                        </div>
+                        <button className="w-full py-2 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 hover:text-slate-600 transition-colors" onClick={onClose}>
+                          Cancel Review
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </>
-          )}
-        </div>
-      </DialogContent>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!previewUrl} onOpenChange={(v) => { if (!v) { setPreviewUrl(null); setZoom(1); } }}>
         <DialogContent showCloseButton={false} className="max-w-[95vw] w-[95vw] h-[90vh] p-0 overflow-hidden bg-[#020617] border-none shadow-2xl flex flex-col">
           <DialogTitle className="sr-only">Evidence Preview</DialogTitle>
           <DialogDescription className="sr-only">Detailed view of the attached evidence document</DialogDescription>
-          
+
           {/* Preview Header */}
           <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-black/40 backdrop-blur-xl border border-white/10 p-2 rounded-2xl shadow-2xl">
             <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => handleZoom(0.25)} title="Zoom In">
@@ -923,8 +888,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           </Button>
 
           {/* Interactive Image Container */}
-          <div 
-            ref={fullScreenContainerRef}
+          <div
+            ref={setFullScreenEl}
             className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing"
           >
             <AnimatePresence mode="wait">
@@ -939,12 +904,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                   <motion.div
                     drag
                     dragMomentum={false}
-                    className="relative"
+                    className="relative select-none"
                     style={{ scale: zoom }}
                   >
-                    <img 
-                      src={previewUrl} 
-                      alt="Evidence" 
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={previewUrl}
+                      alt="Evidence"
                       className="max-w-[85vw] max-h-[80vh] object-contain shadow-[0_0_80px_rgba(0,0,0,0.5)] rounded-lg pointer-events-none"
                       draggable={false}
                     />
@@ -960,6 +926,30 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           </div>
         </DialogContent>
       </Dialog>
-    </Dialog>
+
+      <Dialog open={showConcernWarning} onOpenChange={(v) => !v && setShowConcernWarning(false)}>
+        <DialogContent className="max-w-md p-6 bg-white border-rose-200 shadow-2xl rounded-2xl">
+          <DialogTitle className="flex items-center gap-2 text-rose-600 text-lg font-black tracking-tight">
+            <AlertTriangle size={24} />
+            Permanent Exclusion Warning
+          </DialogTitle>
+          <DialogDescription className="text-slate-600 font-medium leading-relaxed mt-4">
+            You are about to submit this batch while some line items are marked as <strong className="text-amber-600">With Concern</strong>.
+            <br /><br />
+            Items marked with concern will be excluded from the approved payable set and routed according to the configured approval flow.
+            <br /><br />
+            Do you wish to proceed with these concern items excluded from approval?
+          </DialogDescription>
+          <div className="flex items-center justify-end gap-3 mt-8">
+            <Button variant="ghost" onClick={() => setShowConcernWarning(false)} className="text-slate-500 font-bold hover:bg-slate-100">
+              Cancel & Review
+            </Button>
+            <Button onClick={executeSubmit} className="bg-rose-600 hover:bg-rose-700 text-white font-black uppercase tracking-widest shadow-lg shadow-rose-500/30">
+              Confirm & Submit
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

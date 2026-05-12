@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, FolderOpen, Search, CheckCircle2, Clock, LockKeyhole, AlertTriangle, ShieldCheck } from "lucide-react";
+import { Loader2, FolderOpen, Search, CheckCircle2, Clock, LockKeyhole, AlertTriangle, ShieldCheck, ArrowLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -149,11 +149,11 @@ export default function DraftListTable(props: Props) {
     <div className="flex flex-col flex-1 min-h-0 gap-2">
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 shrink-0">
-        <div className="relative max-w-sm flex-1 min-w-[240px]">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <div className="relative max-w-sm flex-1 min-w-[200px]">
+          <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by doc no, payee, or remarks..."
-            className="pl-8 h-8 text-xs bg-background/60 focus:bg-background transition-colors border-muted-foreground/20"
+            placeholder="Search drafts..."
+            className="pl-7 h-7 text-[11px] bg-background/60 focus:bg-background transition-colors border-muted-foreground/20"
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -170,8 +170,8 @@ export default function DraftListTable(props: Props) {
                 setSelectedDivisionId(val === "all" ? undefined : Number(val));
               }}
             >
-              <SelectTrigger className="h-8 w-[180px] text-xs bg-background/60 border-muted-foreground/20">
-                <div className="flex items-center gap-2">
+              <SelectTrigger className="h-7 w-[160px] text-[11px] bg-background/60 border-muted-foreground/20">
+                <div className="flex items-center gap-1.5">
                   <Filter className="h-3 w-3 text-muted-foreground" />
                   <SelectValue placeholder="All Divisions" />
                 </div>
@@ -191,12 +191,12 @@ export default function DraftListTable(props: Props) {
 
       {/* Level indicator */}
       {Object.keys(levelsByDivision).length > 0 && (
-        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary/5 border border-primary/20 rounded-lg text-[11px] font-semibold text-primary shrink-0">
+        <div className="flex items-center gap-1.5 px-2 py-1 bg-primary/5 border border-primary/20 rounded-lg text-[10px] font-semibold text-primary shrink-0 leading-none">
           <LockKeyhole className="h-3 w-3 shrink-0" />
           {Object.keys(levelsByDivision).length > 1 ? (
-            <span>Active approval roles in <span className="underline underline-offset-2">{Object.keys(levelsByDivision).length} divisions</span> — action buttons activate when a draft is at or below your tier.</span>
+            <span>Active roles in <span className="underline underline-offset-2">{Object.keys(levelsByDivision).length} divisions</span>.</span>
           ) : (
-            <span>You are a <span className="underline underline-offset-2">Level {myLevel}</span> approver — buttons active when draft is at or below your tier.</span>
+            <span>You are a <span className="underline underline-offset-2">Level {myLevel}</span> approver.</span>
           )}
         </div>
       )}
@@ -217,15 +217,15 @@ export default function DraftListTable(props: Props) {
           </colgroup>
           <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm shadow-sm">
             <TableRow className="bg-muted/50">
-              <TableHead className="text-center text-xs">#</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-tight">Doc No</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-tight">Division</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-tight">Salesman</TableHead>
-              <TableHead className="text-right text-xs font-bold uppercase tracking-tight">Amount</TableHead>
-              <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Date</TableHead>
-              <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Status</TableHead>
-              <TableHead className="text-center text-xs font-bold uppercase tracking-tight">Tier Progress</TableHead>
-              <TableHead className="text-center text-[10px] font-black uppercase tracking-widest w-[110px]">Action</TableHead>
+              <TableHead className="text-center text-[10px] px-1 py-2">#</TableHead>
+              <TableHead className="text-[10px] font-black uppercase tracking-tight py-2">Doc No</TableHead>
+              <TableHead className="text-[10px] font-black uppercase tracking-tight py-2">Division</TableHead>
+              <TableHead className="text-[10px] font-black uppercase tracking-tight py-2">Salesman</TableHead>
+              <TableHead className="text-right text-[10px] font-black uppercase tracking-tight py-2">Amount</TableHead>
+              <TableHead className="text-center text-[10px] font-black uppercase tracking-tight py-2">Date</TableHead>
+              <TableHead className="text-center text-[10px] font-black uppercase tracking-tight py-2">Status</TableHead>
+              <TableHead className="text-center text-[10px] font-black uppercase tracking-tight py-2">Tier</TableHead>
+              <TableHead className="text-center text-[9px] font-black uppercase tracking-widest w-[100px] py-2">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -248,45 +248,43 @@ export default function DraftListTable(props: Props) {
                       : "hover:bg-muted/30"
                     }`}
                 >
-                  <TableCell className="text-center text-muted-foreground text-xs font-mono">
+                  <TableCell className="text-center text-muted-foreground text-[10px] font-mono py-1.5">
                     {(page - 1) * 8 + idx + 1}
                   </TableCell>
-                  <TableCell className="overflow-hidden">
-                    <span className="font-black text-xs font-mono text-primary block truncate" title={row.doc_no}>
+                  <TableCell className="overflow-hidden py-1.5">
+                    <span className="font-black text-[11px] font-mono text-primary block truncate" title={row.doc_no}>
                       {row.doc_no}
                     </span>
                   </TableCell>
-                  <TableCell className="overflow-hidden">
+                  <TableCell className="overflow-hidden py-1.5">
                     <Badge
                       variant="outline"
-                      className="text-[10px] font-bold bg-muted/50 border-muted-foreground/30 px-2 py-0 max-w-full block truncate"
+                      className="text-[9px] font-bold bg-muted/50 border-muted-foreground/30 px-1.5 py-0 max-w-full block truncate"
                       title={row.division_name || "N/A"}
                     >
                       {row.division_name || "N/A"}
                     </Badge>
                   </TableCell>
-                  <TableCell>
-                    <div className="font-semibold text-foreground">
+                  <TableCell className="py-1.5">
+                    <div className="font-black text-[12px] text-foreground leading-tight truncate">
                       {row.encoder_name}
                     </div>
-
-
                   </TableCell>
-                  <TableCell className="text-right font-black tabular-nums text-xs overflow-hidden">
+                  <TableCell className="text-right font-black tabular-nums text-[12px] overflow-hidden py-1.5">
                     <span className="block truncate" title={formatCurrency(Number(row.total_amount))}>
                       {formatCurrency(Number(row.total_amount))}
                     </span>
                   </TableCell>
-                  <TableCell className="text-center text-xs text-muted-foreground font-medium overflow-hidden">
+                  <TableCell className="text-center text-[10px] text-muted-foreground font-medium overflow-hidden py-1.5">
                     <span className="block truncate">{formatDate(row.transaction_date)}</span>
                   </TableCell>
-                  <TableCell className="text-center overflow-hidden">
-                    <div className="flex justify-center">
+                  <TableCell className="text-center overflow-hidden py-1.5">
+                    <div className="flex justify-center scale-90">
                       <StatusBadge status={row.status} current_tier={row.current_tier} has_concern={row.has_concern} />
                     </div>
                   </TableCell>
-                  <TableCell className="overflow-hidden">
-                    <div className="flex justify-center">
+                  <TableCell className="overflow-hidden py-1.5">
+                    <div className="flex justify-center scale-90">
                       <TierProgress
                         current={row.current_tier}
                         max={row.max_level}
@@ -294,48 +292,48 @@ export default function DraftListTable(props: Props) {
                       />
                     </div>
                   </TableCell>
-                  <TableCell className="text-center overflow-hidden">
-                    <div className="flex flex-col items-center justify-center gap-1.5 py-1">
+                  <TableCell className="text-center overflow-hidden py-1.5">
+                    <div className="flex flex-col items-center justify-center gap-1">
                       {row.my_vote ? (
                         <div className="flex flex-col items-center">
-                          <div className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
-                            <CheckCircle2 className="h-3 w-3" />
+                          <div className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                            <CheckCircle2 className="h-2.5 w-2.5" />
                             Voted
                           </div>
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-7 px-3 mt-1 text-[10px] font-bold text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all rounded-lg"
+                            className="h-6 px-2 mt-0.5 text-[9px] font-bold text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all rounded-lg"
                             onClick={() => onAction(row)}
                           >
-                            Review Details
+                            Review
                           </Button>
                         </div>
                       ) : row.can_vote ? (
                         <Button
                           size="sm"
-                          className="relative h-8 px-4 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[11px] font-black uppercase tracking-wider shadow-lg shadow-blue-500/25 border-t border-white/20 hover:scale-105 active:scale-95 transition-all group overflow-hidden"
+                          className="relative h-7 px-3 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider shadow-md border-t border-white/20 hover:scale-105 active:scale-95 transition-all group overflow-hidden"
                           onClick={() => onAction(row)}
                         >
                           <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          <span className="relative flex items-center gap-2">
-                            <ShieldCheck className="h-3.5 w-3.5" />
-                            Vote Now
+                          <span className="relative flex items-center gap-1.5">
+                            <ShieldCheck className="h-3 w-3" />
+                            Vote
                           </span>
                         </Button>
                       ) : (
                         <div className="flex flex-col items-center opacity-60 group-hover:opacity-100 transition-opacity">
-                          <div className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-inner">
-                            <Clock className="h-3 w-3" />
-                            Waiting
+                          <div className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-inner">
+                            <Clock className="h-2.5 w-2.5" />
+                            Wait
                           </div>
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-7 px-3 mt-1 text-[10px] font-bold text-muted-foreground hover:text-slate-800 transition-all rounded-lg"
+                            className="h-6 px-2 mt-0.5 text-[9px] font-bold text-muted-foreground hover:text-slate-800 transition-all rounded-lg"
                             onClick={() => onAction(row)}
                           >
-                            View Only
+                            View
                           </Button>
                         </div>
                       )}
@@ -349,20 +347,20 @@ export default function DraftListTable(props: Props) {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between shrink-0 border-t pt-3">
-        <p className="text-sm text-muted-foreground">
-          Showing <span className="font-bold text-foreground">{rows.length}</span> of{" "}
+      <div className="flex items-center justify-between shrink-0 border-t pt-2">
+        <p className="text-[11px] text-muted-foreground">
+          <span className="font-bold text-foreground">{rows.length}</span> /{" "}
           <span className="font-bold text-foreground">{totalItems}</span> drafts
         </p>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPage(page - 1)} disabled={page <= 1}>
-            Previous
+        <div className="flex items-center gap-1.5">
+          <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPage(page - 1)} disabled={page <= 1}>
+             <ArrowLeft className="h-3 w-3" />
           </Button>
-          <span className="text-sm font-medium">
-            Page {page} of {pageCount}
+          <span className="text-[11px] font-bold">
+            {page} / {pageCount}
           </span>
-          <Button variant="outline" size="sm" onClick={() => setPage(page + 1)} disabled={page >= pageCount}>
-            Next
+          <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPage(page + 1)} disabled={page >= pageCount}>
+             <ChevronRight className="h-3 w-3" />
           </Button>
         </div>
       </div>
