@@ -28,6 +28,10 @@ export interface Customer {
     id: number;
     customer_name: string;
     customer_code: string;
+    store_name?: string;
+    brgy?: string;
+    city?: string;
+    province?: string;
 }
 
 export interface Salesman {
@@ -110,7 +114,7 @@ export interface MemoApprovalRow {
     status: string;
     created_at: string;
     supplier_id: { id: number, supplier_name: string };
-    customer_id: { id: number, customer_name: string };
+    customer_id: { id: number, customer_name: string, store_name?: string, brgy?: string, city?: string, province?: string };
     salesman_id: { id: number, salesman_code: string, salesman_name: string };
     chart_of_account: { coa_id: number, gl_code: string, account_title: string };
     encoder_id: { user_fname: string, user_lname: string } | null;
