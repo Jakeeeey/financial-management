@@ -1,10 +1,10 @@
 // tax-calendar/components/MetricCards.tsx
 import { Card, CardContent } from '@/components/ui/card';
-import { Clock, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Clock, AlertCircle, FileCheck, TrendingUp } from 'lucide-react';
 
 interface MetricCardProps {
   title:   string;
-  value:   number;
+  value:   string | number;
   sub:     string;
   icon:    React.ReactNode;
   accent?: string;
@@ -28,19 +28,19 @@ function MetricCard({ title, value, sub, icon, accent }: MetricCardProps) {
 }
 
 interface Props {
-  pending: number;
-  overdue: number;
-  filed:   number;
-  paid:    number;
+  upcomingDeadlines: number;
+  overdueFilings:    number;
+  filedThisPeriod:   number;
+  complianceRate:    number;
 }
 
-export function TaxMetricCards({ pending, overdue, filed, paid }: Props) {
+export function TaxMetricCards({ upcomingDeadlines, overdueFilings, filedThisPeriod, complianceRate }: Props) {
   return (
     <div className="grid gap-4 grid-cols-2 md:grid-cols-4 w-full">
-      <MetricCard title="Pending"  value={pending} sub="Awaiting action"              icon={<Clock        className="h-4 w-4" />} accent="text-foreground" />
-      <MetricCard title="Overdue"  value={overdue} sub="Requires immediate attention"  icon={<AlertCircle  className="h-4 w-4" />} accent="text-foreground" />
-      <MetricCard title="Filed"    value={filed}   sub="Successfully filed"            icon={<FileText     className="h-4 w-4" />} accent="text-foreground" />
-      <MetricCard title="Paid"     value={paid}    sub="Completed"                     icon={<CheckCircle2 className="h-4 w-4" />} accent="text-foreground" />
+      <MetricCard title="Total Upcoming Deadlines" value={upcomingDeadlines} sub="Next 7 days" icon={<Clock className="h-4 w-4" />} accent="text-orange-600 dark:text-orange-400" />
+      <MetricCard title="Overdue Filings" value={overdueFilings} sub="Requires immediate action" icon={<AlertCircle className="h-4 w-4" />} accent="text-red-600 dark:text-red-400" />
+      <MetricCard title="Filed This Period" value={filedThisPeriod} sub="Successfully completed" icon={<FileCheck className="h-4 w-4" />} accent="text-green-600 dark:text-green-400" />
+      <MetricCard title="Compliance Rate" value={`${complianceRate}%`} sub="On-time filings" icon={<TrendingUp className="h-4 w-4" />} accent="text-blue-600 dark:text-blue-400" />
     </div>
   );
 }

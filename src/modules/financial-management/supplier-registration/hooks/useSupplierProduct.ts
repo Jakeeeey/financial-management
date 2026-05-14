@@ -17,9 +17,9 @@ export function useSupplierProducts(supplierId: number | null) {
   /**
    * Fetch products for supplier
    */
-  const fetchProducts = useCallback(async (id: number) => {
+  const fetchProducts = useCallback(async (id: number, silent = false) => {
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       setError(null);
 
       // DEBUGGER
@@ -37,7 +37,7 @@ export function useSupplierProducts(supplierId: number | null) {
       setError(err instanceof Error ? err : new Error("Unknown error"));
       setProducts([]);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, []);
 
@@ -69,10 +69,11 @@ export function useSupplierProducts(supplierId: number | null) {
         }
 
         toast.success("Product added successfully");
-        await fetchProducts(supplierId);
+        await fetchProducts(supplierId, true);
         return true;
       } catch (err) {
-        console.error(err); toast.error("An error occurred while adding the product");
+        console.error(err);
+        toast.error("An error occurred while adding the product");
         return false;
       }
     },
@@ -97,7 +98,7 @@ export function useSupplierProducts(supplierId: number | null) {
 
         if (!response.ok) throw new Error("Update failed");
         toast.success("Discount type updated");
-        await fetchProducts(supplierId);
+        await fetchProducts(supplierId, true);
         return true;
       } catch {
         toast.error("Failed to update discount");
@@ -123,7 +124,7 @@ export function useSupplierProducts(supplierId: number | null) {
 
         if (!response.ok) throw new Error("Delete failed");
         toast.success("Product removed");
-        await fetchProducts(supplierId);
+        await fetchProducts(supplierId, true);
         return true;
       } catch {
         toast.error("Failed to remove product");
@@ -154,11 +155,80 @@ export function useSupplierProducts(supplierId: number | null) {
     }
   }, [supplierId, fetchProducts]);
 
+  /**
+   * Add multiple products to supplier in bulk
+   */
+  const addProductsBulk = useCallback(
+    async (productIds: number[]) => {
+      if (!supplierId || productIds.length === 0) return false;
+      try {
+        setIsLoading(true); // Show loader for bulk operation
+        
+        // Loop through products and add them
+        let successCount = 0;
+        let conflictCount = 0;
+        let errorCount = 0;
+
+        await Promise.all(
+          productIds.map(async (productId) => {
+            try {
+              const response = await fetch(
+                `/api/supplier-registration/suppliers/${supplierId}/products`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    product_id: productId,
+                    discount_type: null,
+                  }),
+                },
+              );
+
+              if (response.ok) {
+                successCount++;
+              } else if (response.status === 409) {
+                conflictCount++;
+              } else {
+                errorCount++;
+              }
+            } catch (err) {
+              console.error(`Error adding product ${productId}:`, err);
+              errorCount++;
+            }
+          }),
+        );
+
+        if (successCount > 0) {
+          if (conflictCount > 0 || errorCount > 0) {
+            toast.success(`Added ${successCount} products. ${conflictCount} already existed.`);
+          } else {
+            toast.success(`Successfully added ${successCount} products.`);
+          }
+        } else if (conflictCount > 0) {
+          toast.info(`${conflictCount} products were already assigned.`);
+        } else if (errorCount > 0) {
+          toast.error(`Failed to add products due to errors.`);
+        }
+
+        await fetchProducts(supplierId, true);
+        setIsLoading(false);
+        return successCount > 0 || conflictCount > 0;
+      } catch (err) {
+        console.error(err);
+        toast.error("An error occurred during bulk assignment");
+        setIsLoading(false);
+        return false;
+      }
+    },
+    [supplierId, fetchProducts],
+  );
+
   return {
     products,
     isLoading,
     error,
     addProduct,
+    addProductsBulk,
     updateDiscount,
     removeProduct,
     refresh,

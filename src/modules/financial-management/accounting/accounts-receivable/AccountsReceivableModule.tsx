@@ -10,6 +10,7 @@ import { AlertCircle, Clock, PhilippinePeso, X, Download } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useAccountsReceivable } from './hooks/useAccountsReceivable';
 import { MetricCard } from './components/MetricCard';
 import { AgingChart } from './components/AgingChart';
@@ -29,6 +30,7 @@ export default function AccountsReceivableModule() {
   const [customer, setCustomer] = useState('');
   const [branch, setBranch]     = useState('');
   const [salesman, setSalesman] = useState('');
+  const [division, setDivision] = useState('');
 
   const customerOptions = useMemo(
     () => Array.from(new Set(invoices.map((inv) => inv.customer))).sort(),
@@ -42,6 +44,10 @@ export default function AccountsReceivableModule() {
     () => Array.from(new Set(invoices.map((inv) => inv.salesman).filter((s) => s && s !== 'Unknown'))).sort(),
     [invoices]
   );
+  const divisionOptions = useMemo(
+    () => Array.from(new Set(invoices.map((inv) => inv.division).filter((d) => d && d !== '—'))).sort(),
+    [invoices]
+  );
 
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
@@ -52,11 +58,12 @@ export default function AccountsReceivableModule() {
       if (customer && inv.customer !== customer) return false;
       if (branch   && inv.branch   !== branch)   return false;
       if (salesman && inv.salesman !== salesman)  return false;
+      if (division && inv.division !== division)  return false;
       return true;
     });
-  }, [invoices, dateFrom, dateTo, customer, branch, salesman]);
+  }, [invoices, dateFrom, dateTo, customer, branch, salesman, division]);
 
-  const isFiltered = !!(dateFrom || dateTo || customer || branch || salesman);
+  const isFiltered = !!(dateFrom || dateTo || customer || branch || salesman || division);
 
   const filteredCustomerMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -113,7 +120,7 @@ export default function AccountsReceivableModule() {
   const { totalReceivable, totalOutstanding, overdueInvoices, avgOverdue } = filteredMetrics;
 
   const clearFilters = () => {
-    setDateFrom(''); setDateTo(''); setCustomer(''); setBranch(''); setSalesman(''); setPage(1);
+    setDateFrom(''); setDateTo(''); setCustomer(''); setBranch(''); setSalesman(''); setDivision(''); setPage(1);
   };
 
   const exportToPDF = () => {
@@ -147,7 +154,7 @@ export default function AccountsReceivableModule() {
     doc.setFontSize(7.5);
     doc.setTextColor(120, 120, 120);
     doc.text(
-      `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Customer: ${customer || 'All'}   Branch: ${branch || 'All'}   Salesman: ${salesman || 'All'}`,
+      `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Customer: ${customer || 'All'}   Branch: ${branch || 'All'}   Salesman: ${salesman || 'All'}   Division: ${division || 'All'}`,
       10, 26
     );
     doc.text(
@@ -163,21 +170,22 @@ export default function AccountsReceivableModule() {
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
       columnStyles: {
-        0:  { cellWidth: 30 },  // Invoice No.
-        1:  { cellWidth: 34 },  // Order ID
-        2:  { cellWidth: 60 },  // Customer
-        3:  { cellWidth: 26 },  // Inv. Date
-        4:  { cellWidth: 26 },  // Due Date
-        5:  { cellWidth: 30 },  // Net Recv.
-        6:  { cellWidth: 26 },  // Total Paid
-        7:  { cellWidth: 32 },  // Outstanding
-        8:  { cellWidth: 20 },  // Days OD
-        9:  { cellWidth: 38 },  // Branch
-        10: { cellWidth: 42 },  // Salesman
-        11: { cellWidth: 22 },  // Status
+        0:  { cellWidth: 28 },  // Invoice No.
+        1:  { cellWidth: 32 },  // Order ID
+        2:  { cellWidth: 55 },  // Customer
+        3:  { cellWidth: 36 },  // Salesman
+        4:  { cellWidth: 32 },  // Division
+        5:  { cellWidth: 36 },  // Branch
+        6:  { cellWidth: 24 },  // Inv. Date
+        7:  { cellWidth: 24 },  // Due Date
+        8:  { cellWidth: 28 },  // Net Recv.
+        9:  { cellWidth: 24 },  // Total Paid
+        10: { cellWidth: 30 },  // Outstanding
+        11: { cellWidth: 18 },  // Days OD
+        12: { cellWidth: 20 },  // Status
       },
       head: [[
-        'Invoice No.', 'Order ID', 'Customer', 'Salesman', 'Branch', 'Inv. Date', 'Due Date',
+        'Invoice No.', 'Order ID', 'Customer', 'Salesman', 'Division', 'Branch', 'Inv. Date', 'Due Date',
         'Net Recv. (PHP)', 'Total Paid', 'Outstanding (PHP)',
         'Days OD', 'Status',
       ]],
@@ -186,6 +194,7 @@ export default function AccountsReceivableModule() {
         inv.orderId,
         inv.customer,
         inv.salesman,
+        inv.division,
         inv.branch,
         (inv.invoiceDate ?? '').split(' ')[0],
         (inv.due ?? '').split(' ')[0],
@@ -268,20 +277,17 @@ export default function AccountsReceivableModule() {
           />
         </div>
 
-        <Select
-          value={customer || '__all__'}
-          onValueChange={(val) => { setCustomer(val === '__all__' ? '' : val); setPage(1); }}
-        >
-          <SelectTrigger className="h-9 w-[160px] text-xs">
-            <SelectValue placeholder="All Customers" />
-          </SelectTrigger>
-          <SelectContent className="max-h-60">
-            <SelectItem value="__all__" className="text-xs text-muted-foreground">All Customers</SelectItem>
-            {customerOptions.map((name) => (
-              <SelectItem key={name} value={name} className="text-xs">{name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Customer (searchable) */}
+        <SearchableSelect
+          value={customer}
+          onValueChange={(val) => { setCustomer(val); setPage(1); }}
+          placeholder="All Customers"
+          className="h-9 w-[180px] text-xs !block text-left truncate relative pr-8 [&_svg]:absolute [&_svg]:right-3 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
+          options={[
+            { value: '', label: 'All Customers' },
+            ...customerOptions.map((name) => ({ value: name, label: name })),
+          ]}
+        />
 
         <Select
           value={branch || '__all__'}
@@ -298,20 +304,29 @@ export default function AccountsReceivableModule() {
           </SelectContent>
         </Select>
 
-        <Select
-          value={salesman || '__all__'}
-          onValueChange={(val) => { setSalesman(val === '__all__' ? '' : val); setPage(1); }}
-        >
-          <SelectTrigger className="h-9 w-[150px] text-xs">
-            <SelectValue placeholder="All Salesmen" />
-          </SelectTrigger>
-          <SelectContent className="max-h-60">
-            <SelectItem value="__all__" className="text-xs text-muted-foreground">All Salesmen</SelectItem>
-            {salesmanOptions.map((name) => (
-              <SelectItem key={name} value={name} className="text-xs">{name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Salesman (searchable) */}
+        <SearchableSelect
+          value={salesman}
+          onValueChange={(val) => { setSalesman(val); setPage(1); }}
+          placeholder="All Salesmen"
+          className="h-9 w-[180px] text-xs !block text-left truncate relative pr-8 [&_svg]:absolute [&_svg]:right-3 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
+          options={[
+            { value: '', label: 'All Salesmen' },
+            ...salesmanOptions.map((name) => ({ value: name, label: name })),
+          ]}
+        />
+
+        {/* Division (searchable) */}
+        <SearchableSelect
+          value={division}
+          onValueChange={(val) => { setDivision(val); setPage(1); }}
+          placeholder="All Divisions"
+          className="h-9 w-[180px] text-xs !block text-left truncate relative pr-8 [&_svg]:absolute [&_svg]:right-3 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
+          options={[
+            { value: '', label: 'All Divisions' },
+            ...divisionOptions.map((name) => ({ value: name, label: name })),
+          ]}
+        />
 
         {isFiltered && (
           <Button variant="ghost" size="sm" onClick={clearFilters}

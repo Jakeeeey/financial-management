@@ -8,6 +8,8 @@ import type {
     Unit,
     UpsertLine,
     Supplier,
+    PriceChangeRequest,
+    CostChangeRequest,
 } from "../types";
 import { http } from "./fetchProvider";
 
@@ -144,4 +146,36 @@ export async function createPriceChangeRequests(items: {
         method: "POST",
         body: JSON.stringify({ items }),
     });
+}
+
+export async function bulkUpdateProducts(items: { product_id: number; cost_per_unit: number | null }[]) {
+    return http<{ ok: boolean; affected: number }>(`/api/fm/product-pricing/products/bulk-patch`, {
+        method: "POST",
+        body: JSON.stringify({ items }),
+    });
+}
+
+export async function createCostChangeRequests(
+    items: {
+        product_id: number;
+        proposed_cost: number;
+        current_cost?: number | null;
+    }[],
+) {
+    return http<{
+        created: number;
+        skipped_duplicates?: number;
+        skipped_existing_pending?: number;
+    }>(`/api/fm/product-pricing/cost-change-requests/bulk`, {
+        method: "POST",
+        body: JSON.stringify({ items }),
+    });
+}
+
+export async function getPendingPriceRequests() {
+    return http<{ data: PriceChangeRequest[] }>("/api/fm/product-pricing/price-change-requests?status=PENDING&limit=-1");
+}
+
+export async function getPendingCostRequests() {
+    return http<{ data: CostChangeRequest[] }>("/api/fm/product-pricing/cost-change-requests?status=PENDING&limit=-1");
 }

@@ -10,14 +10,19 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return fallback;
 }
 
-export function usePCRActions(onDone?: () => void) {
+export function usePCRActions(onDone?: () => void, requestType: "price" | "cost" = "price") {
     const [acting, setActing] = React.useState(false);
+
+    const apiAction = React.useMemo(
+        () => (requestType === "cost" ? api.actionCostRequest : api.actionRequest),
+        [requestType],
+    );
 
     const approve = React.useCallback(
         async (request_id: number) => {
             setActing(true);
             try {
-                await api.actionRequest({ action: "approve", request_id });
+                await apiAction({ action: "approve", request_id });
                 toast.success("Approved and applied.");
                 onDone?.();
             } catch (error: unknown) {
@@ -26,7 +31,7 @@ export function usePCRActions(onDone?: () => void) {
                 setActing(false);
             }
         },
-        [onDone],
+        [onDone, apiAction],
     );
 
     const approveMany = React.useCallback(
@@ -45,7 +50,7 @@ export function usePCRActions(onDone?: () => void) {
             try {
                 for (const request_id of uniqueIds) {
                     try {
-                        await api.actionRequest({ action: "approve", request_id });
+                        await apiAction({ action: "approve", request_id });
                         successIds.push(request_id);
                     } catch {
                         failedIds.push(request_id);
@@ -55,9 +60,7 @@ export function usePCRActions(onDone?: () => void) {
                 if (successIds.length > 0 && failedIds.length === 0) {
                     toast.success(`${successIds.length} request(s) approved and applied.`);
                 } else if (successIds.length > 0 && failedIds.length > 0) {
-                    toast.warning(
-                        `${successIds.length} approved, ${failedIds.length} failed.`,
-                    );
+                    toast.warning(`${successIds.length} approved, ${failedIds.length} failed.`);
                 } else {
                     toast.error("Failed to approve selected requests.");
                 }
@@ -69,14 +72,14 @@ export function usePCRActions(onDone?: () => void) {
                 setActing(false);
             }
         },
-        [onDone],
+        [onDone, apiAction],
     );
 
     const cancel = React.useCallback(
         async (request_id: number) => {
             setActing(true);
             try {
-                await api.actionRequest({ action: "cancel", request_id });
+                await apiAction({ action: "cancel", request_id });
                 toast.success("Cancelled.");
                 onDone?.();
             } catch (error: unknown) {
@@ -85,14 +88,14 @@ export function usePCRActions(onDone?: () => void) {
                 setActing(false);
             }
         },
-        [onDone],
+        [onDone, apiAction],
     );
 
     const reject = React.useCallback(
         async (request_id: number, reject_reason: string) => {
             setActing(true);
             try {
-                await api.actionRequest({ action: "reject", request_id, reject_reason });
+                await apiAction({ action: "reject", request_id, reject_reason });
                 toast.success("Rejected.");
                 onDone?.();
             } catch (error: unknown) {
@@ -101,8 +104,8 @@ export function usePCRActions(onDone?: () => void) {
                 setActing(false);
             }
         },
-        [onDone],
+        [onDone, apiAction],
     );
 
     return { acting, approve, approveMany, cancel, reject };
-}
+}

@@ -14,7 +14,7 @@ export default function SupplierDebitMemoModule() {
   const {
     memos, loading, error,
     filters, updateFilter, clearFilters, hasFilters,
-    toast, showToast,
+    showToast,
     modalOpen, setModalOpen,
     stats, refetch,
   } = useSupplierDebitMemo();
@@ -53,17 +53,6 @@ export default function SupplierDebitMemoModule() {
         </p>
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div className={`px-4 py-3 rounded-lg text-sm flex items-center gap-3 border ${
-          toast.type === "success"
-            ? "bg-muted border-border text-foreground"
-            : "bg-red-500/10 border-red-500/20 text-red-700"
-        }`}>
-          {toast.message}
-        </div>
-      )}
-
       {/* Filters row — New Debit Memo button is inside, far right */}
       <MemoFiltersBar
         filters={filters}
@@ -94,7 +83,6 @@ export default function SupplierDebitMemoModule() {
           onSuccess={msg => { showToast(msg, "success"); refetch(); }}
         />
       )}
-
     </div>
   );
 }

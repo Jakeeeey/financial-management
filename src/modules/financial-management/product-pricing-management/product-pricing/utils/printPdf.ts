@@ -34,7 +34,7 @@ function money(v: unknown): string {
     if (!Number.isFinite(n)) return "";
     return n.toLocaleString(undefined, {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 4,
     });
 }
 

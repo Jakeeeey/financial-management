@@ -1,189 +1,159 @@
 "use client";
 
-import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Plus, Loader2 } from "lucide-react";
 import { useProducts } from "@/modules/financial-management/supplier-registration/hooks/useProducts";
-import { Product } from "../../types/product.schema";
-import { useDiscountTypes } from "../../hooks/useDiscountTypes";
+import { Loader2, Search } from "lucide-react";
+import { useMemo, useState } from "react";
 
 interface AddProductsModalProps {
   open: boolean;
   onClose: () => void;
-  onAddProduct: (
-    productId: number,
-    discountTypeId: number | null,
-  ) => Promise<boolean>;
+  onAddProducts: (productIds: number[]) => Promise<boolean>;
+  assignedProductIds: number[];
 }
 
 export function AddProductsModal({
   open,
   onClose,
-  onAddProduct,
+  onAddProducts,
+  assignedProductIds,
 }: AddProductsModalProps) {
-  const {
-    products,
-    isLoading: productsLoading,
-    setSearchQuery,
-  } = useProducts();
-  const { discountTypes, isLoading: discountTypesLoading } = useDiscountTypes();
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [selectedDiscount, setSelectedDiscount] = useState<string>("none");
+  const { products, isLoading: productsLoading } = useProducts();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Filter out products already assigned
+  const availableProducts = useMemo(() => {
+    const assignedSet = new Set(assignedProductIds.map((id) => Number(id)));
+    return products.filter((p) => !assignedSet.has(Number(p.product_id)));
+  }, [products, assignedProductIds]);
+
+  // Filter available products based on search
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery.trim()) return availableProducts;
+    const query = searchQuery.toLowerCase();
+    return availableProducts.filter(
+      (p) =>
+        (p.product_name?.toLowerCase() ?? "").includes(query) ||
+        (p.product_code?.toLowerCase() ?? "").includes(query),
+    );
+  }, [availableProducts, searchQuery]);
+
+  const toggleProduct = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedIds(next);
+  };
+
+  const handleClose = () => {
+    setSearchQuery("");
+    setSelectedIds(new Set());
+    onClose();
+  };
+
   const handleAdd = async () => {
-    if (!selectedProduct) return;
-
+    if (selectedIds.size === 0) return;
     setIsSubmitting(true);
-    const discountId =
-      selectedDiscount === "none" ? null : parseInt(selectedDiscount);
-    const success = await onAddProduct(selectedProduct.product_id, discountId);
-
+    const success = await onAddProducts(Array.from(selectedIds));
     if (success) {
-      setSelectedProduct(null);
-      setSelectedDiscount("none");
-      onClose();
+      handleClose();
     }
     setIsSubmitting(false);
   };
 
-  const handleProductSelect = (product: Product) => {
-    setSelectedProduct(product);
-  };
-
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[80vh]">
-        <DialogHeader>
-          <DialogTitle>Add Products to Supplier</DialogTitle>
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent
+        className="sm:max-w-[500px] h-[80vh] flex flex-col gap-0 p-0"
+        showCloseButton={false}
+      >
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
+          <DialogTitle>Select Products</DialogTitle>
           <DialogDescription>
-            Search and select a product, then choose an optional discount type.
+            Choose multiple products to add to this supplier.
           </DialogDescription>
-        </DialogHeader>
 
-        <div className="space-y-4 mt-4">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <div className="relative mt-4">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              type="search"
-              placeholder="Search products by name or code..."
+              placeholder="Search products..."
+              className="pl-9 h-9"
+              value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8"
-              autoComplete="off"
             />
           </div>
+        </DialogHeader>
 
-          {/* Products List */}
-          <ScrollArea className="h-[300px] border rounded-md">
-            {productsLoading ? (
-              <div className="flex items-center justify-center h-full">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : products.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                No products found
-              </div>
-            ) : (
-              <div className="p-2 space-y-1">
-                {products.map((product) => (
-                  <button
+        <div className="flex-1 overflow-hidden">
+          <ScrollArea className="h-full px-6">
+            <div className="py-2 space-y-1">
+              {productsLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : filteredProducts.length === 0 ? (
+                <div className="text-center py-10 text-sm text-muted-foreground">
+                  {searchQuery ? "No products found" : "All products assigned"}
+                </div>
+              ) : (
+                filteredProducts.map((product) => (
+                  <label
                     key={product.product_id}
-                    onClick={() => handleProductSelect(product)}
-                    className={`w-full text-left p-3 rounded-md transition-colors ${
-                      selectedProduct?.product_id === product.product_id
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-muted"
-                    }`}
+                    className="flex items-center gap-3 p-3 rounded-md hover:bg-muted/50 transition-colors cursor-pointer group"
                   >
-                    <p className="font-medium text-sm">
-                      {product.product_name}
-                    </p>
-                    {product.product_code && (
-                      <p className="text-xs opacity-80 mt-0.5">
-                        Code: {product.product_code}
+                    <Checkbox
+                      checked={selectedIds.has(product.product_id)}
+                      onCheckedChange={() => toggleProduct(product.product_id)}
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium leading-none truncate group-hover:text-primary transition-colors">
+                        {product.product_name}
                       </p>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
-
-          {/* Selected Product & Discount */}
-          {selectedProduct && (
-            <div className="border rounded-md p-4 space-y-3 bg-muted/50">
-              <div>
-                <p className="text-sm font-medium">Selected Product:</p>
-                <p className="text-sm text-muted-foreground">
-                  {selectedProduct.product_name}
-                  {selectedProduct.product_code &&
-                    ` (${selectedProduct.product_code})`}
-                </p>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Discount Type (Optional)
-                </label>
-                <Select
-                  value={selectedDiscount}
-                  onValueChange={setSelectedDiscount}
-                  disabled={discountTypesLoading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="No discount" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No discount</SelectItem>
-                    {discountTypes.map((dt) => (
-                      <SelectItem key={dt.id} value={dt.id.toString()}>
-                        {dt.discount_type}
-                        {dt.total_percent &&
-                          dt.total_percent !==
-                            "0.000000000000000000000000000000" &&
-                          ` (${parseFloat(dt.total_percent).toFixed(1)}%)`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAdd}
-              disabled={!selectedProduct || isSubmitting}
-            >
-              {isSubmitting && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {product.product_code && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {product.product_code}
+                        </p>
+                      )}
+                    </div>
+                  </label>
+                ))
               )}
-              <Plus className="h-4 w-4 mr-2" />
-              Add Product
-            </Button>
-          </div>
+            </div>
+          </ScrollArea>
         </div>
+
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
+          <Button variant="ghost" onClick={handleClose} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAdd}
+            disabled={selectedIds.size === 0 || isSubmitting}
+            className="min-w-[140px]"
+          >
+            {isSubmitting ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              `Add ${selectedIds.size > 0 ? selectedIds.size : ""} Product${selectedIds.size !== 1 ? "s" : ""}`
+            )}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

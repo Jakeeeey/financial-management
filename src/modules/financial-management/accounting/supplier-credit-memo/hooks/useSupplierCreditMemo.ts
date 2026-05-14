@@ -2,7 +2,8 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { toast } from "sonner";
 import type { SupplierCreditMemo, Supplier, ChartOfAccount, CreateMemoPayload, MemoFilters } from "../types";
 
 const API_PATH = "/api/fm/accounting/supplier-credit-memo";
@@ -12,6 +13,8 @@ const DEFAULT_FILTERS: MemoFilters = {
   supplier_id:      "",
   chart_of_account: "",
   status:           "",
+  date_from:        "",
+  date_to:          "",
 };
 
 function extractList<T>(json: unknown): T[] {
@@ -24,25 +27,20 @@ function extractList<T>(json: unknown): T[] {
 
 // ─── Main hook ────────────────────────────────────────────────────────────────
 export function useSupplierCreditMemo() {
-  const [memos,     setMemos]     = useState<SupplierCreditMemo[]>([]);
-  const [total,     setTotal]     = useState(0);
+  const [allMemos,  setAllMemos]  = useState<SupplierCreditMemo[]>([]);  // All loaded memos from API
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState<string | null>(null);
   const [filters,   setFilters]   = useState<MemoFilters>(DEFAULT_FILTERS);
-  const [toast,     setToast]     = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
+  // Load all memos once on mount (no filter dependency)
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const toastId = toast.loading('Loading supplier credit memos...');
     try {
-      const q = new URLSearchParams();
-      if (filters.search)           q.set("search",           filters.search);
-      if (filters.supplier_id)      q.set("supplier_id",      filters.supplier_id);
-      if (filters.chart_of_account) q.set("chart_of_account", filters.chart_of_account);
-      if (filters.status)           q.set("status",           filters.status);
-
-      const res  = await fetch(`${API_PATH}?${q}`);
+      // Load all memos without filters
+      const res  = await fetch(`${API_PATH}`);
       const json: unknown = await res.json();
       if (!res.ok) {
         const msg = typeof json === "object" && json !== null && "message" in json
@@ -51,21 +49,59 @@ export function useSupplierCreditMemo() {
         throw new Error(msg);
       }
       const data = extractList<SupplierCreditMemo>(json);
-      setMemos(data);
-      const jsonObj = json as Record<string, unknown>;
-      setTotal(typeof jsonObj.total === "number" ? jsonObj.total : data.length);
+      setAllMemos(data);
+      toast.success('Supplier credit memos loaded successfully', { id: toastId });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      setError(msg);
+      toast.error(`Failed to load: ${msg}`, { id: toastId });
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
+  // Filter locally using useMemo - all filtering client-side, no API calls
+  const memos = useMemo(() => {
+    return allMemos.filter(m => {
+      // Search filter
+      if (filters.search) {
+        const search = filters.search.toLowerCase();
+        const matches = (m.memo_number?.toLowerCase().includes(search)) ||
+                       (m.reason?.toLowerCase().includes(search)) ||
+                       (m.status?.toLowerCase().includes(search));
+        if (!matches) return false;
+      }
+
+      // Supplier ID filter
+      if (filters.supplier_id && String(m.supplier_id) !== filters.supplier_id) return false;
+
+      // Chart of Account filter
+      if (filters.chart_of_account && String(m.chart_of_account) !== filters.chart_of_account) return false;
+
+      // Status filter
+      if (filters.status && m.status !== filters.status) return false;
+
+      // Date range filters - use string comparison
+      if (filters.date_from) {
+        const memoDate = (m.date || '').split(' ')[0];  // Extract YYYY-MM-DD
+        if (memoDate && memoDate < filters.date_from) return false;
+      }
+      if (filters.date_to) {
+        const memoDate = (m.date || '').split(' ')[0];  // Extract YYYY-MM-DD
+        if (memoDate && memoDate > filters.date_to) return false;
+      }
+
+      return true;
+    });
+  }, [allMemos, filters]);
+
+  const total = memos.length;
+
   const showToast = (message: string, type: "success" | "error" = "success") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
+    if (type === "success") toast.success(message);
+    else toast.error(message);
   };
 
   const updateFilter = <K extends keyof MemoFilters>(key: K, value: MemoFilters[K]) =>
@@ -85,7 +121,8 @@ export function useSupplierCreditMemo() {
   return {
     memos, total, loading, error,
     filters, updateFilter, clearFilters, hasFilters,
-    toast, showToast,
+    toast: null,
+    showToast,
     modalOpen, setModalOpen,
     stats,
     refetch: load,
@@ -104,9 +141,12 @@ export function useSuppliers() {
       try {
         const r    = await fetch(`${API_PATH}?action=suppliers`);
         const json: unknown = await r.json();
-        if (!cancelled) setSuppliers(extractList<Supplier>(json));
+        // Only include suppliers with supplier_type === 'TRADE'
+        const allSuppliers = extractList<Supplier & { supplier_type?: string }>(json);
+        const tradeSuppliers = allSuppliers.filter(s => s.supplier_type === 'TRADE');
+        if (!cancelled) setSuppliers(tradeSuppliers);
       } catch {
-        // silent — dropdowns fail gracefully
+        // silent  dropdowns fail gracefully
       } finally {
         if (!cancelled) setLoading(false);
       }
