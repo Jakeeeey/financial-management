@@ -316,10 +316,19 @@ export default function EditAssetModal({
                     </Button>
                   </div>
                 ) : (
-                  <div className="text-center p-4">
-                    <UploadCloud className="mx-auto h-6 w-6 text-muted-foreground" />
-                    <p className="text-sm font-medium">Click to update image</p>
-                  </div>
+                  <>
+                    <div className="p-4">
+                      <UploadCloud className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-medium">
+                        Click to upload or drag and drop
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        PNG, JPG or WebP (max. 2MB)
+                      </p>
+                    </div>
+                  </>
                 )}
                 <input
                   id="edit-image-upload"
