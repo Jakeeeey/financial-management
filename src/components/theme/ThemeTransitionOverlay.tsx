@@ -1,8 +1,8 @@
 // src/components/theme/ThemeTransitionOverlay.tsx
 "use client"
 
-import { useTheme } from "@/components/theme/ThemeProvider"
 import { AnimatePresence, motion } from "framer-motion"
+import { useTheme } from "next-themes"
 import * as React from "react"
 
 // ─────────────────────────────────────────────

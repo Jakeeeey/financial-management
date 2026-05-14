@@ -1,7 +1,6 @@
 // src/components/main-dashboard/user-menu.tsx
 "use client";
 
-import { useTheme } from "@/components/theme/ThemeProvider";
 import { useThemeTransition } from "@/components/theme/ThemeTransitionOverlay";
 import {
     Activity,
@@ -12,6 +11,7 @@ import {
     Settings,
     User,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 
 import {

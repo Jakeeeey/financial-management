@@ -1,7 +1,6 @@
 // src/components/shared/app-sidebar/nav-user.tsx
 "use client"
 
-import { useTheme } from "@/components/theme/ThemeProvider"
 import {
     ChevronsUpDown,
     KeyRound,
@@ -13,6 +12,7 @@ import {
     User,
 } from "lucide-react"
 import Link from "next/link"
+import { useTheme } from "next-themes"
 import { usePathname, useRouter } from "next/navigation"
 import * as React from "react"
 
