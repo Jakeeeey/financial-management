@@ -63,6 +63,7 @@ type ReceivePayload = {
 type DetailRow = {
     id?: number | string | null;
     customer_memo_id?: number | string | { id?: number | string | null } | null;
+    claims_transmittal_id?: number | string | { id?: number | string | null } | null;
 };
 
 type PatchBody = { received_at: string };
@@ -167,7 +168,7 @@ export async function DELETE(req: NextRequest) {
                 ? Number((cmRaw as { id?: unknown }).id ?? 0)
                 : Number(cmRaw ?? 0);
 
-        const tRaw = (row as any)?.claims_transmittal_id;
+        const tRaw = row?.claims_transmittal_id;
         const transmittalId =
             tRaw && typeof tRaw === "object"
                 ? Number((tRaw as { id?: unknown }).id ?? 0)
