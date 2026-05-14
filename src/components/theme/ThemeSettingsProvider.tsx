@@ -1,14 +1,14 @@
 // src/components/theme/ThemeSettingsProvider.tsx
 "use client";
 
+import { useTheme } from "@/components/theme/ThemeProvider";
 import * as React from "react";
-import { useTheme } from "next-themes";
 
 import {
+    accentTripletsForMode,
     DEFAULT_THEME_SETTINGS,
     loadSettingsFromStorage,
     saveSettingsToStorage,
-    accentTripletsForMode,
     type ThemeSettings,
 } from "./theme-settings";
 import { ThemeSettingsProviderContext } from "./useThemeSettings";

@@ -5,6 +5,13 @@ const nextConfig: NextConfig = {
     allowedDevOrigins: ["localhost",
         "100.70.24.30"
     ],
+    images: {
+        localPatterns: [
+            {
+                pathname: "/**",
+            },
+        ],
+    },
 };
 
 export default nextConfig;

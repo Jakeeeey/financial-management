@@ -1,5 +1,7 @@
+// src/components/ui/sonner.tsx
 "use client"
 
+import { useTheme } from "@/components/theme/ThemeProvider"
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -7,7 +9,6 @@ import {
   OctagonXIcon,
   TriangleAlertIcon,
 } from "lucide-react"
-import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
 const Toaster = ({ ...props }: ToasterProps) => {
@@ -38,3 +39,4 @@ const Toaster = ({ ...props }: ToasterProps) => {
 }
 
 export { Toaster }
+

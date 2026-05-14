@@ -1,19 +1,24 @@
+// src/components/main-dashboard/user-menu.tsx
 "use client";
 
-import * as React from "react";
-import { useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { useThemeTransition } from "@/components/theme/ThemeTransitionOverlay";
 import {
-    LogOut,
-    User,
-    Settings,
-    Moon,
-    Key,
     Activity,
     ChevronDown,
+    Key,
+    LogOut,
+    Moon,
+    Settings,
+    User,
 } from "lucide-react";
-import { useThemeTransition } from "@/components/theme/ThemeTransitionOverlay";
+import { useRouter } from "next/navigation";
 
+import {
+    Avatar,
+    AvatarFallback,
+    AvatarImage,
+} from "@/components/ui/avatar";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -21,11 +26,6 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-    Avatar,
-    AvatarFallback,
-    AvatarImage,
-} from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
@@ -81,7 +81,7 @@ export function UserMenu({ fullName, email }: UserMenuProps) {
                             <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
                         </div>
                     </div>
-                    
+
                     <div className="hidden flex-col items-start leading-none sm:flex">
                         <span className="text-[11px] font-black tracking-tight uppercase italic">{fullName}</span>
                         <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 opacity-60 mt-0.5 uppercase tracking-wider">{email.split('@')[0]}</span>
@@ -90,14 +90,14 @@ export function UserMenu({ fullName, email }: UserMenuProps) {
                     <ChevronDown className="h-3 w-3 text-slate-400 dark:text-slate-500" />
                 </button>
             </DropdownMenuTrigger>
-            
-            <DropdownMenuContent 
+
+            <DropdownMenuContent
                 className={cn(
                     "w-60 rounded-2xl border p-1 shadow-2xl backdrop-blur-3xl transition-all",
                     "bg-white/80 dark:bg-slate-950/80",
                     "border-slate-900/10 dark:border-white/10"
-                )} 
-                align="end" 
+                )}
+                align="end"
                 forceMount
             >
                 {/* Account Context Header */}
@@ -121,7 +121,7 @@ export function UserMenu({ fullName, email }: UserMenuProps) {
 
                 <DropdownMenuGroup>
                     {/* Dark Mode Switch */}
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                         className="group flex items-center justify-between rounded-xl px-2.5 py-2 cursor-pointer transition-all hover:bg-slate-900/5 dark:hover:bg-white/5 focus:bg-slate-900/5 dark:focus:bg-white/5"
                         onSelect={(e) => {
                             e.preventDefault();
@@ -134,20 +134,20 @@ export function UserMenu({ fullName, email }: UserMenuProps) {
                             </div>
                             <span className="text-[10px] font-bold uppercase tracking-wide">Interface Mode</span>
                         </div>
-                        <Switch 
-                            checked={isDark} 
+                        <Switch
+                            checked={isDark}
                             onCheckedChange={(checked) => triggerTransition(checked ? "dark" : "light")}
                             className="scale-[0.6] data-[state=checked]:bg-cyan-500"
                         />
                     </DropdownMenuItem>
-                    
+
                     {[
                         { icon: User, label: "Profile Blueprint", sub: "Settings" },
                         { icon: Key, label: "Security Access", sub: "Auth" },
                         { icon: Activity, label: "Ops Activity", sub: "Log" },
                         { icon: Settings, label: "System Config", sub: "Prefs" },
                     ].map((item, i) => (
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
                             key={i}
                             className="group flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 cursor-pointer transition-all hover:bg-slate-900/5 dark:hover:bg-white/5 mt-0.5 focus:bg-slate-900/5 dark:focus:bg-white/5"
                         >
@@ -164,7 +164,7 @@ export function UserMenu({ fullName, email }: UserMenuProps) {
 
                 <div className="h-px bg-slate-900/5 dark:bg-white/5 mx-1.5 my-1" />
 
-                <DropdownMenuItem 
+                <DropdownMenuItem
                     onClick={handleLogout}
                     className="group flex items-center gap-2.5 rounded-xl px-2.5 py-2 cursor-pointer text-rose-500 transition-all hover:bg-rose-500/5 focus:bg-rose-500/5"
                 >

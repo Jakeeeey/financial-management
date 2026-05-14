@@ -1,19 +1,19 @@
 // src/app/settings/settings-appearance.tsx
 "use client";
 
-import * as React from "react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/theme/ThemeProvider";
 import { Check, Monitor, Moon, Sun } from "lucide-react";
+import * as React from "react";
 
 import { ACCENTS, DEFAULT_THEME_SETTINGS, DensityMode, clamp } from "@/components/theme/theme-settings";
 import { useThemeSettings } from "@/components/theme/useThemeSettings";
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
 function AccentSwatch({ hsl }: { hsl: string }) {

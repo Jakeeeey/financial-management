@@ -1,19 +1,20 @@
+// src/components/shared/app-sidebar/nav-user.tsx
 "use client"
 
-import * as React from "react"
-import Link from "next/link"
-import { useRouter, usePathname } from "next/navigation"
+import { useTheme } from "@/components/theme/ThemeProvider"
 import {
     ChevronsUpDown,
-    LogOut,
-    Settings,
-    User,
     KeyRound,
-    ShieldCheck,
+    LogOut,
     Moon,
+    Settings,
+    ShieldCheck,
     Sun,
+    User,
 } from "lucide-react"
-import { useTheme } from "next-themes"
+import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
+import * as React from "react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {

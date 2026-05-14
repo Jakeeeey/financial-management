@@ -1,8 +1,9 @@
+// src/components/theme/ThemeTransitionOverlay.tsx
 "use client"
 
+import { useTheme } from "@/components/theme/ThemeProvider"
+import { AnimatePresence, motion } from "framer-motion"
 import * as React from "react"
-import { useTheme } from "next-themes"
-import { motion, AnimatePresence } from "framer-motion"
 
 // ─────────────────────────────────────────────
 // Context so ModeToggle can trigger the animation
@@ -87,7 +88,7 @@ export function ThemeTransitionProvider({ children }: { children: React.ReactNod
                 {active && (
                     <motion.div
                         key="theme-veil"
-                        className="fixed inset-0 z-[200] pointer-events-none overflow-hidden"
+                        className="fixed inset-0 z-200 pointer-events-none overflow-hidden"
                     >
                         {/* Diagonal band sweep */}
                         {bands.map((color, i) => {
@@ -147,7 +148,7 @@ export function ThemeTransitionProvider({ children }: { children: React.ReactNod
 
                             {/* Animated bar */}
                             <motion.div
-                                className="h-[2px] rounded-full"
+                                className="h-0.5 rounded-full"
                                 style={{ background: subColor }}
                                 initial={{ width: 0 }}
                                 animate={{ width: phase === "hold" ? "80px" : 0 }}
