@@ -267,10 +267,10 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                             </div>
                             <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 custom-scrollbar">
                               {log.expense_logs.map((exRev) => (
-                                <div key={exRev.id} className="min-w-[180px] max-w-[220px] border border-amber-100 bg-amber-50/5 rounded-xl p-3 shrink-0 flex flex-col gap-1.5 shadow-sm">
+                                <div key={exRev.log_id} className="min-w-[180px] max-w-[220px] border border-amber-100 bg-amber-50/5 rounded-xl p-3 shrink-0 flex flex-col gap-1.5 shadow-sm">
                                   <div className="flex justify-between items-center">
                                     <span className="text-[8px] font-black text-amber-700/60 uppercase truncate max-w-[80px]">{exRev.editor_name}</span>
-                                    <span className="text-[7px] font-bold text-muted-foreground/40 uppercase">{exRev.action}</span>
+                                    <Badge variant="outline" className="text-[7px] font-bold h-3 px-1">{exRev.action} V{exRev.version}</Badge>
                                   </div>
                                   <p className="text-[9px] font-black text-foreground/80 line-clamp-1">{exRev.particulars}</p>
                                   <div className="flex justify-between items-center">
