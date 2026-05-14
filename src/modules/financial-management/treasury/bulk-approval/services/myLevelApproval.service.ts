@@ -3,17 +3,13 @@ import type { NextResponse } from "next/server";
 import { directusFetch } from "./directus.service";
 import { jsonResponse } from "./http";
 import type {
-  ApprovalVoteRow,
   BulkApprovalContext,
   ConcernItemResponse,
-  DirectusAggregateCountResponse,
-  DirectusApproverRow,
   DirectusItemResponse,
   DirectusListResponse,
   DisbursementDraftRow,
   DisbursementPayableDraftLogRow,
   DisbursementPayableDraftRow,
-  DraftLifecycleStatus,
   DraftRevisionLogResponse,
   DraftRowResponse,
   ExpenseDraftLogRow,
@@ -21,7 +17,6 @@ import type {
   ExpenseRevisionLogResponse,
   PayableResponse,
   PostBody,
-  VoteStatus,
   ActivityLogDetailResponse,
 } from "./bulkApproval.types";
 import {
@@ -32,16 +27,12 @@ import {
   createExpenseLog,
   fetchCoaMap,
   fetchDivisionMap,
-  fetchExpenseById,
   fetchMyVotes,
   fetchSupplierMap,
   fetchUserMap,
   getExpenseEmployeeId,
-  getVirtualDraftKey,
-  getVirtualDraftId,
   getWeekEndFromStart,
   getWeekStart,
-  hashVirtualKey,
   insertExpenseIntoPayableDraft,
   nowManila,
   parseTier,
@@ -79,9 +70,6 @@ export async function handleMyLevelApprovalGetResource(params: {
 
       const filter: Record<string, unknown> = {
         division_id: filterDivId ? { _eq: filterDivId } : { _in: myDivisionIds },
-        status: {
-          _nin: ["Rejected"],
-        },
       };
 
       const query = buildFilterQuery(
@@ -174,7 +162,16 @@ export async function handleMyLevelApprovalGetResource(params: {
           total_amount: toNumber(draft.total_amount),
           remarks: draft.remarks ?? null,
           status,
+          division_id: divisionId,
           division_name: divisionMap.get(divisionId) ?? `Division #${divisionId}`,
+          requires_final_top_sheet:
+            currentTier >= (maxLevelByDivision[divisionId] ?? currentTier) &&
+            approverRecords.some(
+              (r) =>
+                toNumericId(r.division_id) === divisionId &&
+                toNumber(r.approver_heirarchy) ===
+                  (maxLevelByDivision[divisionId] ?? currentTier)
+            ),
           approval_version: approvalVersion,
           transaction_date: draft.transaction_date ?? null,
           date_created: draft.date_created ?? draft.transaction_date ?? "",
@@ -182,12 +179,23 @@ export async function handleMyLevelApprovalGetResource(params: {
           max_level: maxLevelByDivision[divisionId] ?? currentTier,
           approvers_per_level: approversPerLevelByDivision[divisionId] ?? {},
           my_vote: myVote,
-          can_vote: canUserVote({
-            approverRecords,
-            divisionId,
-            currentTier,
-            myVote,
-          }),
+          can_vote:
+            !(
+              currentTier >= (maxLevelByDivision[divisionId] ?? currentTier) &&
+              approverRecords.some(
+                (r) =>
+                  toNumericId(r.division_id) === divisionId &&
+                  toNumber(r.approver_heirarchy) ===
+                    (maxLevelByDivision[divisionId] ?? currentTier)
+              )
+            ) &&
+            canUserVote({
+              approverRecords,
+              divisionId,
+              currentTier,
+              status,
+              myVote,
+            }),
           has_concern:
             status.toLowerCase() === "with concern" ||
             Boolean(draft.remarks?.includes("[Contains Returned Items]")),
@@ -252,6 +260,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             has_concern: true,
           };
         })
+        .filter(() => true)
         .sort((a, b) => {
           const aDate = a.transaction_date ?? "";
           const bDate = b.transaction_date ?? "";
@@ -334,6 +343,14 @@ export async function handleMyLevelApprovalGetResource(params: {
             total_amount: total,
             remarks: `[Virtual Returned Batch] ${resolved.items.length} item(s) for re-verification.`,
             status: tierStatus(tier),
+            division_id: divisionId,
+            requires_final_top_sheet:
+              tier >= (maxLevelByDivision[divisionId] ?? tier) &&
+              approverRecords.some(
+                (r) =>
+                  r.division_id === divisionId &&
+                  r.approver_heirarchy === (maxLevelByDivision[divisionId] ?? tier)
+              ),
             approval_version: 1,
             transaction_date: first.transaction_date ?? null,
             date_created: first.transaction_date ?? "",
@@ -492,6 +509,15 @@ export async function handleMyLevelApprovalGetResource(params: {
           total_amount: toNumber(draft.total_amount),
           remarks: draft.remarks ?? null,
           status: draft.status ?? "Submitted",
+          division_id: divisionId,
+          requires_final_top_sheet:
+            currentTier >= (maxLevelByDivision[divisionId] ?? currentTier) &&
+            approverRecords.some(
+              (r) =>
+                toNumericId(r.division_id) === divisionId &&
+                toNumber(r.approver_heirarchy) ===
+                  (maxLevelByDivision[divisionId] ?? currentTier)
+            ),
           approval_version: approvalVersion,
           transaction_date: draft.transaction_date ?? null,
           date_created: draft.date_created ?? draft.transaction_date ?? "",
@@ -508,12 +534,23 @@ export async function handleMyLevelApprovalGetResource(params: {
         expense_logs: [],
         my_level: currentTier,
         my_vote: myVote,
-        can_vote: canUserVote({
-          approverRecords,
-          divisionId,
-          currentTier,
-          myVote,
-        }),
+        can_vote:
+          !(
+            currentTier >= (maxLevelByDivision[divisionId] ?? currentTier) &&
+            approverRecords.some(
+              (r) =>
+                toNumericId(r.division_id) === divisionId &&
+                toNumber(r.approver_heirarchy) ===
+                  (maxLevelByDivision[divisionId] ?? currentTier)
+            )
+          ) &&
+          canUserVote({
+            approverRecords,
+            divisionId,
+            currentTier,
+            status: draft.status ?? "Submitted",
+            myVote,
+          }),
         attachments: attachments.map((a) => ({
           file_url: a.file_url ?? "",
           file_name: a.file_name ?? "Attachment",
@@ -810,7 +847,6 @@ export async function submitMyLevelApprovalVote(params: {
 
     let draft: DisbursementDraftRow | null = null;
     let currentTier = 1;
-    let currentVersion = 1;
 
     if (isVirtual) {
       const resolved = await resolveVirtualItemsById(draftId, myDivisionIds);
@@ -882,7 +918,7 @@ export async function submitMyLevelApprovalVote(params: {
       draft = createdDraft;
       draftId = toNumericId(createdDraft.id) ?? 0;
       currentTier = tier;
-      currentVersion = 1;
+
 
       for (const expense of resolved.items) {
         const expenseId = toNumericId(expense.id);
@@ -998,8 +1034,30 @@ export async function submitMyLevelApprovalVote(params: {
         return jsonResponse({ error: "Forbidden" }, { status: 403 });
       }
 
-      currentVersion = toNumber(draft.approval_version, 1);
       currentTier = parseTier(draft.status ?? "Submitted");
+    }
+
+    const draftDivisionId = toNumericId(draft?.division_id) ?? 0;
+    const maxLevelForDivision =
+      params.context.maxLevelByDivision[draftDivisionId] ?? currentTier;
+    const isUserFinalApproverForDraft = approverRecords.some(
+      (r) =>
+        toNumericId(r.division_id) === draftDivisionId &&
+        toNumber(r.approver_heirarchy) === maxLevelForDivision
+    );
+
+    if (!isVirtual && currentTier >= maxLevelForDivision && isUserFinalApproverForDraft) {
+      return jsonResponse(
+        {
+          error: "Final approval must be handled through Final Top Sheets.",
+          message:
+            "This draft is already at your final approval level. Please use the Final Top Sheets tab to review and approve the matrix.",
+          division_id: draftDivisionId,
+          current_tier: currentTier,
+          final_tier: maxLevelForDivision,
+        },
+        { status: 409 }
+      );
     }
 
     const voteRes = await processDraftApproval({

@@ -28,7 +28,6 @@ import {
   finalizeDisbursementDraft,
   getApprovalContextsForUser,
   getExpenseEmployeeId,
-  insertExpenseIntoPayableDraft,
   isFinalHeaderDecisionBody,
   makeFinalGroupKey,
   normalizeFinalDecisionStatus,
@@ -81,12 +80,34 @@ type PayableDraftLookupRow = Pick<
   "id" | "disbursement_id" | "expense_id" | "amount"
 >;
 
-function getNestedExpenseId(value: DisbursementPayableDraftRow["expense_id"]): number | null {
+type PayableDraftExpenseLinkRow = {
+  id?: number | string | null;
+  disbursement_id?: number | string | { id?: number | string | null } | null;
+  expense_id?:
+    | number
+    | string
+    | {
+        id?: number | string | null;
+        header_id?: number | string | { id?: number | string | null } | null;
+      }
+    | null;
+  amount?: number | string | null;
+};
+
+function getNestedExpenseId(value: DisbursementPayableDraftRow["expense_id"] | PayableDraftExpenseLinkRow["expense_id"]): number | null {
   if (typeof value === "object" && value !== null) {
     return toNumericId(value.id);
   }
 
   return toNumericId(value);
+}
+
+function getPayableExpenseHeaderId(value: PayableDraftExpenseLinkRow["expense_id"]): number | null {
+  if (typeof value === "object" && value !== null) {
+    return toNumericId(value.header_id);
+  }
+
+  return null;
 }
 
 function getPipelineStatuses(maxLevel: number): string[] {
@@ -137,12 +158,13 @@ function getActionableStatusesForDivision(params: {
     const maxLevel = params.context.maxLevelByDivision[params.divisionId] ?? record.approver_heirarchy;
     const isFinalApprover = record.approver_heirarchy === maxLevel;
 
-    // Legacy/expense-only guard:
-    // Older Final Top Sheet logic incorrectly moved disbursement_draft.status to "With Concern".
-    // Since this tab now only updates expense_draft rows, the final approver must still be able
-    // to act on those expense rows while the real draft is in this legacy concern state.
+    // Final approvers must be able to act on expense_draft rows even after the disbursement_draft
+    // transitions to "Approved" (i.e. when a sequential batch fires a second request after the
+    // first already finalized the draft). "With Concern" is kept for the legacy concern-state guard.
+    // "Approved" is added so that mid-batch requests are not 409'd by hasActionableDraftForPeriod.
     if (isFinalApprover) {
       statuses.add("With Concern");
+      statuses.add("Approved");
     }
   }
 
@@ -212,44 +234,169 @@ function parseDraftTier(status: string): number {
   return 0;
 }
 
-async function getActiveDraftIdsForDivision(params: {
+
+
+
+
+type LinkedTopSheetPayable = {
+  payable_id: number;
+  draft_id: number;
+  expense_id: number;
+  header_id: number;
+};
+
+type LinkedTopSheetData = {
+  visibleDrafts: { id: number; division_id: number; status: string; can_act: boolean; current_tier: number }[];
+  draftStatuses: string[];
+  canAct: boolean;
+  currentTier: number;
+  requiredApproverLevel: number;
+  headers: ExpenseDraftHeaderRow[];
+  headerIds: number[];
+  payables: LinkedTopSheetPayable[];
+  expenseIds: number[];
+};
+
+async function resolveLinkedTopSheetData(params: {
   divisionId: number;
+  periodFrom?: string;
+  periodTo?: string;
   context: BulkApprovalContext;
-}) {
-  const targetStatuses = getActionableStatusesForDivision(params);
+  actionableOnly?: boolean;
+}): Promise<LinkedTopSheetData> {
+  const visibleDraftResult = await getVisibleDraftsForDivision({
+    divisionId: params.divisionId,
+    context: params.context,
+  });
 
-  if (!targetStatuses.length) return [];
+  const visibleDrafts = params.actionableOnly
+    ? visibleDraftResult.drafts.filter((draft) => draft.can_act)
+    : visibleDraftResult.drafts;
 
-  const draftQuery = new URLSearchParams({
-    filter: JSON.stringify({
-      division_id: { _eq: params.divisionId },
-      status: { _in: targetStatuses },
-    }),
-    fields: "id",
-    limit: "-1",
-  }).toString();
+  const draftIds = visibleDrafts.map((draft) => draft.id);
+  const draftStatuses = [...new Set(visibleDrafts.map((draft) => draft.status))];
+  const canAct = visibleDrafts.some((draft) => draft.can_act);
+  const currentTier = visibleDrafts.reduce((max, draft) => Math.max(max, draft.current_tier), 0);
+  const requiredApproverLevel = params.context.maxLevelByDivision[params.divisionId] ?? currentTier;
 
-  const draftRes = await directusFetch<DirectusListResponse<{ id: number | string }>>(
-    `/items/disbursement_draft?${draftQuery}`
+  if (!draftIds.length) {
+    return {
+      visibleDrafts,
+      draftStatuses,
+      canAct,
+      currentTier,
+      requiredApproverLevel,
+      headers: [],
+      headerIds: [],
+      payables: [],
+      expenseIds: [],
+    };
+  }
+
+  const payableQuery = buildFilterQuery(
+    { disbursement_id: { _in: draftIds } },
+    "id,disbursement_id,expense_id,expense_id.id,expense_id.header_id",
+    { limit: "-1" }
   );
 
-  return (draftRes.ok ? draftRes.data.data ?? [] : [])
-    .map((draft) => toNumericId(draft.id))
-    .filter((id): id is number => Boolean(id));
-}
+  const payableRes = await directusFetch<DirectusListResponse<PayableDraftExpenseLinkRow>>(
+    `/items/disbursement_payables_draft?${payableQuery}`
+  );
 
-async function getHeaderIdsForPeriod(params: {
-  divisionId: number;
-  periodFrom: string;
-  periodTo: string;
-}) {
+  if (!payableRes.ok) {
+    return {
+      visibleDrafts,
+      draftStatuses,
+      canAct,
+      currentTier,
+      requiredApproverLevel,
+      headers: [],
+      headerIds: [],
+      payables: [],
+      expenseIds: [],
+    };
+  }
+
+  const rawPayables = payableRes.data.data ?? [];
+  const expenseIds = [
+    ...new Set(
+      rawPayables
+        .map((payable) => getNestedExpenseId(payable.expense_id))
+        .filter((id): id is number => Boolean(id))
+    ),
+  ];
+
+  if (!expenseIds.length) {
+    return {
+      visibleDrafts,
+      draftStatuses,
+      canAct,
+      currentTier,
+      requiredApproverLevel,
+      headers: [],
+      headerIds: [],
+      payables: [],
+      expenseIds: [],
+    };
+  }
+
+  const expenseHeaderMap = new Map<number, number>();
+
+  for (const payable of rawPayables) {
+    const expenseId = getNestedExpenseId(payable.expense_id);
+    const headerId = getPayableExpenseHeaderId(payable.expense_id);
+    if (expenseId && headerId) expenseHeaderMap.set(expenseId, headerId);
+  }
+
+  const missingHeaderExpenseIds = expenseIds.filter((expenseId) => !expenseHeaderMap.has(expenseId));
+
+  if (missingHeaderExpenseIds.length > 0) {
+    const fallbackExpenseQuery = buildFilterQuery(
+      { id: { _in: missingHeaderExpenseIds } },
+      "id,header_id",
+      { limit: "-1" }
+    );
+
+    const fallbackExpenseRes = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
+      `/items/expense_draft?${fallbackExpenseQuery}`
+    );
+
+    if (fallbackExpenseRes.ok) {
+      for (const expense of fallbackExpenseRes.data.data ?? []) {
+        const expenseId = toNumericId(expense.id);
+        const headerId = toNumericId(expense.header_id);
+        if (expenseId && headerId) expenseHeaderMap.set(expenseId, headerId);
+      }
+    }
+  }
+
+  const linkedHeaderIds = [...new Set([...expenseHeaderMap.values()].filter((id) => id > 0))];
+
+  if (!linkedHeaderIds.length) {
+    return {
+      visibleDrafts,
+      draftStatuses,
+      canAct,
+      currentTier,
+      requiredApproverLevel,
+      headers: [],
+      headerIds: [],
+      payables: [],
+      expenseIds: [],
+    };
+  }
+
+  const headerFilter: Record<string, unknown> = {
+    id: { _in: linkedHeaderIds },
+  };
+
+  if (params.periodFrom) headerFilter.period_from = { _eq: params.periodFrom };
+  if (params.periodTo) headerFilter.period_to = { _eq: params.periodTo };
+
   const headerQuery = buildFilterQuery(
-    {
-      division_id: { _eq: params.divisionId },
-      period_from: { _eq: params.periodFrom },
-      period_to: { _eq: params.periodTo },
-    },
-    "id,division_id,period_from,period_to,created_by,created_at"
+    headerFilter,
+    "id,division_id,period_from,period_to,created_by,created_at",
+    { limit: "-1" }
   );
 
   const headerRes = await directusFetch<DirectusListResponse<ExpenseDraftHeaderRow>>(
@@ -257,15 +404,56 @@ async function getHeaderIdsForPeriod(params: {
   );
 
   if (!headerRes.ok) {
-    return { ok: false as const, status: headerRes.status, data: headerRes.data, headerIds: [] as number[], headers: [] as ExpenseDraftHeaderRow[] };
+    return {
+      visibleDrafts,
+      draftStatuses,
+      canAct,
+      currentTier,
+      requiredApproverLevel,
+      headers: [],
+      headerIds: [],
+      payables: [],
+      expenseIds: [],
+    };
   }
 
   const headers = headerRes.data.data ?? [];
   const headerIds = headers
     .map((header) => toNumericId(header.id))
     .filter((id): id is number => Boolean(id));
+  const headerIdSet = new Set(headerIds);
 
-  return { ok: true as const, status: 200, data: null, headerIds, headers };
+  const payables: LinkedTopSheetPayable[] = rawPayables
+    .map((payable) => {
+      const payableId = toNumericId(payable.id) ?? 0;
+      const draftId = toNumericId(payable.disbursement_id) ?? 0;
+      const expenseId = getNestedExpenseId(payable.expense_id) ?? 0;
+      const headerId = expenseHeaderMap.get(expenseId) ?? 0;
+
+      return { payable_id: payableId, draft_id: draftId, expense_id: expenseId, header_id: headerId };
+    })
+    .filter(
+      (payable) =>
+        payable.payable_id > 0 &&
+        payable.draft_id > 0 &&
+        payable.expense_id > 0 &&
+        payable.header_id > 0 &&
+        headerIdSet.has(payable.header_id)
+    );
+
+  const scopedExpenseIds = [...new Set(payables.map((payable) => payable.expense_id))];
+
+  return {
+    visibleDrafts,
+    draftStatuses,
+    canAct,
+    currentTier,
+    requiredApproverLevel,
+    headers,
+    headerIds,
+    payables,
+    expenseIds: scopedExpenseIds,
+  };
 }
 
 export async function getExpenseHeaderGroups(params: {
@@ -274,187 +462,123 @@ export async function getExpenseHeaderGroups(params: {
   const { myDivisionIds, maxLevelByDivision } = params.context;
   if (!myDivisionIds.length) return [];
 
-  const allVisibleDrafts: {
-    id: number;
-    division_id: number;
-    status: string;
-    can_act: boolean;
-    current_tier: number;
-  }[] = [];
-
-  for (const divisionId of myDivisionIds) {
-    const visible = await getVisibleDraftsForDivision({ divisionId, context: params.context });
-    allVisibleDrafts.push(...visible.drafts);
-  }
-
-  if (!allVisibleDrafts.length) return [];
-
-  const draftIds = allVisibleDrafts.map((draft) => draft.id);
-  const draftById = new Map(allVisibleDrafts.map((draft) => [draft.id, draft]));
-  const headerToDraftIds = new Map<number, Set<number>>();
-
-  const payableQuery = new URLSearchParams({
-    "filter[disbursement_id][_in]": draftIds.join(","),
-    fields: "disbursement_id,expense_id.header_id",
-    limit: "-1",
-  }).toString();
-
-  const payableRes = await directusFetch<
-    DirectusListResponse<{
-      disbursement_id?: number | string | { id?: number | string } | null;
-      expense_id?: { header_id?: number | string | null } | number | null;
-    }>
-  >(`/items/disbursement_payables_draft?${payableQuery}`);
-
-  const headerIds = [
-    ...new Set(
-      (payableRes.ok ? payableRes.data.data ?? [] : [])
-        .map((payable) => {
-          const draftId =
-            typeof payable.disbursement_id === "object" && payable.disbursement_id !== null
-              ? toNumericId(payable.disbursement_id.id)
-              : toNumericId(payable.disbursement_id);
-
-          const headerId =
-            typeof payable.expense_id === "object" && payable.expense_id !== null
-              ? toNumericId(payable.expense_id.header_id)
-              : null;
-
-          if (draftId && headerId) {
-            const existing = headerToDraftIds.get(headerId) ?? new Set<number>();
-            existing.add(draftId);
-            headerToDraftIds.set(headerId, existing);
-          }
-
-          return headerId;
-        })
-        .filter((id): id is number => Boolean(id))
-    ),
-  ];
-
-  if (!headerIds.length) return [];
-
-  const headerQuery = buildFilterQuery(
-    { id: { _in: headerIds } },
-    "id,division_id,period_from,period_to,created_by,created_at",
-    { sort: "-period_from,-period_to" }
-  );
-
-  const headerRes = await directusFetch<DirectusListResponse<ExpenseDraftHeaderRow>>(
-    `/items/expense_draft_header?${headerQuery}`
-  );
-  if (!headerRes.ok) return [];
-
-  const headers = headerRes.data.data ?? [];
-  const normalizedHeaders = headers
-    .map((header) => ({
-      id: toNumericId(header.id) ?? 0,
-      division_id: toNumericId(header.division_id) ?? 0,
-      period_from: toStringOrNull(header.period_from) ?? "",
-      period_to: toStringOrNull(header.period_to) ?? "",
-    }))
-    .filter(
-      (header) =>
-        header.id > 0 &&
-        header.division_id > 0 &&
-        Boolean(header.period_from) &&
-        Boolean(header.period_to)
-    );
-
-  if (!normalizedHeaders.length) return [];
-
-  const allHeaderIds = normalizedHeaders.map((header) => header.id);
-  const expenseQuery = buildFilterQuery(
-    { header_id: { _in: allHeaderIds } },
-    "id,header_id,encoded_by,particulars,division_id,transaction_date,amount,status,remarks,payee,attachment_url"
-  );
-
-  const expenseRes = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
-    `/items/expense_draft?${expenseQuery}`
-  );
-  const expenses = expenseRes.ok ? expenseRes.data.data ?? [] : [];
-
   const divisionMap = await fetchDivisionMap(myDivisionIds);
   const groupMap = new Map<
     string,
     FinalHeaderGroupResponse & {
       header_ids: number[];
       draft_ids: number[];
-      draft_statuses: string[];
-      can_act: boolean;
-      is_waiting: boolean;
-      current_tier: number;
-      required_approver_level: number;
+      expense_ids: number[];
     }
   >();
 
-  for (const header of normalizedHeaders) {
-    const key = makeFinalGroupKey({
-      divisionId: header.division_id,
-      periodFrom: header.period_from,
-      periodTo: header.period_to,
+  for (const approvalDivisionId of myDivisionIds) {
+    const linked = await resolveLinkedTopSheetData({
+      divisionId: approvalDivisionId,
+      context: params.context,
     });
 
-    const relatedDraftIds = [...(headerToDraftIds.get(header.id) ?? new Set<number>())];
-    const relatedDrafts = relatedDraftIds
-      .map((draftId) => draftById.get(draftId))
-      .filter((draft): draft is { id: number; division_id: number; status: string; can_act: boolean; current_tier: number } => Boolean(draft));
+    if (!linked.payables.length || !linked.headers.length || !linked.expenseIds.length) continue;
 
-    const relatedStatuses = [...new Set(relatedDrafts.map((draft) => draft.status))];
-    const canAct = relatedDrafts.some((draft) => draft.can_act);
-    const currentTier = relatedDrafts.reduce((max, draft) => Math.max(max, draft.current_tier), 0);
-    const requiredLevel = maxLevelByDivision[header.division_id] ?? currentTier;
+    const headerById = new Map(
+      linked.headers
+        .map((header) => {
+          const id = toNumericId(header.id);
+          return id ? [id, header] as const : null;
+        })
+        .filter((entry): entry is readonly [number, ExpenseDraftHeaderRow] => Boolean(entry))
+    );
 
-    const existing = groupMap.get(key);
 
-    if (existing) {
-      existing.header_count += 1;
-      existing.header_ids.push(header.id);
-      existing.header_id = Math.min(existing.header_id, header.id);
-      existing.draft_ids = [...new Set([...existing.draft_ids, ...relatedDraftIds])];
-      existing.draft_statuses = [...new Set([...existing.draft_statuses, ...relatedStatuses])];
-      existing.can_act = existing.can_act || canAct;
-      existing.is_waiting = !existing.can_act;
-      existing.current_tier = Math.max(existing.current_tier, currentTier);
-      existing.required_approver_level = Math.max(existing.required_approver_level, requiredLevel);
-      existing.is_final_ready = existing.can_act;
-      continue;
+
+    for (const header of linked.headers) {
+      const headerId = toNumericId(header.id) ?? 0;
+      const periodFrom = toStringOrNull(header.period_from) ?? "";
+      const periodTo = toStringOrNull(header.period_to) ?? "";
+
+      if (!headerId || !periodFrom || !periodTo) continue;
+
+      const payablesForHeader = linked.payables.filter((payable) => payable.header_id === headerId);
+      if (!payablesForHeader.length) continue;
+
+      const relatedDraftIds = [...new Set(payablesForHeader.map((payable) => payable.draft_id))];
+      const relatedDrafts = relatedDraftIds
+        .map((draftId) => linked.visibleDrafts.find((draft) => draft.id === draftId))
+        .filter((draft): draft is { id: number; division_id: number; status: string; can_act: boolean; current_tier: number } => Boolean(draft));
+
+      if (!relatedDrafts.length) continue;
+
+      const key = makeFinalGroupKey({
+        divisionId: approvalDivisionId,
+        periodFrom,
+        periodTo,
+      });
+
+      const relatedStatuses = [...new Set(relatedDrafts.map((draft) => draft.status))];
+      const canAct = relatedDrafts.some((draft) => draft.can_act);
+      const currentTier = relatedDrafts.reduce((max, draft) => Math.max(max, draft.current_tier), 0);
+      const requiredLevel = maxLevelByDivision[approvalDivisionId] ?? currentTier;
+      const linkedExpenseIds = [...new Set(payablesForHeader.map((payable) => payable.expense_id))];
+
+      const existing = groupMap.get(key);
+
+      if (existing) {
+        existing.header_count += headerById.has(headerId) ? 1 : 0;
+        existing.header_ids = [...new Set([...existing.header_ids, headerId])];
+        existing.header_id = Math.min(existing.header_id, headerId);
+        existing.draft_ids = [...new Set([...existing.draft_ids, ...relatedDraftIds])];
+        existing.draft_statuses = [...new Set([...(existing.draft_statuses || []), ...relatedStatuses])];
+        existing.can_act = existing.can_act || canAct;
+        existing.is_waiting = !existing.can_act;
+        existing.current_tier = Math.max(existing.current_tier || 0, currentTier);
+        existing.required_approver_level = Math.max(existing.required_approver_level || 0, requiredLevel);
+        existing.is_final_ready = existing.can_act;
+        existing.expense_ids = [...new Set([...existing.expense_ids, ...linkedExpenseIds])];
+        continue;
+      }
+
+      groupMap.set(key, {
+        group_key: key,
+        division_id: approvalDivisionId,
+        division_name: divisionMap.get(approvalDivisionId) ?? `Division #${approvalDivisionId}`,
+        period_from: periodFrom,
+        period_to: periodTo,
+        header_id: headerId,
+        header_count: 1,
+        salesman_count: 0,
+        coa_count: 0,
+        expense_count: 0,
+        total_amount: 0,
+        is_final_ready: canAct,
+        header_ids: [headerId],
+        draft_ids: relatedDraftIds,
+        draft_statuses: relatedStatuses,
+        can_act: canAct,
+        is_waiting: !canAct,
+        current_tier: currentTier,
+        required_approver_level: requiredLevel,
+        expense_ids: linkedExpenseIds,
+      });
     }
-
-    groupMap.set(key, {
-      group_key: key,
-      division_id: header.division_id,
-      division_name: divisionMap.get(header.division_id) ?? `Division #${header.division_id}`,
-      period_from: header.period_from,
-      period_to: header.period_to,
-      header_id: header.id,
-      header_count: 1,
-      salesman_count: 0,
-      coa_count: 0,
-      expense_count: 0,
-      total_amount: 0,
-      is_final_ready: canAct,
-      header_ids: [header.id],
-      draft_ids: relatedDraftIds,
-      draft_statuses: relatedStatuses,
-      can_act: canAct,
-      is_waiting: !canAct,
-      current_tier: currentTier,
-      required_approver_level: requiredLevel,
-    });
   }
 
   for (const group of groupMap.values()) {
-    const headerIdSet = new Set(group.header_ids);
-    const groupExpenses = expenses.filter((expense) => {
-      const headerId = toNumericId(expense.header_id) ?? 0;
-      return headerIdSet.has(headerId);
-    });
+    if (!group.expense_ids.length) continue;
+
+    const expenseQuery = buildFilterQuery(
+      { id: { _in: group.expense_ids } },
+      "id,header_id,encoded_by,particulars,amount",
+      { limit: "-1" }
+    );
+
+    const expenseRes = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
+      `/items/expense_draft?${expenseQuery}`
+    );
+
+    const groupExpenses = expenseRes.ok ? expenseRes.data.data ?? [] : [];
 
     group.expense_count = groupExpenses.length;
-    group.salesman_count = new Set(
-      groupExpenses.map(getExpenseEmployeeId).filter((id) => id > 0)
-    ).size;
+    group.salesman_count = new Set(groupExpenses.map(getExpenseEmployeeId).filter((id) => id > 0)).size;
     group.coa_count = new Set(
       groupExpenses.map((expense) => toNumericId(expense.particulars) ?? 0).filter((id) => id > 0)
     ).size;
@@ -462,14 +586,14 @@ export async function getExpenseHeaderGroups(params: {
   }
 
   return [...groupMap.values()]
+    .filter((group) => group.expense_count > 0 && group.draft_ids.length > 0)
     .map((group) => {
-      const { header_ids: _headerIds, ...rest } = group;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { header_ids, expense_ids, ...rest } = group;
       return rest;
     })
     .sort((a, b) => {
-      if (a.can_act !== b.can_act) {
-        return a.can_act ? -1 : 1;
-      }
+      if (a.can_act !== b.can_act) return a.can_act ? -1 : 1;
       if (a.period_from === b.period_from) {
         return String(a.division_name ?? "").localeCompare(String(b.division_name ?? ""));
       }
@@ -483,173 +607,42 @@ export async function buildFinalTopSheet(params: {
   periodTo: string;
   context: BulkApprovalContext;
 }) {
-  const headerResult = await getHeaderIdsForPeriod({
+  const linked = await resolveLinkedTopSheetData({
     divisionId: params.divisionId,
     periodFrom: params.periodFrom,
     periodTo: params.periodTo,
-  });
-
-  if (!headerResult.ok) {
-    return { ok: false as const, status: headerResult.status, data: headerResult.data };
-  }
-
-  const { headerIds, headers } = headerResult;
-
-  if (!headerIds.length) {
-    return {
-      ok: true as const,
-      status: 200,
-      data: {
-        group: {
-          division_id: params.divisionId,
-          division_name: `Division #${params.divisionId}`,
-          period_from: params.periodFrom,
-          period_to: params.periodTo,
-          header_count: 0,
-          total_amount: 0,
-          draft_statuses: [],
-          can_act: false,
-          is_waiting: true,
-          current_tier: 0,
-          required_approver_level: params.context.maxLevelByDivision[params.divisionId] ?? 0,
-        },
-        salesmen: [],
-        coa_rows: [],
-        grand_total: 0,
-        details: [],
-        attachments: [],
-      },
-    };
-  }
-
-  const visibleDraftResult = await getVisibleDraftsForDivision({
-    divisionId: params.divisionId,
     context: params.context,
   });
 
-  const draftIdsForLevel = visibleDraftResult.drafts.map((draft) => draft.id);
-  const draftStatuses = [...new Set(visibleDraftResult.drafts.map((draft) => draft.status))];
-  const canAct = visibleDraftResult.drafts.some((draft) => draft.can_act);
-  const currentTier = visibleDraftResult.drafts.reduce(
-    (max, draft) => Math.max(max, draft.current_tier),
-    0
-  );
-  const requiredApproverLevel = params.context.maxLevelByDivision[params.divisionId] ?? currentTier;
-
-  if (!draftIdsForLevel.length) {
-    return {
-      ok: true as const,
-      status: 200,
-      data: {
-        group: {
-          division_id: params.divisionId,
-          division_name: `Division #${params.divisionId}`,
-          period_from: params.periodFrom,
-          period_to: params.periodTo,
-          header_count: 0,
-          total_amount: 0,
-          draft_statuses: draftStatuses,
-          can_act: canAct,
-          is_waiting: !canAct,
-          current_tier: currentTier,
-          required_approver_level: requiredApproverLevel,
-        },
-        salesmen: [],
-        coa_rows: [],
-        grand_total: 0,
-        details: [],
-        attachments: [],
-      },
-    };
-  }
-
-  const payableQuery = new URLSearchParams({
-    "filter[disbursement_id][_in]": draftIdsForLevel.join(","),
-    fields: "expense_id",
-    limit: "-1",
-  }).toString();
-
-  const payableRes = await directusFetch<DirectusListResponse<Pick<DisbursementPayableDraftRow, "expense_id">>>(
-    `/items/disbursement_payables_draft?${payableQuery}`
-  );
-  const initialAllowedIds = (payableRes.ok ? payableRes.data.data ?? [] : [])
-    .map((p) => toNumericId(p.expense_id))
-    .filter((id): id is number => Boolean(id));
-
-  // --- Auto-Healing Logic: Find Approved orphans and re-link them ---
-  const orphanQuery = buildFilterQuery(
-    {
-      header_id: { _in: headerIds },
-      status: { _eq: "Approved" },
-      id: { _nin: initialAllowedIds.length > 0 ? initialAllowedIds : [-1] },
+  const emptyData = {
+    group: {
+      division_id: params.divisionId,
+      division_name: `Division #${params.divisionId}`,
+      period_from: params.periodFrom,
+      period_to: params.periodTo,
+      header_count: linked.headers.length,
+      total_amount: 0,
+      draft_statuses: linked.draftStatuses,
+      can_act: linked.canAct,
+      is_waiting: !linked.canAct,
+      current_tier: linked.currentTier,
+      required_approver_level: linked.requiredApproverLevel,
     },
-    "id,amount,remarks,transaction_date,division_id,particulars,header_id"
-  );
+    salesmen: [],
+    coa_rows: [],
+    grand_total: 0,
+    details: [],
+    attachments: [],
+  };
 
-  const orphanRes = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
-    `/items/expense_draft?${orphanQuery}`
-  );
-
-  const orphans = (orphanRes.ok ? orphanRes.data.data ?? [] : []);
-  
-  if (orphans.length > 0 && draftIdsForLevel.length > 0) {
-    const targetDraftId = draftIdsForLevel[0]; // Link to the first active draft in the batch
-    for (const orphan of orphans) {
-      await insertExpenseIntoPayableDraft({
-        draftId: targetDraftId,
-        expense: orphan,
-      });
-    }
-    await recalcDraftTotal(targetDraftId);
-    // Refresh allowed IDs
-    const refreshedRes = await directusFetch<DirectusListResponse<Pick<DisbursementPayableDraftRow, "expense_id">>>(
-      `/items/disbursement_payables_draft?${payableQuery}`
-    );
-    initialAllowedIds.splice(0, initialAllowedIds.length, ...(refreshedRes.ok ? refreshedRes.data.data ?? [] : [])
-      .map((p) => toNumericId(p.expense_id))
-      .filter((id): id is number => Boolean(id)));
-  }
-
-  const allowedExpenseIds = initialAllowedIds;
-
-  if (!allowedExpenseIds.length) {
-    return {
-      ok: true as const,
-      status: 200,
-      data: {
-        group: {
-          division_id: params.divisionId,
-          division_name: `Division #${params.divisionId}`,
-          period_from: params.periodFrom,
-          period_to: params.periodTo,
-          header_count: headers.length,
-          total_amount: 0,
-          draft_statuses: draftStatuses,
-          can_act: canAct,
-          is_waiting: !canAct,
-          current_tier: currentTier,
-          required_approver_level: requiredApproverLevel,
-        },
-        salesmen: [],
-        coa_rows: [],
-        grand_total: 0,
-        details: [],
-        attachments: [],
-      },
-    };
+  if (!linked.visibleDrafts.length || !linked.payables.length || !linked.expenseIds.length || !linked.headerIds.length) {
+    return { ok: true as const, status: 200, data: emptyData };
   }
 
   const expenseQuery = buildFilterQuery(
-    {
-      header_id: { _in: headerIds },
-      _or: [
-        { id: { _in: allowedExpenseIds } },
-        { status: { _eq: "With Concern" } },
-        { status: { _eq: "Rejected" } },
-      ],
-    },
+    { header_id: { _in: linked.headerIds } },
     "id,header_id,encoded_by,particulars,division_id,transaction_date,amount,status,remarks,payee,attachment_url",
-    { sort: "particulars,encoded_by,transaction_date" }
+    { sort: "particulars,encoded_by,transaction_date", limit: "-1" }
   );
 
   const expenseRes = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
@@ -657,7 +650,19 @@ export async function buildFinalTopSheet(params: {
   );
   if (!expenseRes.ok) return { ok: false as const, status: expenseRes.status, data: expenseRes.data };
 
-  const expenses = expenseRes.data.data ?? [];
+  const allowedExpenseIdSet = new Set(linked.expenseIds);
+  const expenses = (expenseRes.data.data ?? []).filter((expense) => {
+    const expenseId = toNumericId(expense.id);
+    const status = (expense.status ?? "").toLowerCase();
+    const isCulledButRelevant = status === "with concern" || status === "rejected";
+    
+    return Boolean(expenseId && (allowedExpenseIdSet.has(expenseId) || isCulledButRelevant));
+  });
+
+  if (!expenses.length) {
+    return { ok: true as const, status: 200, data: emptyData };
+  }
+
   const employeeIds = [...new Set(expenses.map(getExpenseEmployeeId).filter((id) => id > 0))];
   const coaIds = [
     ...new Set(expenses.map((expense) => toNumericId(expense.particulars) ?? 0).filter((id) => id > 0)),
@@ -675,12 +680,7 @@ export async function buildFinalTopSheet(params: {
       const salesman = salesmanMap.get(employeeId);
       const name = salesman?.salesman_name?.trim() || userMap.get(employeeId) || `User #${employeeId}`;
       const total = expenses
-        .filter((expense) => {
-          const expenseId = toNumericId(expense.id);
-          return getExpenseEmployeeId(expense) === employeeId && 
-                 expenseId !== null && 
-                 allowedExpenseIds.includes(expenseId);
-        })
+        .filter((expense) => getExpenseEmployeeId(expense) === employeeId)
         .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
 
       return {
@@ -716,7 +716,7 @@ export async function buildFinalTopSheet(params: {
   });
 
   const attachmentsRes = await directusFetch<DirectusListResponse<ExpenseAttachmentRow>>(
-    `/items/expense_attachments?filter[header_id][_in]=${headerIds.join(",")}&fields=header_id,file_url,file_name&limit=-1`
+    `/items/expense_attachments?filter[header_id][_in]=${linked.headerIds.join(",")}&fields=header_id,file_url,file_name&limit=-1`
   );
 
   const attachments = attachmentsRes.ok ? attachmentsRes.data.data ?? [] : [];
@@ -730,13 +730,11 @@ export async function buildFinalTopSheet(params: {
           const cellDetails = rowDetails.filter((detail) => detail.employee_id === salesman.employee_id);
           return {
             employee_id: salesman.employee_id,
-            amount: cellDetails
-              .filter(d => allowedExpenseIds.includes(d.expense_id))
-              .reduce((sum, detail) => sum + detail.amount, 0),
+            amount: cellDetails.reduce((sum, detail) => sum + detail.amount, 0),
             count: cellDetails.length,
             expense_ids: cellDetails.map((detail) => detail.expense_id).filter((id) => id > 0),
-            has_concern: cellDetails.some(d => d.status.toLowerCase().includes("concern")),
-            has_rejected: cellDetails.some(d => d.status.toLowerCase() === "rejected"),
+            has_concern: cellDetails.some((detail) => detail.status.toLowerCase().includes("concern")),
+            has_rejected: cellDetails.some((detail) => detail.status.toLowerCase() === "rejected"),
           };
         })
         .filter((cell) => cell.count > 0 || cell.amount > 0);
@@ -745,17 +743,13 @@ export async function buildFinalTopSheet(params: {
         coa_id: coaId,
         account_title: coa?.account_title ?? `COA #${coaId}`,
         gl_code: coa?.gl_code ?? null,
-        row_total: rowDetails
-          .filter(d => allowedExpenseIds.includes(d.expense_id))
-          .reduce((sum, detail) => sum + detail.amount, 0),
+        row_total: rowDetails.reduce((sum, detail) => sum + detail.amount, 0),
         cells,
       };
     })
     .sort((a, b) => a.account_title.localeCompare(b.account_title));
 
-  const grandTotal = details
-    .filter(d => allowedExpenseIds.includes(d.expense_id))
-    .reduce((sum, detail) => sum + detail.amount, 0);
+  const grandTotal = details.reduce((sum, detail) => sum + detail.amount, 0);
 
   return {
     ok: true as const,
@@ -766,13 +760,13 @@ export async function buildFinalTopSheet(params: {
         division_name: divisionMap.get(params.divisionId) ?? `Division #${params.divisionId}`,
         period_from: params.periodFrom,
         period_to: params.periodTo,
-        header_count: headers.length,
+        header_count: linked.headers.length,
         total_amount: grandTotal,
-        draft_statuses: draftStatuses,
-        can_act: canAct,
-        is_waiting: !canAct,
-        current_tier: currentTier,
-        required_approver_level: requiredApproverLevel,
+        draft_statuses: linked.draftStatuses,
+        can_act: linked.canAct,
+        is_waiting: !linked.canAct,
+        current_tier: linked.currentTier,
+        required_approver_level: linked.requiredApproverLevel,
       },
       salesmen,
       coa_rows: coaRows,
@@ -914,20 +908,40 @@ export async function handleFinalHeaderDecision(params: {
     return jsonResponse({ error: "Remarks are required for rejected or concern decisions" }, { status: 400 });
   }
 
-  const headerResult = await getHeaderIdsForPeriod({ divisionId, periodFrom, periodTo });
-  if (!headerResult.ok) return jsonResponse(headerResult.data, { status: headerResult.status });
-  if (!headerResult.headerIds.length) {
-    return jsonResponse({ error: "No matching expense draft headers found" }, { status: 404 });
+  const linked = await resolveLinkedTopSheetData({
+    divisionId,
+    periodFrom,
+    periodTo,
+    context: params.context,
+    actionableOnly: true,
+  });
+
+  if (!linked.headerIds.length || !linked.expenseIds.length || !linked.payables.length) {
+    return jsonResponse(
+      { error: "No linked payable draft expenses found for this final top sheet period" },
+      { status: 404 }
+    );
   }
 
   const filters: Record<string, unknown> = {
-    header_id: { _in: headerResult.headerIds },
+    id: { _in: linked.expenseIds },
   };
 
   if (scope === "expense_ids") {
     if (!expenseIds.length) {
       return jsonResponse({ error: "expense_ids are required for expense_ids target scope" }, { status: 400 });
     }
+
+    const linkedExpenseIdSet = new Set(linked.expenseIds);
+    const outsideLinkedScope = expenseIds.some((expenseId) => !linkedExpenseIdSet.has(expenseId));
+
+    if (outsideLinkedScope) {
+      return jsonResponse(
+        { error: "Scope mismatch: selected expense_ids are not linked to this final top sheet" },
+        { status: 409 }
+      );
+    }
+
     filters.id = { _in: expenseIds };
   } else if (scope === "encoder") {
     if (!employeeId) return jsonResponse({ error: "employee_id is required for encoder target scope" }, { status: 400 });
@@ -978,29 +992,22 @@ export async function handleFinalHeaderDecision(params: {
     .map((expense) => toNumericId(expense.id))
     .filter((id): id is number => Boolean(id));
 
-  const activeDraftIds = await getActiveDraftIdsForDivision({ divisionId, context: params.context });
-  if (!activeDraftIds.length) {
-    return jsonResponse({ error: "No active disbursement drafts found for your approval level" }, { status: 404 });
-  }
-
-  const targetPayablesRes = await directusFetch<DirectusListResponse<PayableDraftLookupRow>>(
-    `/items/disbursement_payables_draft?filter[disbursement_id][_in]=${activeDraftIds.join(",")}&filter[expense_id][_in]=${targetExpenseIds.join(",")}&fields=id,disbursement_id,expense_id,amount&limit=-1`
-  );
-
-  if (!targetPayablesRes.ok) {
-    return jsonResponse(targetPayablesRes.data, { status: targetPayablesRes.status });
-  }
-
-  const targetPayables = targetPayablesRes.data.data ?? [];
+  const targetExpenseIdSet = new Set(targetExpenseIds);
   const payableByExpenseId = new Map<number, PayableDraftLookupRow[]>();
 
-  for (const payable of targetPayables) {
-    const expenseId = getNestedExpenseId(payable.expense_id);
-    if (!expenseId) continue;
+  for (const payable of linked.payables) {
+    if (!targetExpenseIdSet.has(payable.expense_id)) continue;
 
-    const existing = payableByExpenseId.get(expenseId) ?? [];
-    existing.push(payable);
-    payableByExpenseId.set(expenseId, existing);
+    const row: PayableDraftLookupRow = {
+      id: payable.payable_id,
+      disbursement_id: payable.draft_id,
+      expense_id: payable.expense_id,
+      amount: null,
+    };
+
+    const existing = payableByExpenseId.get(payable.expense_id) ?? [];
+    existing.push(row);
+    payableByExpenseId.set(payable.expense_id, existing);
   }
 
   const targetExpenses = rawTargetExpenses.filter((expense) => {
@@ -1117,10 +1124,27 @@ export async function handleFinalHeaderDecision(params: {
   const isFinalLevel = userContext.approver_level >= maxLevel;
 
   let disbursement_draft_status_updated = false;
-  const finalizationResults: any[] = [];
+  const finalizationResults: Array<{ draft_id: number; result: string; doc_no?: string }> = [];
 
   if (isFinalLevel && status === "Approved") {
     for (const draftId of linkedDraftIds) {
+      // Safety Check: Verify that ALL items remaining in the staging table are actually "Approved".
+      // This prevents premature finalization during a bulk batch submission where subsequent
+      // requests haven't processed yet, which would otherwise auto-reject the remaining pending items.
+      const pRes = await directusFetch<DirectusListResponse<{ expense_id?: { status?: string } | null }>>(
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=expense_id.status&limit=-1`
+      );
+
+      const payables = pRes.ok ? pRes.data.data ?? [] : [];
+      const allApproved = payables.length > 0 && payables.every(p => {
+        const s = String(p.expense_id?.status || "").toLowerCase();
+        return s === "approved";
+      });
+
+      if (!allApproved) {
+        continue;
+      }
+
       const draftRes = await directusFetch<DirectusItemResponse<DisbursementDraftRow>>(
         `/items/disbursement_draft/${draftId}?fields=id,status,approval_version,division_id,encoder_id,payee,transaction_type,transaction_date,doc_no`
       );
@@ -1141,7 +1165,7 @@ export async function handleFinalHeaderDecision(params: {
 
       if (fRes.ok) {
         disbursement_draft_status_updated = true;
-        finalizationResults.push({ draft_id: draftId, result: fRes.result, doc_no: (fRes as any).doc_no });
+        finalizationResults.push({ draft_id: draftId, result: "result" in fRes ? String(fRes.result) : "UNKNOWN", doc_no: (fRes as { doc_no?: string }).doc_no });
       }
     }
   }

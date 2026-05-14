@@ -34,3 +34,9 @@ export function formatDateTime(value: string | null) {
     return value;
   }
 }
+
+export function toNumber(val: unknown, fallback = 0): number {
+  if (val === null || val === undefined || val === "") return fallback;
+  const n = Number(val);
+  return isNaN(n) ? fallback : n;
+}

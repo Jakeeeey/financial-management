@@ -5,12 +5,11 @@ import * as React from "react";
 import {
   AlertTriangle,
   CalendarRange,
-  CheckCircle2,
-  Clock3,
   Eye,
   FileText,
   Loader2,
   Send,
+  ShieldAlert,
   ShieldCheck,
   Users,
   XCircle,
@@ -37,7 +36,7 @@ import type {
   FinalTopSheetDetail,
   FinalTopSheetResponse,
 } from "../type";
-import { formatCurrency, formatDate } from "../utils/format";
+import { formatCurrency, formatDate, toNumber } from "../utils/format";
 import AuditeeDetailSplitModal from "./AuditeeDetailSplitModal";
 import FinalTopSheetMatrix from "./FinalTopSheetMatrix";
 
@@ -132,32 +131,37 @@ function getTargetLabel(data: FinalTopSheetResponse | null, target: FinalDecisio
     }`;
   }
 
-  return `${target.expense_ids.length} selected expense line${target.expense_ids.length === 1 ? "" : "s"}`;
+  return `${target.expense_ids?.length ?? 0} selected expense line${target.expense_ids?.length === 1 ? "" : "s"}`;
 }
 
 function getDetailsForTarget(
   details: FinalTopSheetDetail[],
   target: FinalDecisionTarget
 ) {
-  if (target.scope === "all") return details;
+  const actionableDetails = details.filter((d) => {
+    const s = (d.status ?? "").toLowerCase();
+    return !s.includes("concern") && s !== "rejected";
+  });
+
+  if (target.scope === "all") return actionableDetails;
 
   if (target.scope === "encoder") {
-    return details.filter((detail) => detail.employee_id === target.employee_id);
+    return actionableDetails.filter((detail) => detail.employee_id === target.employee_id);
   }
 
   if (target.scope === "coa") {
-    return details.filter((detail) => detail.coa_id === target.coa_id);
+    return actionableDetails.filter((detail) => detail.coa_id === target.coa_id);
   }
 
   if (target.scope === "cell") {
-    return details.filter(
+    return actionableDetails.filter(
       (detail) =>
         detail.employee_id === target.employee_id && detail.coa_id === target.coa_id
     );
   }
 
   const expenseIdSet = new Set(target.expense_ids);
-  return details.filter((detail) => expenseIdSet.has(detail.expense_id));
+  return actionableDetails.filter((detail) => expenseIdSet.has(detail.expense_id));
 }
 
 function requiresLineRemarks(status: FinalHeaderDecisionStatus) {
@@ -351,7 +355,6 @@ export default function FinalTopSheetModal({
   const [pendingRemarksDecision, setPendingRemarksDecision] = React.useState<PendingRemarksDecision>(null);
   const [remarksDialogOpen, setRemarksDialogOpen] = React.useState(false);
   const [stagedDecisions, setStagedDecisions] = React.useState<Record<string, { target: FinalDecisionTarget; status: FinalHeaderDecisionStatus }>>({});
-  const [globalDecision, setGlobalDecision] = React.useState<FinalHeaderDecisionStatus>("Approved");
   const [finalConfirmOpen, setFinalConfirmOpen] = React.useState(false);
   const [selectedAuditeeId, setSelectedAuditeeId] = React.useState<number | null>(null);
   const [auditeeDetailOpen, setAuditeeDetailOpen] = React.useState(false);
@@ -363,7 +366,22 @@ export default function FinalTopSheetModal({
 
   const approvalInfo = React.useMemo(() => getApprovalInfo(activeApprovalMeta), [activeApprovalMeta]);
   const canSubmitFinalAction = data?.group.can_act ?? false;
-  const isApprovedHistory = data?.group.draft_statuses.includes("Approved") && !canSubmitFinalAction;
+  const stagedDecisionEntries = React.useMemo(
+    () => Object.values(stagedDecisions),
+    [stagedDecisions]
+  );
+  const stagedDecisionCount = stagedDecisionEntries.length;
+  const stagedDecisionSummary = React.useMemo(() => {
+    return stagedDecisionEntries.reduce(
+      (summary, item) => ({
+        approved: summary.approved + (item.status === "Approved" ? 1 : 0),
+        concern: summary.concern + (item.status === "With Concern" ? 1 : 0),
+        rejected: summary.rejected + (item.status === "Rejected" ? 1 : 0),
+      }),
+      { approved: 0, concern: 0, rejected: 0 }
+    );
+  }, [stagedDecisionEntries]);
+  const isApprovedHistory = !!(data?.group.draft_statuses?.includes("Approved")) && !canSubmitFinalAction;
   const actionDisabledReason = canSubmitFinalAction ? undefined : approvalInfo.description;
 
   React.useEffect(() => {
@@ -421,11 +439,84 @@ export default function FinalTopSheetModal({
     return "unknown";
   }
 
-  function handleToggleDecision(status: FinalHeaderDecisionStatus, target: FinalDecisionTarget) {
-    const key = getTargetKey(target);
+  function getCellTargetsForBulkTarget(target: FinalDecisionTarget): FinalDecisionTarget[] {
+    if (!data) return [];
+
+    let cellTargets: FinalDecisionTarget[] = [];
+
+    if (target.scope === "cell") {
+      cellTargets = [target];
+    } else if (target.scope === "encoder") {
+      cellTargets = data.coa_rows
+        .filter((coaRow) =>
+          coaRow.cells.some((cell) => cell.employee_id === target.employee_id)
+        )
+        .map((coaRow) => ({
+          scope: "cell" as const,
+          employee_id: target.employee_id,
+          coa_id: coaRow.coa_id,
+        }));
+    } else if (target.scope === "coa") {
+      const coaRow = data.coa_rows.find((item) => item.coa_id === target.coa_id);
+      if (coaRow) {
+        cellTargets = coaRow.cells.map((cell) => ({
+          scope: "cell" as const,
+          employee_id: cell.employee_id,
+          coa_id: target.coa_id,
+        }));
+      }
+    } else if (target.scope === "all") {
+      cellTargets = data.coa_rows.flatMap((coaRow) =>
+        coaRow.cells.map((cell) => ({
+          scope: "cell" as const,
+          employee_id: cell.employee_id,
+          coa_id: coaRow.coa_id,
+        }))
+      );
+    }
+
+    // Filter out cells that have no actionable details (e.g. they only contain culled/rejected items)
+    return cellTargets.filter(
+      (cellTarget) => getDetailsForTarget(data.details, cellTarget).length > 0
+    );
+  }
+
+
+  function performStageDecision(status: FinalHeaderDecisionStatus, target: FinalDecisionTarget) {
     setStagedDecisions((current) => {
-      const existing = current[key];
       const next = { ...current };
+
+      if (target.scope === "encoder" || target.scope === "coa" || target.scope === "all") {
+        const cellTargets = getCellTargetsForBulkTarget(target);
+        const cellKeys = cellTargets.map(getTargetKey);
+
+        if (cellKeys.length === 0) {
+          toast.warning("There are no COA cells available for this action.");
+          return current;
+        }
+
+        const isSameActionAlreadyApplied = cellKeys.every(
+          (cellKey) => next[cellKey]?.status === status
+        );
+
+        // Remove aggregate keys from older staged states. The footer submit must be based
+        // on actual COA cell decisions only, not encoder/COA shortcut records.
+        delete next[getTargetKey(target)];
+
+        if (isSameActionAlreadyApplied) {
+          for (const cellKey of cellKeys) delete next[cellKey];
+          return next;
+        }
+
+        for (const cellTarget of cellTargets) {
+          next[getTargetKey(cellTarget)] = { target: cellTarget, status };
+        }
+
+        return next;
+      }
+
+      const key = getTargetKey(target);
+      const existing = next[key];
 
       if (existing && existing.status === status) {
         delete next[key];
@@ -435,6 +526,23 @@ export default function FinalTopSheetModal({
 
       return next;
     });
+  }
+
+  function handleToggleDecision(status: FinalHeaderDecisionStatus, target: FinalDecisionTarget) {
+    if (status === "With Concern" || status === "Rejected") {
+      void submitTargetDecision(status, target);
+      return;
+    }
+
+    if (data) {
+      const affectedDetails = getDetailsForTarget(data.details, target);
+      if (affectedDetails.length === 0) {
+        toast.error("There are no active expense lines available for this action.");
+        return;
+      }
+    }
+
+    performStageDecision(status, target);
   }
 
   function handleLineRemarkChange(expenseId: number, value: string) {
@@ -479,9 +587,15 @@ export default function FinalTopSheetModal({
   }
 
   function handleInitiateFinalSubmit() {
-    if (!remarks.trim()) {
-      setRemarks(""); // Reset to empty to trigger focus/validation if needed
+    if (stagedDecisionCount === 0) {
+      toast.warning("Select at least one COA/encoder action before submitting the audit.");
+      return;
     }
+
+    if (!remarks.trim()) {
+      setRemarks("");
+    }
+
     setFinalConfirmOpen(true);
   }
 
@@ -587,37 +701,39 @@ export default function FinalTopSheetModal({
   }
 
   async function submitStagedAuditBatch() {
-    const stagedList = Object.values(stagedDecisions);
-    if (!stagedList.length) return;
+    if (stagedDecisionEntries.length === 0) {
+      toast.warning("No staged COA/encoder actions to submit.");
+      return;
+    }
+
+    if (!remarks.trim()) {
+      toast.warning("Audit remarks are required before submitting staged decisions.");
+      return;
+    }
 
     try {
       setSubmitting(true);
-      let successCount = 0;
 
-      for (const item of stagedList) {
-        // Note: For now, we reuse the same logic. 
-        // If it requires remarks, we might need a more complex batch UI.
-        // But the user requested "one button for submit approval on the matrix".
-        const affectedDetails = getDetailsForTarget(data?.details ?? [], item.target);
-        
-        if (requiresLineRemarks(item.status)) {
-           // For simplicity, we skip batching items that require remarks if not provided.
-           // In a real app, we'd validate this before starting the loop.
-           const missing = affectedDetails.some(d => !getLineRemark(lineRemarks, d.expense_id));
-           if (missing) {
-             toast.error(`Decision for ${getTargetLabel(data, item.target)} requires line remarks.`);
-             continue;
-           }
+      for (const item of stagedDecisionEntries) {
+        if (requiresLineRemarks(item.status) && data) {
+          const affectedDetails = getDetailsForTarget(data.details, item.target);
+          for (const detail of affectedDetails) {
+            await submitSingleDecisionRequest({
+              status: item.status,
+              target: { scope: "expense_ids", expense_ids: [detail.expense_id] },
+              decisionRemarks: getLineRemark(lineRemarks, detail.expense_id) || remarks.trim(),
+            });
+          }
+        } else {
+          await submitSingleDecisionRequest({
+            status: item.status,
+            target: item.target,
+            decisionRemarks: remarks.trim(),
+          });
         }
-
-        await submitSingleDecisionRequest({
-          status: item.status,
-          target: item.target,
-          decisionRemarks: remarks.trim(),
-        });
-        successCount++;
       }
 
+      toast.success(`${stagedDecisionEntries.length} staged audit decision${stagedDecisionEntries.length === 1 ? "" : "s"} submitted.`);
       setStagedDecisions({});
       setFinalConfirmOpen(false);
       setRemarks("");
@@ -638,10 +754,6 @@ export default function FinalTopSheetModal({
     );
   }
 
-  function submitWhole(status: FinalHeaderDecisionStatus) {
-    void submitTargetDecision(status, { scope: "all" });
-  }
-
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -654,17 +766,17 @@ export default function FinalTopSheetModal({
                 </div>
                 <div className="flex flex-col leading-none">
                   <span>Final Top-Sheet Review</span>
-                  {Object.keys(stagedDecisions).length > 0 ? (
+                  {stagedDecisionCount > 0 ? (
                     <motion.span 
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       className="text-[9px] font-black uppercase tracking-[0.25em] text-emerald-400 mt-0.5 flex items-center gap-1"
                     >
                       <span className="h-1 w-1 rounded-full bg-emerald-400 animate-ping" />
-                      {Object.keys(stagedDecisions).length} Items Staged for Consensus
+                      {stagedDecisionCount} Actions Staged for Audit
                     </motion.span>
                   ) : (
-                    <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/40 mt-0.5">Audit Consensus Engine</span>
+                    <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/40 mt-0.5">COA Action Review</span>
                   )}
                 </div>
               </DialogTitle>
@@ -750,8 +862,8 @@ export default function FinalTopSheetModal({
                         {isApprovedHistory 
                           ? "This top-sheet has been successfully audited and posted to the live Disbursement table."
                           : canSubmitFinalAction 
-                            ? `Current status: ${data?.group.draft_statuses.join(", ")}. This top-sheet is already on Level ${data?.group.current_tier}.` 
-                            : `Current status: ${data?.group.draft_statuses.join(", ")}. Final approver actions are enabled only at Level ${data?.group.required_approver_level}.`}
+                            ? `Current status: ${(data?.group.draft_statuses ?? []).join(", ")}. This top-sheet is ${toNumber(data?.group.current_tier) >= 999 ? "Finalized" : `on Level ${data?.group.current_tier}`}.` 
+                            : `Current status: ${(data?.group.draft_statuses ?? []).join(", ")}. Final approver actions are enabled only at Level ${data?.group.required_approver_level}.`}
                       </p>
                     </div>
                   </div>
@@ -760,17 +872,23 @@ export default function FinalTopSheetModal({
                     <div className="flex items-center gap-8">
                       <div className="text-center">
                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status</p>
-                        <p className="text-[10px] font-black text-slate-900">{data?.group.draft_statuses.join(", ")}</p>
+                        <p className="text-[10px] font-black text-slate-900">{(data?.group.draft_statuses ?? []).join(", ")}</p>
                       </div>
                       <div className="h-8 w-px bg-slate-200" />
                       <div className="text-center">
                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Current Tier</p>
-                        <p className="text-[10px] font-black text-slate-900">Level {data?.group.current_tier}</p>
+                        <p className="text-[10px] font-black text-slate-900">
+                          {toNumber(data?.group.current_tier) >= 999 ? "Finalized" : 
+                           toNumber(data?.group.current_tier) <= 0 ? "Suspended" : 
+                           `Level ${data?.group.current_tier}`}
+                        </p>
                       </div>
                       <div className="h-8 w-px bg-slate-200" />
                       <div className="text-center">
                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Required Tier</p>
-                        <p className="text-[10px] font-black text-slate-900">Level {data?.group.required_approver_level}</p>
+                        <p className="text-[10px] font-black text-slate-900">
+                          {toNumber(data?.group.required_approver_level) >= 999 ? "N/A" : `Level ${data?.group.required_approver_level}`}
+                        </p>
                       </div>
                     </div>
                   )}
@@ -815,18 +933,12 @@ export default function FinalTopSheetModal({
                       <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700/60">Consolidated Total</p>
                       <p className="text-base font-black text-emerald-700">{formatCurrency(data.grand_total)}</p>
                     </div>
-                    {Object.keys(stagedDecisions).length > 0 && (
+                    {stagedDecisionCount > 0 && (
                       <div className="ml-4 px-4 border-l border-emerald-100">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-primary/60">Batch Action</p>
-                        <Button
-                          size="sm"
-                          className="h-8 rounded-xl bg-slate-900 px-4 text-[10px] font-black uppercase tracking-widest text-white shadow-lg hover:bg-primary transition-all active:scale-95"
-                          onClick={submitStagedAuditBatch}
-                          disabled={submitting}
-                        >
-                          <Send className="mr-2 h-3 w-3" />
-                          Commit Staged Audit
-                        </Button>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-primary/60">Selected Actions</p>
+                        <p className="text-[11px] font-black text-slate-800">
+                          {stagedDecisionCount} staged decision{stagedDecisionCount !== 1 ? "s" : ""}
+                        </p>
                       </div>
                     )}
                     <Button
@@ -858,7 +970,7 @@ export default function FinalTopSheetModal({
                     )}
                     onOpenAuditeeDetails={handleOpenAuditeeDetails}
                     onToggleDecision={handleToggleDecision}
-                    onSubmitStaged={submitStagedAuditBatch}
+                    onSubmitStaged={handleInitiateFinalSubmit}
                   />
                 </div>
               </div>
@@ -877,30 +989,20 @@ export default function FinalTopSheetModal({
                     </div>
                   </div>
 
-                  {Object.keys(stagedDecisions).length === 0 && (
-                    <div className="flex items-center gap-3 pl-6 border-l border-slate-100">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Consensus:</span>
-                      <div className="flex bg-slate-100 p-0.5 rounded-xl">
-                        {(["Approved", "With Concern", "Rejected"] as const).map((status) => (
-                          <button
-                            key={status}
-                            type="button"
-                            onClick={() => setGlobalDecision(status)}
-                            disabled={!canSubmitFinalAction}
-                            className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                              globalDecision === status
-                                ? status === "Approved" ? "bg-white text-emerald-600 shadow-sm" :
-                                  status === "With Concern" ? "bg-white text-amber-600 shadow-sm" :
-                                  "bg-white text-rose-600 shadow-sm"
-                                : "text-slate-400 hover:text-slate-600"
-                            }`}
-                          >
-                            {status === "With Concern" ? "Concern" : status}
-                          </button>
-                        ))}
-                      </div>
+                  <div className="flex items-center gap-3 pl-6 border-l border-slate-100">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">COA Actions:</span>
+                    <div className="flex items-center gap-1.5 rounded-xl bg-slate-100 p-1">
+                      <span className="rounded-lg bg-white px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-600 shadow-sm">
+                        Approved {stagedDecisionSummary.approved}
+                      </span>
+                      <span className="rounded-lg bg-white px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-amber-600 shadow-sm">
+                        Concern {stagedDecisionSummary.concern}
+                      </span>
+                      <span className="rounded-lg bg-white px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-rose-600 shadow-sm">
+                        Rejected {stagedDecisionSummary.rejected}
+                      </span>
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-4">
@@ -914,15 +1016,9 @@ export default function FinalTopSheetModal({
                   <Button
                     type="button"
                     size="sm"
-                    className={`h-11 px-8 rounded-xl font-black uppercase tracking-[0.15em] shadow-lg transition-all active:scale-[0.98] gap-2 text-[10px] ${
-                      Object.keys(stagedDecisions).length > 0 
-                        ? "bg-slate-900 text-white hover:bg-primary" 
-                        : globalDecision === "Approved" ? "bg-emerald-600 hover:bg-emerald-700 text-white" :
-                          globalDecision === "With Concern" ? "bg-amber-500 hover:bg-amber-600 text-white" :
-                          "bg-rose-600 hover:bg-rose-700 text-white"
-                    }`}
+                    className="h-11 rounded-xl bg-slate-900 px-8 text-[10px] font-black uppercase tracking-[0.15em] text-white shadow-lg transition-all hover:bg-primary active:scale-[0.98] gap-2 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
                     onClick={handleInitiateFinalSubmit}
-                    disabled={submitting || loading || !data || !canSubmitFinalAction}
+                    disabled={submitting || loading || !data || !canSubmitFinalAction || stagedDecisionCount === 0}
                   >
                     {submitting ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -930,8 +1026,8 @@ export default function FinalTopSheetModal({
                       <ShieldCheck size={16} />
                     )}
                     <span>
-                      {Object.keys(stagedDecisions).length > 0 
-                        ? `Submit ${Object.keys(stagedDecisions).length} Decisions` 
+                      {stagedDecisionCount > 0 
+                        ? `Submit ${stagedDecisionCount} Decisions` 
                         : "Submit Audit"}
                     </span>
                   </Button>
@@ -1037,21 +1133,21 @@ export default function FinalTopSheetModal({
           <div className="bg-slate-950 px-8 py-6 text-white">
             <DialogTitle className="flex items-center gap-3 text-xl font-black tracking-tight">
               <ShieldCheck className="h-6 w-6 text-emerald-400" />
-              Consensus Confirmation
+              Audit Submission Confirmation
             </DialogTitle>
             <DialogDescription className="text-white/40 text-xs font-bold uppercase tracking-widest mt-1">
-              Finalizing Audit Consensus Trail
+              Finalizing COA action trail
             </DialogDescription>
           </div>
 
           <div className="p-8 bg-slate-50 space-y-6">
-            {(canSubmitFinalAction && (Object.keys(stagedDecisions).length > 0 || globalDecision === "Approved")) && (
+            {(canSubmitFinalAction && stagedDecisionCount > 0) && (
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
                 <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="text-[10px] font-black uppercase tracking-widest text-amber-900 leading-none">Irreversible Posting Action</p>
                   <p className="text-[11px] text-amber-700 font-medium leading-relaxed">
-                    This consensus will <strong>permanently post</strong> approved items to the live Disbursement table. Any items marked "With Concern" or "Rejected" will be excluded from this batch.
+                    This audit will <strong>permanently post</strong> approved staged items to the live Disbursement table. Items marked &quot;With Concern&quot; or &quot;Rejected&quot; will be excluded from posting.
                   </p>
                 </div>
               </div>
@@ -1061,18 +1157,14 @@ export default function FinalTopSheetModal({
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Action Scope</span>
                 <Badge variant="outline" className="bg-slate-50 text-[10px] font-black px-3 py-1 rounded-lg">
-                  {Object.keys(stagedDecisions).length > 0 ? "Staged Batch" : "Global Consensus"}
+                  Staged COA/Encoder Batch
                 </Badge>
               </div>
               <div className="h-px bg-slate-100" />
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Decision</span>
-                <span className={`text-[10px] font-black uppercase tracking-widest ${
-                  Object.keys(stagedDecisions).length > 0 ? "text-slate-900" :
-                  globalDecision === "Approved" ? "text-emerald-600" :
-                  globalDecision === "With Concern" ? "text-amber-500" : "text-rose-600"
-                }`}>
-                  {Object.keys(stagedDecisions).length > 0 ? `${Object.keys(stagedDecisions).length} Items` : globalDecision}
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-900">
+                  {stagedDecisionCount} staged decision{stagedDecisionCount !== 1 ? "s" : ""}
                 </span>
               </div>
             </div>
@@ -1085,7 +1177,7 @@ export default function FinalTopSheetModal({
               <Textarea
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Provide mandatory consensus remarks for the audit trail..."
+                placeholder="Provide mandatory audit remarks for the selected COA actions..."
                 rows={4}
                 className="resize-none rounded-2xl border-slate-200 bg-white p-4 text-xs font-medium shadow-inner focus:ring-2 focus:ring-primary/10"
               />
@@ -1097,19 +1189,9 @@ export default function FinalTopSheetModal({
             <div className="flex flex-col gap-3 pt-2">
               <Button
                 size="lg"
-                className={`h-14 rounded-2xl font-black uppercase tracking-[0.2em] shadow-lg gap-3 text-sm ${
-                  Object.keys(stagedDecisions).length > 0 ? "bg-slate-900 text-white" :
-                  globalDecision === "Approved" ? "bg-emerald-600 text-white" :
-                  globalDecision === "With Concern" ? "bg-amber-500 text-white" : "bg-rose-600 text-white"
-                }`}
-                disabled={submitting || !remarks.trim()}
-                onClick={() => {
-                  if (Object.keys(stagedDecisions).length > 0) {
-                    void submitStagedAuditBatch();
-                  } else {
-                    void submitWhole(globalDecision);
-                  }
-                }}
+                className="h-14 rounded-2xl bg-slate-900 text-sm font-black uppercase tracking-[0.2em] text-white shadow-lg gap-3 hover:bg-primary disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+                disabled={submitting || !remarks.trim() || stagedDecisionCount === 0}
+                onClick={() => void submitStagedAuditBatch()}
               >
                 {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send size={18} />}
                 Confirm & Post Audit

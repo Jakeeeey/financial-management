@@ -148,7 +148,9 @@ export type DraftRowResponse = {
   total_amount: number;
   remarks: string | null;
   status: string;
+  division_id: number;
   division_name?: string;
+  requires_final_top_sheet?: boolean;
   approval_version: number;
   transaction_date: string | null;
   date_created: string;

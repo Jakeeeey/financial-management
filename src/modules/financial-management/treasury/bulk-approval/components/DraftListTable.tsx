@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, FolderOpen, Search, CheckCircle2, Clock, LockKeyhole, AlertTriangle, ShieldCheck, ArrowLeft, ChevronRight } from "lucide-react";
+import { Loader2, FolderOpen, Search, CheckCircle2, Clock, LockKeyhole, AlertTriangle, ShieldCheck, ArrowLeft, ChevronRight, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,7 @@ interface Props {
   selectedDivisionId?: number;
   setSelectedDivisionId: (v: number | undefined) => void;
   availableDivisions: { id: number; name: string }[];
+  actionLoadingId?: number | null;
   onAction: (row: DraftRow) => void;
 }
 
@@ -133,6 +134,7 @@ export default function DraftListTable(props: Props) {
     selectedDivisionId,
     setSelectedDivisionId,
     availableDivisions,
+    actionLoadingId,
     onAction,
   } = props;
 
@@ -239,7 +241,10 @@ export default function DraftListTable(props: Props) {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((row, idx) => (
+              rows.map((row, idx) => {
+                const isActionLoading = actionLoadingId === row.id;
+
+                return (
                 <TableRow
                   key={row.id}
                   className={`transition-colors group
@@ -294,53 +299,55 @@ export default function DraftListTable(props: Props) {
                   </TableCell>
                   <TableCell className="text-center overflow-hidden py-1.5">
                     <div className="flex flex-col items-center justify-center gap-1">
-                      {row.my_vote ? (
-                        <div className="flex flex-col items-center">
-                          <div className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
-                            <CheckCircle2 className="h-2.5 w-2.5" />
-                            Voted
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 px-2 mt-0.5 text-[9px] font-bold text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all rounded-lg"
-                            onClick={() => onAction(row)}
-                          >
-                            Review
-                          </Button>
-                        </div>
+                      {row.requires_final_top_sheet ? (
+                        <Button
+                          size="sm"
+                          className="h-7 px-4 rounded-xl bg-primary text-primary-foreground text-[9px] font-black uppercase tracking-[0.15em] hover:bg-primary/90 transition-all shadow-lg shadow-primary/10 active:scale-95 flex items-center gap-1.5"
+                          onClick={() => onAction(row)}
+                          disabled={isActionLoading}
+                        >
+                          {isActionLoading ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <ShieldCheck className="h-3 w-3" />
+                          )}
+                          {isActionLoading ? "Opening..." : "Open Top Sheet"}
+                        </Button>
+                      ) : row.my_vote ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-3 rounded-xl border-emerald-200 bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-[0.1em] hover:bg-emerald-100 hover:text-emerald-800 transition-all flex items-center gap-1.5 group/action"
+                          onClick={() => onAction(row)}
+                        >
+                          <CheckCircle2 className="h-3 w-3 text-emerald-500 group-hover/action:scale-110 transition-transform" />
+                          Review Audit
+                        </Button>
                       ) : row.can_vote ? (
                         <Button
                           size="sm"
-                          className="relative h-7 px-3 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-black uppercase tracking-wider shadow-md border-t border-white/20 hover:scale-105 active:scale-95 transition-all group overflow-hidden"
+                          className="h-7 px-4 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase tracking-[0.15em] hover:bg-primary transition-all shadow-lg shadow-slate-900/10 active:scale-95 flex items-center gap-1.5"
                           onClick={() => onAction(row)}
                         >
-                          <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          <span className="relative flex items-center gap-1.5">
-                            <ShieldCheck className="h-3 w-3" />
-                            Vote
-                          </span>
+                          <ShieldCheck className="h-3 w-3 text-emerald-400" />
+                          Cast Vote
                         </Button>
                       ) : (
-                        <div className="flex flex-col items-center opacity-60 group-hover:opacity-100 transition-opacity">
-                          <div className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-inner">
-                            <Clock className="h-2.5 w-2.5" />
-                            Wait
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 px-2 mt-0.5 text-[9px] font-bold text-muted-foreground hover:text-slate-800 transition-all rounded-lg"
-                            onClick={() => onAction(row)}
-                          >
-                            View
-                          </Button>
-                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-3 rounded-xl border-slate-200 bg-slate-50 text-slate-500 text-[9px] font-black uppercase tracking-[0.1em] hover:bg-white hover:text-slate-900 hover:border-slate-300 transition-all flex items-center gap-1.5 group/action"
+                          onClick={() => onAction(row)}
+                        >
+                          <Eye className="h-3 w-3 text-slate-400 group-hover/action:text-primary transition-colors" />
+                          Inspect Audit
+                        </Button>
                       )}
                     </div>
                   </TableCell>
                 </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>

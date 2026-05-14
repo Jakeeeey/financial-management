@@ -112,6 +112,8 @@ export function parseTier(status: string): number {
 
   const s = status.toUpperCase();
 
+  if (s === "APPROVED") return 999;
+  if (s === "REJECTED" || s === "WITH CONCERN" || s === "WITH_CONCERN") return 0;
   if (s === "SUBMITTED") return 1;
 
   const m = s.match(/PENDING_L(\d+)/);
@@ -554,9 +556,13 @@ export function canUserVote(params: {
   approverRecords: ApproverRecord[];
   divisionId: number;
   currentTier: number;
+  status?: string;
   myVote: { status: string; created_at: string; version: number } | null;
 }) {
   if (params.myVote) return false;
+
+  const s = (params.status ?? "").toUpperCase();
+  if (s === "APPROVED" || s === "REJECTED") return false;
 
   return params.approverRecords.some(
     (r) => {
@@ -1253,7 +1259,7 @@ export async function processDraftApproval(params: {
       transaction_date: first.transaction_date,
       status: `Returned L${tier}`,
       approval_version: 1,
-    } as any;
+    } as DisbursementDraftRow;
 
     currentVersion = 1;
     currentTier = tier;

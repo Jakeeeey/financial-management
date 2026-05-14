@@ -4,11 +4,14 @@
 import * as React from "react";
 import {
   ArrowLeft,
+  ArrowRight,
   ClipboardList,
   Layers3,
+  Loader2,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -20,9 +23,68 @@ import FinalHeaderGroupsTable from "./components/FinalHeaderGroupsTable";
 import FinalTopSheetModal from "./components/FinalTopSheetModal";
 import VoteModal from "./components/VoteModal";
 import { useBulkApproval } from "./hooks/useBulkApproval";
-import type { FinalHeaderGroup } from "./type";
+import type { DraftRow, FinalHeaderGroup } from "./type";
 
 type ApprovalTab = "level-approval" | "final-approval";
+
+type TopSheetRedirectState = {
+  draftId: number;
+  docNo: string;
+  divisionName: string;
+  encoderName: string;
+};
+
+function TopSheetRedirectLoader({ state }: { state: TopSheetRedirectState }) {
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-background/70 p-4 backdrop-blur-xl animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md overflow-hidden rounded-[2rem] border bg-card/95 p-1 shadow-2xl shadow-primary/10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.24),transparent_34%),radial-gradient(circle_at_bottom_right,hsl(var(--primary)/0.16),transparent_38%)]" />
+        <div className="absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
+
+        <div className="relative rounded-[1.75rem] border bg-background/80 p-6 shadow-inner">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border bg-card shadow-xl shadow-primary/10">
+            <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+              <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-primary animate-spin" />
+              <Sparkles className="h-6 w-6 text-primary" />
+            </div>
+          </div>
+
+          <div className="mt-5 text-center">
+            <div className="inline-flex items-center gap-1.5 rounded-full border bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-primary">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Redirecting
+            </div>
+            <h3 className="mt-3 text-xl font-black tracking-tight text-foreground">
+              Opening Final Top Sheet
+            </h3>
+            <p className="mx-auto mt-1 max-w-xs text-sm font-medium leading-6 text-muted-foreground">
+              This draft is already at the final approval level, so it will be reviewed through the matrix.
+            </p>
+          </div>
+
+          <div className="mt-5 rounded-2xl border bg-card/80 p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3 text-left">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-foreground">{state.docNo}</p>
+                <p className="truncate text-xs font-semibold text-muted-foreground">
+                  {state.divisionName} · {state.encoderName}
+                </p>
+              </div>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+                <ArrowRight className="h-4 w-4" />
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full w-1/2 rounded-full bg-primary animate-[pulse_1s_ease-in-out_infinite]" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function BulkApprovalModule() {
   const {
@@ -62,6 +124,7 @@ export default function BulkApprovalModule() {
   const [activeTab, setActiveTab] = React.useState<ApprovalTab>("level-approval");
   const [selectedTopSheetGroup, setSelectedTopSheetGroup] = React.useState<FinalHeaderGroup | null>(null);
   const [topSheetOpen, setTopSheetOpen] = React.useState(false);
+  const [topSheetRedirect, setTopSheetRedirect] = React.useState<TopSheetRedirectState | null>(null);
 
   React.useEffect(() => {
     if (canDoNormalApproval) {
@@ -83,6 +146,49 @@ export default function BulkApprovalModule() {
     setTopSheetOpen(false);
     setSelectedTopSheetGroup(null);
     await refreshAll();
+  }
+
+  async function handleDraftAction(draft: DraftRow) {
+    const isFinalDivision = approvalContexts.some(
+      (context) =>
+        context.is_final_approver && context.division_id === draft.division_id
+    );
+
+    const shouldOpenTopSheet = Boolean(draft.requires_final_top_sheet) || isFinalDivision;
+
+    if (!shouldOpenTopSheet) {
+      void openVoteModal(draft);
+      return;
+    }
+
+    setTopSheetRedirect({
+      draftId: draft.id,
+      docNo: draft.doc_no,
+      divisionName: draft.division_name ?? `Division #${draft.division_id}`,
+      encoderName: draft.encoder_name,
+    });
+    setActiveTab("final-approval");
+
+    try {
+      let groups = finalHeaderGroups;
+      if (groups.length === 0) {
+        groups = await loadFinalHeaderGroups();
+      }
+
+      const matchingGroup =
+        groups.find(
+          (group) =>
+            group.division_id === draft.division_id &&
+            Array.isArray(group.draft_ids) &&
+            group.draft_ids.includes(draft.id)
+        ) ?? groups.find((group) => group.division_id === draft.division_id);
+
+      if (matchingGroup) {
+        openTopSheet(matchingGroup);
+      }
+    } finally {
+      setTopSheetRedirect(null);
+    }
   }
 
   if (unauthorized) {
@@ -246,7 +352,8 @@ export default function BulkApprovalModule() {
                 selectedDivisionId={selectedDivisionId}
                 setSelectedDivisionId={setSelectedDivisionId}
                 availableDivisions={availableDivisions}
-                onAction={openVoteModal}
+                actionLoadingId={topSheetRedirect?.draftId ?? null}
+                onAction={handleDraftAction}
               />
             )}
           </div>
@@ -256,6 +363,8 @@ export default function BulkApprovalModule() {
           <ActivityFeed logs={logs} loading={logsLoading} />
         </div>
       </div>
+
+      {topSheetRedirect && <TopSheetRedirectLoader state={topSheetRedirect} />}
 
       <VoteModal
         open={modalOpen}

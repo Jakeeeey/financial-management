@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/carousel";
 
 
-import type { DraftDetail } from "../type";
+import type { DraftDetail, DraftPayable, ConcernItemResponse } from "../type";
 import * as api from "../providers/fetchProvider";
 
 interface Props {
@@ -134,22 +134,27 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
       const initialRemarks: Record<number, string> = {};
 
-      // Initialize with PENDING state for regular items, keep WITH_CONCERN for flagged ones
+      const isDraftApproved = detail.draft.status === "Approved";
+
+      // Initialize with APPROVED state if the draft is already fully approved,
+      // otherwise default to PENDING for regular items.
       const payableInit = detail.payables.reduce(
-        (acc, p) => {
+        (acc: Record<number, "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING">, p: DraftPayable) => {
           initialRemarks[p.id] = p.feedback || "";
+          const defaultStatus = p.is_rejected ? "REJECTED" : (isDraftApproved ? "APPROVED" : "PENDING");
           return {
             ...acc,
-            [p.id]: p.is_concern ? ("WITH_CONCERN" as const) : ("PENDING" as const)
+            [p.id]: p.is_concern ? ("WITH_CONCERN" as const) : (defaultStatus as "APPROVED" | "REJECTED" | "PENDING")
           };
         }, {}
       ) || {};
 
-      const concernInit = detail.concern_items?.reduce(
-        (acc, ci) => {
+      const concernInit = (detail.concern_items || []).reduce(
+        (acc: Record<number, "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING">, ci: ConcernItemResponse) => {
           initialRemarks[-ci.expense_id] = ci.feedback || "";
           const isStillConcern = ci.status === "With Concern";
-          return { ...acc, [-ci.expense_id]: isStillConcern ? ("WITH_CONCERN" as const) : ("PENDING" as const) };
+          const defaultStatus = ci.status === "Rejected" ? "REJECTED" : (isDraftApproved ? "APPROVED" : "PENDING");
+          return { ...acc, [-ci.expense_id]: isStillConcern ? ("WITH_CONCERN" as const) : (defaultStatus as "APPROVED" | "REJECTED" | "PENDING") };
         }, {}
       ) || {};
 
@@ -160,13 +165,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
   const combinedItems = React.useMemo(() => {
     if (!detail) return [];
-    const items = detail.payables.map(p => ({
+    const items = detail.payables.map((p: import("../type").DraftPayable) => ({
       ...p,
       is_concern: p.is_concern || false,
       feedback: p.feedback || null
     }));
-    const existingIds = new Set(items.map(i => i.id));
-    (detail.concern_items || []).forEach(ci => {
+    const existingIds = new Set(items.map((i: { id: number }) => i.id));
+    (detail.concern_items || []).forEach((ci: import("../type").ConcernItemResponse) => {
       const negId = -ci.expense_id;
       if (!existingIds.has(negId)) {
         items.push({
@@ -178,12 +183,12 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         });
       }
     });
-    return items as (import("../type").DraftPayable & { is_concern: boolean; is_rejected?: boolean; feedback: string | null })[];
+    return items as (DraftPayable & { is_concern: boolean; is_rejected?: boolean; feedback: string | null })[];
   }, [detail]);
 
   // Total amount ONLY for APPROVED items (Verified Only)
   const currentTotalAmount = React.useMemo(() => {
-    return combinedItems.reduce((acc, p) => {
+    return combinedItems.reduce((acc: number, p) => {
       if (itemDecisions[p.id] !== "APPROVED") return acc;
       const val = editedAmounts[p.id];
       return acc + (val !== undefined && val !== "" ? Number(val) : Number(p.amount));
@@ -201,7 +206,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     setItemDecisions(prev => ({ ...prev, [id]: prev[id] === status ? "PENDING" : status }));
   };
 
-  const toggleGroupStatus = (groupItems: import("../type").DraftPayable[], status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
+  const toggleGroupStatus = (groupItems: DraftPayable[], status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
     setItemDecisions(prev => {
       const next = { ...prev };
       groupItems.forEach(item => {
@@ -240,7 +245,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   };
 
   const groupedPayables = React.useMemo(() => {
-    const groups: Record<string, { coa_name: string; coa_id: number; weeks: Record<string, import("../type").DraftPayable[]> }> = {};
+    const groups: Record<string, { coa_name: string; coa_id: number; weeks: Record<string, DraftPayable[]> }> = {};
     combinedItems.forEach(p => {
       const gk = p.coa_name || `COA #${p.coa_id}`;
       if (!groups[gk]) groups[gk] = { coa_name: gk, coa_id: p.coa_id, weeks: {} };
@@ -304,7 +309,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const currentTier = draft.current_tier || 1;
   const isInteractionDisabled = !!detail.my_vote || !detail.can_vote;
 
-  const handleSingleItemVote = async (p: import("../type").DraftPayable) => {
+  const handleSingleItemVote = async (p: DraftPayable) => {
     const status = itemDecisions[p.id];
     const feedback = showItemRemarks[p.id];
 
@@ -325,9 +330,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     if (!remarks.trim()) return toast.warning("Approval remarks are required for the audit trail.");
 
     const missingFeedback = combinedItems
-      .filter(p => (itemDecisions[p.id] === "REJECTED" || itemDecisions[p.id] === "WITH_CONCERN"))
-      .filter(p => !(showItemRemarks[p.id]?.trim()))
-      .map(p => ({ id: p.id, coa_name: p.coa_name, status: itemDecisions[p.id] as "REJECTED" | "WITH_CONCERN" }));
+      .filter((p: { id: number }) => (itemDecisions[p.id] === "REJECTED" || itemDecisions[p.id] === "WITH_CONCERN"))
+      .filter((p: { id: number }) => !(showItemRemarks[p.id]?.trim()))
+      .map((p: { id: number; coa_name: string }) => ({ id: p.id, coa_name: p.coa_name, status: itemDecisions[p.id] as "REJECTED" | "WITH_CONCERN" }));
 
     if (missingFeedback.length > 0) {
       toast.error(`Please provide feedback for ${missingFeedback.length} items.`);
@@ -356,7 +361,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           }
           return null;
         })
-        .filter((item): item is { id: number; amount: number } => item !== null);
+        .filter((item: { id: number; amount: number } | null): item is { id: number; amount: number } => item !== null);
 
       const payloadItemDecisions: Record<number, { status: "APPROVED" | "REJECTED" | "WITH_CONCERN"; remarks: string }> = {};
 
@@ -434,7 +439,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
               <div ref={setInlineEl} className="flex-1 relative flex items-center justify-center p-8">
                 <Carousel setApi={setCarouselApi} opts={{ watchDrag: false }} className="w-full h-full">
                   <CarouselContent className="h-full">
-                    {detail.attachments.map((at, i) => (
+                    {detail.attachments.map((at: { file_url: string; file_name: string }, i: number) => (
                       <CarouselItem key={i} className="flex items-center justify-center h-full">
                         <div className="relative w-full h-full flex flex-col items-center justify-center gap-6">
                           <div
@@ -545,7 +550,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                     </Button>
                   )}
                   <Badge className="bg-white/20 text-white border-white/30 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest backdrop-blur-sm shadow-xl h-10 flex items-center justify-center rounded-2xl">
-                    Level {currentTier}
+                    {currentTier >= 999 ? "Finalized" : `Level ${currentTier}`}
                   </Badge>
                 </div>
               </div>

@@ -148,7 +148,9 @@ export type DraftRow = {
   total_amount: number;
   remarks: string | null;
   status: string;
+  division_id: number;
   division_name?: string;
+  requires_final_top_sheet?: boolean;
   approval_version: number;
   transaction_date: string | null;
   date_created: string;
@@ -299,6 +301,7 @@ export type ApprovalContextResponse = {
   approver_level: number;
   is_final_approver: boolean;
 };
+export type ApprovalContext = ApprovalContextResponse;
 
 export type FinalHeaderGroupResponse = {
   group_key: string;
@@ -320,6 +323,7 @@ export type FinalHeaderGroupResponse = {
   current_tier?: number;
   required_approver_level?: number;
 };
+export type FinalHeaderGroup = FinalHeaderGroupResponse;
 
 export type FinalTopSheetSalesmanResponse = {
   employee_id: number;
@@ -410,6 +414,17 @@ export type FinalTopSheetGroupMetaResponse = {
   required_approver_level?: number;
 };
 
+export type DraftPayable = PayableResponse;
+
+export type DraftDetail = {
+  draft: DraftRow;
+  payables: DraftPayable[];
+  concern_items?: ConcernItemResponse[];
+  attachments?: { file_url: string; file_name: string }[];
+  my_vote: { status: string; created_at: string; version: number } | null;
+  can_vote: boolean;
+};
+
 export type FinalHeaderDecisionStatus = "Approved" | "Rejected" | "With Concern";
 
 export type FinalHeaderDecisionBody = {
@@ -425,6 +440,7 @@ export type FinalHeaderDecisionBody = {
   expense_ids?: number[];
   concern_expense_ids?: number[]; // Legacy field, keeping for compatibility
 };
+export type FinalHeaderDecisionPayload = FinalHeaderDecisionBody;
 
 
 
@@ -444,6 +460,7 @@ export type PostBody = {
   }[];
   item_decisions?: Record<string, ItemDecision>;
 };
+export type VotePayload = PostBody;
 
 export type DirectusResponse<T = unknown> = {
   ok: boolean;

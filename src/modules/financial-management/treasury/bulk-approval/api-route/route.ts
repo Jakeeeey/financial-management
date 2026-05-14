@@ -1476,15 +1476,23 @@ export async function GET(req: NextRequest) {
         .map((p) => toNumericId(p.coa_id))
         .filter((id): id is number => Boolean(id));
 
-      const weekStart = getWeekStart(draft.transaction_date ?? "");
-      const weekEnd = getWeekEndFromStart(weekStart);
 
-      const concernRes = await directusFetch(
-        `/items/expense_draft?filter[division_id][_eq]=${divisionId}&filter[status][_in]=With Concern,Approved&filter[return_to][_starts_with]=L&filter[transaction_date][_between]=[${weekStart},${weekEnd}]&fields=id,amount,remarks,transaction_date,particulars,attachment_url,feedback,return_to,status,header_id&limit=-1`
-      );
 
-      const rawConcerns =
-        (concernRes.data as DirectusListResponse<ExpenseDraftRow>).data ?? [];
+      const headerIds = [
+        ...new Set([
+          ...payablesRaw.map(p => typeof p.expense_id === "object" ? toNumericId(p.expense_id?.header_id) : null),
+        ].filter((id): id is number => Boolean(id)))
+      ];
+
+      // Fetch ALL expenses for these headers to include Rejected/Concern items
+      const allExpensesRes = headerIds.length > 0 
+        ? await directusFetch(`/items/expense_draft?filter[header_id][_in]=${headerIds.join(",")}&fields=id,amount,remarks,transaction_date,particulars,attachment_url,feedback,return_to,status,header_id&limit=-1`)
+        : { ok: true, data: { data: [] } };
+      
+      const allExpenses = (allExpensesRes.data as DirectusListResponse<ExpenseDraftRow>).data ?? [];
+      const payableExpenseIds = new Set(payablesRaw.map(p => typeof p.expense_id === "object" ? toNumericId(p.expense_id?.id) : toNumericId(p.expense_id)).filter(id => !!id));
+
+      const rawConcerns = allExpenses.filter(e => !payableExpenseIds.has(toNumericId(e.id)));
 
       const concernCoaIds = rawConcerns
         .map((c) => toNumericId(c.particulars))
@@ -1492,13 +1500,6 @@ export async function GET(req: NextRequest) {
 
       const payeeId = toNumericId(draft.payee) ?? 0;
       const encoderId = toNumericId(draft.encoder_id) ?? 0;
-
-      const headerIds = [
-        ...new Set([
-          ...payablesRaw.map(p => typeof p.expense_id === "object" ? toNumericId(p.expense_id?.header_id) : null),
-          ...rawConcerns.map(c => typeof c === "object" ? toNumericId(c.header_id) : null)
-        ].filter((id): id is number => Boolean(id)))
-      ];
 
       const [coaMap, supplierMap, userMap, divisionMap, voteHistory, approversByLevel, attachmentsRes] =
         await Promise.all([

@@ -96,17 +96,19 @@ export function useBulkApproval() {
     }
   }, []);
 
-  const loadFinalHeaderGroups = React.useCallback(async () => {
+  const loadFinalHeaderGroups = React.useCallback(async (): Promise<FinalHeaderGroup[]> => {
     try {
       setFinalHeaderGroupsLoading(true);
       const groups = await api.getFinalHeaderGroups();
       setFinalHeaderGroups(groups);
+      return groups;
     } catch (e: unknown) {
       if (e instanceof Error && e.message === "403_UNAUTHORIZED") {
         setFinalHeaderGroups([]);
       } else {
         console.error("Failed to load final top-sheet groups", e);
       }
+      return [];
     } finally {
       setFinalHeaderGroupsLoading(false);
     }
