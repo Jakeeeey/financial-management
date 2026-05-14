@@ -5,10 +5,17 @@ export type PriceTypeRef = {
     price_type_name?: string;
 };
 
+export type UomRef = {
+    unit_id?: number | string | null;
+    unit_name?: string | null;
+    unit_shortcut?: string | null;
+};
+
 export type ProductRef = {
     product_id: number;
     product_code?: string;
     product_name?: string;
+    unit_of_measurement?: UomRef | number | string | null;
 };
 
 export type PriceChangeRequestRow = {
@@ -16,6 +23,24 @@ export type PriceChangeRequestRow = {
     product_id: number | ProductRef;
     price_type_id: number | PriceTypeRef;
     proposed_price: number;
+    status: PCRStatus;
+
+    requested_by: number;
+    requested_at: string;
+
+    approved_by?: number | null;
+    approved_at?: string | null;
+
+    rejected_by?: number | null;
+    rejected_at?: string | null;
+    reject_reason?: string | null;
+};
+
+export type CostChangeRequestRow = {
+    request_id: number;
+    product_id: number | ProductRef;
+    current_cost?: number | null;
+    proposed_cost: number;
     status: PCRStatus;
 
     requested_by: number;
@@ -37,8 +62,11 @@ export type ListQuery = {
     status?: PCRStatus | "";
     q?: string;
     product_id?: number | "";
+    supplier_id?: number | "";
     price_type_id?: number | "";
     requested_by?: number | "";
+    date_from?: string | "";
+    date_to?: string | "";
     page?: number;
     page_size?: number;
 };
@@ -47,6 +75,12 @@ export type CreatePCRPayload = {
     product_id: number;
     price_type_id: number;
     proposed_price: number;
+};
+
+export type CreateCCRPayload = {
+    product_id: number;
+    proposed_cost: number;
+    current_cost?: number | null;
 };
 
 export type ActionPayload =

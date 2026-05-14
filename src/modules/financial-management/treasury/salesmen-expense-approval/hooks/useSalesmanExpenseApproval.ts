@@ -3,6 +3,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { startOfMonth, endOfMonth, format } from "date-fns";
+import type { DateRange } from "react-day-picker";
 
 import type { SalesmanExpenseRow, SalesmanExpenseDetail, ApprovalLog, ExpenseHeader } from "../type";
 import * as api from "../providers/fetchProvider";
@@ -49,7 +51,7 @@ export function useSalesmanExpenseApproval() {
     try {
       setLoading(true);
       const [data] = await Promise.all([
-        api.listSalesmenWithExpenses(),
+        api.listSalesmenWithExpenses(startDateStr, endDateStr),
         loadLogs(),
       ]);
       setRows(data);
@@ -63,11 +65,15 @@ export function useSalesmanExpenseApproval() {
     } finally {
       setLoading(false);
     }
-  }, [loadLogs]);
+  }, [loadLogs, startDateStr, endDateStr]);
 
   React.useEffect(() => {
     load();
   }, [load]);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [dateRange]);
 
   // Client-side filtering
   const filteredRows = React.useMemo(() => {
@@ -102,7 +108,7 @@ export function useSalesmanExpenseApproval() {
     setSelectedHeader(null);
     setDetailLoading(true);
     try {
-      const detail = await api.getSalesmanExpenses(row.id);
+      const detail = await api.getSalesmanExpenses(row.id, startDateStr, endDateStr);
       setSalesmanDetail(detail);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load expenses");
@@ -164,5 +170,7 @@ export function useSalesmanExpenseApproval() {
     logs,
     logsLoading,
     unauthorized,
+    dateRange,
+    setDateRange,
   };
 }

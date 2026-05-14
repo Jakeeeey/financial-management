@@ -41,6 +41,8 @@ export default function SalesmenExpenseApprovalModule() {
     logs,
     logsLoading,
     unauthorized,
+    dateRange,
+    setDateRange,
   } = useSalesmanExpenseApproval();
 
   if (unauthorized) {

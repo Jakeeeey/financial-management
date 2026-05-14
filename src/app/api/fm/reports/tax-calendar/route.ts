@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
   if (!token) return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 });
 
   try {
-    const body = await request.json() as { title?: string; description?: string; tax_type?: string; due_date?: string; status?: string; reminder_date?: string };
-    const { title, description, tax_type, due_date, status, reminder_date } = body;
+    const body = await request.json() as Record<string, unknown>;
+    const { title, description, tax_type, due_date, status, reminder_date, bir_form, filing_frequency, due_date_rule, actual_filing_date, payment_date, amount_paid } = body;
 
     if (!title || !tax_type || !due_date) {
       return NextResponse.json({ ok: false, message: 'Missing required fields: title, tax_type, due_date' }, { status: 400 });
@@ -65,6 +65,12 @@ export async function POST(request: NextRequest) {
         due_date,
         status: status ?? 'PENDING',
         reminder_date: reminder_date || null,
+        bir_form: bir_form || null,
+        filing_frequency: filing_frequency || null,
+        due_date_rule: due_date_rule || null,
+        actual_filing_date: actual_filing_date || null,
+        payment_date: payment_date || null,
+        amount_paid: amount_paid ? Number(amount_paid) : null,
       }),
       cache: 'no-store',
     });

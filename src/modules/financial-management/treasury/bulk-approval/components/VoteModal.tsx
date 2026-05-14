@@ -378,6 +378,15 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         };
       });
 
+      const adjustmentSummary = payloadEditedPayables.map(ep => {
+        const p = payables.find(item => item.id === ep.id);
+        return `[ADJUSTED] ${p?.coa_name || "Item"}: ${formatCurrency(Number(p?.amount))} -> ${formatCurrency(ep.amount)}`;
+      }).join(" | ");
+
+      const finalRemarks = adjustmentSummary 
+        ? `${adjustmentSummary}${remarks.trim() ? " | User Remarks: " + remarks.trim() : ""}` 
+        : remarks.trim();
+
       const result = await api.submitVote({
         draft_id: draft.id,
         status: derivedStatus,

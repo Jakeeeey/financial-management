@@ -818,7 +818,104 @@ export async function GET(req: NextRequest) {
         };
       });
 
-      return json({ data: formattedLogs });
+        allVotes = (vRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        allDraftLogs = (dlRes.data as { data?: Record<string, unknown>[] })?.data ?? [];
+        
+        // Resolve user names for all actors
+        const voteUids = [...new Set([
+          ...allVotes.map(v => Number(v.approver_id)),
+          ...allDraftLogs.map(l => Number(l.editor_id)),
+          ...allExpenseLogs.map(l => Number(l.changed_by))
+        ].filter(Boolean))];
+
+        const missingUids = voteUids.filter(uid => !userMap[uid]);
+        if (missingUids.length > 0) {
+          const uRes = await directusFetch(`/items/user?filter[user_id][_in]=${missingUids.join(",")}&fields=user_id,user_fname,user_lname&limit=-1`);
+          for (const u of (uRes.data as { data?: Record<string, unknown>[] })?.data ?? []) {
+            userMap[Number(u.user_id)] = `${u.user_fname ?? ''} ${u.user_lname ?? ''}`.trim();
+          }
+        }
+
+        // Resolve COA names for expense logs
+        const coaIdsForLogs = [...new Set(allExpenseLogs.map(l => Number(l.particulars)).filter(Boolean))];
+        const coaMapForLogs: Record<number, string> = {};
+        if (coaIdsForLogs.length > 0) {
+           const cRes = await directusFetch(`/items/chart_of_accounts?filter[coa_id][_in]=${coaIdsForLogs.join(",")}&fields=coa_id,account_title&limit=-1`);
+           for (const c of (cRes.data as { data?: Record<string, unknown>[] })?.data ?? []) {
+             coaMapForLogs[Number(c.coa_id)] = String(c.account_title ?? "");
+           }
+        }
+
+        const formattedLogs = visibleLogs.map((log) => {
+          const logVotes = allVotes
+            .filter(v => Number(v.draft_id) === Number(log.id))
+            .map(v => ({
+              approver_name: userMap[Number(v.approver_id)] || `User #${v.approver_id}`,
+              status: String(v.status),
+              remarks: v.remarks ? String(v.remarks) : null,
+              version: Number(v.version),
+              created_at: String(v.created_at ?? ""),
+            }));
+
+          const draftLogs = allDraftLogs
+            .filter(l => Number(l.draft_id) === Number(log.id))
+            .map(l => {
+              let snapshot = { old_total: 0, new_total: 0 };
+              try { snapshot = JSON.parse(String(l.payload_snapshot || "{}")); } catch {}
+              return {
+                id: Number(l.id),
+                editor_name: userMap[Number(l.editor_id)] || `User #${l.editor_id}`,
+                edit_reason: String(l.edit_reason || ""),
+                old_total: Number(snapshot.old_total || 0),
+                new_total: Number(snapshot.new_total || 0),
+                created_at: String(l.created_at || ""),
+              };
+            });
+
+          // Match expense logs using the mapping
+          const currentExpenseIds = pRowsForIds
+            .filter(pr => {
+               const draftId = typeof pr.disbursement_id === "object" && pr.disbursement_id !== null ? (pr.disbursement_id as { id: number }).id : pr.disbursement_id;
+               return Number(draftId) === Number(log.id);
+            })
+            .map(pr => {
+              const raw = pr.expense_id;
+              if (typeof raw === "object" && raw !== null) return Number((raw as { id: number }).id);
+              return Number(raw);
+            });
+
+          const expenseLogs = allExpenseLogs
+            .filter(l => currentExpenseIds.includes(Number(l.expense_id)))
+            .map(l => ({
+               id: Number(l.log_id),
+               expense_id: Number(l.expense_id),
+               action: String(l.action || ""),
+               editor_name: userMap[Number(l.changed_by)] || `User #${l.changed_by}`,
+               changed_at: String(l.changed_at || ""),
+               amount: Number(l.amount || 0),
+               remarks: l.remarks ? String(l.remarks) : null,
+               particulars: coaMapForLogs[Number(l.particulars)] || String(l.particulars || ""),
+               status: String(l.status || ""),
+            }));
+
+          return {
+            id: log.id,
+            doc_no: log.doc_no,
+            transaction_date: log.transaction_date,
+            salesman_name: userMap[Number(log.encoder_id)] || userMap[Number(log.payee)] || `User #${log.encoder_id || log.payee}`,
+            total_amount: log.total_amount,
+            remarks: log.remarks,
+            approver_name: userMap[Number(log.approver_id)] || `User #${log.approver_id}`,
+            status: log.status,
+            date_created: log.date_created,
+            votes: logVotes,
+            logs: draftLogs,
+            expense_logs: expenseLogs,
+          };
+        });
+
+        return json({ data: formattedLogs });
+      }
     }
 
     if (resource === "log-details") {

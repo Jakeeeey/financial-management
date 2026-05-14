@@ -3,7 +3,7 @@ import {
   fetchRepresentativesBySupplier,
   fetchAllRepresentatives,
   createRepresentative,
-  isEmailUniqueForSupplier,
+  checkRepresentativeDuplicate,
 } from "@/modules/financial-management/supplier-registration/services/representative";
 import { RepresentativeFormSchema } from "@/modules/financial-management/supplier-registration/types/representative.schema";
 
@@ -66,18 +66,27 @@ export async function POST(request: NextRequest) {
     // Validate with Zod schema
     const validatedData = RepresentativeFormSchema.parse(body);
 
-    // Check email uniqueness for this supplier
-    const isUnique = await isEmailUniqueForSupplier(
-      validatedData.email,
+    // Check for duplicates (Email, Contact, or Name) for this supplier
+    const duplicateCheck = await checkRepresentativeDuplicate(
+      validatedData,
       validatedData.supplier_id,
     );
 
-    if (!isUnique) {
+    if (duplicateCheck.isDuplicate) {
+      let errorMessage = "A representative with these details already exists for this supplier";
+      
+      if (duplicateCheck.type === "email") {
+        errorMessage = "A representative with this email already exists for this supplier";
+      } else if (duplicateCheck.type === "contact") {
+        errorMessage = "A representative with this contact number already exists for this supplier";
+      } else if (duplicateCheck.type === "name") {
+        errorMessage = "A representative with this name already exists for this supplier";
+      }
+
       return NextResponse.json(
         {
           success: false,
-          error:
-            "A representative with this email already exists for this supplier",
+          error: errorMessage,
         },
         { status: 409 }, // Conflict
       );

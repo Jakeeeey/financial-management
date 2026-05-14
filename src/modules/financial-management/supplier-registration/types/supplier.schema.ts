@@ -59,8 +59,11 @@ export const SupplierFormSchema = z.object({
     .min(1, "Supplier shortcut is required")
     .max(50, "Supplier shortcut is too long"),
   supplier_type: z.string().min(1, "Supplier type is required"),
-  tin_number: z.string().optional().default(""),
-  contact_person: z.string().optional().default(""),
+  tin_number: z
+    .string()
+    .regex(/^\d{9,12}$/, "TIN must be 9-12 digits")
+    .min(9, "TIN must be at least 9 digits"),
+  contact_person: z.string().min(2, "Contact person name is required"),
   email_address: z
     .string()
     .email("Invalid email address")
@@ -69,14 +72,14 @@ export const SupplierFormSchema = z.object({
     .optional()
     .default(""),
   phone_number: z.string().optional().default(""),
-  address: z.string().optional().default(""),
-  brgy: z.string().optional().default(""),
-  city: z.string().optional().default(""),
-  state_province: z.string().optional().default(""),
-  postal_code: z.string().optional().default(""),
-  country: z.string().default("Philippines"),
-  payment_terms: z.string().optional().default(""),
-  delivery_terms: z.string().optional().default(""),
+  address: z.string().min(1, "Address is required"),
+  brgy: z.string().min(1, "Barangay is required"),
+  city: z.string().min(1, "City is required"),
+  state_province: z.string().min(1, "Province is required"),
+  postal_code: z.string().min(1, "Postal code is required"),
+  country: z.string().min(1, "Country is required").default("Philippines"),
+  payment_terms: z.string().min(1, "Payment terms are required"),
+  delivery_terms: z.string().min(1, "Delivery terms are required"),
   isActive: z.number().int().min(0).max(1).default(1),
   supplier_image: z.string().optional().default(""),
   bank_details: z.string().optional().default(""),

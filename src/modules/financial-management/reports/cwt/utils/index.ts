@@ -1,87 +1,63 @@
-// cwt/utils/index.ts
-// Data transform and chart-build helpers for the CWT module.
-import {
-  RawCWTRow,
-  CWTRecord,
-  PieEntry,
-  TrendEntry,
-  BarEntry
-} from '../types';
+// utils/index.ts
+// Pure utility functions for the CWT module — no React, no side effects.
 
-// ── Transform ────────────────────────────────────────────────────────────────
+import type { RawCWTRow, CWTRecord, AggregatedEntry, CWTMetrics } from '../types';
 
-export function transformCWTRows(raw: RawCWTRow[]): CWTRecord[] {
-  return raw.map((item, i) => {
-    const dateRaw = item.transactionDate ?? '';
-    const dateObj = dateRaw ? new Date(dateRaw) : new Date(0);
+/** Format a number as Philippine Peso string */
+export const formatPeso = (value: number): string =>
+  `₱${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+/** Transform raw API rows into clean CWTRecord objects */
+export function transformCWTRows(rows: RawCWTRow[]): CWTRecord[] {
+  return rows.map((row, i) => {
+    // Strip time component from date — API returns "2025-12-26 17:52:45"
+    const rawDate = row.transactionDate ?? row.invoiceDate ?? row.date ?? row.createdAt ?? '-';
+    const date    = rawDate !== '-' ? rawDate.split(' ')[0] : '-';
+
     return {
-      id:            item.docNo ?? `CWT-${i + 1}`,
-      invoiceNo:     item.docNo ?? `CWT-${i + 1}`,
-      customerName:  item.supplier    ?? '-',
-      invoiceDate:   dateRaw,
-      grossAmount:   Number(item.grossAmount   ?? 0),
-      taxableAmount: Number(item.taxableAmount ?? 0),
-      displayAmount: Number(item.cwt           ?? 0),
-      dateObj,
+      id:            row.docNo ?? row.invoiceNo ?? row.invoice_number ?? row.id ?? `CWT${i + 1}`,
+      customer:      row.supplier ?? row.customer ?? row.customerName ?? row.client ?? 'Unknown',
+      amount:        typeof row.ewt === 'number'
+        ? row.ewt
+        : parseFloat(String(row.ewt ?? row.amount ?? '0').replace(/[^0-9.]/g, '')) || 0,
+      grossAmount:   Number(row.grossAmount   ?? 0),
+      taxableAmount: Number(row.taxableAmount ?? 0),
+      date,
+      status:        row.status ?? 'Processed',
     };
   });
 }
 
-// ── Chart builders ───────────────────────────────────────────────────────────
-
-export function buildPieData(records: CWTRecord[]): PieEntry[] {
-  const map: Record<string, number> = {};
-  records.forEach((r) => { map[r.customerName] = (map[r.customerName] ?? 0) + r.displayAmount; });
-  const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
-  const top    = sorted.slice(0, 6);
-  const rest   = sorted.slice(6).reduce((s, [, v]) => s + v, 0);
-  const entries: PieEntry[] = top.map(([name, value]) => ({ name, value }));
-  if (rest > 0) entries.push({ name: 'Others', value: rest });
-  return entries;
-}
-
-export function buildTrendData(records: CWTRecord[]): TrendEntry[] {
+/** Aggregate CWT records by customer for charts */
+export function aggregateByCustomer(records: CWTRecord[]): AggregatedEntry[] {
   const map: Record<string, number> = {};
   records.forEach((r) => {
-    if (!r.dateObj || isNaN(r.dateObj.getTime())) return;
-    const key = r.dateObj.toLocaleString('default', { month: 'short', year: '2-digit' });
-    map[key] = (map[key] ?? 0) + r.displayAmount;
-  });
-  return Object.entries(map).map(([month, amount]) => ({ month, amount }));
-}
-
-export function buildBarData(records: CWTRecord[]): BarEntry[] {
-  const map: Record<string, { amount: number; count: number }> = {};
-  records.forEach((r) => {
-    if (!map[r.customerName]) map[r.customerName] = { amount: 0, count: 0 };
-    map[r.customerName].amount += r.displayAmount;
-    map[r.customerName].count  += 1;
+    map[r.customer] = (map[r.customer] || 0) + r.amount;
   });
   return Object.entries(map)
-    .map(([name, { amount, count }]) => ({ name, amount, count }))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 10);
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
 }
 
-// ── Formatting ───────────────────────────────────────────────────────────────
-
-export function formatPeso(value: number | string): string {
-  const n = typeof value === 'string' ? parseFloat(value) : value;
-  return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** Derive high-level CWT metrics from records */
+export function deriveMetrics(records: CWTRecord[]): CWTMetrics {
+  const totalAmount = records.reduce((acc, r) => acc + r.amount, 0);
+  return {
+    totalAmount,
+    averageCwt:   records.length ? totalAmount / records.length : 0,
+    totalRecords: records.length,
+  };
 }
 
-export function formatDate(raw: string | undefined): string {
-  if (!raw) return '-';
-  const d = new Date(raw);
-  return isNaN(d.getTime()) ? raw : d.toLocaleDateString('en-PH');
-}
-
-export function getPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+/** Pagination helper: produce page number + ellipsis array */
+export function getPageNumbers(currentPage: number, totalPages: number): (number | 'ellipsis')[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
   const pages: (number | 'ellipsis')[] = [1];
-  if (current > 3) pages.push('ellipsis');
-  for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i);
-  if (current < total - 2) pages.push('ellipsis');
-  pages.push(total);
+  if (currentPage > 3) pages.push('ellipsis');
+  for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+    pages.push(i);
+  }
+  if (currentPage < totalPages - 2) pages.push('ellipsis');
+  pages.push(totalPages);
   return pages;
 }

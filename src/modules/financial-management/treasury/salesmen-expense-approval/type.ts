@@ -197,6 +197,36 @@ export interface ExpenseLog {
   version: number;
 }
 
+export interface TreasuryVote {
+  approver_name: string;
+  status: string;
+  remarks: string | null;
+  version: number;
+  created_at: string;
+}
+
+export interface DraftLog {
+  id: number;
+  editor_name: string;
+  edit_reason: string;
+  old_total: number;
+  new_total: number;
+  created_at: string;
+  payables?: ApprovalLogDetail[]; // For now, we only need the variance
+}
+
+export interface ExpenseLog {
+  id: number;
+  expense_id: number;
+  action: string;
+  editor_name: string;
+  changed_at: string;
+  amount: number;
+  remarks: string | null;
+  particulars: string;
+  status: string;
+}
+
 export interface ApprovalLog {
   id: number;
   doc_no: string;

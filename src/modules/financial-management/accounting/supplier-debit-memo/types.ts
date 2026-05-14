@@ -44,6 +44,8 @@ export interface MemoFilters {
   supplier_id:      string;
   chart_of_account: string;
   status:           string;
+  date_from?:       string;
+  date_to?:         string;
 }
 
 // Spring wraps list responses in { data: [...] }

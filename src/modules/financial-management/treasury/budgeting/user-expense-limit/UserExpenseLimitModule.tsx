@@ -6,14 +6,16 @@ import { useState } from "react";
 import { Button }   from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus }     from "lucide-react";
-import { useUserExpenseLimits } from "./hooks/useUserExpenseLimit";
+import { useUserExpenseLimits, useDepartments } from "./hooks/useUserExpenseLimit";
 import { LimitTable }     from "./components/LimitTable";
+import { LimitFilters }   from "./components/LimitFilters";
 import { AddLimitModal }  from "./components/AddLimitModal";
 import { EditLimitModal } from "./components/EditLimitModal";
 import type { UserExpenseLimit } from "./types";
 
 export default function UserExpenseLimitModule() {
-  const { limits, loading, error, toast, showToast, refetch } = useUserExpenseLimits();
+  const { limits, loading, error, showToast, refetch, filters, updateFilter, clearFilters, hasFilters } = useUserExpenseLimits();
+  const { departments } = useDepartments();
   const [showAdd,   setShowAdd]   = useState(false);
   const [editLimit, setEditLimit] = useState<UserExpenseLimit | null>(null);
 
@@ -51,16 +53,14 @@ export default function UserExpenseLimitModule() {
         </Button>
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div className={`px-4 py-3 rounded-lg text-sm flex items-center gap-3 border ${
-          toast.type === "success"
-            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400"
-            : "bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-400"
-        }`}>
-          {toast.message}
-        </div>
-      )}
+      {/* Filters */}
+      <LimitFilters
+        filters={filters}
+        departments={departments}
+        hasFilters={hasFilters}
+        onChange={updateFilter}
+        onClear={clearFilters}
+      />
 
       {/* Table */}
       <LimitTable

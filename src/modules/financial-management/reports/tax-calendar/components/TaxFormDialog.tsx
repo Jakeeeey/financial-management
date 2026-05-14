@@ -10,8 +10,8 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { TAX_TYPES, STATUSES } from '../types';
-import type { TaxActivityForm, TaxStatus } from '../types';
+import { TAX_TYPES, FILING_FREQUENCIES } from '../types';
+import type { TaxActivityForm, FilingFrequency } from '../types';
 
 interface Props {
   open:    boolean;
@@ -36,15 +36,10 @@ const Field = ({ label, required, children }: {
 export function TaxFormDialog({ open, onClose, onSave, initial, loading, title }: Props) {
   const [form, setForm] = useState<TaxActivityForm>(initial);
 
-  // Only reset when dialog transitions from closed → open
-  // Using a ref to track previous open state avoids re-running on every render
   const prevOpenRef = useRef(false);
   useEffect(() => {
-    if (open && !prevOpenRef.current) {
-      setForm(initial);
-    }
+    if (open && !prevOpenRef.current) setForm(initial);
     prevOpenRef.current = open;
-    // Intentionally NOT including `initial` — we only want this on open transition
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -60,7 +55,6 @@ export function TaxFormDialog({ open, onClose, onSave, initial, loading, title }
           <DialogTitle className="text-base font-bold">{title}</DialogTitle>
         </DialogHeader>
 
-        {/* Scrollable body — prevents overflow when description is long */}
         <div className="flex-1 overflow-y-auto space-y-5 py-2 pr-1 pl-1">
           <Field label="Title" required>
             <Input
@@ -84,32 +78,52 @@ export function TaxFormDialog({ open, onClose, onSave, initial, loading, title }
             </Select>
           </Field>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Due Date" required>
-              <Input
-                type="datetime-local"
-                value={form.due_date}
-                onChange={(e) => set('due_date', e.target.value)}
-                className="text-sm"
-              />
-            </Field>
-            <Field label="Status">
-              <Select value={form.status} onValueChange={(v) => set('status', v as TaxStatus)}>
-                <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {STATUSES.map((s) => (
-                    <SelectItem key={s} value={s} className="text-sm">{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
+          <Field label="Filing Frequency" required>
+            <Select value={form.filing_frequency} onValueChange={(v) => set('filing_frequency', v as FilingFrequency)}>
+              <SelectTrigger className="text-sm">
+                <SelectValue placeholder="Select frequency" />
+              </SelectTrigger>
+              <SelectContent>
+                {FILING_FREQUENCIES.map((f) => (
+                  <SelectItem key={f} value={f} className="text-sm">{f}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          {/* Due Date — full width now that Status dropdown is removed */}
+          <Field label="Due Date" required>
+            <Input
+              type="datetime-local"
+              value={form.due_date}
+              onChange={(e) => set('due_date', e.target.value)}
+              className="text-sm"
+            />
+          </Field>
 
           <Field label="Reminder Date">
             <Input
               type="datetime-local"
               value={form.reminder_date}
               onChange={(e) => set('reminder_date', e.target.value)}
+              className="text-sm"
+            />
+          </Field>
+
+          <Field label="BIR Form">
+            <Input
+              value={form.bir_form}
+              onChange={(e) => set('bir_form', e.target.value)}
+              placeholder="e.g. 2550M, 1601C"
+              className="text-sm"
+            />
+          </Field>
+
+          <Field label="Due Date Rule">
+            <Input
+              value={form.due_date_rule}
+              onChange={(e) => set('due_date_rule', e.target.value)}
+              placeholder="e.g. 20th of every month"
               className="text-sm"
             />
           </Field>
@@ -123,12 +137,40 @@ export function TaxFormDialog({ open, onClose, onSave, initial, loading, title }
               className="text-sm resize-none max-h-40 overflow-y-auto"
             />
           </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Filing Date">
+              <Input
+                type="datetime-local"
+                value={form.actual_filing_date}
+                onChange={(e) => set('actual_filing_date', e.target.value)}
+                className="text-sm"
+              />
+            </Field>
+            <Field label="Payment Date">
+              <Input
+                type="datetime-local"
+                value={form.payment_date}
+                onChange={(e) => set('payment_date', e.target.value)}
+                className="text-sm"
+              />
+            </Field>
+          </div>
+
+          <Field label="Amount Paid">
+            <Input
+              type="number"
+              step="0.01"
+              value={form.amount_paid}
+              onChange={(e) => set('amount_paid', e.target.value)}
+              placeholder="0.00"
+              className="text-sm"
+            />
+          </Field>
         </div>
 
         <DialogFooter className="flex-shrink-0 pt-2 border-t border-border/50">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={loading}>
-            Cancel
-          </Button>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={loading}>Cancel</Button>
           <Button size="sm" onClick={() => onSave(form)} disabled={!valid || loading}>
             {loading ? 'Saving…' : 'Save'}
           </Button>

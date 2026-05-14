@@ -164,43 +164,82 @@ export async function deleteRepresentative(id: number): Promise<void> {
 }
 
 /**
- * Check if email is unique for a supplier
- * Used for validation before creating/updating
+ * Check if a representative already exists for a supplier
+ * Checks for: Email, Contact Number, or Full Name (First + Middle + Last + Suffix)
  */
-export async function isEmailUniqueForSupplier(
-  email: string,
+export async function checkRepresentativeDuplicate(
+  data: Partial<Representative>,
   supplierId: number,
-  excludeRepId?: number,
-): Promise<boolean> {
+  excludeId?: number,
+): Promise<{ isDuplicate: boolean; type?: "email" | "contact" | "name" }> {
   try {
-    const filter: Record<string, unknown> = {
-      _and: [{ supplier_id: { _eq: supplierId } }, { email: { _eq: email } }],
+    const filters: Record<string, unknown>[] = [
+      { supplier_id: { _eq: supplierId } },
+    ];
+
+    if (excludeId) {
+      filters.push({ id: { _neq: excludeId } });
+    }
+
+    // We check each condition separately to identify which field is duplicated
+    const checkFields = async (
+      fieldFilter: Record<string, unknown>,
+    ) => {
+      const combinedFilter = {
+        _and: [...filters, fieldFilter],
+      };
+
+      const response = await fetch(
+        `${API_BASE}/suppliers_representative?limit=1&fields=id&filter=${encodeURIComponent(
+          JSON.stringify(combinedFilter),
+        )}`,
+        {
+          method: "GET",
+          headers: getHeaders(),
+          cache: "no-store",
+        },
+      );
+
+      if (!response.ok) return false;
+      const result: RepresentativesResponse = await response.json();
+      return (result.data || []).length > 0;
     };
 
-    // Exclude current representative when updating
-    if (excludeRepId) {
-      (filter._and as Record<string, unknown>[]).push({ id: { _neq: excludeRepId } });
+    // 1. Check Email
+    if (data.email) {
+      if (await checkFields({ email: { _eq: data.email } })) {
+        return { isDuplicate: true, type: "email" };
+      }
     }
 
-    const response = await fetch(
-      `${API_BASE}/suppliers_representative?limit=1&fields=id&filter=${encodeURIComponent(
-        JSON.stringify(filter),
-      )}`,
-      {
-        method: "GET",
-        headers: getHeaders(),
-        cache: "no-store",
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to check email uniqueness");
+    // 2. Check Contact Number
+    if (data.contact_number) {
+      if (
+        await checkFields({ contact_number: { _eq: data.contact_number } })
+      ) {
+        return { isDuplicate: true, type: "contact" };
+      }
     }
 
-    const result: RepresentativesResponse = await response.json();
-    return (result.data || []).length === 0;
+    // 3. Check Name (Only if both first and last are provided)
+    if (data.first_name && data.last_name) {
+      const nameFilter: Record<string, unknown> = {
+        _and: [
+          { first_name: { _eq: data.first_name } },
+          { last_name: { _eq: data.last_name } },
+          { middle_name: { _eq: data.middle_name || null } },
+          { suffix: { _eq: data.suffix || null } },
+        ],
+      };
+
+      if (await checkFields(nameFilter)) {
+        return { isDuplicate: true, type: "name" };
+      }
+    }
+
+    return { isDuplicate: false };
   } catch (error) {
-    console.error("Error checking email uniqueness:", error);
+    console.error("Error checking representative duplicate:", error);
     throw error;
   }
 }

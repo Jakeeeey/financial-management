@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import type { Brand, Category, PricingFilters, Supplier, Unit } from "../types";
+import type { Brand, Category, PriceType, PricingFilters, Supplier, Unit } from "../types";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,7 +21,7 @@ import {
     CommandList,
 } from "@/components/ui/command";
 
-import { Check, ChevronsUpDown, X } from "lucide-react";
+import { Check, ChevronsUpDown, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -33,9 +33,10 @@ type Props = {
     brands: Brand[];
     units: Unit[];
     suppliers: Supplier[];
+    priceTypes: PriceType[];
 };
 
-type FilterArrayKey = "category_ids" | "brand_ids" | "unit_ids" | "supplier_ids";
+type FilterArrayKey = "category_ids" | "brand_ids" | "unit_ids" | "supplier_ids" | "price_type_ids";
 
 function safeStr(v: unknown): string {
     const s = String(v ?? "").trim();
@@ -100,7 +101,7 @@ function labelCount(title: string, count: number, emptyLabel: string): string {
 }
 
 export default function PricingFiltersBar(props: Props) {
-    const { filters, setFilters, resetFilters, categories, brands, units, suppliers } = props;
+    const { filters, setFilters, resetFilters, categories, brands, units, suppliers, priceTypes } = props;
 
     const selectedSupplierIds = React.useMemo(
         () => getIds(filters, "supplier_ids"),
@@ -118,17 +119,23 @@ export default function PricingFiltersBar(props: Props) {
         () => getIds(filters, "unit_ids"),
         [filters],
     );
+    const selectedPriceTypeIds = React.useMemo(
+        () => getIds(filters, "price_type_ids"),
+        [filters],
+    );
 
     const [localQ, setLocalQ] = React.useState(filters.q);
     const [supplierOpen, setSupplierOpen] = React.useState(false);
     const [brandOpen, setBrandOpen] = React.useState(false);
     const [catOpen, setCatOpen] = React.useState(false);
     const [unitOpen, setUnitOpen] = React.useState(false);
+    const [ptOpen, setPtOpen] = React.useState(false);
 
     const [supplierQuery, setSupplierQuery] = React.useState("");
     const [brandQuery, setBrandQuery] = React.useState("");
     const [catQuery, setCatQuery] = React.useState("");
     const [unitQuery, setUnitQuery] = React.useState("");
+    const [ptQuery, setPtQuery] = React.useState("");
 
     React.useEffect(() => {
         setLocalQ(filters.q);
@@ -214,6 +221,16 @@ export default function PricingFiltersBar(props: Props) {
         }
         return map;
     }, [units]);
+    
+    const priceTypeLabelById = React.useMemo(() => {
+        const map = new Map<string, string>();
+        for (const pt of priceTypes) {
+            const id = safeStr(pt.price_type_id);
+            const label = safeStr(pt.price_type_name) || "—";
+            if (id) map.set(id, label);
+        }
+        return map;
+    }, [priceTypes]);
 
     const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
 
@@ -266,6 +283,16 @@ export default function PricingFiltersBar(props: Props) {
         });
     }
 
+    for (const id of selectedPriceTypeIds) {
+        const label = priceTypeLabelById.get(id) ?? `Price #${id}`;
+        chips.push({
+            key: `pt:${id}`,
+            label: `Price ${label}`,
+            onRemove: () =>
+                setIds(setFilters, "price_type_ids", selectedPriceTypeIds.filter((x) => x !== id)),
+        });
+    }
+
     if (filters.active_only) {
         chips.push({
             key: "active_only",
@@ -282,402 +309,501 @@ export default function PricingFiltersBar(props: Props) {
         });
     }
 
+    if (filters.show_list_price) {
+        chips.push({
+            key: "show_list_price",
+            label: "List Price",
+            onRemove: () => setFilters((prev) => ({ ...prev, show_list_price: false })),
+        });
+    }
+
     return (
-        <Card className="rounded-2xl p-3 shadow-sm">
-            <div className="min-w-0 overflow-hidden">
-                <div className="min-w-0 overflow-x-auto">
-                    <div className="min-w-[980px] max-w-full">
-                        <div className="grid gap-2 md:grid-cols-12">
-                            <div className="flex gap-2 min-w-0 md:col-span-4">
-                                <Input
-                                    placeholder="Search name / code / barcode…"
-                                    value={localQ}
-                                    onChange={(e) => setLocalQ(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            setFilters((prev) => ({ ...prev, q: localQ }));
-                                        }
-                                    }}
-                                />
-                                <Button
-                                    type="button"
-                                    onClick={() => setFilters((prev) => ({ ...prev, q: localQ }))}
-                                >
-                                    Search
-                                </Button>
-                            </div>
+        <Card className="flex flex-col gap-3 rounded-2xl p-4 shadow-sm">
+            {/* Top Row: Search & Primary Filters */}
+            <div className="flex flex-col gap-3 lg:flex-row">
+                {/* Search */}
+                <div className="relative w-full shrink-0 lg:w-[340px]">
+                    <Input
+                        placeholder="Search name / code / barcode…"
+                        value={localQ}
+                        onChange={(e) => setLocalQ(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                                e.preventDefault();
+                                setFilters((prev) => ({ ...prev, q: localQ }));
+                            }
+                        }}
+                        className="pr-10 shadow-none"
+                    />
+                    <Button
+                        type="button"
+                        onClick={() => setFilters((prev) => ({ ...prev, q: localQ }))}
+                        size="icon"
+                        title="Search"
+                        className="absolute right-1 top-1 h-8 w-8 bg-emerald-500 text-white hover:bg-emerald-600"
+                    >
+                        <Search className="h-4 w-4" />
+                    </Button>
+                </div>
 
-                            <div className="min-w-0 md:col-span-2">
-                                <Popover open={supplierOpen} onOpenChange={setSupplierOpen}>
-                                    <PopoverTrigger asChild>
-                                        <Button
-                                            variant="outline"
-                                            className="w-full justify-between whitespace-nowrap"
-                                            type="button"
-                                        >
-                                            <span className="truncate">
-                                                {labelCount("Suppliers", selectedSupplierIds.length, "Supplier")}
-                                                {selectedSupplierIds.length ? " • Linked" : ""}
-                                            </span>
-                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
-                                        </Button>
-                                    </PopoverTrigger>
-
-                                    <PopoverContent className="w-[380px] p-0" align="start">
-                                        <Command shouldFilter={false}>
-                                            <div className="flex items-center gap-2 px-2 pt-2">
-                                                <CommandInput
-                                                    placeholder="Search supplier…"
-                                                    value={supplierQuery}
-                                                    onValueChange={setSupplierQuery}
-                                                />
-                                                {selectedSupplierIds.length > 0 ? (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8"
-                                                        onClick={() => setIds(setFilters, "supplier_ids", [])}
-                                                        title="Clear suppliers"
-                                                        type="button"
-                                                    >
-                                                        <X className="h-4 w-4" />
-                                                    </Button>
-                                                ) : null}
-                                            </div>
-
-                                            <CommandList>
-                                                <CommandEmpty>No suppliers found.</CommandEmpty>
-
-                                                <CommandGroup heading="Suppliers">
-                                                    {filteredSuppliers.slice(0, 120).map((s) => {
-                                                        const idStr = safeStr(s.id);
-                                                        const label = supplierText(s);
-                                                        const selected = selectedSupplierIds.includes(idStr);
-
-                                                        return (
-                                                            <CommandItem
-                                                                key={idStr}
-                                                                value={`${label} ${idStr}`}
-                                                                onSelect={() =>
-                                                                    setIds(
-                                                                        setFilters,
-                                                                        "supplier_ids",
-                                                                        toggleId(selectedSupplierIds, idStr),
-                                                                    )
-                                                                }
-                                                            >
-                                                                <Check
-                                                                    className={cn(
-                                                                        "mr-2 h-4 w-4",
-                                                                        selected ? "opacity-100" : "opacity-0",
-                                                                    )}
-                                                                />
-                                                                <span className="truncate">{label}</span>
-                                                            </CommandItem>
-                                                        );
-                                                    })}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-
-                                        <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-                                            Selecting supplier(s) will automatically show linked products only.
-                                        </div>
-                                    </PopoverContent>
-                                </Popover>
-                            </div>
-
-                            <div className="min-w-0 md:col-span-2">
-                                <Popover open={brandOpen} onOpenChange={setBrandOpen}>
-                                    <PopoverTrigger asChild>
-                                        <Button
-                                            variant="outline"
-                                            className="w-full justify-between whitespace-nowrap"
-                                            type="button"
-                                        >
-                                            <span className="truncate">
-                                                {labelCount("Brands", selectedBrandIds.length, "All brands")}
-                                            </span>
-                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
-                                        </Button>
-                                    </PopoverTrigger>
-
-                                    <PopoverContent className="w-[340px] p-0" align="start">
-                                        <Command shouldFilter={false}>
-                                            <div className="flex items-center gap-2 px-2 pt-2">
-                                                <CommandInput
-                                                    placeholder="Search brand…"
-                                                    value={brandQuery}
-                                                    onValueChange={setBrandQuery}
-                                                />
-                                                {selectedBrandIds.length > 0 ? (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8"
-                                                        onClick={() => setIds(setFilters, "brand_ids", [])}
-                                                        title="Clear brands"
-                                                        type="button"
-                                                    >
-                                                        <X className="h-4 w-4" />
-                                                    </Button>
-                                                ) : null}
-                                            </div>
-
-                                            <CommandList>
-                                                <CommandEmpty>No brands found.</CommandEmpty>
-                                                <CommandGroup heading="Brands">
-                                                    {filteredBrands.slice(0, 140).map((b) => {
-                                                        const idStr = safeStr(b.brand_id);
-                                                        const label = safeStr(b.brand_name) || "—";
-                                                        const selected = selectedBrandIds.includes(idStr);
-
-                                                        return (
-                                                            <CommandItem
-                                                                key={idStr}
-                                                                value={`${label} ${idStr}`}
-                                                                onSelect={() =>
-                                                                    setIds(
-                                                                        setFilters,
-                                                                        "brand_ids",
-                                                                        toggleId(selectedBrandIds, idStr),
-                                                                    )
-                                                                }
-                                                            >
-                                                                <Check
-                                                                    className={cn(
-                                                                        "mr-2 h-4 w-4",
-                                                                        selected ? "opacity-100" : "opacity-0",
-                                                                    )}
-                                                                />
-                                                                <span className="truncate">{label}</span>
-                                                            </CommandItem>
-                                                        );
-                                                    })}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-                                    </PopoverContent>
-                                </Popover>
-                            </div>
-
-                            <div className="min-w-0 md:col-span-2">
-                                <Popover open={catOpen} onOpenChange={setCatOpen}>
-                                    <PopoverTrigger asChild>
-                                        <Button
-                                            variant="outline"
-                                            className="w-full justify-between whitespace-nowrap"
-                                            type="button"
-                                        >
-                                            <span className="truncate">
-                                                {labelCount("Categories", selectedCategoryIds.length, "All categories")}
-                                            </span>
-                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
-                                        </Button>
-                                    </PopoverTrigger>
-
-                                    <PopoverContent className="w-[340px] p-0" align="start">
-                                        <Command shouldFilter={false}>
-                                            <div className="flex items-center gap-2 px-2 pt-2">
-                                                <CommandInput
-                                                    placeholder="Search category…"
-                                                    value={catQuery}
-                                                    onValueChange={setCatQuery}
-                                                />
-                                                {selectedCategoryIds.length > 0 ? (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8"
-                                                        onClick={() => setIds(setFilters, "category_ids", [])}
-                                                        title="Clear categories"
-                                                        type="button"
-                                                    >
-                                                        <X className="h-4 w-4" />
-                                                    </Button>
-                                                ) : null}
-                                            </div>
-
-                                            <CommandList>
-                                                <CommandEmpty>No categories found.</CommandEmpty>
-                                                <CommandGroup heading="Categories">
-                                                    {filteredCategories.slice(0, 140).map((c) => {
-                                                        const idStr = safeStr(c.category_id);
-                                                        const label = safeStr(c.category_name) || "—";
-                                                        const selected = selectedCategoryIds.includes(idStr);
-
-                                                        return (
-                                                            <CommandItem
-                                                                key={idStr}
-                                                                value={`${label} ${idStr}`}
-                                                                onSelect={() =>
-                                                                    setIds(
-                                                                        setFilters,
-                                                                        "category_ids",
-                                                                        toggleId(selectedCategoryIds, idStr),
-                                                                    )
-                                                                }
-                                                            >
-                                                                <Check
-                                                                    className={cn(
-                                                                        "mr-2 h-4 w-4",
-                                                                        selected ? "opacity-100" : "opacity-0",
-                                                                    )}
-                                                                />
-                                                                <span className="truncate">{label}</span>
-                                                            </CommandItem>
-                                                        );
-                                                    })}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-                                    </PopoverContent>
-                                </Popover>
-                            </div>
-
-                            <div className="min-w-0 md:col-span-2">
-                                <Popover open={unitOpen} onOpenChange={setUnitOpen}>
-                                    <PopoverTrigger asChild>
-                                        <Button
-                                            variant="outline"
-                                            className="w-full justify-between whitespace-nowrap"
-                                            type="button"
-                                        >
-                                            <span className="truncate">
-                                                {labelCount("UOM", selectedUnitIds.length, "All units")}
-                                            </span>
-                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
-                                        </Button>
-                                    </PopoverTrigger>
-
-                                    <PopoverContent className="w-[340px] p-0" align="start">
-                                        <Command shouldFilter={false}>
-                                            <div className="flex items-center gap-2 px-2 pt-2">
-                                                <CommandInput
-                                                    placeholder="Search unit…"
-                                                    value={unitQuery}
-                                                    onValueChange={setUnitQuery}
-                                                />
-                                                {selectedUnitIds.length > 0 ? (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8"
-                                                        onClick={() => setIds(setFilters, "unit_ids", [])}
-                                                        title="Clear units"
-                                                        type="button"
-                                                    >
-                                                        <X className="h-4 w-4" />
-                                                    </Button>
-                                                ) : null}
-                                            </div>
-
-                                            <CommandList>
-                                                <CommandEmpty>No units found.</CommandEmpty>
-                                                <CommandGroup heading="Units">
-                                                    {filteredUnits.slice(0, 160).map((u) => {
-                                                        const idStr = safeStr(u.unit_id);
-                                                        const label = unitText(u);
-                                                        const selected = selectedUnitIds.includes(idStr);
-
-                                                        return (
-                                                            <CommandItem
-                                                                key={idStr}
-                                                                value={`${label} ${idStr}`}
-                                                                onSelect={() =>
-                                                                    setIds(
-                                                                        setFilters,
-                                                                        "unit_ids",
-                                                                        toggleId(selectedUnitIds, idStr),
-                                                                    )
-                                                                }
-                                                            >
-                                                                <Check
-                                                                    className={cn(
-                                                                        "mr-2 h-4 w-4",
-                                                                        selected ? "opacity-100" : "opacity-0",
-                                                                    )}
-                                                                />
-                                                                <span className="truncate">{label}</span>
-                                                            </CommandItem>
-                                                        );
-                                                    })}
-                                                </CommandGroup>
-                                            </CommandList>
-                                        </Command>
-                                    </PopoverContent>
-                                </Popover>
-                            </div>
-
-                            <div className="flex items-center gap-3 whitespace-nowrap md:col-span-2">
-                                <div className="flex items-center gap-2">
-                                    <Switch
-                                        checked={filters.active_only}
-                                        onCheckedChange={(checked) =>
-                                            setFilters((prev) => ({ ...prev, active_only: checked }))
-                                        }
-                                    />
-                                    <Label>Active only</Label>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-3 whitespace-nowrap md:col-span-2">
-                                <div className="flex items-center gap-2">
-                                    <Switch
-                                        checked={filters.missing_tier}
-                                        onCheckedChange={(checked) =>
-                                            setFilters((prev) => ({ ...prev, missing_tier: checked }))
-                                        }
-                                    />
-                                    <Label>Missing tier</Label>
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-1 md:col-span-12">
+                {/* Primary Filters (Wrap on smaller screens, stick to rest of width) */}
+                <div className="flex flex-1 flex-wrap items-center gap-2">
+                    <div className="min-w-[160px] flex-1">
+                        <Popover open={supplierOpen} onOpenChange={setSupplierOpen}>
+                            <PopoverTrigger asChild>
                                 <Button
                                     variant="outline"
-                                    onClick={() => {
-                                        resetFilters();
-                                        setSupplierQuery("");
-                                        setBrandQuery("");
-                                        setCatQuery("");
-                                        setUnitQuery("");
-                                    }}
+                                    className="w-full justify-between whitespace-nowrap shadow-none"
                                     type="button"
                                 >
-                                    Reset
+                                    <span className="truncate">
+                                        {labelCount("Suppliers", selectedSupplierIds.length, "Supplier")}
+                                        {selectedSupplierIds.length ? " • Linked" : ""}
+                                    </span>
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
                                 </Button>
-                            </div>
+                            </PopoverTrigger>
+
+                            <PopoverContent className="w-[380px] p-0" align="start">
+                                <Command shouldFilter={false}>
+                                    <div className="flex items-center gap-2 px-2 pt-2">
+                                        <CommandInput
+                                            placeholder="Search supplier…"
+                                            value={supplierQuery}
+                                            onValueChange={setSupplierQuery}
+                                        />
+                                        {selectedSupplierIds.length > 0 ? (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8"
+                                                onClick={() => setIds(setFilters, "supplier_ids", [])}
+                                                title="Clear suppliers"
+                                                type="button"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        ) : null}
+                                    </div>
+
+                                    <CommandList>
+                                        <CommandEmpty>No suppliers found.</CommandEmpty>
+
+                                        <CommandGroup heading="Suppliers">
+                                            {filteredSuppliers.slice(0, 120).map((s) => {
+                                                const idStr = safeStr(s.id);
+                                                const label = supplierText(s);
+                                                const selected = selectedSupplierIds.includes(idStr);
+
+                                                return (
+                                                    <CommandItem
+                                                        key={idStr}
+                                                        value={`${label} ${idStr}`}
+                                                        onSelect={() =>
+                                                            setIds(
+                                                                setFilters,
+                                                                "supplier_ids",
+                                                                toggleId(selectedSupplierIds, idStr),
+                                                            )
+                                                        }
+                                                    >
+                                                        <Check
+                                                            className={cn(
+                                                                "mr-2 h-4 w-4",
+                                                                selected ? "opacity-100" : "opacity-0",
+                                                            )}
+                                                        />
+                                                        <span className="truncate">{label}</span>
+                                                    </CommandItem>
+                                                );
+                                            })}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+
+                                <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+                                    Selecting supplier(s) will automatically show linked products only.
+                                </div>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+
+                    <div className="min-w-[160px] flex-1">
+                        <Popover open={brandOpen} onOpenChange={setBrandOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    className="w-full justify-between whitespace-nowrap shadow-none"
+                                    type="button"
+                                >
+                                    <span className="truncate">
+                                        {labelCount("Brands", selectedBrandIds.length, "All brands")}
+                                    </span>
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+                                </Button>
+                            </PopoverTrigger>
+
+                            <PopoverContent className="w-[340px] p-0" align="start">
+                                <Command shouldFilter={false}>
+                                    <div className="flex items-center gap-2 px-2 pt-2">
+                                        <CommandInput
+                                            placeholder="Search brand…"
+                                            value={brandQuery}
+                                            onValueChange={setBrandQuery}
+                                        />
+                                        {selectedBrandIds.length > 0 ? (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8"
+                                                onClick={() => setIds(setFilters, "brand_ids", [])}
+                                                title="Clear brands"
+                                                type="button"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        ) : null}
+                                    </div>
+
+                                    <CommandList>
+                                        <CommandEmpty>No brands found.</CommandEmpty>
+                                        <CommandGroup heading="Brands">
+                                            {filteredBrands.slice(0, 140).map((b) => {
+                                                const idStr = safeStr(b.brand_id);
+                                                const label = safeStr(b.brand_name) || "—";
+                                                const selected = selectedBrandIds.includes(idStr);
+
+                                                return (
+                                                    <CommandItem
+                                                        key={idStr}
+                                                        value={`${label} ${idStr}`}
+                                                        onSelect={() =>
+                                                            setIds(
+                                                                setFilters,
+                                                                "brand_ids",
+                                                                toggleId(selectedBrandIds, idStr),
+                                                            )
+                                                        }
+                                                    >
+                                                        <Check
+                                                            className={cn(
+                                                                "mr-2 h-4 w-4",
+                                                                selected ? "opacity-100" : "opacity-0",
+                                                            )}
+                                                        />
+                                                        <span className="truncate">{label}</span>
+                                                    </CommandItem>
+                                                );
+                                            })}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+
+                    <div className="min-w-[160px] flex-1">
+                        <Popover open={catOpen} onOpenChange={setCatOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    className="w-full justify-between whitespace-nowrap shadow-none"
+                                    type="button"
+                                >
+                                    <span className="truncate">
+                                        {labelCount("Categories", selectedCategoryIds.length, "All categories")}
+                                    </span>
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+                                </Button>
+                            </PopoverTrigger>
+
+                            <PopoverContent className="w-[340px] p-0" align="start">
+                                <Command shouldFilter={false}>
+                                    <div className="flex items-center gap-2 px-2 pt-2">
+                                        <CommandInput
+                                            placeholder="Search category…"
+                                            value={catQuery}
+                                            onValueChange={setCatQuery}
+                                        />
+                                        {selectedCategoryIds.length > 0 ? (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8"
+                                                onClick={() => setIds(setFilters, "category_ids", [])}
+                                                title="Clear categories"
+                                                type="button"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        ) : null}
+                                    </div>
+
+                                    <CommandList>
+                                        <CommandEmpty>No categories found.</CommandEmpty>
+                                        <CommandGroup heading="Categories">
+                                            {filteredCategories.slice(0, 140).map((c) => {
+                                                const idStr = safeStr(c.category_id);
+                                                const label = safeStr(c.category_name) || "—";
+                                                const selected = selectedCategoryIds.includes(idStr);
+
+                                                return (
+                                                    <CommandItem
+                                                        key={idStr}
+                                                        value={`${label} ${idStr}`}
+                                                        onSelect={() =>
+                                                            setIds(
+                                                                setFilters,
+                                                                "category_ids",
+                                                                toggleId(selectedCategoryIds, idStr),
+                                                            )
+                                                        }
+                                                    >
+                                                        <Check
+                                                            className={cn(
+                                                                "mr-2 h-4 w-4",
+                                                                selected ? "opacity-100" : "opacity-0",
+                                                            )}
+                                                        />
+                                                        <span className="truncate">{label}</span>
+                                                    </CommandItem>
+                                                );
+                                            })}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+
+                    <div className="min-w-[120px] flex-1">
+                        <Popover open={unitOpen} onOpenChange={setUnitOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    className="w-full justify-between whitespace-nowrap shadow-none"
+                                    type="button"
+                                >
+                                    <span className="truncate">
+                                        {labelCount("UOM", selectedUnitIds.length, "All units")}
+                                    </span>
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+                                </Button>
+                            </PopoverTrigger>
+
+                            <PopoverContent className="w-[340px] p-0" align="start">
+                                <Command shouldFilter={false}>
+                                    <div className="flex items-center gap-2 px-2 pt-2">
+                                        <CommandInput
+                                            placeholder="Search unit…"
+                                            value={unitQuery}
+                                            onValueChange={setUnitQuery}
+                                        />
+                                        {selectedUnitIds.length > 0 ? (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8"
+                                                onClick={() => setIds(setFilters, "unit_ids", [])}
+                                                title="Clear units"
+                                                type="button"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        ) : null}
+                                    </div>
+
+                                    <CommandList>
+                                        <CommandEmpty>No units found.</CommandEmpty>
+                                        <CommandGroup heading="Units">
+                                            {filteredUnits.slice(0, 160).map((u) => {
+                                                const idStr = safeStr(u.unit_id);
+                                                const label = unitText(u);
+                                                const selected = selectedUnitIds.includes(idStr);
+
+                                                return (
+                                                    <CommandItem
+                                                        key={idStr}
+                                                        value={`${label} ${idStr}`}
+                                                        onSelect={() =>
+                                                            setIds(
+                                                                setFilters,
+                                                                "unit_ids",
+                                                                toggleId(selectedUnitIds, idStr),
+                                                            )
+                                                        }
+                                                    >
+                                                        <Check
+                                                            className={cn(
+                                                                "mr-2 h-4 w-4",
+                                                                selected ? "opacity-100" : "opacity-0",
+                                                            )}
+                                                        />
+                                                        <span className="truncate">{label}</span>
+                                                    </CommandItem>
+                                                );
+                                            })}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Row: Secondary Filters & Toggles */}
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-muted bg-muted/20 px-4 py-2.5">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                    <div className="w-[180px]">
+                        <Popover open={ptOpen} onOpenChange={setPtOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    className="w-full justify-between whitespace-nowrap bg-background shadow-none"
+                                    type="button"
+                                >
+                                    <span className="truncate">
+                                        {labelCount("Prices", selectedPriceTypeIds.length + (filters.show_list_price ? 1 : 0), "All Prices")}
+                                    </span>
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+                                </Button>
+                            </PopoverTrigger>
+
+                            <PopoverContent className="w-[200px] p-0" align="start">
+                                <Command shouldFilter={true}>
+                                    <CommandInput
+                                        placeholder="Filter price type…"
+                                        value={ptQuery}
+                                        onValueChange={setPtQuery}
+                                    />
+                                    <CommandList>
+                                        <CommandEmpty>No price types found.</CommandEmpty>
+                                        <CommandGroup heading="Price Types">
+                                            <CommandItem
+                                                key="list_price"
+                                                value="List Price"
+                                                onSelect={() =>
+                                                    setFilters((prev) => ({
+                                                        ...prev,
+                                                        show_list_price: !prev.show_list_price,
+                                                    }))
+                                                }
+                                            >
+                                                <Check
+                                                    className={cn(
+                                                        "mr-2 h-4 w-4",
+                                                        filters.show_list_price ? "opacity-100" : "opacity-0",
+                                                    )}
+                                                />
+                                                <span className="truncate">List Price</span>
+                                            </CommandItem>
+                                            {priceTypes.map((pt) => {
+                                                const idStr = safeStr(pt.price_type_id);
+                                                const label = safeStr(pt.price_type_name) || "—";
+                                                const selected = selectedPriceTypeIds.includes(idStr);
+
+                                                return (
+                                                    <CommandItem
+                                                        key={idStr}
+                                                        value={`${label} ${idStr}`}
+                                                        onSelect={() =>
+                                                            setIds(
+                                                                setFilters,
+                                                                "price_type_ids",
+                                                                toggleId(selectedPriceTypeIds, idStr),
+                                                            )
+                                                        }
+                                                    >
+                                                        <Check
+                                                            className={cn(
+                                                                "mr-2 h-4 w-4",
+                                                                selected ? "opacity-100" : "opacity-0",
+                                                            )}
+                                                        />
+                                                        <span className="truncate">Price {label}</span>
+                                                    </CommandItem>
+                                                );
+                                            })}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+
+                    <div className="hidden h-5 w-px bg-border sm:block" />
+
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                            <Switch
+                                id="filter-active-only"
+                                checked={filters.active_only}
+                                onCheckedChange={(checked) =>
+                                    setFilters((prev) => ({ ...prev, active_only: checked }))
+                                }
+                            />
+                            <Label htmlFor="filter-active-only" className="cursor-pointer text-sm font-medium">
+                                Active only
+                            </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Switch
+                                id="filter-missing-tier"
+                                checked={filters.missing_tier}
+                                onCheckedChange={(checked) =>
+                                    setFilters((prev) => ({ ...prev, missing_tier: checked }))
+                                }
+                            />
+                            <Label htmlFor="filter-missing-tier" className="cursor-pointer text-sm font-medium">
+                                Missing tier
+                            </Label>
                         </div>
                     </div>
                 </div>
 
-                {chips.length > 0 ? (
-                    <div className="mt-3 border-t pt-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                            {chips.map((chip) => (
-                                <Badge
-                                    key={chip.key}
-                                    variant="secondary"
-                                    className="flex items-center gap-1 rounded-full px-3 py-1 text-xs"
-                                >
-                                    <span className="max-w-[520px] truncate">{chip.label}</span>
-                                    <button
-                                        type="button"
-                                        onClick={chip.onRemove}
-                                        className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-muted"
-                                        aria-label="Remove filter"
-                                        title="Remove"
-                                    >
-                                        <X className="h-3 w-3" />
-                                    </button>
-                                </Badge>
-                            ))}
-                        </div>
-                    </div>
-                ) : null}
+                <Button
+                    variant="ghost"
+                    className="h-8 shrink-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                        resetFilters();
+                        setSupplierQuery("");
+                        setBrandQuery("");
+                        setCatQuery("");
+                        setUnitQuery("");
+                        setPtQuery("");
+                    }}
+                    type="button"
+                >
+                    Reset Filters
+                </Button>
             </div>
+
+            {/* Chips */}
+            {chips.length > 0 ? (
+                <div className="border-t pt-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {chips.map((chip) => (
+                            <Badge
+                                key={chip.key}
+                                variant="secondary"
+                                className="flex items-center gap-1 rounded-full px-3 py-1 text-xs"
+                            >
+                                <span className="max-w-[520px] truncate">{chip.label}</span>
+                                <button
+                                    type="button"
+                                    onClick={chip.onRemove}
+                                    className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-muted"
+                                    aria-label="Remove filter"
+                                    title="Remove"
+                                >
+                                    <X className="h-3 w-3" />
+                                </button>
+                            </Badge>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
         </Card>
     );
 }
