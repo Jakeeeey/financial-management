@@ -2,17 +2,16 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw, ShieldAlert, ArrowLeft } from "lucide-react";
+import { RefreshCw, ShieldAlert, ArrowLeft, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-
 
 import { useSalesmanExpenseApproval } from "./hooks/useSalesmanExpenseApproval";
 import SalesmanExpenseTable from "./components/SalesmanExpenseTable";
 import ExpenseApprovalModal from "./components/ExpenseApprovalModal";
 import { ApprovalLogTable } from "./components/ApprovalLogTable";
-import { DateRangePicker } from "../components/DateRangePicker";
+import HeaderSelectionPanel from "./components/HeaderSelectionPanel";
 
 export default function SalesmenExpenseApprovalModule() {
   const {
@@ -24,17 +23,24 @@ export default function SalesmenExpenseApprovalModule() {
     setPage,
     pageCount,
     loading,
+    // Panel state
+    selectedSalesman,
+    salesmanDetail,
+    detailLoading,
+    selectSalesman,
+    closePanel,
+    // Header selection
+    selectedHeader,
+    openModalForHeader,
+    // Modal state
     modalOpen,
     modalLoading,
-    salesmanDetail,
-    logs,
-    logsLoading,
-    openModal,
     closeModal,
     onConfirmed,
+    // Logs
+    logs,
+    logsLoading,
     unauthorized,
-    dateRange,
-    setDateRange,
   } = useSalesmanExpenseApproval();
 
   if (unauthorized) {
@@ -61,20 +67,25 @@ export default function SalesmenExpenseApprovalModule() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)] pb-4 space-y-6">
+    <div className="flex flex-col h-[calc(100vh-6rem)] pb-4 space-y-6 px-4 bg-gradient-to-br from-slate-50 to-slate-100/50">
       {/* Header */}
-      <div className="flex items-center justify-between shrink-0 bg-card border rounded-2xl p-6 shadow-sm">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight text-foreground flex items-center gap-3">
-            <span className="w-2 h-8 bg-primary rounded-full"></span>
-            Expense Approvals
-          </h1>
-          <p className="text-sm font-medium text-muted-foreground ml-5">
-            Manage and process pending salesman disbursements.
-          </p>
+      <div className="flex items-center justify-between shrink-0 bg-white/80 backdrop-blur-xl border rounded-[2rem] p-8 shadow-xl shadow-slate-200/50">
+        <div className="flex items-center gap-6">
+          <div className="h-16 w-16 bg-primary/10 rounded-[1.5rem] flex items-center justify-center text-primary border border-primary/10 shadow-inner">
+            <ShieldCheck size={32} />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">
+              Expense Verification
+            </h1>
+            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Treasury Audit Workspace
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <DateRangePicker date={dateRange} setDate={setDateRange} />
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-[1px] bg-slate-100 mx-2" />
           <Button
             className="rounded-full shadow-lg font-bold tracking-wide shadow-primary/20 active:scale-95 transition-all"
             onClick={() => window.location.reload()}
@@ -113,14 +124,27 @@ export default function SalesmenExpenseApprovalModule() {
               setPage={setPage}
               pageCount={pageCount}
               loading={loading}
-              onAction={openModal}
+              onAction={selectSalesman}
+              selectedId={selectedSalesman?.id}
             />
           </div>
         </div>
 
-        {/* Right Side: Logs */}
-        <div className="flex-[3] flex flex-col min-h-0 bg-card border rounded-2xl shadow-sm p-6 overflow-hidden">
-          <ApprovalLogTable logs={logs} loading={logsLoading} />
+        {/* Right Side: Logs or Header Selection */}
+        <div className="flex-[3] flex flex-col min-h-0 bg-card border rounded-2xl shadow-sm overflow-hidden">
+          {selectedSalesman ? (
+            <HeaderSelectionPanel
+              selectedSalesman={selectedSalesman}
+              detail={salesmanDetail}
+              loading={detailLoading}
+              onClose={closePanel}
+              onSelectHeader={openModalForHeader}
+            />
+          ) : (
+            <div className="p-6 h-full flex flex-col">
+              <ApprovalLogTable logs={logs} loading={logsLoading} />
+            </div>
+          )}
         </div>
 
       </div>
@@ -130,6 +154,7 @@ export default function SalesmenExpenseApprovalModule() {
         open={modalOpen}
         loading={modalLoading}
         detail={salesmanDetail}
+        selectedHeader={selectedHeader}
         onClose={closeModal}
         onConfirmed={onConfirmed}
       />

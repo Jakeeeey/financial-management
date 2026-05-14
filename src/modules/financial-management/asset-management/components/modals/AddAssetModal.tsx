@@ -1,4 +1,3 @@
-// src/modules/financial-management/asset-management/components/modals/AddAssetModal.tsx
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,8 +17,6 @@ import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
 import {
   CalendarIcon,
-  Check,
-  ChevronsUpDown,
   Loader2,
   Plus,
   UploadCloud,
@@ -28,14 +25,17 @@ import {
 import { cn } from "../../utils/lib";
 
 import { Button } from "@/components/ui/button";
+
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+  Combobox,
+  ComboboxInput,
+  ComboboxContent,
+  ComboboxList,
+  ComboboxItem,
+  ComboboxGroup,
+  ComboboxEmpty,
+  ComboboxLabel,
+} from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -72,13 +72,10 @@ import {
 } from "@/modules/financial-management/asset-management/types";
 
 interface AddAssetModalProps {
-  /** Called by older parent flows after a successful save; local append is the current primary update path. */
   onSuccess: () => void;
-  /** Appends the newly created asset row to the table without forcing a full asset refetch. */
   onLocalAppend: (asset: AssetTableData) => void;
 }
 
-/** Existing item lookup row used to suggest names and autofill type/classification. */
 interface AssetItem {
   id: number;
   item_name: string;
@@ -86,13 +83,6 @@ interface AssetItem {
   item_classification?: { classification_name?: string };
 }
 
-/**
- * Modal form for creating a single fixed-quantity asset.
- *
- * The modal loads lookup data only while open, supports image compression before
- * upload, and patches the parent table through `onLocalAppend` after a successful
- * create request.
- */
 export default function AddAssetModal({
   onLocalAppend,
 }: AddAssetModalProps) {
@@ -112,9 +102,6 @@ export default function AddAssetModal({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // Popover states to auto-close upon selection
-  const [nameOpen, setNameOpen] = useState(false);
-  const [typeOpen, setTypeOpen] = useState(false);
-  const [classificationOpen, setClassificationOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
 
   const form = useForm<AssetFormValues>({
@@ -137,7 +124,6 @@ export default function AddAssetModal({
     },
   });
 
-  /** Loads select/combobox options required by the create form. */
   useEffect(() => {
     if (open) {
       const fetchData = async () => {
@@ -165,7 +151,6 @@ export default function AddAssetModal({
     }
   }, [open]);
 
-  /** Resets transient form and image state each time the modal opens. */
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
     if (isOpen) {
@@ -191,7 +176,6 @@ export default function AddAssetModal({
     }
   };
 
-  /** Stores a selected local image and creates a preview URL for the upload area. */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -200,7 +184,6 @@ export default function AddAssetModal({
     }
   };
 
-  /** Compresses and uploads the selected asset image, returning the Directus file UUID. */
   const uploadToDirectus = async (file: File) => {
     try {
       // 1. Compress the image before uploading to save time/bandwidth
@@ -231,7 +214,6 @@ export default function AddAssetModal({
     }
   };
 
-  /** Creates the asset, resolves display labels, and appends the new row locally. */
   const onSubmit = async (values: AssetFormValues) => {
     setLoading(true);
     try {
@@ -322,7 +304,6 @@ export default function AddAssetModal({
     }
   };
 
-  /** Restores the form to its default create state and clears the selected image. */
   const resetForm = () => {
     form.reset({
       item_name: "",
@@ -342,11 +323,6 @@ export default function AddAssetModal({
     });
     setSelectedFile(null);
     setPreviewUrl(null);
-  };
-
-  /** Keeps mouse wheel scrolling inside open combobox lists instead of the parent dialog. */
-  const stopWheelPropagation = (event: React.WheelEvent) => {
-    event.stopPropagation();
   };
 
   return (
@@ -440,118 +416,59 @@ export default function AddAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Item Name *</FormLabel>
-                    <Popover modal open={nameOpen} onOpenChange={setNameOpen}>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            role="combobox"
-                            className={cn(
-                              "w-full justify-between h-10 font-normal",
-                              !field.value && "text-muted-foreground",
-                            )}
-                          >
-                            {field.value || "Search or type asset name..."}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-(--radix-popover-trigger-width) p-0"
-                        align="start"
-                      >
-                        <Command
-                          filter={(value, search) => {
-                            if (
-                              value.toLowerCase().includes(search.toLowerCase())
-                            )
-                              return 1;
-                            return 0;
-                          }}
-                        >
-                          <CommandInput
-                            placeholder="Type asset name..."
-                            value={itemNameSearch}
-                            onValueChange={(val) => {
-                              setItemNameSearch(val);
-                              field.onChange(val); // Continously update form value as user types
-                            }}
-                          />
-                          <CommandList
-                            className="overscroll-contain"
-                            onWheel={stopWheelPropagation}
-                          >
-                            <CommandEmpty className="p-2 text-sm text-muted-foreground">
-                              New item will be created.
-                            </CommandEmpty>
-                            <CommandGroup heading="Existing Assets">
-                              {Array.from(
-                                new Map(
-                                  items
-                                    .filter((item) =>
-                                      item.item_name
-                                        .toLowerCase()
-                                        .includes(itemNameSearch.toLowerCase()),
-                                    )
-                                    .map((item) => [
-                                      item.item_name.toLowerCase(),
-                                      item,
-                                    ]),
-                                ).values(),
-                              )
-                                .slice(0, 10) // Limit suggestions
-                                .map((item) => (
-                                  <CommandItem
-                                    key={item.id}
-                                    value={item.item_name}
-                                    onSelect={(val) => {
-                                      form.setValue("item_name", val);
-                                      // Autofill Type and Classification
-                                      if (item.item_type?.type_name) {
-                                        form.setValue(
-                                          "item_type",
-                                          item.item_type.type_name,
-                                        );
-                                      }
-                                      if (
-                                        item.item_classification
-                                          ?.classification_name
-                                      ) {
-                                        form.setValue(
-                                          "item_classification",
-                                          item.item_classification
-                                            .classification_name,
-                                        );
-                                      }
-                                      setItemNameSearch("");
-                                      setNameOpen(false);
-                                    }}
-                                  >
-                                    <Check
-                                      className={cn(
-                                        "mr-2 h-4 w-4",
-                                        item.item_name === field.value
-                                          ? "opacity-100"
-                                          : "opacity-0",
-                                      )}
-                                    />
-                                    <div className="flex flex-col">
-                                      <span>{item.item_name}</span>
-                                      <span className="text-xs text-muted-foreground">
-                                        {item.item_type?.type_name} •{" "}
-                                        {
-                                          item.item_classification
-                                            ?.classification_name
-                                        }
-                                      </span>
-                                    </div>
-                                  </CommandItem>
-                                ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
+                    <Combobox
+                      value={field.value}
+                      onValueChange={(val) => {
+                        if (val) {
+                          form.setValue("item_name", val);
+                          const item = items.find((i) => i.item_name === val);
+                          if (item) {
+                            if (item.item_type?.type_name) {
+                              form.setValue("item_type", item.item_type.type_name);
+                            }
+                            if (item.item_classification?.classification_name) {
+                              form.setValue("item_classification", item.item_classification.classification_name);
+                            }
+                          }
+                          setItemNameSearch("");
+                        }
+                      }}
+                      inputValue={itemNameSearch}
+                      onInputValueChange={(val) => {
+                        setItemNameSearch(val);
+                        field.onChange(val); // Continuously update form value as user types
+                      }}
+                    >
+                      <ComboboxInput placeholder="Search or type asset name..." showTrigger={true} />
+                      <ComboboxContent align="start" className="w-(--radix-popover-trigger-width) p-0 pointer-events-auto z-[100]">
+                        <ComboboxList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                          <ComboboxGroup>
+                            <ComboboxLabel>Existing Assets</ComboboxLabel>
+                            {Array.from(
+                              new Map(
+                                items
+                                  .filter((item) =>
+                                    item.item_name.toLowerCase().includes(itemNameSearch.toLowerCase()),
+                                  )
+                                  .map((item) => [item.item_name.toLowerCase(), item]),
+                              ).values(),
+                            ).map((item) => (
+                              <ComboboxItem key={item.id} value={item.item_name}>
+                                <div className="flex flex-col">
+                                  <span>{item.item_name}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {item.item_type?.type_name} • {item.item_classification?.classification_name}
+                                  </span>
+                                </div>
+                              </ComboboxItem>
+                            ))}
+                          </ComboboxGroup>
+                          <ComboboxEmpty className="p-2 text-sm text-muted-foreground">
+                            New item will be created.
+                          </ComboboxEmpty>
+                        </ComboboxList>
+                      </ComboboxContent>
+                    </Combobox>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -565,105 +482,47 @@ export default function AddAssetModal({
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Item Type *</FormLabel>
-                      <Popover modal open={typeOpen} onOpenChange={setTypeOpen}>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              role="combobox"
-                              className={cn(
-                                "w-full justify-between h-10",
-                                !field.value && "text-muted-foreground",
+                      <Combobox
+                        value={field.value}
+                        onValueChange={(val) => {
+                          if (val) {
+                            form.setValue("item_type", val);
+                            setTypeSearch("");
+                          }
+                        }}
+                        inputValue={typeSearch}
+                        onInputValueChange={(val) => {
+                          setTypeSearch(val);
+                          field.onChange(val);
+                        }}
+                      >
+                        <ComboboxInput placeholder="Search or type new..." showTrigger={true} />
+                        <ComboboxContent align="start" className="w-(--radix-popover-trigger-width) p-0 pointer-events-auto z-[100]">
+                          <ComboboxList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                            {/* Custom "Add New" Logic */}
+                            {typeSearch &&
+                              !types.some((t) => t.type_name.toLowerCase() === typeSearch.toLowerCase()) && (
+                                <ComboboxItem value={typeSearch} className="text-primary font-medium">
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  <span>
+                                    Add <span className="font-bold">&quot;{typeSearch}&quot;</span> as new type
+                                  </span>
+                                </ComboboxItem>
                               )}
-                            >
-                              {field.value || "Select type..."}
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent
-                          className="w-(--radix-popover-trigger-width) p-0"
-                          align="start"
-                        >
-                          <Command
-                            filter={(value, search) => {
-                              if (
-                                value
-                                  .toLowerCase()
-                                  .includes(search.toLowerCase())
-                              )
-                                return 1;
-                              return 0;
-                            }}
-                          >
-                            <CommandInput
-                              placeholder="Search or type new..."
-                              value={typeSearch}
-                              onValueChange={setTypeSearch}
-                            />
-                            <CommandList
-                              className="overscroll-contain"
-                              onWheel={stopWheelPropagation}
-                            >
-                              {/* Custom "Add New" Logic */}
-                              {typeSearch &&
-                                !types.some(
-                                  (t) =>
-                                    t.type_name.toLowerCase() ===
-                                    typeSearch.toLowerCase(),
-                                ) && (
-                                  <div
-                                    className="p-2 border-b cursor-pointer hover:bg-accent flex items-center gap-2 text-sm text-primary font-medium"
-                                    onClick={() => {
-                                      form.setValue("item_type", typeSearch);
-                                      setTypeSearch("");
-                                      setTypeOpen(false);
-                                    }}
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                    <span>
-                                      Add{" "}
-                                      <span className="font-bold">
-                                        &quot;{typeSearch}&quot;
-                                      </span>{" "}
-                                      as new type
-                                    </span>
-                                  </div>
-                                )}
-                              <CommandGroup heading="Existing Types">
-                                {types
-                                  .filter((t) =>
-                                    t.type_name
-                                      .toLowerCase()
-                                      .includes(typeSearch.toLowerCase()),
-                                  )
-                                  .map((t) => (
-                                    <CommandItem
-                                      key={t.id}
-                                      value={t.type_name}
-                                      onSelect={(val) => {
-                                        form.setValue("item_type", val);
-                                        setTypeSearch("");
-                                        setTypeOpen(false);
-                                      }}
-                                    >
-                                      <Check
-                                        className={cn(
-                                          "mr-2 h-4 w-4",
-                                          t.type_name === field.value
-                                            ? "opacity-100"
-                                            : "opacity-0",
-                                        )}
-                                      />
-                                      {t.type_name}
-                                    </CommandItem>
-                                  ))}
-                              </CommandGroup>
-                              <CommandEmpty>No results found.</CommandEmpty>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                            <ComboboxGroup>
+                              <ComboboxLabel>Existing Types</ComboboxLabel>
+                              {types
+                                .filter((t) => t.type_name.toLowerCase().includes(typeSearch.toLowerCase()))
+                                .map((t) => (
+                                  <ComboboxItem key={t.id} value={t.type_name}>
+                                    {t.type_name}
+                                  </ComboboxItem>
+                                ))}
+                            </ComboboxGroup>
+                            <ComboboxEmpty>No results found.</ComboboxEmpty>
+                          </ComboboxList>
+                        </ComboboxContent>
+                      </Combobox>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -676,117 +535,51 @@ export default function AddAssetModal({
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Classification *</FormLabel>
-                      <Popover
-                        modal
-                        open={classificationOpen}
-                        onOpenChange={setClassificationOpen}
+                      <Combobox
+                        value={field.value}
+                        onValueChange={(val) => {
+                          if (val) {
+                            form.setValue("item_classification", val);
+                            setClassificationSearch("");
+                          }
+                        }}
+                        inputValue={classificationSearch}
+                        onInputValueChange={(val) => {
+                          setClassificationSearch(val);
+                          field.onChange(val);
+                        }}
                       >
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              role="combobox"
-                              className={cn(
-                                "w-full justify-between h-10",
-                                !field.value && "text-muted-foreground",
+                        <ComboboxInput placeholder="Search or type new..." showTrigger={true} />
+                        <ComboboxContent align="start" className="w-(--radix-popover-trigger-width) p-0 pointer-events-auto z-[100]">
+                          <ComboboxList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                            {/* Custom "Add New" Logic */}
+                            {classificationSearch &&
+                              !classifications.some(
+                                (c) => c.classification_name.toLowerCase() === classificationSearch.toLowerCase(),
+                              ) && (
+                                <ComboboxItem value={classificationSearch} className="text-primary font-medium">
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  <span>
+                                    Add <span className="font-bold">&quot;{classificationSearch}&quot;</span> as new
+                                  </span>
+                                </ComboboxItem>
                               )}
-                            >
-                              {field.value || "Select classification..."}
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent
-                          className="w-(--radix-popover-trigger-width) p-0"
-                          align="start"
-                        >
-                          <Command
-                            filter={(value, search) => {
-                              if (
-                                value
-                                  .toLowerCase()
-                                  .includes(search.toLowerCase())
-                              )
-                                return 1;
-                              return 0;
-                            }}
-                          >
-                            <CommandInput
-                              placeholder="Search or type new..."
-                              value={classificationSearch}
-                              onValueChange={setClassificationSearch}
-                            />
-                            <CommandList
-                              className="overscroll-contain"
-                              onWheel={stopWheelPropagation}
-                            >
-                              {/* Custom "Add New" Logic */}
-                              {classificationSearch &&
-                                !classifications.some(
-                                  (c) =>
-                                    c.classification_name.toLowerCase() ===
-                                    classificationSearch.toLowerCase(),
-                                ) && (
-                                  <div
-                                    className="p-2 border-b cursor-pointer hover:bg-accent flex items-center gap-2 text-sm text-primary font-medium"
-                                    onClick={() => {
-                                      form.setValue(
-                                        "item_classification",
-                                        classificationSearch,
-                                      );
-                                      setClassificationSearch("");
-                                      setClassificationOpen(false);
-                                    }}
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                    <span>
-                                      Add{" "}
-                                      <span className="font-bold">
-                                        &quot;{classificationSearch}&quot;
-                                      </span>{" "}
-                                      as new
-                                    </span>
-                                  </div>
-                                )}
-                              <CommandGroup heading="Existing Classifications">
-                                {classifications
-                                  .filter((c) =>
-                                    c.classification_name
-                                      .toLowerCase()
-                                      .includes(
-                                        classificationSearch.toLowerCase(),
-                                      ),
-                                  )
-                                  .map((c) => (
-                                    <CommandItem
-                                      key={c.id}
-                                      value={c.classification_name}
-                                      onSelect={(val) => {
-                                        form.setValue(
-                                          "item_classification",
-                                          val,
-                                        );
-                                        setClassificationSearch("");
-                                        setClassificationOpen(false);
-                                      }}
-                                    >
-                                      <Check
-                                        className={cn(
-                                          "mr-2 h-4 w-4",
-                                          c.classification_name === field.value
-                                            ? "opacity-100"
-                                            : "opacity-0",
-                                        )}
-                                      />
-                                      {c.classification_name}
-                                    </CommandItem>
-                                  ))}
-                              </CommandGroup>
-                              <CommandEmpty>No results found.</CommandEmpty>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                            <ComboboxGroup>
+                              <ComboboxLabel>Existing Classifications</ComboboxLabel>
+                              {classifications
+                                .filter((c) =>
+                                  c.classification_name.toLowerCase().includes(classificationSearch.toLowerCase()),
+                                )
+                                .map((c) => (
+                                  <ComboboxItem key={c.id} value={c.classification_name}>
+                                    {c.classification_name}
+                                  </ComboboxItem>
+                                ))}
+                            </ComboboxGroup>
+                            <ComboboxEmpty>No results found.</ComboboxEmpty>
+                          </ComboboxList>
+                        </ComboboxContent>
+                      </Combobox>
                       <FormMessage />
                     </FormItem>
                   )}
