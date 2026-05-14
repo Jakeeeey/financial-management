@@ -72,10 +72,13 @@ import {
 } from "@/modules/financial-management/asset-management/types";
 
 interface AddAssetModalProps {
+  /** Called by older parent flows after a successful save; local append is the current primary update path. */
   onSuccess: () => void;
+  /** Appends the newly created asset row to the table without forcing a full asset refetch. */
   onLocalAppend: (asset: AssetTableData) => void;
 }
 
+/** Existing item lookup row used to suggest names and autofill type/classification. */
 interface AssetItem {
   id: number;
   item_name: string;
@@ -83,6 +86,13 @@ interface AssetItem {
   item_classification?: { classification_name?: string };
 }
 
+/**
+ * Modal form for creating a single fixed-quantity asset.
+ *
+ * The modal loads lookup data only while open, supports image compression before
+ * upload, and patches the parent table through `onLocalAppend` after a successful
+ * create request.
+ */
 export default function AddAssetModal({
   onLocalAppend,
 }: AddAssetModalProps) {
@@ -127,6 +137,7 @@ export default function AddAssetModal({
     },
   });
 
+  /** Loads select/combobox options required by the create form. */
   useEffect(() => {
     if (open) {
       const fetchData = async () => {
@@ -154,6 +165,7 @@ export default function AddAssetModal({
     }
   }, [open]);
 
+  /** Resets transient form and image state each time the modal opens. */
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
     if (isOpen) {
@@ -179,6 +191,7 @@ export default function AddAssetModal({
     }
   };
 
+  /** Stores a selected local image and creates a preview URL for the upload area. */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -187,6 +200,7 @@ export default function AddAssetModal({
     }
   };
 
+  /** Compresses and uploads the selected asset image, returning the Directus file UUID. */
   const uploadToDirectus = async (file: File) => {
     try {
       // 1. Compress the image before uploading to save time/bandwidth
@@ -217,6 +231,7 @@ export default function AddAssetModal({
     }
   };
 
+  /** Creates the asset, resolves display labels, and appends the new row locally. */
   const onSubmit = async (values: AssetFormValues) => {
     setLoading(true);
     try {
@@ -307,6 +322,7 @@ export default function AddAssetModal({
     }
   };
 
+  /** Restores the form to its default create state and clears the selected image. */
   const resetForm = () => {
     form.reset({
       item_name: "",
@@ -328,6 +344,7 @@ export default function AddAssetModal({
     setPreviewUrl(null);
   };
 
+  /** Keeps mouse wheel scrolling inside open combobox lists instead of the parent dialog. */
   const stopWheelPropagation = (event: React.WheelEvent) => {
     event.stopPropagation();
   };

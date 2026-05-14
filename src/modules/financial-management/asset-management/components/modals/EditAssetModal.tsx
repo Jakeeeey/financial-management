@@ -70,13 +70,25 @@ import { assetService } from "../../services/assetService";
 import { cn } from "../../utils/lib";
 
 interface EditAssetModalProps {
+  /** Controls whether the edit modal is visible. */
   isOpen: boolean;
+  /** Closes the modal; parent owns the open state. */
   onClose: () => void;
+  /** Selected asset row to hydrate into the edit form. */
   asset: AssetTableData | null;
+  /** Optional full-refresh callback kept for legacy parent flows. */
   onSuccess?: () => void;
+  /** Patches the edited asset row in the parent table without forcing a full refetch. */
   onLocalUpdate: (updated: Partial<AssetTableData> & { id: number }) => void;
 }
 
+/**
+ * Modal form for editing an existing asset using the same layout as AddAssetModal.
+ *
+ * The form hydrates from the selected asset, supports optional image replacement
+ * or removal, and patches the parent table through `onLocalUpdate` after the
+ * update request succeeds.
+ */
 export default function EditAssetModal({
   asset,
   isOpen,
@@ -95,6 +107,7 @@ export default function EditAssetModal({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
+  // Popover states to auto-close upon selection.
   const [typeOpen, setTypeOpen] = useState(false);
   const [classificationOpen, setClassificationOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
@@ -120,6 +133,8 @@ export default function EditAssetModal({
     },
   });
 
+  // Sync form with the selected asset whenever the edit modal opens.
+  /** Hydrates the form and preview image from the selected asset when the modal opens. */
   useEffect(() => {
     if (!asset || !isOpen) return;
 
@@ -130,7 +145,7 @@ export default function EditAssetModal({
       barcode: asset.barcode || "",
       rfid_code: asset.rfid_code || "",
       condition: asset.condition,
-      quantity: 1,
+      quantity: 1, // Fixed to 1.
       cost_per_item: asset.cost_per_item,
       life_span: asset.life_span,
       date_acquired: new Date(asset.date_acquired),
@@ -151,6 +166,8 @@ export default function EditAssetModal({
     );
   }, [asset, isOpen, form]);
 
+  // Fetch dropdown options when the edit modal is opened.
+  /** Loads select/combobox options required by the edit form. */
   useEffect(() => {
     if (!isOpen) return;
 
@@ -175,6 +192,7 @@ export default function EditAssetModal({
     fetchData();
   }, [isOpen]);
 
+  /** Stores a selected replacement image and creates a preview URL for the upload area. */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -183,6 +201,7 @@ export default function EditAssetModal({
     }
   };
 
+  /** Compresses and uploads a replacement asset image, returning the Directus file UUID. */
   const uploadToDirectus = async (file: File) => {
     const compressedFile = await imageCompression(file, {
       maxSizeMB: 1,
@@ -201,10 +220,12 @@ export default function EditAssetModal({
     return result?.data?.id;
   };
 
+  /** Keeps mouse wheel scrolling inside open combobox lists instead of the parent dialog. */
   const stopWheelPropagation = (event: React.WheelEvent) => {
     event.stopPropagation();
   };
 
+  /** Updates the asset, resolves display labels, and patches the parent row locally. */
   const onSubmit = async (values: AssetFormValues) => {
     if (!asset) return;
 
@@ -232,6 +253,8 @@ export default function EditAssetModal({
       const d = values.date_acquired;
       const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
+      // Build the locally patched version of the row from form values.
+      // This mirrors what fetchAssets returns for this row without a full refetch.
       const updatedFields: Partial<AssetTableData> & { id: number } = {
         id: asset.id,
         item_name: values.item_name,
@@ -256,9 +279,12 @@ export default function EditAssetModal({
         is_active_warning: values.is_active_warning,
       };
 
-      onLocalUpdate(updatedFields);
+      onLocalUpdate(updatedFields); // Patch just this row, no refetch.
       toast.success("Asset updated successfully!");
       onClose();
+
+      // NOTE: onSuccess (full refetch) is intentionally not called here.
+      // It is kept in the props as a fallback if a full refresh is needed later.
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to update asset");
     } finally {
