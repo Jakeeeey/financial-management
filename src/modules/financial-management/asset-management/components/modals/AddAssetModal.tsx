@@ -1,3 +1,4 @@
+// src/modules/financial-management/asset-management/components/modals/AddAssetModal.tsx
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -327,6 +328,10 @@ export default function AddAssetModal({
     setPreviewUrl(null);
   };
 
+  const stopWheelPropagation = (event: React.WheelEvent) => {
+    event.stopPropagation();
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
@@ -418,7 +423,7 @@ export default function AddAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Item Name *</FormLabel>
-                    <Popover open={nameOpen} onOpenChange={setNameOpen}>
+                    <Popover modal open={nameOpen} onOpenChange={setNameOpen}>
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
@@ -455,7 +460,10 @@ export default function AddAssetModal({
                               field.onChange(val); // Continously update form value as user types
                             }}
                           />
-                          <CommandList>
+                          <CommandList
+                            className="overscroll-contain"
+                            onWheel={stopWheelPropagation}
+                          >
                             <CommandEmpty className="p-2 text-sm text-muted-foreground">
                               New item will be created.
                             </CommandEmpty>
@@ -540,7 +548,7 @@ export default function AddAssetModal({
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Item Type *</FormLabel>
-                      <Popover open={typeOpen} onOpenChange={setTypeOpen}>
+                      <Popover modal open={typeOpen} onOpenChange={setTypeOpen}>
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
@@ -576,7 +584,10 @@ export default function AddAssetModal({
                               value={typeSearch}
                               onValueChange={setTypeSearch}
                             />
-                            <CommandList>
+                            <CommandList
+                              className="overscroll-contain"
+                              onWheel={stopWheelPropagation}
+                            >
                               {/* Custom "Add New" Logic */}
                               {typeSearch &&
                                 !types.some(
@@ -649,6 +660,7 @@ export default function AddAssetModal({
                     <FormItem className="flex flex-col">
                       <FormLabel>Classification *</FormLabel>
                       <Popover
+                        modal
                         open={classificationOpen}
                         onOpenChange={setClassificationOpen}
                       >
@@ -687,7 +699,10 @@ export default function AddAssetModal({
                               value={classificationSearch}
                               onValueChange={setClassificationSearch}
                             />
-                            <CommandList>
+                            <CommandList
+                              className="overscroll-contain"
+                              onWheel={stopWheelPropagation}
+                            >
                               {/* Custom "Add New" Logic */}
                               {classificationSearch &&
                                 !classifications.some(
