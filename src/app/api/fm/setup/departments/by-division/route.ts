@@ -14,6 +14,9 @@ interface DirectusListResponse<T> {
     data?: T[];
 }
 
+/**
+ * Converts Directus and query-string scalar values into a numeric ID.
+ */
 const toNumber = (value: unknown): number | null => {
     if (typeof value === "number" && Number.isFinite(value)) return value;
     if (typeof value === "string" && value.trim() !== "") {
@@ -26,6 +29,9 @@ const toNumber = (value: unknown): number | null => {
 
 const toString = (value: unknown): string => typeof value === "string" ? value.trim() : "";
 
+/**
+ * Resolves a department ID from either a raw relation ID or an expanded Directus relation object.
+ */
 const getDepartmentId = (row: LookupRow): number | null => {
     const department = row.department_id ?? row.departmentId ?? row.department;
 
@@ -37,6 +43,9 @@ const getDepartmentId = (row: LookupRow): number | null => {
     return toNumber(department);
 };
 
+/**
+ * Resolves a department display name when the relationship row already contains expanded data.
+ */
 const getDepartmentName = (row: LookupRow): string => {
     const department = row.department_id ?? row.departmentId ?? row.department;
 
@@ -52,6 +61,9 @@ const directusHeaders = () => ({
     Authorization: `Bearer ${DIRECTUS_TOKEN}`,
 });
 
+/**
+ * Returns departments linked to a division through the department_per_division table.
+ */
 export async function GET(request: NextRequest) {
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value;

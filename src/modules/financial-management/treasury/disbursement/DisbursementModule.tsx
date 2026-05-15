@@ -16,6 +16,9 @@ import { DisbursementViewSheet } from "./components/DisbursementViewSheet";
 import { useDisbursement } from "./hooks/useDisbursement";
 import { Disbursement } from "./types";
 
+/**
+ * Renders the treasury disbursement list, filters, and create/edit/view sheets.
+ */
 export default function DisbursementModule() {
     const {
         data, loading, page, setPage, totalPages,
@@ -92,7 +95,7 @@ export default function DisbursementModule() {
                                 Search
                             </Button>
                             <Button onClick={clearFilters} variant="ghost" size="sm" className="h-9 px-2 text-destructive hover:bg-destructive/10" title="Clear Filters">
-                                <X className="w-4 h-4"/>
+                                <X className="w-4 h-4" />
                             </Button>
                         </div>
                     </div>

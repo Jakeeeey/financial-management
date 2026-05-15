@@ -1,29 +1,44 @@
+// src/modules/financial-management/treasury/disbursement/components/DisbursementCreateSheet.tsx
 "use client";
-
-import React, { useState, useEffect } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
-import {
-    Plus, Trash2, Loader2, Save, Building2, Wallet, Calculator,
-    DownloadCloud, FileText, Check, ChevronsUpDown, Search
-} from "lucide-react";
-import { format } from "date-fns";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 import {
-    DisbursementPayload, PayableLine, PaymentLine, SupplierDto, COADto,
-    Disbursement, BankAccountDto, UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto
-} from "../types";
-import { disbursementProvider } from "../providers/fetchProvider";
+    Building2,
+    Calculator,
+    Check, ChevronsUpDown,
+    DownloadCloud, FileText,
+    Loader2,
+    Plus,
+    Save,
+    Search,
+    Trash2,
+    Wallet
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { disbursementProvider } from "../providers/fetchProvider";
+import {
+    BankAccountDto,
+    COADto,
+    DepartmentDto,
+    Disbursement,
+    DisbursementPayload,
+    DivisionDto,
+    MemoDto,
+    PayableLine, PaymentLine, SupplierDto,
+    UnpaidPoDto
+} from "../types";
 
 // 🚀 FIX 1: Extended interface to strictly type the incoming API data
 export interface ExtendedDisbursement extends Disbursement {
@@ -51,9 +66,12 @@ interface SearchableDropdownProps<T extends string | number> {
     popoverWidth?: string;
 }
 
+/**
+ * Searchable dropdown used by the disbursement form for ID-backed lookup fields.
+ */
 function SearchableDropdown<T extends string | number>({
-                                                           options, value, onSelect, placeholder, disabled, className, popoverWidth = "w-[400px]"
-                                                       }: SearchableDropdownProps<T>) {
+    options, value, onSelect, placeholder, disabled, className, popoverWidth = "w-[400px]"
+}: SearchableDropdownProps<T>) {
     const [open, setOpen] = useState(false);
     const safeOptions = options.filter((option) => {
         const optionValue = option.value as unknown;
@@ -66,14 +84,14 @@ function SearchableDropdown<T extends string | number>({
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
                 <Button variant="outline" role="combobox" aria-expanded={open} disabled={disabled}
-                        className={cn("justify-between font-normal px-3", className)}>
+                    className={cn("justify-between font-normal px-3", className)}>
                     <span className="truncate">{selectedLabel}</span>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
             <PopoverContent className={cn("p-0 shadow-lg border-border", popoverWidth)} align="start">
                 <Command>
-                    <CommandInput placeholder="Search..." className="h-9 text-xs"/>
+                    <CommandInput placeholder="Search..." className="h-9 text-xs" />
                     <CommandList
                         className="max-h-[250px] scrollbar-thin"
                         onWheel={(event) => event.stopPropagation()}
@@ -85,7 +103,7 @@ function SearchableDropdown<T extends string | number>({
                                     onSelect(opt.value);
                                     setOpen(false);
                                 }} className="text-xs cursor-pointer">
-                                    <Check className={cn("mr-2 h-4 w-4 text-primary", hasValue && String(value) === String(opt.value) ? "opacity-100" : "opacity-0")}/>
+                                    <Check className={cn("mr-2 h-4 w-4 text-primary", hasValue && String(value) === String(opt.value) ? "opacity-100" : "opacity-0")} />
                                     {opt.label}
                                 </CommandItem>
                             ))}
@@ -262,6 +280,9 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
         };
     }, [open, divisionId]);
 
+    /**
+     * Clears stale department selections before loading departments for the new division.
+     */
     const handleDivisionSelect = (val: number) => {
         if (String(val) !== String(divisionId)) {
             setDepartmentId("");
@@ -271,8 +292,8 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
         setDivisionId(val);
     };
 
-    const handleAddPayable = () => setPayables([...payables, {referenceNo: "", date: today, amount: 0, remarks: ""}]);
-    const handleAddPayment = () => setPayments([...payments, {checkNo: "", date: today, amount: 0, remarks: ""}]);
+    const handleAddPayable = () => setPayables([...payables, { referenceNo: "", date: today, amount: 0, remarks: "" }]);
+    const handleAddPayment = () => setPayments([...payments, { checkNo: "", date: today, amount: 0, remarks: "" }]);
 
     const handleOpenPoModal = async () => {
         if (!payeeId) return toast.error("Please select a Payee first.");
@@ -405,13 +426,13 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                     <div className="flex-1 overflow-y-auto p-6 scrollbar-thin space-y-6">
                         <div className="bg-card p-5 rounded-xl border border-border shadow-sm grid grid-cols-2 gap-4">
                             <div className="col-span-2 flex items-center gap-2 mb-2">
-                                <Building2 className="w-4 h-4 text-primary"/>
+                                <Building2 className="w-4 h-4 text-primary" />
                                 <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Voucher Details</h3>
                             </div>
 
                             <div className="space-y-1.5">
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Document No.</Label>
-                                <Input value={editData ? editData.docNo : "AUTO-GENERATED"} disabled className="h-9 text-[10px] font-black text-muted-foreground uppercase border-border bg-muted"/>
+                                <Input value={editData ? editData.docNo : "AUTO-GENERATED"} disabled className="h-9 text-[10px] font-black text-muted-foreground uppercase border-border bg-muted" />
                             </div>
 
                             <div className="space-y-1.5">
@@ -435,18 +456,18 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
 
                             <div className="space-y-1.5">
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Transaction Date <span className="text-destructive">*</span></Label>
-                                <Input type="date" value={transactionDate} onChange={e => setTransactionDate(e.target.value)} className="h-9 text-xs font-bold uppercase border-input bg-background text-foreground"/>
+                                <Input type="date" value={transactionDate} onChange={e => setTransactionDate(e.target.value)} className="h-9 text-xs font-bold uppercase border-input bg-background text-foreground" />
                             </div>
 
                             <div className="space-y-1.5 col-span-2">
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex justify-between">
                                     Payee (Supplier) <span className="text-destructive">*</span>
-                                    {loadingData && <Loader2 className="w-3 h-3 animate-spin text-primary"/>}
+                                    {loadingData && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
                                 </Label>
                                 <div className="flex gap-2">
                                     <div className="flex-1 min-w-0">
                                         <SearchableDropdown<number>
-                                            options={suppliers.map(s => ({value: s.id, label: s.supplier_name}))}
+                                            options={suppliers.map(s => ({ value: s.id, label: s.supplier_name }))}
                                             value={payeeId as number | ""} onSelect={(val) => setPayeeId(val)}
                                             placeholder={`-- Search Payee --`}
                                             disabled={loadingData || !transactionTypeId}
@@ -454,7 +475,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                                         />
                                     </div>
                                     <Button type="button" onClick={handleOpenPoModal} disabled={!payeeId} className="h-9 px-3 bg-amber-500 hover:bg-amber-600 text-white shadow-sm shrink-0" title="Pull Unpaid POs">
-                                        <DownloadCloud className="w-4 h-4"/>
+                                        <DownloadCloud className="w-4 h-4" />
                                     </Button>
                                 </div>
                             </div>
@@ -462,7 +483,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                             <div className="space-y-1.5">
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Division <span className="text-destructive">*</span></Label>
                                 <SearchableDropdown<number>
-                                    options={divisions.map(d => ({value: d.id, label: d.divisionName}))}
+                                    options={divisions.map(d => ({ value: d.id, label: d.divisionName }))}
                                     value={divisionId as number | ""} onSelect={handleDivisionSelect}
                                     placeholder="-- Search Division --"
                                     className="h-9 w-full bg-background border-input text-xs font-bold uppercase text-foreground shadow-sm"
@@ -472,10 +493,10 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                             <div className="space-y-1.5">
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex justify-between">
                                     Department <span className="text-destructive">*</span>
-                                    {loadingDepartments && <Loader2 className="w-3 h-3 animate-spin text-primary"/>}
+                                    {loadingDepartments && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
                                 </Label>
                                 <SearchableDropdown<number>
-                                    options={departments.map(d => ({value: d.id, label: d.departmentName}))}
+                                    options={departments.map(d => ({ value: d.id, label: d.departmentName }))}
                                     value={departmentId as number | ""} onSelect={(val) => setDepartmentId(val)}
                                     placeholder={divisionId ? "-- Search Department --" : "Select a division first"}
                                     disabled={!divisionId || loadingDepartments}
@@ -485,16 +506,16 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
 
                             <div className="space-y-1.5 col-span-2">
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Particulars / Remarks</Label>
-                                <Input value={remarks} onChange={e => setRemarks(e.target.value)} className="h-9 text-xs border-input bg-background text-foreground" placeholder="What is this payment for?"/>
+                                <Input value={remarks} onChange={e => setRemarks(e.target.value)} className="h-9 text-xs border-input bg-background text-foreground" placeholder="What is this payment for?" />
                             </div>
 
                             <div className="space-y-1.5 col-span-2 pt-2 border-t border-border mt-2">
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex justify-between items-center">
-                                    Total Voucher Amount <span className="text-emerald-600 dark:text-emerald-500 font-medium flex items-center gap-1"><Calculator className="w-3 h-3"/> Auto-Calculated</span>
+                                    Total Voucher Amount <span className="text-emerald-600 dark:text-emerald-500 font-medium flex items-center gap-1"><Calculator className="w-3 h-3" /> Auto-Calculated</span>
                                 </Label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-2.5 text-xs font-black text-muted-foreground">₱</span>
-                                    <Input type="number" value={totalAmount.toFixed(2)} readOnly className="h-10 pl-7 text-sm font-black text-emerald-600 dark:text-emerald-500 border-border bg-muted cursor-not-allowed shadow-inner" placeholder="0.00"/>
+                                    <Input type="number" value={totalAmount.toFixed(2)} readOnly className="h-10 pl-7 text-sm font-black text-emerald-600 dark:text-emerald-500 border-border bg-muted cursor-not-allowed shadow-inner" placeholder="0.00" />
                                 </div>
                             </div>
                         </div>
@@ -526,7 +547,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                                                 ) : payables.map((p, i) => (
                                                     <TableRow key={i} className="border-border hover:bg-muted/50">
                                                         <TableCell className="p-2 align-top pt-3">
-                                                            <Input className="h-8 text-xs uppercase bg-background" placeholder="Invoice/PO" value={p.referenceNo} onChange={e => { const n = [...payables]; n[i].referenceNo = e.target.value; setPayables(n); }}/>
+                                                            <Input className="h-8 text-xs uppercase bg-background" placeholder="Invoice/PO" value={p.referenceNo} onChange={e => { const n = [...payables]; n[i].referenceNo = e.target.value; setPayables(n); }} />
                                                         </TableCell>
                                                         <TableCell className="p-2 align-top pt-3">
                                                             <SearchableDropdown<number>
@@ -536,15 +557,15 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                                                             />
                                                         </TableCell>
                                                         <TableCell className="p-2 align-top pt-3">
-                                                            <Input className="h-8 text-[10px] bg-background" placeholder="Line remarks..." value={p.remarks || ""} onChange={e => { const n = [...payables]; n[i].remarks = e.target.value; setPayables(n); }}/>
+                                                            <Input className="h-8 text-[10px] bg-background" placeholder="Line remarks..." value={p.remarks || ""} onChange={e => { const n = [...payables]; n[i].remarks = e.target.value; setPayables(n); }} />
                                                         </TableCell>
                                                         <TableCell className="p-2 align-top pt-3">
                                                             <Input type="number" className={`h-8 text-xs font-bold bg-background ${p.amount < 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-500'}`}
-                                                                   value={p.amount || ""} onChange={e => { const n = [...payables]; n[i].amount = Number(e.target.value); setPayables(n); }}/>
+                                                                value={p.amount || ""} onChange={e => { const n = [...payables]; n[i].amount = Number(e.target.value); setPayables(n); }} />
                                                         </TableCell>
                                                         <TableCell className="p-2 text-right align-top pt-3">
                                                             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                                                                    onClick={() => setPayables(payables.filter((_, idx) => idx !== i))}><Trash2 className="w-4 h-4"/></Button>
+                                                                onClick={() => setPayables(payables.filter((_, idx) => idx !== i))}><Trash2 className="w-4 h-4" /></Button>
                                                         </TableCell>
                                                     </TableRow>
                                                 ))}
@@ -553,10 +574,10 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                                     </div>
                                     <div className="flex gap-2 w-full">
                                         <Button variant="outline" size="sm" className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border" onClick={handleAddPayable}>
-                                            <Plus className="w-3.5 h-3.5 mr-2"/> Add Manual Payable
+                                            <Plus className="w-3.5 h-3.5 mr-2" /> Add Manual Payable
                                         </Button>
                                         <Button variant="outline" size="sm" className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-purple-600 hover:bg-purple-50 hover:text-purple-700 border-purple-200 dark:border-purple-800/50 dark:hover:bg-purple-900/20" onClick={handleOpenMemoModal}>
-                                            <FileText className="w-3.5 h-3.5 mr-2"/> Apply Credit/Debit Memo
+                                            <FileText className="w-3.5 h-3.5 mr-2" /> Apply Credit/Debit Memo
                                         </Button>
                                     </div>
                                 </TabsContent>
@@ -577,7 +598,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                                                     <TableRow><TableCell colSpan={4} className="text-center text-xs text-muted-foreground py-8 font-medium">No payments added.</TableCell></TableRow>
                                                 ) : payments.map((p, i) => (
                                                     <TableRow key={i} className="border-border hover:bg-muted/50">
-                                                        <TableCell className="p-2 align-top pt-3"><Input className="h-8 text-xs uppercase bg-background" placeholder="e.g. CHK-123" value={p.checkNo} onChange={e => { const n = [...payments]; n[i].checkNo = e.target.value; setPayments(n); }}/></TableCell>
+                                                        <TableCell className="p-2 align-top pt-3"><Input className="h-8 text-xs uppercase bg-background" placeholder="e.g. CHK-123" value={p.checkNo} onChange={e => { const n = [...payments]; n[i].checkNo = e.target.value; setPayments(n); }} /></TableCell>
                                                         <TableCell className="p-2 align-top">
                                                             <div className="flex flex-col gap-2 pt-3">
                                                                 <SearchableDropdown<number>
@@ -592,15 +613,15 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                                                                 />
                                                             </div>
                                                         </TableCell>
-                                                        <TableCell className="p-2 align-top pt-3"><Input type="number" className="h-8 text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-background" value={p.amount || ""} onChange={e => { const n = [...payments]; n[i].amount = Number(e.target.value); setPayments(n); }}/></TableCell>
-                                                        <TableCell className="p-2 text-right align-top pt-3"><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => setPayments(payments.filter((_, idx) => idx !== i))}><Trash2 className="w-4 h-4"/></Button></TableCell>
+                                                        <TableCell className="p-2 align-top pt-3"><Input type="number" className="h-8 text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-background" value={p.amount || ""} onChange={e => { const n = [...payments]; n[i].amount = Number(e.target.value); setPayments(n); }} /></TableCell>
+                                                        <TableCell className="p-2 text-right align-top pt-3"><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => setPayments(payments.filter((_, idx) => idx !== i))}><Trash2 className="w-4 h-4" /></Button></TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>
                                         </Table>
                                     </div>
                                     <Button variant="outline" size="sm" className="w-full text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border" onClick={handleAddPayment}>
-                                        <Plus className="w-3.5 h-3.5 mr-2"/> Add Payment Line
+                                        <Plus className="w-3.5 h-3.5 mr-2" /> Add Payment Line
                                     </Button>
                                 </TabsContent>
                             </Tabs>
@@ -609,12 +630,12 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
 
                     <div className="p-6 bg-card border-t border-border shrink-0 flex justify-between items-center z-10">
                         <div className="flex items-center gap-2 text-[10px] font-black uppercase text-muted-foreground tracking-widest">
-                            <Wallet className="w-4 h-4"/> Lines: {payables.length} Pay | {payments.length} Rcv
+                            <Wallet className="w-4 h-4" /> Lines: {payables.length} Pay | {payments.length} Rcv
                         </div>
                         <div className="flex gap-2">
                             <Button variant="outline" onClick={() => onOpenChange(false)} className="text-[10px] font-black uppercase tracking-widest h-10 px-6">Cancel</Button>
                             <Button onClick={handleSubmit} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-8 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Save className="w-4 h-4 mr-2"/>}
+                                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                                 {editData ? "Update Voucher" : "Save Voucher"}
                             </Button>
                         </div>
@@ -626,7 +647,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                 <DialogContent className="sm:max-w-[750px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
-                            <DownloadCloud className="w-5 h-5 text-amber-500"/>
+                            <DownloadCloud className="w-5 h-5 text-amber-500" />
                             Pending Records
                         </DialogTitle>
                         <DialogDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
@@ -636,7 +657,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
 
                     {/* SEARCH BAR */}
                     <div className="mt-2 flex items-center gap-2 bg-muted/50 p-2 rounded-md border border-border">
-                        <Search className="w-4 h-4 text-muted-foreground ml-2"/>
+                        <Search className="w-4 h-4 text-muted-foreground ml-2" />
                         <Input
                             placeholder="Search by PO # or Invoice #..."
                             value={poSearchQuery}
@@ -658,7 +679,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                             </TableHeader>
                             <TableBody>
                                 {loadingPos ? (
-                                    <TableRow><TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2"/> Loading Records...</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" /> Loading Records...</TableCell></TableRow>
                                 ) : unpaidPos.filter(po =>
                                     po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
                                     (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()))
@@ -673,21 +694,21 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                                             const isChecking = !selectedPoIds.includes(po.uniqueKey);
                                             setSelectedPoIds(prev => isChecking ? [...prev, po.uniqueKey] : prev.filter(id => id !== po.uniqueKey));
                                             if (isChecking && !taxTypes[po.uniqueKey]) {
-                                                setTaxTypes(prev => ({...prev, [po.uniqueKey]: "VAT"}));
+                                                setTaxTypes(prev => ({ ...prev, [po.uniqueKey]: "VAT" }));
                                             }
                                         }}>
                                             <TableCell className="text-center">
                                                 <Checkbox checked={selectedPoIds.includes(po.uniqueKey)} onCheckedChange={(checked) => {
                                                     if (checked) {
                                                         setSelectedPoIds([...selectedPoIds, po.uniqueKey]);
-                                                        if (!taxTypes[po.uniqueKey]) setTaxTypes(prev => ({...prev, [po.uniqueKey]: "VAT"}));
+                                                        if (!taxTypes[po.uniqueKey]) setTaxTypes(prev => ({ ...prev, [po.uniqueKey]: "VAT" }));
                                                     } else {
                                                         setSelectedPoIds(selectedPoIds.filter(id => id !== po.uniqueKey));
                                                     }
-                                                }}/>
+                                                }} />
                                             </TableCell>
                                             <TableCell className="font-bold text-xs uppercase flex flex-col gap-1 text-foreground mt-1.5 border-none">
-                                                <div className="flex items-center gap-1.5"><FileText className="w-3 h-3 text-muted-foreground"/> {po.poNo}</div>
+                                                <div className="flex items-center gap-1.5"><FileText className="w-3 h-3 text-muted-foreground" /> {po.poNo}</div>
                                                 <span className="text-[9px] text-muted-foreground font-medium ml-4.5">{po.date ? format(new Date(po.date), "MMM dd, yyyy") : "No Date"}</span>
                                             </TableCell>
                                             <TableCell className="text-xs font-black text-primary uppercase">
@@ -697,12 +718,12 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                                                 </div>
                                             </TableCell>
                                             <TableCell onClick={(e) => e.stopPropagation()}>
-                                                <select className="h-7 w-full rounded-sm border border-input bg-background px-1 text-[10px] font-bold text-foreground shadow-sm disabled:opacity-30" value={taxTypes[po.uniqueKey] || "VAT"} onChange={(e) => setTaxTypes({...taxTypes, [po.uniqueKey]: e.target.value as "VAT" | "NON_VAT"})} disabled={!selectedPoIds.includes(po.uniqueKey)}>
+                                                <select className="h-7 w-full rounded-sm border border-input bg-background px-1 text-[10px] font-bold text-foreground shadow-sm disabled:opacity-30" value={taxTypes[po.uniqueKey] || "VAT"} onChange={(e) => setTaxTypes({ ...taxTypes, [po.uniqueKey]: e.target.value as "VAT" | "NON_VAT" })} disabled={!selectedPoIds.includes(po.uniqueKey)}>
                                                     <option value="VAT">VAT Registered</option>
                                                     <option value="NON_VAT">Non-Registered (No VAT)</option>
                                                 </select>
                                             </TableCell>
-                                            <TableCell className="text-xs font-black text-right text-emerald-600 dark:text-emerald-500">₱ {po.amountDue.toLocaleString('en-US', {minimumFractionDigits: 2})}</TableCell>
+                                            <TableCell className="text-xs font-black text-right text-emerald-600 dark:text-emerald-500">₱ {po.amountDue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</TableCell>
                                         </TableRow>
                                     ))
                                 )}
@@ -723,7 +744,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                 <DialogContent className="sm:max-w-[700px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
-                            <FileText className="w-5 h-5 text-purple-500"/>
+                            <FileText className="w-5 h-5 text-purple-500" />
                             Available Supplier Memos
                         </DialogTitle>
                         <DialogDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
@@ -744,7 +765,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                             </TableHeader>
                             <TableBody>
                                 {loadingMemos ? (
-                                    <TableRow><TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2"/> Fetching Memos...</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" /> Fetching Memos...</TableCell></TableRow>
                                 ) : memos.length === 0 ? (
                                     <TableRow><TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground">No available memos found for this supplier.</TableCell></TableRow>
                                 ) : (
@@ -762,7 +783,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                                                 <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[180px]">{memo.reason || "N/A"}</div>
                                             </TableCell>
                                             <TableCell className={`text-xs font-black text-right ${memo.type === 1 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                {memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                                                {memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 <Button size="sm" onClick={() => handleApplyMemo(memo)} className="h-7 text-[10px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white">
