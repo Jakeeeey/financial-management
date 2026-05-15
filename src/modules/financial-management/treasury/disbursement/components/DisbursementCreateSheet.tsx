@@ -55,7 +55,12 @@ function SearchableDropdown<T extends string | number>({
                                                            options, value, onSelect, placeholder, disabled, className, popoverWidth = "w-[400px]"
                                                        }: SearchableDropdownProps<T>) {
     const [open, setOpen] = useState(false);
-    const selectedLabel = options.find((o) => String(o.value) === String(value))?.label || placeholder;
+    const safeOptions = options.filter((option) => {
+        const optionValue = option.value as unknown;
+        return optionValue !== undefined && optionValue !== null && option.label.trim() !== "";
+    });
+    const hasValue = value !== "" && value !== undefined && value !== null;
+    const selectedLabel = hasValue ? safeOptions.find((o) => String(o.value) === String(value))?.label || placeholder : placeholder;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -69,15 +74,18 @@ function SearchableDropdown<T extends string | number>({
             <PopoverContent className={cn("p-0 shadow-lg border-border", popoverWidth)} align="start">
                 <Command>
                     <CommandInput placeholder="Search..." className="h-9 text-xs"/>
-                    <CommandList className="max-h-[250px] scrollbar-thin">
+                    <CommandList
+                        className="max-h-[250px] scrollbar-thin"
+                        onWheel={(event) => event.stopPropagation()}
+                    >
                         <CommandEmpty className="py-4 text-center text-xs text-muted-foreground">No results found.</CommandEmpty>
                         <CommandGroup>
-                            {options.map((opt, index) => (
-                                <CommandItem key={`${opt.value}-${index}`} value={opt.label} onSelect={() => {
+                            {safeOptions.map((opt) => (
+                                <CommandItem key={String(opt.value)} value={`${opt.label} ${String(opt.value)}`} onSelect={() => {
                                     onSelect(opt.value);
                                     setOpen(false);
                                 }} className="text-xs cursor-pointer">
-                                    <Check className={cn("mr-2 h-4 w-4 text-primary", String(value) === String(opt.value) ? "opacity-100" : "opacity-0")}/>
+                                    <Check className={cn("mr-2 h-4 w-4 text-primary", hasValue && String(value) === String(opt.value) ? "opacity-100" : "opacity-0")}/>
                                     {opt.label}
                                 </CommandItem>
                             ))}
@@ -119,6 +127,7 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
     const [departmentId, setDepartmentId] = useState<number | "">("");
     const [divisions, setDivisions] = useState<DivisionDto[]>([]);
     const [departments, setDepartments] = useState<DepartmentDto[]>([]);
+    const [loadingDepartments, setLoadingDepartments] = useState(false);
 
     const [poSearchQuery, setPoSearchQuery] = useState("");
 
@@ -130,7 +139,6 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
             disbursementProvider.getCOAs().then(setCoas);
             disbursementProvider.getBanks().then(setBanks);
             disbursementProvider.getDivisions().then(setDivisions).catch(() => console.warn("No divisions route"));
-            disbursementProvider.getDepartments().then(setDepartments).catch(() => console.warn("No departments route"));
         }
     }, [open]);
 
@@ -212,6 +220,56 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
             if (match) setDepartmentId(match.id);
         }
     }, [open, editData, departmentId, departments]);
+
+    useEffect(() => {
+        if (!open) return;
+
+        let cancelled = false;
+
+        if (!divisionId) {
+            setDepartments([]);
+            setDepartmentId("");
+            setLoadingDepartments(false);
+            return;
+        }
+
+        setLoadingDepartments(true);
+        disbursementProvider.getDepartmentsByDivision(Number(divisionId))
+            .then((scopedDepartments) => {
+                if (cancelled) return;
+
+                setDepartments(scopedDepartments);
+                setDepartmentId((currentDepartmentId) => {
+                    if (!currentDepartmentId) return "";
+                    return scopedDepartments.some((department) => department.id === Number(currentDepartmentId))
+                        ? currentDepartmentId
+                        : "";
+                });
+            })
+            .catch(() => {
+                if (cancelled) return;
+
+                setDepartments([]);
+                setDepartmentId("");
+                toast.error("Failed to load departments for the selected division.");
+            })
+            .finally(() => {
+                if (!cancelled) setLoadingDepartments(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [open, divisionId]);
+
+    const handleDivisionSelect = (val: number) => {
+        if (String(val) !== String(divisionId)) {
+            setDepartmentId("");
+            setDepartments([]);
+        }
+
+        setDivisionId(val);
+    };
 
     const handleAddPayable = () => setPayables([...payables, {referenceNo: "", date: today, amount: 0, remarks: ""}]);
     const handleAddPayment = () => setPayments([...payments, {checkNo: "", date: today, amount: 0, remarks: ""}]);
@@ -405,18 +463,22 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Division <span className="text-destructive">*</span></Label>
                                 <SearchableDropdown<number>
                                     options={divisions.map(d => ({value: d.id, label: d.divisionName}))}
-                                    value={divisionId as number | ""} onSelect={(val) => setDivisionId(val)}
+                                    value={divisionId as number | ""} onSelect={handleDivisionSelect}
                                     placeholder="-- Search Division --"
                                     className="h-9 w-full bg-background border-input text-xs font-bold uppercase text-foreground shadow-sm"
                                 />
                             </div>
 
                             <div className="space-y-1.5">
-                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Department <span className="text-destructive">*</span></Label>
+                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex justify-between">
+                                    Department <span className="text-destructive">*</span>
+                                    {loadingDepartments && <Loader2 className="w-3 h-3 animate-spin text-primary"/>}
+                                </Label>
                                 <SearchableDropdown<number>
                                     options={departments.map(d => ({value: d.id, label: d.departmentName}))}
                                     value={departmentId as number | ""} onSelect={(val) => setDepartmentId(val)}
-                                    placeholder="-- Search Department --"
+                                    placeholder={divisionId ? "-- Search Department --" : "Select a division first"}
+                                    disabled={!divisionId || loadingDepartments}
                                     className="h-9 w-full bg-background border-input text-xs font-bold uppercase text-foreground shadow-sm"
                                 />
                             </div>

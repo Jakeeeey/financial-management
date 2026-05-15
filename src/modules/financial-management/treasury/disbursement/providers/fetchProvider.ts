@@ -14,6 +14,66 @@ import {
 const API_BASE = "/api/fm/treasury/disbursements";
 const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
 
+type LookupRow = Record<string, unknown>;
+
+const getRows = (payload: unknown): LookupRow[] => {
+    if (Array.isArray(payload)) return payload.filter((row): row is LookupRow => row !== null && typeof row === "object" && !Array.isArray(row));
+
+    if (payload !== null && typeof payload === "object" && "data" in payload) {
+        const data = (payload as { data?: unknown }).data;
+        if (Array.isArray(data)) return data.filter((row): row is LookupRow => row !== null && typeof row === "object" && !Array.isArray(row));
+    }
+
+    return [];
+};
+
+const toNumber = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "") {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+};
+
+const toString = (value: unknown): string => typeof value === "string" ? value.trim() : "";
+
+const normalizeDivisions = (payload: unknown): DivisionDto[] =>
+    getRows(payload).reduce<DivisionDto[]>((rows, row) => {
+        const id = toNumber(row.id ?? row.divisionId ?? row.division_id);
+        const divisionName = toString(row.divisionName ?? row.division_name ?? row.name ?? row.division);
+
+        if (id !== null && divisionName) rows.push({ id, divisionName });
+        return rows;
+    }, []);
+
+const normalizeDepartments = (payload: unknown): DepartmentDto[] =>
+    getRows(payload).reduce<DepartmentDto[]>((rows, row) => {
+        const id = toNumber(row.id ?? row.departmentId ?? row.department_id);
+        const departmentName = toString(row.departmentName ?? row.department_name ?? row.name ?? row.department);
+
+        if (id !== null && departmentName) rows.push({ id, departmentName });
+        return rows;
+    }, []);
+
+const normalizeSuppliers = (payload: unknown): SupplierDto[] =>
+    getRows(payload).reduce<SupplierDto[]>((rows, row) => {
+        const id = toNumber(row.id ?? row.supplierId ?? row.supplier_id);
+        const supplierName = toString(row.supplier_name ?? row.supplierName ?? row.name ?? row.supplier);
+
+        if (id !== null && supplierName) {
+            rows.push({
+                id,
+                supplier_name: supplierName,
+                supplier_shortcut: toString(row.supplier_shortcut ?? row.supplierShortcut) || undefined,
+                isActive: row.isActive === undefined ? true : Boolean(row.isActive),
+            });
+        }
+
+        return rows;
+    }, []);
+
 export const disbursementProvider = {
     getDisbursements: async (
         page: number = 0, size: number = 20, type: string = "All",
@@ -59,7 +119,7 @@ export const disbursementProvider = {
     getSuppliers: async (type: string = "Trade"): Promise<SupplierDto[]> => {
         const res = await fetch(`${SUPPLIER_API_BASE}?type=${encodeURIComponent(type)}`);
         if (!res.ok) throw new Error("Failed to fetch suppliers");
-        return res.json();
+        return normalizeSuppliers(await res.json());
     },
 
     // 🚀 Fetch COAs for the Line Items
@@ -95,16 +155,20 @@ export const disbursementProvider = {
         return res.json();
     },
     getDivisions: async (): Promise<DivisionDto[]> => {
-        // Replace with your actual division API route if different
         const res = await fetch("/api/fm/setup/divisions");
         if (!res.ok) throw new Error("Failed to fetch divisions");
-        return res.json();
+        return normalizeDivisions(await res.json());
     },
 
     getDepartments: async (): Promise<DepartmentDto[]> => {
-        // Replace with your actual department API route if different
         const res = await fetch("/api/fm/setup/departments");
         if (!res.ok) throw new Error("Failed to fetch departments");
-        return res.json();
+        return normalizeDepartments(await res.json());
+    },
+
+    getDepartmentsByDivision: async (divisionId: number): Promise<DepartmentDto[]> => {
+        const res = await fetch(`/api/fm/setup/departments/by-division?divisionId=${encodeURIComponent(divisionId)}`);
+        if (!res.ok) throw new Error("Failed to fetch departments for division");
+        return normalizeDepartments(await res.json());
     },
 };
