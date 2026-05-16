@@ -51,15 +51,17 @@ type ApprovalMeta = {
   draft_statuses?: string[];
   can_act?: boolean;
   is_waiting?: boolean;
+  is_finalized?: boolean;
   current_tier?: number;
   required_approver_level?: number;
 };
 
 function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null | undefined): ApprovalMeta {
   return {
-    draft_statuses: source?.draft_statuses,
+    draft_statuses: source?.draft_statuses ?? [],
     can_act: source?.can_act,
     is_waiting: source?.is_waiting,
+    is_finalized: source?.is_finalized,
     current_tier: source?.current_tier,
     required_approver_level: source?.required_approver_level,
   };
@@ -74,6 +76,19 @@ function getApprovalInfo(meta: ApprovalMeta) {
   const currentLevel = meta.current_tier ? `Level ${meta.current_tier}` : "not yet routed";
   const requiredLevel = meta.required_approver_level ? `Level ${meta.required_approver_level}` : "final approver level";
   const currentStatuses = formatDraftStatusList(meta.draft_statuses);
+  const isApproved = (meta.draft_statuses?.length ?? 0) > 0 && meta.draft_statuses?.every((s) => s === "Approved");
+
+  if (isApproved) {
+    return {
+      title: "This top-sheet has been finalized and posted",
+      description: `Current status: ${currentStatuses}. This disbursement is already live and posted.`,
+      shortLabel: "Finalized",
+      tone: "finalized" as const,
+      currentLevel,
+      requiredLevel,
+      currentStatuses,
+    };
+  }
 
   if (meta.can_act) {
     return {
@@ -365,7 +380,7 @@ export default function FinalTopSheetModal({
   }, [data?.group, group]);
 
   const approvalInfo = React.useMemo(() => getApprovalInfo(activeApprovalMeta), [activeApprovalMeta]);
-  const canSubmitFinalAction = data?.group.can_act ?? false;
+  const canSubmitFinalAction = (data?.group.can_act ?? false) && (data?.group.draft_statuses?.some((s) => s !== "Approved") ?? false);
   const stagedDecisionEntries = React.useMemo(
     () => Object.values(stagedDecisions),
     [stagedDecisions]
@@ -381,7 +396,7 @@ export default function FinalTopSheetModal({
       { approved: 0, concern: 0, rejected: 0 }
     );
   }, [stagedDecisionEntries]);
-  const isApprovedHistory = !!(data?.group.draft_statuses?.includes("Approved")) && !canSubmitFinalAction;
+  const isApprovedHistory = !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s === "Approved")) && !canSubmitFinalAction;
   const actionDisabledReason = canSubmitFinalAction ? undefined : approvalInfo.description;
 
   React.useEffect(() => {

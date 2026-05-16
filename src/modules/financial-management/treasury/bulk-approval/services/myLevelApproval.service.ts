@@ -901,6 +901,8 @@ export async function submitMyLevelApprovalVote(params: {
           transaction_date: first.transaction_date,
           transaction_type: 2,
           remarks: `[Virtual Resubmission Round] Created from returned items at Level ${tier}.`,
+          date_created: nowTs,
+          date_updated: nowTs,
         }),
       });
 
@@ -954,6 +956,8 @@ export async function submitMyLevelApprovalVote(params: {
               status: "Approved",
               return_to: null,
               feedback: null,
+              approved_at: nowTs,
+              date_updated: nowTs,
             }),
           });
 
@@ -977,6 +981,7 @@ export async function submitMyLevelApprovalVote(params: {
               rejected_at: nowTs,
               return_to: null,
               feedback: decision.remarks || "Item rejected.",
+              date_updated: nowTs,
             }),
           });
 
@@ -999,6 +1004,7 @@ export async function submitMyLevelApprovalVote(params: {
               status: "With Concern",
               return_to: `L${currentTier}`,
               feedback: decision.remarks || "Concern raised.",
+              date_updated: nowTs,
             }),
           });
 

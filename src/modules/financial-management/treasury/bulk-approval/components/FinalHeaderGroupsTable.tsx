@@ -63,6 +63,17 @@ function getApprovalTierText(group: ApprovalAwareGroup) {
 }
 
 function ApprovalStateBadge({ group }: { group: ApprovalAwareGroup }) {
+  const isApproved = group.draft_statuses?.includes("Approved");
+
+  if (isApproved) {
+    return (
+      <Badge className="w-fit rounded-lg border border-emerald-200 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 hover:bg-emerald-500/15">
+        <CheckCircle2 className="mr-1 h-3 w-3" />
+        Posted / Completed
+      </Badge>
+    );
+  }
+
   if (group.can_act) {
     return (
       <Badge className="w-fit rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 hover:bg-emerald-50">

@@ -320,6 +320,7 @@ export default function ExpenseApprovalModal({
         salesman_id: detail.salesman.id,
         remarks: `Individual decision for item #${expense.id}: ${status}`,
         item_decisions: payloadDecisions,
+        all_ids: headerExpenses.map((e) => e.id),
       });
 
       toast.success(`Decision for item #${expense.id} submitted.`);
@@ -387,6 +388,7 @@ export default function ExpenseApprovalModal({
         remarks: remarks.trim(),
         item_decisions: payloadDecisions,
         edited_amounts: payloadEdited.length > 0 ? payloadEdited : undefined,
+        all_ids: headerExpenses.map((e) => e.id),
       });
 
       toast.success("Approvals submitted successfully.");
