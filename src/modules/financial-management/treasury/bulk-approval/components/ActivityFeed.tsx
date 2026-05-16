@@ -225,7 +225,7 @@ function RoundSection({
 
   return (
     <div
-      className={`rounded-xl border overflow-hidden transition-all dark:shadow-[0_0_20px_-12px_rgba(0,0,0,0.5)] ${meta.bg}`}
+      className={`rounded-xl border dark:border-slate-800 overflow-hidden transition-all dark:shadow-[0_0_20px_-12px_rgba(0,0,0,0.5)] ${meta.bg}`}
     >
       <button
         type="button"
@@ -300,7 +300,7 @@ function DraftRevisionList({ logs }: { logs: DraftRevisionLog[] }) {
         return (
           <div
             key={revision.id}
-            className="rounded-xl border bg-background/70 p-3 shadow-sm"
+            className="rounded-xl border dark:border-slate-800 bg-background/70 dark:bg-slate-900/70 p-3 shadow-sm"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -370,7 +370,7 @@ function ExpenseRevisionList({ logs }: { logs: ExpenseRevisionLog[] }) {
         return (
           <div
             key={`${revision.log_id}-${revision.expense_id}`}
-            className="rounded-xl border bg-background/70 p-3 shadow-sm"
+            className="rounded-xl border dark:border-slate-800 bg-background/70 dark:bg-slate-900/70 p-3 shadow-sm"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -491,7 +491,7 @@ export function ActivityFeed({ logs, loading }: Props) {
           <input
             type="text"
             placeholder="Search docs..."
-            className="w-full pl-8 pr-3 py-1.5 text-[11px] bg-muted/30 border-transparent focus:border-primary focus:bg-background rounded-lg outline-none transition-all font-medium"
+            className="w-full pl-8 pr-3 py-1.5 text-[11px] bg-muted/30 dark:bg-slate-800/50 border-transparent focus:border-primary focus:bg-background dark:focus:bg-slate-900 rounded-lg outline-none transition-all font-medium"
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -534,7 +534,7 @@ export function ActivityFeed({ logs, loading }: Props) {
             return (
               <div
                 key={draft.id}
-                className="rounded-xl border bg-card shadow-sm hover:shadow-md transition-all overflow-hidden"
+                className="rounded-xl border dark:border-slate-800 bg-card dark:bg-slate-900 shadow-sm hover:shadow-md transition-all overflow-hidden"
               >
                 <button
                   type="button"
@@ -601,7 +601,7 @@ export function ActivityFeed({ logs, loading }: Props) {
                 </button>
 
                 {isExpanded && (
-                  <div className="border-t bg-muted/[0.03] animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="border-t dark:border-slate-800 bg-muted/[0.03] dark:bg-slate-950/50 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="p-4 space-y-3">
                       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-2">
                         <Clock size={11} />
@@ -625,7 +625,7 @@ export function ActivityFeed({ logs, loading }: Props) {
                       )}
                     </div>
 
-                    <div className="border-t p-4 space-y-3">
+                    <div className="border-t dark:border-slate-800 p-4 space-y-3">
                       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-2">
                         <PencilLine size={11} />
                         Payable Amount Revision Logs
@@ -633,7 +633,7 @@ export function ActivityFeed({ logs, loading }: Props) {
                       <DraftRevisionList logs={draft.logs ?? []} />
                     </div>
 
-                    <div className="border-t p-4 space-y-3">
+                    <div className="border-t dark:border-slate-800 p-4 space-y-3">
                       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-2">
                         <ClipboardList size={11} />
                         Itemized Expense Revisions
@@ -641,7 +641,7 @@ export function ActivityFeed({ logs, loading }: Props) {
                       <ExpenseRevisionList logs={draft.expense_logs ?? []} />
                     </div>
 
-                    <div className="border-t p-4">
+                    <div className="border-t dark:border-slate-800 p-4">
                       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-2 mb-3">
                         <Info size={11} />
                         Payables Breakdown

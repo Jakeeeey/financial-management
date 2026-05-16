@@ -51,15 +51,17 @@ type ApprovalMeta = {
   draft_statuses?: string[];
   can_act?: boolean;
   is_waiting?: boolean;
+  is_finalized?: boolean;
   current_tier?: number;
   required_approver_level?: number;
 };
 
 function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null | undefined): ApprovalMeta {
   return {
-    draft_statuses: source?.draft_statuses,
+    draft_statuses: source?.draft_statuses ?? [],
     can_act: source?.can_act,
     is_waiting: source?.is_waiting,
+    is_finalized: source?.is_finalized,
     current_tier: source?.current_tier,
     required_approver_level: source?.required_approver_level,
   };
@@ -74,6 +76,19 @@ function getApprovalInfo(meta: ApprovalMeta) {
   const currentLevel = meta.current_tier ? `Level ${meta.current_tier}` : "not yet routed";
   const requiredLevel = meta.required_approver_level ? `Level ${meta.required_approver_level}` : "final approver level";
   const currentStatuses = formatDraftStatusList(meta.draft_statuses);
+  const isApproved = (meta.draft_statuses?.length ?? 0) > 0 && meta.draft_statuses?.every((s) => s === "Approved");
+
+  if (isApproved) {
+    return {
+      title: "This top-sheet has been finalized and posted",
+      description: `Current status: ${currentStatuses}. This disbursement is already live and posted.`,
+      shortLabel: "Finalized",
+      tone: "finalized" as const,
+      currentLevel,
+      requiredLevel,
+      currentStatuses,
+    };
+  }
 
   if (meta.can_act) {
     return {
@@ -244,19 +259,19 @@ function RemarksRequiredDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col overflow-hidden rounded-3xl border-slate-200 p-0 shadow-2xl">
-        <div className="shrink-0 border-b bg-slate-950 px-6 py-4 text-white">
+      <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col overflow-hidden rounded-3xl border-slate-200 dark:border-slate-800 p-0 shadow-2xl dark:shadow-none">
+        <div className="shrink-0 border-b dark:border-slate-800 bg-slate-100 dark:bg-slate-950 px-6 py-4 text-slate-900 dark:text-white">
           <DialogTitle className="flex items-center gap-2 text-base font-black tracking-tight">
-            <AlertTriangle className="h-5 w-5 text-amber-400" />
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
             Item Remarks Required
           </DialogTitle>
-          <DialogDescription className="mt-1 text-xs font-medium text-white/60">
+          <DialogDescription className="mt-1 text-xs font-medium text-slate-500 dark:text-white/60">
             {statusLabel} decisions require remarks for every affected expense line before submission.
           </DialogDescription>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto bg-slate-50/70 px-5 py-4">
-          <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+        <div className="min-h-0 flex-1 overflow-auto bg-slate-50/70 dark:bg-slate-900/70 px-5 py-4">
+          <div className="mb-3 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-xs font-semibold text-amber-800 dark:text-amber-400">
             {missingCount > 0
               ? `${missingCount} line${missingCount === 1 ? "" : "s"} still need remarks.`
               : "All affected lines have remarks and are ready to submit."}
@@ -271,23 +286,23 @@ function RemarksRequiredDialog({
               return (
                 <div
                   key={detail.expense_id}
-                  className={`rounded-2xl border bg-white p-4 shadow-sm ${
-                    isMissing ? "border-amber-200" : "border-emerald-100"
+                  className={`rounded-2xl border bg-white dark:bg-slate-800 p-4 shadow-sm dark:shadow-none ${
+                    isMissing ? "border-amber-200 dark:border-amber-800/50" : "border-emerald-100 dark:border-emerald-800/50"
                   }`}
                 >
                   <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-black text-slate-800">
+                      <p className="truncate text-sm font-black text-slate-800 dark:text-slate-100">
                         {salesman}
                       </p>
-                      <p className="truncate text-xs font-semibold text-slate-500">
+                      <p className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
                         {account}
                       </p>
-                      <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
                         Expense #{detail.expense_id} • {formatDate(detail.transaction_date)}
                       </p>
                     </div>
-                    <Badge className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
+                    <Badge className="rounded-lg bg-emerald-50 dark:bg-emerald-900/20 px-2.5 py-1 text-[10px] font-black text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30">
                       {formatCurrency(detail.amount)}
                     </Badge>
                   </div>
@@ -299,8 +314,8 @@ function RemarksRequiredDialog({
                     }
                     placeholder={`Enter remarks for ${statusLabel.toLowerCase()} decision...`}
                     rows={2}
-                    className={`resize-none rounded-xl bg-white text-xs font-medium shadow-inner ${
-                      isMissing ? "border-amber-300" : "border-slate-200"
+                    className={`resize-none rounded-xl bg-white dark:bg-slate-900 text-xs font-medium shadow-inner dark:shadow-none ${
+                      isMissing ? "border-amber-300 dark:border-amber-800/60" : "border-slate-200 dark:border-slate-700"
                     }`}
                     disabled={submitting}
                   />
@@ -310,12 +325,12 @@ function RemarksRequiredDialog({
           </div>
         </div>
 
-        <div className="shrink-0 border-t bg-white px-5 py-4">
+        <div className="shrink-0 border-t dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-4">
           <div className="flex items-center justify-end gap-2">
             <Button
               type="button"
               variant="outline"
-              className="rounded-xl border-slate-200 px-4 text-xs font-bold"
+              className="rounded-xl border-slate-200 dark:border-slate-800 px-4 text-xs font-bold"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
@@ -323,7 +338,7 @@ function RemarksRequiredDialog({
             </Button>
             <Button
               type="button"
-              className="rounded-xl bg-slate-900 px-5 text-xs font-black uppercase tracking-widest text-white hover:bg-primary"
+              className="rounded-xl bg-slate-900 dark:bg-slate-100 px-5 text-xs font-black uppercase tracking-widest text-white dark:text-slate-900 hover:bg-primary"
               onClick={() => void onSubmit()}
               disabled={submitting || missingCount > 0 || affectedDetails.length === 0}
             >
@@ -365,7 +380,7 @@ export default function FinalTopSheetModal({
   }, [data?.group, group]);
 
   const approvalInfo = React.useMemo(() => getApprovalInfo(activeApprovalMeta), [activeApprovalMeta]);
-  const canSubmitFinalAction = data?.group.can_act ?? false;
+  const canSubmitFinalAction = (data?.group.can_act ?? false) && (data?.group.draft_statuses?.some((s) => s !== "Approved") ?? false);
   const stagedDecisionEntries = React.useMemo(
     () => Object.values(stagedDecisions),
     [stagedDecisions]
@@ -381,7 +396,7 @@ export default function FinalTopSheetModal({
       { approved: 0, concern: 0, rejected: 0 }
     );
   }, [stagedDecisionEntries]);
-  const isApprovedHistory = !!(data?.group.draft_statuses?.includes("Approved")) && !canSubmitFinalAction;
+  const isApprovedHistory = !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s === "Approved")) && !canSubmitFinalAction;
   const actionDisabledReason = canSubmitFinalAction ? undefined : approvalInfo.description;
 
   React.useEffect(() => {
@@ -758,11 +773,11 @@ export default function FinalTopSheetModal({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="flex !h-screen !w-screen !max-w-none !max-h-none flex-col overflow-hidden border-none p-0 sm:rounded-none">
-          <div className="shrink-0 bg-gradient-to-r from-slate-950 via-slate-900 to-[#1e1e2e] px-5 py-3 text-white shadow-xl relative">
+          <div className="shrink-0 bg-slate-50 dark:bg-gradient-to-r dark:from-slate-950 dark:via-slate-900 dark:to-[#1e1e2e] border-b dark:border-none px-5 py-3 text-slate-900 dark:text-white shadow-xl relative">
             <div className="flex items-center justify-between gap-4 relative z-10">
-              <DialogTitle className="flex items-center gap-3 text-base font-black tracking-tight text-white">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/10">
-                  <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <DialogTitle className="flex items-center gap-3 text-base font-black tracking-tight text-slate-900 dark:text-white">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 dark:bg-white/10">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div className="flex flex-col leading-none">
                   <span>Final Top-Sheet Review</span>
@@ -770,13 +785,13 @@ export default function FinalTopSheetModal({
                     <motion.span 
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className="text-[9px] font-black uppercase tracking-[0.25em] text-emerald-400 mt-0.5 flex items-center gap-1"
+                      className="text-[9px] font-black uppercase tracking-[0.25em] text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center gap-1"
                     >
-                      <span className="h-1 w-1 rounded-full bg-emerald-400 animate-ping" />
+                      <span className="h-1 w-1 rounded-full bg-emerald-600 dark:bg-emerald-400 animate-ping" />
                       {stagedDecisionCount} Actions Staged for Audit
                     </motion.span>
                   ) : (
-                    <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/40 mt-0.5">COA Action Review</span>
+                    <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-slate-400 dark:text-white/40 mt-0.5">COA Action Review</span>
                   )}
                 </div>
               </DialogTitle>
@@ -804,7 +819,7 @@ export default function FinalTopSheetModal({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-xl text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                  className="h-8 w-8 rounded-xl text-slate-400 dark:text-white/40 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
                   onClick={() => onOpenChange(false)}
                 >
                   <XCircle className="h-4 w-4" />
@@ -813,42 +828,42 @@ export default function FinalTopSheetModal({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto bg-[#f8fafc] p-4">
+          <div className="min-h-0 flex-1 overflow-auto bg-slate-50 dark:bg-slate-950 p-4">
             {loading ? (
               <div className="flex h-full flex-col items-center justify-center gap-4">
                 <div className="relative">
                   <div className="h-12 w-12 rounded-full border-4 border-primary/5 border-t-primary animate-spin" />
                   <Loader2 className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 text-primary" />
                 </div>
-                <p className="text-sm font-black text-slate-600 animate-pulse">Calculating Matrix Totals...</p>
+                <p className="text-sm font-black text-slate-600 dark:text-slate-400 animate-pulse">Calculating Matrix Totals...</p>
               </div>
             ) : !data ? (
               <div className="flex h-full flex-col items-center justify-center gap-3">
                 <AlertTriangle className="h-10 w-10 text-rose-400" />
-                <p className="text-base font-black text-slate-800">No top-sheet data available.</p>
+                <p className="text-base font-black text-slate-800 dark:text-slate-200">No top-sheet data available.</p>
               </div>
             ) : (
               <div className="flex h-full flex-col gap-4 animate-in fade-in duration-500 overflow-hidden">
                 <div className={`flex items-center justify-between gap-6 rounded-2xl border px-6 py-4 transition-all ${
                   isApprovedHistory 
-                    ? "bg-emerald-50 border-emerald-100 shadow-sm shadow-emerald-100/20" 
+                    ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50 shadow-sm dark:shadow-none shadow-emerald-100/20" 
                     : canSubmitFinalAction 
-                      ? "bg-emerald-50 border-emerald-100 shadow-sm shadow-emerald-100/20" 
-                      : "bg-slate-50 border-slate-200"
+                      ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50 shadow-sm dark:shadow-none shadow-emerald-100/20" 
+                      : "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"
                 }`}>
                   <div className="flex items-center gap-5">
                     <div className={`flex h-12 w-12 items-center justify-center rounded-full ring-4 ${
                       isApprovedHistory
-                        ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/5"
+                        ? "bg-emerald-500/10 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 ring-emerald-500/5 dark:ring-emerald-900/20"
                         : canSubmitFinalAction 
-                          ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/5" 
-                          : "bg-slate-200 text-slate-400 ring-slate-100"
+                          ? "bg-emerald-500/10 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 ring-emerald-500/5 dark:ring-emerald-900/20" 
+                          : "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 ring-slate-100 dark:ring-slate-900"
                     }`}>
                       {isApprovedHistory || canSubmitFinalAction ? <ShieldCheck className="h-6 w-6" /> : <ShieldAlert className="h-6 w-6" />}
                     </div>
                     <div className="space-y-1">
                       <h3 className={`text-sm font-black tracking-tight ${
-                        isApprovedHistory || canSubmitFinalAction ? "text-emerald-900" : "text-slate-900"
+                        isApprovedHistory || canSubmitFinalAction ? "text-emerald-900 dark:text-emerald-400" : "text-slate-900 dark:text-slate-100"
                       }`}>
                         {isApprovedHistory 
                           ? "Audit Finalized & Posted" 
@@ -857,7 +872,7 @@ export default function FinalTopSheetModal({
                             : "View-only until previous approval tier is completed"}
                       </h3>
                       <p className={`text-[11px] font-medium leading-none ${
-                        isApprovedHistory || canSubmitFinalAction ? "text-emerald-700/70" : "text-slate-500"
+                        isApprovedHistory || canSubmitFinalAction ? "text-emerald-700/70 dark:text-emerald-400/70" : "text-slate-500 dark:text-slate-400"
                       }`}>
                         {isApprovedHistory 
                           ? "This top-sheet has been successfully audited and posted to the live Disbursement table."
@@ -871,22 +886,22 @@ export default function FinalTopSheetModal({
                   {!isApprovedHistory && (
                     <div className="flex items-center gap-8">
                       <div className="text-center">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status</p>
-                        <p className="text-[10px] font-black text-slate-900">{(data?.group.draft_statuses ?? []).join(", ")}</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Status</p>
+                        <p className="text-[10px] font-black text-slate-900 dark:text-slate-200">{(data?.group.draft_statuses ?? []).join(", ")}</p>
                       </div>
-                      <div className="h-8 w-px bg-slate-200" />
+                      <div className="h-8 w-px bg-slate-200 dark:bg-slate-800" />
                       <div className="text-center">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Current Tier</p>
-                        <p className="text-[10px] font-black text-slate-900">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Current Tier</p>
+                        <p className="text-[10px] font-black text-slate-900 dark:text-slate-200">
                           {toNumber(data?.group.current_tier) >= 999 ? "Finalized" : 
                            toNumber(data?.group.current_tier) <= 0 ? "Suspended" : 
                            `Level ${data?.group.current_tier}`}
                         </p>
                       </div>
-                      <div className="h-8 w-px bg-slate-200" />
+                      <div className="h-8 w-px bg-slate-200 dark:bg-slate-800" />
                       <div className="text-center">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Required Tier</p>
-                        <p className="text-[10px] font-black text-slate-900">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Required Tier</p>
+                        <p className="text-[10px] font-black text-slate-900 dark:text-slate-200">
                           {toNumber(data?.group.required_approver_level) >= 999 ? "N/A" : `Level ${data?.group.required_approver_level}`}
                         </p>
                       </div>
@@ -895,34 +910,34 @@ export default function FinalTopSheetModal({
                 </div>
 
                 {/* Compact stats strip */}
-                <div className="flex shrink-0 items-stretch gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-md">
-                  <div className="flex items-center gap-2 pr-4 border-r border-slate-100">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <div className="flex shrink-0 items-stretch gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3 shadow-md dark:shadow-none">
+                  <div className="flex items-center gap-2 pr-4 border-r border-slate-100 dark:border-slate-800">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
                       <CalendarRange size={14} />
                     </div>
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Period</p>
-                      <p className="text-[11px] font-black text-slate-800">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Period</p>
+                      <p className="text-[11px] font-black text-slate-800 dark:text-slate-200">
                         {formatDate(data.group.period_from)} – {formatDate(data.group.period_to)}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 px-4 border-r border-slate-100">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+                  <div className="flex items-center gap-2 px-4 border-r border-slate-100 dark:border-slate-800">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400">
                       <Users size={14} />
                     </div>
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Encoders</p>
-                      <p className="text-sm font-black text-slate-800">{data.salesmen.length}</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Encoders</p>
+                      <p className="text-sm font-black text-slate-800 dark:text-slate-200">{data.salesmen.length}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 px-4 border-r border-slate-100">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                  <div className="flex items-center gap-2 px-4 border-r border-slate-100 dark:border-slate-800">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">
                       <FileText size={14} />
                     </div>
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Lines</p>
-                      <p className="text-sm font-black text-slate-800">{data.details.length}</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Lines</p>
+                      <p className="text-sm font-black text-slate-800 dark:text-slate-200">{data.details.length}</p>
                     </div>
                   </div>
                   <div className="flex flex-1 items-center justify-end gap-2">
@@ -930,13 +945,13 @@ export default function FinalTopSheetModal({
                       <ShieldCheck size={14} />
                     </div>
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700/60">Consolidated Total</p>
-                      <p className="text-base font-black text-emerald-700">{formatCurrency(data.grand_total)}</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700/60 dark:text-emerald-400/60">Consolidated Total</p>
+                      <p className="text-base font-black text-emerald-700 dark:text-emerald-400">{formatCurrency(data.grand_total)}</p>
                     </div>
                     {stagedDecisionCount > 0 && (
-                      <div className="ml-4 px-4 border-l border-emerald-100">
+                      <div className="ml-4 px-4 border-l border-emerald-100 dark:border-emerald-800">
                         <p className="text-[9px] font-black uppercase tracking-widest text-primary/60">Selected Actions</p>
-                        <p className="text-[11px] font-black text-slate-800">
+                        <p className="text-[11px] font-black text-slate-800 dark:text-slate-200">
                           {stagedDecisionCount} staged decision{stagedDecisionCount !== 1 ? "s" : ""}
                         </p>
                       </div>
@@ -945,7 +960,7 @@ export default function FinalTopSheetModal({
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="ml-4 h-8 rounded-xl border-slate-200 bg-slate-50 px-4 text-[10px] font-black uppercase tracking-widest transition-all hover:bg-white active:scale-95"
+                      className="ml-4 h-8 rounded-xl border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 px-4 text-[10px] font-black uppercase tracking-widest transition-all hover:bg-white dark:hover:bg-slate-700 active:scale-95"
                       onClick={() => {
                         setSelectedAuditeeId(null);
                         setAuditeeDetailOpen(true);
@@ -958,7 +973,7 @@ export default function FinalTopSheetModal({
                 </div>
 
                 {/* Matrix – fills remaining space */}
-                <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
+                <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl dark:shadow-none shadow-slate-200/50">
                   <FinalTopSheetMatrix
                     data={data}
                     submitting={submitting}
@@ -978,27 +993,27 @@ export default function FinalTopSheetModal({
           </div>
 
           {!isApprovedHistory && (
-            <div className="shrink-0 border-t bg-white px-6 py-4 shadow-[0_-10px_40px_-20px_rgba(0,0,0,0.1)]">
+            <div className="shrink-0 border-t dark:border-slate-800 bg-white dark:bg-slate-950 px-6 py-4 shadow-[0_-10px_40px_-20px_rgba(0,0,0,0.1)] dark:shadow-none">
               <div className="flex items-center justify-between gap-6 max-w-7xl mx-auto">
                 <div className="flex items-center gap-5">
                   <div className="flex flex-col">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Consolidated Value</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Consolidated Value</span>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-xl font-black text-slate-900 tabular-nums">{formatCurrency(data?.grand_total ?? 0)}</span>
-                      <span className="text-[10px] font-bold text-slate-400">{data?.details.length ?? 0} Lines</span>
+                      <span className="text-xl font-black text-slate-900 dark:text-slate-100 tabular-nums">{formatCurrency(data?.grand_total ?? 0)}</span>
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{data?.details.length ?? 0} Lines</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 pl-6 border-l border-slate-100">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">COA Actions:</span>
-                    <div className="flex items-center gap-1.5 rounded-xl bg-slate-100 p-1">
-                      <span className="rounded-lg bg-white px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-600 shadow-sm">
+                  <div className="flex items-center gap-3 pl-6 border-l border-slate-100 dark:border-slate-800">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">COA Actions:</span>
+                    <div className="flex items-center gap-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 p-1 border dark:border-slate-800">
+                      <span className="rounded-lg bg-white dark:bg-slate-800 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 shadow-sm dark:shadow-none">
                         Approved {stagedDecisionSummary.approved}
                       </span>
-                      <span className="rounded-lg bg-white px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-amber-600 shadow-sm">
+                      <span className="rounded-lg bg-white dark:bg-slate-800 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400 shadow-sm dark:shadow-none">
                         Concern {stagedDecisionSummary.concern}
                       </span>
-                      <span className="rounded-lg bg-white px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-rose-600 shadow-sm">
+                      <span className="rounded-lg bg-white dark:bg-slate-800 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400 shadow-sm dark:shadow-none">
                         Rejected {stagedDecisionSummary.rejected}
                       </span>
                     </div>
@@ -1012,11 +1027,11 @@ export default function FinalTopSheetModal({
                   >
                     Cancel Review
                   </button>
-                  <div className="h-8 w-px bg-slate-100" />
+                  <div className="h-8 w-px bg-slate-100 dark:bg-slate-800" />
                   <Button
                     type="button"
                     size="sm"
-                    className="h-11 rounded-xl bg-slate-900 px-8 text-[10px] font-black uppercase tracking-[0.15em] text-white shadow-lg transition-all hover:bg-primary active:scale-[0.98] gap-2 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+                    className="h-11 rounded-xl bg-slate-900 dark:bg-slate-100 px-8 text-[10px] font-black uppercase tracking-[0.15em] text-white dark:text-slate-900 shadow-lg dark:shadow-none transition-all hover:bg-primary active:scale-[0.98] gap-2 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:shadow-none"
                     onClick={handleInitiateFinalSubmit}
                     disabled={submitting || loading || !data || !canSubmitFinalAction || stagedDecisionCount === 0}
                   >
@@ -1037,14 +1052,14 @@ export default function FinalTopSheetModal({
           )}
 
           {isApprovedHistory && (
-            <div className="shrink-0 border-t bg-slate-50 px-6 py-4">
+            <div className="shrink-0 border-t dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-6 py-4">
               <div className="flex items-center justify-between gap-6 max-w-7xl mx-auto">
                 <div className="flex items-center gap-5">
                   <div className="flex flex-col">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Archived Value</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Archived Value</span>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-xl font-black text-slate-500 tabular-nums">{formatCurrency(data?.grand_total ?? 0)}</span>
-                      <span className="text-[10px] font-bold text-slate-400">{data?.details.length ?? 0} Lines</span>
+                      <span className="text-xl font-black text-slate-500 dark:text-slate-300 tabular-nums">{formatCurrency(data?.grand_total ?? 0)}</span>
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{data?.details.length ?? 0} Lines</span>
                     </div>
                   </div>
                 </div>
@@ -1129,48 +1144,48 @@ export default function FinalTopSheetModal({
       />
 
       <Dialog open={finalConfirmOpen} onOpenChange={setFinalConfirmOpen}>
-        <DialogContent className="max-w-lg p-0 overflow-hidden border-none rounded-[2.5rem] shadow-2xl">
-          <div className="bg-slate-950 px-8 py-6 text-white">
+        <DialogContent className="max-w-lg p-0 overflow-hidden border-none dark:border-slate-800 rounded-[2.5rem] shadow-2xl dark:shadow-none">
+          <div className="bg-slate-100 dark:bg-black px-8 py-6 text-slate-900 dark:text-white">
             <DialogTitle className="flex items-center gap-3 text-xl font-black tracking-tight">
-              <ShieldCheck className="h-6 w-6 text-emerald-400" />
+              <ShieldCheck className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
               Audit Submission Confirmation
             </DialogTitle>
-            <DialogDescription className="text-white/40 text-xs font-bold uppercase tracking-widest mt-1">
+            <DialogDescription className="text-slate-500 dark:text-white/20 text-xs font-bold uppercase tracking-widest mt-1">
               Finalizing COA action trail
             </DialogDescription>
           </div>
 
-          <div className="p-8 bg-slate-50 space-y-6">
+          <div className="p-8 bg-slate-50 dark:bg-slate-950 space-y-6">
             {(canSubmitFinalAction && stagedDecisionCount > 0) && (
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
-                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/50 rounded-2xl p-4 flex items-start gap-4 shadow-sm dark:shadow-none animate-in fade-in slide-in-from-top-2 duration-500">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div className="space-y-1">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-900 leading-none">Irreversible Posting Action</p>
-                  <p className="text-[11px] text-amber-700 font-medium leading-relaxed">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-900 dark:text-amber-400 leading-none">Irreversible Posting Action</p>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-500 font-medium leading-relaxed">
                     This audit will <strong>permanently post</strong> approved staged items to the live Disbursement table. Items marked &quot;With Concern&quot; or &quot;Rejected&quot; will be excluded from posting.
                   </p>
                 </div>
               </div>
             )}
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm dark:shadow-none space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Action Scope</span>
-                <Badge variant="outline" className="bg-slate-50 text-[10px] font-black px-3 py-1 rounded-lg">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Action Scope</span>
+                <Badge variant="outline" className="bg-slate-50 dark:bg-slate-800 text-[10px] font-black px-3 py-1 rounded-lg dark:border-slate-700">
                   Staged COA/Encoder Batch
                 </Badge>
               </div>
-              <div className="h-px bg-slate-100" />
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Decision</span>
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-900">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Decision</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">
                   {stagedDecisionCount} staged decision{stagedDecisionCount !== 1 ? "s" : ""}
                 </span>
               </div>
             </div>
 
             <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 flex items-center gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 flex items-center gap-2">
                 <FileText size={14} className="text-primary" />
                 Audit Remarks <span className="text-rose-500">*</span>
               </label>
@@ -1179,9 +1194,9 @@ export default function FinalTopSheetModal({
                 onChange={(e) => setRemarks(e.target.value)}
                 placeholder="Provide mandatory audit remarks for the selected COA actions..."
                 rows={4}
-                className="resize-none rounded-2xl border-slate-200 bg-white p-4 text-xs font-medium shadow-inner focus:ring-2 focus:ring-primary/10"
+                className="resize-none rounded-2xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-medium shadow-inner dark:shadow-none focus:ring-2 focus:ring-primary/10"
               />
-              <p className="text-[9px] font-bold text-slate-400 italic">
+              <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 italic">
                 These remarks will be permanently recorded for accountability.
               </p>
             </div>
@@ -1189,7 +1204,7 @@ export default function FinalTopSheetModal({
             <div className="flex flex-col gap-3 pt-2">
               <Button
                 size="lg"
-                className="h-14 rounded-2xl bg-slate-900 text-sm font-black uppercase tracking-[0.2em] text-white shadow-lg gap-3 hover:bg-primary disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+                className="h-14 rounded-2xl bg-slate-900 dark:bg-slate-100 text-sm font-black uppercase tracking-[0.2em] text-white dark:text-slate-900 shadow-lg dark:shadow-none gap-3 hover:bg-primary active:scale-[0.98] disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:shadow-none"
                 disabled={submitting || !remarks.trim() || stagedDecisionCount === 0}
                 onClick={() => void submitStagedAuditBatch()}
               >

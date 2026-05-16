@@ -19,18 +19,18 @@ export default function HeaderSelectionPanel({ selectedSalesman, detail, loading
   if (!selectedSalesman) return null;
 
   return (
-    <div className="flex flex-col h-full bg-card animate-in slide-in-from-right duration-300 overflow-hidden">
-      <div className="flex items-center justify-between p-4 border-b bg-muted/5">
+    <div className="flex flex-col h-full bg-card dark:bg-slate-900 animate-in slide-in-from-right duration-300 overflow-hidden">
+      <div className="flex items-center justify-between p-4 border-b dark:border-slate-800 bg-muted/5 dark:bg-slate-800/50">
         <div>
-          <h3 className="font-black text-sm uppercase tracking-wider text-slate-800">Select Submittal Period</h3>
+          <h3 className="font-black text-sm uppercase tracking-wider text-slate-800 dark:text-slate-200">Select Submittal Period</h3>
           <p className="text-[10px] text-muted-foreground font-bold">{selectedSalesman.salesman_name}</p>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8 hover:bg-rose-50 hover:text-rose-600 transition-colors">
+        <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8 hover:bg-rose-50 dark:hover:bg-rose-950/50 hover:text-rose-600 dark:hover:text-rose-400 transition-colors">
           <X size={18} />
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/5">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/5 dark:bg-slate-900/50">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-40 gap-3">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -46,22 +46,22 @@ export default function HeaderSelectionPanel({ selectedSalesman, detail, loading
                <button
                  key={header.id}
                  onClick={() => onSelectHeader(header)}
-                 className="w-full text-left p-4 rounded-2xl border bg-white hover:border-primary hover:shadow-xl hover:-translate-y-0.5 transition-all group flex items-center justify-between"
+                 className="w-full text-left p-4 rounded-2xl border dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-primary dark:hover:border-primary hover:shadow-xl hover:-translate-y-0.5 transition-all group flex items-center justify-between"
                >
                  <div className="space-y-1">
                    <div className="flex items-center gap-2">
                      <div className="p-1.5 bg-primary/5 rounded-lg text-primary group-hover:bg-primary group-hover:text-white transition-colors">
                         <Calendar size={12} />
                      </div>
-                     <span className="text-[11px] font-black text-slate-800">
+                     <span className="text-[11px] font-black text-slate-800 dark:text-slate-200">
                        {new Date(header.period_from + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })} - {new Date(header.period_to + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
                      </span>
                    </div>
                    <div className="flex items-center gap-2 pl-8">
-                      <Badge variant="outline" className="text-[9px] font-black px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-100 tabular-nums">
+                      <Badge variant="outline" className="text-[9px] font-black px-1.5 py-0 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20 tabular-nums">
                         ₱{totalAmount.toLocaleString()}
                       </Badge>
-                      <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 bg-slate-50 border-slate-200">
+                      <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 dark:text-slate-300">
                         {itemCount} Line{itemCount !== 1 ? 's' : ''}
                       </Badge>
                       <span className="text-[9px] text-muted-foreground italic truncate max-w-[80px]">
@@ -69,7 +69,7 @@ export default function HeaderSelectionPanel({ selectedSalesman, detail, loading
                       </span>
                    </div>
                  </div>
-                 <div className="h-8 w-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-all shadow-inner">
+                 <div className="h-8 w-8 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-all shadow-inner">
                     <ChevronRight size={16} />
                  </div>
                </button>
@@ -83,7 +83,7 @@ export default function HeaderSelectionPanel({ selectedSalesman, detail, loading
         )}
       </div>
 
-      <div className="p-4 bg-muted/10 border-t mt-auto">
+      <div className="p-4 bg-muted/10 dark:bg-slate-800/50 border-t dark:border-slate-800 mt-auto">
         <p className="text-[9px] text-muted-foreground font-black text-center uppercase tracking-widest leading-relaxed">
           PICK A PERIOD TO INITIATE<br/>THE AUDIT WORKSPACE
         </p>
