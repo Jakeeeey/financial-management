@@ -1,0 +1,5 @@
+
+> financial-management@0.1.0 typecheck
+> tsc --noEmit
+
+src/modules/financial-management/treasury/bulk-approval/components/FinalTopSheetModal.tsx(929,20): error TS2741: Property 'onSubmitStaged' is missing in type '{ data: FinalTopSheetResponse; submitting: boolean; canAct: boolean; isApprovedHistory: boolean; readOnlyReason: string | undefined; stagedDecisions: { [k: string]: FinalHeaderDecisionStatus; }; onOpenAuditeeDetails: (employeeId: number) => void; onToggleDecision: (status: FinalHeaderDecisionStatus, target: FinalDec...' but required in type 'Props'.
