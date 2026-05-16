@@ -75,3 +75,15 @@ export function titleCase(input: string): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
 }
+
+/**
+ * TIN Formatter: formats digits as 000-000-000-000
+ */
+export function formatTIN(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 12);
+  const groups = [];
+  for (let i = 0; i < digits.length; i += 3) {
+    groups.push(digits.slice(i, i + 3));
+  }
+  return groups.join("-");
+}

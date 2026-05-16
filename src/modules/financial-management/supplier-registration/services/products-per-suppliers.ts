@@ -125,6 +125,34 @@ export async function addProductToSupplier(
 }
 
 /**
+ * Add products to supplier in bulk
+ */
+export async function createBulkSupplierProducts(
+  items: Partial<ProductPerSupplier>[],
+): Promise<ProductPerSupplier[]> {
+  try {
+    const response = await fetch(`${API_BASE}/product_per_supplier`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(items),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(
+        error.errors?.[0]?.message || "Failed to add products in bulk",
+      );
+    }
+
+    const result = await response.json();
+    return result.data;
+  } catch (error) {
+    console.error("Error bulk adding products to supplier:", error);
+    throw error;
+  }
+}
+
+/**
  * Update discount type for product-supplier relationship
  */
 export async function updateProductDiscount(

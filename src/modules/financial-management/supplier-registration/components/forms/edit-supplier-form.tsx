@@ -24,6 +24,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import Image from "next/image";
+import { formatTIN } from "@/lib/utils";
 import {
   usePaymentTerms,
   useDeliveryTerms,
@@ -491,7 +492,14 @@ export function EditSupplierForm({
                         TIN Number <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
-                        <Input placeholder="9-12 digits" {...field} />
+                        <Input
+                          placeholder="000-000-000-000"
+                          {...field}
+                          onChange={(e) => {
+                            const formatted = formatTIN(e.target.value);
+                            field.onChange(formatted);
+                          }}
+                        />
                       </FormControl>
                       <FormDescription>
                         Tax Identification Number (9-12 digits)
