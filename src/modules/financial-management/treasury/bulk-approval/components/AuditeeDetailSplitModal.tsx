@@ -80,10 +80,10 @@ function groupByCoa(details: FinalTopSheetDetail[]) {
 
 function statusBadgeClass(status: string) {
   const s = status.toLowerCase();
-  if (s === "approved") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (s === "rejected") return "bg-rose-50 text-rose-700 border-rose-200";
-  if (s.includes("concern")) return "bg-amber-50 text-amber-700 border-amber-200";
-  return "bg-slate-100 text-slate-500 border-slate-200";
+  if (s === "approved") return "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50";
+  if (s === "rejected") return "bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/50";
+  if (s.includes("concern")) return "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/50";
+  return "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700";
 }
 
 export default function AuditeeDetailSplitModal({
@@ -277,7 +277,7 @@ export default function AuditeeDetailSplitModal({
         )}
 
         {/* RIGHT: Main Detail Pane */}
-        <div className={`flex flex-col bg-white rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] overflow-hidden h-full transition-all duration-500 border border-slate-200 ${showEvidence && attachments.length > 0 ? "w-[60vw]" : "w-[85vw]"}`}>
+        <div className={`flex flex-col bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_0_50px_-12px_rgba(0,0,0,0.8)] overflow-hidden h-full transition-all duration-500 border border-slate-200 dark:border-slate-800 ${showEvidence && attachments.length > 0 ? "w-[60vw]" : "w-[85vw]"}`}>
 
           {/* Blue Header */}
           <div className="px-[2vw] py-[2.5vh] bg-[#1e40af] text-white shrink-0 relative overflow-hidden">
@@ -321,9 +321,9 @@ export default function AuditeeDetailSplitModal({
           </div>
 
           {/* Stats Bar */}
-          <div className="grid grid-cols-3 gap-4 px-[1.5vw] py-[2vh] bg-white border-b shadow-sm shrink-0">
+          <div className="grid grid-cols-3 gap-4 px-[1.5vw] py-[2vh] bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm shrink-0">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
+              <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50">
                 <ShieldCheck size={20} />
               </div>
               <div>
@@ -333,7 +333,7 @@ export default function AuditeeDetailSplitModal({
               </div>
             </div>
             <div className="flex items-center gap-3 pl-4 border-l">
-              <div className="h-10 w-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 border border-purple-100">
+              <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center text-purple-600 dark:text-purple-400 border border-purple-100 dark:border-purple-900/50">
                 <FileText size={20} />
               </div>
               <div>
@@ -342,7 +342,7 @@ export default function AuditeeDetailSplitModal({
               </div>
             </div>
             <div className="flex items-center gap-3 pl-4 border-l">
-              <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100">
+              <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50">
                 <CheckCircle2 size={20} />
               </div>
               <div>
@@ -353,8 +353,8 @@ export default function AuditeeDetailSplitModal({
           </div>
 
           {/* Toolbar */}
-          <div className="px-[2vw] py-3 bg-muted/5 border-b flex items-center justify-between shrink-0">
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-800">
+          <div className="px-[2vw] py-3 bg-muted/5 dark:bg-slate-900/50 border-b dark:border-slate-800 flex items-center justify-between shrink-0">
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-800 dark:text-slate-200">
               <FileText className="h-4 w-4 text-primary" />
               Verification Registry — Grouped by COA
             </h3>
@@ -377,7 +377,7 @@ export default function AuditeeDetailSplitModal({
           </div>
 
           {/* COA-Grouped Table */}
-          <div className="flex-1 overflow-auto bg-slate-50/50 p-6">
+          <div className="flex-1 overflow-auto bg-slate-50/50 dark:bg-slate-950/50 p-6">
             {coaGroups.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
                 <Loader2 className="h-8 w-8 animate-spin" />
@@ -390,7 +390,7 @@ export default function AuditeeDetailSplitModal({
                     .filter(i => !i.status.toLowerCase().includes("concern"))
                     .reduce((s, i) => s + i.amount, 0);
                   return (
-                    <div key={group.coa_id} className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <div key={group.coa_id} className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
                       {/* COA Header */}
                       <div className="flex items-center justify-between px-5 py-3 bg-slate-900 text-white">
                         <div>
@@ -416,7 +416,7 @@ export default function AuditeeDetailSplitModal({
 
                       {/* Line Items */}
                       <Table>
-                        <TableHeader className="bg-slate-50/70">
+                        <TableHeader className="bg-slate-50/70 dark:bg-slate-900/70">
                           <TableRow>
                             <TableHead className="text-[9px] font-black uppercase tracking-widest py-2 pl-5 w-8">#</TableHead>
                             <TableHead className="text-[9px] font-black uppercase tracking-widest py-2">Remarks</TableHead>
@@ -430,14 +430,14 @@ export default function AuditeeDetailSplitModal({
                         </TableHeader>
                         <TableBody>
                           {group.items.map((item, idx) => (
-                            <TableRow key={item.expense_id} className="hover:bg-slate-50/50 border-b border-slate-100">
-                              <TableCell className="py-3 pl-5 text-[9px] font-black text-slate-300 italic">{String(idx + 1).padStart(2, "0")}</TableCell>
+                            <TableRow key={item.expense_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
+                              <TableCell className="py-3 pl-5 text-[9px] font-black text-slate-300 dark:text-slate-600 italic">{String(idx + 1).padStart(2, "0")}</TableCell>
                               <TableCell className="py-3">
-                                <p className="text-[10px] font-bold text-slate-700 line-clamp-2">{item.remarks || "—"}</p>
+                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-200 line-clamp-2">{item.remarks || "—"}</p>
                               </TableCell>
-                              <TableCell className="py-3 text-[10px] font-medium text-slate-500">{item.payee || "—"}</TableCell>
+                              <TableCell className="py-3 text-[10px] font-medium text-slate-500 dark:text-slate-400">{item.payee || "—"}</TableCell>
                               <TableCell className="py-3 text-center text-[10px] font-bold text-slate-500 uppercase tabular-nums">{formatDate(item.transaction_date)}</TableCell>
-                              <TableCell className="py-3 text-right text-[10px] font-black text-slate-800 tabular-nums">{formatCurrency(item.amount)}</TableCell>
+                              <TableCell className="py-3 text-right text-[10px] font-black text-slate-800 dark:text-slate-200 tabular-nums">{formatCurrency(item.amount)}</TableCell>
                               <TableCell className="py-3 text-center">
                                 <Badge className={`text-[9px] font-black border rounded-lg px-2 ${statusBadgeClass(item.status)}`}>
                                   {item.status}
@@ -446,7 +446,7 @@ export default function AuditeeDetailSplitModal({
                               <TableCell className="py-3 px-3">
                                 <Input
                                   placeholder="Feedback for rejection / concern..."
-                                  className="h-7 text-[10px] font-medium border-slate-200 bg-slate-50 rounded-lg"
+                                  className="h-7 text-[10px] font-medium border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-lg"
                                   value={lineRemarks[item.expense_id] ?? ""}
                                   onChange={e => onLineRemarkChange(item.expense_id, e.target.value)}
                                   disabled={submitting}
@@ -464,7 +464,7 @@ export default function AuditeeDetailSplitModal({
                                     <XCircle size={13} />
                                   </Button>
                                   {item.attachment_url && (
-                                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-lg bg-blue-50 text-blue-600" onClick={() => onPreviewUrl(`/api/fm/expense-assets?id=${item.attachment_url}`)} title="View document">
+                                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => onPreviewUrl(`/api/fm/expense-assets?id=${item.attachment_url}`)} title="View document">
                                       <FileText size={12} />
                                     </Button>
                                   )}
@@ -482,7 +482,7 @@ export default function AuditeeDetailSplitModal({
           </div>
 
           {/* Footer */}
-          <div className="shrink-0 border-t bg-white px-6 py-3 flex items-center justify-between">
+          <div className="shrink-0 border-t dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold">
               <ShieldCheck size={14} className="text-emerald-500" />
               Audit Consensus Engine — Immutable Trail
@@ -491,7 +491,7 @@ export default function AuditeeDetailSplitModal({
               type="button"
               variant="outline"
               size="sm"
-              className="h-9 rounded-xl border-slate-200 px-5 text-[10px] font-black uppercase tracking-widest"
+              className="h-9 rounded-xl border-slate-200 dark:border-slate-700 px-5 text-[10px] font-black uppercase tracking-widest"
               onClick={() => onOpenChange(false)}
             >
               Close

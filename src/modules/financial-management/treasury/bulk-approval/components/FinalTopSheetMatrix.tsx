@@ -149,15 +149,15 @@ export default function FinalTopSheetMatrix({
   const stagedCount = Object.keys(stagedDecisions).length;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-white rounded-2xl">
-      <div className="shrink-0 border-b bg-white px-5 py-3">
+    <div className="flex h-full flex-col overflow-hidden bg-white dark:bg-slate-900 rounded-2xl">
+      <div className="shrink-0 border-b dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <div>
-              <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-600">
+              <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-300">
                 Audit Matrix: Encoder × COA
               </h3>
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-slate-400 dark:text-slate-500">
                 Click any auditee row to inspect line details. Use audit buttons
                 to stage decisions.
               </p>
@@ -165,7 +165,7 @@ export default function FinalTopSheetMatrix({
 
             {stagedCount > 0 && (
               <div className="flex items-center gap-2 animate-in slide-in-from-left-2 duration-300">
-                <div className="h-4 w-px bg-slate-200" />
+                <div className="h-4 w-px bg-slate-200 dark:bg-slate-800" />
                 <Button
                   size="sm"
                   className="h-8 rounded-xl bg-slate-900 px-4 text-[10px] font-black uppercase tracking-widest text-white shadow-lg shadow-slate-900/20 hover:bg-primary transition-all active:scale-95"
@@ -182,7 +182,7 @@ export default function FinalTopSheetMatrix({
           <div className="flex items-center gap-2">
             {!canAct ? (
               <div
-                className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-amber-800"
+                className="flex items-center gap-2 rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5 text-amber-800 dark:text-amber-400"
                 title={readOnlyReason}
               >
                 <LockKeyhole className="h-3.5 w-3.5" />
@@ -191,11 +191,11 @@ export default function FinalTopSheetMatrix({
                 </span>
               </div>
             ) : null}
-            <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100">
-              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-800/60">
+            <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-800/50">
+              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-800/60 dark:text-emerald-400/60">
                 Total
               </span>
-              <span className="text-sm font-black text-emerald-700">
+              <span className="text-sm font-black text-emerald-700 dark:text-emerald-400">
                 {formatCurrency(data.grand_total)}
               </span>
             </div>
@@ -207,13 +207,13 @@ export default function FinalTopSheetMatrix({
         <Table className="border-separate border-spacing-0">
           <TableHeader className="sticky top-0 z-30 shadow-[0_5px_15px_-10px_rgba(0,0,0,0.1)]">
             <TableRow className="hover:bg-transparent">
-              <TableHead className="sticky left-0 z-40 w-[130px] bg-white/95 backdrop-blur-md px-4 py-2 border-b border-r text-[9px] font-black uppercase tracking-[0.1em] text-slate-400">
+              <TableHead className="sticky left-0 z-40 w-[130px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-4 py-2 border-b border-r dark:border-slate-800 text-[9px] font-black uppercase tracking-[0.1em] text-slate-400">
                 Auditee
               </TableHead>
               {data.coa_rows.map((coaRow) => (
                 <TableHead
                   key={coaRow.coa_id}
-                  className="min-w-[75px] bg-slate-50/80 backdrop-blur-md px-1.5 py-1.5 border-b border-r last:border-r-0 text-right"
+                  className="min-w-[75px] bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-md px-1.5 py-1.5 border-b border-r dark:border-slate-800 last:border-r-0 text-right"
                 >
                   <div className="flex flex-col items-end">
                     <span
@@ -225,10 +225,10 @@ export default function FinalTopSheetMatrix({
                   </div>
                 </TableHead>
               ))}
-              <TableHead className="sticky right-[100px] z-40 w-[80px] bg-slate-900 px-2 py-2 border-b text-right text-[9px] font-black uppercase tracking-[0.1em] text-white/40">
+              <TableHead className="sticky right-[100px] z-40 w-[80px] bg-slate-50 dark:bg-slate-950 px-2 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
                 Total
               </TableHead>
-              <TableHead className="sticky right-0 z-40 w-[100px] bg-slate-900 px-3 py-2 border-b text-right text-[9px] font-black uppercase tracking-[0.1em] text-white/40">
+              <TableHead className="sticky right-0 z-40 w-[100px] bg-slate-50 dark:bg-slate-950 px-3 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
                 Audit
               </TableHead>
             </TableRow>
@@ -269,14 +269,14 @@ export default function FinalTopSheetMatrix({
                       }
                     }}
                   >
-                    <TableCell className="sticky left-0 z-20 bg-white group-hover:bg-primary/5 group-focus-visible:bg-primary/5 backdrop-blur-sm px-3 py-1.5 border-r border-b shadow-[5px_0_15px_-10px_rgba(0,0,0,0.05)] transition-all">
+                    <TableCell className="sticky left-0 z-20 bg-white dark:bg-slate-900 group-hover:bg-primary/5 group-focus-visible:bg-primary/5 backdrop-blur-sm px-3 py-1.5 border-r border-b dark:border-slate-800 shadow-[5px_0_15px_-10px_rgba(0,0,0,0.05)] dark:shadow-[5px_0_15px_-10px_rgba(0,0,0,0.5)] transition-all">
                       <div className="flex items-center gap-1.5 w-full rounded-lg px-1 py-0.5 group/auditee">
                         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary text-white text-[8px] font-black group-hover/auditee:bg-blue-700 transition-colors">
                           {salesman.salesman_code?.slice(-2) || "??"}
                         </div>
                         <div className="min-w-0 flex-1 text-left">
                           <p
-                            className="truncate text-[10px] font-black text-slate-800 group-hover/auditee:text-primary transition-colors"
+                            className="truncate text-[10px] font-black text-slate-800 dark:text-slate-200 group-hover/auditee:text-primary transition-colors"
                             title={encoderLabel}
                           >
                             {encoderLabel}
@@ -302,13 +302,13 @@ export default function FinalTopSheetMatrix({
                       return (
                         <TableCell
                           key={coaRow.coa_id}
-                          className={`p-0 border-r border-b last:border-r-0 align-top group/cell transition-colors ${
+                          className={`p-0 border-r border-b dark:border-slate-800 last:border-r-0 align-top group/cell transition-colors ${
                             activeStatus === "Approved"
-                              ? "bg-emerald-50/50"
+                              ? "bg-emerald-50/50 dark:bg-emerald-900/20"
                               : activeStatus === "With Concern"
-                                ? "bg-amber-50/50"
+                                ? "bg-amber-50/50 dark:bg-amber-900/20"
                                 : activeStatus === "Rejected"
-                                  ? "bg-rose-50/50"
+                                  ? "bg-rose-50/50 dark:bg-rose-900/20"
                                   : ""
                           }`}
                         >
@@ -316,7 +316,7 @@ export default function FinalTopSheetMatrix({
                             <div className="flex h-full min-h-[70px] w-full flex-col items-end justify-between gap-2 px-2 py-2">
                               <div className="flex w-full flex-col items-end justify-start">
                                 <span
-                                  className={`text-[10px] font-black tabular-nums ${cell.amount > 0 ? "text-slate-800" : "text-slate-300"}`}
+                                  className={`text-[10px] font-black tabular-nums ${cell.amount > 0 ? "text-slate-800 dark:text-slate-200" : "text-slate-300 dark:text-slate-600"}`}
                                 >
                                   {formatCurrency(cell.amount)}
                                 </span>
@@ -358,26 +358,26 @@ export default function FinalTopSheetMatrix({
                       );
                     })}
 
-                    <TableCell className="sticky right-[100px] z-20 bg-slate-50 group-hover:bg-primary/5 backdrop-blur-sm px-2 py-1.5 text-right border-b transition-all">
-                      <p className="text-[10px] font-black text-slate-900 tabular-nums">
+                    <TableCell className="sticky right-[100px] z-20 bg-slate-50 dark:bg-slate-950 group-hover:bg-primary/5 backdrop-blur-sm px-2 py-1.5 text-right border-b dark:border-slate-800 transition-all">
+                      <p className="text-[10px] font-black text-slate-900 dark:text-slate-100 tabular-nums">
                         {formatCurrency(rowTotal)}
                       </p>
                     </TableCell>
 
                     <TableCell
-                      className={`sticky right-0 z-20 backdrop-blur-sm px-3 py-1.5 border-b transition-all ${
+                      className={`sticky right-0 z-20 backdrop-blur-sm px-3 py-1.5 border-b dark:border-slate-800 transition-all ${
                         stagedDecisions[`encoder:${salesman.employee_id}`] ===
                         "Approved"
-                          ? "bg-emerald-50"
+                          ? "bg-emerald-50 dark:bg-emerald-900/20"
                           : stagedDecisions[
                                 `encoder:${salesman.employee_id}`
                               ] === "With Concern"
-                            ? "bg-amber-50"
+                            ? "bg-amber-50 dark:bg-amber-900/20"
                             : stagedDecisions[
                                   `encoder:${salesman.employee_id}`
                                 ] === "Rejected"
-                              ? "bg-rose-50"
-                              : "bg-white group-hover:bg-primary/5"
+                              ? "bg-rose-50 dark:bg-rose-900/20"
+                              : "bg-white dark:bg-slate-900 group-hover:bg-primary/5"
                       }`}
                     >
                       <ActionButtonSet
@@ -400,16 +400,16 @@ export default function FinalTopSheetMatrix({
               })
             )}
 
-            <TableRow className="sticky bottom-0 z-30 bg-white/95 backdrop-blur-xl">
-              <TableCell className="sticky left-0 z-40 bg-slate-900 px-4 py-2 text-[8px] font-black uppercase tracking-widest text-white/40">
+            <TableRow className="sticky bottom-0 z-30 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl">
+              <TableCell className="sticky left-0 z-40 bg-slate-100 dark:bg-black px-4 py-2 text-[8px] font-black uppercase tracking-widest text-slate-500 dark:text-white/40">
                 Metrics
               </TableCell>
               {data.coa_rows.map((coaRow) => (
                 <TableCell
                   key={coaRow.coa_id}
-                  className="bg-slate-900/95 px-2 py-2 text-right border-r border-white/5 last:border-r-0"
+                  className="bg-slate-50/95 dark:bg-black/95 px-2 py-2 text-right border-r border-slate-200 dark:border-white/5 last:border-r-0"
                 >
-                  <p className="text-[11px] font-black text-white tabular-nums">
+                  <p className="text-[11px] font-black text-slate-900 dark:text-white tabular-nums">
                     {formatCurrency(coaRow.row_total)}
                   </p>
                 </TableCell>

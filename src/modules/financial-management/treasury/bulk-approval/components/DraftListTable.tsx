@@ -98,11 +98,11 @@ function StatusBadge({ status, current_tier, has_concern }: { status: string; cu
           Lvl {current_tier}
         </Badge>
       ) : s === "APPROVED" ? (
-        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] px-1.5 py-0 shadow-sm">Approved</Badge>
+        <Badge className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 text-[10px] px-1.5 py-0 shadow-sm dark:shadow-none">Approved</Badge>
       ) : s === "REJECTED" ? (
-        <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0 shadow-sm">Rejected</Badge>
+        <Badge className="bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800 text-[10px] px-1.5 py-0 shadow-sm dark:shadow-none">Rejected</Badge>
       ) : s === "WITH CONCERN" || s === "WITH_CONCERN" ? (
-        <Badge className="bg-orange-100 text-orange-800 border-orange-200 gap-1 text-[10px] px-1.5 py-0 shadow-sm animate-pulse">
+        <Badge className="bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-400 border-orange-200 dark:border-orange-800 gap-1 text-[10px] px-1.5 py-0 shadow-sm dark:shadow-none animate-pulse">
           <AlertTriangle className="h-2.5 w-2.5" />
           With Concern
         </Badge>
@@ -155,7 +155,7 @@ export default function DraftListTable(props: Props) {
           <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search drafts..."
-            className="pl-7 h-7 text-[11px] bg-background/60 focus:bg-background transition-colors border-muted-foreground/20"
+            className="pl-7 h-7 text-[11px] bg-background/60 dark:bg-slate-900/60 focus:bg-background dark:focus:bg-slate-950 transition-colors border-muted-foreground/20 dark:border-slate-800"
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -172,7 +172,7 @@ export default function DraftListTable(props: Props) {
                 setSelectedDivisionId(val === "all" ? undefined : Number(val));
               }}
             >
-              <SelectTrigger className="h-7 w-[160px] text-[11px] bg-background/60 border-muted-foreground/20">
+              <SelectTrigger className="h-7 w-[160px] text-[11px] bg-background/60 dark:bg-slate-900/60 border-muted-foreground/20 dark:border-slate-800">
                 <div className="flex items-center gap-1.5">
                   <Filter className="h-3 w-3 text-muted-foreground" />
                   <SelectValue placeholder="All Divisions" />
@@ -204,7 +204,7 @@ export default function DraftListTable(props: Props) {
       )}
 
       {/* Table */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden rounded-xl border shadow-inner bg-background relative">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden rounded-xl border dark:border-slate-800 shadow-inner dark:shadow-none bg-background dark:bg-slate-900 relative">
         <Table className="w-full table-fixed">
           <colgroup>
             <col className="w-9" />
@@ -217,8 +217,8 @@ export default function DraftListTable(props: Props) {
             <col className="w-[11%]" />
             <col className="w-[15%]" />
           </colgroup>
-          <TableHeader className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm shadow-sm">
-            <TableRow className="bg-muted/50">
+          <TableHeader className="sticky top-0 z-10 bg-muted/90 dark:bg-slate-900/90 backdrop-blur-sm shadow-sm dark:shadow-none">
+            <TableRow className="bg-muted/50 dark:bg-slate-800/50">
               <TableHead className="text-center text-[10px] px-1 py-2">#</TableHead>
               <TableHead className="text-[10px] font-black uppercase tracking-tight py-2">Doc No</TableHead>
               <TableHead className="text-[10px] font-black uppercase tracking-tight py-2">Division</TableHead>
@@ -250,7 +250,7 @@ export default function DraftListTable(props: Props) {
                   className={`transition-colors group
                     ${row.has_concern
                       ? "bg-amber-50/40 hover:bg-amber-50/70 border-l-2 border-l-amber-400"
-                      : "hover:bg-muted/30"
+                      : "hover:bg-muted/30 dark:hover:bg-slate-800/50"
                     }`}
                 >
                   <TableCell className="text-center text-muted-foreground text-[10px] font-mono py-1.5">
@@ -264,7 +264,7 @@ export default function DraftListTable(props: Props) {
                   <TableCell className="overflow-hidden py-1.5">
                     <Badge
                       variant="outline"
-                      className="text-[9px] font-bold bg-muted/50 border-muted-foreground/30 px-1.5 py-0 max-w-full block truncate"
+                      className="text-[9px] font-bold bg-muted/50 dark:bg-slate-800/50 border-muted-foreground/30 dark:border-slate-700 px-1.5 py-0 max-w-full block truncate"
                       title={row.division_name || "N/A"}
                     >
                       {row.division_name || "N/A"}
@@ -317,7 +317,7 @@ export default function DraftListTable(props: Props) {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 px-3 rounded-xl border-emerald-200 bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-[0.1em] hover:bg-emerald-100 hover:text-emerald-800 transition-all flex items-center gap-1.5 group/action"
+                          className="h-7 px-3 rounded-xl border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-[9px] font-black uppercase tracking-[0.1em] hover:bg-emerald-100 hover:text-emerald-800 transition-all flex items-center gap-1.5 group/action"
                           onClick={() => onAction(row)}
                         >
                           <CheckCircle2 className="h-3 w-3 text-emerald-500 group-hover/action:scale-110 transition-transform" />
@@ -336,7 +336,7 @@ export default function DraftListTable(props: Props) {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 px-3 rounded-xl border-slate-200 bg-slate-50 text-slate-500 text-[9px] font-black uppercase tracking-[0.1em] hover:bg-white hover:text-slate-900 hover:border-slate-300 transition-all flex items-center gap-1.5 group/action"
+                          className="h-7 px-3 rounded-xl border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-black uppercase tracking-[0.1em] hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600 transition-all flex items-center gap-1.5 group/action"
                           onClick={() => onAction(row)}
                         >
                           <Eye className="h-3 w-3 text-slate-400 group-hover/action:text-primary transition-colors" />
