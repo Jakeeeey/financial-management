@@ -38,7 +38,7 @@ export async function fetchSupplierProducts(
   try {
     const filter = { supplier_id: { _eq: supplierId } };
     const fields =
-      "id,supplier_id,product_id,discount_type,product_id.product_name,product_id.product_code";
+      "id,supplier_id,product_id,discount_type,product_id.product_id,product_id.product_name,product_id.product_code";
 
     const url = `${API_BASE}/product_per_supplier?limit=-1&fields=${fields}&filter=${encodeURIComponent(
       JSON.stringify(filter),
@@ -70,23 +70,32 @@ export async function fetchSupplierProducts(
 
     const result = await response.json();
 
-    return (result.data || []).map((item: { id: number, supplier_id: number, product_id: unknown, discount_type: number | null }) => ({
-      id: item.id,
-      supplier_id: item.supplier_id,
-      product_id:
-        typeof item.product_id === 'object' && item.product_id !== null
-          ? (item.product_id as Record<string, unknown>).product_id // Check if this field name is correct in Directus!
-          : item.product_id,
-      discount_type: item.discount_type,
-      product_name:
-        typeof item.product_id === 'object' && item.product_id !== null
-          ? (item.product_id as Record<string, unknown>).product_name
-          : "Unknown Product",
-      product_code:
-        typeof item.product_id === 'object' && item.product_id !== null
-          ? (item.product_id as Record<string, unknown>).product_code
-          : null,
-    }));
+    return (result.data || []).map(
+      (item: {
+        id: number;
+        supplier_id: number;
+        product_id: unknown;
+        discount_type: number | null;
+      }) => {
+        const isObject =
+          typeof item.product_id === "object" && item.product_id !== null;
+        const expanded = isObject
+          ? (item.product_id as Record<string, unknown>)
+          : null;
+
+        return {
+          id: item.id,
+          supplier_id: item.supplier_id,
+          product_id: expanded
+            ? ((expanded.product_id || expanded.id) as number)
+            : (item.product_id as number),
+          discount_type: item.discount_type,
+          product_name:
+            (expanded?.product_name as string) || "Unknown Product",
+          product_code: (expanded?.product_code as string) || null,
+        };
+      },
+    );
   } catch (error: unknown) {
     console.error(
       `[SERVER FATAL] Error for supplier ${supplierId}:`,

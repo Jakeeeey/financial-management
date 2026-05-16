@@ -1,11 +1,10 @@
 import {
-  Supplier,
-  SuppliersResponse,
-} from "@/modules/financial-management/supplier-registration/types/supplier.schema";
+  Payee,
+  PayeesResponse,
+} from "../types/payee.schema";
 
 /**
  * Base Directus API URL
- * Update this to match your environment
  */
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const API_BASE = `${API_BASE_URL}/items`;
@@ -17,37 +16,37 @@ const getHeaders = () => ({
   "Content-Type": "application/json",
   Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
 });
+
 /**
- * Fetch all suppliers with recursive pattern
- * Uses limit=-1 to get all data in single request
+ * Fetch all payees (Non-Trade)
  */
-export async function fetchAllSuppliers(): Promise<Supplier[]> {
+export async function fetchAllPayees(): Promise<Payee[]> {
   try {
     const response = await fetch(
-      `${API_BASE}/suppliers?limit=-1&fields=*&filter[supplier_type][_eq]=Trade`,
+      `${API_BASE}/suppliers?limit=-1&fields=*&filter[supplier_type][_eq]=Non-Trade`,
       {
         method: "GET",
         headers: getHeaders(),
-        cache: "no-store", // Ensure fresh data
+        cache: "no-store",
       },
     );
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch suppliers: ${response.statusText}`);
+      throw new Error(`Failed to fetch payees: ${response.statusText}`);
     }
 
-    const result: SuppliersResponse = await response.json();
+    const result: PayeesResponse = await response.json();
     return result.data || [];
   } catch (error) {
-    console.error("Error fetching suppliers:", error);
+    console.error("Error fetching payees:", error);
     throw error;
   }
 }
 
 /**
- * Fetch single supplier by ID
+ * Fetch single payee by ID
  */
-export async function fetchSupplierById(id: number): Promise<Supplier> {
+export async function fetchPayeeById(id: number): Promise<Payee> {
   try {
     const response = await fetch(`${API_BASE}/suppliers/${id}?fields=*`, {
       method: "GET",
@@ -56,52 +55,55 @@ export async function fetchSupplierById(id: number): Promise<Supplier> {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch supplier: ${response.statusText}`);
+      throw new Error(`Failed to fetch payee: ${response.statusText}`);
     }
 
     const result = await response.json();
     return result.data;
   } catch (error) {
-    console.error(`Error fetching supplier ${id}:`, error);
+    console.error(`Error fetching payee ${id}:`, error);
     throw error;
   }
 }
 
 /**
- * Create new supplier
+ * Create new payee
  */
-export async function createSupplier(
-  data: Partial<Supplier>,
-): Promise<Supplier> {
+export async function createPayee(
+  data: Partial<Payee>,
+): Promise<Payee> {
   try {
+    // Force Non-Trade type
+    const payload = { ...data, supplier_type: "Non-Trade" };
+    
     const response = await fetch(`${API_BASE}/suppliers`, {
       method: "POST",
       headers: getHeaders(),
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
       const error = await response.json();
       throw new Error(
-        error.errors?.[0]?.message || "Failed to create supplier",
+        error.errors?.[0]?.message || "Failed to create payee",
       );
     }
 
     const result = await response.json();
     return result.data;
   } catch (error) {
-    console.error("Error creating supplier:", error);
+    console.error("Error creating payee:", error);
     throw error;
   }
 }
 
 /**
- * Update existing supplier
+ * Update existing payee
  */
-export async function updateSupplier(
+export async function updatePayee(
   id: number,
-  data: Partial<Supplier>,
-): Promise<Supplier> {
+  data: Partial<Payee>,
+): Promise<Payee> {
   try {
     const response = await fetch(`${API_BASE}/suppliers/${id}`, {
       method: "PATCH",
@@ -112,27 +114,26 @@ export async function updateSupplier(
     if (!response.ok) {
       const error = await response.json();
       throw new Error(
-        error.errors?.[0]?.message || "Failed to update supplier",
+        error.errors?.[0]?.message || "Failed to update payee",
       );
     }
 
     const result = await response.json();
     return result.data;
   } catch (error) {
-    console.error(`Error updating supplier ${id}:`, error);
+    console.error(`Error updating payee ${id}:`, error);
     throw error;
   }
 }
 
 /**
- * Search suppliers by name, TIN, or contact person
+ * Search payees by name, TIN, or contact person (strictly Non-Trade)
  */
-export async function searchSuppliers(query: string): Promise<Supplier[]> {
+export async function searchPayees(query: string): Promise<Payee[]> {
   try {
-    // Build filter: Must be Trade AND match query
     const filter = {
       _and: [
-        { supplier_type: { _eq: "Trade" } },
+        { supplier_type: { _eq: "Non-Trade" } },
         {
           _or: [
             { supplier_name: { _contains: query } },
@@ -155,13 +156,13 @@ export async function searchSuppliers(query: string): Promise<Supplier[]> {
     );
 
     if (!response.ok) {
-      throw new Error(`Failed to search suppliers: ${response.statusText}`);
+      throw new Error(`Failed to search payees: ${response.statusText}`);
     }
 
-    const result: SuppliersResponse = await response.json();
+    const result: PayeesResponse = await response.json();
     return result.data || [];
   } catch (error) {
-    console.error("Error searching suppliers:", error);
+    console.error("Error searching payees:", error);
     throw error;
   }
 }

@@ -26,7 +26,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import Image from "next/image";
-import { formatTIN } from "@/lib/utils";
+import { formatTIN } from "../../utils/utils";
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
