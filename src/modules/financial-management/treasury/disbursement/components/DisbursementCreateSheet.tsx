@@ -64,13 +64,14 @@ interface SearchableDropdownProps<T extends string | number> {
     disabled?: boolean;
     className?: string;
     popoverWidth?: string;
+    overrideLabel?: string;
 }
 
 /**
  * Searchable dropdown used by the disbursement form for ID-backed lookup fields.
  */
 function SearchableDropdown<T extends string | number>({
-    options, value, onSelect, placeholder, disabled, className, popoverWidth = "w-[400px]"
+    options, value, onSelect, placeholder, disabled, className, popoverWidth = "w-[400px]", overrideLabel
 }: SearchableDropdownProps<T>) {
     const [open, setOpen] = useState(false);
     const safeOptions = options.filter((option) => {
@@ -78,7 +79,7 @@ function SearchableDropdown<T extends string | number>({
         return optionValue !== undefined && optionValue !== null && option.label.trim() !== "";
     });
     const hasValue = value !== "" && value !== undefined && value !== null;
-    const selectedLabel = hasValue ? safeOptions.find((o) => String(o.value) === String(value))?.label || placeholder : placeholder;
+    const selectedLabel = hasValue ? safeOptions.find((o) => String(o.value) === String(value))?.label || overrideLabel || placeholder : placeholder;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -154,9 +155,9 @@ export function DisbursementCreateSheet({ open, onOpenChange, onSubmit, loading,
     // Initial Data Fetching
     useEffect(() => {
         if (open) {
-            disbursementProvider.getCOAs().then(setCoas);
-            disbursementProvider.getBanks().then(setBanks);
-            disbursementProvider.getDivisions().then(setDivisions).catch(() => console.warn("No divisions route"));
+            disbursementProvider.getCOAs().then((res) => setCoas(Array.isArray(res) ? res : []));
+            disbursementProvider.getBanks().then((res) => setBanks(Array.isArray(res) ? res : []));
+            disbursementProvider.getDivisions().then((res) => setDivisions(Array.isArray(res) ? res : [])).catch(() => console.warn("No divisions route"));
         }
     }, [open]);
 
