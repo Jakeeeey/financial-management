@@ -37,12 +37,12 @@ type TopSheetRedirectState = {
 function TopSheetRedirectLoader({ state }: { state: TopSheetRedirectState }) {
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-background/70 p-4 backdrop-blur-xl animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md overflow-hidden rounded-[2rem] border bg-card/95 p-1 shadow-2xl shadow-primary/10">
+      <div className="relative w-full max-w-md overflow-hidden rounded-[2rem] border dark:border-slate-800 bg-card/95 p-1 shadow-2xl shadow-primary/10 dark:shadow-none">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.24),transparent_34%),radial-gradient(circle_at_bottom_right,hsl(var(--primary)/0.16),transparent_38%)]" />
         <div className="absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
 
-        <div className="relative rounded-[1.75rem] border bg-background/80 p-6 shadow-inner">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border bg-card shadow-xl shadow-primary/10">
+        <div className="relative rounded-[1.75rem] border dark:border-slate-800 bg-background/80 p-6 shadow-inner dark:shadow-none">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border dark:border-slate-800 bg-card shadow-xl shadow-primary/10 dark:shadow-none">
             <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
               <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
               <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-primary animate-spin" />
@@ -63,7 +63,7 @@ function TopSheetRedirectLoader({ state }: { state: TopSheetRedirectState }) {
             </p>
           </div>
 
-          <div className="mt-5 rounded-2xl border bg-card/80 p-4 shadow-sm">
+          <div className="mt-5 rounded-2xl border dark:border-slate-800 bg-card/80 p-4 shadow-sm dark:shadow-none">
             <div className="flex items-center justify-between gap-3 text-left">
               <div className="min-w-0">
                 <p className="truncate text-sm font-black text-foreground">{state.docNo}</p>
@@ -219,7 +219,7 @@ export default function BulkApprovalModule() {
 
   return (
     <div className="flex h-[calc(100vh-6rem)] flex-col space-y-4 pb-4">
-      <div className="flex shrink-0 items-center justify-between rounded-2xl border bg-card px-5 py-3 shadow-sm">
+      <div className="flex shrink-0 items-center justify-between rounded-2xl border dark:border-slate-800 bg-card px-5 py-3 shadow-sm dark:shadow-none">
         <div className="space-y-0.5">
           <h1 className="flex items-center gap-2 text-xl font-black tracking-tight text-foreground">
             <span className="h-6 w-1.5 rounded-full bg-primary" />
@@ -258,7 +258,7 @@ export default function BulkApprovalModule() {
       </div>
 
       {approvalContexts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-muted/20 px-4 py-2 text-[10px]">
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border dark:border-slate-800 bg-muted/20 dark:bg-slate-900/50 px-4 py-2 text-[10px]">
           <span className="font-black uppercase tracking-wider text-muted-foreground">Your contexts</span>
           {approvalContexts.map((context) => (
             <Badge
@@ -273,8 +273,8 @@ export default function BulkApprovalModule() {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden xl:flex-row">
-        <div className="flex min-h-0 flex-[7] flex-col overflow-hidden rounded-2xl border bg-card shadow-sm">
-          <div className="shrink-0 border-b bg-muted/10 px-5 py-3">
+        <div className="flex min-h-0 flex-[7] flex-col overflow-hidden rounded-2xl border dark:border-slate-800 bg-card shadow-sm dark:shadow-none">
+          <div className="shrink-0 border-b dark:border-slate-800 bg-muted/10 dark:bg-slate-800/50 px-5 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="flex items-center gap-2 text-base font-bold">
@@ -293,7 +293,7 @@ export default function BulkApprovalModule() {
                 </p>
               </div>
 
-              <div className="flex rounded-full border bg-background p-1 shadow-sm">
+              <div className="flex rounded-full border dark:border-slate-800 bg-background dark:bg-slate-900 p-1 shadow-sm dark:shadow-none">
                 {canDoNormalApproval && (
                   <Button
                     type="button"
@@ -329,7 +329,7 @@ export default function BulkApprovalModule() {
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col bg-muted/5 p-6">
+          <div className="flex min-h-0 flex-1 flex-col bg-muted/5 dark:bg-slate-900/50 p-6">
             {activeTab === "final-approval" && canDoFinalApproval ? (
               <FinalHeaderGroupsTable
                 groups={finalHeaderGroups}
@@ -359,7 +359,7 @@ export default function BulkApprovalModule() {
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-[3] flex-col overflow-hidden rounded-2xl border bg-card p-6 shadow-sm">
+        <div className="flex min-h-0 flex-[3] flex-col overflow-hidden rounded-2xl border dark:border-slate-800 bg-card p-6 shadow-sm dark:shadow-none">
           <ActivityFeed logs={logs} loading={logsLoading} />
         </div>
       </div>

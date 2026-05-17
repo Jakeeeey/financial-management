@@ -135,7 +135,8 @@ function getReadableStatusesForDivision(params: {
       statuses.add("Rejected");
       statuses.add("Approved");
     } else {
-      statuses.add(tierStatus(record.approver_heirarchy));
+      // Non-final approvers in a Top Sheet context see nothing.
+      // They should use the "My Level Approval" tab instead.
     }
   }
 
@@ -153,16 +154,14 @@ function getActionableStatusesForDivision(params: {
   );
 
   for (const record of records) {
-    statuses.add(tierStatus(record.approver_heirarchy));
-
     const maxLevel = params.context.maxLevelByDivision[params.divisionId] ?? record.approver_heirarchy;
     const isFinalApprover = record.approver_heirarchy === maxLevel;
 
-    // Final approvers must be able to act on expense_draft rows even after the disbursement_draft
-    // transitions to "Approved" (i.e. when a sequential batch fires a second request after the
-    // first already finalized the draft). "With Concern" is kept for the legacy concern-state guard.
-    // "Approved" is added so that mid-batch requests are not 409'd by hasActionableDraftForPeriod.
+    // In the Final Top Sheet matrix, "Actionable" strictly means the draft is at the final tier level.
+    // If the user also holds a non-final level for this division, those non-final actions
+    // should be handled via the "My Level Approvals" tab, not the Final Matrix.
     if (isFinalApprover) {
+      statuses.add(tierStatus(record.approver_heirarchy));
       statuses.add("With Concern");
       statuses.add("Approved");
     }
@@ -255,6 +254,7 @@ type LinkedTopSheetData = {
   headerIds: number[];
   payables: LinkedTopSheetPayable[];
   expenseIds: number[];
+  isApprovedHistory: boolean;
 };
 
 async function resolveLinkedTopSheetData(params: {
@@ -290,6 +290,7 @@ async function resolveLinkedTopSheetData(params: {
       headerIds: [],
       payables: [],
       expenseIds: [],
+      isApprovedHistory: false,
     };
   }
 
@@ -314,6 +315,7 @@ async function resolveLinkedTopSheetData(params: {
       headerIds: [],
       payables: [],
       expenseIds: [],
+      isApprovedHistory: false,
     };
   }
 
@@ -337,6 +339,7 @@ async function resolveLinkedTopSheetData(params: {
       headerIds: [],
       payables: [],
       expenseIds: [],
+      isApprovedHistory: false,
     };
   }
 
@@ -383,6 +386,7 @@ async function resolveLinkedTopSheetData(params: {
       headerIds: [],
       payables: [],
       expenseIds: [],
+      isApprovedHistory: false,
     };
   }
 
@@ -414,6 +418,7 @@ async function resolveLinkedTopSheetData(params: {
       headerIds: [],
       payables: [],
       expenseIds: [],
+      isApprovedHistory: false,
     };
   }
 
@@ -443,26 +448,41 @@ async function resolveLinkedTopSheetData(params: {
 
   const scopedExpenseIds = [...new Set(payables.map((payable) => payable.expense_id))];
 
+  const scopedDraftIds = new Set(payables.map((p) => p.draft_id));
+  const scopedDrafts = visibleDrafts.filter((d) => scopedDraftIds.has(d.id));
+  const scopedStatuses = [...new Set(scopedDrafts.map((d) => d.status))];
+  const scopedCanAct = scopedDrafts.some((d) => d.can_act);
+  const isApprovedHistory = scopedStatuses.every((s) => s === "Approved") && !scopedCanAct;
+  const scopedTier = scopedDrafts.reduce((max, d) => Math.max(max, d.current_tier), 0);
+  const scopedRequired = params.context.maxLevelByDivision[params.divisionId] ?? scopedTier;
+
   return {
-    visibleDrafts,
-    draftStatuses,
-    canAct,
-    currentTier,
-    requiredApproverLevel,
+    visibleDrafts: scopedDrafts,
+    draftStatuses: scopedStatuses,
+    canAct: scopedCanAct,
+    currentTier: scopedTier,
+    requiredApproverLevel: scopedRequired,
     headers,
     headerIds,
     payables,
     expenseIds: scopedExpenseIds,
+    isApprovedHistory,
   };
 }
 
 export async function getExpenseHeaderGroups(params: {
   context: BulkApprovalContext;
 }): Promise<FinalHeaderGroupResponse[]> {
-  const { myDivisionIds, maxLevelByDivision } = params.context;
-  if (!myDivisionIds.length) return [];
+  const { approverRecords, maxLevelByDivision } = params.context;
+  const finalDivisionIds = [...new Set(
+    approverRecords
+      .filter(r => r.approver_heirarchy === (maxLevelByDivision[r.division_id] ?? r.approver_heirarchy))
+      .map(r => r.division_id)
+  )];
 
-  const divisionMap = await fetchDivisionMap(myDivisionIds);
+  if (!finalDivisionIds.length) return [];
+
+  const divisionMap = await fetchDivisionMap(finalDivisionIds);
   const groupMap = new Map<
     string,
     FinalHeaderGroupResponse & {
@@ -472,7 +492,7 @@ export async function getExpenseHeaderGroups(params: {
     }
   >();
 
-  for (const approvalDivisionId of myDivisionIds) {
+  for (const approvalDivisionId of finalDivisionIds) {
     const linked = await resolveLinkedTopSheetData({
       divisionId: approvalDivisionId,
       context: params.context,
@@ -765,6 +785,7 @@ export async function buildFinalTopSheet(params: {
         draft_statuses: linked.draftStatuses,
         can_act: linked.canAct,
         is_waiting: !linked.canAct,
+        is_finalized: linked.isApprovedHistory,
         current_tier: linked.currentTier,
         required_approver_level: linked.requiredApproverLevel,
       },
@@ -1027,6 +1048,7 @@ export async function handleFinalHeaderDecision(params: {
     status,
     feedback: status === "Approved" ? null : remarks,
     return_to: status === "With Concern" ? `L${userContext.approver_level}` : null,
+    date_updated: nowTs,
   };
 
   if (status === "Approved") {

@@ -165,6 +165,7 @@ export interface BatchApprovalPayload {
   remarks: string;
   item_decisions: Record<number, ItemDecision>;
   edited_amounts?: { id: number; amount: number }[];
+  all_ids?: number[];
 }
 
 export interface TreasuryVote {
