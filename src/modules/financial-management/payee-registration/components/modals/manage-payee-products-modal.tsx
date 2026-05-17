@@ -13,28 +13,28 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PackageOpen, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useDiscountTypes } from "../../hooks/useDiscountTypes";
-import { useSupplierProducts } from "../../hooks/useSupplierProduct";
+import { useDiscountTypes } from "@/modules/financial-management/supplier-registration/hooks/useDiscountTypes";
+import { usePayeeProducts } from "../../hooks/usePayeeProducts";
 import { ProductListItem } from "../product-list-item";
-import { AddProductsModal } from "./add-products-modal";
+import { AddPayeeProductsModal } from "./add-payee-products-modal";
 
-interface ManageProductsModalProps {
-  supplierId: number | null;
-  supplierName: string;
+interface ManagePayeeProductsModalProps {
+  payeeId: number | null;
+  payeeName: string;
   open: boolean;
   onClose: () => void;
 }
 
-export function ManageProductsModal({
-  supplierId,
-  supplierName,
+export function ManagePayeeProductsModal({
+  payeeId,
+  payeeName,
   open,
   onClose,
-}: ManageProductsModalProps) {
+}: ManagePayeeProductsModalProps) {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { products, isLoading, addProductsBulk, updateDiscount, removeProduct } =
-    useSupplierProducts(supplierId);
+    usePayeeProducts(payeeId);
   const { discountTypes } = useDiscountTypes();
 
   // Filter products based on search query
@@ -48,7 +48,7 @@ export function ManageProductsModal({
     );
   }, [products, searchQuery]);
 
-  // Get list of assigned product IDs for filtering in AddProductsModal
+  // Get list of assigned product IDs for filtering in AddPayeeProductsModal
   const assignedProductIds = useMemo(
     () =>
       products
@@ -65,14 +65,12 @@ export function ManageProductsModal({
     <>
       <Dialog open={open} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-[600px] max-h-[80vh] gap-0 p-0 flex flex-col">
-          {/* Header */}
           <DialogHeader className="px-6 py-4 border-b shrink-0">
             <DialogTitle>Manage Products</DialogTitle>
             <DialogDescription className="mt-0.5">
-              {supplierName}
+              {payeeName}
             </DialogDescription>
 
-            {/* Search bar */}
             {!isLoading && products.length > 0 && (
               <div className="relative mt-4">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -86,7 +84,6 @@ export function ManageProductsModal({
             )}
           </DialogHeader>
 
-          {/* Column headers */}
           {!isLoading && filteredProducts.length > 0 && (
             <div className="grid grid-cols-[1fr_200px_40px] gap-4 px-6 py-2 border-b bg-muted/30 shrink-0">
               <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -99,7 +96,6 @@ export function ManageProductsModal({
             </div>
           )}
 
-          {/* Content */}
           <div className="flex-1 overflow-y-auto min-h-0">
             {isLoading ? (
               <div className="p-4 space-y-2">
@@ -161,7 +157,7 @@ export function ManageProductsModal({
         </DialogContent>
       </Dialog>
 
-      <AddProductsModal
+      <AddPayeeProductsModal
         open={addModalOpen}
         onClose={() => setAddModalOpen(false)}
         onAddProducts={addProductsBulk}

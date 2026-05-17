@@ -4,10 +4,10 @@ import { useState, useRef, useCallback } from "react";
 import { useForm, FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  Supplier,
-  SupplierFormSchema,
-  SupplierFormValues,
-} from "@/modules/financial-management/supplier-registration/types/supplier.schema";
+  usePaymentTerms,
+  useDeliveryTerms,
+} from "@/modules/financial-management/supplier-registration/hooks/useTerms";
+import { Term } from "@/modules/financial-management/supplier-registration/services/terms";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -19,44 +19,29 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Combobox } from "@/modules/financial-management/supplier-registration/components/ui/Combobox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import Image from "next/image";
-import {
-  usePaymentTerms,
-  useDeliveryTerms,
-} from "@/modules/financial-management/supplier-registration/hooks/useTerms";
-import { Term } from "@/modules/financial-management/supplier-registration/services/terms";
-import { formatTIN } from "../../utils/utils";
-import { Combobox } from "../ui/Combobox";
+import { PayeeFormSchema, PayeeFormValues } from "../../types/payee.schema";
+import { formatTIN } from "@/modules/financial-management/supplier-registration/utils/utils";
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-interface EditSupplierFormProps {
-  supplier: Supplier;
+interface AddPayeeFormProps {
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export function EditSupplierForm({
-  supplier,
-  onSuccess,
-  onCancel,
-}: EditSupplierFormProps) {
+export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState("contact");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(
-    supplier.supplier_image
-      ? `${API_BASE_URL}/assets/${supplier.supplier_image}`
-      : null,
-  );
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [imageCleared, setImageCleared] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validateAndSetFile = useCallback((file: File) => {
@@ -69,7 +54,6 @@ export function EditSupplierForm({
       return;
     }
     setSelectedFile(file);
-    setImageCleared(false);
     const reader = new FileReader();
     reader.onload = (e) => setImagePreview(e.target?.result as string);
     reader.readAsDataURL(file);
@@ -85,53 +69,50 @@ export function EditSupplierForm({
   const clearImage = useCallback(() => {
     setSelectedFile(null);
     setImagePreview(null);
-    setImageCleared(true);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
   const form = useForm({
-    resolver: zodResolver(SupplierFormSchema),
+    resolver: zodResolver(PayeeFormSchema),
     defaultValues: {
-      supplier_name: supplier.supplier_name || "",
-      supplier_shortcut: supplier.supplier_shortcut || "",
-      supplier_type: supplier.supplier_type || "",
-      tin_number: supplier.tin_number || "",
-      contact_person: supplier.contact_person || "",
-      email_address: supplier.email_address || "",
-      phone_number: supplier.phone_number || "",
-      address: supplier.address || "",
-      brgy: supplier.brgy || "",
-      city: supplier.city || "",
-      state_province: supplier.state_province || "",
-      postal_code: supplier.postal_code || "",
-      country: supplier.country || "Philippines",
-      payment_terms: supplier.payment_terms || "",
-      delivery_terms: supplier.delivery_terms || "",
-      isActive: supplier.isActive || 1,
-      supplier_image: supplier.supplier_image || "",
-      bank_details: supplier.bank_details || "",
-      notes_or_comments: supplier.notes_or_comments || "",
-      agreement_or_contract: supplier.agreement_or_contract || "",
-      preferred_communication_method:
-        supplier.preferred_communication_method || "",
+      supplier_name: "",
+      supplier_shortcut: "",
+      supplier_type: "Non-Trade",
+      tin_number: "",
+      contact_person: "",
+      email_address: "",
+      phone_number: "",
+      address: "",
+      brgy: "",
+      city: "",
+      state_province: "",
+      postal_code: "",
+      country: "Philippines",
+      payment_terms: "",
+      delivery_terms: "",
+      isActive: 1,
+      supplier_image: "",
+      bank_details: "",
+      notes_or_comments: "",
+      agreement_or_contract: "",
+      preferred_communication_method: "",
     },
   });
 
   const { paymentTerms, isLoading: isLoadingPayment } = usePaymentTerms();
   const { deliveryTerms, isLoading: isLoadingDelivery } = useDeliveryTerms();
 
-  const onSubmit = async (data: SupplierFormValues) => {
+  const onSubmit = async (data: PayeeFormValues) => {
     setIsSubmitting(true);
     try {
-      let imageId = supplier.supplier_image || "";
+      let imageId = "";
 
-      // Upload new image if selected
       if (selectedFile) {
         const formData = new FormData();
         formData.append("file", selectedFile);
-        formData.append("folder_name", "supplier_profile_image");
+        formData.append("folder_name", "payee_profile_image");
 
-        const uploadRes = await fetch("/api/supplier-registration/supplier-image-upload", {
+        const uploadRes = await fetch("/api/payee-registration/payee-image-upload", {
           method: "POST",
           body: formData,
         });
@@ -143,43 +124,38 @@ export function EditSupplierForm({
         }
 
         imageId = uploadResult.data?.id || "";
-      } else if (imageCleared) {
-        imageId = "";
       }
 
-      const response = await fetch(
-        `/api/supplier-registration/suppliers/${supplier.id}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ ...data, supplier_image: imageId }),
+      const response = await fetch("/api/payee-registration/payees", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({ ...data, supplier_image: imageId }),
+      });
 
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || "Failed to update supplier");
+        throw new Error(result.error || "Failed to create payee");
       }
 
       form.reset();
+      clearImage();
       onSuccess();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to update supplier",
+        error instanceof Error ? error.message : "Failed to create payee",
       );
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const onInvalid = useCallback((errors: FieldErrors<SupplierFormValues>) => {
+  const onInvalid = useCallback((errors: FieldErrors<PayeeFormValues>) => {
     const fieldTabMap: Record<string, string> = {
       supplier_name: "contact",
       supplier_shortcut: "contact",
-      supplier_type: "contact",
       contact_person: "contact",
       email_address: "contact",
       phone_number: "contact",
@@ -236,7 +212,6 @@ export function EditSupplierForm({
             <TabsTrigger value="terms">Terms</TabsTrigger>
           </TabsList>
 
-          {/* CONTACT INFORMATION TAB */}
           <TabsContent value="contact" className="space-y-4 mt-4">
             <Card>
               <CardContent className="pt-6 space-y-4">
@@ -247,11 +222,11 @@ export function EditSupplierForm({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>
-                          Supplier Name{" "}
+                          Payee Name{" "}
                           <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="Enter supplier name" {...field} />
+                          <Input placeholder="Enter payee name" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -264,11 +239,11 @@ export function EditSupplierForm({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>
-                          Supplier Shortcut{" "}
+                          Payee Shortcut{" "}
                           <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g., NFPI" {...field} />
+                          <Input placeholder="e.g., PAYEE-01" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -278,36 +253,11 @@ export function EditSupplierForm({
 
                 <FormField
                   control={form.control}
-                  name="supplier_type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        Supplier Type <span className="text-destructive">*</span>
-                      </FormLabel>
-                      <FormControl>
-                        <Combobox
-                          options={[
-                            { value: "TRADE", label: "TRADE" },
-                            { value: "NON-TRADE", label: "NON-TRADE" },
-                          ]}
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          placeholder="Select supplier type"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
                   name="contact_person"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Contact Person{" "}
-                        <span className="text-destructive">*</span>
+                        Contact Person <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
                         <Input
@@ -371,7 +321,6 @@ export function EditSupplierForm({
             </Card>
           </TabsContent>
 
-          {/* LOCATION TAB */}
           <TabsContent value="location" className="space-y-4 mt-4">
             <Card>
               <CardContent className="pt-6 space-y-4">
@@ -448,8 +397,7 @@ export function EditSupplierForm({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>
-                          Postal Code{" "}
-                          <span className="text-destructive">*</span>
+                          Postal Code <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
                           <Input placeholder="e.g., 2300" {...field} />
@@ -479,7 +427,6 @@ export function EditSupplierForm({
             </Card>
           </TabsContent>
 
-          {/* BUSINESS DETAILS TAB */}
           <TabsContent value="business" className="space-y-4 mt-4">
             <Card>
               <CardContent className="pt-6 space-y-4">
@@ -557,9 +504,8 @@ export function EditSupplierForm({
                   )}
                 />
 
-                {/* Supplier Profile Image Upload */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Supplier Profile Image</label>
+                  <label className="text-sm font-medium">Payee Profile Image</label>
                   <div
                     onClick={() => fileInputRef.current?.click()}
                     onDrop={handleDrop}
@@ -614,15 +560,11 @@ export function EditSupplierForm({
                       }}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Upload a supplier logo or profile image
-                  </p>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* TERMS & CONDITIONS TAB */}
           <TabsContent value="terms" className="space-y-4 mt-4">
             <Card>
               <CardContent className="pt-6 space-y-4">
@@ -688,7 +630,6 @@ export function EditSupplierForm({
           </TabsContent>
         </Tabs>
 
-        {/* Action Buttons */}
         <div className="flex items-center justify-end gap-2 pt-4 border-t">
           <Button
             type="button"
@@ -700,7 +641,7 @@ export function EditSupplierForm({
           </Button>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isSubmitting ? "Saving..." : "Save Changes"}
+            {isSubmitting ? "Creating..." : "Create Payee"}
           </Button>
         </div>
       </form>
