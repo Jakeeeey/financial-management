@@ -837,6 +837,8 @@ export async function createExpenseLog(params: {
       amount: params.amount ?? 0,
       remarks: params.remarks ?? null,
       status: params.status,
+      date_created: params.changedAt,
+      date_updated: params.changedAt,
     }),
   });
 }
@@ -845,6 +847,7 @@ export async function insertExpenseIntoPayableDraft(params: {
   draftId: number;
   expense: ExpenseDraftRow;
   referenceNo?: string | null;
+  nowTs?: string;
 }) {
   const expenseId = toNumericId(params.expense.id);
   const divisionId = toNumericId(params.expense.division_id);
@@ -879,6 +882,8 @@ export async function insertExpenseIntoPayableDraft(params: {
       date: params.expense.transaction_date ?? null,
       expense_id: expenseId,
       reference_no: params.referenceNo ?? null,
+      date_created: params.nowTs ?? undefined,
+      date_updated: params.nowTs ?? undefined,
     }),
   });
 
@@ -1110,6 +1115,8 @@ export async function finalizeDisbursementDraft(params: {
       status: "Draft",
       transaction_type: draft.transaction_type,
       transaction_date: draft.transaction_date,
+      date_created: nowTs,
+      date_updated: nowTs,
     }),
   });
 
@@ -1193,6 +1200,7 @@ export async function finalizeDisbursementDraft(params: {
       doc_no: liveDocNo,
       total_amount: approvedTotal,
       approval_version: currentVersion,
+      date_updated: nowTs,
     }),
   });
 
@@ -1355,6 +1363,8 @@ export async function processDraftApproval(params: {
             remarks: `Auto-generated from re-approved items. [Contains Returned Items]`,
             total_amount: 0,
             approval_version: 1,
+            date_created: nowTs,
+            date_updated: nowTs,
           }),
         });
 
@@ -1378,6 +1388,7 @@ export async function processDraftApproval(params: {
           draftId: targetDraftId,
           expense,
           referenceNo: draft.doc_no ?? `REF-${targetDraftId}`,
+          nowTs,
         });
 
         if (!insertResult.ok) {
@@ -1398,6 +1409,8 @@ export async function processDraftApproval(params: {
             status: "Approved",
             return_to: null,
             feedback: null,
+            approved_at: nowTs,
+            date_updated: nowTs,
           }),
         });
 
@@ -1421,6 +1434,7 @@ export async function processDraftApproval(params: {
             rejected_at: nowTs,
             return_to: null,
             feedback: decision.remarks || "Item rejected.",
+            date_updated: nowTs,
           }),
         });
 
@@ -1497,6 +1511,7 @@ export async function processDraftApproval(params: {
               rejected_at: targetStatus === "Rejected" ? nowTs : undefined,
               return_to: targetStatus === "With Concern" ? `L${currentTier}` : null,
               feedback: decision.remarks || (targetStatus === "Rejected" ? "Item rejected." : "Concern raised."),
+              date_updated: nowTs,
             }),
           });
 
@@ -1519,7 +1534,7 @@ export async function processDraftApproval(params: {
       await directusFetch(`/items/disbursement_payables_draft/${edited.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ amount: Number(edited.amount) }),
+        body: JSON.stringify({ amount: Number(edited.amount), date_updated: nowTs }),
       });
 
       const pRes = await directusFetch<DirectusListResponse<DisbursementPayableDraftRow>>(
@@ -1533,7 +1548,7 @@ export async function processDraftApproval(params: {
         await directusFetch(`/items/expense_draft/${expenseId}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ amount: Number(edited.amount) }),
+          body: JSON.stringify({ amount: Number(edited.amount), date_updated: nowTs }),
         });
       }
     }
@@ -1577,6 +1592,8 @@ export async function processDraftApproval(params: {
       remarks: finalRemarks,
       version: currentVersion,
       created_at: nowTs,
+      date_created: nowTs,
+      date_updated: nowTs,
     }),
   });
 
@@ -1597,6 +1614,8 @@ export async function processDraftApproval(params: {
       version: currentVersion,
       updated_by: currentUserId,
       payload_snapshot: allItems,
+      date_created: nowTs,
+      date_updated: nowTs,
     }),
   });
 
@@ -1628,7 +1647,13 @@ export async function processDraftApproval(params: {
       await directusFetch(`/items/disbursement_payables_draft_logs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payableLogs),
+        body: JSON.stringify(
+          payableLogs.map((p) => ({
+            ...p,
+            date_created: nowTs,
+            date_updated: nowTs,
+          }))
+        ),
       });
     }
   }
@@ -1687,6 +1712,7 @@ export async function processDraftApproval(params: {
       body: JSON.stringify({
         status: tierStatus(nextLevel),
         approval_version: currentVersion + 1,
+        date_updated: nowTs,
       }),
     });
   }
