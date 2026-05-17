@@ -72,11 +72,13 @@ export interface DisbursementPayload {
 }
 
 export interface DivisionDto {
+    id: number;
     divisionId: number;
     divisionName: string;
 }
 
 export interface DepartmentDto {
+    id: number;
     departmentId: number;
     departmentName: string;
 }

@@ -68,7 +68,7 @@ const normalizeDivisions = (payload: unknown): DivisionDto[] =>
       row.divisionName ?? row.division_name ?? row.name ?? row.division,
     );
 
-    if (id !== null && divisionName) rows.push({ id, divisionName });
+    if (id !== null && divisionName) rows.push({ id, divisionId: id, divisionName });
     return rows;
   }, []);
 
@@ -82,7 +82,7 @@ const normalizeDepartments = (payload: unknown): DepartmentDto[] =>
       row.departmentName ?? row.department_name ?? row.name ?? row.department,
     );
 
-    if (id !== null && departmentName) rows.push({ id, departmentName });
+    if (id !== null && departmentName) rows.push({ id, departmentId: id, departmentName });
     return rows;
   }, []);
 
