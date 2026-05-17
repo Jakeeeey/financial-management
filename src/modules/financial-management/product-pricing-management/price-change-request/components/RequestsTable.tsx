@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import type { ListMeta, PriceChangeRequestRow, CostChangeRequestRow } from "../types";
-import { productLabel, priceTypeLabel } from "../utils/labels";
+import { productLabel, priceTypeLabel, uomLabel } from "../utils/labels";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -101,12 +101,12 @@ export default function RequestsTable(props: Props) {
     const allPageSelected = selectableIds.length > 0 && selectedOnPageCount === selectableIds.length;
     const somePageSelected = selectedOnPageCount > 0 && selectedOnPageCount < selectableIds.length;
 
-    const colSpan = (props.mode === "approver" ? 8 : 7) - (requestType === "cost" ? 1 : 0);
+    const colSpan = (props.mode === "approver" ? 9 : 7) - (requestType === "cost" ? 1 : 0);
 
     return (
         <div className="rounded-xl border bg-background">
             <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 z-10 bg-background shadow-sm">
                     <TableRow>
                         {props.mode === "approver" && (
                             <TableHead className="w-[52px]">
@@ -120,11 +120,12 @@ export default function RequestsTable(props: Props) {
                         )}
                         <TableHead className="w-[110px]">Request #</TableHead>
                         <TableHead>Product</TableHead>
+                        <TableHead className="w-[100px]">UOM</TableHead>
                         {requestType === "price" && <TableHead className="w-[90px]">Type</TableHead>}
                         <TableHead className="w-[140px] text-right">Proposed</TableHead>
                         <TableHead className="w-[140px]">Status</TableHead>
                         <TableHead className="w-[170px]">Requested At</TableHead>
-                        <TableHead className="w-[220px] text-right">Actions</TableHead>
+                        {props.mode === "approver" && <TableHead className="w-[220px] text-right">Actions</TableHead>}
                     </TableRow>
                 </TableHeader>
 
@@ -153,6 +154,11 @@ export default function RequestsTable(props: Props) {
 
                                 <TableCell className="font-medium">{requestType === "cost" ? "CCR" : "PCR"}-{id}</TableCell>
                                 <TableCell className="max-w-[420px] truncate">{productLabel(r as PriceChangeRequestRow)}</TableCell>
+                                <TableCell>
+                                    <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                                        {uomLabel(r as PriceChangeRequestRow)}
+                                    </span>
+                                </TableCell>
                                 {requestType === "price" && <TableCell>{priceTypeLabel(r as PriceChangeRequestRow)}</TableCell>}
                                 <TableCell className="text-right">{fmt(proposedValue)}</TableCell>
                                 <TableCell>
@@ -162,36 +168,23 @@ export default function RequestsTable(props: Props) {
                                 </TableCell>
                                 <TableCell>{r.requested_at ? new Date(r.requested_at).toLocaleString() : "—"}</TableCell>
 
-                                <TableCell className="text-right">
-                                    <div className="inline-flex gap-2">
-                                        {props.mode === "approver" && (
-                                            <>
-                                                <Button size="sm" onClick={() => props.onApprove?.(id)} disabled={props.acting || !isPending}>
-                                                    Approve
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="destructive"
-                                                    onClick={() => props.onReject?.(id)}
-                                                    disabled={props.acting || !isPending}
-                                                >
-                                                    Reject
-                                                </Button>
-                                            </>
-                                        )}
-
-                                        {props.mode === "mine" && (
+                                {props.mode === "approver" && (
+                                    <TableCell className="text-right">
+                                        <div className="inline-flex gap-2">
+                                            <Button size="sm" onClick={() => props.onApprove?.(id)} disabled={props.acting || !isPending}>
+                                                Approve
+                                            </Button>
                                             <Button
                                                 size="sm"
-                                                variant="outline"
-                                                onClick={() => props.onCancel?.(id)}
+                                                variant="destructive"
+                                                onClick={() => props.onReject?.(id)}
                                                 disabled={props.acting || !isPending}
                                             >
-                                                Cancel
+                                                Reject
                                             </Button>
-                                        )}
-                                    </div>
-                                </TableCell>
+                                        </div>
+                                    </TableCell>
+                                )}
                             </TableRow>
                         );
                     })}

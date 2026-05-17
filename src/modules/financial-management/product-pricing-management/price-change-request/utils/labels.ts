@@ -19,6 +19,19 @@ export function productLabel(r: PriceChangeRequestRow | CostChangeRequestRow) {
     return `Product #${r.product_id}`;
 }
 
+export function uomLabel(r: PriceChangeRequestRow | CostChangeRequestRow): string {
+    const product = r.product_id;
+    if (!isRecord(product)) return "—";
+
+    const uom = product.unit_of_measurement;
+    if (!isRecord(uom)) return "—";
+
+    const shortcut = typeof uom.unit_shortcut === "string" ? uom.unit_shortcut.trim() : "";
+    const name = typeof uom.unit_name === "string" ? uom.unit_name.trim() : "";
+
+    return shortcut || name || "—";
+}
+
 export function priceTypeLabel(r: PriceChangeRequestRow) {
     const priceType = r.price_type_id;
 

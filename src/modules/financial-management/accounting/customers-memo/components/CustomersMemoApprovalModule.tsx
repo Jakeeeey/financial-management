@@ -33,7 +33,7 @@ import { MemoApprovalRow, Supplier, Customer, Salesman } from "../types";
 import { ApprovalDetailModal } from "./ApprovalDetailModal";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelect } from "./SearchableSelect";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
     Dialog,
@@ -288,7 +288,16 @@ export default function CustomersMemoApprovalModule() {
                 <div className="flex-1 min-w-[200px]">
                     <SearchableSelect
                         placeholder="Filter by Customer"
-                        options={customers.map(c => ({ value: String(c.id), label: c.customer_name }))}
+                        options={customers.map(c => {
+                            const address = [c.brgy, c.city].filter(Boolean).join(", ");
+                            const storeInfo = c.store_name && c.store_name !== c.customer_name ? c.store_name : "";
+                            const subLabel = [storeInfo, address].filter(Boolean).join(" | ");
+                            return {
+                                value: String(c.id),
+                                label: c.customer_name,
+                                subLabel: subLabel
+                            };
+                        })}
                         value={filterCustomer}
                         onValueChange={setFilterCustomer}
                     />
@@ -297,7 +306,11 @@ export default function CustomersMemoApprovalModule() {
                 <div className="flex-1 min-w-[200px]">
                     <SearchableSelect
                         placeholder="Filter by Supplier"
-                        options={suppliers.map(s => ({ value: String(s.id), label: s.supplier_name }))}
+                        options={suppliers.map(s => ({
+                            value: String(s.id),
+                            label: s.supplier_name,
+                            subLabel: s.supplier_shortcut || ""
+                        }))}
                         value={filterSupplier}
                         onValueChange={setFilterSupplier}
                     />
@@ -306,7 +319,11 @@ export default function CustomersMemoApprovalModule() {
                 <div className="flex-1 min-w-[200px]">
                     <SearchableSelect
                         placeholder="Filter by Salesman"
-                        options={salesmen.map(s => ({ value: String(s.id), label: `${s.salesman_code} - ${s.salesman_name}` }))}
+                        options={salesmen.map(s => ({
+                            value: String(s.id),
+                            label: s.salesman_name,
+                            subLabel: s.salesman_code
+                        }))}
                         value={filterSalesman}
                         onValueChange={setFilterSalesman}
                     />
