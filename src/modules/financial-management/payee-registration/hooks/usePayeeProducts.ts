@@ -4,8 +4,17 @@ import { useState, useEffect, useCallback } from "react";
 import { fetchPayeeProducts } from "../services/products-per-payee";
 import { toast } from "sonner";
 
+export interface PayeeProduct {
+  id: number;
+  product_id: number | null;
+  product_name: string;
+  product_code: string;
+  discount_type: string;
+  discount_type_id: number | null;
+}
+
 export function usePayeeProducts(payeeId: number | null) {
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<PayeeProduct[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const loadProducts = useCallback(async () => {
@@ -14,20 +23,20 @@ export function usePayeeProducts(payeeId: number | null) {
     try {
       const data = await fetchPayeeProducts(payeeId);
       // Map nested data for easier UI access
-      const mappedData = data.map((item: any) => ({
+      const mappedData = data.map((item: { id: number; product_id: unknown; discount_type_id: unknown }) => ({
         id: item.id,
         product_id:
           typeof item.product_id === "object" && item.product_id !== null
             ? (item.product_id as { product_id?: number; id?: number }).product_id ||
               (item.product_id as { product_id?: number; id?: number }).id
-            : item.product_id,
-        product_name: item.product_id?.product_name || "Unknown Product",
-        product_code: item.product_id?.product_code || "N/A",
-        discount_type: item.discount_type_id?.name || "None",
-        discount_type_id: item.discount_type_id?.id || item.discount_type_id,
+            : (item.product_id as number),
+        product_name: (item.product_id as { product_name?: string })?.product_name || "Unknown Product",
+        product_code: (item.product_id as { product_code?: string })?.product_code || "N/A",
+        discount_type: (item.discount_type_id as { name?: string })?.name || "None",
+        discount_type_id: ((item.discount_type_id as { id?: number })?.id || item.discount_type_id) as number | null,
       }));
       setProducts(mappedData);
-    } catch (error) {
+    } catch {
       toast.error("Failed to load assigned products");
     } finally {
       setIsLoading(false);
@@ -49,7 +58,7 @@ export function usePayeeProducts(payeeId: number | null) {
       if (!response.ok) throw new Error("Failed to add products");
       await loadProducts();
       toast.success("Products added successfully");
-    } catch (error) {
+    } catch {
       toast.error("Failed to add products");
     }
   };
@@ -64,7 +73,7 @@ export function usePayeeProducts(payeeId: number | null) {
       if (!response.ok) throw new Error("Failed to update discount");
       await loadProducts();
       toast.success("Discount updated");
-    } catch (error) {
+    } catch {
       toast.error("Failed to update discount");
     }
   };
@@ -77,7 +86,7 @@ export function usePayeeProducts(payeeId: number | null) {
       if (!response.ok) throw new Error("Failed to remove product");
       await loadProducts();
       toast.success("Product removed");
-    } catch (error) {
+    } catch {
       toast.error("Failed to remove product");
     }
   };

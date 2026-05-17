@@ -15,7 +15,7 @@ import { AddPayeeModal } from "./components/modals/add-payee-modal";
 import { ErrorPage } from "@/app/(financial-management)/fm/_components/ErrorPage";
 
 export default function PayeeRegistrationModulePage() {
-  const { payees, isLoading, error, refresh, setSearchQuery } =
+  const { payees, isLoading, error, refresh } =
     usePayees();
   const [selectedPayee, setSelectedPayee] = useState<Payee | null>(
     null,

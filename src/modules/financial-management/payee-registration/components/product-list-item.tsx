@@ -17,13 +17,13 @@ import { useState } from "react";
 import { Combobox } from "@/modules/financial-management/supplier-registration/components/ui/Combobox";
 
 interface ProductListItemProps {
-  product: any;
-  discountTypes: any[];
+  product: { id: number; product_name: string; product_code?: string; discount_type_id?: number | string | null };
+  discountTypes: { id: string | number; name?: string; discount_type?: string }[];
   onDiscountChange: (
     assignmentId: number,
     discountTypeId: number | null,
-  ) => Promise<any>;
-  onRemove: (assignmentId: number) => Promise<any>;
+  ) => Promise<void>;
+  onRemove: (assignmentId: number) => Promise<void>;
 }
 
 export function ProductListItem({
@@ -50,7 +50,7 @@ export function ProductListItem({
           { value: "none", label: "No Discount" },
           ...discountTypes.map((dt) => ({
             value: dt.id.toString(),
-            label: dt.name || dt.discount_type,
+            label: dt.name || dt.discount_type || "Unknown",
           })),
         ]}
         value={product.discount_type_id?.toString() || "none"}

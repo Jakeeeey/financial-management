@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
+
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -129,7 +129,7 @@ export function AddPayeeProductsModal({
                 <div className="space-y-1">
                   {availableProducts.map((product) => {
                     const productId = Number(
-                      product.product_id || (product as any).id,
+                      product.product_id || (product as { id?: number; product_id?: number }).id,
                     );
                     const isSelected = selectedIds.includes(productId);
 
