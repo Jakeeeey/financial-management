@@ -1370,7 +1370,7 @@ export async function POST(req: NextRequest) {
       original.rejected_at = decision.status === "Rejected" ? nowTs : null;
     }
 
-    const selectedExpenses = allRelevantRows.filter((row) => {
+    const selectedExpenses = allDetailRows.filter((row) => {
       const decision = itemDecisions[String(row.id)];
 
       if (decision) {

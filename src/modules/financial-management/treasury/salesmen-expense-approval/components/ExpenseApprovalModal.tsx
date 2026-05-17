@@ -320,6 +320,7 @@ export default function ExpenseApprovalModal({
         salesman_id: detail.salesman.id,
         remarks: `Individual decision for item #${expense.id}: ${status}`,
         item_decisions: payloadDecisions,
+        all_ids: headerExpenses.map((e) => e.id),
       });
 
       toast.success(`Decision for item #${expense.id} submitted.`);
@@ -387,6 +388,7 @@ export default function ExpenseApprovalModal({
         remarks: remarks.trim(),
         item_decisions: payloadDecisions,
         edited_amounts: payloadEdited.length > 0 ? payloadEdited : undefined,
+        all_ids: headerExpenses.map((e) => e.id),
       });
 
       toast.success("Approvals submitted successfully.");
@@ -438,7 +440,7 @@ export default function ExpenseApprovalModal({
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-6 px-[2vw] py-[2vh] bg-white border-b shadow-sm shrink-0">
+        <div className="grid grid-cols-4 gap-6 px-[2vw] py-[2vh] bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm shrink-0">
           <div className="flex items-center gap-4">
             <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100 shadow-inner">
               <User size={24} />
@@ -524,9 +526,9 @@ export default function ExpenseApprovalModal({
           </div>
         ) : (
           <>
-            <div className="px-[2vw] py-4 bg-muted/5 border-b flex items-center justify-between shrink-0">
+            <div className="px-[2vw] py-4 bg-muted/5 dark:bg-slate-800/50 border-b dark:border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-8">
-                <h3 className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-800">
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-800 dark:text-slate-200">
                   <Receipt className="h-4 w-4 text-primary" />
                   Line-Item Expense Breakdown
                 </h3>
@@ -582,10 +584,10 @@ export default function ExpenseApprovalModal({
               </div>
             </div>
 
-            <div className="flex-1 flex min-h-0 bg-slate-50/50">
-              <div className="w-[25vw] border-r bg-white overflow-y-auto shadow-[5px_0_15px_rgba(0,0,0,0.02)]">
+            <div className="flex-1 flex min-h-0 bg-slate-50/50 dark:bg-slate-950/50">
+              <div className="w-[25vw] border-r dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto shadow-[5px_0_15px_rgba(0,0,0,0.02)] dark:shadow-none">
                 <Table>
-                  <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-sm">
+                  <TableHeader className="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10 shadow-sm dark:shadow-none border-b dark:border-slate-800">
                     <TableRow>
                       <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 pl-8">
                         Particulars / COA
@@ -620,7 +622,7 @@ export default function ExpenseApprovalModal({
                         <TableRow
                           key={groupId}
                           className={`cursor-pointer group transition-all ${
-                            isSelected ? "bg-blue-50/80" : "hover:bg-slate-50"
+                            isSelected ? "bg-blue-50/80 dark:bg-blue-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
                           }`}
                           onClick={() => setSelectedGroupId(groupId)}
                         >
@@ -639,7 +641,7 @@ export default function ExpenseApprovalModal({
                                 #
                               </div>
                               <div>
-                                <p className="text-[11px] font-black uppercase tracking-tight text-slate-800 leading-none mb-1 line-clamp-1">
+                                <p className="text-[11px] font-black uppercase tracking-tight text-slate-800 dark:text-slate-200 leading-none mb-1 line-clamp-1">
                                   {group.particulars_name}
                                 </p>
                                 <p className="text-[9px] font-bold text-muted-foreground uppercase">
@@ -652,7 +654,7 @@ export default function ExpenseApprovalModal({
                             </div>
                           </TableCell>
                           <TableCell className="text-right py-4 pr-4">
-                            <p className="text-xs font-black tabular-nums text-slate-800">
+                            <p className="text-xs font-black tabular-nums text-slate-800 dark:text-slate-200">
                               {formatCurrency(total)}
                             </p>
                             <p className="text-[9px] text-muted-foreground font-bold italic">
@@ -670,8 +672,8 @@ export default function ExpenseApprovalModal({
                               disabled={submitting || editableGroupItems.length === 0}
                               className={`h-7 px-3 rounded-full text-[9px] font-black uppercase tracking-tighter transition-all ${
                                 allEditableApproved
-                                  ? "bg-emerald-500 hover:bg-emerald-600 text-white border-none shadow-md shadow-emerald-200"
-                                  : "bg-slate-50 text-slate-500 hover:bg-blue-50 hover:text-blue-600 border-slate-200"
+                                  ? "bg-emerald-500 hover:bg-emerald-600 text-white border-none shadow-md shadow-emerald-200 dark:shadow-none"
+                                  : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 border-slate-200 dark:border-slate-700"
                               } disabled:opacity-50 disabled:cursor-not-allowed`}
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -697,10 +699,10 @@ export default function ExpenseApprovalModal({
                 </Table>
               </div>
 
-              <div className="flex-1 bg-white flex flex-col overflow-hidden">
+              <div className="flex-1 bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-auto p-8 pt-0">
-                  <Table className="border rounded-2xl overflow-hidden shadow-sm">
-                    <TableHeader className="bg-slate-50/50 sticky top-0 z-10 backdrop-blur-sm border-b">
+                  <Table className="border dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none">
+                    <TableHeader className="bg-slate-50/50 dark:bg-slate-900/80 sticky top-0 z-10 backdrop-blur-sm border-b dark:border-slate-800">
                       <TableRow>
                         <TableHead className="w-12 text-center text-[10px] font-black">
                           #
@@ -731,25 +733,25 @@ export default function ExpenseApprovalModal({
                         return (
                           <React.Fragment key={expense.id}>
                             <TableRow
-                              className={`group hover:bg-slate-50/50 border-b border-slate-100 transition-all ${
+                              className={`group hover:bg-slate-50/50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 transition-all ${
                                 isReadOnly ? "opacity-80" : ""
                               } ${
                                 status === "Approved"
-                                  ? "bg-emerald-50/20"
+                                  ? "bg-emerald-50/20 dark:bg-emerald-900/10"
                                   : status === "Rejected"
-                                    ? "bg-rose-50/20"
+                                    ? "bg-rose-50/20 dark:bg-rose-900/10"
                                     : status === "With Concern"
-                                      ? "bg-amber-50/20"
+                                      ? "bg-amber-50/20 dark:bg-amber-900/10"
                                       : ""
                               }`}
                             >
-                              <TableCell className="text-center py-4 text-[10px] font-black text-slate-300 italic">
+                              <TableCell className="text-center py-4 text-[10px] font-black text-slate-300 dark:text-slate-600 italic">
                                 {(index + 1).toString().padStart(2, "0")}
                               </TableCell>
                               <TableCell className="py-4">
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
-                                    <p className="text-xs font-black text-slate-800 leading-none mb-1">
+                                    <p className="text-xs font-black text-slate-800 dark:text-slate-200 leading-none mb-1">
                                       {expense.remarks || "No remarks provided"}
                                     </p>
                                     <p className="text-[9px] text-muted-foreground font-mono uppercase">
@@ -770,10 +772,10 @@ export default function ExpenseApprovalModal({
                                 <Input
                                   className={`h-8 w-28 text-center text-xs font-black tabular-nums transition-all ${
                                     isReadOnly
-                                      ? "bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed"
+                                      ? "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed"
                                       : Number(localAmounts[expense.id]) !== Number(expense.amount)
-                                        ? "bg-amber-50 border-amber-300 text-amber-700 shadow-inner"
-                                        : "bg-slate-50 border-slate-200"
+                                        ? "bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700/50 text-amber-700 dark:text-amber-400 shadow-inner"
+                                        : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
                                   }`}
                                   value={localAmounts[expense.id] || ""}
                                   disabled={isBusy || isReadOnly}
@@ -793,7 +795,7 @@ export default function ExpenseApprovalModal({
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    className="h-8 w-8 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                                    className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-600 hover:text-white transition-all shadow-sm dark:shadow-none"
                                     onClick={() =>
                                       setPreviewUrl(
                                         `/api/fm/expense-assets?id=${expense.attachment_url}`
@@ -934,21 +936,21 @@ export default function ExpenseApprovalModal({
                   </Table>
                 </div>
 
-                <div className="p-8 border-t bg-slate-50 flex items-center justify-end gap-12 relative shadow-[0_-5px_15px_rgba(0,0,0,0.02)]">
+                <div className="p-8 border-t dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-end gap-12 relative shadow-[0_-5px_15px_rgba(0,0,0,0.02)] dark:shadow-none">
                   <div className="w-80 flex flex-col gap-4">
-                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl space-y-4">
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-xl dark:shadow-none space-y-4">
                       <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
                         <span>Consolidation Summary</span>
                         <span className="text-blue-600">
                           {approvedCount} Draft Line{approvedCount !== 1 ? "s" : ""} Verified
                         </span>
                       </div>
-                      <div className="h-[1px] bg-slate-100 w-full" />
+                      <div className="h-[1px] bg-slate-100 dark:bg-slate-700 w-full" />
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                           Approved Draft Total:
                         </span>
-                        <span className="text-2xl font-black tabular-nums text-blue-700 tracking-tighter">
+                        <span className="text-2xl font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">
                           {formatCurrency(totalSelected)}
                         </span>
                       </div>
@@ -995,14 +997,14 @@ export default function ExpenseApprovalModal({
       </DialogContent>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="max-w-lg rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+        <DialogContent className="max-w-lg rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl dark:bg-slate-900">
           <div className="p-8 space-y-6">
             <div className="flex flex-col items-center text-center gap-4">
-              <div className="h-16 w-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 shadow-inner">
+              <div className="h-16 w-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-inner dark:shadow-none">
                 <ShieldCheck size={32} />
               </div>
               <div>
-                <DialogTitle className="text-xl font-black text-slate-800 uppercase tracking-tight">
+                <DialogTitle className="text-xl font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">
                   Finalize Batch Submittal
                 </DialogTitle>
                 <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
@@ -1019,7 +1021,7 @@ export default function ExpenseApprovalModal({
                 </label>
                 <Textarea
                   rows={4}
-                  className="rounded-3xl border-slate-200 text-sm focus:ring-blue-500/20 shadow-inner bg-slate-50/30 p-5"
+                  className="rounded-3xl border-slate-200 dark:border-slate-700 text-sm focus:ring-blue-500/20 shadow-inner dark:shadow-none bg-slate-50/30 dark:bg-slate-800 p-5"
                   placeholder="Provide the final audit justification for this batch..."
                   value={remarks}
                   onChange={(event) => setRemarks(event.target.value)}
@@ -1036,10 +1038,10 @@ export default function ExpenseApprovalModal({
                     {itemsMissingFeedback.map((item) => (
                       <div
                         key={item.id}
-                        className="p-4 bg-white rounded-2xl border border-rose-100/50 shadow-sm space-y-3"
+                        className="p-4 bg-white dark:bg-slate-800 rounded-2xl border border-rose-100/50 dark:border-rose-900/50 shadow-sm space-y-3"
                       >
                         <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-black text-slate-700 uppercase tracking-tight">
+                          <span className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-tight">
                             {item.particulars_name}
                           </span>
                           <span
@@ -1054,7 +1056,7 @@ export default function ExpenseApprovalModal({
                         </div>
                         <Textarea
                           rows={2}
-                          className="bg-slate-50/50 border-slate-100 text-[11px] rounded-xl focus:ring-rose-500/10 resize-none shadow-inner"
+                          className="bg-slate-50/50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-[11px] rounded-xl focus:ring-rose-500/10 resize-none shadow-inner dark:shadow-none"
                           placeholder={`Reason for ${itemDecisions[item.id]}...`}
                           value={itemRemarks[item.id] || ""}
                           onChange={(event) =>
