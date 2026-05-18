@@ -9,7 +9,6 @@ import { ThemeTransitionProvider } from "@/components/theme/ThemeTransitionOverl
 import { Toaster } from "@/components/ui/sonner"
 import { IdleTimer } from "@/components/auth/IdleTimer"
 
-
 const geistSans = Geist({
     variable: "--font-geist-sans",
     subsets: ["latin"],
