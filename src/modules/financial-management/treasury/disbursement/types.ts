@@ -24,12 +24,17 @@ export interface PaymentLine {
 export interface Disbursement {
     id: number;
     docNo: string;
-    payeeId?: number; // 🚀 Added for Edit mode population
+    payeeId?: number;
     transactionTypeName?: string;
     payeeName?: string;
     remarks?: string;
     totalAmount: number;
     paidAmount: number;
+
+    // 🚀 NEW: Financial Header Aggregates
+    totalDebit?: number;
+    totalCredit?: number;
+    balance?: number;
 
     encoderName?: string;
     approverName?: string;
@@ -40,8 +45,8 @@ export interface Disbursement {
     dateCreated?: string;
     dateApproved?: string;
     datePosted?: string;
-    divisionId?: number;     // 🚀 NEW: Needed for Edit Mode
-    departmentId?: number;   // 🚀 NEW: Needed for Edit Mode
+    divisionId?: number;
+    departmentId?: number;
     divisionName?: string;
     departmentName?: string;
     status: string;
@@ -51,7 +56,7 @@ export interface Disbursement {
 }
 
 export interface DisbursementPayload {
-    docNo?: string; // 🚀 Made optional so the backend can auto-generate
+    docNo?: string;
     transactionTypeId?: number;
     payeeId: number;
     remarks?: string;
@@ -67,12 +72,12 @@ export interface DisbursementPayload {
 }
 
 export interface DivisionDto {
-    id: number;
+    divisionId: number;
     divisionName: string;
 }
 
 export interface DepartmentDto {
-    id: number;
+    departmentId: number;
     departmentName: string;
 }
 
@@ -95,14 +100,16 @@ export interface COADto {
     coaId: number;
     glCode: string;
     accountTitle: string;
-    isPayment?: boolean; // 🚀 Added to support the payments dropdown filter
-    isPaymentDuplicate?: boolean; // 🚀 Added to support the payments dropdown filter
+    isPayment?: boolean;
+    isPaymentDuplicate?: boolean;
 }
+
 export interface BankAccountDto {
     bankId: number;
     bankName: string;
     accountNumber: string;
 }
+
 export interface UnpaidPoDto {
     uniqueKey: string;
     poId: number;
@@ -110,9 +117,9 @@ export interface UnpaidPoDto {
     receiptNo: string;
     date: string;
     amountDue: number;
-    type: string; // 🚀 NEW
+    type: string;
 }
-// Add this interface to your types file
+
 export interface MemoDto {
     id: number;
     memo_number: string;

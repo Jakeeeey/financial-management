@@ -162,7 +162,7 @@ export default function DisbursementModule() {
                             <select className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs font-bold uppercase text-foreground shadow-sm" value={divisionFilter} onChange={e => setDivisionFilter(e.target.value)}>
                                 <option value="">All Divisions</option>
                                 {divisions.map((d, idx) => (
-                                    <option key={`f-div-${d.id || idx}`} value={d.id}>
+                                    <option key={`f-div-${d.divisionId|| idx}`} value={d.divisionId}>
                                         {d.divisionName}
                                     </option>
                                 ))}
@@ -175,7 +175,7 @@ export default function DisbursementModule() {
                             <select className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs font-bold uppercase text-foreground shadow-sm" value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)}>
                                 <option value="">All Departments</option>
                                 {departments.map((d, idx) => (
-                                    <option key={`f-dept-${d.id || idx}`} value={d.id}>
+                                    <option key={`f-dept-${d.departmentId || idx}`} value={d.departmentId}>
                                         {d.departmentName}
                                     </option>
                                 ))}
