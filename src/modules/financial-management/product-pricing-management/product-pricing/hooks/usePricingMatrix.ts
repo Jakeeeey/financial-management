@@ -19,6 +19,7 @@ import { pivotPrices, buildTierIdMap } from "../utils/pivot";
 import { validatePrice } from "../utils/validators";
 
 type DirtyKey = `${number}:${ProductTierKey}`;
+type PendingKey = `${number}:${ProductTierKey}`;
 
 
 
@@ -80,6 +81,8 @@ export function usePricingMatrix(args: {
 
     const [dirty, setDirty] = useState<Map<DirtyKey, string>>(new Map());
     const [dirtyErrors, setDirtyErrors] = useState<Map<DirtyKey, string>>(new Map());
+
+    const [pendingMap, setPendingMap] = useState<Map<PendingKey, number>>(new Map());
 
     const filtersKey = useMemo(
         () =>
@@ -164,6 +167,40 @@ export function usePricingMatrix(args: {
             const priceRes = await api.getPricesForProducts(productIds);
             const priceMap = pivotPrices(priceTypes, priceRes.data ?? []);
 
+            // Fetch pending requests
+            const [pendingPriceRes, pendingCostRes] = await Promise.all([
+                api.getPendingPriceRequests(),
+                api.getPendingCostRequests()
+            ]);
+
+            const nextPending = new Map<PendingKey, number>();
+
+            // Map price change requests
+            for (const pcr of pendingPriceRes.data ?? []) {
+                const pidRaw = pcr.product_id;
+                const ptidRaw = pcr.price_type_id;
+                const pid = toNumberOrNull(typeof pidRaw === "object" ? pidRaw?.product_id : pidRaw);
+                const ptid = toNumberOrNull(typeof ptidRaw === "object" ? ptidRaw?.price_type_id : ptidRaw);
+                if (pid !== null && ptid !== null) {
+                    // Reverse map ptid to tier key
+                    const tierKey = Array.from(tierIdMap.entries()).find(([, id]) => id === ptid)?.[0];
+                    if (tierKey) {
+                        nextPending.set(`${pid}:${tierKey}`, toNumberOrNull(pcr.proposed_price) ?? 0);
+                    }
+                }
+            }
+
+            // Map cost change requests
+            for (const ccr of pendingCostRes.data ?? []) {
+                const pidRaw = ccr.product_id;
+                const pid = toNumberOrNull(typeof pidRaw === "object" ? pidRaw?.product_id : pidRaw);
+                if (pid !== null) {
+                    nextPending.set(`${pid}:LIST`, toNumberOrNull(ccr.proposed_cost) ?? 0);
+                }
+            }
+
+            setPendingMap(nextPending);
+
             const groups = new Map<number, MatrixProductRow[]>();
             for (const p of products) {
                 const groupId =
@@ -231,7 +268,7 @@ export function usePricingMatrix(args: {
         } finally {
             setLoading(false);
         }
-    }, [filters, page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes]);
+    }, [filters, page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes, tierIdMap]);
 
     useEffect(() => {
         refresh().catch((error: unknown) => {
@@ -273,6 +310,10 @@ export function usePricingMatrix(args: {
     const getError = useCallback((productId: number, tier: ProductTierKey) => {
         return dirtyErrors.get(`${productId}:${tier}` as DirtyKey) ?? null;
     }, [dirtyErrors]);
+
+    const getPendingValue = useCallback((productId: number, tier: ProductTierKey) => {
+        return pendingMap.get(`${productId}:${tier}` as PendingKey) ?? null;
+    }, [pendingMap]);
 
     const saveAll = useCallback(async () => {
         if (dirtyErrors.size > 0) {
@@ -347,42 +388,95 @@ export function usePricingMatrix(args: {
 
             const results = await Promise.all(promises);
 
-            const parts: string[] = [];
+            let totalCreated = 0;
+            let totalSkippedPending = 0;
+            let totalSkippedDuplicates = 0;
 
-            // Result of pcrItems
+            // Result of pcrItems (always results[0] if present)
             if (pcrItems.length > 0) {
                 const res = results[0] as {
                     created?: number;
                     skipped_existing_pending?: number;
                     skipped_duplicates?: number;
                 };
-                parts.push(`Submitted ${res.created ?? 0} tier request(s).`);
-                if ((res.skipped_existing_pending ?? 0) > 0) {
-                    parts.push(`Skipped (existing pending): ${res.skipped_existing_pending}`);
-                }
+                totalCreated += res.created ?? 0;
+                totalSkippedPending += res.skipped_existing_pending ?? 0;
+                totalSkippedDuplicates += res.skipped_duplicates ?? 0;
             }
 
-            // Result of costPcrItems
+            // Result of costPcrItems — index shifts if pcrItems also ran
             if (costPcrItems.length > 0) {
-                const res = (pcrItems.length > 0 ? results[1] : results[0]) as {
+                const costResultIndex = pcrItems.length > 0 ? 1 : 0;
+                const res = results[costResultIndex] as {
                     created?: number;
                     skipped_existing_pending?: number;
+                    skipped_duplicates?: number;
                 };
-                parts.push(`Submitted ${res.created ?? 0} List Price request(s).`);
-                if ((res.skipped_existing_pending ?? 0) > 0) {
-                    parts.push(`Skipped List Price (existing pending): ${res.skipped_existing_pending}`);
-                }
+                totalCreated += res.created ?? 0;
+                totalSkippedPending += res.skipped_existing_pending ?? 0;
+                totalSkippedDuplicates += res.skipped_duplicates ?? 0;
             }
-
-            toast.success(parts.join(" "));
 
             setDirty(new Map());
             setDirtyErrors(new Map());
-
             await refresh();
+
+            // All items were blocked by existing pending requests
+            if (totalCreated === 0 && totalSkippedPending > 0) {
+                toast.warning(
+                    `${totalSkippedPending} item(s) already have a PENDING request and were skipped. ` +
+                    `Please approve or reject the existing request(s) in Price Change Requests before re-submitting.`,
+                    { duration: 8000 }
+                );
+                return;
+            }
+
+            // Some created, some skipped
+            if (totalCreated > 0 && totalSkippedPending > 0) {
+                toast.success(
+                    `${totalCreated} request(s) submitted. ` +
+                    `${totalSkippedPending} skipped (already pending — resolve them in Price Change Requests first).`,
+                    { duration: 6000 }
+                );
+                return;
+            }
+
+            // All skipped as duplicates (same batch)
+            if (totalCreated === 0 && totalSkippedDuplicates > 0) {
+                toast.message("No new changes — all entries were duplicates in the same batch.");
+                return;
+            }
+
+            toast.success(`${totalCreated} price change request(s) submitted successfully.`);
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : "Failed to save changes";
-            toast.error(message);
+            // Try to extract a human-readable Directus error body from the thrown message
+            let displayMessage = "Failed to save changes";
+            if (error instanceof Error) {
+                try {
+                    const parsed = JSON.parse(error.message) as Record<string, unknown>;
+                    const body = parsed.directus_body ?? parsed.body ?? parsed.details ?? parsed.error;
+                    if (typeof body === "string" && body.trim()) {
+                        // Try to parse the inner Directus error JSON
+                        try {
+                            const inner = JSON.parse(body) as Record<string, unknown>;
+                            const innerErrors = inner.errors;
+                            if (Array.isArray(innerErrors) && innerErrors.length > 0) {
+                                const first = innerErrors[0] as Record<string, unknown>;
+                                displayMessage = String(first.message ?? body);
+                            } else {
+                                displayMessage = body;
+                            }
+                        } catch {
+                            displayMessage = body;
+                        }
+                    } else {
+                        displayMessage = error.message;
+                    }
+                } catch {
+                    displayMessage = error.message;
+                }
+            }
+            toast.error(displayMessage);
         }
     }, [dirty, dirtyErrors, tierIdMap, refresh, rows]);
 
@@ -415,6 +509,7 @@ export function usePricingMatrix(args: {
 
         setCell,
         getCellValue,
+        getPendingValue,
         isDirty,
         getError,
 
@@ -438,6 +533,7 @@ export function usePricingMatrix(args: {
         setPageSize,
         setCell,
         getCellValue,
+        getPendingValue,
         isDirty,
         getError,
         dirty,
