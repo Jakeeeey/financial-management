@@ -1,0 +1,166 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  addSoftDeleteFilters,
+  asNumber,
+  asString,
+  directusFetch,
+  discountLabel,
+  DirectusList,
+  isDeletedAtAccessError,
+  jsonError,
+  relationId,
+} from "../_utils";
+
+type SupplierCategoryRuleRow = {
+  id?: unknown;
+  customer_code?: unknown;
+  supplier_id?: unknown;
+  category_id?: unknown;
+  discount_type?: unknown;
+};
+
+type ProductRuleRow = {
+  id?: unknown;
+  customer_code?: unknown;
+  product_id?: unknown;
+  discount_type?: unknown;
+  unit_price?: unknown;
+};
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function supplierName(value: unknown) {
+  return value && typeof value === "object"
+    ? asString((value as Record<string, unknown>).supplier_name)
+    : "";
+}
+
+function categoryName(value: unknown) {
+  return value && typeof value === "object"
+    ? asString((value as Record<string, unknown>).category_name)
+    : "";
+}
+
+function productName(value: unknown) {
+  return value && typeof value === "object"
+    ? asString((value as Record<string, unknown>).product_name)
+    : "";
+}
+
+function productCode(value: unknown) {
+  return value && typeof value === "object"
+    ? asString((value as Record<string, unknown>).product_code)
+    : "";
+}
+
+function productBarcode(value: unknown) {
+  return value && typeof value === "object"
+    ? asString((value as Record<string, unknown>).barcode)
+    : "";
+}
+
+async function fetchProductRules(params: URLSearchParams) {
+  const paramsWithSoftDelete = new URLSearchParams(params);
+  addSoftDeleteFilters(paramsWithSoftDelete);
+
+  try {
+    return await directusFetch<DirectusList<ProductRuleRow>>(
+      `/items/product_per_customer?${paramsWithSoftDelete.toString()}`,
+    );
+  } catch (error) {
+    if (!isDeletedAtAccessError(error)) throw error;
+
+    return directusFetch<DirectusList<ProductRuleRow>>(
+      `/items/product_per_customer?${params.toString()}`,
+    );
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const customerCode = asString(searchParams.get("customer_code"));
+
+    if (!customerCode) {
+      return NextResponse.json({ error: "customer_code is required" }, { status: 400 });
+    }
+
+    const supplierParams = new URLSearchParams();
+    supplierParams.set("limit", "-1");
+    supplierParams.set("sort", "-id");
+    supplierParams.set(
+      "fields",
+      [
+        "id",
+        "customer_code",
+        "supplier_id",
+        "supplier_id.id",
+        "supplier_id.supplier_name",
+        "category_id",
+        "category_id.category_id",
+        "category_id.category_name",
+        "discount_type",
+        "discount_type.id",
+        "discount_type.discount_type",
+        "discount_type.total_percent",
+      ].join(","),
+    );
+    supplierParams.set("filter[customer_code][_eq]", customerCode);
+    addSoftDeleteFilters(supplierParams);
+
+    const productParams = new URLSearchParams();
+    productParams.set("limit", "-1");
+    productParams.set("sort", "-id");
+    productParams.set(
+      "fields",
+      [
+        "id",
+        "customer_code",
+        "unit_price",
+        "product_id",
+        "product_id.product_id",
+        "product_id.product_name",
+        "product_id.product_code",
+        "product_id.barcode",
+        "discount_type",
+        "discount_type.id",
+        "discount_type.discount_type",
+        "discount_type.total_percent",
+      ].join(","),
+    );
+    productParams.set("filter[customer_code][_eq]", customerCode);
+
+    const [supplierRulesRes, productRulesRes] = await Promise.all([
+      directusFetch<DirectusList<SupplierCategoryRuleRow>>(
+        `/items/supplier_category_discount_per_customer?${supplierParams.toString()}`,
+      ),
+      fetchProductRules(productParams),
+    ]);
+
+    const supplierCategoryRules = (supplierRulesRes.data ?? []).map((row) => ({
+      id: asNumber(row.id) ?? 0,
+      customerCode: asString(row.customer_code),
+      supplierId: relationId(row.supplier_id),
+      supplierName: supplierName(row.supplier_id),
+      categoryId: relationId(row.category_id, "category_id"),
+      categoryName: categoryName(row.category_id),
+      discount: discountLabel(row.discount_type),
+    })).filter((row) => row.id > 0);
+
+    const productRules = (productRulesRes.data ?? []).map((row) => ({
+      id: asNumber(row.id) ?? 0,
+      customerCode: asString(row.customer_code),
+      productId: relationId(row.product_id, "product_id"),
+      productName: productName(row.product_id),
+      productCode: productCode(row.product_id),
+      barcode: productBarcode(row.product_id),
+      discount: discountLabel(row.discount_type),
+      unitPrice: asNumber(row.unit_price),
+    })).filter((row) => row.id > 0);
+
+    return NextResponse.json({ supplierCategoryRules, productRules });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
