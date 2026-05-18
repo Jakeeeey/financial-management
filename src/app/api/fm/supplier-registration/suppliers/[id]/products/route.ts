@@ -6,7 +6,7 @@ import {
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * GET /api/supplier-registration/suppliers/[id]/products
+ * GET /api/fm/supplier-registration/suppliers/[id]/products
  * Fetch all products for a specific supplier
  */
 export async function GET(
@@ -46,7 +46,7 @@ export async function GET(
 }
 
 /**
- * POST /api/supplier-registration/suppliers/[id]/products
+ * POST /api/fm/supplier-registration/suppliers/[id]/products
  * Add a product to a supplier
  */
 export async function POST(

@@ -127,7 +127,7 @@ export function EditPayeeForm({
         formData.append("file", selectedFile);
         formData.append("folder_name", "payee_profile_image");
 
-        const uploadRes = await fetch("/api/payee-registration/payee-image-upload", {
+        const uploadRes = await fetch("/api/fm/payee-registration/payee-image-upload", {
           method: "POST",
           body: formData,
         });
@@ -144,7 +144,7 @@ export function EditPayeeForm({
       }
 
       const response = await fetch(
-        `/api/payee-registration/payees/${payee.id}`,
+        `/api/fm/payee-registration/payees/${payee.id}`,
         {
           method: "PATCH",
           headers: {
