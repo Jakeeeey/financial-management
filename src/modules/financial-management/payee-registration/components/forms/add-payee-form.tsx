@@ -109,7 +109,7 @@ export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
         formData.append("file", selectedFile);
         formData.append("folder_name", "payee_profile_image");
 
-        const uploadRes = await fetch("/api/payee-registration/payee-image-upload", {
+        const uploadRes = await fetch("/api/fm/payee-registration/payee-image-upload", {
           method: "POST",
           body: formData,
         });
@@ -123,7 +123,7 @@ export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
         imageId = uploadResult.data?.id || "";
       }
 
-      const response = await fetch("/api/payee-registration/payees", {
+      const response = await fetch("/api/fm/payee-registration/payees", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
