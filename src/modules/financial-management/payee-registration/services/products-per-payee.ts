@@ -11,7 +11,7 @@
 export async function fetchPayeeProducts(payeeId: number) {
   try {
     const response = await fetch(
-      `/api/payee-registration/payees/${payeeId}/products`,
+      `/api/fm/payee-registration/payees/${payeeId}/products`,
       {
         method: "GET",
         headers: {
@@ -38,7 +38,7 @@ export async function fetchPayeeProducts(payeeId: number) {
  */
 export async function addPayeeProductsBulk(payeeId: number, productIds: number[]) {
   try {
-    const response = await fetch(`/api/payee-registration/payees/${payeeId}/products/bulk`, {
+    const response = await fetch(`/api/fm/payee-registration/payees/${payeeId}/products/bulk`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

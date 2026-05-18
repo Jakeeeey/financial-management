@@ -113,7 +113,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
         formData.append("file", selectedFile);
         formData.append("folder_name", "supplier_profile_image");
 
-        const uploadRes = await fetch("/api/supplier-registration/supplier-image-upload", {
+        const uploadRes = await fetch("/api/fm/supplier-registration/supplier-image-upload", {
           method: "POST",
           body: formData,
         });
@@ -127,7 +127,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
         imageId = uploadResult.data?.id || "";
       }
 
-      const response = await fetch("/api/supplier-registration/suppliers", {
+      const response = await fetch("/api/fm/supplier-registration/suppliers", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
