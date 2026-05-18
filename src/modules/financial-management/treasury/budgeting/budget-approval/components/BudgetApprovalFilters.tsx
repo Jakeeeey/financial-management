@@ -1,229 +1,157 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Search, X, ChevronDown, Clock, CheckCircle2, XCircle } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useBudgetApprovalContext } from "../providers/BudgetApprovalProvider";
 import { budgetApprovalService } from "../services/budgetService";
-import {
-  MONTH_OPTIONS,
-  YEAR_OPTIONS,
-} from "../utils";
-import type { BudgetApprovalFilters, Division, Department } from "../types";
-import { toast } from "sonner";
+import type { Division, Department } from "../types";
+import { Badge } from "@/components/ui/badge";
 
-function FilterSelect({
-  id,
-  value,
-  onChange,
-  placeholder,
-  options,
-  disabled,
-  loading,
-}: {
-  id:          string;
-  value:       string;
-  onChange:    (val: string) => void;
-  placeholder: string;
-  options:     { value: string; label: string }[];
-  disabled?:   boolean;
-  loading?:    boolean;
-}) {
-  return (
-    <div className="relative">
-      <select
-        id={id}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        disabled={disabled || loading}
-        className="flex h-9 w-full appearance-none rounded-md border border-input bg-background px-3 py-2 pr-8 text-xs text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <option value="">{loading ? "Loading..." : placeholder}</option>
-        {options.map(o => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-    </div>
-  );
-}
+import { YEAR_OPTIONS } from "../utils";
 
 export function BudgetApprovalFilters() {
   const { filters, updateFilter, clearFilters, hasFilters } = useBudgetApprovalContext();
-
+  
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    async function loadDivs() {
-        try {
-            setLoading(true);
-            const data = await budgetApprovalService.getDivisions();
-            setDivisions(Array.isArray(data) ? data : []);
-        } catch (e) {
-            toast.error("Failed to load divisions for filters");
-        } finally {
-            setLoading(false);
-        }
-    }
-    loadDivs();
+    const loadLookups = async () => {
+      try {
+        const divs = await budgetApprovalService.getDivisions();
+        setDivisions(divs);
+      } catch (err) {
+        console.error("Failed to load divisions:", err);
+      }
+    };
+    loadLookups();
   }, []);
 
   useEffect(() => {
-    if (!filters.division_id) {
+    const loadDepts = async () => {
+      if (!filters.division_id) {
         setDepartments([]);
         return;
-    }
-    async function loadDepts() {
-        try {
-            setLoading(true);
-            const data = await budgetApprovalService.getDepartments(Number(filters.division_id));
-            setDepartments(Array.isArray(data) ? data : []);
-        } catch (e) {
-            toast.error("Failed to load departments for filters");
-        } finally {
-            setLoading(false);
-        }
-    }
+      }
+      try {
+        const depts = await budgetApprovalService.getDepartments(Number(filters.division_id));
+        setDepartments(depts);
+      } catch (err) {
+        console.error("Failed to load departments:", err);
+      }
+    };
     loadDepts();
   }, [filters.division_id]);
 
-  const divisionOptions = (divisions || [])
-    .filter(d => d && (d.division_id || (d as any).id))
-    .map((d, i) => ({ 
-      value: String(d.division_id || (d as any).id), 
-      label: d.division_name || (d as any).name || (d as any).divisionName || `Division ${i+1}` 
-    }));
-
-  const deptOptions = (departments || [])
-    .filter(d => d && (d.department_id || (d as any).id))
-    .map((d, i) => ({ 
-      value: String((d as any).dept_div_id || d.department_id || (d as any).id), 
-      label: d.department_name || (d as any).name || (d as any).departmentName || `Department ${i+1}` 
-    }));
-
-  const handleFilter = <K extends keyof BudgetApprovalFilters>(key: K, val: BudgetApprovalFilters[K]) => {
-    updateFilter(key, val);
-    // Reset department when division changes
-    if (key === "division_id") updateFilter("department_id", "");
-  };
-
   return (
     <div className="flex flex-col gap-4">
-      {/* Top Tabs for Status */}
-      <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg w-max border border-border">
-          <Button
-              variant={filters.status === "Pending" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => handleFilter("status", "Pending")}
-              className={`h-8 text-xs font-semibold px-4 gap-2 ${filters.status === "Pending" ? "shadow-sm" : "text-muted-foreground"}`}
-          >
-              <Clock className="w-3.5 h-3.5" />
-              Pending
-          </Button>
-          <Button
-              variant={filters.status === "Approved" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => handleFilter("status", "Approved")}
-              className={`h-8 text-xs font-semibold px-4 gap-2 ${filters.status === "Approved" ? "shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white" : "text-muted-foreground hover:text-emerald-600"}`}
-          >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Approved
-          </Button>
-          <Button
-              variant={filters.status === "Rejected" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => handleFilter("status", "Rejected")}
-              className={`h-8 text-xs font-semibold px-4 gap-2 ${filters.status === "Rejected" ? "shadow-sm bg-destructive hover:bg-destructive text-destructive-foreground" : "text-muted-foreground hover:text-destructive"}`}
-          >
-              <XCircle className="w-3.5 h-3.5" />
-              Rejected
-          </Button>
+    <div className="flex flex-wrap items-center gap-3">
+      {/* Search Input */}
+      <div className="relative w-full sm:w-[240px]">
+        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+        <Input
+          placeholder="Search Budget No..."
+          value={filters.search}
+          onChange={(e) => updateFilter("search", e.target.value)}
+          className="h-9 w-full pl-9 rounded-lg border-border/40 bg-background text-xs font-medium placeholder:text-muted-foreground/50 focus-visible:ring-primary/20"
+        />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Search */}
-        <div className="relative min-w-[180px] flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input
-            id="budget-approval-search"
-            value={filters.search}
-            onChange={e => handleFilter("search", e.target.value)}
-            placeholder="Search budgets…"
-            className="h-9 pl-9 text-xs"
-          />
-          {filters.search && (
-            <button
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              onClick={() => handleFilter("search", "")}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+      {/* Year Filter */}
+      <Select
+        value={filters.year}
+        onValueChange={(val) => updateFilter("year", val)}
+      >
+        <SelectTrigger className="h-9 w-[100px] rounded-lg border-border/40 bg-background text-xs font-medium">
+          <SelectValue placeholder="Year" />
+        </SelectTrigger>
+        <SelectContent className="rounded-lg border-border/40 shadow-xl">
+          {YEAR_OPTIONS.map((y) => (
+            <SelectItem key={`year-${y.value}`} value={y.value} className="text-xs font-medium">
+              {y.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-        {/* Year */}
-        <div className="w-[110px]">
-          <FilterSelect
-            id="budget-approval-year"
-            value={filters.year}
-            onChange={v => handleFilter("year", v)}
-            placeholder="All Years"
-            options={YEAR_OPTIONS}
-          />
-        </div>
+      {/* Division Filter */}
+      <Select
+        value={filters.division_id}
+        onValueChange={(val) => {
+          updateFilter("division_id", val);
+          updateFilter("department_id", "all");
+        }}
+      >
+        <SelectTrigger className="h-9 w-[160px] rounded-lg border-border/40 bg-background text-xs font-medium">
+          <SelectValue placeholder="All Divisions" />
+        </SelectTrigger>
+        <SelectContent className="rounded-lg border-border/40 shadow-xl">
+           <SelectItem value="all" className="text-xs font-medium">All Divisions</SelectItem>
+          {divisions.map((div) => (
+            <SelectItem key={`div-${div.division_id}`} value={String(div.division_id)} className="text-xs font-medium">
+              {div.division_name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-        {/* Month */}
-        <div className="w-[130px]">
-          <FilterSelect
-            id="budget-approval-month"
-            value={filters.month}
-            onChange={v => handleFilter("month", v)}
-            placeholder="All Months"
-            options={MONTH_OPTIONS}
-          />
-        </div>
+      {/* Department Filter */}
+      <Select
+        value={filters.department_id}
+        onValueChange={(val) => updateFilter("department_id", val)}
+        disabled={!filters.division_id || filters.division_id === "all"}
+      >
+        <SelectTrigger className="h-9 w-[160px] rounded-lg border-border/40 bg-background text-xs font-medium text-left">
+          <SelectValue placeholder="All Depts." />
+        </SelectTrigger>
+        <SelectContent className="rounded-lg border-border/40 shadow-xl">
+           <SelectItem value="all" className="text-xs font-medium">All Depts.</SelectItem>
+          {departments.map((dept) => (
+            <SelectItem key={`dept-${dept.department_id}`} value={String(dept.department_id)} className="text-xs font-medium">
+              {dept.department_name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-        {/* Division */}
-        <div className="w-[140px]">
-          <FilterSelect
-            id="budget-approval-division"
-            value={filters.division_id}
-            onChange={v => handleFilter("division_id", v)}
-            placeholder="All Divisions"
-            options={divisionOptions}
-            loading={loading && divisions.length === 0}
-          />
-        </div>
+      {hasFilters && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={clearFilters}
+          className="h-8 px-2 text-[11px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1.5 active:scale-95 transition-all"
+        >
+          <X className="h-3 w-3" />
+          Clear
+        </Button>
+      )}
+    </div>
 
-        {/* Department */}
-        <div className="w-[150px]">
-          <FilterSelect
-            id="budget-approval-department"
-            value={filters.department_id}
-            onChange={v => handleFilter("department_id", v)}
-            placeholder="All Depts."
-            options={deptOptions}
-            disabled={!filters.division_id}
-            loading={loading && filters.division_id !== ""}
-          />
-        </div>
-
-        {/* Clear */}
-        {hasFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearFilters}
-            className="h-9 px-3 text-xs text-muted-foreground hover:text-foreground gap-1.5"
-          >
-            <X className="h-3.5 w-3.5" />
-            Clear
-          </Button>
-        )}
-      </div>
+      {/* Active Filter Tags (Optional Enhancement) */}
+      {hasFilters && (
+         <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mr-1">Active Filters:</span>
+            {filters.status && (
+               <Badge variant="secondary" className="h-5 px-2 text-[8px] font-black uppercase tracking-tighter bg-primary/10 text-primary border-none">
+                  Status: {filters.status}
+               </Badge>
+            )}
+            {filters.division_id && (
+               <Badge variant="secondary" className="h-5 px-2 text-[8px] font-black uppercase tracking-tighter bg-primary/10 text-primary border-none">
+                  Division: {divisions.find(d => String(d.division_id) === filters.division_id)?.division_name}
+               </Badge>
+            )}
+         </div>
+      )}
     </div>
   );
 }

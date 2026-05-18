@@ -10,7 +10,7 @@ import {
   ArrowUpRight,
   ArrowDownRight
 } from "lucide-react";
-import { DASHBOARD_METRICS } from "../constants";
+import type { DashboardMetrics } from "../services/budgetDashboardService";
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat("en-PH", {
@@ -20,7 +20,7 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-export function KPICards() {
+export function KPICards({ metrics }: { metrics: DashboardMetrics }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Total Active Budget */}
@@ -38,13 +38,13 @@ export function KPICards() {
               </div>
               <div>
                  <h2 className="text-3xl font-black tracking-tighter text-foreground leading-tight">
-                    {formatCurrency(DASHBOARD_METRICS.totalBudget)}
+                    {formatCurrency(metrics.totalBudget)}
                  </h2>
                  <p className="text-[10px] text-muted-foreground mt-1 font-bold flex items-center gap-1">
                     <span className="text-emerald-500 flex items-center gap-0.5">
-                       <ArrowUpRight className="h-3 w-3" /> +12%
+                       <ArrowUpRight className="h-3 w-3" /> Real-time
                     </span> 
-                    vs last month
+                    approved budgets
                  </p>
               </div>
            </div>
@@ -66,13 +66,13 @@ export function KPICards() {
               </div>
               <div>
                  <h2 className="text-3xl font-black tracking-tighter text-foreground leading-tight">
-                    {formatCurrency(DASHBOARD_METRICS.utilized)}
+                    {formatCurrency(metrics.utilized)}
                  </h2>
                  <p className="text-[10px] text-muted-foreground mt-1 font-bold flex items-center gap-1">
                     <span className="text-blue-500 flex items-center gap-0.5">
-                       <ArrowUpRight className="h-3 w-3" /> +5.4%
+                       <ArrowUpRight className="h-3 w-3" /> 70%
                     </span> 
-                    real-time spend
+                    simulated spend
                  </p>
               </div>
            </div>
@@ -94,11 +94,11 @@ export function KPICards() {
               </div>
               <div>
                  <h2 className="text-3xl font-black tracking-tighter text-foreground leading-tight">
-                    {formatCurrency(DASHBOARD_METRICS.remaining)}
+                    {formatCurrency(metrics.remaining)}
                  </h2>
                  <p className="text-[10px] text-muted-foreground mt-1 font-bold flex items-center gap-1">
-                    <span className="text-amber-500 flex items-center gap-0.5">
-                       <ArrowDownRight className="h-3 w-3" /> -2.1%
+                    <span className="text-emerald-500 flex items-center gap-0.5">
+                       <ArrowDownRight className="h-3 w-3" /> 30%
                     </span> 
                     available funds
                  </p>
@@ -119,7 +119,7 @@ export function KPICards() {
               </div>
               <div>
                  <h2 className="text-3xl font-black tracking-tighter text-foreground leading-tight">
-                    {DASHBOARD_METRICS.utilizationRate}%
+                    {metrics.utilizationRate}%
                  </h2>
                  <p className="text-[10px] text-muted-foreground mt-1 font-bold">
                     System-wide usage
@@ -147,12 +147,12 @@ export function KPICards() {
                   strokeWidth="6"
                   fill="transparent"
                   strokeDasharray={175.9}
-                  strokeDashoffset={175.9 - (175.9 * DASHBOARD_METRICS.utilizationRate) / 100}
+                  strokeDashoffset={175.9 - (175.9 * metrics.utilizationRate) / 100}
                   className="text-purple-600 transition-all duration-1000 ease-out"
                   strokeLinecap="round"
                 />
               </svg>
-              <span className="absolute text-[10px] font-black text-purple-700">75%</span>
+              <span className="absolute text-[10px] font-black text-purple-700">{metrics.utilizationRate}%</span>
            </div>
         </CardContent>
       </Card>

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { LayoutDashboard, RefreshCw, Filter, Calendar } from "lucide-react";
+import { LayoutDashboard, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { KPICards } from "./components/KPICards";
 import { BudgetVsActualChart } from "./components/BudgetVsActualChart";
@@ -15,22 +15,30 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select";
+import { useBudgetDashboard } from "./hooks/useBudgetDashboard";
+import { MONTH_NAMES } from "../budget-approval/utils";
 
 export default function BudgetDashboardModule() {
+  const { 
+    filters, 
+    updateFilter, 
+    metrics, 
+    trendData,
+    categoryData,
+    divisionComparison,
+    deptUtilization,
+    pendingSummary,
+    divisions, 
+    loading, 
+    refresh 
+  } = useBudgetDashboard();
+
+  const [mounted, setMounted] = React.useState(false);
   const [currentTime, setCurrentTime] = React.useState("");
 
   React.useEffect(() => {
-    setCurrentTime(new Date().toLocaleString('en-PH', { 
-      month: 'long', 
-      day: 'numeric', 
-      year: 'numeric',
-      hour: '2-digit', 
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true 
-    }));
-    
-    const timer = setInterval(() => {
+    setMounted(true);
+    const updateTime = () => {
       setCurrentTime(new Date().toLocaleString('en-PH', { 
         month: 'long', 
         day: 'numeric', 
@@ -40,10 +48,13 @@ export default function BudgetDashboardModule() {
         second: '2-digit',
         hour12: true 
       }));
-    }, 1000);
-
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  if (!mounted) return null;
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6 min-h-0 min-w-0 flex-1">
       {/* Header Section */}
@@ -65,25 +76,36 @@ export default function BudgetDashboardModule() {
         <div className="flex flex-wrap items-center gap-2">
           {/* Global Filters */}
           <div className="flex items-center gap-2 bg-muted/30 p-1.5 rounded-2xl border border-border/40">
-            <Select defaultValue="all">
-              <SelectTrigger className="h-8 w-32 rounded-xl text-[10px] font-black uppercase tracking-widest border-none bg-transparent hover:bg-white transition-colors">
+            <Select 
+              value={filters.division_id || "all"} 
+              onValueChange={(val) => updateFilter("division_id", val === "all" ? "" : val)}
+            >
+              <SelectTrigger className="h-8 w-40 rounded-xl text-[10px] font-black uppercase tracking-widest border-none bg-transparent hover:bg-white transition-colors">
                 <SelectValue placeholder="Division" />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
                 <SelectItem value="all" className="text-[10px] font-bold uppercase">All Divisions</SelectItem>
-                <SelectItem value="industrial" className="text-[10px] font-bold uppercase">Industrial</SelectItem>
-                <SelectItem value="corporate" className="text-[10px] font-bold uppercase">Corporate</SelectItem>
-                <SelectItem value="logistics" className="text-[10px] font-bold uppercase">Logistics</SelectItem>
+                {divisions.map(d => (
+                  <SelectItem key={d.id} value={d.id} className="text-[10px] font-bold uppercase">
+                    {d.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <div className="h-4 w-px bg-border/60" />
-            <Select defaultValue="may">
-              <SelectTrigger className="h-8 w-28 rounded-xl text-[10px] font-black uppercase tracking-widest border-none bg-transparent hover:bg-white transition-colors">
+            <Select 
+              value={filters.month} 
+              onValueChange={(val) => updateFilter("month", val)}
+            >
+              <SelectTrigger className="h-8 w-32 rounded-xl text-[10px] font-black uppercase tracking-widest border-none bg-transparent hover:bg-white transition-colors">
                 <SelectValue placeholder="Month" />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
-                <SelectItem value="may" className="text-[10px] font-bold uppercase">May 2026</SelectItem>
-                <SelectItem value="june" className="text-[10px] font-bold uppercase">June 2026</SelectItem>
+                {MONTH_NAMES.map((name, i) => (
+                  <SelectItem key={name} value={String(i + 1)} className="text-[10px] font-bold uppercase">
+                    {name} {filters.year}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -92,43 +114,48 @@ export default function BudgetDashboardModule() {
             size="sm"
             variant="outline"
             title="Refresh Data"
+            onClick={refresh}
+            disabled={loading}
             className="h-9 w-9 p-0 rounded-xl border-border/50 active:scale-95 transition-transform"
           >
-            <RefreshCw className="h-4 w-4 text-muted-foreground" />
+            <RefreshCw className={`h-4 w-4 text-muted-foreground ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </div>
 
       {/* Real-time Timestamp */}
       <div className="flex items-center gap-2 px-1">
-        <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+        <div className={`h-2 w-2 rounded-full ${loading ? "bg-amber-500 animate-bounce" : "bg-emerald-500 animate-pulse"}`} />
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">
-          Live Data <span className="mx-2 text-muted-foreground/30">|</span> As of {currentTime}
+          {loading ? "Updating..." : "Live Data"} <span className="mx-2 text-muted-foreground/30">|</span> As of {currentTime}
         </p>
       </div>
 
       {/* Bento Grid Layout */}
       <div className="flex flex-col gap-6">
         {/* Row 1: KPI Cards */}
-        <KPICards />
+        <KPICards metrics={metrics} />
 
         {/* Row 2: Main Charts & Alerts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-            <MonthlyTrendChart />
+            <MonthlyTrendChart data={trendData} />
           </div>
           <div className="lg:col-span-1">
-            <AllocationCategoryChart />
+            <AllocationCategoryChart data={categoryData} />
           </div>
         </div>
 
         {/* Row 3: Detail Charts & Critical Alerts */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-1">
-            <BudgetVsActualChart />
+            <BudgetVsActualChart data={divisionComparison} />
           </div>
           <div className="lg:col-span-3">
-             <CriticalAlerts />
+             <CriticalAlerts 
+                utilization={deptUtilization} 
+                pending={pendingSummary} 
+             />
           </div>
         </div>
       </div>

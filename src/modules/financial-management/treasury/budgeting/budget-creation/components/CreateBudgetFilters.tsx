@@ -62,9 +62,9 @@ export function CreateBudgetFilters() {
         try {
             setLoading(true);
             const data = await budgetService.getDivisions();
-            console.log("BudgetFilters Divisions:", data);
             setDivisions(Array.isArray(data) ? data : []);
         } catch (e) {
+            console.error(e);
             toast.error("Failed to load divisions for filters");
         } finally {
             setLoading(false);
@@ -74,37 +74,44 @@ export function CreateBudgetFilters() {
   }, []);
 
   useEffect(() => {
-    if (!filters.division_id) {
-        setDepartments([]);
-        return;
-    }
+    let active = true;
     async function loadDepts() {
+        if (!filters.division_id) {
+            await Promise.resolve();
+            if (active) setDepartments([]);
+            return;
+        }
         try {
             setLoading(true);
             const data = await budgetService.getDepartments(Number(filters.division_id));
-            console.log("BudgetFilters Departments:", data);
-            setDepartments(Array.isArray(data) ? data : []);
+            if (active) {
+                setDepartments(Array.isArray(data) ? data : []);
+            }
         } catch (e) {
+            console.error(e);
             toast.error("Failed to load departments for filters");
         } finally {
-            setLoading(false);
+            if (active) setLoading(false);
         }
     }
     loadDepts();
+    return () => {
+        active = false;
+    };
   }, [filters.division_id]);
 
   const divisionOptions = (divisions || [])
-    .filter(d => d && (d.division_id || (d as any).id))
+    .filter(d => d && d.division_id)
     .map((d, i) => ({ 
-      value: String(d.division_id || (d as any).id), 
-      label: d.division_name || (d as any).name || (d as any).divisionName || `Division ${i+1}` 
+      value: String(d.division_id), 
+      label: d.division_name || `Division ${i+1}` 
     }));
 
   const deptOptions = (departments || [])
-    .filter(d => d && (d.department_id || (d as any).id))
+    .filter(d => d && d.department_id)
     .map((d, i) => ({ 
-      value: String((d as any).dept_div_id || d.department_id || (d as any).id), 
-      label: d.department_name || (d as any).name || (d as any).departmentName || `Department ${i+1}` 
+      value: String(d.department_id), 
+      label: d.department_name || `Department ${i+1}` 
     }));
 
   const handleFilter = <K extends keyof BudgetFilters>(key: K, val: BudgetFilters[K]) => {
@@ -122,7 +129,7 @@ export function CreateBudgetFilters() {
           id="budget-filter-search"
           value={filters.search}
           onChange={e => handleFilter("search", e.target.value)}
-          placeholder="Search budgets…"
+          placeholder="Search Budget No..."
           className="h-9 pl-9 text-xs"
         />
         {filters.search && (

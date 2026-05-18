@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useRef, useEffect, useCallback } from "react";
+import React, { useRef, useCallback } from "react";
 import {
     Table,
     TableBody,
@@ -25,9 +25,27 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Send, Pencil, Trash2, Plus } from "lucide-react";
+import { 
+  Popover, 
+  PopoverContent, 
+  PopoverTrigger 
+} from "@/components/ui/popover";
+import { 
+  Loader2, 
+  Send, 
+  Pencil, 
+  Trash2, 
+  Plus,
+  Paperclip,
+  Image as ImageIcon,
+  FileSpreadsheet,
+  FileText,
+  ExternalLink,
+  Download
+} from "lucide-react";
 import { useCreateBudgetContext } from "../providers/CreateBudgetProvider";
 import { getMonthName, getBudgetStatusColor } from "../utils";
+import type { BudgetAttachment } from "../types";
 
 export function CreateBudgetTable() {
     const {
@@ -46,7 +64,10 @@ export function CreateBudgetTable() {
         getGrandTotal,
         hasInFlightSupplement,
         total,
+        filters,
     } = useCreateBudgetContext();
+
+    const activeStatus = filters?.status;
 
     const observer = useRef<IntersectionObserver | null>(null);
     const lastElementRef = useCallback(
@@ -98,7 +119,9 @@ export function CreateBudgetTable() {
                             <TableHead className="text-xs font-bold py-3">COA / GL Code</TableHead>
                             <TableHead className="text-xs font-bold py-3">Proposed Amount</TableHead>
                             <TableHead className="text-xs font-bold py-3 w-[120px]">Status</TableHead>
-                            <TableHead className="text-xs font-bold py-3 pr-4 text-right w-[150px]">Action</TableHead>
+                            <TableHead className="text-xs font-bold py-3 pr-4 text-right w-[150px]">
+                                {activeStatus !== "Pending" ? "Action" : ""}
+                            </TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -119,8 +142,8 @@ export function CreateBudgetTable() {
                                     >
                                         <TableCell className="py-3 pl-4">
                                             <Checkbox
-                                                checked={selectedIds.has(budget.id)}
-                                                onCheckedChange={() => toggleSelect(budget.id)}
+                                                checked={selectedIds.has(String(budget.id))}
+                                                onCheckedChange={() => toggleSelect(String(budget.id))}
                                                 aria-label={`Select budget ${budget.id}`}
                                             />
                                         </TableCell>
@@ -128,7 +151,7 @@ export function CreateBudgetTable() {
                                             {budget.year}
                                         </TableCell>
                                         <TableCell className="text-xs py-3">
-                                            {getMonthName(budget.month)}
+                                            {getMonthName(Number(budget.month || 0))}
                                         </TableCell>
                                         <TableCell className="py-3">
                                             <p className="text-xs font-semibold text-foreground">
@@ -140,7 +163,7 @@ export function CreateBudgetTable() {
                                         </TableCell>
                                         <TableCell className="py-3">
                                             <div className="flex flex-col gap-1">
-                                                <div className="flex items-center gap-1.5">
+                                                <div className="flex items-center flex-wrap gap-1.5">
                                                     <p className="text-xs font-medium text-foreground">
                                                         {budget.coa_name}
                                                     </p>
@@ -149,6 +172,89 @@ export function CreateBudgetTable() {
                                                             SUPPLEMENTAL
                                                         </Badge>
                                                     )}
+                                                    {budget.attachments && budget.attachments.length > 0 && (
+                                                        <Popover>
+                                                            <PopoverTrigger asChild>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="h-5 px-1.5 py-0 bg-secondary/40 hover:bg-secondary/80 text-muted-foreground hover:text-foreground rounded gap-1 active:scale-95 transition-all"
+                                                                >
+                                                                    <Paperclip className="h-3 w-3" />
+                                                                    <span className="text-[10px] font-bold tabular-nums leading-none">
+                                                                        {budget.attachments.length}
+                                                                    </span>
+                                                                </Button>
+                                                            </PopoverTrigger>
+                                                            <PopoverContent align="start" className="w-80 p-3 rounded-2xl shadow-xl border-border/40 backdrop-blur-sm z-50">
+                                                                <div className="space-y-2.5">
+                                                                    <div className="flex items-center justify-between border-b border-border/40 pb-2">
+                                                                        <span className="text-xs font-black tracking-tight flex items-center gap-1.5">
+                                                                            <Paperclip className="h-3.5 w-3.5 text-primary" />
+                                                                            Supporting Documents
+                                                                        </span>
+                                                                        <Badge variant="secondary" className="text-[9px] font-bold px-1.5 py-0">
+                                                                            {budget.attachments.length} {budget.attachments.length === 1 ? "File" : "Files"}
+                                                                        </Badge>
+                                                                    </div>
+                                                                    <div className="max-h-[220px] overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+                                                                        {budget.attachments.map((file: BudgetAttachment) => {
+                                                                            const isImg = file.type?.includes("image");
+                                                                            const isExcel = file.type?.includes("spreadsheet") || file.type?.includes("excel") || file.name?.endsWith(".xlsx") || file.name?.endsWith(".xls");
+                                                                            const isPdf = file.type?.includes("pdf") || file.name?.endsWith(".pdf");
+                                                                            
+                                                                            return (
+                                                                                <div 
+                                                                                    key={file.id || file.directus_id} 
+                                                                                    className="flex items-start gap-2.5 p-2 rounded-xl bg-muted/40 hover:bg-muted/80 border border-border/30 transition-colors group"
+                                                                                >
+                                                                                    <div className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${
+                                                                                        isImg ? "bg-orange-50 text-orange-600 dark:bg-orange-950/30 dark:text-orange-400" :
+                                                                                        isExcel ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400" :
+                                                                                        isPdf ? "bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400" :
+                                                                                        "bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400"
+                                                                                    }`}>
+                                                                                        {isImg ? <ImageIcon className="h-3.5 w-3.5" /> :
+                                                                                         isExcel ? <FileSpreadsheet className="h-3.5 w-3.5" /> :
+                                                                                         <FileText className="h-3.5 w-3.5" />}
+                                                                                    </div>
+                                                                                    
+                                                                                    <div className="flex-1 min-w-0">
+                                                                                        <p className="text-xs font-bold text-foreground truncate leading-tight" title={file.name}>
+                                                                                            {file.name}
+                                                                                        </p>
+                                                                                        <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                                                                                            {file.size ? `${(file.size / 1024).toFixed(1)} KB` : "—"}
+                                                                                        </p>
+                                                                                    </div>
+
+                                                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 self-center">
+                                                                                        <a 
+                                                                                            href={file.url} 
+                                                                                            target="_blank" 
+                                                                                            rel="noopener noreferrer"
+                                                                                            className="p-1 text-muted-foreground hover:text-primary transition-colors rounded"
+                                                                                            title="Open External Link"
+                                                                                        >
+                                                                                            <ExternalLink className="h-3 w-3" />
+                                                                                        </a>
+                                                                                        <a 
+                                                                                            href={file.url} 
+                                                                                            download={file.name}
+                                                                                            className="p-1 text-muted-foreground hover:text-primary transition-colors rounded"
+                                                                                            title="Download File"
+                                                                                        >
+                                                                                            <Download className="h-3 w-3" />
+                                                                                        </a>
+                                                                                    </div>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+                                                            </PopoverContent>
+                                                        </Popover>
+                                                    )}
                                                 </div>
                                                 <p className="text-[11px] font-mono text-primary/80">
                                                     {budget.gl_code}
@@ -156,18 +262,29 @@ export function CreateBudgetTable() {
                                             </div>
                                         </TableCell>
                                         <TableCell className="py-3">
-                                            <p className="text-xs font-bold text-foreground">
-                                                {new Intl.NumberFormat("en-PH", {
-                                                    style: "currency",
-                                                    currency: "PHP",
-                                                }).format(budget.amount || 0)}
-                                            </p>
-                                            {budget.status === "Approved" && budget.entry_type !== "supplemental" && getGrandTotal(budget.id) > budget.amount && (
-                                                <p className="text-[10px] font-bold text-emerald-600 mt-1">
-                                                    Total: {new Intl.NumberFormat("en-PH", {
+                                            {budget.status === "Approved" && budget.entry_type !== "supplemental" && getGrandTotal(String(budget.id)) > Number(budget.amount || 0) ? (
+                                                <div>
+                                                    <p className="text-xs font-black text-foreground">
+                                                        {new Intl.NumberFormat("en-PH", {
+                                                            style: "currency",
+                                                            currency: "PHP",
+                                                        }).format(getGrandTotal(String(budget.id)))}
+                                                    </p>
+                                                    <div className="flex flex-col gap-0.5 mt-1">
+                                                        <span className="text-[9px] font-mono text-muted-foreground">
+                                                            Base: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(budget.amount || 0)}
+                                                        </span>
+                                                        <span className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold">
+                                                            ⁺ {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(getGrandTotal(String(budget.id)) - Number(budget.amount || 0))} (Supplements)
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs font-bold text-foreground">
+                                                    {new Intl.NumberFormat("en-PH", {
                                                         style: "currency",
                                                         currency: "PHP",
-                                                    }).format(getGrandTotal(budget.id))}
+                                                    }).format(budget.amount || 0)}
                                                 </p>
                                             )}
                                         </TableCell>
@@ -213,7 +330,7 @@ export function CreateBudgetTable() {
                                                             </AlertDialogHeader>
                                                             <AlertDialogFooter>
                                                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction onClick={() => submitForApproval(budget.id)} className="bg-primary hover:bg-primary/90">
+                                                                <AlertDialogAction onClick={() => submitForApproval(String(budget.id))} className="bg-primary hover:bg-primary/90">
                                                                     Submit
                                                                 </AlertDialogAction>
                                                             </AlertDialogFooter>
@@ -239,7 +356,7 @@ export function CreateBudgetTable() {
                                                             </AlertDialogHeader>
                                                             <AlertDialogFooter>
                                                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction onClick={() => deleteBudget(budget.id)} className="bg-destructive hover:bg-destructive/90">
+                                                                <AlertDialogAction onClick={() => deleteBudget(String(budget.id))} className="bg-destructive hover:bg-destructive/90">
                                                                     Delete
                                                                 </AlertDialogAction>
                                                             </AlertDialogFooter>
@@ -247,8 +364,8 @@ export function CreateBudgetTable() {
                                                     </AlertDialog>
                                                 </>
                                             )}
-                                            {budget.status === "Approved" && (() => {
-                                                const inFlight = hasInFlightSupplement(budget.id);
+                                            {budget.status === "Approved" && budget.entry_type !== "supplemental" && (() => {
+                                                const inFlight = hasInFlightSupplement(String(budget.id));
                                                 return (
                                                     <Button
                                                         variant="ghost"

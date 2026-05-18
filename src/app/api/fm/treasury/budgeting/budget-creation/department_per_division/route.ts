@@ -30,7 +30,9 @@ export async function GET(req: Request) {
 
         const data = await res.json();
         return NextResponse.json(data);
-    } catch (err: any) {
-        return NextResponse.json({ message: "BFF Error", detail: err.message }, { status: 502 });
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        console.error("GET Dept Per Div Proxy Error:", msg, "Target:", targetUrl);
+        return NextResponse.json({ message: "BFF Error", detail: msg }, { status: 502 });
     }
 }

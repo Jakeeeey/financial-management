@@ -1,4 +1,4 @@
-// src/modules/financial-management/treasury/budgeting/create-budget/providers/CreateBudgetProvider.tsx
+// src/modules/financial-management/treasury/budgeting/budget-creation/providers/CreateBudgetProvider.tsx
 
 "use client";
 
@@ -9,6 +9,7 @@ import type { CreateBudgetPayload, BudgetFilters, Budget } from "../types";
 interface CreateBudgetContextValue {
   // Data & state
   displayedItems:  Budget[];
+  budgets:         Budget[];
   loading:         boolean;
   initialLoading:  boolean;
   hasMore:         boolean;
@@ -26,12 +27,14 @@ interface CreateBudgetContextValue {
   toggleSelectAll: () => void;
   clearSelection:  () => void;
   // Actions
-  submitForApproval: (id: string) => void;
+  submitBudgets:     (ids: string[]) => Promise<void>;
+  submitForApproval: (id: string | number) => void;
   quickSubmit:       () => void;
-  addBudget:         (payload: CreateBudgetPayload, names?: { division_name?: string; department_name?: string; coa_name?: string }) => void;
-  updateBudget:      (id: string, payload: CreateBudgetPayload, names?: { division_name?: string; department_name?: string; coa_name?: string }) => void;
-  deleteBudget:      (id: string) => void;
-  isDuplicate:       (year: number, month: number, deptDivCoaId: number, excludeId?: string) => boolean;
+  quickDelete:       () => void;
+  addBudget:         (payload: CreateBudgetPayload, names?: { division_name?: string; department_name?: string; coa_name?: string }) => Promise<void>;
+  updateBudget:      (id: string, payload: Partial<CreateBudgetPayload>, names?: { division_name?: string; department_name?: string; coa_name?: string }) => Promise<void>;
+  deleteBudget:      (id: string | number) => void;
+  isDuplicate:       (year: number, month: number, coaId: number, divisionId: number, departmentId: number, excludeId?: string) => Promise<boolean>;
   // Modal
   isModalOpen:     boolean;
   editingBudget:   Budget | null;
@@ -52,10 +55,31 @@ export function CreateBudgetProvider({ children }: { children: React.ReactNode }
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
   const [supplementParent, setSupplementParent] = useState<Budget | null>(null);
 
-  const budgets = useCreateBudgets();
+  const { budgets, ...budgetMethods } = useCreateBudgets();
 
   const value: CreateBudgetContextValue = {
-    ...budgets,
+    ...budgetMethods,
+    quickDelete: budgetMethods.deleteSelected,
+    displayedItems: budgets,
+    budgets,
+    initialLoading: false, // For now, we use loading from hook
+    hasMore: false,        // Pagination to be implemented
+    total: budgets.length,
+    loadMore: () => {},
+    updateFilter: (key, val) => {
+        budgetMethods.setFilters(prev => ({ ...prev, [key]: val }));
+    },
+    clearFilters: () => {
+        budgetMethods.setFilters({
+            search: "",
+            year: String(new Date().getFullYear()),
+            month: String(new Date().getMonth() + 1),
+            division_id: "",
+            department_id: "",
+            status: "Draft",
+        });
+    },
+    hasFilters: budgetMethods.filters.search !== "" || budgetMethods.filters.month !== "" || budgetMethods.filters.division_id !== "",
     isModalOpen,
     editingBudget,
     supplementParent,

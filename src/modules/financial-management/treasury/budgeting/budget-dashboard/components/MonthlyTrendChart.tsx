@@ -11,21 +11,44 @@ import {
   ResponsiveContainer
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MONTHLY_TREND_DATA } from "../constants";
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const FULL_MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June", 
+  "July", "August", "September", "October", "November", "December"
+];
 
-export function MonthlyTrendChart() {
+export function MonthlyTrendChart({ data = [] }: { data?: { month: string; amount: number }[] }) {
+  // Map raw data (Full Month Names) to the chart format (Abbr)
+  const chartData = MONTH_ABBR.map((abbr, index) => {
+    const fullName = FULL_MONTH_NAMES[index];
+    const match = data.find(d => d.month === fullName);
+    return {
+      month: abbr,
+      amount: match ? match.amount : 0
+    };
+  });
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(value);
+  };
+
   return (
     <Card className="rounded-3xl border-border/50 shadow-sm bg-card overflow-hidden h-[400px] flex flex-col lg:col-span-2">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-black uppercase tracking-widest text-muted-foreground/70">
-          Monthly Utilization Trend (%)
+          Monthly Approved Budget
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 min-h-0 pt-0">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
-            data={MONTHLY_TREND_DATA}
-            margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
+            data={chartData}
+            margin={{ top: 20, right: 30, left: 10, bottom: 0 }}
           >
             <defs>
               <linearGradient id="colorUtil" x1="0" y1="0" x2="0" y2="1">
@@ -45,7 +68,7 @@ export function MonthlyTrendChart() {
               axisLine={false} 
               tickLine={false} 
               tick={{ fontSize: 10, fontWeight: 700, fill: "hsl(var(--muted-foreground))" }}
-              tickFormatter={(value) => `${value}%`}
+              tickFormatter={formatCurrency}
             />
             <Tooltip 
               contentStyle={{ 
@@ -55,11 +78,11 @@ export function MonthlyTrendChart() {
                 fontSize: "12px",
                 fontWeight: "bold"
               }}
-              formatter={(value: number) => [`${value}%`, "Utilization"]}
+              formatter={(value: number) => [formatCurrency(value), "Approved Amount"]}
             />
             <Area 
               type="monotone" 
-              dataKey="utilization" 
+              dataKey="amount" 
               stroke="hsl(var(--primary))" 
               strokeWidth={3}
               fillOpacity={1} 

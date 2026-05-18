@@ -1,11 +1,16 @@
-// src/modules/financial-management/treasury/budgeting/create-budget/hooks/useCreateBudgetForm.ts
+// src/modules/financial-management/treasury/budgeting/budget-creation/hooks/useCreateBudgetForm.ts
 
 "use client";
 
 import { useState, useEffect } from "react";
-import type { CreateBudgetPayload, Division, Department, COA } from "../types";
+import type { Budget, CreateBudgetPayload, Division, Department, COA, BudgetAttachment } from "../types";
 import { budgetService } from "../services/budgetService";
 import { toast } from "sonner";
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June", 
+  "July", "August", "September", "October", "November", "December"
+];
 
 interface FormState {
   year:          string;
@@ -19,107 +24,96 @@ interface FormState {
   attachments:   File[];
 }
 
-interface FormErrors {
-  year?:          string;
-  month?:         string;
-  division_id?:   string;
-  department_id?: string;
-  coa_id?:        string;
-  gl_code?:       string;
-  amount?:        string;
-}
-
-const now = new Date();
-
-const DEFAULT_STATE: FormState = {
-  year:          String(now.getFullYear()),
-  month:         String(now.getMonth() + 1),
-  division_id:   "",
-  department_id: "",
-  coa_id:        "",
-  gl_code:       "",
-  amount:        "",
-  remarks:       "",
-  attachments:   [],
-};
-
 export function useCreateBudgetForm(
-    onSuccess: (payload: CreateBudgetPayload) => void,
-    initialData: Budget | null = null,
-    supplementParent: Budget | null = null,
-    checkDuplicate?: (year: number, month: number, coaId: number) => boolean
+  onSuccess: (payload: CreateBudgetPayload, names: { division_name?: string; department_name?: string; coa_name?: string }) => void | Promise<void>,
+  initialData: Budget | null = null,
+  supplementParent: Budget | null = null,
+  checkDuplicate: (year: number, month: number, coaId: number, divisionId: number, departmentId: number) => Promise<boolean>
 ) {
-  const [form,    setForm]    = useState<FormState>(DEFAULT_STATE);
-  const [errors,  setErrors]  = useState<FormErrors>({});
-  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState<FormState>({
+    year:          String(new Date().getFullYear()),
+    month:         String(new Date().getMonth() + 1),
+    division_id:   "",
+    department_id: "",
+    coa_id:        "",
+    gl_code:       "",
+    amount:        "",
+    remarks:       "",
+    attachments:   [],
+  });
 
-  // Sync with initialData for editing or supplementParent for supplementing
-  useEffect(() => {
-    if (initialData) {
-        setForm({
-            year:          String(initialData.year),
-            month:         String(initialData.month),
-            division_id:   String(initialData.division_id || ""),
-            department_id: String(initialData.department_id || ""), 
-            coa_id:        String(initialData.coa_id),
-            gl_code:       initialData.gl_code,
-            amount:        String(initialData.amount),
-            remarks:       initialData.remarks,
-            attachments:   [], // Don't try to sync File objects from URLs
-        });
-    } else if (supplementParent) {
-        setForm({
-            year:          String(supplementParent.year),
-            month:         String(supplementParent.month),
-            division_id:   String(supplementParent.division_id || ""),
-            department_id: String(supplementParent.department_id || ""), 
-            coa_id:        String(supplementParent.coa_id),
-            gl_code:       supplementParent.gl_code,
-            amount:        "", // Supplemental amount starts blank
-            remarks:       "",
-            attachments:   [],
-        });
-    } else {
-        setForm(DEFAULT_STATE);
-    }
-    setErrors({});
-  }, [initialData, supplementParent]);
+  const [existingAttachments, setExistingAttachments] = useState<BudgetAttachment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
   // Lookups
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [coas, setCoas] = useState<COA[]>([]);
+  const [usedCoaIds, setUsedCoaIds] = useState<Set<number>>(new Set());
   const [fetchingLookups, setFetchingLookups] = useState(false);
 
-  // Load initial divisions
+  // Sync with initialData
   useEffect(() => {
-    async function loadInitial() {
+    if (initialData) {
+      const monthIdx = MONTH_NAMES.indexOf(initialData.month) + 1;
+      setForm({
+        year:          String(initialData.year || ""),
+        month:         monthIdx > 0 ? String(monthIdx) : String(initialData.month || ""),
+        division_id:   String(initialData.division_id || ""),
+        department_id: String(initialData.department_id || ""),
+        coa_id:        String(initialData.coa_id || ""),
+        gl_code:       initialData.gl_code || "",
+        amount:        String(initialData.amount || ""),
+        remarks:       initialData.remarks || "",
+        attachments:   [],
+      });
+
+      // Fetch existing attachments
+      budgetService.getAttachments(initialData.id).then(setExistingAttachments).catch(console.error);
+
+    } else if (supplementParent) {
+      const monthIdx = MONTH_NAMES.indexOf(supplementParent.month) + 1;
+      setForm(prev => ({
+        ...prev,
+        year:          String(supplementParent.year),
+        month:         monthIdx > 0 ? String(monthIdx) : String(supplementParent.month),
+        division_id:   String(supplementParent.division_id),
+        department_id: String(supplementParent.department_id),
+        coa_id:        String(supplementParent.coa_id),
+        gl_code:       supplementParent.gl_code || "",
+        amount:        "",
+        remarks:       "",
+        attachments:   [],
+      }));
+    }
+  }, [initialData, supplementParent]);
+
+  // Lookup Loading
+  useEffect(() => {
+    async function loadDivisions() {
       try {
         setFetchingLookups(true);
         const divList = await budgetService.getDivisions();
         setDivisions(divList);
-      } catch (e) {
-        toast.error("Failed to load divisions");
       } finally {
         setFetchingLookups(false);
       }
     }
-    loadInitial();
+    loadDivisions();
   }, []);
 
-  // Load departments when division changes
   useEffect(() => {
-    if (!form.division_id) {
+    if (!form.division_id || isNaN(Number(form.division_id))) {
       setDepartments([]);
       return;
     }
     async function loadDepts() {
       try {
         setFetchingLookups(true);
-        const deptList = await budgetService.getDepartments(Number(form.division_id));
+        const divId = Number(form.division_id);
+        const deptList = await budgetService.getDepartments(divId);
         setDepartments(deptList);
-      } catch (e) {
-        toast.error("Failed to load departments");
       } finally {
         setFetchingLookups(false);
       }
@@ -127,114 +121,158 @@ export function useCreateBudgetForm(
     loadDepts();
   }, [form.division_id]);
 
-  // Load COAs when department changes
   useEffect(() => {
-    if (!form.department_id) {
+    if (!form.department_id || isNaN(Number(form.department_id))) {
       setCoas([]);
       return;
     }
     async function loadCoas() {
       try {
         setFetchingLookups(true);
-        // We'd ideally need the dept_div_id here based on the DDL logic.
-        // For now, we'll assume the service handles fetching COAs for the selected department.
-        const coaList = await budgetService.getCOAs(Number(form.department_id));
-        setCoas(coaList);
-      } catch (e) {
-        toast.error("Failed to load Chart of Accounts");
+        // Find the dept_div_id from departments lookup
+        const dept = departments.find(d => String(d.department_id) === form.department_id);
+        const deptDivId = dept?.dept_div_id;
+        
+        if (deptDivId) {
+            const coaList = await budgetService.getCOAs(deptDivId);
+            setCoas(coaList);
+        }
       } finally {
         setFetchingLookups(false);
       }
     }
     loadCoas();
-  }, [form.department_id]);
+  }, [form.department_id, departments]);
 
-  const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm(f => ({ ...f, [key]: value }));
-    setErrors(e => ({ ...e, [key]: undefined }));
-
-    // Cascading resets
-    if (key === "division_id") {
-      setForm(f => ({ ...f, division_id: value as string, department_id: "", coa_id: "", gl_code: "" }));
-    } else if (key === "department_id") {
-      setForm(f => ({ ...f, department_id: value as string, coa_id: "", gl_code: "" }));
-    } else if (key === "coa_id") {
-        // Auto-fill GL Code if found
-        const selectedCOA = coas.find(c => String((c as any).dept_div_coa_id || c.coa_id || (c as any).id) === value);
-        if (selectedCOA) {
-            setForm(f => ({ ...f, coa_id: value as string, gl_code: selectedCOA.coa_code || (selectedCOA as any).code || (selectedCOA as any).coaCode || "" }));
-        }
+  // Auto-fill GL Code
+  useEffect(() => {
+    const coa = coas.find(c => String(c.coa_id) === form.coa_id);
+    if (coa) {
+      setForm(prev => ({ ...prev, gl_code: coa.gl_code || "" }));
     }
+  }, [form.coa_id, coas]);
+
+  // Fetch used COA IDs for the selected Year + Month + Division + Department
+  useEffect(() => {
+    if (!form.year || !form.month || !form.division_id || !form.department_id || initialData) {
+      setUsedCoaIds(new Set());
+      return;
+    }
+    async function loadUsedCoas() {
+      const monthName = MONTH_NAMES[Number(form.month) - 1];
+      if (!monthName) return;
+      const ids = await budgetService.getUsedCoaIds(
+        Number(form.year), 
+        monthName,
+        Number(form.division_id),
+        Number(form.department_id)
+      );
+      setUsedCoaIds(new Set(ids));
+    }
+    loadUsedCoas();
+  }, [form.year, form.month, form.division_id, form.department_id, initialData]);
+
+  const setField = <K extends keyof FormState>(field: K, value: FormState[K]) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: "" }));
   };
 
   const addFiles = (files: FileList | null) => {
     if (!files) return;
-    const arr = Array.from(files);
-    setForm(f => ({ ...f, attachments: [...f.attachments, ...arr] }));
+    const newFiles = Array.from(files);
+    setForm(prev => ({
+      ...prev,
+      attachments: [...prev.attachments, ...newFiles],
+    }));
   };
 
   const removeFile = (index: number) => {
-    setForm(f => ({ ...f, attachments: f.attachments.filter((_, i) => i !== index) }));
+    setForm(prev => ({
+      ...prev,
+      attachments: prev.attachments.filter((_, i) => i !== index),
+    }));
   };
 
-  const validate = (): boolean => {
-    const errs: FormErrors = {};
-    if (!form.year)          errs.year          = "Year is required.";
-    if (!form.month)         errs.month         = "Month is required.";
-    if (!form.division_id)   errs.division_id   = "Division is required.";
-    if (!form.department_id) errs.department_id = "Department is required.";
-    if (!form.coa_id)        errs.coa_id        = "COA is required.";
-    if (!form.gl_code.trim()) errs.gl_code      = "GL Code is required.";
-    if (!form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0) {
-        errs.amount = "A valid positive amount is required.";
+  const removeExistingAttachment = async (id: string | number) => {
+    try {
+      await budgetService.deleteAttachment(id);
+      setExistingAttachments(prev => prev.filter(a => String(a.id) !== String(id)));
+      toast.success("Attachment removed.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to remove attachment";
+      toast.error(msg);
+    }
+  };
+
+  const validate = async () => {
+    const newErrors: Partial<Record<keyof FormState, string>> = {};
+    if (!form.year) newErrors.year = "Year is required";
+    if (!form.month) newErrors.month = "Month is required";
+    if (!form.division_id) newErrors.division_id = "Division is required";
+    if (!form.department_id) newErrors.department_id = "Department is required";
+    if (!form.coa_id) newErrors.coa_id = "COA is required";
+    if (!form.amount || Number(form.amount) <= 0) newErrors.amount = "Amount must be greater than 0";
+
+    if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors);
+        return false;
     }
 
-    if (!errs.coa_id && checkDuplicate?.(Number(form.year), Number(form.month), Number(form.coa_id))) {
-        errs.coa_id = "A budget for this Year, Month, and Account already exists.";
-        toast.warning("Duplicate entry detected.");
+    // Only check duplicate for Original budgets
+    if (!initialData && !supplementParent) {
+        const isDup = await checkDuplicate(
+            Number(form.year), 
+            Number(form.month), 
+            Number(form.coa_id),
+            Number(form.division_id),
+            Number(form.department_id)
+        );
+        if (isDup) {
+            setErrors({ coa_id: "This account is already budgeted for this period and department." });
+            return false;
+        }
     }
 
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
+    return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (loading) return;
+
+    if (!(await validate())) return;
+
     setLoading(true);
     try {
         const payload: CreateBudgetPayload = {
-            parent_budget_id: supplementParent ? supplementParent.id : initialData?.parent_budget_id,
-            entry_type:    supplementParent ? 'supplemental' : (initialData?.entry_type || 'original'),
-            year:          Number(form.year),
-            month:         Number(form.month),
-            division_id:   Number(form.division_id),
-            department_id: Number(form.department_id),
-            dept_div_coa_id: Number(form.coa_id), 
-            gl_code:       form.gl_code,
-            amount:        Number(form.amount),
-            remarks:       form.remarks,
-            attachments:   form.attachments,
+            parent_budget_id: supplementParent?.id ? Number(supplementParent.id) : initialData?.parent_budget_id ? Number(initialData.parent_budget_id) : null,
+            entry_type:       supplementParent ? 'supplemental' : (initialData?.entry_type || 'original'),
+            year:             Number(form.year),
+            month:            Number(form.month),
+            division_id:      Number(form.division_id),
+            department_id:    Number(form.department_id),
+            coa_id:           Number(form.coa_id),
+            amount:           Number(form.amount),
+            remarks:          form.remarks,
+            attachments:      form.attachments,
         };
-        // await budgetService.createBudget(payload); // Real API call
-        onSuccess(payload);
-        reset();
-    } catch (e: any) {
-        toast.error(e.message || "Failed to create budget");
+        const divName = divisions.find(d => String(d.division_id) === form.division_id)?.division_name;
+        const deptName = departments.find(d => String(d.department_id) === form.department_id)?.department_name;
+        const coaName = coas.find(c => String(c.coa_id) === form.coa_id)?.account_title;
+
+        await onSuccess(payload, {
+            division_name: divName || undefined,
+            department_name: deptName || undefined,
+            coa_name: coaName || undefined,
+        });
     } finally {
         setLoading(false);
     }
   };
 
-  const reset = () => {
-    setForm(DEFAULT_STATE);
-    setErrors({});
-  };
-
   return {
-    form, errors, loading,
-    divisions, departments, coas, fetchingLookups,
-    setField, addFiles, removeFile,
-    handleSubmit, reset,
+    form, existingAttachments, errors, loading,
+    divisions, departments, coas, usedCoaIds, fetchingLookups,
+    setField, addFiles, removeFile, removeExistingAttachment, handleSubmit,
   };
 }

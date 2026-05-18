@@ -15,6 +15,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { 
+  Popover, 
+  PopoverContent, 
+  PopoverTrigger 
+} from "@/components/ui/popover";
 import {
   ChevronRight,
   Loader2,
@@ -25,7 +30,14 @@ import {
   ChevronDown,
   Building2,
   Layers,
+  Paperclip,
+  Image as ImageIcon,
+  FileSpreadsheet,
+  FileText,
+  ExternalLink,
+  Download,
 } from "lucide-react";
+
 import { useCreateBudgetContext } from "../providers/CreateBudgetProvider";
 import { getMonthName, getBudgetStatusColor } from "../utils";
 import type { Budget } from "../types";
@@ -34,6 +46,19 @@ const fmt = (n: number) =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(n);
 
 // ─── Data Transformation ───────────────────────────────────────────────────────
+
+interface AttachmentFile {
+  id?: string | number;
+  directus_id?: string;
+  type?: string;
+  name?: string;
+  size?: number;
+  url?: string;
+}
+
+interface WithAttachments {
+  attachments?: AttachmentFile[];
+}
 
 interface BudgetNode extends Budget {
   supplements: Budget[];
@@ -51,29 +76,32 @@ interface DivisionGroup {
   total: number;
 }
 
-function groupBudgets(items: Budget[], allItems: Budget[]): DivisionGroup[] {
+function groupBudgets(items: Budget[] = [], allItems: Budget[] = []): DivisionGroup[] {
   // Helper to calculate grand total within this grouping function
   const calcGrandTotal = (budgetId: string, amount: number) => {
-    const approvedSupplements = allItems.filter(
-      b => b.parent_budget_id === budgetId && 
+    // If we don't have the full list, we just return the amount for now
+    // or we filter from the current items
+    const approvedSupplements = (allItems || []).filter(
+      b => String(b.parent_budget_id) === String(budgetId) && 
            b.entry_type === "supplemental" && 
            b.status === "Approved"
     );
-    return amount + approvedSupplements.reduce((sum, s) => sum + s.amount, 0);
+    return Number(amount || 0) + approvedSupplements.reduce((sum, s) => sum + Number(s.amount || 0), 0);
   };
 
   // Separate parents from supplements
-  const parents = items.filter(b => b.entry_type !== "supplemental");
-  const supplements = items.filter(b => b.entry_type === "supplemental");
+  const parents = (items || []).filter(b => b && b.entry_type !== "supplemental");
+  const supplements = (items || []).filter(b => b && b.entry_type === "supplemental");
+
 
   // Attach supplements to their parents IF the parent is in the list
   const nodes: BudgetNode[] = parents.map(p => ({
     ...p,
-    supplements: supplements.filter(s => s.parent_budget_id === p.id),
+    supplements: supplements.filter(s => String(s.parent_budget_id) === String(p.id)),
   }));
 
   // Find supplements whose parents ARE NOT in the current list (e.g. Draft supplement of an Approved parent)
-  const orphanedSupplements = supplements.filter(s => !parents.some(p => p.id === s.parent_budget_id));
+  const orphanedSupplements = supplements.filter(s => !parents.some(p => String(p.id) === String(s.parent_budget_id)));
   
   // Add orphans as standalone nodes (they will be rendered like parents but with supplement style)
   const allNodes: BudgetNode[] = [
@@ -97,7 +125,7 @@ function groupBudgets(items: Budget[], allItems: Budget[]): DivisionGroup[] {
     const departments: DepartmentGroup[] = Array.from(deptMap.entries()).map(
       ([department_name, budgets]) => {
         // Subtotal now includes the Grand Totals (Original + Approved Supplements)
-        const subtotal = budgets.reduce((sum, b) => sum + calcGrandTotal(b.id, b.amount || 0), 0);
+        const subtotal = budgets.reduce((sum, b) => sum + calcGrandTotal(String(b.id), Number(b.amount || 0)), 0);
         return { department_name, budgets, subtotal };
       }
     );
@@ -109,6 +137,7 @@ function groupBudgets(items: Budget[], allItems: Budget[]): DivisionGroup[] {
 // ─── Row Components ────────────────────────────────────────────────────────────
 
 function SupplementRow({ supplement, showCheckbox }: { supplement: Budget; showCheckbox: boolean }) {
+  const suppAtts = ((supplement as unknown as WithAttachments).attachments || []);
   return (
     <tr className="bg-blue-50/60 dark:bg-blue-950/20 border-b border-blue-100 dark:border-blue-900/30">
       {/* Checkbox placeholder */}
@@ -123,13 +152,96 @@ function SupplementRow({ supplement, showCheckbox }: { supplement: Budget; showC
         <div className="flex items-center gap-2">
           <div className="w-0.5 h-5 rounded-full bg-blue-300 dark:bg-blue-600 shrink-0" />
           <div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center flex-wrap gap-1.5">
               <p className="text-xs font-medium text-blue-700 dark:text-blue-400">
                 {supplement.coa_name}
               </p>
               <Badge className="h-4 px-1.5 text-[9px] font-black tracking-tight text-blue-600 bg-blue-100 border-none uppercase">
                 SUPPLEMENTAL
               </Badge>
+              {suppAtts.length > 0 && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 px-1.5 py-0 bg-blue-100/50 hover:bg-blue-200/50 text-blue-700 dark:text-blue-400 rounded gap-1 active:scale-95 transition-all"
+                    >
+                      <Paperclip className="h-3 w-3" />
+                      <span className="text-[10px] font-bold tabular-nums leading-none">
+                        {suppAtts.length}
+                      </span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-80 p-3 rounded-2xl shadow-xl border-border/40 backdrop-blur-sm z-50">
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between border-b border-border/40 pb-2">
+                        <span className="text-xs font-black tracking-tight flex items-center gap-1.5 text-foreground">
+                          <Paperclip className="h-3.5 w-3.5 text-primary" />
+                          Supporting Documents
+                        </span>
+                        <Badge variant="secondary" className="text-[9px] font-bold px-1.5 py-0">
+                          {suppAtts.length} {suppAtts.length === 1 ? "File" : "Files"}
+                        </Badge>
+                      </div>
+                      <div className="max-h-[220px] overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+                        {suppAtts.map((file: AttachmentFile) => {
+                          const isImg = file.type?.includes("image");
+                          const isExcel = file.type?.includes("spreadsheet") || file.type?.includes("excel") || file.name?.endsWith(".xlsx") || file.name?.endsWith(".xls");
+                          const isPdf = file.type?.includes("pdf") || file.name?.endsWith(".pdf");
+                          
+                          return (
+                            <div 
+                              key={file.id || file.directus_id} 
+                              className="flex items-start gap-2.5 p-2 rounded-xl bg-muted/40 hover:bg-muted/80 border border-border/30 transition-colors group"
+                            >
+                              <div className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${
+                                isImg ? "bg-orange-50 text-orange-600 dark:bg-orange-950/30 dark:text-orange-400" :
+                                isExcel ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400" :
+                                isPdf ? "bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400" :
+                                "bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400"
+                              }`}>
+                                {isImg ? <ImageIcon className="h-3.5 w-3.5" /> :
+                                 isExcel ? <FileSpreadsheet className="h-3.5 w-3.5" /> :
+                                 <FileText className="h-3.5 w-3.5" />}
+                              </div>
+                              
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-bold text-foreground truncate leading-tight" title={file.name}>
+                                  {file.name}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                                  {file.size ? `${(file.size / 1024).toFixed(1)} KB` : "—"}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 self-center">
+                                <a 
+                                  href={file.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="p-1 text-muted-foreground hover:text-primary transition-colors rounded"
+                                  title="Open External Link"
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                </a>
+                                <a 
+                                  href={file.url} 
+                                  download={file.name}
+                                  className="p-1 text-muted-foreground hover:text-primary transition-colors rounded"
+                                  title="Download File"
+                                >
+                                  <Download className="h-3 w-3" />
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
             </div>
             <p className="text-[11px] font-mono text-blue-500/80">{supplement.gl_code}</p>
           </div>
@@ -177,11 +289,12 @@ function BudgetRow({
   hasInFlightSupplement: (id: string) => boolean;
   activeStatus: string;
 }) {
-  const [supplementsOpen, setSupplementsOpen] = useState(true);
+  const [supplementsOpen, setSupplementsOpen] = useState(false);
   const showCheckbox = activeStatus === "Draft" || activeStatus === "Rejected";
   const hasSubs = node.supplements.length > 0;
-  const grandTotal = getGrandTotal(node.id);
-  const inFlight = hasInFlightSupplement(node.id);
+  const grandTotal = getGrandTotal(String(node.id));
+  const inFlight = hasInFlightSupplement(String(node.id));
+  const nodeAtts = ((node as unknown as WithAttachments).attachments || []);
 
   return (
     <>
@@ -190,8 +303,8 @@ function BudgetRow({
         {showCheckbox && (
           <td className="py-3 pl-4 w-[50px]">
             <Checkbox
-              checked={selectedIds.has(node.id)}
-              onCheckedChange={() => toggleSelect(node.id)}
+              checked={selectedIds.has(String(node.id))}
+              onCheckedChange={() => toggleSelect(String(node.id))}
               aria-label={`Select budget ${node.id}`}
             />
           </td>
@@ -208,6 +321,7 @@ function BudgetRow({
               <button
                 onClick={() => setSupplementsOpen(o => !o)}
                 className="shrink-0 -ml-5 mr-1 z-10 bg-card text-muted-foreground hover:text-foreground transition-colors"
+                title={supplementsOpen ? "Hide Supplements" : "View Supplements"}
               >
                 <ChevronRight
                   className={`h-3.5 w-3.5 transition-transform duration-200 ${supplementsOpen ? "rotate-90" : ""}`}
@@ -215,26 +329,129 @@ function BudgetRow({
               </button>
             )}
             <div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center flex-wrap gap-1.5">
                 <p className="text-xs font-medium text-foreground">{node.coa_name}</p>
                 {node.entry_type === "supplemental" && (
                   <Badge variant="secondary" className="h-4 px-1.5 text-[9px] font-black tracking-tight text-blue-600 bg-blue-100 border-none uppercase">
                     SUPPLEMENTAL
                   </Badge>
                 )}
+                {hasSubs && (
+                  <Badge 
+                    variant="outline" 
+                    className="h-4 px-1.5 text-[9px] font-bold tracking-tight text-blue-600 border-blue-200 bg-blue-50/50 cursor-pointer hover:bg-blue-100/50 active:scale-95 transition-all"
+                    onClick={() => setSupplementsOpen(o => !o)}
+                    title="Click to toggle supporting nested records"
+                  >
+                    {node.supplements.length} {node.supplements.length === 1 ? "Supplement" : "Supplements"}
+                  </Badge>
+                )}
+                {nodeAtts.length > 0 && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-1.5 py-0 bg-secondary/40 hover:bg-secondary/80 text-muted-foreground hover:text-foreground rounded gap-1 active:scale-95 transition-all"
+                      >
+                        <Paperclip className="h-3 w-3" />
+                        <span className="text-[10px] font-bold tabular-nums leading-none">
+                          {nodeAtts.length}
+                        </span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-80 p-3 rounded-2xl shadow-xl border-border/40 backdrop-blur-sm z-50">
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between border-b border-border/40 pb-2">
+                          <span className="text-xs font-black tracking-tight flex items-center gap-1.5 text-foreground">
+                            <Paperclip className="h-3.5 w-3.5 text-primary" />
+                            Supporting Documents
+                          </span>
+                          <Badge variant="secondary" className="text-[9px] font-bold px-1.5 py-0">
+                            {nodeAtts.length} {nodeAtts.length === 1 ? "File" : "Files"}
+                          </Badge>
+                        </div>
+                        <div className="max-h-[220px] overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+                          {nodeAtts.map((file: AttachmentFile) => {
+                            const isImg = file.type?.includes("image");
+                            const isExcel = file.type?.includes("spreadsheet") || file.type?.includes("excel") || file.name?.endsWith(".xlsx") || file.name?.endsWith(".xls");
+                            const isPdf = file.type?.includes("pdf") || file.name?.endsWith(".pdf");
+                            
+                            return (
+                              <div 
+                                key={file.id || file.directus_id} 
+                                className="flex items-start gap-2.5 p-2 rounded-xl bg-muted/40 hover:bg-muted/80 border border-border/30 transition-colors group"
+                              >
+                                <div className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${
+                                  isImg ? "bg-orange-50 text-orange-600 dark:bg-orange-950/30 dark:text-orange-400" :
+                                  isExcel ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400" :
+                                  isPdf ? "bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400" :
+                                  "bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400"
+                                }`}>
+                                  {isImg ? <ImageIcon className="h-3.5 w-3.5" /> :
+                                   isExcel ? <FileSpreadsheet className="h-3.5 w-3.5" /> :
+                                   <FileText className="h-3.5 w-3.5" />}
+                                </div>
+                                
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-bold text-foreground truncate leading-tight" title={file.name}>
+                                    {file.name}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                                    {file.size ? `${(file.size / 1024).toFixed(1)} KB` : "—"}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 self-center">
+                                  <a 
+                                    href={file.url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="p-1 text-muted-foreground hover:text-primary transition-colors rounded"
+                                    title="Open External Link"
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                  <a 
+                                    href={file.url} 
+                                    download={file.name}
+                                    className="p-1 text-muted-foreground hover:text-primary transition-colors rounded"
+                                    title="Download File"
+                                  >
+                                    <Download className="h-3 w-3" />
+                                  </a>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
               </div>
-              <p className="text-[11px] font-mono text-primary/80">{node.gl_code}</p>
+
+              <p className="text-[11px] font-mono text-primary/80">
+                {node.gl_code} • <span className="opacity-60">{node.budget_no}</span>
+              </p>
             </div>
           </div>
         </td>
 
         {/* Proposed Amount + Grand Total */}
         <td className="py-3">
-          <p className="text-xs font-bold text-foreground">{fmt(node.amount || 0)}</p>
-          {node.status === "Approved" && hasSubs && grandTotal > node.amount && (
-            <p className="text-[10px] font-bold text-emerald-600 mt-0.5">
-              Total: {fmt(grandTotal)}
-            </p>
+          {node.status === "Approved" && hasSubs && grandTotal > node.amount ? (
+            <div>
+              <p className="text-xs font-black text-foreground">{fmt(grandTotal)}</p>
+              <div className="flex flex-col gap-0.5 mt-1">
+                <span className="text-[9px] font-mono text-muted-foreground">Base: {fmt(node.amount || 0)}</span>
+                <span className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold">
+                  ⁺ {fmt(grandTotal - Number(node.amount || 0))} (Supplements)
+                </span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs font-bold text-foreground">{fmt(node.amount || 0)}</p>
           )}
         </td>
 
@@ -288,7 +505,7 @@ function BudgetRow({
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
-                        onClick={() => submitForApproval(node.id)}
+                        onClick={() => submitForApproval(String(node.id))}
                         className="bg-primary hover:bg-primary/90"
                       >
                         Submit
@@ -317,7 +534,7 @@ function BudgetRow({
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
-                        onClick={() => deleteBudget(node.id)}
+                        onClick={() => deleteBudget(String(node.id))}
                         className="bg-destructive hover:bg-destructive/90"
                       >
                         Delete
@@ -327,7 +544,7 @@ function BudgetRow({
                 </AlertDialog>
               </>
             )}
-            {node.status === "Approved" && (
+            {node.status === "Approved" && node.entry_type !== "supplemental" && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -371,13 +588,14 @@ export function CreateBudgetGroupedTable() {
     submitForApproval,
     openEditModal,
     openSupplementModal,
+    openModal,
     deleteBudget,
     getGrandTotal,
     hasInFlightSupplement,
     total,
     filters,
-    allBudgets,
   } = useCreateBudgetContext();
+
 
   const activeStatus = filters.status;
   const showCheckbox = activeStatus === "Draft" || activeStatus === "Rejected";
@@ -399,24 +617,33 @@ export function CreateBudgetGroupedTable() {
     [loading, initialLoading, hasMore, loadMore]
   );
 
-  const grouped = useMemo(() => groupBudgets(displayedItems, allBudgets), [displayedItems, allBudgets]);
+  const grouped = useMemo(() => groupBudgets(displayedItems, displayedItems), [displayedItems]);
+
 
   const toggleDiv = (key: string) =>
     setCollapsedDivisions(prev => {
       const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
       return next;
     });
 
   const toggleDept = (key: string) =>
     setCollapsedDepts(prev => {
       const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
       return next;
     });
 
   // All selectable (non-supplement) ids
-  const allIds = displayedItems.filter(b => b.entry_type !== "supplemental").map(b => b.id);
+  const allIds = displayedItems.filter(b => b.entry_type !== "supplemental").map(b => String(b.id));
   const allSelected = allIds.length > 0 && allIds.every(id => selectedIds.has(id));
 
   if (initialLoading) {
@@ -448,17 +675,38 @@ export function CreateBudgetGroupedTable() {
                   />
                 </th>
               )}
-              <th className="py-3 pl-6 text-left text-xs font-bold" colSpan={showCheckbox ? 2 : 3}>COA / GL Code</th>
+              <th className="py-3 pl-24 text-left text-xs font-bold" colSpan={showCheckbox ? 2 : 3}>COA / GL Code</th>
               <th className="py-3 text-left text-xs font-bold">Proposed Amount</th>
               <th className="py-3 text-left text-xs font-bold w-[120px]">Status</th>
-              <th className="py-3 pr-4 text-right text-xs font-bold w-[220px]">Action</th>
+              <th className="py-3 pr-4 text-right text-xs font-bold w-[220px]">
+                {activeStatus !== "Pending" ? "Action" : ""}
+              </th>
             </tr>
           </thead>
           <tbody>
             {grouped.length === 0 ? (
               <tr>
-                <td colSpan={6} className="h-32 text-center text-sm text-muted-foreground">
-                  No budgets found for this month.
+                <td colSpan={6} className="py-24">
+                  <div className="flex flex-col items-center justify-center w-full min-h-[300px] gap-4 animate-in fade-in zoom-in duration-500">
+                    <div className="p-8 rounded-full bg-muted/20 border border-border/40 shadow-inner">
+                        <Layers className="h-14 w-14 text-muted-foreground/30" />
+                    </div>
+                    <div className="max-w-[320px] text-center space-y-2">
+                        <p className="text-xl font-black tracking-tighter uppercase text-foreground/90">No Budgets Found</p>
+                        <p className="text-xs text-muted-foreground font-medium leading-relaxed">
+                            It looks like there are no budget entries for <span className="text-primary font-bold">{getMonthName(Number(filters.month))} {filters.year}</span> that match your search.
+                        </p>
+                    </div>
+                    <Button 
+                        variant="outline"
+                        size="sm" 
+                        onClick={openModal}
+                        className="mt-4 rounded-xl h-10 px-8 font-black border-2 border-emerald-600/20 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-600/40 transition-all shadow-sm active:scale-95"
+                    >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create First Budget
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -468,13 +716,12 @@ export function CreateBudgetGroupedTable() {
 
                 return (
                   <React.Fragment key={divKey}>
-                    {/* ── Division Header — Level 1: 16px ── */}
+                    {/* ── Division Header — Level 1 ── */}
                     <tr
-                      className="bg-primary/8 border-b border-primary/15 cursor-pointer select-none"
+                      className="bg-gradient-to-r from-primary/10 to-transparent border-b border-primary/15 border-l-4 border-l-primary cursor-pointer select-none hover:from-primary/15 transition-colors"
                       onClick={() => toggleDiv(divKey)}
                     >
-                      {/* Division always spans 6 columns */}
-                      <td className="py-2.5 pl-4" colSpan={6}>
+                      <td className="py-2.5 pl-4" colSpan={3}>
                         <div className="flex items-center gap-2">
                           <ChevronDown
                             className={`h-4 w-4 text-primary transition-transform duration-200 ${isDivCollapsed ? "-rotate-90" : ""}`}
@@ -483,11 +730,14 @@ export function CreateBudgetGroupedTable() {
                           <span className="text-xs font-black tracking-tight uppercase text-primary">
                             {division.division_name}
                           </span>
-                          <span className="ml-auto pr-4 text-xs font-bold text-primary/70">
-                            {fmt(division.total)}
-                          </span>
                         </div>
                       </td>
+                      <td className="py-2.5">
+                        <span className="text-xs font-black text-primary">
+                          {fmt(division.total)}
+                        </span>
+                      </td>
+                      <td className="py-2.5" colSpan={2} />
                     </tr>
 
                     {!isDivCollapsed && division.departments.map(dept => {
@@ -496,13 +746,12 @@ export function CreateBudgetGroupedTable() {
 
                       return (
                         <React.Fragment key={deptKey}>
-                          {/* ── Department Header — Level 2: 40px ── */}
+                          {/* ── Department Header — Level 2 ── */}
                           <tr
-                            className="bg-muted/40 border-b border-border/40 cursor-pointer select-none"
+                            className="bg-gradient-to-r from-muted/50 to-transparent border-b border-border/40 border-l-4 border-l-muted-foreground/30 cursor-pointer select-none hover:from-muted/70 transition-colors"
                             onClick={() => toggleDept(deptKey)}
                           >
-                            {/* Department always spans 6 columns */}
-                            <td className="py-2 pl-10" colSpan={6}>
+                            <td className="py-2 pl-10" colSpan={3}>
                               <div className="flex items-center gap-2">
                                 <ChevronRight
                                   className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${isDeptCollapsed ? "" : "rotate-90"}`}
@@ -511,11 +760,14 @@ export function CreateBudgetGroupedTable() {
                                 <span className="text-xs font-semibold text-foreground/80">
                                   {dept.department_name}
                                 </span>
-                                <span className="ml-auto pr-4 text-xs font-semibold text-muted-foreground">
-                                  Subtotal: {fmt(dept.subtotal)}
-                                </span>
                               </div>
                             </td>
+                            <td className="py-2">
+                              <span className="text-xs font-bold text-muted-foreground">
+                                {fmt(dept.subtotal)}
+                              </span>
+                            </td>
+                            <td className="py-2" colSpan={2} />
                           </tr>
 
                           {/* ── Budget Rows ── */}

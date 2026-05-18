@@ -2,7 +2,6 @@
 
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { 
   AlertTriangle, 
   Clock, 
@@ -10,7 +9,6 @@ import {
   AlertCircle,
   FileSearch
 } from "lucide-react";
-import { OVER_UTILIZED_DEPTS, PENDING_SUMMARY } from "../constants";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
@@ -23,7 +21,12 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-export function CriticalAlerts() {
+interface CriticalAlertsProps {
+  utilization: { name: string; spent: number; total: number; utilization: number }[];
+  pending: { total: number; highPriority: number; value: number };
+}
+
+export function CriticalAlerts({ utilization = [], pending }: CriticalAlertsProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Top Over-Utilized Departments */}
@@ -40,7 +43,7 @@ export function CriticalAlerts() {
           </span>
         </CardHeader>
         <CardContent className="space-y-5 pt-2">
-          {OVER_UTILIZED_DEPTS.map((dept, index) => (
+          {utilization.map((dept, index) => (
             <div key={index} className="space-y-1.5">
                <div className="flex justify-between items-end">
                   <div>
@@ -85,7 +88,7 @@ export function CriticalAlerts() {
            <div className="space-y-6">
               <div className="space-y-1">
                  <h2 className="text-6xl font-black tracking-tighter leading-none">
-                    {PENDING_SUMMARY.total}
+                    {pending.total}
                  </h2>
                  <p className="text-xs font-bold text-primary-foreground/70 uppercase tracking-widest">
                     Budgets awaiting action
@@ -98,14 +101,14 @@ export function CriticalAlerts() {
                        <AlertCircle className="h-3.5 w-3.5 text-red-300" />
                        High Priority
                     </span>
-                    <span className="font-black text-red-200">{PENDING_SUMMARY.highPriority}</span>
+                    <span className="font-black text-red-200">{pending.highPriority}</span>
                  </div>
                  <div className="flex items-center justify-between text-xs font-bold">
                     <span className="flex items-center gap-2 text-primary-foreground/80">
                        <FileSearch className="h-3.5 w-3.5" />
                        Total Value
                     </span>
-                    <span className="font-black">{formatCurrency(PENDING_SUMMARY.value)}</span>
+                    <span className="font-black">{formatCurrency(pending.value)}</span>
                  </div>
               </div>
            </div>

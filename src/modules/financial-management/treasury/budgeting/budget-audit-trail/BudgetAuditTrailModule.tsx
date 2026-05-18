@@ -3,8 +3,7 @@
 import { useBudgetAuditTrail } from "./hooks/useBudgetAuditTrail";
 import { AuditTrailTable } from "./components/AuditTrailTable";
 import { AuditTrailFilters } from "./components/AuditTrailFilters";
-import { History, Download, RefreshCcw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { History } from "lucide-react";
 
 export default function BudgetAuditTrailModule() {
   const { 
@@ -35,13 +34,7 @@ export default function BudgetAuditTrailModule() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="h-9 px-4 text-xs font-bold gap-2 rounded-xl border-border/50 hover:bg-primary/5 active:scale-95 transition-transform">
-            <Download className="h-3.5 w-3.5" />
-            Export Logs
-          </Button>
-          <Button variant="outline" size="sm" className="h-9 w-9 p-0 rounded-xl border-border/50 active:scale-95 transition-transform">
-            <RefreshCcw className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
+          {/* Action buttons removed as per user request to keep it data-centric */}
         </div>
       </div>
 
@@ -56,7 +49,7 @@ export default function BudgetAuditTrailModule() {
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between px-2">
           <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">
-            History Timeline ({total} entries)
+            {loading ? "Loading History..." : `History Timeline (${total} entries)`}
           </span>
         </div>
         

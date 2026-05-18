@@ -3,17 +3,33 @@
 import React from "react";
 import { BUDGET_REPORTS } from "./constants";
 import { ReportCard } from "./components/ReportCard";
-import { FileChartColumn, Search, RefreshCcw } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { FileChartColumn } from "lucide-react";
+import { useBudgetReports, MONTH_NAMES } from "./hooks/useBudgetReports";
+import { ReportPreviewModal } from "./components/ReportPreviewModal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function BudgetReportsModule() {
-  const [search, setSearch] = React.useState("");
+  const {
+    filters,
+    updateFilter,
+    divisions,
+    templates,
+    loading,
+    pdfUrl,
+    activeReportId,
+    previewReport,
+    downloadReport,
+    exportToExcel,
+    closePreview
+  } = useBudgetReports();
 
-  const filteredReports = BUDGET_REPORTS.filter(r => 
-    r.title.toLowerCase().includes(search.toLowerCase()) ||
-    r.description.toLowerCase().includes(search.toLowerCase())
-  );
+  const activeReport = BUDGET_REPORTS.find(r => r.id === activeReportId);
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6 min-h-0 min-w-0 flex-1">
@@ -33,42 +49,66 @@ export default function BudgetReportsModule() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="relative w-full md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input 
-              placeholder="Search reports..." 
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9 rounded-xl bg-card border-border/50 text-xs font-medium"
-            />
-          </div>
-          <Button variant="outline" size="sm" title="Refresh" className="h-9 w-9 p-0 rounded-xl border-border/50 active:scale-95 transition-transform">
-            <RefreshCcw className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
+        <div className="flex items-center gap-2 bg-muted/30 p-1.5 rounded-2xl border border-border/40 shrink-0">
+          <Select 
+            value={filters.division_id || "all"} 
+            onValueChange={(val) => updateFilter("division_id", val === "all" ? "" : val)}
+          >
+            <SelectTrigger className="h-9 w-40 rounded-xl text-[10px] font-black uppercase tracking-widest border-none bg-transparent hover:bg-white transition-colors">
+              <SelectValue placeholder="Division" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="all" className="text-[10px] font-bold uppercase">All Divisions</SelectItem>
+              {divisions.map(d => (
+                <SelectItem key={d.id} value={d.id} className="text-[10px] font-bold uppercase">
+                  {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="h-4 w-px bg-border/60" />
+          <Select 
+            value={filters.month} 
+            onValueChange={(val) => updateFilter("month", val)}
+          >
+            <SelectTrigger className="h-9 w-32 rounded-xl text-[10px] font-black uppercase tracking-widest border-none bg-transparent hover:bg-white transition-colors">
+              <SelectValue placeholder="Month" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              {MONTH_NAMES.map((name, i) => (
+                <SelectItem key={name} value={String(i + 1)} className="text-[10px] font-bold uppercase">
+                  {name} {filters.year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
       {/* Reports Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredReports.map((report) => (
-          <ReportCard key={report.id} report={report} />
+        {BUDGET_REPORTS.map((report) => (
+          <ReportCard 
+            key={report.id} 
+            report={report} 
+            templates={templates}
+            onPreview={previewReport}
+            onDownload={downloadReport}
+            onExcel={exportToExcel}
+          />
         ))}
       </div>
 
-      {filteredReports.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 bg-muted/20 rounded-3xl border border-dashed border-border/60">
-          <FileChartColumn className="h-10 w-10 text-muted-foreground/30 mb-3" />
-          <p className="text-sm font-bold text-muted-foreground">No reports found matching your search.</p>
-          <Button 
-            variant="link" 
-            onClick={() => setSearch("")}
-            className="text-primary font-black uppercase text-[10px] tracking-widest mt-1"
-          >
-            Clear Search
-          </Button>
-        </div>
-      )}
+      {/* Report Preview Modal */}
+      <ReportPreviewModal 
+        isOpen={!!activeReportId}
+        onClose={closePreview}
+        title={activeReport?.title || ""}
+        pdfUrl={pdfUrl}
+        loading={loading}
+      />
     </div>
   );
 }
+
+

@@ -16,22 +16,28 @@ export const YEAR_OPTIONS: { value: string; label: string }[] = Array.from(
   }
 );
 
-export function getMonthName(month: number): string {
-  return MONTH_NAMES[month - 1] ?? "—";
-}
-
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-export function getBudgetStatusColor(status: string): string {
-  switch (status) {
-    case "Draft":    return "bg-muted text-muted-foreground border-border";
-    case "Pending":  return "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400";
-    case "Approved": return "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400";
-    case "Rejected": return "bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400";
-    default:         return "bg-muted text-muted-foreground border-border";
+/**
+ * Maps BudgetStatus to tailwind colors for consistent UI across the module.
+ */
+export const getBudgetStatusColor = (status: string | null | undefined) => {
+  if (!status) return "bg-slate-500/10 text-slate-500 border-slate-200";
+  const s = status.toLowerCase();
+  switch (s) {
+    case "draft":     return "bg-slate-100 text-slate-600 border-slate-200";
+    case "pending":   return "bg-amber-50 text-amber-600 border-amber-200";
+    case "approved":  return "bg-emerald-50 text-emerald-600 border-emerald-200";
+    case "rejected":  return "bg-rose-50 text-rose-600 border-rose-200";
+    case "deleted":   return "bg-gray-100 text-gray-500 border-gray-200";
+    default:          return "bg-slate-100 text-slate-600 border-slate-200";
   }
-}
+};
+
+/**
+ * Formats a number as Philippine Peso.
+ */
+export const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+  }).format(amount);
+};

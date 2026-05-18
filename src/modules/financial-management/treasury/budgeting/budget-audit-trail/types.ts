@@ -1,43 +1,20 @@
-import { BudgetStatus } from "../budget-creation/types";
+import { z } from "zod";
+import * as schemas from "./schemas";
 
-export type AuditAction = 
-  | "Created" 
-  | "Submitted" 
-  | "Approved" 
-  | "Rejected" 
-  | "Resubmitted" 
-  | "Supplement Requested" 
-  | "Deleted";
+/**
+ * Shared types for the Budget Audit Trail module.
+ * All core data types are inferred from Zod schemas to ensure single-source-of-truth.
+ */
 
-export interface BudgetAuditTrail {
-  id: string;
-  budget_id: string;
-  action: AuditAction;
-  performed_by: {
-    id: string;
-    name: string;
-    role: string;
-    avatar?: string;
-  };
-  performed_at: string;
-  previous_status?: BudgetStatus;
-  new_status: BudgetStatus;
-  previous_amount?: number;
-  new_amount: number;
-  remarks?: string;
-  
-  // Contextual data for display
-  coa_name: string;
-  gl_code: string;
-  department_name: string;
-  division_name: string;
-  month: number;
-  year: number;
-}
+export type BudgetStatus = z.infer<typeof schemas.BudgetStatusSchema>;
+export type AuditAction = z.infer<typeof schemas.AuditActionSchema>;
+export type BudgetAuditTrail = z.infer<typeof schemas.BudgetAuditTrailSchema>;
+export type Division = z.infer<typeof schemas.DivisionSchema>;
+export type Department = z.infer<typeof schemas.DepartmentSchema>;
 
 export interface AuditTrailFilters {
   search: string;
-  action: AuditAction | "";
+  status: BudgetStatus | "";
   user_id: string;
   date_from: string;
   date_to: string;

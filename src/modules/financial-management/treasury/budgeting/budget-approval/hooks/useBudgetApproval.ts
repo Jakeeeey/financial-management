@@ -1,194 +1,170 @@
 "use client";
 
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import type { Budget, BudgetApprovalFilters } from "../types";
+import type { Budget, BudgetApprovalFilters, BudgetStatus, AuditAction } from "../types";
+import { budgetApprovalService } from "../services/budgetService";
 
 const PAGE_SIZE = 20;
 
 const DEFAULT_FILTERS: BudgetApprovalFilters = {
-  search:        "",
-  year:          String(new Date().getFullYear()),
-  month:         String(new Date().getMonth() + 1), // Default to current month
-  division_id:   "",
-  department_id: "",
-  status:        "Pending", // Default to pending
+  search: "",
+  year: String(new Date().getFullYear()),
+  month: String(new Date().getMonth() + 1),
+  division_id: "all",
+  department_id: "all",
+  status: "Pending",
 };
 
-// Simulate async fetch for the list
-function simulateFetch(budgets: Budget[], page: number): Promise<Budget[]> {
-  return new Promise(resolve =>
-    setTimeout(() => {
-      const start = (page - 1) * PAGE_SIZE;
-      resolve(budgets.slice(start, start + PAGE_SIZE));
-    }, 600)
-  );
-}
-
-const STORAGE_KEY = "fm_budget_entries";
-
 export function useBudgetApproval() {
-  const allBudgetsRef                    = useRef<Budget[]>([]);
-  const [displayedItems, setDisplayed]   = useState<Budget[]>([]);
-  const [filters, setFilters]            = useState<BudgetApprovalFilters>(DEFAULT_FILTERS);
-  const [page, setPage]                  = useState(1);
-  const [loading, setLoading]            = useState(false);
-  const [initialLoading, setInitial]     = useState(false);
-  const [hasMore, setHasMore]            = useState(false);
-  const [selectedIds, setSelectedIds]    = useState<Set<string>>(new Set());
+  const [displayedItems, setDisplayed] = useState<Budget[]>([]);
+  const [filters, setFilters] = useState<BudgetApprovalFilters>(DEFAULT_FILTERS);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Persistence helpers
-  const saveToLocal = (data: Budget[]) => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  };
+  // ---------- Data fetching ----------
+  const fetchPage = useCallback(async (pg: number) => {
+    const offset = (pg - 1) * PAGE_SIZE;
+    const params: Record<string, unknown> = {
+      limit: PAGE_SIZE,
+      offset,
+      "filter[status][_eq]": filters.status,
+    };
 
-  const loadFromLocal = (): Budget[] => {
-    if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
-  };
-
-  // Initial load from LocalStorage
-  useEffect(() => {
-    const data = loadFromLocal();
-    allBudgetsRef.current = data;
-    const initialFiltered = data.filter(b => b.status === DEFAULT_FILTERS.status);
-    reload(initialFiltered);
-  }, []);
-
-  // Apply filters in memory
-  const filteredBudgets = useMemo(() => {
-    const term    = filters.search.trim().toLowerCase();
-    const year    = filters.year    ? Number(filters.year)    : null;
-    const month   = filters.month   ? Number(filters.month)   : null;
-    const divId   = filters.division_id ? Number(filters.division_id) : null;
-    const deptId  = filters.department_id ? Number(filters.department_id) : null;
-    const status  = filters.status;
-
-    return allBudgetsRef.current.filter(b => {
-      if (b.status !== status) return false; // Filter by status tab
-      if (year   && b.year          !== year)   return false;
-      if (month  && b.month         !== month)  return false;
-      if (divId  && b.division_id   !== divId)  return false;
-      if (deptId && b.department_id !== deptId) return false;
-      if (term && ![b.division_name, b.department_name, b.coa_name, b.gl_code, b.remarks]
-        .join(" ").toLowerCase().includes(term)) return false;
-      return true;
-    });
-  }, [filters, allBudgetsRef.current]);
-
-  // Initial load / re-load on filter change
-  const reload = useCallback(async (newFiltered: Budget[]) => {
-    setInitial(true);
-    setPage(1);
-    setDisplayed([]);
-    setHasMore(true);
-    try {
-      const items = await simulateFetch(newFiltered, 1);
-      setDisplayed(items);
-      setPage(2);
-      setHasMore(items.length === PAGE_SIZE && newFiltered.length > PAGE_SIZE);
-    } finally {
-      setInitial(false);
+    if (filters.year && filters.year !== "all") params["filter[year][_eq]"] = filters.year;
+    
+    if (filters.month && filters.month !== "all") {
+      const monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+      ];
+      const monthIdx = Number(filters.month) - 1;
+      if (monthIdx >= 0 && monthIdx < 12) {
+        params["filter[month][_eq]"] = monthNames[monthIdx];
+      }
     }
-  }, []);
 
-  // Trigger reload when filters change
-  const filteredKey = JSON.stringify(filters);
-  const prevKey     = useRef(filteredKey);
-  if (prevKey.current !== filteredKey) {
-    prevKey.current = filteredKey;
-    reload(filteredBudgets);
-    setSelectedIds(new Set()); // clear selection when changing tabs
-  }
+    if (filters.division_id && filters.division_id !== "all") params["filter[division_id][_eq]"] = Number(filters.division_id);
+    if (filters.department_id && filters.department_id !== "all") params["filter[department_id][_eq]"] = Number(filters.department_id);
+    if (filters.search) params.search = filters.search;
 
-  // Load more (infinite scroll)
+    const result = await budgetApprovalService.getBudgets(params);
+    return result;
+  }, [filters]);
+
+  // Initial load & filter change
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const { data, total } = await fetchPage(1);
+        setDisplayed(data);
+        setTotalCount(total);
+        setPage(2);
+        setHasMore(data.length === PAGE_SIZE && data.length < total);
+      } catch (error) {
+        toast.error("Failed to load budgets.");
+        console.error(error);
+      } finally {
+        setLoading(false);
+        setInitialLoading(false);
+      }
+    };
+    load();
+    setSelectedIds(new Set());
+  }, [fetchPage]);
+
+  // Infinite scroll loader
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return;
     setLoading(true);
     try {
-      const items = await simulateFetch(filteredBudgets, page);
-      if (items.length === 0) {
-        setHasMore(false);
-      } else {
-        setDisplayed(prev => [...prev, ...items]);
-        setPage(p => p + 1);
-        setHasMore(items.length === PAGE_SIZE);
-      }
+      const { data, total } = await fetchPage(page);
+      setDisplayed((prev) => [...prev, ...data]);
+      setPage((p) => p + 1);
+      setHasMore(data.length === PAGE_SIZE && (displayedItems.length + data.length) < total);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to load more budgets.");
     } finally {
       setLoading(false);
     }
-  }, [loading, hasMore, filteredBudgets, page]);
+  }, [loading, hasMore, page, fetchPage, displayedItems.length]);
 
-  const updateFilter = <K extends keyof BudgetApprovalFilters>(key: K, value: BudgetApprovalFilters[K]) =>
-    setFilters(f => ({ ...f, [key]: value }));
-
+  // ---------- Filters ----------
+  const updateFilter = <K extends keyof BudgetApprovalFilters>(
+    key: K,
+    value: BudgetApprovalFilters[K]
+  ) => {
+    setFilters((f) => ({ ...f, [key]: value }));
+  };
   const clearFilters = () => setFilters(DEFAULT_FILTERS);
-  const hasFilters   = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
+  const hasFilters = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
 
-  // Selection
-  const toggleSelect = (id: string) =>
-    setSelectedIds(prev => {
+  // ---------- Selection ----------
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
-
+  };
   const toggleSelectAll = () => {
     if (selectedIds.size === displayedItems.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(displayedItems.map(b => b.id)));
+      setSelectedIds(new Set(displayedItems.map((b) => String(b.id))));
+    }
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+
+  // ---------- Actions (Combined with Audit Logging) ----------
+  const processBudgetAction = async (
+    ids: string[], 
+    status: BudgetStatus, 
+    action: AuditAction, 
+    remarks?: string
+  ) => {
+    const isBulk = ids.length > 1;
+    setLoading(true);
+    try {
+      if (isBulk) {
+        await budgetApprovalService.bulkUpdateStatus(ids, status, action, remarks);
+      } else {
+        await budgetApprovalService.updateStatus(ids[0], status, action, remarks);
+      }
+      
+      setDisplayed((prev) => prev.filter((b) => !ids.includes(String(b.id))));
+      setTotalCount((prev) => prev - ids.length);
+      toast.success(`${ids.length} budget(s) ${status.toLowerCase()} successfully.`);
+      clearSelection();
+    } catch (error) {
+      toast.error(`Failed to ${status.toLowerCase()} budget(s).`);
+      console.error(error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const clearSelection = () => setSelectedIds(new Set());
+  const approveBudget = (id: string, remarks?: string) => 
+    processBudgetAction([id], "Approved", "Approved", remarks);
 
-  // Actions
-  const approveBudget = (id: string) => {
-    const updated = allBudgetsRef.current.map(b =>
-      b.id === id ? { ...b, status: "Approved" as const, updated_at: new Date().toISOString() } : b
-    );
-    allBudgetsRef.current = updated;
-    saveToLocal(updated);
-    setDisplayed(prev => prev.filter(b => b.id !== id));
-    toast.success("Budget approved successfully.");
-  };
+  const rejectBudget = (id: string, remarks?: string) => 
+    processBudgetAction([id], "Rejected", "Rejected", remarks);
 
-  const rejectBudget = (id: string) => {
-    const updated = allBudgetsRef.current.map(b =>
-      b.id === id ? { ...b, status: "Rejected" as const, updated_at: new Date().toISOString() } : b
-    );
-    allBudgetsRef.current = updated;
-    saveToLocal(updated);
-    setDisplayed(prev => prev.filter(b => b.id !== id));
-    toast.error("Budget rejected.");
-  };
+  const bulkApprove = (remarks?: string) => 
+    processBudgetAction(Array.from(selectedIds), "Approved", "Approved", remarks);
 
-  const bulkApprove = () => {
-    if (selectedIds.size === 0) return;
-    const updated = allBudgetsRef.current.map(b =>
-      selectedIds.has(b.id) ? { ...b, status: "Approved" as const, updated_at: new Date().toISOString() } : b
-    );
-    allBudgetsRef.current = updated;
-    saveToLocal(updated);
-    setDisplayed(prev => prev.filter(b => !selectedIds.has(b.id)));
-    toast.success(`${selectedIds.size} budget(s) approved.`);
-    clearSelection();
-  };
-
-  const bulkReject = () => {
-    if (selectedIds.size === 0) return;
-    const updated = allBudgetsRef.current.map(b =>
-      selectedIds.has(b.id) ? { ...b, status: "Rejected" as const, updated_at: new Date().toISOString() } : b
-    );
-    allBudgetsRef.current = updated;
-    saveToLocal(updated);
-    setDisplayed(prev => prev.filter(b => !selectedIds.has(b.id)));
-    toast.error(`${selectedIds.size} budget(s) rejected.`);
-    clearSelection();
-  };
+  const bulkReject = (remarks?: string) => 
+    processBudgetAction(Array.from(selectedIds), "Rejected", "Rejected", remarks);
 
   return {
     displayedItems,
@@ -208,6 +184,6 @@ export function useBudgetApproval() {
     rejectBudget,
     bulkApprove,
     bulkReject,
-    total: filteredBudgets.length,
+    total: totalCount,
   };
 }

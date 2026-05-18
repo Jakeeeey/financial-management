@@ -1,148 +1,148 @@
 "use client";
 
-import React from "react";
-import { Check, X, RefreshCw, CheckCircle2, XCircle, FileCheck } from "lucide-react";
+import React, { useState } from "react";
+import { RefreshCw, CheckCircle2, XCircle, FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-    Card,
-    CardContent,
-} from "@/components/ui/card";
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-    AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { BudgetApprovalProvider, useBudgetApprovalContext } from "./providers/BudgetApprovalProvider";
+import { MonthTabs } from "./components/MonthTabs";
+import { StatusTabs } from "./components/StatusTabs";
 import { BudgetApprovalFilters } from "./components/BudgetApprovalFilters";
 import { BudgetApprovalTable } from "./components/BudgetApprovalTable";
+import { ApprovalActionDialog } from "./components/ApprovalActionDialog";
+import { BudgetApprovalSummaryCards } from "./components/BudgetApprovalSummaryCards";
+import { formatCurrency as fmt } from "./utils";
+import type { Budget } from "./types";
 
 function BudgetApprovalContent() {
     const {
+        displayedItems,
         selectedIds,
         clearSelection,
         clearFilters,
         bulkApprove,
         bulkReject,
-        filters
+        filters,
+        loading
     } = useBudgetApprovalContext();
 
+    const [bulkAction, setBulkAction] = useState<"approve" | "reject" | null>(null);
+
     const isPendingTab = filters.status === "Pending";
+
+    // Compute active selection cumulative pricing securely
+    const selectedItemsTotal = React.useMemo(() => {
+        return (displayedItems || [])
+            .filter((b: Budget) => selectedIds.has(String(b.id)))
+            .reduce((sum: number, b: Budget) => sum + Number(b.amount || 0), 0);
+    }, [displayedItems, selectedIds]);
+
+    const handleBulkConfirm = (remarks: string) => {
+        if (bulkAction === "approve") bulkApprove(remarks);
+        if (bulkAction === "reject") bulkReject(remarks);
+        setBulkAction(null);
+    };
 
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-4 md:p-6">
             {/* Header Section */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-primary/10 rounded-2xl">
-                        <FileCheck className="h-6 w-6 text-primary" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-black tracking-tighter uppercase leading-none">
-                            Budget Approval
-                        </h1>
-                        <p className="text-sm text-muted-foreground mt-1 font-medium">
-                            Review, approve, or reject pending department budgets
-                        </p>
-                    </div>
+            <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-primary/10 rounded-2xl shadow-sm border border-primary/5 shrink-0">
+                    <FileCheck className="h-6 w-6 text-primary" />
                 </div>
-                <div className="flex items-center gap-2">
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={clearFilters}
-                        title="Reset Filters"
-                        className="h-9 w-9 p-0 rounded-xl border-border/50 active:scale-95 transition-transform"
-                    >
-                        <RefreshCw className="h-4 w-4 text-muted-foreground" />
-                    </Button>
+                <div>
+                    <h1 className="text-2xl font-black tracking-tighter uppercase leading-none">
+                        Budget Approval
+                    </h1>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mt-1 opacity-70">
+                        Management Review Workflow
+                    </p>
                 </div>
             </div>
 
-            {/* Filter Section */}
-            <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden">
-                <CardContent className="p-4 bg-muted/20">
-                    <BudgetApprovalFilters />
-                </CardContent>
-            </Card>
-
-            {/* Selection Bar (Floating or Inline) */}
-            {isPendingTab && selectedIds.size > 0 && (
-                <div className="flex items-center justify-between rounded-xl bg-primary px-4 py-2 text-primary-foreground shadow-lg animate-in fade-in slide-in-from-top-2 duration-300">
-                    <div className="flex items-center gap-4">
-                        <span className="text-xs font-bold">
-                            {selectedIds.size} budget(s) selected
-                        </span>
+            {/* Two-Column Macro Dashboard Strip */}
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+                {/* Column 1: Unified Dashboard Frame (Filters + Reset + Months + Status Tabs) */}
+                <div className="xl:col-span-8 flex flex-col justify-between rounded-2xl border border-border/50 bg-card shadow-sm p-4 gap-4">
+                    {/* Top: Embedded Search, Sub-filters & Relocated Reset Strip */}
+                    <div className="flex items-start gap-2 bg-muted/30 p-2.5 rounded-xl border border-border/40">
+                        <div className="min-w-0 flex-1">
+                            <BudgetApprovalFilters />
+                        </div>
                         <Button
-                            variant="link"
                             size="sm"
-                            className="h-auto p-0 text-xs text-primary-foreground/80 hover:text-primary-foreground underline decoration-primary-foreground/30"
-                            onClick={clearSelection}
+                            variant="outline"
+                            onClick={clearFilters}
+                            title="Reset Filters"
+                            className="h-9 w-9 p-0 rounded-xl border-border/40 active:scale-95 transition-all hover:bg-primary/5 shadow-sm shrink-0 mt-0.5"
                         >
-                            Deselect all
+                            <RefreshCw className="h-4 w-4 text-muted-foreground" />
                         </Button>
+                    </div>
+
+                    {/* Middle: Month Navigation Strip */}
+                    <div className="overflow-x-auto scrollbar-none py-0.5">
+                        <MonthTabs />
+                    </div>
+
+                    {/* Bottom: Pure Status Controls Strip */}
+                    <div className="border-t border-border/30 pt-3 mt-auto">
+                        <StatusTabs />
+                    </div>
+                </div>
+
+                {/* Column 2: Stacked Macro Metrics Group */}
+                <div className="xl:col-span-4 flex items-center">
+                    <BudgetApprovalSummaryCards />
+                </div>
+            </div>
+
+            {/* Selection Bar (Premium Floating Style) */}
+            {isPendingTab && selectedIds.size > 0 && (
+                <div className="flex items-center justify-between rounded-2xl bg-slate-950 px-5 py-3 text-white shadow-2xl animate-in fade-in slide-in-from-top-4 duration-500 border border-white/10 mx-2">
+                    <div className="flex items-center gap-4">
+                        <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center border border-primary/30">
+                            <span className="text-xs font-black">{selectedIds.size}</span>
+                        </div>
+                        <div className="flex flex-col justify-center">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 leading-tight">Selection</span>
+                                {selectedItemsTotal > 0 && (
+                                    <span className="text-xs font-mono font-black text-emerald-400 tracking-tight">
+                                        ({fmt(selectedItemsTotal)})
+                                    </span>
+                                )}
+                            </div>
+                            <Button
+                                variant="link"
+                                size="sm"
+                                className="h-auto p-0 text-[11px] font-bold text-primary/80 hover:text-primary underline-offset-4 justify-start"
+                                onClick={clearSelection}
+                            >
+                                Clear all selections
+                            </Button>
+                        </div>
                     </div>
                     
                     <div className="flex gap-2">
-                        <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                                <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    className="h-8 px-3 text-[11px] font-black uppercase tracking-tight gap-1.5 active:scale-95 transition-transform bg-white text-emerald-700 hover:bg-emerald-50 border-none"
-                                >
-                                    <CheckCircle2 className="h-3 w-3" />
-                                    Approve All
-                                </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                                <AlertDialogHeader>
-                                    <AlertDialogTitle>Approve Selected Budgets?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                        Are you sure you want to approve the {selectedIds.size} selected budget entries? 
-                                        They will become active budgets.
-                                    </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={bulkApprove} className="bg-emerald-600 hover:bg-emerald-700">
-                                        Approve All
-                                    </AlertDialogAction>
-                                </AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
-
-                        <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                                <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    className="h-8 px-3 text-[11px] font-black uppercase tracking-tight gap-1.5 active:scale-95 transition-transform bg-white text-destructive hover:bg-destructive/10 border-none"
-                                >
-                                    <XCircle className="h-3 w-3" />
-                                    Reject All
-                                </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                                <AlertDialogHeader>
-                                    <AlertDialogTitle>Reject Selected Budgets?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                        Are you sure you want to reject the {selectedIds.size} selected budget entries? 
-                                    </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={bulkReject} className="bg-destructive hover:bg-destructive/90">
-                                        Reject All
-                                    </AlertDialogAction>
-                                </AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
+                        <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setBulkAction("reject")}
+                            className="h-9 px-4 text-[10px] font-black uppercase tracking-widest gap-2 active:scale-95 transition-all bg-slate-800 text-rose-400 hover:bg-rose-500 hover:text-white border-none rounded-xl"
+                        >
+                            <XCircle className="h-3.5 w-3.5" />
+                            Reject
+                        </Button>
+                        
+                        <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setBulkAction("approve")}
+                            className="h-9 px-4 text-[10px] font-black uppercase tracking-widest gap-2 active:scale-95 transition-all bg-emerald-600 text-white hover:bg-emerald-500 border-none rounded-xl shadow-lg shadow-emerald-900/20"
+                        >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Approve
+                        </Button>
                     </div>
                 </div>
             )}
@@ -151,6 +151,18 @@ function BudgetApprovalContent() {
             <div className="flex flex-1 min-h-0 min-w-0">
                 <BudgetApprovalTable />
             </div>
+
+            {/* Bulk Action Dialog */}
+            {bulkAction && (
+                <ApprovalActionDialog 
+                    isOpen={!!bulkAction}
+                    onClose={() => setBulkAction(null)}
+                    onConfirm={handleBulkConfirm}
+                    type={bulkAction}
+                    count={selectedIds.size}
+                    loading={loading}
+                />
+            )}
         </div>
     );
 }

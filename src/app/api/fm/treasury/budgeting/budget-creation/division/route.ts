@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 
         const data = await res.json();
         return NextResponse.json(data);
-    } catch (err: any) {
-        return NextResponse.json({ message: "BFF Error", detail: err.message }, { status: 502 });
+    } catch (err: unknown) {
+        return NextResponse.json({ message: "BFF Error", detail: err instanceof Error ? err.message : "Unknown error" }, { status: 502 });
     }
 }

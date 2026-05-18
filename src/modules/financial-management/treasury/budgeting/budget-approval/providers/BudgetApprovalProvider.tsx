@@ -24,10 +24,10 @@ interface BudgetApprovalContextValue {
   toggleSelectAll: () => void;
   clearSelection:  () => void;
   // Actions
-  approveBudget:   (id: string) => void;
-  rejectBudget:    (id: string) => void;
-  bulkApprove:     () => void;
-  bulkReject:      () => void;
+  approveBudget:   (id: string, remarks?: string) => void;
+  rejectBudget:    (id: string, remarks?: string) => void;
+  bulkApprove:     (remarks?: string) => void;
+  bulkReject:      (remarks?: string) => void;
 }
 
 const BudgetApprovalContext = createContext<BudgetApprovalContextValue | null>(null);

@@ -1,147 +1,84 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
-import { BudgetAuditTrail, AuditTrailFilters } from "../types";
-
-const MOCK_AUDIT_DATA: BudgetAuditTrail[] = [
-  {
-    id: "log-1",
-    budget_id: "b-101",
-    action: "Created",
-    performed_by: { id: "u-1", name: "Juan Dela Cruz", role: "Budget Creator" },
-    performed_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(), // 2 days ago
-    new_status: "Draft",
-    new_amount: 5000,
-    coa_name: "Office Supplies",
-    gl_code: "5001",
-    department_name: "HR",
-    division_name: "Corporate",
-    month: 5,
-    year: 2026,
-    remarks: "Initial budget request for Q2 supplies"
-  },
-  {
-    id: "log-2",
-    budget_id: "b-101",
-    action: "Submitted",
-    performed_by: { id: "u-1", name: "Juan Dela Cruz", role: "Budget Creator" },
-    performed_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1.5).toISOString(),
-    previous_status: "Draft",
-    new_status: "Pending",
-    new_amount: 5000,
-    coa_name: "Office Supplies",
-    gl_code: "5001",
-    department_name: "HR",
-    division_name: "Corporate",
-    month: 5,
-    year: 2026
-  },
-  {
-    id: "log-3",
-    budget_id: "b-101",
-    action: "Rejected",
-    performed_by: { id: "u-99", name: "Admin Maria", role: "Treasury Manager" },
-    performed_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1).toISOString(),
-    previous_status: "Pending",
-    new_status: "Rejected",
-    new_amount: 5000,
-    coa_name: "Office Supplies",
-    gl_code: "5001",
-    department_name: "HR",
-    division_name: "Corporate",
-    month: 5,
-    year: 2026,
-    remarks: "Please reduce amount. ₱5k is too high for this month."
-  },
-  {
-    id: "log-4",
-    budget_id: "b-101",
-    action: "Resubmitted",
-    performed_by: { id: "u-1", name: "Juan Dela Cruz", role: "Budget Creator" },
-    performed_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(), // 5 hours ago
-    previous_status: "Rejected",
-    new_status: "Pending",
-    previous_amount: 5000,
-    new_amount: 3500,
-    coa_name: "Office Supplies",
-    gl_code: "5001",
-    department_name: "HR",
-    division_name: "Corporate",
-    month: 5,
-    year: 2026,
-    remarks: "Reduced as requested."
-  },
-  {
-    id: "log-5",
-    budget_id: "b-101",
-    action: "Approved",
-    performed_by: { id: "u-99", name: "Admin Maria", role: "Treasury Manager" },
-    performed_at: new Date(Date.now() - 1000 * 60 * 60 * 1).toISOString(), // 1 hour ago
-    previous_status: "Pending",
-    new_status: "Approved",
-    new_amount: 3500,
-    coa_name: "Office Supplies",
-    gl_code: "5001",
-    department_name: "HR",
-    division_name: "Corporate",
-    month: 5,
-    year: 2026,
-    remarks: "Approved for May 2026."
-  }
-];
+import { useState, useEffect } from "react";
+import { auditTrailService } from "../services/auditTrailService";
+import type { BudgetAuditTrail, AuditTrailFilters } from "../types";
+import { toast } from "sonner";
 
 export function useBudgetAuditTrail() {
+  const [logs, setLogs] = useState<BudgetAuditTrail[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Initialize with 1 month gap
+  const getInitialDates = () => {
+    const today = new Date();
+    const lastMonth = new Date();
+    lastMonth.setMonth(today.getMonth() - 1);
+
+    return {
+      to: today.toISOString().split('T')[0],
+      from: lastMonth.toISOString().split('T')[0]
+    };
+  };
+
+  const initialDates = getInitialDates();
+
   const [filters, setFilters] = useState<AuditTrailFilters>({
     search: "",
-    action: "",
+    status: "",
     user_id: "",
-    date_from: "",
-    date_to: "",
+    date_from: initialDates.from,
+    date_to: initialDates.to,
     division_id: "",
     department_id: "",
   });
 
-  const [loading, setLoading] = useState(false);
-  const [allLogs, setAllLogs] = useState<BudgetAuditTrail[]>(MOCK_AUDIT_DATA);
-
-  const filteredLogs = useMemo(() => {
-    return allLogs.filter(log => {
-      if (filters.action && log.action !== filters.action) return false;
-      if (filters.search) {
-        const s = filters.search.toLowerCase();
-        return (
-          log.coa_name.toLowerCase().includes(s) ||
-          log.gl_code.toLowerCase().includes(s) ||
-          log.performed_by.name.toLowerCase().includes(s) ||
-          log.remarks?.toLowerCase().includes(s)
-        );
+  const updateFilter = <K extends keyof AuditTrailFilters>(key: K, value: AuditTrailFilters[K]) => {
+    setFilters(prev => {
+      const next: AuditTrailFilters = { ...prev, [key]: value };
+      if (key === "division_id") {
+        next.department_id = "";
       }
-      return true;
-    }).sort((a, b) => new Date(b.performed_at).getTime() - new Date(a.performed_at).getTime());
-  }, [allLogs, filters]);
-
-  const updateFilter = (key: keyof AuditTrailFilters, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+      return next;
+    });
   };
 
   const clearFilters = () => {
+    const dates = getInitialDates();
     setFilters({
       search: "",
-      action: "",
+      status: "",
       user_id: "",
-      date_from: "",
-      date_to: "",
+      date_from: dates.from,
+      date_to: dates.to,
       division_id: "",
       department_id: "",
     });
   };
 
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        setLoading(true);
+        const data = await auditTrailService.getAuditLogs(filters);
+        setLogs(data);
+      } catch (err) {
+        console.error("Failed to fetch audit logs:", err);
+        toast.error("Failed to load audit trail history");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
+  }, [filters]);
+
   return {
-    logs: filteredLogs,
+    logs,
     filters,
     updateFilter,
     clearFilters,
     loading,
-    total: filteredLogs.length
+    total: logs.length
   };
 }

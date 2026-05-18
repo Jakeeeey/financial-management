@@ -13,7 +13,6 @@ import {
   Cell
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BUDGET_VS_ACTUAL_DATA } from "../constants";
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat("en-PH", {
@@ -24,7 +23,7 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-export function BudgetVsActualChart() {
+export function BudgetVsActualChart({ data = [] }: { data?: { name: string; allocated: number; actual: number }[] }) {
   return (
     <Card className="rounded-3xl border-border/50 shadow-sm bg-card overflow-hidden h-[400px] flex flex-col">
       <CardHeader className="pb-2">
@@ -35,7 +34,7 @@ export function BudgetVsActualChart() {
       <CardContent className="flex-1 min-h-0 pt-0">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
-            data={BUDGET_VS_ACTUAL_DATA}
+            data={data}
             margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
             barGap={8}
           >
@@ -84,7 +83,7 @@ export function BudgetVsActualChart() {
               radius={[6, 6, 0, 0]} 
               barSize={24}
             >
-               {BUDGET_VS_ACTUAL_DATA.map((entry, index) => (
+               {data.map((entry, index) => (
                   <Cell 
                     key={`cell-${index}`} 
                     fill={entry.actual > entry.allocated ? "#EF4444" : "#0D9488"} 
