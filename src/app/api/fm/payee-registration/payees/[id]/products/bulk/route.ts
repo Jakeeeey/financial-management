@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * POST /api/payee-registration/payees/[id]/products/bulk
+ * POST /api/fm/payee-registration/payees/[id]/products/bulk
  * Bulk assign products to a payee
  */
 export async function POST(

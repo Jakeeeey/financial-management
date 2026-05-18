@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * POST /api/payee-registration/payee-image-upload
+ * POST /api/fm/payee-registration/payee-image-upload
  * Proxies the upload to Directus assets
  */
 export async function POST(request: NextRequest) {

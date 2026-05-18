@@ -50,7 +50,7 @@ export function usePayeeProducts(payeeId: number | null) {
   const addProductsBulk = async (productIds: number[]) => {
     if (!payeeId) return;
     try {
-      const response = await fetch(`/api/payee-registration/payees/${payeeId}/products/bulk`, {
+      const response = await fetch(`/api/fm/payee-registration/payees/${payeeId}/products/bulk`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productIds }),
@@ -65,7 +65,7 @@ export function usePayeeProducts(payeeId: number | null) {
 
   const updateDiscount = async (assignmentId: number, discountTypeId: string | number | null) => {
     try {
-      const response = await fetch(`/api/payee-registration/payees/products/${assignmentId}/discount`, {
+      const response = await fetch(`/api/fm/payee-registration/payees/products/${assignmentId}/discount`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ discountTypeId }),
@@ -80,7 +80,7 @@ export function usePayeeProducts(payeeId: number | null) {
 
   const removeProduct = async (assignmentId: number) => {
     try {
-      const response = await fetch(`/api/payee-registration/payees/products/${assignmentId}`, {
+      const response = await fetch(`/api/fm/payee-registration/payees/products/${assignmentId}`, {
         method: "DELETE",
       });
       if (!response.ok) throw new Error("Failed to remove product");

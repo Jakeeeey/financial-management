@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createBulkSupplierProducts } from "@/modules/financial-management/supplier-registration/services/products-per-suppliers";
 
 /**
- * POST /api/supplier-registration/suppliers/[id]/products/bulk
+ * POST /api/fm/supplier-registration/suppliers/[id]/products/bulk
  * Bulk add products to a supplier
  */
 export async function POST(

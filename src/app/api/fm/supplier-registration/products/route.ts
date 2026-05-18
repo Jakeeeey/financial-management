@@ -5,7 +5,7 @@ import {
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * GET /api/supplier-registration/products
+ * GET /api/fm/supplier-registration/products
  * Fetch all products or search by query
  */
 export async function GET(request: NextRequest) {

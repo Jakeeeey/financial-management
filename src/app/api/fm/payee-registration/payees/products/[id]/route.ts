@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * DELETE /api/payee-registration/payees/products/[id]
+ * DELETE /api/fm/payee-registration/payees/products/[id]
  * Remove a product assignment from a payee
  */
 export async function DELETE(

@@ -6,7 +6,7 @@ import {
 import { PayeeFormSchema } from "@/modules/financial-management/payee-registration/types/payee.schema";
 
 /**
- * GET /api/payee-registration/payees/[id]
+ * GET /api/fm/payee-registration/payees/[id]
  */
 export async function GET(
   request: NextRequest,
@@ -22,7 +22,7 @@ export async function GET(
     const payee = await fetchPayeeById(id);
     return NextResponse.json({ success: true, data: payee });
   } catch (error) {
-    console.error(`GET /api/payee-registration/payees/${idStr} error:`, error);
+    console.error(`GET /api/fm/payee-registration/payees/${idStr} error:`, error);
     return NextResponse.json(
       {
         success: false,
@@ -34,7 +34,7 @@ export async function GET(
 }
 
 /**
- * PATCH /api/payee-registration/payees/[id]
+ * PATCH /api/fm/payee-registration/payees/[id]
  */
 export async function PATCH(
   request: NextRequest,
@@ -58,7 +58,7 @@ export async function PATCH(
       message: "Payee updated successfully",
     });
   } catch (error) {
-    console.error(`PATCH /api/payee-registration/payees/${idStr} error:`, error);
+    console.error(`PATCH /api/fm/payee-registration/payees/${idStr} error:`, error);
     return NextResponse.json(
       {
         success: false,

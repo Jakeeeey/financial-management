@@ -7,7 +7,7 @@ import {
 import { PayeeFormSchema } from "@/modules/financial-management/payee-registration/types/payee.schema";
 
 /**
- * GET /api/payee-registration/payees
+ * GET /api/fm/payee-registration/payees
  * Fetch all payees (Non-Trade)
  */
 export async function GET(request: NextRequest) {
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       count: payees.length,
     });
   } catch (error) {
-    console.error("GET /api/payee-registration/payees error:", error);
+    console.error("GET /api/fm/payee-registration/payees error:", error);
     return NextResponse.json(
       {
         success: false,
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/payee-registration/payees
+ * POST /api/fm/payee-registration/payees
  * Create new payee
  */
 export async function POST(request: NextRequest) {
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
-    console.error("POST /api/payee-registration/payees error:", error);
+    console.error("POST /api/fm/payee-registration/payees error:", error);
 
     if (error instanceof Error && error.name === "ZodError") {
       return NextResponse.json(

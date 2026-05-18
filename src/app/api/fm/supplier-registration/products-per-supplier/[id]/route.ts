@@ -5,7 +5,7 @@ import {
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * PATCH /api/supplier-registration/products-per-supplier/[id]
+ * PATCH /api/fm/supplier-registration/products-per-supplier/[id]
  * Update discount type for a product-supplier relationship
  */
 export async function PATCH(
@@ -48,7 +48,7 @@ export async function PATCH(
 }
 
 /**
- * DELETE /api/supplier-registration/products-per-supplier/[id]
+ * DELETE /api/fm/supplier-registration/products-per-supplier/[id]
  * Remove a product from a supplier
  */
 export async function DELETE(

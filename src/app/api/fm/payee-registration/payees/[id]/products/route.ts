@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchPayeeProductsServer } from "@/modules/financial-management/payee-registration/services/products-server";
 
 /**
- * GET /api/payee-registration/payees/[id]/products
+ * GET /api/fm/payee-registration/payees/[id]/products
  * Proxies the request to Directus via a server-side service
  */
 export async function GET(
@@ -23,7 +23,7 @@ export async function GET(
       data: products,
     });
   } catch (error) {
-    console.error(`GET /api/payee-registration/payees/${idStr}/products error:`, error);
+    console.error(`GET /api/fm/payee-registration/payees/${idStr}/products error:`, error);
     return NextResponse.json(
       {
         success: false,

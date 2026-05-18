@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * PATCH /api/payee-registration/payees/products/[id]/discount
+ * PATCH /api/fm/payee-registration/payees/products/[id]/discount
  * Update the discount type for a product assignment
  */
 export async function PATCH(
