@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Supplier, Customer, Salesman, ChartOfAccount } from "../types";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelect } from "./SearchableSelect";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -60,15 +60,32 @@ export const HeaderForm = React.memo(function HeaderForm({
         [suppliers]);
 
     const customerOptions = useMemo(() =>
-        customers.map(c => ({ value: String(c.id), label: c.customer_name })),
+        customers.map(c => {
+            const address = [c.brgy, c.city].filter(Boolean).join(", ");
+            const storeInfo = c.store_name && c.store_name !== c.customer_name ? c.store_name : "";
+            const subLabel = [storeInfo, address].filter(Boolean).join(" | ");
+            return {
+                value: String(c.id),
+                label: c.customer_name,
+                subLabel: subLabel
+            };
+        }),
         [customers]);
 
     const salesmanOptions = useMemo(() =>
-        salesmen.map(sl => ({ value: String(sl.id), label: `${sl.salesman_code} - ${sl.salesman_name}` })),
+        salesmen.map(sl => ({
+            value: String(sl.id),
+            label: sl.salesman_name,
+            subLabel: sl.salesman_code
+        })),
         [salesmen]);
 
     const coaOptions = useMemo(() =>
-        coas.map(c => ({ value: String(c.coa_id), label: `${c.gl_code} - ${c.account_title}` })),
+        coas.map(c => ({
+            value: String(c.coa_id),
+            label: c.account_title,
+            subLabel: c.gl_code
+        })),
         [coas]);
 
     return (

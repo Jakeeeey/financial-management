@@ -108,3 +108,20 @@ export type UpsertLine = {
     created_by?: number | null;
     status?: string;
 };
+
+export type PriceChangeRequest = {
+    id: number;
+    product_id: number | { product_id: number };
+    price_type_id: number | { price_type_id: number };
+    proposed_price: number;
+    status: string;
+};
+
+export type CostChangeRequest = {
+    id: number;
+    product_id: number | { product_id: number };
+    proposed_cost: number;
+    current_cost: number | null;
+    status: string;
+};
+

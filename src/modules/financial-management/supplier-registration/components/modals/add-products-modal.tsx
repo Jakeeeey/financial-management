@@ -34,10 +34,21 @@ export function AddProductsModal({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Filter out products already assigned
+  // Filter out products already assigned and de-duplicate the available list
   const availableProducts = useMemo(() => {
     const assignedSet = new Set(assignedProductIds.map((id) => Number(id)));
-    return products.filter((p) => !assignedSet.has(Number(p.product_id)));
+    const uniqueProducts = new Map<number, (typeof products)[0]>();
+
+    products.forEach((p) => {
+      const productId = Number(
+        p.product_id || (p as { id?: number; product_id?: number }).id,
+      );
+      if (!assignedSet.has(productId) && !uniqueProducts.has(productId)) {
+        uniqueProducts.set(productId, p);
+      }
+    });
+
+    return Array.from(uniqueProducts.values());
   }, [products, assignedProductIds]);
 
   // Filter available products based on search

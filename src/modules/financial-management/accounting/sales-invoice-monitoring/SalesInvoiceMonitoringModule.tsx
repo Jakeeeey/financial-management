@@ -1,10 +1,17 @@
 "use client";
 
+import { useState } from "react";
+
 import { SalesInvoiceMonitoringFiltersBar } from "./components/SalesInvoiceMonitoringFilters";
 import { SalesInvoiceMonitoringTable } from "./components/SalesInvoiceMonitoringTable";
+import { SalesInvoiceMonitoringViewDialog } from "./components/SalesInvoiceMonitoringViewDialog";
 import { useSalesInvoiceMonitoring } from "./hooks/useSalesInvoiceMonitoring";
+import type { SalesInvoiceMonitoringRow } from "./types";
 
 export default function SalesInvoiceMonitoringModule() {
+	const [viewOpen, setViewOpen] = useState(false);
+	const [selectedRow, setSelectedRow] = useState<SalesInvoiceMonitoringRow | null>(null);
+
 	const {
 		loading,
 		error,
@@ -53,7 +60,20 @@ export default function SalesInvoiceMonitoringModule() {
 				sortBy={sortBy}
 				sortOrder={sortOrder}
 				onSortChange={onSortChange}
+				onRowClick={(row) => {
+					setSelectedRow(row);
+					setViewOpen(true);
+				}}
 				onPageChange={setPage}
+			/>
+
+			<SalesInvoiceMonitoringViewDialog
+				open={viewOpen}
+				onOpenChange={(open) => {
+					setViewOpen(open);
+					if (!open) setSelectedRow(null);
+				}}
+				row={selectedRow}
 			/>
 		</div>
 	);

@@ -107,14 +107,16 @@ function AllocatorPopover({
                             <Percent size={10} className="mr-1"/> Credits (Memos/Returns)
                         </h5>
                         <div className="relative flex w-full">
-                            <Input type="text" placeholder="Search doc no..." className="h-7 pr-7 border-purple-200 focus-visible:ring-purple-500 text-[10px]" value={localSearch} onChange={(e) => setLocalSearch(e.target.value)} onKeyDown={(e) => e.stopPropagation()}/>
+                            <Input type="text" placeholder="Search doc no or customer..." className="h-7 pr-7 border-purple-200 focus-visible:ring-purple-500 text-[10px]" value={localSearch} onChange={(e) => setLocalSearch(e.target.value)} onKeyDown={(e) => e.stopPropagation()}/>
                             <Search size={12} className="absolute right-2 top-1.5 text-muted-foreground"/>
                         </div>
 
-                        {credits.filter(c => c.customerName === inv.customerName && c.label.toLowerCase().includes(localSearch.toLowerCase())).length === 0 ? (
+                        {/* 🚀 THE FIX: Removed `c.customerName === inv.customerName` to allow cross-applying! */}
+                        {credits.filter(c => c.label.toLowerCase().includes(localSearch.toLowerCase()) || (c.customerName || "").toLowerCase().includes(localSearch.toLowerCase())).length === 0 ? (
                             <p className="text-[10px] text-muted-foreground italic">No matching credits.</p>
                         ) : credits.map(c => {
-                            if (c.customerName !== inv.customerName || !c.label.toLowerCase().includes(localSearch.toLowerCase())) return null;
+                            if (!c.label.toLowerCase().includes(localSearch.toLowerCase()) && !(c.customerName || "").toLowerCase().includes(localSearch.toLowerCase())) return null;
+
                             const existingAlloc = allocations.find(a => a.invoiceId === inv.id && a.sourceTempId === c.id);
                             const usedElsewhere = getUsedAmount(c.id) - (existingAlloc?.amountApplied || 0);
                             const remaining = c.originalAmount - usedElsewhere;
@@ -122,10 +124,20 @@ function AllocatorPopover({
                             let targetMax = unmetBalance > 0 ? unmetBalance : inv.remainingBalance;
                             targetMax = Math.min(targetMax, remaining);
 
+                            // 🚀 THE UI FIX: Highlight credits that belong to a DIFFERENT customer!
+                            const isCrossCustomer = c.customerName !== inv.customerName;
+
                             return (
-                                <div key={`apply-${inv.id}-${c.id}`} className="flex flex-col gap-1 py-1.5 border-b border-border/50 last:border-0">
+                                <div key={`apply-${inv.id}-${c.id}`} className={cn("flex flex-col gap-1 py-1.5 border-b border-border/50 last:border-0", isCrossCustomer ? "bg-orange-50/40 dark:bg-orange-900/10 px-1.5 -mx-1.5 rounded" : "")}>
                                     <div className="flex justify-between items-start gap-2">
-                                        <div className="flex flex-col min-w-0"><span className="text-[9px] font-black uppercase text-foreground leading-tight break-words">{c.label}</span></div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="text-[9px] font-black uppercase text-foreground leading-tight break-words">{c.label}</span>
+                                            {isCrossCustomer && (
+                                                <span className="text-[7px] font-bold text-orange-600 uppercase leading-none mt-0.5 truncate block" title={c.customerName}>
+                                                    From: {c.customerName}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="flex flex-col items-end shrink-0 text-right">
                                             <span className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest leading-tight">Rem: ₱{remaining.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                                             <span className="text-[7px] font-bold text-muted-foreground/60 uppercase tracking-widest leading-tight">Orig: ₱{c.originalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
@@ -242,7 +254,6 @@ export default function SettlementInvoiceCartTable({
                         } else if (isPartiallySettled) { rowStatus = "PARTIAL"; badgeColor = "border-blue-200 text-blue-700 bg-blue-100"; rowBg = "bg-blue-50/10 dark:bg-blue-950/5"; IconComponent = <Loader2 size={8} className="mr-1 animate-spin"/>; }
 
                         return (
-                            // 🚀 THE FIX: Reduced padding `py-2` to make rows ultra-compact!
                             <TableRow key={`cart-row-${inv.id}`} className={`group hover:bg-muted/30 transition-all ${rowBg}`}>
                                 <TableCell className="align-top py-2 px-4 min-w-[180px]">
                                     <div className="flex items-start gap-1.5">
