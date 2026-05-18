@@ -91,7 +91,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
           <input
             type="text"
             placeholder="Search docs or names..."
-            className="w-full pl-8 pr-3 h-8 text-xs bg-muted/30 border-transparent focus:border-primary focus:bg-background rounded-lg outline-none ring-0 transition-all font-medium"
+            className="w-full pl-8 pr-3 h-8 text-xs bg-muted/30 dark:bg-slate-800/50 border-transparent focus:border-primary focus:bg-background dark:focus:bg-slate-900 rounded-lg outline-none ring-0 transition-all font-medium"
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -123,7 +123,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
               <div 
                 key={log.id} 
                 className={`group flex flex-col p-3 rounded-xl border transition-all cursor-pointer shadow-sm hover:shadow-md
-                  ${isExpanded ? 'bg-primary/[0.02] border-primary/20 ring-1 ring-primary/20' : 'bg-card hover:border-primary/30'}
+                  ${isExpanded ? 'bg-primary/[0.02] border-primary/20 ring-1 ring-primary/20' : 'bg-card dark:bg-slate-900 hover:border-primary/30 dark:hover:border-primary/30'}
                 `}
                 onClick={() => toggleExpand(log.id)}
               >
@@ -194,7 +194,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                         </div>
                         <div className="space-y-2">
                           {log.votes.map((v, i) => (
-                             <div key={i} className={`p-3 rounded-xl border transition-colors shadow-sm ${v.status === 'APPROVED' ? 'bg-emerald-500/5 border-emerald-500/20' : v.status === 'REJECTED' ? 'bg-destructive/5 border-destructive/20' : 'bg-muted/30 border-border/50'}`}>
+                             <div key={i} className={`p-3 rounded-xl border transition-colors shadow-sm ${v.status === 'APPROVED' ? 'bg-emerald-500/5 border-emerald-500/20' : v.status === 'REJECTED' ? 'bg-destructive/5 border-destructive/20' : 'bg-muted/30 border-border/50 dark:bg-slate-800/50 dark:border-slate-800'}`}>
                                <div className="flex justify-between items-center mb-1">
                                   <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
                                     <div className={`w-1.5 h-1.5 rounded-full ${v.status === 'APPROVED' ? 'bg-emerald-500' : v.status === 'REJECTED' ? 'bg-destructive' : 'bg-muted-foreground'}`}></div>
@@ -228,7 +228,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                                 const isIncrease = variance > 0;
                                 const isDecrease = variance < 0;
                                 return (
-                                  <div key={rev.id} className="min-w-[200px] max-w-[240px] border bg-background rounded-xl p-3 shrink-0 flex flex-col gap-2 shadow-sm border-primary/5">
+                                  <div key={rev.id} className="min-w-[200px] max-w-[240px] border bg-background dark:bg-slate-900 rounded-xl p-3 shrink-0 flex flex-col gap-2 shadow-sm border-primary/5 dark:border-slate-800">
                                     <div className="flex justify-between items-start">
                                       <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/60">{rev.editor_name}</span>
                                       <div className={`shrink-0 flex items-center gap-1 text-[7px] uppercase font-black px-1 py-0.5 rounded
@@ -267,10 +267,10 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                             </div>
                             <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 custom-scrollbar">
                               {log.expense_logs.map((exRev) => (
-                                <div key={exRev.id} className="min-w-[180px] max-w-[220px] border border-amber-100 bg-amber-50/5 rounded-xl p-3 shrink-0 flex flex-col gap-1.5 shadow-sm">
+                                <div key={exRev.log_id} className="min-w-[180px] max-w-[220px] border border-amber-100 bg-amber-50/5 rounded-xl p-3 shrink-0 flex flex-col gap-1.5 shadow-sm">
                                   <div className="flex justify-between items-center">
                                     <span className="text-[8px] font-black text-amber-700/60 uppercase truncate max-w-[80px]">{exRev.editor_name}</span>
-                                    <span className="text-[7px] font-bold text-muted-foreground/40 uppercase">{exRev.action}</span>
+                                    <Badge variant="outline" className="text-[7px] font-bold h-3 px-1">{exRev.action} V{exRev.version}</Badge>
                                   </div>
                                   <p className="text-[9px] font-black text-foreground/80 line-clamp-1">{exRev.particulars}</p>
                                   <div className="flex justify-between items-center">
@@ -297,7 +297,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                         Retrieving nested records...
                       </div>
                     ) : (
-                      <div className="rounded-xl bg-background/50 border overflow-hidden shadow-inner">
+                      <div className="rounded-xl bg-background/50 dark:bg-slate-900/50 border dark:border-slate-800 overflow-hidden shadow-inner">
                         <div className="flex flex-col">
                           {itemDetails.length === 0 ? (
                             <div className="p-4 text-center text-xs italic text-muted-foreground font-medium">
@@ -305,7 +305,7 @@ export function ApprovalLogTable({ logs, loading }: ApprovalLogTableProps) {
                             </div>
                           ) : (
                             itemDetails.map((item, idx) => (
-                              <div key={item.id} className={`flex justify-between items-center p-3 sm:px-4 ${idx !== 0 ? 'border-t border-border/50' : ''} hover:bg-muted/30 transition-colors`}>
+                              <div key={item.id} className={`flex justify-between items-center p-3 sm:px-4 ${idx !== 0 ? 'border-t border-border/50 dark:border-slate-800' : ''} hover:bg-muted/30 dark:hover:bg-slate-800/50 transition-colors`}>
                                 <div className="flex flex-col min-w-0 pr-4">
                                   <span className="text-[11px] font-bold text-foreground/80 truncate">{item.coa_name}</span>
                                   <span className="text-[10px] text-muted-foreground italic truncate">{item.remarks || "—"}</span>

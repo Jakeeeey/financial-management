@@ -50,7 +50,14 @@ export function ManageProductsModal({
 
   // Get list of assigned product IDs for filtering in AddProductsModal
   const assignedProductIds = useMemo(
-    () => products.map((p) => Number(p.product_id)),
+    () =>
+      products
+        .map((p) =>
+          Number(
+            p.product_id || (p as { id?: number; product_id?: number }).id,
+          ),
+        )
+        .filter((id) => !isNaN(id)),
     [products],
   );
 
