@@ -11,11 +11,18 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { cookies } from "next/headers";
 import CustomerDiscountingModule from "@/modules/financial-management/accounting/discount-management/customer-discounting";
+import { getCustomerDiscountingModuleData } from "@/app/api/fm/accounting/discount-management/customer-discounting/_module-data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const COOKIE_NAME = "vos_access_token";
+const PAGE_SIZE = 10;
+type ViewMode = "table" | "card";
+
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
@@ -63,10 +70,29 @@ function buildHeaderUserFromToken(token: string | null | undefined) {
   };
 }
 
-export default async function Page() {
+function firstSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function parsePage(value: string | string[] | undefined) {
+  const parsed = Number(firstSearchParam(value));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+}
+
+function parseViewMode(value: string | string[] | undefined): ViewMode | undefined {
+  const viewMode = firstSearchParam(value);
+  return viewMode === "table" || viewMode === "card" ? viewMode : undefined;
+}
+
+export default async function Page({ searchParams }: PageProps) {
   const cookieStore = await cookies();
+  const resolvedSearchParams = await searchParams;
   const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
   const headerUser = buildHeaderUserFromToken(token);
+  const page = parsePage(resolvedSearchParams?.page);
+  const search = firstSearchParam(resolvedSearchParams?.q)?.trim() ?? "";
+  const viewMode = parseViewMode(resolvedSearchParams?.view);
+  const moduleData = await getCustomerDiscountingModuleData({ page, pageSize: PAGE_SIZE, search });
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -106,7 +132,12 @@ export default async function Page() {
       </header>
 
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
-        <CustomerDiscountingModule userId={headerUser.id} />
+        <CustomerDiscountingModule
+          key={`${moduleData.pagination.page}:${moduleData.pagination.search}`}
+          userId={headerUser.id}
+          initialModuleData={moduleData}
+          initialViewMode={viewMode}
+        />
       </main>
     </div>
   );

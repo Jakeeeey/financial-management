@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { asNumber, asString, directusFetch, DirectusList, jsonError } from "../../_utils";
+import { CustomerDiscountPricingError, parsePriceTier, resolveCustomerDiscountPrice } from "../../pricing/service";
 
 type ProductRow = {
   product_id?: unknown;
@@ -7,6 +8,7 @@ type ProductRow = {
   barcode?: unknown;
   product_name?: unknown;
   product_category?: unknown;
+  unit_of_measurement?: unknown;
   price_per_unit?: unknown;
   priceA?: unknown;
   priceB?: unknown;
@@ -31,10 +33,32 @@ function categoryName(value: unknown) {
     : "";
 }
 
+function unitId(value: unknown) {
+  if (value && typeof value === "object") {
+    return asNumber((value as Record<string, unknown>).unit_id);
+  }
+  return asNumber(value);
+}
+
+function unitName(value: unknown) {
+  return value && typeof value === "object"
+    ? asString((value as Record<string, unknown>).unit_name)
+    : "";
+}
+
+function unitShortcut(value: unknown) {
+  return value && typeof value === "object"
+    ? asString((value as Record<string, unknown>).unit_shortcut)
+    : "";
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const q = asString(searchParams.get("q"));
+    const customerCode = asString(searchParams.get("customer_code") ?? searchParams.get("customerCode"));
+    const supplierId = asNumber(searchParams.get("supplier_id") ?? searchParams.get("supplierId"));
+    const priceTier = parsePriceTier(searchParams.get("price_tier") ?? searchParams.get("priceTier"));
 
     if (!q) return NextResponse.json({ data: [] });
 
@@ -52,6 +76,10 @@ export async function GET(request: NextRequest) {
         "product_category",
         "product_category.category_id",
         "product_category.category_name",
+        "unit_of_measurement",
+        "unit_of_measurement.unit_id",
+        "unit_of_measurement.unit_name",
+        "unit_of_measurement.unit_shortcut",
         "price_per_unit",
         "priceA",
         "priceB",
@@ -63,7 +91,7 @@ export async function GET(request: NextRequest) {
     params.set("filter[isActive][_eq]", "1");
 
     const res = await directusFetch<DirectusList<ProductRow>>(`/items/products?${params.toString()}`);
-    const data = (res.data ?? [])
+    const products = (res.data ?? [])
       .map((row) => ({
         productId: asNumber(row.product_id) ?? 0,
         productCode: asString(row.product_code),
@@ -71,6 +99,9 @@ export async function GET(request: NextRequest) {
         productName: asString(row.product_name),
         categoryId: categoryId(row.product_category),
         categoryName: categoryName(row.product_category),
+        unitId: unitId(row.unit_of_measurement),
+        unitName: unitName(row.unit_of_measurement),
+        unitShortcut: unitShortcut(row.unit_of_measurement),
         pricePerUnit: asNumber(row.price_per_unit),
         priceA: asNumber(row.priceA),
         priceB: asNumber(row.priceB),
@@ -80,8 +111,26 @@ export async function GET(request: NextRequest) {
       }))
       .filter((row) => row.productId > 0 && row.productName);
 
+    const data = customerCode
+      ? await Promise.all(
+          products.map(async (product) => ({
+            ...product,
+            pricing: await resolveCustomerDiscountPrice({
+              customerCode,
+              productId: product.productId,
+              supplierId,
+              priceTier,
+            }),
+          })),
+        )
+      : products;
+
     return NextResponse.json({ data });
   } catch (error) {
+    if (error instanceof CustomerDiscountPricingError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
     return jsonError(error);
   }
 }

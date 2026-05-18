@@ -30,12 +30,16 @@ export type CustomerDiscountingProduct = {
   productName: string;
   categoryId: number | null;
   categoryName: string;
+  unitId: number | null;
+  unitName: string;
+  unitShortcut: string;
   pricePerUnit: number | null;
   priceA: number | null;
   priceB: number | null;
   priceC: number | null;
   priceD: number | null;
   priceE: number | null;
+  pricing?: CustomerDiscountPricingResult | null;
 };
 
 export type SupplierCategoryRule = {
@@ -55,6 +59,9 @@ export type ProductRule = {
   productName: string;
   productCode: string;
   barcode: string;
+  unitId: number | null;
+  unitName: string;
+  unitShortcut: string;
   discount: DiscountOption | null;
   unitPrice: number | null;
 };
@@ -64,6 +71,13 @@ export type CustomerDiscountingModuleData = {
   discountTypes: DiscountOption[];
   suppliers: CustomerDiscountingSupplier[];
   categories: CustomerDiscountingCategory[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    search: string;
+  };
 };
 
 export type CustomerDiscountingRules = {
@@ -85,6 +99,9 @@ export type CustomerDiscountPricingResult = {
     productName: string;
     categoryId: number | null;
     categoryName: string;
+    unitId: number | null;
+    unitName: string;
+    unitShortcut: string;
   };
   supplierId: number | null;
   priceTier: "manual" | "price_per_unit" | "priceA" | "priceB" | "priceC" | "priceD" | "priceE";

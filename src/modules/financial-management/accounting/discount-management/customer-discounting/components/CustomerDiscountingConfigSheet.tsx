@@ -73,6 +73,14 @@ function discountText(discount: DiscountOption | null) {
   return discount ? `${discount.discountType} (${percentLabel(discount.totalPercent)})` : "No discount";
 }
 
+function unitText(product: { unitName?: string; unitShortcut?: string }) {
+  return product.unitShortcut || product.unitName || "No UOM";
+}
+
+function productPickerLabel(product: CustomerDiscountingProduct) {
+  return `${product.productName} (${unitText(product)})`;
+}
+
 function parseMoney(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -305,7 +313,7 @@ export function CustomerDiscountingConfigSheet({
                     <div className="relative">
                       <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                       <Input
-                        value={selectedProduct ? selectedProduct.productName : productQuery}
+                        value={selectedProduct ? productPickerLabel(selectedProduct) : productQuery}
                         onChange={(event) => {
                           if (event.target.value.trim().length < 2) setProductOptions([]);
                           setSelectedProduct(null);
@@ -329,7 +337,7 @@ export function CustomerDiscountingConfigSheet({
                             className="flex w-full flex-col rounded-sm px-3 py-2 text-left text-sm hover:bg-muted"
                             onClick={() => {
                               setSelectedProduct(product);
-                              setProductQuery(product.productName);
+                              setProductQuery(productPickerLabel(product));
                               setProductOptions([]);
                             }}
                           >
@@ -337,8 +345,16 @@ export function CustomerDiscountingConfigSheet({
                             <span className="text-xs text-muted-foreground">
                               {product.productCode || "No code"} | {product.barcode || "No barcode"}
                             </span>
+                            <span className="text-xs text-muted-foreground">
+                              UOM: {unitText(product)}
+                            </span>
                           </button>
                         ))}
+                      </div>
+                    ) : null}
+                    {selectedProduct ? (
+                      <div className="text-xs text-muted-foreground">
+                        Unit of measurement: {unitText(selectedProduct)}
                       </div>
                     ) : null}
                   </div>
@@ -374,6 +390,9 @@ export function CustomerDiscountingConfigSheet({
                       <div className="font-medium">{rule.productName || `Product #${rule.productId}`}</div>
                       <div className="text-xs text-muted-foreground">
                         {rule.productCode || "No code"} | {rule.barcode || "No barcode"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        UOM: {unitText(rule)}
                       </div>
                     </TableCell>
                     <TableCell>

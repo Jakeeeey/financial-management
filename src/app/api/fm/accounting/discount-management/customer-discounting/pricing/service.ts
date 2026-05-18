@@ -33,6 +33,7 @@ type ProductRow = {
   barcode?: unknown;
   product_name?: unknown;
   product_category?: unknown;
+  unit_of_measurement?: unknown;
   price_per_unit?: unknown;
   priceA?: unknown;
   priceB?: unknown;
@@ -80,6 +81,9 @@ export type CustomerDiscountPriceResult = {
     productName: string;
     categoryId: number | null;
     categoryName: string;
+    unitId: number | null;
+    unitName: string;
+    unitShortcut: string;
   };
   supplierId: number | null;
   priceTier: CustomerDiscountPriceTier | "manual";
@@ -111,6 +115,18 @@ export function parsePriceTier(value: unknown): CustomerDiscountPriceTier | null
 function categoryName(value: unknown) {
   return value && typeof value === "object"
     ? asString((value as Record<string, unknown>).category_name)
+    : "";
+}
+
+function unitName(value: unknown) {
+  return value && typeof value === "object"
+    ? asString((value as Record<string, unknown>).unit_name)
+    : "";
+}
+
+function unitShortcut(value: unknown) {
+  return value && typeof value === "object"
+    ? asString((value as Record<string, unknown>).unit_shortcut)
     : "";
 }
 
@@ -169,6 +185,10 @@ async function fetchProduct(productId: number) {
       "product_category",
       "product_category.category_id",
       "product_category.category_name",
+      "unit_of_measurement",
+      "unit_of_measurement.unit_id",
+      "unit_of_measurement.unit_name",
+      "unit_of_measurement.unit_shortcut",
       "price_per_unit",
       "priceA",
       "priceB",
@@ -307,6 +327,9 @@ export async function resolveCustomerDiscountPrice(input: CustomerDiscountPriceI
     productName: asString(productRow.product_name),
     categoryId: relationId(productRow.product_category, "category_id"),
     categoryName: categoryName(productRow.product_category),
+    unitId: relationId(productRow.unit_of_measurement, "unit_id"),
+    unitName: unitName(productRow.unit_of_measurement),
+    unitShortcut: unitShortcut(productRow.unit_of_measurement),
   };
   const base = selectedBasePrice(productRow, input.priceTier ?? null, input.basePrice ?? null);
   const initialSupplierId = input.supplierId ?? null;

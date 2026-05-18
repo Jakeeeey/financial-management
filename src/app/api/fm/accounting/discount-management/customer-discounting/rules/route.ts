@@ -60,6 +60,27 @@ function productBarcode(value: unknown) {
     : "";
 }
 
+function productUnitId(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  return relationId((value as Record<string, unknown>).unit_of_measurement, "unit_id");
+}
+
+function productUnitName(value: unknown) {
+  if (!value || typeof value !== "object") return "";
+  const unit = (value as Record<string, unknown>).unit_of_measurement;
+  return unit && typeof unit === "object"
+    ? asString((unit as Record<string, unknown>).unit_name)
+    : "";
+}
+
+function productUnitShortcut(value: unknown) {
+  if (!value || typeof value !== "object") return "";
+  const unit = (value as Record<string, unknown>).unit_of_measurement;
+  return unit && typeof unit === "object"
+    ? asString((unit as Record<string, unknown>).unit_shortcut)
+    : "";
+}
+
 async function fetchProductRules(params: URLSearchParams) {
   const paramsWithSoftDelete = new URLSearchParams(params);
   addSoftDeleteFilters(paramsWithSoftDelete);
@@ -123,6 +144,10 @@ export async function GET(request: NextRequest) {
         "product_id.product_name",
         "product_id.product_code",
         "product_id.barcode",
+        "product_id.unit_of_measurement",
+        "product_id.unit_of_measurement.unit_id",
+        "product_id.unit_of_measurement.unit_name",
+        "product_id.unit_of_measurement.unit_shortcut",
         "discount_type",
         "discount_type.id",
         "discount_type.discount_type",
@@ -155,6 +180,9 @@ export async function GET(request: NextRequest) {
       productName: productName(row.product_id),
       productCode: productCode(row.product_id),
       barcode: productBarcode(row.product_id),
+      unitId: productUnitId(row.product_id),
+      unitName: productUnitName(row.product_id),
+      unitShortcut: productUnitShortcut(row.product_id),
       discount: discountLabel(row.discount_type),
       unitPrice: asNumber(row.unit_price),
     })).filter((row) => row.id > 0);

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
 export const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 
-export type DirectusList<T> = { data?: T[] };
+export type DirectusList<T> = { data?: T[]; meta?: { filter_count?: number | string } };
 export type DirectusItem<T> = { data?: T };
 
 export class DirectusRequestError extends Error {

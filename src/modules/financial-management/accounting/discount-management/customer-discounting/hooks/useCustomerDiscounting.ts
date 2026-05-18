@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { customerDiscountingApi } from "../providers/customerDiscountingApi";
 import type {
@@ -12,29 +12,12 @@ const emptyRules: CustomerDiscountingRules = {
   productRules: [],
 };
 
-export function useCustomerDiscounting(userId: number | null) {
-  const [moduleData, setModuleData] = useState<CustomerDiscountingModuleData | null>(null);
+export function useCustomerDiscounting(userId: number | null, initialModuleData: CustomerDiscountingModuleData) {
+  const [moduleData, setModuleData] = useState<CustomerDiscountingModuleData>(initialModuleData);
   const [rules, setRules] = useState<CustomerDiscountingRules>(emptyRules);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerDiscountingCustomer | null>(null);
-  const [loading, setLoading] = useState(true);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadModuleData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await customerDiscountingApi.getModuleData();
-      setModuleData(data);
-      setError(null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load customer discounting data";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   const loadRules = useCallback(async (customerCode: string) => {
     try {
@@ -56,8 +39,8 @@ export function useCustomerDiscounting(userId: number | null) {
 
   const refreshSelectedCustomer = useCallback(async () => {
     if (!selectedCustomer) return;
-    await Promise.all([loadModuleData(), loadRules(selectedCustomer.customerCode)]);
-  }, [loadModuleData, loadRules, selectedCustomer]);
+    await loadRules(selectedCustomer.customerCode);
+  }, [loadRules, selectedCustomer]);
 
   const updateGlobalDiscount = useCallback(async (discountTypeId: number | null) => {
     if (!selectedCustomer) return;
@@ -69,14 +52,29 @@ export function useCustomerDiscounting(userId: number | null) {
         discountTypeId,
         updatedBy: userId,
       });
+      const globalDiscount = discountTypeId
+        ? moduleData.discountTypes.find((item) => item.id === discountTypeId) ?? null
+        : null;
+      setModuleData((current) => ({
+        ...current,
+        customers: current.customers.map((customer) =>
+          customer.customerCode === selectedCustomer.customerCode
+            ? { ...customer, globalDiscount }
+            : customer,
+        ),
+      }));
+      setSelectedCustomer((current) =>
+        current?.customerCode === selectedCustomer.customerCode
+          ? { ...current, globalDiscount }
+          : current,
+      );
       toast.success("Global customer discount updated");
-      await loadModuleData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update global customer discount");
     } finally {
       setSaving(false);
     }
-  }, [loadModuleData, selectedCustomer, userId]);
+  }, [moduleData.discountTypes, selectedCustomer, userId]);
 
   const addSupplierCategoryRule = useCallback(async (payload: {
     supplierId: number;
@@ -154,20 +152,16 @@ export function useCustomerDiscounting(userId: number | null) {
     }
   }, [loadRules, selectedCustomer, userId]);
 
-  useEffect(() => {
-    void loadModuleData();
-  }, [loadModuleData]);
-
   return {
     moduleData,
     rules,
     selectedCustomer,
     setSelectedCustomer,
     selectCustomer,
-    loading,
+    loading: false,
     rulesLoading,
     saving,
-    error,
+    error: null,
     refreshSelectedCustomer,
     updateGlobalDiscount,
     addSupplierCategoryRule,

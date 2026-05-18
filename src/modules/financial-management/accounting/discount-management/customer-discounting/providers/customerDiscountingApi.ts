@@ -1,6 +1,7 @@
 import type {
   CustomerDiscountingModuleData,
   CustomerDiscountPricingResult,
+  CustomerDiscountingCustomer,
   CustomerDiscountingProduct,
   CustomerDiscountingRules,
   CustomerDiscountingSupplier,
@@ -23,8 +24,18 @@ async function parseResponse<T>(res: Response, fallback: string): Promise<T> {
 }
 
 export const customerDiscountingApi = {
-  async getModuleData(): Promise<CustomerDiscountingModuleData> {
-    const res = await fetch(`${BASE}/module-data`, { cache: "no-store" });
+  async getModuleData(query?: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+  }): Promise<CustomerDiscountingModuleData> {
+    const params = new URLSearchParams();
+    if (query?.page) params.set("page", String(query.page));
+    if (query?.pageSize) params.set("page_size", String(query.pageSize));
+    if (query?.search) params.set("q", query.search);
+
+    const url = params.size > 0 ? `${BASE}/module-data?${params.toString()}` : `${BASE}/module-data`;
+    const res = await fetch(url, { cache: "no-store" });
     return parseResponse<CustomerDiscountingModuleData>(res, "Failed to load customer discounting data");
   },
 
@@ -92,10 +103,24 @@ export const customerDiscountingApi = {
     return parseResponse<unknown>(res, "Failed to delete product discount");
   },
 
-  async searchProducts(query: string): Promise<CustomerDiscountingProduct[]> {
+  async searchProducts(query: string, options?: {
+    customerCode?: string;
+    supplierId?: number | null;
+    priceTier?: "price_per_unit" | "priceA" | "priceB" | "priceC" | "priceD" | "priceE" | null;
+  }): Promise<CustomerDiscountingProduct[]> {
     const params = new URLSearchParams({ q: query });
+    if (options?.customerCode) params.set("customer_code", options.customerCode);
+    if (options?.supplierId) params.set("supplier_id", String(options.supplierId));
+    if (options?.priceTier) params.set("price_tier", options.priceTier);
     const res = await fetch(`${BASE}/products/search?${params.toString()}`, { cache: "no-store" });
     const json = await parseResponse<{ data: CustomerDiscountingProduct[] }>(res, "Failed to search products");
+    return Array.isArray(json.data) ? json.data : [];
+  },
+
+  async searchCustomers(query: string): Promise<CustomerDiscountingCustomer[]> {
+    const params = new URLSearchParams({ q: query });
+    const res = await fetch(`${BASE}/customers/search?${params.toString()}`, { cache: "no-store" });
+    const json = await parseResponse<{ data: CustomerDiscountingCustomer[] }>(res, "Failed to search customers");
     return Array.isArray(json.data) ? json.data : [];
   },
 
