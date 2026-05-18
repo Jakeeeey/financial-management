@@ -14,9 +14,7 @@ import {
   Building2,
   Calendar,
   CreditCard,
-  Mail,
   MapPin,
-  Phone,
   User,
   Info,
 } from "lucide-react";
@@ -88,24 +86,8 @@ export function PayeeDetailsModal({
             </h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Shortcut:</span>
-                <span className="font-medium">{payee.supplier_shortcut}</span>
-              </div>
-              <div className="flex justify-between">
                 <span className="text-muted-foreground">Contact Person:</span>
                 <span className="font-medium">{payee.contact_person}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5" /> Email:
-                </span>
-                <span className="font-medium">{payee.email_address || "N/A"}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground flex items-center gap-1.5">
-                  <Phone className="h-3.5 w-3.5" /> Phone:
-                </span>
-                <span className="font-medium">{payee.phone_number || "N/A"}</span>
               </div>
             </div>
           </div>

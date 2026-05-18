@@ -9,10 +9,7 @@ export const PayeeSchema = z.object({
     .string()
     .min(2, "Payee name must be at least 2 characters")
     .max(255, "Payee name is too long"),
-  supplier_shortcut: z
-    .string()
-    .min(1, "Payee shortcut is required")
-    .max(50, "Payee shortcut is too long"),
+  supplier_shortcut: z.string().optional().default(""),
   supplier_type: z.string().default("Non-Trade"),
   tin_number: z
     .string()

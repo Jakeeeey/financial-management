@@ -16,7 +16,7 @@ const getHeaders = () => ({
  */
 export async function fetchPayeeProductsServer(payeeId: number) {
   try {
-    const fields = "*,product_id.product_name,product_id.product_code,product_id.product_id,product_id.id,discount_type_id.name";
+    const fields = "id,supplier_id,product_id,discount_type,product_id.product_id,product_id.product_name,product_id.product_code,discount_type_id.name";
     
     // Using shorthand filter syntax to match fetchAllPayees
     const url = `${API_BASE}/product_per_supplier?limit=-1&fields=${fields}&filter[supplier_id][_eq]=${payeeId}`;

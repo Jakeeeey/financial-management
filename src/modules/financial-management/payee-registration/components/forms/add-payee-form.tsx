@@ -76,12 +76,9 @@ export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
     resolver: zodResolver(PayeeFormSchema),
     defaultValues: {
       supplier_name: "",
-      supplier_shortcut: "",
       supplier_type: "Non-Trade",
       tin_number: "",
       contact_person: "",
-      email_address: "",
-      phone_number: "",
       address: "",
       brgy: "",
       city: "",
@@ -155,10 +152,7 @@ export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
   const onInvalid = useCallback((errors: FieldErrors<PayeeFormValues>) => {
     const fieldTabMap: Record<string, string> = {
       supplier_name: "contact",
-      supplier_shortcut: "contact",
       contact_person: "contact",
-      email_address: "contact",
-      phone_number: "contact",
       preferred_communication_method: "contact",
       address: "location",
       brgy: "location",
@@ -215,8 +209,7 @@ export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
           <TabsContent value="contact" className="space-y-4 mt-4">
             <Card>
               <CardContent className="pt-6 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
+                <FormField
                     control={form.control}
                     name="supplier_name"
                     render={({ field }) => (
@@ -232,24 +225,6 @@ export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
                       </FormItem>
                     )}
                   />
-
-                  <FormField
-                    control={form.control}
-                    name="supplier_shortcut"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          Payee Shortcut{" "}
-                          <span className="text-destructive">*</span>
-                        </FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g., PAYEE-01" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
 
                 <FormField
                   control={form.control}
@@ -270,39 +245,6 @@ export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
                   )}
                 />
 
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="email_address"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email Address</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="email"
-                            placeholder="email@example.com"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="phone_number"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone Number</FormLabel>
-                        <FormControl>
-                          <Input placeholder="09XXXXXXXXX" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
 
                 <FormField
                   control={form.control}
