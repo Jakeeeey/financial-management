@@ -12,6 +12,11 @@ import type {
 
 const emptyProductPage: SupplierDiscountProductPage = {
   products: [],
+  filterOptions: {
+    supplierId: null,
+    categories: [],
+    brands: [],
+  },
   pagination: {
     page: 1,
     pageSize: 10,
@@ -60,6 +65,7 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
     search?: string;
     categoryId?: number | null;
     brandId?: number | null;
+    supplierId?: number | null;
   }) => {
     const seq = ++loadSeqRef.current;
     try {

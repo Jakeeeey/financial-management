@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import {
   Pagination,
   PaginationContent,
@@ -27,6 +26,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -144,6 +144,16 @@ export default function SupplierDiscountingModule({
   const [preflighting, setPreflighting] = useState(false);
   const [pendingApplyId, setPendingApplyId] = useState<number | null>(null);
   const [pendingApplyNewCount, setPendingApplyNewCount] = useState(0);
+  const selectedSupplierId = selectedSupplier?.id ?? null;
+  const supplierFiltersReady = !selectedSupplierId || productPage.filterOptions.supplierId === selectedSupplierId;
+  const categoryOptions = useMemo(() => {
+    if (!selectedSupplierId) return moduleData.categories;
+    return supplierFiltersReady ? productPage.filterOptions.categories : [];
+  }, [moduleData.categories, productPage.filterOptions.categories, selectedSupplierId, supplierFiltersReady]);
+  const brandOptions = useMemo(() => {
+    if (!selectedSupplierId) return moduleData.brands;
+    return supplierFiltersReady ? productPage.filterOptions.brands : [];
+  }, [moduleData.brands, productPage.filterOptions.brands, selectedSupplierId, supplierFiltersReady]);
   const pendingDeleteRule = useMemo(
     () => (pendingDeleteId ? rules.find((r) => r.id === pendingDeleteId) ?? null : null),
     [pendingDeleteId, rules],
@@ -187,15 +197,30 @@ export default function SupplierDiscountingModule({
         search,
         categoryId,
         brandId,
+        supplierId: selectedSupplierId,
       });
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [brandId, categoryId, loadProducts, page, search]);
+  }, [brandId, categoryId, loadProducts, page, search, selectedSupplierId]);
 
   useEffect(() => {
     if (rulePage > ruleTotalPages) setRulePage(ruleTotalPages);
   }, [rulePage, ruleTotalPages]);
+
+  useEffect(() => {
+    if (!selectedSupplierId || !supplierFiltersReady) return;
+
+    if (categoryId && !categoryOptions.some((category) => category.categoryId === categoryId)) {
+      setCategoryId(null);
+      setPage(1);
+    }
+
+    if (brandId && !brandOptions.some((brand) => brand.brandId === brandId)) {
+      setBrandId(null);
+      setPage(1);
+    }
+  }, [brandId, brandOptions, categoryId, categoryOptions, selectedSupplierId, supplierFiltersReady]);
 
   useEffect(() => {
     setMetadataMessage(metadataError ?? null);
@@ -285,82 +310,87 @@ export default function SupplierDiscountingModule({
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.3fr_1fr_1fr_1fr_auto]">
-          <label className="grid gap-1.5 text-sm">
+          <div className="grid gap-1.5 text-sm">
             <span className="font-medium">Supplier</span>
-            <NativeSelect
+            <SearchableSelect
               className="w-full"
               value={selectedSupplier?.id ? String(selectedSupplier.id) : ""}
-              onChange={(event) => {
+              onValueChange={(value) => {
                 setRuleSearch("");
                 setRulePage(1);
                 setDiscountTypeId(null);
-                selectSupplier(numberValue(event.target.value));
+                setPage(1);
+                selectSupplier(numberValue(value));
               }}
-            >
-              <NativeSelectOption value="">Select supplier</NativeSelectOption>
-              {moduleData.suppliers.map((supplier) => (
-                <NativeSelectOption key={supplier.id} value={supplier.id}>
-                  {supplier.supplierName}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
+              options={[
+                { value: "", label: "Select supplier" },
+                ...moduleData.suppliers.map((supplier) => ({
+                  value: String(supplier.id),
+                  label: supplier.supplierName,
+                })),
+              ]}
+              placeholder="Select supplier"
+            />
+          </div>
 
-          <label className="grid gap-1.5 text-sm">
+          <div className="grid gap-1.5 text-sm">
             <span className="font-medium">Category</span>
-            <NativeSelect
+            <SearchableSelect
               className="w-full"
-              disabled={saving}
+              disabled={saving || !supplierFiltersReady}
               value={categoryId ? String(categoryId) : ""}
-              onChange={(event) => {
-                setCategoryId(numberValue(event.target.value));
+              onValueChange={(value) => {
+                setCategoryId(numberValue(value));
                 setPage(1);
               }}
-            >
-              <NativeSelectOption value="">All categories</NativeSelectOption>
-              {moduleData.categories.map((category) => (
-                <NativeSelectOption key={category.categoryId} value={category.categoryId}>
-                  {category.categoryName}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
+              options={[
+                { value: "", label: "All categories" },
+                ...categoryOptions.map((category) => ({
+                  value: String(category.categoryId),
+                  label: category.categoryName,
+                })),
+              ]}
+              placeholder="All categories"
+            />
+          </div>
 
-          <label className="grid gap-1.5 text-sm">
+          <div className="grid gap-1.5 text-sm">
             <span className="font-medium">Brand</span>
-            <NativeSelect
+            <SearchableSelect
               className="w-full"
-              disabled={saving}
+              disabled={saving || !supplierFiltersReady}
               value={brandId ? String(brandId) : ""}
-              onChange={(event) => {
-                setBrandId(numberValue(event.target.value));
+              onValueChange={(value) => {
+                setBrandId(numberValue(value));
                 setPage(1);
               }}
-            >
-              <NativeSelectOption value="">All brands</NativeSelectOption>
-              {moduleData.brands.map((brand) => (
-                <NativeSelectOption key={brand.brandId} value={brand.brandId}>
-                  {brand.brandName}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
+              options={[
+                { value: "", label: "All brands" },
+                ...brandOptions.map((brand) => ({
+                  value: String(brand.brandId),
+                  label: brand.brandName,
+                })),
+              ]}
+              placeholder="All brands"
+            />
+          </div>
 
-          <label className="grid gap-1.5 text-sm">
+          <div className="grid gap-1.5 text-sm">
             <span className="font-medium">Discount</span>
-            <NativeSelect
+            <SearchableSelect
               className="w-full"
               value={discountTypeId ? String(discountTypeId) : ""}
-              onChange={(event) => setDiscountTypeId(numberValue(event.target.value))}
-            >
-              <NativeSelectOption value="">Select discount</NativeSelectOption>
-              {moduleData.discountTypes.map((discount) => (
-                <NativeSelectOption key={discount.id} value={discount.id}>
-                  {discountText(discount)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
+              onValueChange={(value) => setDiscountTypeId(numberValue(value))}
+              options={[
+                { value: "", label: "Select discount" },
+                ...moduleData.discountTypes.map((discount) => ({
+                  value: String(discount.id),
+                  label: discountText(discount),
+                })),
+              ]}
+              placeholder="Select discount"
+            />
+          </div>
 
           <div className="flex items-end gap-2">
             <Button
@@ -404,7 +434,14 @@ export default function SupplierDiscountingModule({
                 variant="outline"
                 size="sm"
                 disabled={saving}
-                onClick={() => void loadProducts({ page, pageSize: PRODUCT_PAGE_SIZE, search, categoryId, brandId })}
+                onClick={() => void loadProducts({
+                  page,
+                  pageSize: PRODUCT_PAGE_SIZE,
+                  search,
+                  categoryId,
+                  brandId,
+                  supplierId: selectedSupplierId,
+                })}
               >
                 <RefreshCw />
                 Refresh
@@ -432,7 +469,14 @@ export default function SupplierDiscountingModule({
                   disabled={productsLoading}
                   onClick={() => {
                     setProductError(null);
-                    void loadProducts({ page, pageSize: PRODUCT_PAGE_SIZE, search, categoryId, brandId });
+                    void loadProducts({
+                      page,
+                      pageSize: PRODUCT_PAGE_SIZE,
+                      search,
+                      categoryId,
+                      brandId,
+                      supplierId: selectedSupplierId,
+                    });
                   }}
                 >
                   {productsLoading ? <Loader2 className="size-3 animate-spin" /> : null}
@@ -454,19 +498,20 @@ export default function SupplierDiscountingModule({
                   <TableHead>Product</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Brand</TableHead>
+                  <TableHead>Discount</TableHead>
                   <TableHead className="text-right">Cost</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {productsLoading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-28 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
                       Loading parent products...
                     </TableCell>
                   </TableRow>
                 ) : productPage.products.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-28 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
                       {productPage.emptyStateMessage ?? "No parent products found."}
                     </TableCell>
                   </TableRow>
@@ -488,6 +533,9 @@ export default function SupplierDiscountingModule({
                     </TableCell>
                     <TableCell>{product.categoryName || "Uncategorized"}</TableCell>
                     <TableCell>{product.brandName || "No brand"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{discountText(product.discount)}</Badge>
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{money(product.costPerUnit)}</TableCell>
                   </TableRow>
                 ))}
@@ -724,7 +772,14 @@ export default function SupplierDiscountingModule({
                 if (id == null) return;
                 const saved = await applyBulkDiscount(id);
                 if (saved) setDiscountTypeId(null);
-                void loadProducts({ page, pageSize: PRODUCT_PAGE_SIZE, search, categoryId, brandId });
+                void loadProducts({
+                  page,
+                  pageSize: PRODUCT_PAGE_SIZE,
+                  search,
+                  categoryId,
+                  brandId,
+                  supplierId: selectedSupplierId,
+                });
                 setPendingApplyId(null);
               }}
             >

@@ -20,11 +20,60 @@ type RuleRow = {
   discount_type?: unknown;
 };
 
+type ActivityRow = {
+  item?: unknown;
+  timestamp?: unknown;
+};
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function productRelation(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function timestampMs(value: unknown) {
+  const text = asString(value);
+  if (!text) return 0;
+
+  const time = new Date(text).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function chunks<T>(items: T[], size: number) {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
+async function latestRuleActivity(ruleIds: number[]) {
+  const activityByRuleId = new Map<number, number>();
+  if (ruleIds.length === 0) return activityByRuleId;
+
+  for (const ids of chunks(ruleIds, 100)) {
+    const params = new URLSearchParams();
+    params.set("limit", "-1");
+    params.set("sort", "-timestamp,-id");
+    params.set("fields", "item,timestamp");
+    params.set("filter[_and][0][collection][_eq]", "product_per_supplier");
+    params.set("filter[_and][1][item][_in]", ids.join(","));
+    params.set("filter[_and][2][action][_in]", "create,update");
+
+    try {
+      const res = await directusFetch<DirectusList<ActivityRow>>(`/items/directus_activity?${params.toString()}`);
+      for (const row of res.data ?? []) {
+        const id = asNumber(row.item);
+        const time = timestampMs(row.timestamp);
+        if (id && time && !activityByRuleId.has(id)) activityByRuleId.set(id, time);
+      }
+    } catch {
+      return new Map<number, number>();
+    }
+  }
+
+  return activityByRuleId;
 }
 
 export async function GET(request: NextRequest) {
@@ -88,6 +137,11 @@ export async function GET(request: NextRequest) {
         };
       })
       .filter((row) => row.id > 0);
+    const activityByRuleId = await latestRuleActivity(rules.map((rule) => rule.id));
+    rules.sort((a, b) =>
+      (activityByRuleId.get(b.id) ?? 0) - (activityByRuleId.get(a.id) ?? 0)
+      || b.id - a.id,
+    );
 
     return NextResponse.json({ rules });
   } catch (error) {

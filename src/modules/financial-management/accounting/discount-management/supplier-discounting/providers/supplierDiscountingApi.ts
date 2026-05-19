@@ -48,6 +48,7 @@ export const supplierDiscountingApi = {
     search?: string;
     categoryId?: number | null;
     brandId?: number | null;
+    supplierId?: number | null;
   }): Promise<SupplierDiscountProductPage> {
     const params = new URLSearchParams();
     if (query?.page) params.set("page", String(query.page));
@@ -55,6 +56,7 @@ export const supplierDiscountingApi = {
     if (query?.search) params.set("q", query.search);
     if (query?.categoryId) params.set("category_id", String(query.categoryId));
     if (query?.brandId) params.set("brand_id", String(query.brandId));
+    if (query?.supplierId) params.set("supplier_id", String(query.supplierId));
 
     const url = params.size > 0 ? `${BASE}/products?${params.toString()}` : `${BASE}/products`;
     const res = await fetch(url, { cache: "no-store" });

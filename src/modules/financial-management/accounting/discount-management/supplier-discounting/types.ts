@@ -33,6 +33,7 @@ export type SupplierDiscountProduct = {
   parentId: number | null;
   costPerUnit: number | null;
   pricePerUnit: number | null;
+  discount: SupplierDiscountOption | null;
 };
 
 export type SupplierDiscountRule = {
@@ -59,6 +60,11 @@ export type SupplierDiscountModuleData = {
 
 export type SupplierDiscountProductPage = {
   products: SupplierDiscountProduct[];
+  filterOptions: {
+    supplierId: number | null;
+    categories: SupplierDiscountCategory[];
+    brands: SupplierDiscountBrand[];
+  };
   pagination: {
     page: number;
     pageSize: number;
