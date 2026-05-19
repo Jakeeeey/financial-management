@@ -62,7 +62,7 @@ async function latestRuleActivity(ruleIds: number[]) {
     params.set("filter[_and][2][action][_in]", "create,update");
 
     try {
-      const res = await directusFetch<DirectusList<ActivityRow>>(`/items/directus_activity?${params.toString()}`);
+      const res = await directusFetch<DirectusList<ActivityRow>>(`/activity?${params.toString()}`);
       for (const row of res.data ?? []) {
         const id = asNumber(row.item);
         const time = timestampMs(row.timestamp);
@@ -174,7 +174,8 @@ export async function DELETE(request: NextRequest) {
     }
 
     await directusFetch<DirectusItem<RuleRow>>(`/items/product_per_supplier/${id}`, {
-      method: "DELETE",
+      method: "PATCH",
+      body: JSON.stringify({ discount_type: null }),
     });
 
     return NextResponse.json({ success: true });

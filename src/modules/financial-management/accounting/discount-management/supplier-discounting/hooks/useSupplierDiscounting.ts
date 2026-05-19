@@ -186,9 +186,6 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
   }, [loadRules, selectedProductIds, selectedSupplier]);
 
   /**
-   * Deletes an existing supplier discount rule and refreshes the rule list.
-   */
-  /**
    * Retries loading the module metadata (suppliers, categories, brands, discounts).
    */
   const refreshModuleData = useCallback(async () => {
@@ -206,15 +203,17 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
   }, []);
 
   const deleteRule = useCallback(async (id: number) => {
-    if (!selectedSupplier) return;
+    if (!selectedSupplier) return false;
 
     try {
       setSaving(true);
       await supplierDiscountingApi.deleteRule(id, selectedSupplier.id);
-      toast.success("Supplier discount rule removed");
+      toast.success("Supplier discount cleared");
       await loadRules(selectedSupplier.id);
+      return true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete supplier discount rule");
+      toast.error(err instanceof Error ? err.message : "Failed to clear supplier discount");
+      return false;
     } finally {
       setSaving(false);
     }

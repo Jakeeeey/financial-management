@@ -107,13 +107,13 @@ export const supplierDiscountingApi = {
   },
 
   /**
-   * Removes a supplier product discount rule.
+   * Clears the discount from a supplier product rule.
    */
   async deleteRule(id: number, supplierId?: number) {
     const params = new URLSearchParams({ id: String(id) });
     if (supplierId) params.set("supplier_id", String(supplierId));
     const res = await fetch(`${BASE}/rules?${params.toString()}`, { method: "DELETE" });
-    return parseResponse<unknown>(res, "Failed to delete supplier discount rule");
+    return parseResponse<unknown>(res, "Failed to clear supplier discount");
   },
 
   /**

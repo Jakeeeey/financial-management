@@ -484,7 +484,7 @@ export default function SupplierDiscountingModule({
                 </Button>
               </div>
             ) : null}
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">
@@ -495,11 +495,11 @@ export default function SupplierDiscountingModule({
                       aria-label="Select all products on this page"
                     />
                   </TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Brand</TableHead>
-                  <TableHead>Discount</TableHead>
-                  <TableHead className="text-right">Cost</TableHead>
+                  <TableHead className="w-[30%]">Product</TableHead>
+                  <TableHead className="w-[17%]">Category</TableHead>
+                  <TableHead className="w-[17%]">Brand</TableHead>
+                  <TableHead className="w-[21%]">Discount</TableHead>
+                  <TableHead className="w-[15%] text-right">Cost</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -528,15 +528,17 @@ export default function SupplierDiscountingModule({
                         aria-label={`Select ${product.productName}`}
                       />
                     </TableCell>
-                    <TableCell className="min-w-64">
+                    <TableCell className="min-w-0 whitespace-normal">
                       <ProductIdentity product={product} />
                     </TableCell>
-                    <TableCell>{product.categoryName || "Uncategorized"}</TableCell>
-                    <TableCell>{product.brandName || "No brand"}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{discountText(product.discount)}</Badge>
+                    <TableCell className="whitespace-normal break-words">{product.categoryName || "Uncategorized"}</TableCell>
+                    <TableCell className="whitespace-normal break-words">{product.brandName || "No brand"}</TableCell>
+                    <TableCell className="whitespace-normal">
+                      <Badge variant="outline" className="max-w-full whitespace-normal text-left">
+                        {discountText(product.discount)}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{money(product.costPerUnit)}</TableCell>
+                    <TableCell className="whitespace-normal text-right tabular-nums">{money(product.costPerUnit)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -582,7 +584,7 @@ export default function SupplierDiscountingModule({
 
         <Card className="overflow-hidden rounded-md">
           <CardHeader className="gap-3 border-b">
-            <CardTitle className="text-base">Current Supplier Rules</CardTitle>
+            <CardTitle className="text-base">Current Supplier Discounts</CardTitle>
             <p className="text-sm text-muted-foreground">
               {selectedSupplier ? selectedSupplier.supplierName : "Select a supplier to review existing item discounts."}
             </p>
@@ -671,7 +673,7 @@ export default function SupplierDiscountingModule({
                           className="shrink-0"
                           disabled={saving}
                           onClick={() => setPendingDeleteId(rule.id)}
-                          aria-label={`Delete ${rule.productName} supplier discount`}
+                          aria-label={`Clear ${rule.productName} supplier discount`}
                         >
                           <Trash2 />
                         </Button>
@@ -725,9 +727,9 @@ export default function SupplierDiscountingModule({
       <AlertDialog open={pendingDeleteId !== null} onOpenChange={(open) => { if (!open) setPendingDeleteId(null); }}>
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete supplier discount</AlertDialogTitle>
+            <AlertDialogTitle>Remove supplier discount</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove the discount for &ldquo;{pendingDeleteRule?.productName}&rdquo;?
+              Are you sure you want to clear the discount for &ldquo;{pendingDeleteRule?.productName}&rdquo;?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -735,12 +737,25 @@ export default function SupplierDiscountingModule({
             <AlertDialogAction
               variant="destructive"
               disabled={saving}
-              onClick={() => {
-                if (pendingDeleteId) void deleteRule(pendingDeleteId);
+              onClick={async () => {
+                const id = pendingDeleteId;
                 setPendingDeleteId(null);
+                if (!id) return;
+
+                const cleared = await deleteRule(id);
+                if (cleared) {
+                  void loadProducts({
+                    page,
+                    pageSize: PRODUCT_PAGE_SIZE,
+                    search,
+                    categoryId,
+                    brandId,
+                    supplierId: selectedSupplierId,
+                  });
+                }
               }}
             >
-              Delete
+              Remove
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
