@@ -3,11 +3,11 @@
 import React, {useState} from "react";
 import {
     CashieringState, CollectionSummary, Salesman, Bank, Denomination,
-    COA, CheckDetail, PaymentMethod, Customer, UnpaidInvoice
+    COA, CheckDetail, PaymentMethod, Customer, UnpaidInvoice, UserDto
 } from "../../types";
 import {
     Plus, Calculator, Receipt, ShieldCheck, Check as CheckIcon, ChevronsUpDown, Landmark,
-    Wallet, AlertCircle, Trash2, Loader2, CreditCard, User, FileText
+    Wallet, AlertCircle, Trash2, Loader2, CreditCard, User as UserIcon, FileText
 } from "lucide-react";
 import {cn} from "@/lib/utils";
 import {Button} from "@/components/ui/button";
@@ -21,8 +21,13 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
         isSheetOpen,
         setIsSheetOpen,
         salesmen,
+        users, // 🚀 NEW: User list for "Collected By"
         salesmanId,
         setSalesmanId,
+        collectedBy, // 🚀 NEW
+        setCollectedBy, // 🚀 NEW
+        crNo, // 🚀 NEW
+        setCrNo, // 🚀 NEW
         banks,
         coas,
         paymentMethods,
@@ -54,6 +59,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
     } = state;
 
     const [openSalesman, setOpenSalesman] = useState(false);
+    const [openCollectedBy, setOpenCollectedBy] = useState(false); // 🚀 NEW Popover state
 
     // Dropdown open states
     const [openPaymentIdx, setOpenPaymentIdx] = useState<number | null>(null);
@@ -102,20 +108,19 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                         </div>
                     ) : (
                         <>
-                            {/* Header Info */}
-                            <div
-                                className="grid grid-cols-1 md:grid-cols-4 gap-4 p-5 bg-card rounded-xl border border-border shadow-sm">
-                                <div className="space-y-2 md:col-span-1">
-                                    <label
-                                        className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
-                                        Collector <span className="text-destructive">*</span>
+                            {/* 🚀 RESTRUCTURED HEADER INFO */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-card rounded-xl border border-border shadow-sm">
+
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                                        Salesman <span className="text-destructive">*</span>
                                     </label>
                                     <Popover open={openSalesman} onOpenChange={setOpenSalesman}>
                                         <PopoverTrigger asChild>
                                             <Button variant="outline" role="combobox"
                                                     className={cn("w-full h-10 justify-between text-xs font-bold bg-background", !salesmanId && "text-muted-foreground border-dashed border-primary/50")}>
                                                 <span className="truncate">
-                                                    {salesmanId ? salesmen.find((s: Salesman) => s.id.toString() === salesmanId)?.salesmanName : "Select Collector..."}
+                                                    {salesmanId ? salesmen.find((s: Salesman) => s.id.toString() === salesmanId)?.salesmanName : "Select Route Owner..."}
                                                 </span>
                                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
                                             </Button>
@@ -123,8 +128,8 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                         <PopoverContent className="w-[300px] p-0" align="start">
                                             <Command>
                                                 <CommandInput placeholder="Type code or name..." className="text-xs"/>
-                                                <CommandList className="max-h-[250px] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border hover:scrollbar-thumb-foreground/20 overscroll-contain">
-                                                    <CommandEmpty>No collector found.</CommandEmpty>
+                                                <CommandList className="max-h-[250px] overflow-y-auto custom-scrollbar">
+                                                    <CommandEmpty>No salesman found.</CommandEmpty>
                                                     <CommandGroup>
                                                         {salesmen.map((s: Salesman) => (
                                                             <CommandItem key={s.id}
@@ -133,10 +138,8 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                              setSalesmanId(s.id.toString());
                                                                              setOpenSalesman(false);
                                                                          }} className="text-xs cursor-pointer">
-                                                                <CheckIcon
-                                                                    className={cn("mr-2 h-4 w-4 text-primary", salesmanId === s.id.toString() ? "opacity-100" : "opacity-0")}/>
-                                                                <span
-                                                                    className="font-mono font-bold text-muted-foreground mr-2">[{s.salesmanCode}]</span>
+                                                                <CheckIcon className={cn("mr-2 h-4 w-4 text-primary", salesmanId === s.id.toString() ? "opacity-100" : "opacity-0")}/>
+                                                                <span className="font-mono font-bold text-muted-foreground mr-2">[{s.salesmanCode}]</span>
                                                                 {s.salesmanName}
                                                             </CommandItem>
                                                         ))}
@@ -146,25 +149,70 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                         </PopoverContent>
                                     </Popover>
                                 </div>
-                                <div className="space-y-2 md:col-span-1">
-                                    <label
-                                        className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Collection
-                                        Date</label>
+
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                                        Collected By
+                                    </label>
+                                    <Popover open={openCollectedBy} onOpenChange={setOpenCollectedBy}>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" role="combobox"
+                                                    className={cn("w-full h-10 justify-between text-xs font-bold bg-background", !collectedBy && "text-muted-foreground")}>
+                                                <span className="truncate">
+                                                    {collectedBy ? users.find((u: UserDto) => u.id.toString() === collectedBy)?.name : "Select Collector..."}
+                                                </span>
+                                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[300px] p-0" align="start">
+                                            <Command>
+                                                <CommandInput placeholder="Type name..." className="text-xs"/>
+                                                <CommandList className="max-h-[250px] overflow-y-auto custom-scrollbar">
+                                                    <CommandEmpty>No user found.</CommandEmpty>
+                                                    <CommandGroup>
+                                                        {users && users.map((u: UserDto) => (
+                                                            <CommandItem key={u.id}
+                                                                         value={u.name}
+                                                                         onSelect={() => {
+                                                                             setCollectedBy(u.id.toString());
+                                                                             setOpenCollectedBy(false);
+                                                                         }} className="text-xs cursor-pointer">
+                                                                <CheckIcon className={cn("mr-2 h-4 w-4 text-primary", collectedBy === u.id.toString() ? "opacity-100" : "opacity-0")}/>
+                                                                {u.name}
+                                                            </CommandItem>
+                                                        ))}
+                                                    </CommandGroup>
+                                                </CommandList>
+                                            </Command>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Collection Date</label>
                                     <Input type="date" className="h-10 text-xs font-bold bg-background"
                                            value={collectionDate} onChange={(e) => setCollectionDate(e.target.value)}/>
                                 </div>
-                                <div className="space-y-2 md:col-span-1">
-                                    <label
-                                        className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex justify-between">
+
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex justify-between">
                                         Doc No {editingId && <span className="text-primary">PREFILLED</span>}
                                     </label>
                                     <Input type="text"
                                            className={cn("h-10 text-xs font-black font-mono disabled:opacity-100", editingId ? "bg-primary/10 text-primary border-primary/30" : "bg-muted text-muted-foreground")}
                                            value={displayDocNo} disabled/>
                                 </div>
-                                <div className="space-y-2 md:col-span-1">
-                                    <label
-                                        className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Remarks</label>
+
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">CR No.</label>
+                                    <Input type="text"
+                                           className="h-10 text-xs font-bold uppercase bg-background placeholder:text-muted-foreground/50 placeholder:font-normal placeholder:normal-case"
+                                           placeholder="Collection Receipt No." value={crNo}
+                                           onChange={(e) => setCrNo(e.target.value)}/>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Remarks</label>
                                     <Input type="text"
                                            className="h-10 text-xs bg-background placeholder:text-muted-foreground/50"
                                            placeholder="Optional notes..." value={remarks}
@@ -394,7 +442,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                             className="w-full h-8 text-[11px] font-bold justify-between px-2 text-muted-foreground bg-muted/20">
                                                                         <div
                                                                             className="flex items-center gap-1.5 truncate pr-2">
-                                                                            <User size={12}/>
+                                                                            <UserIcon size={12}/>
                                                                             <span className="truncate">
                                                                             {check.customerId
                                                                                 ? (customers.find((c: Customer) => c.id.toString() === check.customerId)?.customerName || customers.find((c: Customer) => c.id.toString() === check.customerId)?.name || "Unknown")
@@ -411,7 +459,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                                       className="h-8 text-xs"/>
                                                                         <CommandList
                                                                             className="max-h-[250px] overflow-y-auto"
-                                                                            style={{ 
+                                                                            style={{
                                                                                 scrollbarWidth: 'thin',
                                                                                 scrollbarColor: 'hsl(var(--border)) transparent',
                                                                                 overflowY: 'auto',
@@ -469,7 +517,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                                                                                       className="h-8 text-xs"/>
                                                                         <CommandList
                                                                             className="max-h-[250px] overflow-y-auto"
-                                                                            style={{ 
+                                                                            style={{
                                                                                 scrollbarWidth: 'thin',
                                                                                 scrollbarColor: 'hsl(var(--border)) transparent',
                                                                                 overflowY: 'auto',
@@ -564,7 +612,7 @@ export default function CashieringSheet({state}: { state: CashieringState }) {
                         {!isFormValid && !isSheetLoading && (
                             <span
                                 className="flex items-center justify-center w-full sm:w-auto gap-1.5 text-[11px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-md">
-                                <AlertCircle size={14}/> Collector, &gt; ₱0.00, and Bank required
+                                <AlertCircle size={14}/> Salesman, &gt; ₱0.00, and Bank required
                             </span>
                         )}
                     </div>
