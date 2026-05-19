@@ -3,8 +3,28 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { useSettlement } from "../hooks/useSettlement";
 import {
-    Receipt, ShieldCheck, Wallet, Save, ChevronDown, Plus, X, Loader2,
-    Percent, Trash2, Lock, Printer, Wand2, Truck, ChevronsUpDown, Check, Layers, MapPin, Calendar, FileText, CheckCircle2, Search
+    ShieldCheck,
+    Wallet,
+    Save,
+    ChevronDown,
+    Plus,
+    X,
+    Loader2,
+    Percent,
+    Trash2,
+    Lock,
+    Printer,
+    Wand2,
+    Truck,
+    ChevronsUpDown,
+    Check,
+    Layers,
+    MapPin,
+    Calendar,
+    FileText,
+    CheckCircle2,
+    Search,
+    Receipt
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -19,6 +39,7 @@ import { toast } from "sonner";
 import SettlementInvoiceCartTable from "./SettlementInvoiceCartTable";
 import WalletAssetCard from "./WalletAssetCard";
 import InvoiceSearchPopover from "./InvoiceSearchPopover";
+import AllocationSidePanel from "./AllocationSidePanel";
 
 export interface SettlementCommandCenterProps {
     id: string | number;
@@ -73,6 +94,8 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
 
     const [routePopoverOpen, setRoutePopoverOpen] = useState(false);
 
+    const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
+
     const uniqueCategories = useMemo(() => {
         const coaMap = new Map<number, {id: number, title: string}>();
         findings.forEach(f => {
@@ -117,6 +140,14 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
 
         return () => clearTimeout(delayDebounceFn);
     }, [searchQuery, salesmanId, cartInvoices, isPosted]);
+
+    useEffect(() => {
+        if (cartInvoices.length > 0 && !activeInvoiceId) {
+            setActiveInvoiceId(cartInvoices[0].id);
+        } else if (cartInvoices.length === 0) {
+            setActiveInvoiceId(null);
+        }
+    }, [cartInvoices, activeInvoiceId]);
 
     const pouchTotal = useMemo(() => wallet.filter(w => w.type === 'CASH' || w.type === 'CHECK').reduce((sum, w) => sum + w.originalAmount, 0), [wallet]);
     const ewtTotal = useMemo(() => wallet.filter(w => w.type === 'EWT').reduce((sum, w) => sum + w.originalAmount, 0), [wallet]);
@@ -207,7 +238,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
     const filteredCredits = credits.filter(c => !creditSearch || c.label.toLowerCase().includes(creditSearch.toLowerCase()) || (c.customerName && c.customerName.toLowerCase().includes(creditSearch.toLowerCase())));
 
     return (
-        <div className="w-full h-full flex flex-col bg-muted/10 overflow-hidden relative">
+        <div className="fixed inset-0 w-full h-screen flex flex-col bg-muted/10 overflow-hidden relative z-50">
 
             {/* TOP NAVBAR */}
             <div className="bg-card border-b border-border py-2.5 px-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 shadow-sm shrink-0 relative z-20">
@@ -292,13 +323,13 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                 </div>
             </div>
 
-            {/* MAIN WORKSPACE */}
+            {/* MAIN WORKSPACE - NOW 3 COLUMNS */}
             <div className={cn(
                 "flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 lg:p-4 overflow-y-auto lg:overflow-hidden transition-all duration-500",
                 (isSubmitting || isSuccess) ? "opacity-60 blur-[1px] pointer-events-none grayscale-[20%]" : "opacity-100"
             )}>
-                {/* LEFT SIDEBAR: WALLET & CREDITS */}
-                <div className="col-span-1 lg:col-span-4 flex flex-col gap-3 overflow-hidden lg:h-full">
+                {/* LEFT SIDEBAR: WALLET & CREDITS (col-span-3) */}
+                <div className="col-span-1 lg:col-span-3 flex flex-col gap-3 overflow-hidden lg:h-full">
                     <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
                         <div className="bg-emerald-500/10 py-2 px-3 border-b border-emerald-500/20 flex justify-between items-center shrink-0">
                             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5"><Wallet size={12}/> Liquidation Pool</span>
@@ -414,11 +445,13 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                     </div>
                 </div>
 
-                {/* RIGHT PANEL: CART TABLE */}
-                <div className="col-span-1 lg:col-span-8 bg-card rounded-xl border border-border shadow-sm flex flex-col overflow-hidden lg:h-full min-h-0">
+                {/* MIDDLE PANEL: CART TABLE (col-span-6) */}
+                <div className="col-span-1 lg:col-span-6 bg-card rounded-xl border border-border shadow-sm flex flex-col overflow-hidden lg:h-full min-h-0">
                     <div className="bg-blue-500/10 py-2.5 px-4 border-b border-blue-500/20 flex flex-col gap-2 shrink-0">
                         <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-400 flex items-center gap-1.5"><Receipt size={14}/> Active Cart</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
+                                <Receipt size={14}/> Active Cart
+                            </span>
                             <div className="flex gap-1.5 items-center">
                                 {!isPosted && (
                                     <>
@@ -458,13 +491,29 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                         )}
                     </div>
 
-                    <div className="flex-1 overflow-y-auto scrollbar-thin bg-muted/5 relative [&_div.relative.w-full.overflow-auto]:!overflow-visible">
+                    <div className="flex-1 overflow-y-auto scrollbar-thin bg-muted/5 relative">
                         <SettlementInvoiceCartTable
                             isPosted={isPosted} cartInvoices={cartInvoices} allocations={allocations} wallet={wallet} credits={credits} combinedSources={combinedSources}
                             cartTotalBalance={cartTotalBalance} cartTotalAppliedSession={cartTotalAppliedSession} removeFromCart={removeFromCart} handleInvoiceDiscrepancy={handleInvoiceDiscrepancy}
-                            handleAutoCalculateEWT={handleAutoCalculateEWT} handleAllocate={handleAllocate} getInvoiceApplied={getInvoiceApplied} getUsedAmount={getUsedAmount}
+                            handleAutoCalculateEWT={handleAutoCalculateEWT} getInvoiceApplied={getInvoiceApplied} getUsedAmount={getUsedAmount}
+                            activeInvoiceId={activeInvoiceId}
+                            setActiveInvoiceId={setActiveInvoiceId}
                         />
                     </div>
+                </div>
+
+                {/* RIGHT PANEL: NEW ALLOCATION SIDE PANEL (col-span-3) */}
+                <div className="col-span-1 lg:col-span-3 bg-card rounded-xl border border-border shadow-sm overflow-hidden lg:h-full">
+                    <AllocationSidePanel
+                        activeInvoiceId={activeInvoiceId}
+                        cartInvoices={cartInvoices}
+                        wallet={wallet}
+                        credits={credits}
+                        allocations={allocations}
+                        handleAllocate={handleAllocate}
+                        getUsedAmount={getUsedAmount}
+                        getInvoiceApplied={getInvoiceApplied}
+                    />
                 </div>
             </div>
         </div>
