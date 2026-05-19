@@ -13,6 +13,12 @@ import {
 
 type RuleRow = {
   id?: unknown;
+  customer_code?: unknown;
+};
+
+type ReferenceRow = {
+  id?: unknown;
+  product_id?: unknown;
 };
 
 export const runtime = "nodejs";
@@ -31,16 +37,56 @@ async function hasDuplicate(customerCode: string, productId: number) {
   const paramsWithSoftDelete = new URLSearchParams(params);
   addSoftDeleteFilters(paramsWithSoftDelete);
 
-  let res: DirectusList<RuleRow>;
   try {
-    res = await directusFetch<DirectusList<RuleRow>>(
+    const res = await directusFetch<DirectusList<RuleRow>>(
       `/items/product_per_customer?${paramsWithSoftDelete.toString()}`,
     );
+    return (res.data ?? []).length > 0;
   } catch (error) {
     if (!isDeletedAtAccessError(error)) throw error;
-    res = await directusFetch<DirectusList<RuleRow>>(`/items/product_per_customer?${params.toString()}`);
+    const res = await directusFetch<DirectusList<RuleRow>>(`/items/product_per_customer?${params.toString()}`);
+    return (res.data ?? []).length > 0;
   }
+}
 
+/**
+ * Verifies the customer code is assignable before creating a rule.
+ */
+async function hasActiveCustomer(customerCode: string) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "id");
+  params.set("filter[customer_code][_eq]", customerCode);
+  params.set("filter[isActive][_eq]", "1");
+
+  const res = await directusFetch<DirectusList<ReferenceRow>>(`/items/customer?${params.toString()}`);
+  return (res.data ?? []).length > 0;
+}
+
+/**
+ * Verifies product selections still point to an active product.
+ */
+async function hasActiveProduct(productId: number) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "product_id");
+  params.set("filter[product_id][_eq]", String(productId));
+  params.set("filter[isActive][_eq]", "1");
+
+  const res = await directusFetch<DirectusList<ReferenceRow>>(`/items/products?${params.toString()}`);
+  return (res.data ?? []).length > 0;
+}
+
+/**
+ * Verifies optional product discounts reference an existing discount type.
+ */
+async function hasDiscountType(discountTypeId: number) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "id");
+  params.set("filter[id][_eq]", String(discountTypeId));
+
+  const res = await directusFetch<DirectusList<ReferenceRow>>(`/items/discount_type?${params.toString()}`);
   return (res.data ?? []).length > 0;
 }
 
@@ -62,6 +108,26 @@ export async function POST(request: NextRequest) {
 
     if (!discountTypeId && unitPrice === null) {
       return NextResponse.json({ error: "Select a discount type or enter a unit price" }, { status: 400 });
+    }
+
+    if (discountTypeId !== null && discountTypeId <= 0) {
+      return NextResponse.json({ error: "Discount type was not found" }, { status: 404 });
+    }
+
+    if (unitPrice !== null && unitPrice < 0) {
+      return NextResponse.json({ error: "Unit price must be zero or greater" }, { status: 400 });
+    }
+
+    if (!(await hasActiveCustomer(customerCode))) {
+      return NextResponse.json({ error: "Customer was not found or is inactive" }, { status: 404 });
+    }
+
+    if (!(await hasActiveProduct(productId))) {
+      return NextResponse.json({ error: "Product was not found or is inactive" }, { status: 404 });
+    }
+
+    if (discountTypeId !== null && !(await hasDiscountType(discountTypeId))) {
+      return NextResponse.json({ error: "Discount type was not found" }, { status: 404 });
     }
 
     if (await hasDuplicate(customerCode, productId)) {
@@ -97,10 +163,23 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = asNumber(searchParams.get("id"));
+    const customerCode = asString(searchParams.get("customer_code") ?? searchParams.get("customerCode"));
     const userId = asNumber(searchParams.get("userId"));
 
-    if (!id) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    if (!id || !customerCode) {
+      return NextResponse.json({ error: "id and customer_code are required" }, { status: 400 });
+    }
+
+    const existing = await directusFetch<DirectusItem<RuleRow>>(
+      `/items/product_per_customer/${id}?fields=id,customer_code`,
+    );
+    const existingRule = existing.data;
+    if (!existingRule?.id) {
+      return NextResponse.json({ error: "Product discount rule was not found" }, { status: 404 });
+    }
+
+    if (asString(existingRule.customer_code) !== customerCode) {
+      return NextResponse.json({ error: "Product discount rule does not belong to this customer" }, { status: 403 });
     }
 
     const payload: Record<string, unknown> = {

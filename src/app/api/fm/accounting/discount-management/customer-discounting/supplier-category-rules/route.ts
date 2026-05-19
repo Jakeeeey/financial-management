@@ -12,6 +12,12 @@ import {
 
 type RuleRow = {
   id?: unknown;
+  customer_code?: unknown;
+};
+
+type ReferenceRow = {
+  id?: unknown;
+  category_id?: unknown;
 };
 
 export const runtime = "nodejs";
@@ -36,6 +42,61 @@ async function hasDuplicate(customerCode: string, supplierId: number, categoryId
 }
 
 /**
+ * Verifies the customer code is assignable before creating a rule.
+ */
+async function hasActiveCustomer(customerCode: string) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "id");
+  params.set("filter[customer_code][_eq]", customerCode);
+  params.set("filter[isActive][_eq]", "1");
+
+  const res = await directusFetch<DirectusList<ReferenceRow>>(`/items/customer?${params.toString()}`);
+  return (res.data ?? []).length > 0;
+}
+
+/**
+ * Verifies supplier/category rules only use active trade suppliers.
+ */
+async function hasActiveTradeSupplier(supplierId: number) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "id");
+  params.set("filter[id][_eq]", String(supplierId));
+  params.set("filter[isActive][_eq]", "1");
+  params.set("filter[supplier_type][_eq]", "TRADE");
+
+  const res = await directusFetch<DirectusList<ReferenceRow>>(`/items/suppliers?${params.toString()}`);
+  return (res.data ?? []).length > 0;
+}
+
+/**
+ * Verifies category selections reference an existing category.
+ */
+async function hasCategory(categoryId: number) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "category_id");
+  params.set("filter[category_id][_eq]", String(categoryId));
+
+  const res = await directusFetch<DirectusList<ReferenceRow>>(`/items/categories?${params.toString()}`);
+  return (res.data ?? []).length > 0;
+}
+
+/**
+ * Verifies selected discounts reference an existing discount type.
+ */
+async function hasDiscountType(discountTypeId: number) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "id");
+  params.set("filter[id][_eq]", String(discountTypeId));
+
+  const res = await directusFetch<DirectusList<ReferenceRow>>(`/items/discount_type?${params.toString()}`);
+  return (res.data ?? []).length > 0;
+}
+
+/**
  * Creates a customer supplier/category discount rule.
  */
 export async function POST(request: NextRequest) {
@@ -52,6 +113,22 @@ export async function POST(request: NextRequest) {
         { error: "customerCode, supplierId, categoryId, and discountTypeId are required" },
         { status: 400 },
       );
+    }
+
+    if (!(await hasActiveCustomer(customerCode))) {
+      return NextResponse.json({ error: "Customer was not found or is inactive" }, { status: 404 });
+    }
+
+    if (!(await hasActiveTradeSupplier(supplierId))) {
+      return NextResponse.json({ error: "Supplier was not found, inactive, or not a trade supplier" }, { status: 404 });
+    }
+
+    if (!(await hasCategory(categoryId))) {
+      return NextResponse.json({ error: "Category was not found" }, { status: 404 });
+    }
+
+    if (!(await hasDiscountType(discountTypeId))) {
+      return NextResponse.json({ error: "Discount type was not found" }, { status: 404 });
     }
 
     if (await hasDuplicate(customerCode, supplierId, categoryId)) {
@@ -87,10 +164,26 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = asNumber(searchParams.get("id"));
+    const customerCode = asString(searchParams.get("customer_code") ?? searchParams.get("customerCode"));
     const userId = asNumber(searchParams.get("userId"));
 
-    if (!id) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    if (!id || !customerCode) {
+      return NextResponse.json({ error: "id and customer_code are required" }, { status: 400 });
+    }
+
+    const existing = await directusFetch<DirectusItem<RuleRow>>(
+      `/items/supplier_category_discount_per_customer/${id}?fields=id,customer_code`,
+    );
+    const existingRule = existing.data;
+    if (!existingRule?.id) {
+      return NextResponse.json({ error: "Supplier/category discount rule was not found" }, { status: 404 });
+    }
+
+    if (asString(existingRule.customer_code) !== customerCode) {
+      return NextResponse.json(
+        { error: "Supplier/category discount rule does not belong to this customer" },
+        { status: 403 },
+      );
     }
 
     const payload: Record<string, unknown> = {

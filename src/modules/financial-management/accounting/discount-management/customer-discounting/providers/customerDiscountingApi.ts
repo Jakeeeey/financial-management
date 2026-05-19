@@ -96,8 +96,8 @@ export const customerDiscountingApi = {
   /**
    * Soft-deletes a supplier/category discount rule.
    */
-  async deleteSupplierCategoryRule(id: number, userId: number | null) {
-    const params = new URLSearchParams({ id: String(id) });
+  async deleteSupplierCategoryRule(id: number, customerCode: string, userId: number | null) {
+    const params = new URLSearchParams({ id: String(id), customer_code: customerCode });
     if (userId) params.set("userId", String(userId));
     const res = await fetch(`${BASE}/supplier-category-rules?${params.toString()}`, { method: "DELETE" });
     return parseResponse<unknown>(res, "Failed to delete supplier/category discount");
@@ -124,8 +124,8 @@ export const customerDiscountingApi = {
   /**
    * Soft-deletes a product-specific rule.
    */
-  async deleteProductRule(id: number, userId: number | null) {
-    const params = new URLSearchParams({ id: String(id) });
+  async deleteProductRule(id: number, customerCode: string, userId: number | null) {
+    const params = new URLSearchParams({ id: String(id), customer_code: customerCode });
     if (userId) params.set("userId", String(userId));
     const res = await fetch(`${BASE}/product-rules?${params.toString()}`, { method: "DELETE" });
     return parseResponse<unknown>(res, "Failed to delete product discount");
