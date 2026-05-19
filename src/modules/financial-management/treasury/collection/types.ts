@@ -7,6 +7,17 @@ export interface CurrentUser {
     email: string;
 }
 
+// 🚀 NEW: Simplified UserDto for the UI
+export interface UserDto {
+    id: number | string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+    position?: string;
+    department?: number;
+    name?: string; // Optional: Combines first & last for easy dropdown rendering
+}
+
 // --- MASTER DATA ---
 export interface Bank {
     id: number;
@@ -85,6 +96,8 @@ export interface CashBucketDto {
 export interface CashieringRequestDto {
     id?: number;
     salesmanId: number | string;
+    collectedBy?: number | string; // 🚀 Added
+    crNo?: string;                 // 🚀 Added
     collectionDate: string;
     remarks: string;
     cashBuckets: CashBucketDto[];
@@ -153,14 +166,23 @@ export interface CashieringState {
     editingId: number | null;
     masterList: CollectionSummary[];
     salesmen: Salesman[];
+    users: UserDto[];                // 🚀 Added: List of users for the dropdown
     banks: Bank[];
     coas: COA[];
-    paymentMethods: PaymentMethod[]; // 🚀 Added
-    customers: Customer[];           // 🚀 Added
-    customerInvoices: Record<string, UnpaidInvoice[]>; // 🚀 Added
-    routeInvoices: UnpaidInvoice[];  // 🚀 Added
+    paymentMethods: PaymentMethod[];
+    customers: Customer[];
+    customerInvoices: Record<string, UnpaidInvoice[]>;
+    routeInvoices: UnpaidInvoice[];
+
     salesmanId: string;
     setSalesmanId: (id: string) => void;
+
+    collectedBy: string;             // 🚀 Added
+    setCollectedBy: (id: string) => void; // 🚀 Added
+
+    crNo: string;                    // 🚀 Added
+    setCrNo: (val: string) => void;  // 🚀 Added
+
     collectionDate: string;
     setCollectionDate: (date: string) => void;
     remarks: string;
@@ -172,9 +194,9 @@ export interface CashieringState {
     addCheck: () => void;
     updateCheck: (index: number, field: keyof CheckDetail, value: string) => void;
     removeCheck: (index: number) => void;
-    handlePaymentMethodSelect: (index: number, methodId: string) => void; // 🚀 Added
-    handleCustomerSelect: (index: number, customerId: string) => void;    // 🚀 Added
-    handleInvoiceSelect: (index: number, invoiceId: string) => void;      // 🚀 Added
+    handlePaymentMethodSelect: (index: number, methodId: string) => void;
+    handleCustomerSelect: (index: number, customerId: string) => void;
+    handleInvoiceSelect: (index: number, invoiceId: string) => void;
     totalCash: number;
     totalChecks: number;
     grandTotal: number;

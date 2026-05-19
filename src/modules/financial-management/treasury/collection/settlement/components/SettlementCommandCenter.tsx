@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useSettlement } from "../hooks/useSettlement";
 import {
     Receipt, ShieldCheck, Wallet, Save, ChevronDown, Plus, X, Loader2,
@@ -22,7 +22,7 @@ import InvoiceSearchPopover from "./InvoiceSearchPopover";
 
 export interface SettlementCommandCenterProps {
     id: string | number;
-    onClose?: () => void;
+    onClose?: (hasSaved?: boolean) => void;
 }
 
 export default function SettlementCommandCenter({ id, onClose }: SettlementCommandCenterProps) {
@@ -104,7 +104,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
             setIsSearching(true);
             try {
                 const data = await fetchProvider.get<UnpaidInvoice[]>(
-                    `/api/fm/treasury/collections/search-unpaid?salesmanId=${salesmanId || 0}&query=${encodeURIComponent(searchQuery)}`
+                    `/api/fm/treasury/collections/search-unpaid?salesmanId=${salesmanId || 0}&query=${encodeURIComponent(searchQuery.trim())}`
                 );
                 const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
                 setSearchResults(cleanResults);
@@ -136,7 +136,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         const success = await submitSettlement();
         if (success) {
             setIsSuccess(true);
-            setTimeout(() => { if (onClose) onClose(); }, 1200);
+            setTimeout(() => { if (onClose) onClose(true); }, 1200);
         } else {
             setIsSubmitting(false);
         }
@@ -185,7 +185,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         if (refNo) createEwt(netOfVat * 0.01, refNo, inv.id);
     };
 
-    // 🚀 THE FIX: Pass the string document number safely to the hook!
     const handleFetchExternalCredit = async () => {
         const docNo = externalCreditInput.trim();
         if (!docNo) return toast.error("Please enter a valid Document Number.");
@@ -213,7 +212,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
             {/* TOP NAVBAR */}
             <div className="bg-card border-b border-border py-2.5 px-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 shadow-sm shrink-0 relative z-20">
                 <div className="flex items-start lg:items-center gap-3 w-full lg:w-auto">
-                    {onClose && <Button variant="ghost" size="icon" onClick={onClose} disabled={isSubmitting || isSuccess} className="shrink-0 h-8 w-8 rounded-full hover:bg-muted border border-border/50 disabled:opacity-50"><X size={16} className="text-muted-foreground hover:text-foreground"/></Button>}
+                    {onClose && <Button variant="ghost" size="icon" onClick={() => onClose(false)} disabled={isSubmitting || isSuccess} className="shrink-0 h-8 w-8 rounded-full hover:bg-muted border border-border/50 disabled:opacity-50"><X size={16} className="text-muted-foreground hover:text-foreground"/></Button>}
                     <div className="min-w-0">
                         <h1 className="text-lg font-black flex items-center gap-1.5 truncate leading-none"><ShieldCheck className="text-primary shrink-0" size={16}/><span className="truncate">Settlement Console</span>{isPosted && <Badge variant="destructive" className="ml-2 bg-red-600 tracking-widest shadow-sm text-[8px] shrink-0 h-4 py-0"><Lock size={8} className="mr-1"/> LOCKED</Badge>}</h1>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1.5 truncate leading-none">Doc No: <span className="font-mono text-primary">{docNo}</span> • Collector: <span className="text-primary">{salesmanName}</span></p>
@@ -221,7 +220,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                 </div>
 
                 <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 lg:gap-3 bg-muted/50 p-1.5 px-2.5 rounded-lg border border-border w-full lg:w-auto overflow-x-auto scrollbar-none">
-
                     <div className="flex flex-col border-r pr-2 lg:pr-3 border-border/50 shrink-0">
                         <span className="text-[8px] font-black uppercase text-muted-foreground tracking-tighter leading-none mb-0.5">Physical Pouch</span>
                         <span className="text-sm font-black font-mono text-foreground truncate leading-none">₱{pouchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
@@ -230,9 +228,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                     {ewtTotal > 0 && (
                         <div className="flex flex-col border-r pr-2 lg:pr-3 border-border/50 shrink-0 animate-in fade-in slide-in-from-left-2">
                             <span className="text-[8px] font-black uppercase text-teal-600 tracking-tighter leading-none mb-0.5">EWT Holdings</span>
-                            <span className="text-sm font-black font-mono text-teal-600 truncate leading-none">
-                                +₱{ewtTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}
-                            </span>
+                            <span className="text-sm font-black font-mono text-teal-600 truncate leading-none">+₱{ewtTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                         </div>
                     )}
 
@@ -291,7 +287,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                                     {remainingToAllocate < -0.01 ? "Over-Allocated!" : (remainingToAllocate > 0.01 ? "Save Partial" : "Commit")}
                                 </span>
                             )}
-                            {isSubmitting && <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent" />}
                         </Button>
                     )}
                 </div>
@@ -361,7 +356,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
 
                     <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
                         <div className="bg-purple-500/10 py-2 px-3 border-b border-purple-500/20 flex flex-col gap-1.5 shrink-0">
-
                             <div className="flex justify-between items-center">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-purple-700 dark:text-purple-400 flex items-center gap-1.5"><Percent size={12}/> Available Credits</span>
                                 {!isPosted && (
@@ -384,8 +378,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                                                 </div>
                                                 <div className="flex flex-col gap-1">
                                                     <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Document No.</label>
-                                                    {/* 🚀 THE FIX: Input is now text to support alphanumeric document numbers! */}
-                                                    <Input type="text" placeholder="E.g. CM-152" value={externalCreditInput} onChange={(e) => setExternalCreditInput(e.target.value)} className="h-7 text-xs font-mono uppercase"/>
+                                                    <Input type="text" placeholder="E.g. CM-152" value={externalCreditInput} onChange={(e) => setExternalCreditInput(e.target.value.toUpperCase())} className="h-7 text-xs font-mono uppercase"/>
                                                 </div>
                                                 <Button className="w-full mt-1 h-7 text-[9px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white" disabled={isFetchingExternal || !externalCreditInput} onClick={handleFetchExternalCredit}>
                                                     {isFetchingExternal ? <Loader2 size={12} className="animate-spin"/> : "Pull into Wallet"}
