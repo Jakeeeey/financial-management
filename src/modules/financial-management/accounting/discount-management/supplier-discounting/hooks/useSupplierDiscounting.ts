@@ -1,5 +1,5 @@
 // src/modules/financial-management/accounting/discount-management/supplier-discounting/hooks/useSupplierDiscounting.ts
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supplierDiscountingApi } from "../providers/supplierDiscountingApi";
 import type {
@@ -45,6 +45,9 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
   const [productsLoading, setProductsLoading] = useState(false);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [includeChildren, setIncludeChildren] = useState(false);
+  const loadSeqRef = useRef(0);
+  const rulesSeqRef = useRef(0);
 
   /**
    * Loads parent products that match the current assignment filters.
@@ -56,31 +59,40 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
     categoryId?: number | null;
     brandId?: number | null;
   }) => {
+    const seq = ++loadSeqRef.current;
     try {
       setProductsLoading(true);
-      setProductPage(await supplierDiscountingApi.getProducts(query));
+      const result = await supplierDiscountingApi.getProducts(query);
+      if (seq !== loadSeqRef.current) return;
+      setProductPage(result);
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       toast.error(err instanceof Error ? err.message : "Failed to load parent products");
       setProductPage(emptyProductPage);
     } finally {
-      setProductsLoading(false);
+      if (seq === loadSeqRef.current) setProductsLoading(false);
     }
   }, []);
 
   /**
    * Loads discount rules for the currently selected supplier.
    */
-  const loadRules = useCallback(async (supplierId: number) => {
+  const loadRules = useCallback(async (supplierId: number, includeChildrenOverride?: boolean) => {
+    const seq = ++rulesSeqRef.current;
+    const shouldIncludeChildren = includeChildrenOverride ?? includeChildren;
     try {
       setRulesLoading(true);
-      setRules(await supplierDiscountingApi.getRules(supplierId));
+      const result = await supplierDiscountingApi.getRules(supplierId, shouldIncludeChildren);
+      if (seq !== rulesSeqRef.current) return;
+      setRules(result);
     } catch (err) {
+      if (seq !== rulesSeqRef.current) return;
       toast.error(err instanceof Error ? err.message : "Failed to load supplier discount rules");
       setRules([]);
     } finally {
-      setRulesLoading(false);
+      if (seq === rulesSeqRef.current) setRulesLoading(false);
     }
-  }, []);
+  }, [includeChildren]);
 
   /**
    * Updates supplier selection and refreshes that supplier's rules.
@@ -167,7 +179,7 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
 
     try {
       setSaving(true);
-      await supplierDiscountingApi.deleteRule(id);
+      await supplierDiscountingApi.deleteRule(id, selectedSupplier.id);
       toast.success("Supplier discount rule removed");
       await loadRules(selectedSupplier.id);
     } catch (err) {
@@ -186,7 +198,10 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
     productsLoading,
     rulesLoading,
     saving,
+    includeChildren,
+    setIncludeChildren,
     loadProducts,
+    loadRules,
     selectSupplier,
     toggleProduct,
     setSelectedProductIds,

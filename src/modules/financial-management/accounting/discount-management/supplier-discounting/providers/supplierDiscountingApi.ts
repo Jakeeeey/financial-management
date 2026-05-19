@@ -64,8 +64,9 @@ export const supplierDiscountingApi = {
   /**
    * Loads the selected supplier's current product discount rules.
    */
-  async getRules(supplierId: number): Promise<SupplierDiscountRule[]> {
+  async getRules(supplierId: number, includeChildren?: boolean): Promise<SupplierDiscountRule[]> {
     const params = new URLSearchParams({ supplier_id: String(supplierId) });
+    if (includeChildren) params.set("include_children", "true");
     const res = await fetch(`${BASE}/rules?${params.toString()}`, { cache: "no-store" });
     const json = await parseResponse<{ rules: SupplierDiscountRule[] }>(res, "Failed to load supplier discount rules");
     return Array.isArray(json.rules) ? json.rules : [];
@@ -106,8 +107,9 @@ export const supplierDiscountingApi = {
   /**
    * Removes a supplier product discount rule.
    */
-  async deleteRule(id: number) {
+  async deleteRule(id: number, supplierId?: number) {
     const params = new URLSearchParams({ id: String(id) });
+    if (supplierId) params.set("supplier_id", String(supplierId));
     const res = await fetch(`${BASE}/rules?${params.toString()}`, { method: "DELETE" });
     return parseResponse<unknown>(res, "Failed to delete supplier discount rule");
   },

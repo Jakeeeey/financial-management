@@ -13,6 +13,7 @@ import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { cookies } from "next/headers";
 import SupplierDiscountingModule from "@/modules/financial-management/accounting/discount-management/supplier-discounting";
 import { getSupplierDiscountingModuleData } from "@/app/api/fm/accounting/discount-management/supplier-discounting/_module-data";
+import type { SupplierDiscountModuleData } from "@/modules/financial-management/accounting/discount-management/supplier-discounting/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,7 +85,15 @@ export default async function Page() {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
   const headerUser = buildHeaderUserFromToken(token);
-  const moduleData = await getSupplierDiscountingModuleData();
+  let moduleData: SupplierDiscountModuleData;
+  let metadataError: string | null = null;
+  try {
+    moduleData = await getSupplierDiscountingModuleData();
+  } catch (error) {
+    console.error("Failed to load supplier discounting meta data", error);
+    moduleData = { suppliers: [], categories: [], brands: [], discountTypes: [] };
+    metadataError = "Supplier discounting metadata failed to load. Product rules may be unavailable until the data service recovers.";
+  }
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -124,7 +133,7 @@ export default async function Page() {
       </header>
 
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
-        <SupplierDiscountingModule initialModuleData={moduleData} />
+        <SupplierDiscountingModule initialModuleData={moduleData} metadataError={metadataError} />
       </main>
     </div>
   );

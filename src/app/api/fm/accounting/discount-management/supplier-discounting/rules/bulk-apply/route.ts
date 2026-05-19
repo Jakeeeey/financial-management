@@ -8,6 +8,7 @@ import {
   DirectusItem,
   DirectusList,
   jsonError,
+  relationId,
 } from "../../_utils";
 
 type RuleRow = {
@@ -47,6 +48,38 @@ function existingLinks(value: unknown) {
         })
         .filter((item): item is ExistingLink => item.id > 0 && item.productId > 0)
     : [];
+}
+
+async function verifyExistingLinks(supplierId: number, links: ExistingLink[]) {
+  if (links.length === 0) return { valid: [], rejected: [] };
+
+  const ids = links.map((link) => link.id);
+  const params = new URLSearchParams();
+  params.set("limit", "-1");
+  params.set("fields", "id,product_id,product_id.product_id");
+  params.set("filter[_and][0][id][_in]", ids.join(","));
+  params.set("filter[_and][1][supplier_id][_eq]", String(supplierId));
+
+  type VerifyRow = { id?: unknown; product_id?: unknown };
+  const res = await directusFetch<DirectusList<VerifyRow>>(`/items/product_per_supplier?${params.toString()}`);
+  const validEntries = new Map((res.data ?? []).map((row) => [
+    asNumber(row.id) ?? 0,
+    relationId(row.product_id, "product_id") ?? 0,
+  ]));
+
+  const valid: ExistingLink[] = [];
+  const rejected: ExistingLink[] = [];
+
+  for (const link of links) {
+    const storedProductId = validEntries.get(link.id);
+    if (storedProductId && storedProductId === link.productId) {
+      valid.push(link);
+    } else {
+      rejected.push(link);
+    }
+  }
+
+  return { valid, rejected };
 }
 
 async function productNameMap(productIds: number[]) {
@@ -194,13 +227,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { valid: validLinks, rejected: rejectedLinks } = await verifyExistingLinks(supplierId, existing);
+    const rejectedFailures = rejectedLinks.map((link) => ({
+      productId: link.productId,
+      productName: names.get(link.productId) ?? `Product #${link.productId}`,
+      reason: "Rule does not belong to this supplier",
+    }));
+
     const created = await createItems(supplierId, discountTypeId, newLinks, names);
-    const updated = await updateItems(discountTypeId, existing, names);
+    const updated = await updateItems(discountTypeId, validLinks, names);
 
     return NextResponse.json({
       created: created.count,
       updated: updated.count,
-      failed: [...created.failed, ...updated.failed],
+      failed: [...rejectedFailures, ...created.failed, ...updated.failed],
     });
   } catch (error) {
     return jsonError(error);

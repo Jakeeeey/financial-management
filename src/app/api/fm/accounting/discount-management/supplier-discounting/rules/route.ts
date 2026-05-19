@@ -65,7 +65,8 @@ export async function GET(request: NextRequest) {
       ].join(","),
     );
     params.set("filter[_and][0][supplier_id][_eq]", String(supplierId));
-    addRelatedParentProductFilter(params, 1);
+    const includeChildren = searchParams.get("include_children") === "true";
+    if (!includeChildren) addRelatedParentProductFilter(params, 1);
 
     const res = await directusFetch<DirectusList<RuleRow>>(`/items/product_per_supplier?${params.toString()}`);
     const rules = (res.data ?? [])
@@ -98,9 +99,24 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = asNumber(searchParams.get("id"));
+    const supplierId = asNumber(searchParams.get("supplier_id") ?? searchParams.get("supplierId"));
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    if (!supplierId) {
+      return NextResponse.json({ error: "supplier_id is required" }, { status: 400 });
+    }
+
+    const existing = await directusFetch<DirectusItem<RuleRow>>(`/items/product_per_supplier/${id}?fields=id,supplier_id`);
+    if (!existing.data) {
+      return NextResponse.json({ error: "Rule not found" }, { status: 404 });
+    }
+
+    const existingSupplierId = relationId(existing.data.supplier_id);
+    if (existingSupplierId !== supplierId) {
+      return NextResponse.json({ error: "Rule does not belong to this supplier" }, { status: 403 });
     }
 
     await directusFetch<DirectusItem<RuleRow>>(`/items/product_per_supplier/${id}`, {

@@ -37,6 +37,7 @@ const PRODUCT_PAGE_SIZE = 10;
 
 type SupplierDiscountingModuleProps = {
   initialModuleData: SupplierDiscountModuleData;
+  metadataError?: string | null;
 };
 
 /**
@@ -90,7 +91,10 @@ function RuleIdentity({ rule }: { rule: SupplierDiscountRule }) {
 /**
  * Renders the supplier discounting workspace for product selection and rule maintenance.
  */
-export default function SupplierDiscountingModule({ initialModuleData }: SupplierDiscountingModuleProps) {
+export default function SupplierDiscountingModule({
+  initialModuleData,
+  metadataError,
+}: SupplierDiscountingModuleProps) {
   const {
     moduleData,
     selectedSupplier,
@@ -100,7 +104,10 @@ export default function SupplierDiscountingModule({ initialModuleData }: Supplie
     productsLoading,
     rulesLoading,
     saving,
+    includeChildren,
+    setIncludeChildren,
     loadProducts,
+    loadRules,
     selectSupplier,
     toggleProduct,
     setSelectedProductIds,
@@ -175,6 +182,12 @@ export default function SupplierDiscountingModule({ initialModuleData }: Supplie
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-3 sm:p-4 lg:p-6">
       <section className="flex flex-col gap-3 rounded-md border bg-background p-4 shadow-sm">
+        {metadataError ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {metadataError}
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold tracking-normal">Supplier Discounting</h1>
@@ -417,6 +430,21 @@ export default function SupplierDiscountingModule({ initialModuleData }: Supplie
                 disabled={!selectedSupplier || rules.length === 0}
               />
             </div>
+            {selectedSupplier ? (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-foreground"
+                  checked={includeChildren}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setIncludeChildren(checked);
+                    loadRules(selectedSupplier.id, checked);
+                  }}
+                />
+                Show legacy child-product rules
+              </label>
+            ) : null}
           </CardHeader>
           <CardContent className="p-0">
             {rulesLoading ? (
