@@ -26,6 +26,10 @@ type CustomerRow = {
     id: number;
     customer_name: string;
     customer_code: string;
+    store_name?: string;
+    brgy?: string;
+    city?: string;
+    province?: string;
 };
 
 type SalesmanRow = {
@@ -229,7 +233,7 @@ export async function GET(req: NextRequest) {
 
             case "customers": {
                 const result = await directusFetch<DirectusListResponse<CustomerRow>>(
-                    `${DIRECTUS_URL}/items/customer?fields=id,customer_name,customer_code&filter[isActive][_eq]=1&limit=-1&sort=customer_name`
+                    `${DIRECTUS_URL}/items/customer?fields=id,customer_name,customer_code,store_name,brgy,city,province&filter[isActive][_eq]=1&limit=-1&sort=customer_name`
                 );
                 return NextResponse.json(result);
             }
@@ -320,7 +324,7 @@ export async function GET(req: NextRequest) {
                 const fields = [
                     "id", "memo_number", "amount", "applied_amount", "reason", "status", "created_at", "type",
                     "supplier_id.id", "supplier_id.supplier_name",
-                    "customer_id.id", "customer_id.customer_name", 
+                    "customer_id.id", "customer_id.customer_name", "customer_id.store_name", "customer_id.brgy", "customer_id.city", "customer_id.province",
                     "salesman_id.id", "salesman_id.salesman_code", "salesman_id.salesman_name",
                     "chart_of_account.coa_id", "chart_of_account.gl_code", "chart_of_account.account_title",
                     "encoder_id", "encoder_id.user_fname", "encoder_id.user_lname"
@@ -364,7 +368,7 @@ export async function GET(req: NextRequest) {
                 const headerFields = [
                     "id", "memo_number", "amount", "applied_amount", "reason", "status", "created_at", "type",
                     "supplier_id.id", "supplier_id.supplier_name",
-                    "customer_id.id", "customer_id.customer_name", 
+                    "customer_id.id", "customer_id.customer_name", "customer_id.store_name", "customer_id.brgy", "customer_id.city", "customer_id.province",
                     "salesman_id.id", "salesman_id.salesman_code", "salesman_id.salesman_name",
                     "chart_of_account.coa_id", "chart_of_account.gl_code", "chart_of_account.account_title",
                     "encoder_id", "encoder_id.user_fname", "encoder_id.user_lname"
@@ -390,14 +394,45 @@ export async function GET(req: NextRequest) {
                     }
                 }
                 
-                // Fetch linked collections
-                const collections = await directusFetch<DirectusListResponse<CollectionMemoItem>>(
-                    `${DIRECTUS_URL}/items/collection_memos?filter[memo_id][_eq]=${id}&fields=collection_id.docNo,collection_id.id,amount`
-                );
+                // Fetch linked collections (only fields exposed in Directus)
+                const collectionFields = [
+                    "amount",
+                    "collection_id.id",
+                    "collection_id.docNo",
+                ].join(",");
+                let collectionsData: CollectionMemoItem[] = [];
+                try {
+                    const collections = await directusFetch<DirectusListResponse<CollectionMemoItem>>(
+                        `${DIRECTUS_URL}/items/collection_memos?filter[memo_id][_eq]=${id}&fields=${collectionFields}`
+                    );
+                    collectionsData = collections.data || [];
+                } catch (e) {
+                    console.warn("[Customers Memo API] Collections fetch failed:", e);
+                }
+
+                // Fetch applied invoices from customer_memo_invoices
+                const invoiceFields = [
+                    "amount",
+                    "date_applied",
+                    "invoice_id.invoice_no",
+                    "invoice_id.invoice_date",
+                    "invoice_id.due_date",
+                    "invoice_id.net_amount",
+                ].join(",");
+                let invoicesData: Record<string, unknown>[] = [];
+                try {
+                    const invoices = await directusFetch<DirectusListResponse<Record<string, unknown>>>(
+                        `${DIRECTUS_URL}/items/customer_memo_invoices?filter[memo_id][_eq]=${id}&fields=${invoiceFields}`
+                    );
+                    invoicesData = invoices.data || [];
+                } catch (e) {
+                    console.warn("[Customers Memo API] Invoices fetch failed:", e);
+                }
 
                 return NextResponse.json({
                     header: header,
-                    collections: collections.data || []
+                    collections: collectionsData,
+                    invoices: invoicesData,
                 });
             }
 

@@ -12,10 +12,11 @@ import {
     DialogFooter
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle, FileText, User, Receipt, CreditCard, Layers } from "lucide-react";
+import { Loader2, CheckCircle, FileText, User, Receipt, CreditCard, Layers, Printer } from "lucide-react";
 import { fetchDetailedMemo, approveMemo } from "../service";
-import { DetailedMemo } from "../types";
+import { DetailedMemo, CompanyProfile } from "../types";
 import { toast } from "sonner";
+import { PrintMemoSettingsDialog } from "./PrintMemoSettingsDialog";
 
 interface ApprovalDetailModalProps {
     memoId: number | null;
@@ -27,14 +28,31 @@ interface ApprovalDetailModalProps {
 
 export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, readOnly = false }: ApprovalDetailModalProps) {
     const [details, setDetails] = useState<DetailedMemo | null>(null);
+    const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(false);
     const [approving, setApproving] = useState(false);
+    const [printSettingsOpen, setPrintSettingsOpen] = useState(false);
+
+    useEffect(() => {
+        if (open) {
+            fetch("/api/pdf/company")
+                .then(res => res.json())
+                .then(data => {
+                    const profile = data?.data?.[0];
+                    if (profile) setCompany(profile);
+                })
+                .catch(err => console.error("Failed to fetch company profile:", err));
+        }
+    }, [open]);
 
     useEffect(() => {
         if (open && memoId) {
             setLoading(true);
             fetchDetailedMemo(memoId)
-                .then(setDetails)
+                .then(data => {
+                    if (!data?.header) throw new Error("Invalid response: missing header");
+                    setDetails(data);
+                })
                 .catch(() => toast.error("Failed to load memo details."))
                 .finally(() => setLoading(false));
         } else {
@@ -169,6 +187,16 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                     >
                         Close
                     </Button>
+                    {details && (
+                        <Button
+                            variant="outline"
+                            onClick={() => setPrintSettingsOpen(true)}
+                            className="rounded-xl font-bold text-slate-700 hover:text-slate-900 border-slate-200 shadow-sm"
+                        >
+                            <Printer className="h-4 w-4 mr-2" />
+                            Print
+                        </Button>
+                    )}
                     {(!readOnly && details?.header.status === "FOR APPROVAL") && (
                         <Button 
                             onClick={handleApprove} 
@@ -187,6 +215,14 @@ export function ApprovalDetailModal({ memoId, open, onOpenChange, onApproved, re
                     )}
                 </DialogFooter>
             </DialogContent>
+            {details && (
+                <PrintMemoSettingsDialog
+                    open={printSettingsOpen}
+                    onOpenChange={setPrintSettingsOpen}
+                    details={details}
+                    company={company}
+                />
+            )}
         </Dialog>
     );
 }

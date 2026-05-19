@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo } from "react";
 import {
-    Search, ChevronDown, X, Loader2, History, Info, Percent, Wand2,
-    CheckCircle2, FileText, ArrowUp, ArrowDown, ArrowUpDown, Wallet, Receipt
+    Search, ChevronDown, X, History, Info, Percent, Wand2,
+    CheckCircle2, FileText, ArrowUp, ArrowDown, ArrowUpDown, Wallet, Receipt, Layers
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table";
@@ -95,7 +95,7 @@ function AllocatorPopover({
                                             value={existingAlloc?.amountApplied || ""}
                                             onChange={(e) => { const val = e.target.value === "" ? 0 : parseFloat(e.target.value); handleAllocate(inv.id, w.id, val); }}
                                         />
-                                        <button disabled={isEWTDisabled} onClick={() => handleAllocate(inv.id, w.id, targetMax)} className="absolute right-1 top-1 h-5 px-1.5 bg-muted text-[7px] font-black tracking-widest uppercase rounded hover:bg-emerald-100 hover:text-emerald-700 transition-colors">MAX</button>
+                                        <Button size="sm" disabled={isEWTDisabled} onClick={() => handleAllocate(inv.id, w.id, targetMax)} className="absolute right-1 top-1 h-5 px-1.5 bg-muted text-[7px] font-black text-foreground hover:bg-emerald-100 hover:text-emerald-700 transition-colors">MAX</Button>
                                     </div>
                                 </div>
                             );
@@ -111,7 +111,6 @@ function AllocatorPopover({
                             <Search size={12} className="absolute right-2 top-1.5 text-muted-foreground"/>
                         </div>
 
-                        {/* 🚀 THE FIX: Removed `c.customerName === inv.customerName` to allow cross-applying! */}
                         {credits.filter(c => c.label.toLowerCase().includes(localSearch.toLowerCase()) || (c.customerName || "").toLowerCase().includes(localSearch.toLowerCase())).length === 0 ? (
                             <p className="text-[10px] text-muted-foreground italic">No matching credits.</p>
                         ) : credits.map(c => {
@@ -124,7 +123,6 @@ function AllocatorPopover({
                             let targetMax = unmetBalance > 0 ? unmetBalance : inv.remainingBalance;
                             targetMax = Math.min(targetMax, remaining);
 
-                            // 🚀 THE UI FIX: Highlight credits that belong to a DIFFERENT customer!
                             const isCrossCustomer = c.customerName !== inv.customerName;
 
                             return (
@@ -146,7 +144,7 @@ function AllocatorPopover({
                                     <div className="relative mt-0.5">
                                         <span className="absolute left-2.5 top-1.5 text-[10px] font-black text-muted-foreground">₱</span>
                                         <Input type="number" className="h-7 pl-5 pr-12 text-xs font-black text-right shadow-inner border-purple-200 focus-visible:ring-purple-500" placeholder="0.00" value={existingAlloc?.amountApplied || ""} onChange={(e) => handleAllocate(inv.id, c.id, parseFloat(e.target.value) || 0)} />
-                                        <button onClick={() => handleAllocate(inv.id, c.id, targetMax)} className="absolute right-1 top-1 h-5 px-1.5 bg-purple-50 text-[7px] font-black text-purple-600 tracking-widest uppercase rounded hover:bg-purple-200 transition-colors">MAX</button>
+                                        <Button size="sm" onClick={() => handleAllocate(inv.id, c.id, targetMax)} className="absolute right-1 top-1 h-5 px-1.5 bg-purple-50 text-[7px] font-black text-purple-600 tracking-widest uppercase rounded hover:bg-purple-200 transition-colors">MAX</Button>
                                     </div>
                                 </div>
                             );
@@ -251,7 +249,12 @@ export default function SettlementInvoiceCartTable({
                             if (appliedAdj > 0) { rowStatus = "ADJUSTED"; badgeColor = "border-orange-200 text-orange-700 bg-orange-100"; rowBg = "bg-orange-50/30 dark:bg-orange-950/10"; IconComponent = <Wand2 size={8} className="mr-1"/>; }
                             else if (appliedCredits > 0) { rowStatus = "CREDITED"; badgeColor = "border-purple-200 text-purple-700 bg-purple-100"; rowBg = "bg-purple-50/30 dark:bg-purple-950/10"; IconComponent = <Percent size={8} className="mr-1"/>; }
                             else { rowStatus = "PAID"; badgeColor = "border-emerald-200 text-emerald-700 bg-emerald-100"; rowBg = "bg-emerald-50/30 dark:bg-emerald-950/10"; IconComponent = <CheckCircle2 size={8} className="mr-1"/>; }
-                        } else if (isPartiallySettled) { rowStatus = "PARTIAL"; badgeColor = "border-blue-200 text-blue-700 bg-blue-100"; rowBg = "bg-blue-50/10 dark:bg-blue-950/5"; IconComponent = <Loader2 size={8} className="mr-1 animate-spin"/>; }
+                        } else if (isPartiallySettled) {
+                            rowStatus = "PARTIALLY APPLIED";
+                            badgeColor = "border-blue-200 text-blue-700 bg-blue-100";
+                            rowBg = "bg-blue-50/10 dark:bg-blue-950/5";
+                            IconComponent = <Layers size={8} className="mr-1"/>;
+                        }
 
                         return (
                             <TableRow key={`cart-row-${inv.id}`} className={`group hover:bg-muted/30 transition-all ${rowBg}`}>
@@ -259,7 +262,7 @@ export default function SettlementInvoiceCartTable({
                                     <div className="flex items-start gap-1.5">
                                         {!isPosted && ( <button onClick={() => removeFromCart(inv.id)} className="text-muted-foreground hover:text-destructive mt-0.5 shrink-0"><X size={12} strokeWidth={3}/></button> )}
                                         <div className="flex flex-col min-w-0">
-                                            <div className="flex items-center gap-1.5">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
                                                 <span className={`font-mono font-black text-xs truncate leading-none ${isFullySettled ? 'text-primary/70' : 'text-primary'}`}>{inv.invoiceNo}</span>
                                                 {rowStatus && <Badge variant="outline" className={`text-[7px] px-1 py-0 h-3.5 leading-none shrink-0 uppercase tracking-widest ${badgeColor}`}>{IconComponent}{rowStatus}</Badge>}
                                             </div>
