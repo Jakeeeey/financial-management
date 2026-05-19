@@ -19,9 +19,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Checks for an existing active product-specific rule before insert.
+ * Finds an existing active product-specific rule before insert/update.
  */
-async function hasDuplicate(customerCode: string, productId: number) {
+async function findExistingRule(customerCode: string, productId: number) {
   const params = new URLSearchParams();
   params.set("limit", "1");
   params.set("fields", "id");
@@ -41,11 +41,11 @@ async function hasDuplicate(customerCode: string, productId: number) {
     res = await directusFetch<DirectusList<RuleRow>>(`/items/product_per_customer?${params.toString()}`);
   }
 
-  return (res.data ?? []).length > 0;
+  return asNumber(res.data?.[0]?.id);
 }
 
 /**
- * Creates a customer/product rule with either a discount type or explicit unit price.
+ * Creates or updates a customer/product rule with either a discount type or explicit unit price.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -64,11 +64,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Select a discount type or enter a unit price" }, { status: 400 });
     }
 
-    if (await hasDuplicate(customerCode, productId)) {
-      return NextResponse.json(
-        { error: "A product discount already exists for this customer and product." },
-        { status: 409 },
-      );
+    const existingId = await findExistingRule(customerCode, productId);
+    if (existingId) {
+      const updatePayload: Record<string, unknown> = {
+        discount_type: discountTypeId,
+        unit_price: unitPrice,
+      };
+      if (createdBy) updatePayload.updated_by = createdBy;
+
+      await directusFetch<DirectusItem<RuleRow>>(`/items/product_per_customer/${existingId}`, {
+        method: "PATCH",
+        body: JSON.stringify(updatePayload),
+      });
+
+      return NextResponse.json({ success: true, updated: true, id: existingId });
     }
 
     const payload: Record<string, unknown> = {

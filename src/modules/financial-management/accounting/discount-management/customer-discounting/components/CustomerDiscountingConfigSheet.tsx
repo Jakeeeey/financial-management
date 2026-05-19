@@ -4,6 +4,16 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode, WheelEvent } from "react";
 import { Check, ChevronsUpDown, Loader2, Plus, Save, Search, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,6 +74,40 @@ type SelectOption = {
   label: string;
 };
 
+type PendingConfirmation =
+  | {
+      type: "global";
+      discountTypeId: number | null;
+      discountName: string;
+    }
+  | {
+      type: "supplier-category";
+      mode: "add" | "update";
+      supplierId: number;
+      supplierName: string;
+      categoryId: number | null;
+      categoryName: string;
+      discountTypeId: number;
+      discountName: string;
+    }
+  | {
+      type: "product";
+      mode: "add" | "update";
+      productId: number;
+      productName: string;
+      discountTypeId: number | null;
+      discountName: string;
+      unitPrice: number | null;
+    }
+  | {
+      type: "delete-supplier-category";
+      rule: SupplierCategoryRule;
+    }
+  | {
+      type: "delete-product";
+      rule: ProductRule;
+    };
+
 const noneValue = "none";
 
 /**
@@ -105,6 +149,13 @@ function parseMoney(value: string) {
 }
 
 /**
+ * Returns the selected option label for confirmation copy.
+ */
+function optionLabel(options: SelectOption[], value: string, fallback: string) {
+  return options.find((option) => option.value === value)?.label ?? fallback;
+}
+
+/**
  * Keeps nested dropdowns scrollable inside the sheet.
  */
 function scrollDropdownWithWheel(event: WheelEvent<HTMLDivElement>) {
@@ -143,6 +194,7 @@ export function CustomerDiscountingConfigSheet({
   const [selectedProduct, setSelectedProduct] = useState<CustomerDiscountingProduct | null>(null);
   const [productDiscountId, setProductDiscountId] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
 
   const discountOptions = useMemo(
     () => [
@@ -161,6 +213,19 @@ export function CustomerDiscountingConfigSheet({
       : customer?.globalDiscount
         ? String(customer.globalDiscount.id)
         : noneValue;
+  const selectedSupplierId = supplierId ? Number(supplierId) : null;
+  const selectedCategoryId = categoryId && categoryId !== noneValue ? Number(categoryId) : null;
+  const matchingSupplierCategoryRule = useMemo(() => {
+    if (!selectedSupplierId) return null;
+    return supplierCategoryRules.find((rule) =>
+      rule.supplierId === selectedSupplierId
+      && (rule.categoryId ?? null) === selectedCategoryId,
+    ) ?? null;
+  }, [selectedCategoryId, selectedSupplierId, supplierCategoryRules]);
+  const matchingProductRule = useMemo(() => {
+    if (!selectedProduct) return null;
+    return productRules.find((rule) => rule.productId === selectedProduct.productId) ?? null;
+  }, [productRules, selectedProduct]);
 
   // Product search stays local to the Product tab and waits until there is enough input.
   useEffect(() => {
@@ -203,26 +268,139 @@ export function CustomerDiscountingConfigSheet({
     setUnitPrice("");
   };
 
-  const saveSupplierCategoryRule = async () => {
-    const success = await onAddSupplierCategoryRule({
-      supplierId: Number(supplierId),
-      categoryId: categoryId && categoryId !== noneValue ? Number(categoryId) : null,
-      discountTypeId: Number(supplierDiscountId),
+  const confirmGlobalDiscount = () => {
+    setPendingConfirmation({
+      type: "global",
+      discountTypeId: globalDiscountId === noneValue ? null : Number(globalDiscountId),
+      discountName: optionLabel(discountOptions, globalDiscountId, "No Discount"),
     });
-    if (success) resetSupplierForm();
   };
 
-  const saveProductRule = async () => {
+  const confirmSupplierCategoryRule = () => {
+    if (!selectedSupplierId || !supplierDiscountId) return;
+
+    const supplierName = suppliers.find((item) => item.id === selectedSupplierId)?.supplierName ?? `Supplier #${selectedSupplierId}`;
+    const categoryName = selectedCategoryId
+      ? categories.find((item) => item.categoryId === selectedCategoryId)?.categoryName ?? `Category #${selectedCategoryId}`
+      : "N/A";
+
+    setPendingConfirmation({
+      type: "supplier-category",
+      mode: matchingSupplierCategoryRule ? "update" : "add",
+      supplierId: selectedSupplierId,
+      supplierName,
+      categoryId: selectedCategoryId,
+      categoryName,
+      discountTypeId: Number(supplierDiscountId),
+      discountName: optionLabel(discountOptions, supplierDiscountId, "Selected discount"),
+    });
+  };
+
+  const confirmProductRule = () => {
     if (!selectedProduct) return;
-    const success = await onAddProductRule({
+
+    setPendingConfirmation({
+      type: "product",
+      mode: matchingProductRule ? "update" : "add",
       productId: selectedProduct.productId,
       discountTypeId: productDiscountId ? Number(productDiscountId) : null,
+      discountName: productDiscountId ? optionLabel(discountOptions, productDiscountId, "Selected discount") : "No discount",
+      productName: productPickerLabel(selectedProduct),
       unitPrice: parseMoney(unitPrice),
     });
-    if (success) resetProductForm();
   };
 
   const canSaveProduct = !!selectedProduct && (!!productDiscountId || unitPrice.trim().length > 0);
+
+  const confirmationCopy = (() => {
+    if (!pendingConfirmation) {
+      return { title: "", description: "", action: "Confirm", destructive: false };
+    }
+
+    switch (pendingConfirmation.type) {
+      case "global":
+        return {
+          title: "Update global discount?",
+          description: `Set this customer's global discount to ${pendingConfirmation.discountName}.`,
+          action: "Update",
+          destructive: false,
+        };
+      case "supplier-category":
+        return {
+          title: `${pendingConfirmation.mode === "update" ? "Update" : "Add"} supplier/category discount?`,
+          description: `${pendingConfirmation.supplierName} / ${pendingConfirmation.categoryName} will use ${pendingConfirmation.discountName}.`,
+          action: pendingConfirmation.mode === "update" ? "Update" : "Add",
+          destructive: false,
+        };
+      case "product":
+        return {
+          title: `${pendingConfirmation.mode === "update" ? "Update" : "Add"} product discount?`,
+          description: `${pendingConfirmation.productName} will use ${pendingConfirmation.discountName}${
+            pendingConfirmation.unitPrice === null ? "" : ` with unit price ${pendingConfirmation.unitPrice.toFixed(2)}`
+          }.`,
+          action: pendingConfirmation.mode === "update" ? "Update" : "Add",
+          destructive: false,
+        };
+      case "delete-supplier-category":
+        return {
+          title: "Delete supplier/category discount?",
+          description: `Remove the ${pendingConfirmation.rule.supplierName || `Supplier #${pendingConfirmation.rule.supplierId}`} / ${
+            pendingConfirmation.rule.categoryId ? pendingConfirmation.rule.categoryName : "N/A"
+          } discount rule.`,
+          action: "Delete",
+          destructive: true,
+        };
+      case "delete-product":
+        return {
+          title: "Delete product discount?",
+          description: `Remove the product discount rule for ${pendingConfirmation.rule.productName || `Product #${pendingConfirmation.rule.productId}`}.`,
+          action: "Delete",
+          destructive: true,
+        };
+    }
+  })();
+
+  const runPendingConfirmation = async () => {
+    const confirmation = pendingConfirmation;
+    if (!confirmation) return;
+
+    if (confirmation.type === "global") {
+      await onUpdateGlobalDiscount(confirmation.discountTypeId);
+      setPendingConfirmation(null);
+      return;
+    }
+
+    if (confirmation.type === "supplier-category") {
+      const success = await onAddSupplierCategoryRule({
+        supplierId: confirmation.supplierId,
+        categoryId: confirmation.categoryId,
+        discountTypeId: confirmation.discountTypeId,
+      });
+      if (success) resetSupplierForm();
+      setPendingConfirmation(null);
+      return;
+    }
+
+    if (confirmation.type === "product") {
+      const success = await onAddProductRule({
+        productId: confirmation.productId,
+        discountTypeId: confirmation.discountTypeId,
+        unitPrice: confirmation.unitPrice,
+      });
+      if (success) resetProductForm();
+      setPendingConfirmation(null);
+      return;
+    }
+
+    if (confirmation.type === "delete-supplier-category") {
+      await onDeleteSupplierCategoryRule(confirmation.rule.id);
+      setPendingConfirmation(null);
+      return;
+    }
+
+    await onDeleteProductRule(confirmation.rule.id);
+    setPendingConfirmation(null);
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -258,7 +436,7 @@ export function CustomerDiscountingConfigSheet({
                 <Button
                   className="mt-4"
                   disabled={saving}
-                  onClick={() => onUpdateGlobalDiscount(globalDiscountId === noneValue ? null : Number(globalDiscountId))}
+                  onClick={confirmGlobalDiscount}
                 >
                   {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                   Save Global Discount
@@ -300,10 +478,10 @@ export function CustomerDiscountingConfigSheet({
                 </div>
                 <Button
                   disabled={saving || !supplierId || !supplierDiscountId}
-                  onClick={saveSupplierCategoryRule}
+                  onClick={confirmSupplierCategoryRule}
                 >
                   {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                  Add
+                  {matchingSupplierCategoryRule ? "Update" : "Add"}
                 </Button>
               </div>
 
@@ -321,7 +499,7 @@ export function CustomerDiscountingConfigSheet({
                         size="icon"
                         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         disabled={saving}
-                        onClick={() => onDeleteSupplierCategoryRule(rule.id)}
+                        onClick={() => setPendingConfirmation({ type: "delete-supplier-category", rule })}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -402,9 +580,9 @@ export function CustomerDiscountingConfigSheet({
                       inputMode="decimal"
                     />
                   </div>
-                  <Button disabled={saving || !canSaveProduct} onClick={saveProductRule}>
+                  <Button disabled={saving || !canSaveProduct} onClick={confirmProductRule}>
                     {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                    Add
+                    {matchingProductRule ? "Update" : "Add"}
                   </Button>
                 </div>
               </div>
@@ -431,7 +609,7 @@ export function CustomerDiscountingConfigSheet({
                         size="icon"
                         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         disabled={saving}
-                        onClick={() => onDeleteProductRule(rule.id)}
+                        onClick={() => setPendingConfirmation({ type: "delete-product", rule })}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -443,6 +621,28 @@ export function CustomerDiscountingConfigSheet({
           </Tabs>
         )}
       </SheetContent>
+      <AlertDialog open={pendingConfirmation !== null} onOpenChange={(nextOpen) => { if (!nextOpen) setPendingConfirmation(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmationCopy.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmationCopy.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving}
+              variant={confirmationCopy.destructive ? "destructive" : "default"}
+              onClick={(event) => {
+                event.preventDefault();
+                void runPendingConfirmation();
+              }}
+            >
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {confirmationCopy.action}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   );
 }
@@ -540,7 +740,7 @@ function RuleTable({
           <TableRow>
             <TableHead>Rule</TableHead>
             <TableHead>Discount</TableHead>
-            <TableHead>Detail</TableHead>
+            <TableHead>Category</TableHead>
             <TableHead className="text-right">Action</TableHead>
           </TableRow>
         </TableHeader>

@@ -76,7 +76,7 @@ export const customerDiscountingApi = {
   },
 
   /**
-   * Adds a supplier/category discount rule for a customer.
+   * Adds or updates a supplier/category discount rule for a customer.
    */
   async addSupplierCategoryRule(payload: {
     customerCode: string;
@@ -90,7 +90,7 @@ export const customerDiscountingApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return parseResponse<unknown>(res, "Failed to add supplier/category discount");
+    return parseResponse<unknown>(res, "Failed to save supplier/category discount");
   },
 
   /**
@@ -104,7 +104,7 @@ export const customerDiscountingApi = {
   },
 
   /**
-   * Adds a product-specific discount or unit price override for a customer.
+   * Adds or updates a product-specific discount or unit price override for a customer.
    */
   async addProductRule(payload: {
     customerCode: string;
@@ -118,7 +118,7 @@ export const customerDiscountingApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return parseResponse<unknown>(res, "Failed to add product discount");
+    return parseResponse<unknown>(res, "Failed to save product discount");
   },
 
   /**

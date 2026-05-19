@@ -90,7 +90,7 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
   }, [moduleData.discountTypes, selectedCustomer, userId]);
 
   /**
-   * Creates a supplier/category rule and refreshes the selected customer's rules.
+   * Creates or updates a supplier/category rule and refreshes the selected customer's rules.
    */
   const addSupplierCategoryRule = useCallback(async (payload: {
     supplierId: number;
@@ -105,11 +105,11 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
         ...payload,
         createdBy: userId,
       });
-      toast.success("Supplier/category discount added");
+      toast.success("Supplier/category discount saved");
       await loadRules(selectedCustomer.customerCode);
       return true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to add supplier/category discount");
+      toast.error(err instanceof Error ? err.message : "Failed to save supplier/category discount");
       return false;
     } finally {
       setSaving(false);
@@ -117,7 +117,7 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
   }, [loadRules, selectedCustomer, userId]);
 
   /**
-   * Creates a product-specific rule and refreshes the selected customer's rules.
+   * Creates or updates a product-specific rule and refreshes the selected customer's rules.
    */
   const addProductRule = useCallback(async (payload: {
     productId: number;
@@ -132,11 +132,11 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
         ...payload,
         createdBy: userId,
       });
-      toast.success("Product discount added");
+      toast.success("Product discount saved");
       await loadRules(selectedCustomer.customerCode);
       return true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to add product discount");
+      toast.error(err instanceof Error ? err.message : "Failed to save product discount");
       return false;
     } finally {
       setSaving(false);
