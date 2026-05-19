@@ -20,7 +20,7 @@ export function useDiscountTypes() {
       setIsLoading(true);
       setError(null);
 
-      const apiUrl = "/api/supplier-registration/discount_types";
+      const apiUrl = "/api/fm/supplier-registration/discount_types";
 
       const response = await fetch(apiUrl);
 

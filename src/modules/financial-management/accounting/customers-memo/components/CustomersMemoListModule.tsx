@@ -260,7 +260,16 @@ export default function CustomersMemoListModule() {
                 <div className="flex-1 min-w-[200px]">
                     <MultiSearchableSelect
                         placeholder="Filter by Customer"
-                        options={customers.map(c => ({ value: String(c.id), label: c.customer_name }))}
+                        options={customers.map(c => {
+                            const address = [c.brgy, c.city].filter(Boolean).join(", ");
+                            const storeInfo = c.store_name && c.store_name !== c.customer_name ? c.store_name : "";
+                            const subLabel = [storeInfo, address].filter(Boolean).join(" | ");
+                            return {
+                                value: String(c.id),
+                                label: c.customer_name,
+                                subLabel: subLabel
+                            };
+                        })}
                         value={filterCustomer}
                         onValueChange={setFilterCustomer}
                     />
@@ -278,7 +287,11 @@ export default function CustomersMemoListModule() {
                 <div className="flex-1 min-w-[200px]">
                     <MultiSearchableSelect
                         placeholder="Filter by Salesman"
-                        options={salesmen.map(s => ({ value: String(s.id), label: `${s.salesman_code} - ${s.salesman_name}` }))}
+                        options={salesmen.map(s => ({
+                            value: String(s.id),
+                            label: s.salesman_name,
+                            subLabel: s.salesman_code
+                        }))}
                         value={filterSalesman}
                         onValueChange={setFilterSalesman}
                     />
@@ -287,7 +300,11 @@ export default function CustomersMemoListModule() {
                 <div className="flex-1 min-w-[200px]">
                     <MultiSearchableSelect
                         placeholder="Filter by Chart of Account"
-                        options={coas.map(c => ({ value: String(c.coa_id), label: `${c.gl_code} - ${c.account_title}` }))}
+                        options={coas.map(c => ({
+                            value: String(c.coa_id),
+                            label: c.account_title,
+                            subLabel: c.gl_code
+                        }))}
                         value={filterCOA}
                         onValueChange={setFilterCOA}
                     />
@@ -442,6 +459,11 @@ export default function CustomersMemoListModule() {
                                                         {memo.customer_id.customer_name}
                                                     </p>
                                                 </div>
+                                                {memo.customer_id.store_name && (
+                                                    <p className="text-[10px] font-bold text-blue-600 ml-9 uppercase tracking-widest opacity-80 leading-tight">
+                                                        {memo.customer_id.store_name}
+                                                    </p>
+                                                )}
                                                 <p className="text-[10px] font-black text-slate-400 ml-9 uppercase tracking-widest opacity-70 italic leading-none">
                                                     Rep: {memo.salesman_id.salesman_code} - {memo.salesman_id.salesman_name}
                                                 </p>

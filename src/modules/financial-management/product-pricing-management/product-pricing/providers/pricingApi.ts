@@ -8,6 +8,8 @@ import type {
     Unit,
     UpsertLine,
     Supplier,
+    PriceChangeRequest,
+    CostChangeRequest,
 } from "../types";
 import { http } from "./fetchProvider";
 
@@ -168,4 +170,12 @@ export async function createCostChangeRequests(
         method: "POST",
         body: JSON.stringify({ items }),
     });
+}
+
+export async function getPendingPriceRequests() {
+    return http<{ data: PriceChangeRequest[] }>("/api/fm/product-pricing/price-change-requests?status=PENDING&limit=-1");
+}
+
+export async function getPendingCostRequests() {
+    return http<{ data: CostChangeRequest[] }>("/api/fm/product-pricing/cost-change-requests?status=PENDING&limit=-1");
 }
