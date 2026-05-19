@@ -39,6 +39,18 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
         }
     }, [open]);
 
+    // 🚀 NEW: State to hold our bank dictionary!
+    const [banks, setBanks] = useState<BankAccountDto[]>([]);
+
+    // 🚀 NEW: Fetch the banks exactly like the create sheet does so we can translate IDs to names
+    useEffect(() => {
+        if (open) {
+            disbursementProvider.getBanks()
+                .then(setBanks)
+                .catch(() => console.warn("Failed to fetch banks for view lookup."));
+        }
+    }, [open]);
+
     if (!disbursement) return null;
 
     const formatCurrency = (amount: number) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);

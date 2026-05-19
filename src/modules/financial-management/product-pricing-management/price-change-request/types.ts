@@ -5,10 +5,17 @@ export type PriceTypeRef = {
     price_type_name?: string;
 };
 
+export type UomRef = {
+    unit_id?: number | string | null;
+    unit_name?: string | null;
+    unit_shortcut?: string | null;
+};
+
 export type ProductRef = {
     product_id: number;
     product_code?: string;
     product_name?: string;
+    unit_of_measurement?: UomRef | number | string | null;
 };
 
 export type PriceChangeRequestRow = {
@@ -55,8 +62,11 @@ export type ListQuery = {
     status?: PCRStatus | "";
     q?: string;
     product_id?: number | "";
+    supplier_id?: number | "";
     price_type_id?: number | "";
     requested_by?: number | "";
+    date_from?: string | "";
+    date_to?: string | "";
     page?: number;
     page_size?: number;
 };

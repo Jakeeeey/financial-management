@@ -249,6 +249,7 @@ export async function GET(req: NextRequest) {
         supplierParams.set("fields", "id,supplier_name,supplier_shortcut,isActive");
         supplierParams.set("sort", "supplier_name");
         supplierParams.set("filter[isActive][_eq]", "1");
+        supplierParams.set("filter[supplier_type][_eq]", "TRADE");
 
         const [catJson, brandJson, unitJson, supplierJson] = await Promise.all([
             fetchDirectus<{ data: DirectusCategory[] }>(`${DIRECTUS_URL}/items/${CATEGORIES}?${catParams.toString()}`),
