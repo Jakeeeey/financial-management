@@ -1,3 +1,4 @@
+// src/modules/financial-management/accounting/discount-management/customer-discounting/providers/customerDiscountingApi.ts
 import type {
   CustomerDiscountingModuleData,
   CustomerDiscountPricingResult,
@@ -9,6 +10,9 @@ import type {
 
 const BASE = "/api/fm/accounting/discount-management/customer-discounting";
 
+/**
+ * Parses BFF responses and promotes API error payloads into thrown Error messages.
+ */
 async function parseResponse<T>(res: Response, fallback: string): Promise<T> {
   const json = await res.json().catch(() => null);
 
@@ -23,7 +27,13 @@ async function parseResponse<T>(res: Response, fallback: string): Promise<T> {
   return json as T;
 }
 
+/**
+ * Client-side API adapter for the customer discounting BFF routes.
+ */
 export const customerDiscountingApi = {
+  /**
+   * Loads paginated module data for customer table refreshes.
+   */
   async getModuleData(query?: {
     page?: number;
     pageSize?: number;
@@ -39,12 +49,18 @@ export const customerDiscountingApi = {
     return parseResponse<CustomerDiscountingModuleData>(res, "Failed to load customer discounting data");
   },
 
+  /**
+   * Loads the selected customer's supplier/category and product rules.
+   */
   async getRules(customerCode: string): Promise<CustomerDiscountingRules> {
     const params = new URLSearchParams({ customer_code: customerCode });
     const res = await fetch(`${BASE}/rules?${params.toString()}`, { cache: "no-store" });
     return parseResponse<CustomerDiscountingRules>(res, "Failed to load customer discounting rules");
   },
 
+  /**
+   * Saves the customer's global discount assignment.
+   */
   async updateGlobalDiscount(payload: {
     customerCode: string;
     customerId: number;
@@ -59,6 +75,9 @@ export const customerDiscountingApi = {
     return parseResponse<unknown>(res, "Failed to update global customer discount");
   },
 
+  /**
+   * Adds a supplier/category discount rule for a customer.
+   */
   async addSupplierCategoryRule(payload: {
     customerCode: string;
     supplierId: number;
@@ -74,6 +93,9 @@ export const customerDiscountingApi = {
     return parseResponse<unknown>(res, "Failed to add supplier/category discount");
   },
 
+  /**
+   * Soft-deletes a supplier/category discount rule.
+   */
   async deleteSupplierCategoryRule(id: number, userId: number | null) {
     const params = new URLSearchParams({ id: String(id) });
     if (userId) params.set("userId", String(userId));
@@ -81,6 +103,9 @@ export const customerDiscountingApi = {
     return parseResponse<unknown>(res, "Failed to delete supplier/category discount");
   },
 
+  /**
+   * Adds a product-specific discount or unit price override for a customer.
+   */
   async addProductRule(payload: {
     customerCode: string;
     productId: number;
@@ -96,6 +121,9 @@ export const customerDiscountingApi = {
     return parseResponse<unknown>(res, "Failed to add product discount");
   },
 
+  /**
+   * Soft-deletes a product-specific rule.
+   */
   async deleteProductRule(id: number, userId: number | null) {
     const params = new URLSearchParams({ id: String(id) });
     if (userId) params.set("userId", String(userId));
@@ -103,6 +131,9 @@ export const customerDiscountingApi = {
     return parseResponse<unknown>(res, "Failed to delete product discount");
   },
 
+  /**
+   * Searches products, optionally including resolved customer pricing context.
+   */
   async searchProducts(query: string, options?: {
     customerCode?: string;
     supplierId?: number | null;
@@ -117,6 +148,9 @@ export const customerDiscountingApi = {
     return Array.isArray(json.data) ? json.data : [];
   },
 
+  /**
+   * Searches active customers for the quick-open combobox.
+   */
   async searchCustomers(query: string): Promise<CustomerDiscountingCustomer[]> {
     const params = new URLSearchParams({ q: query });
     const res = await fetch(`${BASE}/customers/search?${params.toString()}`, { cache: "no-store" });
@@ -124,6 +158,9 @@ export const customerDiscountingApi = {
     return Array.isArray(json.data) ? json.data : [];
   },
 
+  /**
+   * Searches trade suppliers for supplier/category rule creation.
+   */
   async searchSuppliers(query: string): Promise<CustomerDiscountingSupplier[]> {
     const params = new URLSearchParams({ q: query });
     const res = await fetch(`${BASE}/suppliers/search?${params.toString()}`, { cache: "no-store" });
@@ -131,6 +168,9 @@ export const customerDiscountingApi = {
     return Array.isArray(json.data) ? json.data : [];
   },
 
+  /**
+   * Resolves final pricing using the customer discount hierarchy.
+   */
   async resolvePrice(payload: {
     customerCode: string;
     productId: number;

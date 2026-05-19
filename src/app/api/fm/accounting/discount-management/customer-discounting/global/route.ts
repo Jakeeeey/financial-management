@@ -1,3 +1,4 @@
+// src/app/api/fm/accounting/discount-management/customer-discounting/global/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { asNumber, asString, directusFetch, DirectusList, DirectusItem, jsonError } from "../_utils";
 
@@ -9,6 +10,9 @@ type CustomerRow = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Resolves the customer primary key when callers only have the customer code.
+ */
 async function resolveCustomerId(customerCode: string) {
   const params = new URLSearchParams();
   params.set("limit", "1");
@@ -19,6 +23,9 @@ async function resolveCustomerId(customerCode: string) {
   return asNumber(res.data?.[0]?.id);
 }
 
+/**
+ * Updates the customer's global discount_type relation.
+ */
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();

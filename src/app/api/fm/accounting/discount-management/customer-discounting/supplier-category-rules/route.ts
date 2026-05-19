@@ -1,3 +1,4 @@
+// src/app/api/fm/accounting/discount-management/customer-discounting/supplier-category-rules/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import {
   addSoftDeleteFilters,
@@ -16,6 +17,9 @@ type RuleRow = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Checks for an existing active supplier/category rule before insert.
+ */
 async function hasDuplicate(customerCode: string, supplierId: number, categoryId: number) {
   const params = new URLSearchParams();
   params.set("limit", "1");
@@ -31,6 +35,9 @@ async function hasDuplicate(customerCode: string, supplierId: number, categoryId
   return (res.data ?? []).length > 0;
 }
 
+/**
+ * Creates a customer supplier/category discount rule.
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -73,6 +80,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * Soft-deletes a supplier/category rule by setting deleted_at/deleted_by.
+ */
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

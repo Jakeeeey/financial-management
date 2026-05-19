@@ -1,3 +1,4 @@
+// src/app/api/fm/accounting/discount-management/customer-discounting/_module-data.ts
 import type { CustomerDiscountingModuleData } from "@/modules/financial-management/accounting/discount-management/customer-discounting";
 import {
   asNumber,
@@ -44,17 +45,26 @@ type ModuleDataQuery = {
 const defaultPageSize = 10;
 const maxPageSize = 100;
 
+/**
+ * Coerces incoming page values into a positive page number for Directus offsets.
+ */
 function normalizePage(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
 }
 
+/**
+ * Keeps requested page sizes within the supported customer-discounting bounds.
+ */
 function normalizePageSize(value: unknown) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return defaultPageSize;
   return Math.min(maxPageSize, Math.floor(parsed));
 }
 
+/**
+ * Builds the Directus customer list query, including active filtering and search.
+ */
 function customerParams(query: Required<ModuleDataQuery>) {
   const params = new URLSearchParams();
   const offset = (query.page - 1) * query.pageSize;
@@ -91,6 +101,9 @@ function customerParams(query: Required<ModuleDataQuery>) {
   return params;
 }
 
+/**
+ * Loads the server-rendered customer-discounting dashboard data in one pass.
+ */
 export async function getCustomerDiscountingModuleData(query: ModuleDataQuery = {}): Promise<CustomerDiscountingModuleData> {
   const normalizedQuery = {
     page: normalizePage(query.page),

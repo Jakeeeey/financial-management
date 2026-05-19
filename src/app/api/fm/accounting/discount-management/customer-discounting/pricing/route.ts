@@ -1,3 +1,4 @@
+// src/app/api/fm/accounting/discount-management/customer-discounting/pricing/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { asNumber, asString, jsonError } from "../_utils";
 import {
@@ -9,6 +10,9 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Converts domain pricing errors into the route's public error response shape.
+ */
 function errorResponse(error: unknown) {
   if (error instanceof CustomerDiscountPricingError) {
     return NextResponse.json({ error: error.message }, { status: error.status });
@@ -17,10 +21,16 @@ function errorResponse(error: unknown) {
   return jsonError(error);
 }
 
+/**
+ * Safely treats arbitrary JSON as an object payload.
+ */
 function recordBody(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
+/**
+ * Resolves customer pricing from query parameters for read-only consumers.
+ */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -48,6 +58,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * Resolves customer pricing from a JSON payload for forms and product pickers.
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = recordBody(await request.json().catch(() => ({})));

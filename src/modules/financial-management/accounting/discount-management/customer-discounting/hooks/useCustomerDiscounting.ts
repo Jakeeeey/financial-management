@@ -1,3 +1,4 @@
+// src/modules/financial-management/accounting/discount-management/customer-discounting/hooks/useCustomerDiscounting.ts
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { customerDiscountingApi } from "../providers/customerDiscountingApi";
@@ -12,6 +13,9 @@ const emptyRules: CustomerDiscountingRules = {
   productRules: [],
 };
 
+/**
+ * Coordinates customer selection, rule loading, and rule mutations for the module.
+ */
 export function useCustomerDiscounting(userId: number | null, initialModuleData: CustomerDiscountingModuleData) {
   const [moduleData, setModuleData] = useState<CustomerDiscountingModuleData>(initialModuleData);
   const [rules, setRules] = useState<CustomerDiscountingRules>(emptyRules);
@@ -19,6 +23,9 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
   const [rulesLoading, setRulesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  /**
+   * Loads the supplier/category and product rules for a selected customer code.
+   */
   const loadRules = useCallback(async (customerCode: string) => {
     try {
       setRulesLoading(true);
@@ -32,6 +39,9 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     }
   }, []);
 
+  /**
+   * Selects a customer and eagerly loads its rules for the configuration sheet.
+   */
   const selectCustomer = useCallback((customer: CustomerDiscountingCustomer) => {
     setSelectedCustomer(customer);
     void loadRules(customer.customerCode);
@@ -42,6 +52,9 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     await loadRules(selectedCustomer.customerCode);
   }, [loadRules, selectedCustomer]);
 
+  /**
+   * Saves the customer's global discount and mirrors the change in local table state.
+   */
   const updateGlobalDiscount = useCallback(async (discountTypeId: number | null) => {
     if (!selectedCustomer) return;
     try {
@@ -76,6 +89,9 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     }
   }, [moduleData.discountTypes, selectedCustomer, userId]);
 
+  /**
+   * Creates a supplier/category rule and refreshes the selected customer's rules.
+   */
   const addSupplierCategoryRule = useCallback(async (payload: {
     supplierId: number;
     categoryId: number;
@@ -100,6 +116,9 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     }
   }, [loadRules, selectedCustomer, userId]);
 
+  /**
+   * Creates a product-specific rule and refreshes the selected customer's rules.
+   */
   const addProductRule = useCallback(async (payload: {
     productId: number;
     discountTypeId: number | null;
@@ -124,6 +143,9 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     }
   }, [loadRules, selectedCustomer, userId]);
 
+  /**
+   * Soft-deletes a supplier/category rule through the BFF.
+   */
   const deleteSupplierCategoryRule = useCallback(async (id: number) => {
     if (!selectedCustomer) return;
     try {
@@ -138,6 +160,9 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     }
   }, [loadRules, selectedCustomer, userId]);
 
+  /**
+   * Soft-deletes a product-specific rule through the BFF.
+   */
   const deleteProductRule = useCallback(async (id: number) => {
     if (!selectedCustomer) return;
     try {

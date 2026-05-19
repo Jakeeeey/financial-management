@@ -1,3 +1,4 @@
+// src/app/api/fm/accounting/discount-management/customer-discounting/module-data/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getCustomerDiscountingModuleData } from "../_module-data";
 import { asNumber, asString, jsonError } from "../_utils";
@@ -5,6 +6,9 @@ import { asNumber, asString, jsonError } from "../_utils";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Returns paginated customer discounting dashboard data for client refreshes.
+ */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

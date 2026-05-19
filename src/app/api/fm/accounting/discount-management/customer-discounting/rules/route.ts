@@ -1,3 +1,4 @@
+// src/app/api/fm/accounting/discount-management/customer-discounting/rules/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import {
   addSoftDeleteFilters,
@@ -30,41 +31,62 @@ type ProductRuleRow = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Reads the supplier label from a Directus supplier relation.
+ */
 function supplierName(value: unknown) {
   return value && typeof value === "object"
     ? asString((value as Record<string, unknown>).supplier_name)
     : "";
 }
 
+/**
+ * Reads the category label from a Directus category relation.
+ */
 function categoryName(value: unknown) {
   return value && typeof value === "object"
     ? asString((value as Record<string, unknown>).category_name)
     : "";
 }
 
+/**
+ * Reads the product name from a Directus product relation.
+ */
 function productName(value: unknown) {
   return value && typeof value === "object"
     ? asString((value as Record<string, unknown>).product_name)
     : "";
 }
 
+/**
+ * Reads the product code from a Directus product relation.
+ */
 function productCode(value: unknown) {
   return value && typeof value === "object"
     ? asString((value as Record<string, unknown>).product_code)
     : "";
 }
 
+/**
+ * Reads the product barcode from a Directus product relation.
+ */
 function productBarcode(value: unknown) {
   return value && typeof value === "object"
     ? asString((value as Record<string, unknown>).barcode)
     : "";
 }
 
+/**
+ * Reads the product UOM id from a nested product relation.
+ */
 function productUnitId(value: unknown) {
   if (!value || typeof value !== "object") return null;
   return relationId((value as Record<string, unknown>).unit_of_measurement, "unit_id");
 }
 
+/**
+ * Reads the product UOM name from a nested product relation.
+ */
 function productUnitName(value: unknown) {
   if (!value || typeof value !== "object") return "";
   const unit = (value as Record<string, unknown>).unit_of_measurement;
@@ -73,6 +95,9 @@ function productUnitName(value: unknown) {
     : "";
 }
 
+/**
+ * Reads the product UOM shortcut from a nested product relation.
+ */
 function productUnitShortcut(value: unknown) {
   if (!value || typeof value !== "object") return "";
   const unit = (value as Record<string, unknown>).unit_of_measurement;
@@ -81,6 +106,9 @@ function productUnitShortcut(value: unknown) {
     : "";
 }
 
+/**
+ * Fetches product rules while tolerating Directus environments without deleted_at access.
+ */
 async function fetchProductRules(params: URLSearchParams) {
   const paramsWithSoftDelete = new URLSearchParams(params);
   addSoftDeleteFilters(paramsWithSoftDelete);
@@ -98,6 +126,9 @@ async function fetchProductRules(params: URLSearchParams) {
   }
 }
 
+/**
+ * Returns all supplier/category and product rules for a selected customer.
+ */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

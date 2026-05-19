@@ -1,3 +1,4 @@
+// src/app/api/fm/accounting/discount-management/customer-discounting/customers/search/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { asNumber, asString, directusFetch, discountLabel, DirectusList, jsonError } from "../../_utils";
 
@@ -12,6 +13,9 @@ type CustomerRow = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Searches active customers for the module quick-open combobox.
+ */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

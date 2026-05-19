@@ -1,3 +1,4 @@
+// src/modules/financial-management/accounting/discount-management/customer-discounting/components/CustomerDiscountingConfigSheet.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -65,22 +66,37 @@ type SelectOption = {
 
 const noneValue = "none";
 
+/**
+ * Formats discount percentages consistently across tabs and rule tables.
+ */
 function percentLabel(value: number) {
   return `${Number(value || 0).toFixed(2)}%`;
 }
 
+/**
+ * Builds a compact user-facing label for discount relations.
+ */
 function discountText(discount: DiscountOption | null) {
   return discount ? `${discount.discountType} (${percentLabel(discount.totalPercent)})` : "No discount";
 }
 
+/**
+ * Chooses the best available unit-of-measurement label for product rows.
+ */
 function unitText(product: { unitName?: string; unitShortcut?: string }) {
   return product.unitShortcut || product.unitName || "No UOM";
 }
 
+/**
+ * Combines the product name and UOM so selected products stay identifiable.
+ */
 function productPickerLabel(product: CustomerDiscountingProduct) {
   return `${product.productName} (${unitText(product)})`;
 }
 
+/**
+ * Parses optional unit price overrides from the product rule form.
+ */
 function parseMoney(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -88,12 +104,18 @@ function parseMoney(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * Keeps nested dropdowns scrollable inside the sheet.
+ */
 function scrollDropdownWithWheel(event: WheelEvent<HTMLDivElement>) {
   event.preventDefault();
   event.stopPropagation();
   event.currentTarget.scrollTop += event.deltaY;
 }
 
+/**
+ * Sheet UI for managing global, supplier/category, and product customer discounts.
+ */
 export function CustomerDiscountingConfigSheet({
   open,
   onOpenChange,
@@ -140,6 +162,7 @@ export function CustomerDiscountingConfigSheet({
         ? String(customer.globalDiscount.id)
         : noneValue;
 
+  // Product search stays local to the Product tab and waits until there is enough input.
   useEffect(() => {
     if (!open || productQuery.trim().length < 2 || selectedProduct) {
       return;
@@ -421,6 +444,9 @@ export function CustomerDiscountingConfigSheet({
   );
 }
 
+/**
+ * Local searchable select with explicit wheel handling for sheet dropdowns.
+ */
 function ConfigSearchableSelect({
   options,
   value,
@@ -490,6 +516,9 @@ function ConfigSearchableSelect({
   );
 }
 
+/**
+ * Shared rule table wrapper for supplier/category and product discount tabs.
+ */
 function RuleTable({
   loading,
   emptyText,

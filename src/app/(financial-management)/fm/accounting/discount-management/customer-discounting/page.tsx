@@ -1,3 +1,4 @@
+// src/app/(financial-management)/fm/accounting/discount-management/customer-discounting/page.tsx
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -24,6 +25,9 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+/**
+ * Decodes the VOS JWT payload so the page can build the shared header user model.
+ */
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split(".");
@@ -37,6 +41,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * Picks the first non-empty string from a set of possible JWT claim names.
+ */
 function pickString(source: Record<string, unknown> | null | undefined, keys: string[]) {
   for (const key of keys) {
     const value = source?.[key];
@@ -45,6 +52,9 @@ function pickString(source: Record<string, unknown> | null | undefined, keys: st
   return "";
 }
 
+/**
+ * Picks a numeric user id from the token payload when one is available.
+ */
 function pickNumber(source: Record<string, unknown> | null | undefined, keys: string[]) {
   for (const key of keys) {
     const value = source?.[key];
@@ -54,6 +64,9 @@ function pickNumber(source: Record<string, unknown> | null | undefined, keys: st
   return null;
 }
 
+/**
+ * Converts the auth cookie into the user object expected by the app sidebar header.
+ */
 function buildHeaderUserFromToken(token: string | null | undefined) {
   const payload = token ? decodeJwtPayload(token) : null;
   const first = pickString(payload, ["Firstname", "FirstName", "firstName", "firstname", "first_name"]);
@@ -70,20 +83,32 @@ function buildHeaderUserFromToken(token: string | null | undefined) {
   };
 }
 
+/**
+ * Reads Next.js search params that may arrive as a scalar or array value.
+ */
 function firstSearchParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+/**
+ * Normalizes the customer list page query parameter for server-side pagination.
+ */
 function parsePage(value: string | string[] | undefined) {
   const parsed = Number(firstSearchParam(value));
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
 }
 
+/**
+ * Restricts the persisted view query parameter to the supported module layouts.
+ */
 function parseViewMode(value: string | string[] | undefined): ViewMode | undefined {
   const viewMode = firstSearchParam(value);
   return viewMode === "table" || viewMode === "card" ? viewMode : undefined;
 }
 
+/**
+ * Renders the customer discounting page shell and server-loads the current customer page.
+ */
 export default async function Page({ searchParams }: PageProps) {
   const cookieStore = await cookies();
   const resolvedSearchParams = await searchParams;

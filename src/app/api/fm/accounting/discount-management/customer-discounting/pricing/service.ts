@@ -1,3 +1,4 @@
+// src/app/api/fm/accounting/discount-management/customer-discounting/pricing/service.ts
 import {
   addSoftDeleteFilters,
   asNumber,
@@ -11,7 +12,14 @@ import {
 
 const priceTierFields = ["price_per_unit", "priceA", "priceB", "priceC", "priceD", "priceE"] as const;
 
+/**
+ * Supported product price columns that can be used as the base price.
+ */
 export type CustomerDiscountPriceTier = typeof priceTierFields[number];
+
+/**
+ * Discount hierarchy tier that produced the resolved price.
+ */
 export type AppliedDiscountTier = "product" | "supplier_category" | "global" | "base";
 
 type DiscountOption = {
@@ -59,6 +67,9 @@ type ProductSupplierRow = {
   supplier_id?: unknown;
 };
 
+/**
+ * Request contract for resolving a customer-specific product price.
+ */
 export type CustomerDiscountPriceInput = {
   customerCode: string;
   productId: number;
@@ -67,6 +78,9 @@ export type CustomerDiscountPriceInput = {
   basePrice?: number | null;
 };
 
+/**
+ * Response contract that explains which discount tier produced the final price.
+ */
 export type CustomerDiscountPriceResult = {
   customer: {
     id: number;
@@ -95,6 +109,9 @@ export type CustomerDiscountPriceResult = {
   finalPrice: number | null;
 };
 
+/**
+ * Domain error used when pricing input is invalid or required records are missing.
+ */
 export class CustomerDiscountPricingError extends Error {
   status: number;
 
@@ -105,6 +122,9 @@ export class CustomerDiscountPricingError extends Error {
   }
 }
 
+/**
+ * Validates caller-provided price tier names against the product price columns.
+ */
 export function parsePriceTier(value: unknown): CustomerDiscountPriceTier | null {
   const tier = asString(value);
   return priceTierFields.includes(tier as CustomerDiscountPriceTier)
@@ -130,6 +150,9 @@ function unitShortcut(value: unknown) {
     : "";
 }
 
+/**
+ * Chooses the requested product base price, falling back through configured price tiers.
+ */
 function selectedBasePrice(product: ProductRow, priceTier: CustomerDiscountPriceTier | null, basePrice: number | null) {
   if (basePrice !== null) return { priceTier: "manual" as const, basePrice };
 
@@ -149,11 +172,17 @@ function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Applies a percent discount and rounds the result to currency precision.
+ */
 function applyDiscount(basePrice: number | null, discount: DiscountOption | null) {
   if (basePrice === null || !discount) return null;
   return roundMoney(basePrice * (1 - discount.totalPercent / 100));
 }
 
+/**
+ * Loads the customer and global discount used by the hierarchy fallback tier.
+ */
 async function fetchCustomer(customerCode: string) {
   const params = new URLSearchParams();
   params.set("limit", "1");
@@ -172,6 +201,9 @@ async function fetchCustomer(customerCode: string) {
   };
 }
 
+/**
+ * Loads product pricing/category/UOM fields needed by the resolver.
+ */
 async function fetchProduct(productId: number) {
   const params = new URLSearchParams();
   params.set("limit", "1");
@@ -206,6 +238,9 @@ async function fetchProduct(productId: number) {
   return row;
 }
 
+/**
+ * Loads the most recent active product-specific rule for the customer/product pair.
+ */
 async function fetchProductRule(customerCode: string, productId: number) {
   const params = new URLSearchParams();
   params.set("limit", "1");
@@ -230,6 +265,9 @@ async function fetchProductRule(customerCode: string, productId: number) {
   return res.data?.[0] ?? null;
 }
 
+/**
+ * Finds suppliers linked to the product when the caller did not provide one.
+ */
 async function fetchProductSupplierIds(productId: number) {
   const params = new URLSearchParams();
   params.set("limit", "-1");
@@ -246,6 +284,9 @@ async function fetchProductSupplierIds(productId: number) {
   );
 }
 
+/**
+ * Loads the most specific supplier/category rule that matches the product context.
+ */
 async function fetchSupplierCategoryRule(customerCode: string, supplierIds: number[], categoryId: number | null) {
   if (!categoryId || supplierIds.length === 0) return null;
 
@@ -267,6 +308,9 @@ async function fetchSupplierCategoryRule(customerCode: string, supplierIds: numb
   return res.data?.[0] ?? null;
 }
 
+/**
+ * Resolves product-level overrides, preferring explicit unit price over discount percent.
+ */
 function resolveProductRule(args: {
   customer: CustomerDiscountPriceResult["customer"];
   product: CustomerDiscountPriceResult["product"];
@@ -309,6 +353,9 @@ function resolveProductRule(args: {
   };
 }
 
+/**
+ * Applies the customer discount hierarchy: product, supplier/category, global, then base price.
+ */
 export async function resolveCustomerDiscountPrice(input: CustomerDiscountPriceInput): Promise<CustomerDiscountPriceResult> {
   const customerCode = asString(input.customerCode);
   if (!customerCode) throw new CustomerDiscountPricingError("customerCode is required");

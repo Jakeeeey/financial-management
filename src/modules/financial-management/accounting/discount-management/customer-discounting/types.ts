@@ -1,9 +1,16 @@
+// src/modules/financial-management/accounting/discount-management/customer-discounting/types.ts
+/**
+ * Normalized discount_type relation used across customer discounting screens.
+ */
 export type DiscountOption = {
   id: number;
   discountType: string;
   totalPercent: number;
 };
 
+/**
+ * Customer row displayed by the server-paginated dashboard.
+ */
 export type CustomerDiscountingCustomer = {
   id: number;
   customerCode: string;
@@ -12,17 +19,26 @@ export type CustomerDiscountingCustomer = {
   globalDiscount: DiscountOption | null;
 };
 
+/**
+ * Trade supplier option used by supplier/category discount rules.
+ */
 export type CustomerDiscountingSupplier = {
   id: number;
   supplierName: string;
   supplierShortcut: string;
 };
 
+/**
+ * Product category option used by supplier/category discount rules.
+ */
 export type CustomerDiscountingCategory = {
   categoryId: number;
   categoryName: string;
 };
 
+/**
+ * Product search result, including UOM and optional resolved pricing context.
+ */
 export type CustomerDiscountingProduct = {
   productId: number;
   productCode: string;
@@ -42,6 +58,9 @@ export type CustomerDiscountingProduct = {
   pricing?: CustomerDiscountPricingResult | null;
 };
 
+/**
+ * Supplier/category rule returned for a selected customer.
+ */
 export type SupplierCategoryRule = {
   id: number;
   customerCode: string;
@@ -52,6 +71,9 @@ export type SupplierCategoryRule = {
   discount: DiscountOption | null;
 };
 
+/**
+ * Product-specific rule returned for a selected customer.
+ */
 export type ProductRule = {
   id: number;
   customerCode: string;
@@ -66,6 +88,9 @@ export type ProductRule = {
   unitPrice: number | null;
 };
 
+/**
+ * Server-loaded module payload used to hydrate the client page.
+ */
 export type CustomerDiscountingModuleData = {
   customers: CustomerDiscountingCustomer[];
   discountTypes: DiscountOption[];
@@ -80,11 +105,17 @@ export type CustomerDiscountingModuleData = {
   };
 };
 
+/**
+ * Complete rule set shown inside the customer configuration sheet.
+ */
 export type CustomerDiscountingRules = {
   supplierCategoryRules: SupplierCategoryRule[];
   productRules: ProductRule[];
 };
 
+/**
+ * Pricing hierarchy response describing the applied discount tier and final price.
+ */
 export type CustomerDiscountPricingResult = {
   customer: {
     id: number;

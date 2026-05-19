@@ -1,3 +1,4 @@
+// src/app/api/fm/accounting/discount-management/customer-discounting/products/search/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { asNumber, asString, directusFetch, DirectusList, jsonError } from "../../_utils";
 import { CustomerDiscountPricingError, parsePriceTier, resolveCustomerDiscountPrice } from "../../pricing/service";
@@ -20,6 +21,9 @@ type ProductRow = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Extracts the product category id from scalar or relational Directus responses.
+ */
 function categoryId(value: unknown) {
   if (value && typeof value === "object") {
     return asNumber((value as Record<string, unknown>).category_id);
@@ -27,12 +31,18 @@ function categoryId(value: unknown) {
   return asNumber(value);
 }
 
+/**
+ * Extracts the product category display name from a Directus relation object.
+ */
 function categoryName(value: unknown) {
   return value && typeof value === "object"
     ? asString((value as Record<string, unknown>).category_name)
     : "";
 }
 
+/**
+ * Extracts the unit id from scalar or relational Directus responses.
+ */
 function unitId(value: unknown) {
   if (value && typeof value === "object") {
     return asNumber((value as Record<string, unknown>).unit_id);
@@ -40,18 +50,27 @@ function unitId(value: unknown) {
   return asNumber(value);
 }
 
+/**
+ * Extracts the unit display name from a Directus relation object.
+ */
 function unitName(value: unknown) {
   return value && typeof value === "object"
     ? asString((value as Record<string, unknown>).unit_name)
     : "";
 }
 
+/**
+ * Extracts the unit shortcut used in compact product picker labels.
+ */
 function unitShortcut(value: unknown) {
   return value && typeof value === "object"
     ? asString((value as Record<string, unknown>).unit_shortcut)
     : "";
 }
 
+/**
+ * Searches products and optionally includes resolved customer pricing data.
+ */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

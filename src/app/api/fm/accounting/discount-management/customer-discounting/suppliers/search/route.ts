@@ -1,3 +1,4 @@
+// src/app/api/fm/accounting/discount-management/customer-discounting/suppliers/search/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { asNumber, asString, directusFetch, DirectusList, jsonError, tradeSupplierParams } from "../../_utils";
 
@@ -10,6 +11,9 @@ type SupplierRow = {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Searches active trade suppliers for supplier/category rule assignment.
+ */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

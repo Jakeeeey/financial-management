@@ -1,3 +1,4 @@
+// src/modules/financial-management/accounting/discount-management/customer-discounting/CustomerDiscountingModule.tsx
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
@@ -30,21 +31,33 @@ type Props = {
 
 type ViewMode = "table" | "card";
 
+/**
+ * Formats a discount option for compact table/card display.
+ */
 function discountText(discount: DiscountOption | null) {
   return discount ? `${discount.discountType} (${Number(discount.totalPercent || 0).toFixed(2)}%)` : "No global discount";
 }
 
+/**
+ * Chooses the initial layout based on screen size when no URL preference exists.
+ */
 function defaultViewMode(): ViewMode {
   if (typeof window === "undefined") return "table";
   return window.matchMedia("(max-width: 767px)").matches ? "card" : "table";
 }
 
+/**
+ * Keeps dropdown wheel events local so page-level scroll containers do not intercept them.
+ */
 function scrollDropdownWithWheel(event: WheelEvent<HTMLDivElement>) {
   event.preventDefault();
   event.stopPropagation();
   event.currentTarget.scrollTop += event.deltaY;
 }
 
+/**
+ * Client module for browsing customers and opening the configuration sheet.
+ */
 export default function CustomerDiscountingModule({ userId, initialModuleData, initialViewMode }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -76,6 +89,7 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
   const startItem = pagination.total === 0 ? 0 : (safeCurrentPage - 1) * pagination.pageSize + 1;
   const endItem = Math.min(safeCurrentPage * pagination.pageSize, pagination.total);
 
+  // Keep search, page, and view mode in the URL so pagination remains server-driven.
   const navigateToCustomerPage = useCallback((page: number, nextSearch = search, nextViewMode = viewMode) => {
     const params = new URLSearchParams();
     const trimmedSearch = nextSearch.trim();
@@ -89,6 +103,7 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
     });
   }, [pathname, router, search, viewMode]);
 
+  // Debounce table filtering to avoid replacing the route on every keystroke.
   useEffect(() => {
     const normalizedSearch = search.trim();
     if (normalizedSearch === pagination.search) return;
@@ -361,6 +376,9 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
   );
 }
 
+/**
+ * Async customer combobox used to open a customer without navigating table pages.
+ */
 function CustomerQuickOpen({
   onSelect,
 }: {
