@@ -1,9 +1,9 @@
 "use client";
 
-import {useState, useEffect, useCallback} from "react";
-import {UnpaidInvoice, SettlementAllocation, PaymentHistory} from "../../types";
-import {fetchProvider} from "../../providers/fetchProvider";
-import {toast} from "sonner";
+import { useState, useEffect, useCallback } from "react";
+import { UnpaidInvoice, SettlementAllocation, PaymentHistory, UserDto } from "../../types";
+import { fetchProvider } from "../../providers/fetchProvider";
+import { toast } from "sonner";
 
 export interface RawCashBucket {
     detailId?: number;
@@ -43,6 +43,8 @@ export interface RawAllocation {
 export interface RawTreasuryPouch {
     docNo?: string;
     isPosted?: boolean;
+    collectedBy?: number;
+    crNo?: string;
     collectionDate?: string;
     salesmanId?: number;
     cashBuckets?: RawCashBucket[];
@@ -97,6 +99,11 @@ export function useSettlement(pouchId: string | number) {
     const [credits, setCredits] = useState<WalletItem[]>([]);
     const [salesmanName, setSalesmanName] = useState("Loading...");
     const [salesmanId, setSalesmanId] = useState<number | null>(null);
+
+    const [collectedBy, setCollectedBy] = useState<number | null>(null);
+    const [collectedByName, setCollectedByName] = useState<string>("Encoder/System");
+    const [crNo, setCrNo] = useState<string>("");
+
     const [docNo, setDocNo] = useState<string>(pouchId.toString());
     const [isPosted, setIsPosted] = useState<boolean>(false);
     const [collectionDate, setCollectionDate] = useState<string>("");
@@ -105,7 +112,6 @@ export function useSettlement(pouchId: string | number) {
     const [findings, setFindings] = useState<GeneralFinding[]>([]);
 
     const [isLoadingRoute, setIsLoadingRoute] = useState(false);
-
     const [dispatchPlans, setDispatchPlans] = useState<DispatchPlan[]>([]);
     const [isLoadingPlans, setIsLoadingPlans] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -119,11 +125,21 @@ export function useSettlement(pouchId: string | number) {
             setWallet([]);
             setCredits([]);
 
-            const pouch = await fetchProvider.get<RawTreasuryPouch>(`/api/fm/treasury/collections/${pouchId}`);
+            // 🚀 Strictly typing the users array
+            const [pouch, salesmen, fetchedFindings, fetchedUsers] = await Promise.all([
+                fetchProvider.get<RawTreasuryPouch>(`/api/fm/treasury/collections/${pouchId}`),
+                fetchProvider.get<RawSalesman[]>("/api/fm/treasury/salesmen"),
+                fetchProvider.get<GeneralFinding[]>("/api/fm/treasury/collections/findings").catch(() => []),
+                fetchProvider.get<UserDto[]>("/api/fm/treasury/users").catch(() => [])
+            ]);
+
             if (!pouch) return;
 
             setDocNo(pouch.docNo || pouchId.toString());
             setIsPosted(pouch.isPosted === true);
+            setCollectedBy(pouch.collectedBy || null);
+            setCrNo(pouch.crNo || "");
+
             if (pouch.collectionDate) {
                 const cDate = pouch.collectionDate.split('T')[0];
                 setCollectionDate(cDate);
@@ -132,15 +148,13 @@ export function useSettlement(pouchId: string | number) {
 
             const currentSalesmanId = pouch.salesmanId || null;
             setSalesmanId(currentSalesmanId);
-
-            const salesmen = await fetchProvider.get<RawSalesman[]>("/api/fm/treasury/salesmen");
             setSalesmanName(salesmen?.find(s => s.id === currentSalesmanId)?.salesmanName || `Owner ID: ${currentSalesmanId}`);
+            setFindings(fetchedFindings || []);
 
-            try {
-                const fetchedFindings = await fetchProvider.get<GeneralFinding[]>("/api/fm/treasury/collections/findings");
-                setFindings(fetchedFindings || []);
-            } catch (e) {
-                console.warn("Could not load findings", e);
+            // 🚀 Strictly typing the user iteration
+            if (pouch.collectedBy && fetchedUsers) {
+                const u = fetchedUsers.find((user: UserDto) => user.id === pouch.collectedBy);
+                if (u) setCollectedByName(`${u.firstName || ''} ${u.lastName || ''}`.trim());
             }
 
             let totalCash = 0;
@@ -175,7 +189,7 @@ export function useSettlement(pouchId: string | number) {
                 } else if (wType === "ADJUSTMENT") {
                     newWallet.push({
                         id: uniqueId, type: "ADJUSTMENT", label: b.referenceNo || 'Adjustment', originalAmount: safeAmount,
-                        customerName: b.referenceNo, balanceTypeId: b.balanceTypeId || 1, dbId: b.detailId, findingId: b.findingId, invoiceId: b.invoiceId
+                        customerName: b.customerName, balanceTypeId: b.balanceTypeId || 1, dbId: b.detailId, findingId: b.findingId, invoiceId: b.invoiceId
                     });
                 } else {
                     newWallet.push({
@@ -242,12 +256,10 @@ export function useSettlement(pouchId: string | number) {
     useEffect(() => {
         const fetchCreditsByCustomers = async () => {
             const uniqueCustomers = Array.from(new Set(cartInvoices.map(inv => inv.customerName).filter(Boolean)));
-
             if (uniqueCustomers.length === 0) return;
 
             try {
                 const namesQuery = encodeURIComponent(uniqueCustomers.join(','));
-
                 const [memos, returns] = await Promise.all([
                     fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/memos/available?customerNames=${namesQuery}`),
                     fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/returns/available?customerNames=${namesQuery}`)
@@ -255,7 +267,6 @@ export function useSettlement(pouchId: string | number) {
 
                 setCredits(prev => {
                     const newCredits = [...prev];
-
                     memos?.forEach(m => {
                         const remainingMemoAmount = (m.amount || 0) - (m.appliedAmount || 0);
                         const id = `memo-${m.id}`;
@@ -263,21 +274,18 @@ export function useSettlement(pouchId: string | number) {
                             newCredits.push({ id, dbId: m.id, type: "MEMO", label: `Memo: ${m.memoNumber}`, originalAmount: remainingMemoAmount, customerName: m.customerName });
                         }
                     });
-
                     returns?.forEach(r => {
                         const id = `return-${r.id}`;
                         if (!r.isApplied && !newCredits.some(c => c.id === id)) {
                             newCredits.push({ id, dbId: r.id, type: "RETURN", label: `Return: ${r.returnNumber}`, originalAmount: r.totalAmount || 0, customerName: r.customerName });
                         }
                     });
-
                     return newCredits;
                 });
             } catch (err) {
                 console.error("Failed to fetch credits dynamically for linked customers", err);
             }
         };
-
         fetchCreditsByCustomers();
     }, [cartInvoices]);
 
@@ -290,7 +298,6 @@ export function useSettlement(pouchId: string | number) {
             .finally(() => setIsLoadingPlans(false));
     }, [salesmanId, dispatchDate]);
 
-    // 🚀 THE FIX: Now safely searches using a String document number!
     const fetchAndInjectExternalCredit = async (documentNo: string, type: "MEMO" | "RETURN") => {
         try {
             const safeDocNo = encodeURIComponent(documentNo.trim());
@@ -336,7 +343,6 @@ export function useSettlement(pouchId: string | number) {
                 toast.error("Database ID missing. Cannot update.");
                 return;
             }
-
             try {
                 const endpoint = item.type === "EWT" ? `/api/fm/treasury/ewts/${dbId}` : `/api/fm/treasury/adjustments/${dbId}`;
                 const payload = item.type === "EWT" ? {
@@ -351,7 +357,7 @@ export function useSettlement(pouchId: string | number) {
                 await fetchProvider.put(endpoint, payload);
             } catch (e) {
                 console.error("Update failed", e);
-                toast.error("Failed to update record in database. Ensure PUT endpoints exist.");
+                toast.error("Failed to update record in database.");
                 return;
             }
         }
@@ -378,7 +384,6 @@ export function useSettlement(pouchId: string | number) {
                 if (!silent) toast.error("Database ID missing. Cannot delete.");
                 return;
             }
-
             try {
                 const endpoint = type === "EWT" ? `/api/fm/treasury/ewts/${dbId}` : `/api/fm/treasury/adjustments/${dbId}`;
                 await fetchProvider.delete(endpoint);
@@ -434,9 +439,7 @@ export function useSettlement(pouchId: string | number) {
         setIsLoadingRoute(true);
         try {
             const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/dispatch-plan-invoices?planId=${planId}`);
-            const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === (inv.id || (inv as unknown as {
-                invoiceId: number
-            }).invoiceId)));
+            const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === (inv.id || (inv as unknown as { invoiceId: number }).invoiceId)));
 
             if (cleanResults.length > 0) {
                 setCartInvoices(prev => [
@@ -463,9 +466,7 @@ export function useSettlement(pouchId: string | number) {
         setIsLoadingRoute(true);
         try {
             const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/route-invoices?salesmanId=${salesmanId}&date=${collectionDate}`);
-            const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === (inv.id || (inv as unknown as {
-                invoiceId: number
-            }).invoiceId)));
+            const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === (inv.id || (inv as unknown as { invoiceId: number }).invoiceId)));
             if (cleanResults.length > 0) {
                 setCartInvoices(prev => [...prev, ...cleanResults.map(inv => ({
                     ...inv,
@@ -610,14 +611,20 @@ export function useSettlement(pouchId: string | number) {
                 }
             });
 
-            const payload = {newAdjustments, newEwts, allocations: persistentAllocations};
-            await fetchProvider.post(`/api/fm/treasury/collections/${pouchId}/allocate`, payload);
+            const payload = {
+                collectedBy: collectedBy || undefined,
+                crNo: crNo || undefined,
+                newAdjustments,
+                newEwts,
+                allocations: persistentAllocations
+            };
 
+            await fetchProvider.post(`/api/fm/treasury/collections/${pouchId}/allocate`, payload);
             toast.success("Settlement successfully committed to the ledger!");
             await fetchData();
             return true;
         } catch (err) {
-            toast.error("Failed to secure settlement to ledger. See console for details.");
+            toast.error("Failed to secure settlement to ledger.");
             console.error(err);
             return false;
         }
@@ -627,6 +634,7 @@ export function useSettlement(pouchId: string | number) {
         isLoading, wallet, credits, cartInvoices, allocations, salesmanName, salesmanId, findings, docNo, isPosted,
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
-        deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate
+        deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
+        collectedByName
     };
 }

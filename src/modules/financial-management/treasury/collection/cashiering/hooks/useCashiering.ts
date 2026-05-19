@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import { fetchProvider } from "../../providers/fetchProvider";
 import {
     CurrentUser, CollectionSummary, Salesman, Bank, Denomination,
-    COA, PaymentMethod, Customer, UnpaidInvoice, CheckDetail
+    COA, PaymentMethod, Customer, UnpaidInvoice, CheckDetail, UserDto
 } from "../../types";
 
 interface PouchDetailResponse {
     id: number;
     salesmanId: number;
+    collectedBy?: number; // 🚀 Added for hydration
+    crNo?: string;        // 🚀 Added for hydration
     collectionDate: string;
     remarks: string;
     cashBuckets: {
@@ -35,6 +37,7 @@ export function useCashiering(currentUser: CurrentUser) {
 
     const [masterList, setMasterList] = useState<CollectionSummary[]>([]);
     const [salesmen, setSalesmen] = useState<Salesman[]>([]);
+    const [users, setUsers] = useState<UserDto[]>([]); // 🚀 NEW: Users state
     const [banks, setBanks] = useState<Bank[]>([]);
     const [coas, setCoas] = useState<COA[]>([]);
     const [denominationMaster, setDenominationMaster] = useState<Denomination[]>([]);
@@ -46,6 +49,8 @@ export function useCashiering(currentUser: CurrentUser) {
     const [routeInvoices, setRouteInvoices] = useState<UnpaidInvoice[]>([]);
 
     const [salesmanId, setSalesmanId] = useState<string>("");
+    const [collectedBy, setCollectedBy] = useState<string>(""); // 🚀 NEW: Collected By state
+    const [crNo, setCrNo] = useState<string>("");               // 🚀 NEW: CR No. state
     const [collectionDate, setCollectionDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [remarks, setRemarks] = useState<string>("");
 
@@ -59,20 +64,33 @@ export function useCashiering(currentUser: CurrentUser) {
     const fetchInitialData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [collectionsData, salesmenData, banksData, denomData, coasData, pmData, custData] = await Promise.all([
+            // 🚀 ADDED the users fetch right here!
+            const [collectionsData, salesmenData, banksData, denomData, coasData, pmData, custData, usersData] = await Promise.all([
                 fetchProvider.get<CollectionSummary[]>("/api/fm/treasury/collections"),
                 fetchProvider.get<Salesman[]>("/api/fm/treasury/salesmen"),
                 fetchProvider.get<Bank[]>("/api/fm/treasury/bank-names"),
                 fetchProvider.get<Denomination[]>("/api/fm/treasury/denominations"),
                 fetchProvider.get<COA[]>("/api/fm/treasury/coas"),
                 fetchProvider.get<PaymentMethod[]>("/api/fm/treasury/payment-methods").catch(() => [] as PaymentMethod[]),
-                fetchProvider.get<Customer[]>("/api/fm/treasury/customers").catch(() => [] as Customer[])
+                fetchProvider.get<Customer[]>("/api/fm/treasury/customers").catch(() => [] as Customer[]),
+                fetchProvider.get<UserDto[]>("/api/fm/treasury/users").catch(() => []) // 🚀 Calling your new BFF route
             ]);
 
             if (collectionsData) setMasterList(collectionsData);
             if (salesmenData) setSalesmen(salesmenData);
             if (banksData) setBanks(banksData);
             if (custData) setCustomers(custData);
+
+            // 🚀 Map the raw Java DTO to our frontend UserDto interface
+            if (usersData && usersData.length > 0) {
+                const mappedUsers = usersData.map(u => ({
+                    id: u.id,
+                    firstName: u.firstName,
+                    lastName: u.lastName,
+                    name: `${u.firstName || ''} ${u.lastName || ''}`.trim() // Combine name for UI
+                }));
+                setUsers(mappedUsers);
+            }
 
             if (pmData) {
                 setPaymentMethods(pmData.filter((pm: PaymentMethod) => pm.methodId !== 1 && pm.methodName.toLowerCase() !== "cash"));
@@ -118,6 +136,11 @@ export function useCashiering(currentUser: CurrentUser) {
             if (pouch) {
                 setEditingId(id);
                 setSalesmanId(pouch.salesmanId.toString());
+
+                // 🚀 Hydrate the new fields if backend returns them
+                setCollectedBy(pouch.collectedBy ? pouch.collectedBy.toString() : "");
+                setCrNo(pouch.crNo || "");
+
                 setCollectionDate(pouch.collectionDate.split('T')[0]);
                 setRemarks(pouch.remarks || "");
 
@@ -237,6 +260,8 @@ export function useCashiering(currentUser: CurrentUser) {
     const resetForm = () => {
         setEditingId(null);
         setSalesmanId("");
+        setCollectedBy(""); // 🚀 Reset
+        setCrNo("");        // 🚀 Reset
         setRemarks("");
         setDenominations(denominationMaster.reduce<Record<number, number>>((acc, d) => ({ ...acc, [d.id]: 0 }), {}));
         setChecks([]);
@@ -252,7 +277,8 @@ export function useCashiering(currentUser: CurrentUser) {
 
         const payload = {
             salesmanId: parseInt(salesmanId),
-            collectedBy: parseInt(currentUser.id) || 1,
+            collectedBy: collectedBy ? parseInt(collectedBy) : (parseInt(currentUser.id) || 1), // 🚀 Dynamic
+            crNo: crNo || undefined, // 🚀 Payload mapping
             collectionDate: `${collectionDate}T00:00:00`,
             remarks: remarks || "",
             cashBuckets: [
@@ -300,6 +326,7 @@ export function useCashiering(currentUser: CurrentUser) {
 
     return {
         isSheetOpen, setIsSheetOpen, isSheetLoading, isSubmitting, masterList, salesmen, isLoading, salesmanId, setSalesmanId,
+        users, collectedBy, setCollectedBy, crNo, setCrNo, // 🚀 Expose the new states to the component!
         collectionDate, setCollectionDate, remarks, setRemarks, denominations, handleDenomChange,
         denominationMaster, checks, banks, coas, paymentMethods, customers, customerInvoices, routeInvoices,
         addCheck, updateCheck, handlePaymentMethodSelect, handleCustomerSelect, handleInvoiceSelect, removeCheck, totalCash,

@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import { WalletItem, GeneralFinding } from "../hooks/useSettlement";
 import { UnpaidInvoice } from "../../types";
 
-// 🚀 THE FIX: Strongly typed props to satisfy TypeScript and rid us of 'any'
 export interface WalletAssetCardProps {
     item: WalletItem;
     getUsedAmount: (id: string) => number;
@@ -132,7 +131,7 @@ export default function WalletAssetCard({
                         <span className="absolute left-2 top-1.5 text-[9px] font-black text-muted-foreground">₱</span>
                         <Input type="number" value={editAmt} onChange={e => setEditAmt(e.target.value)} placeholder="0.00" className="h-7 pl-5 text-xs font-mono font-black shadow-inner bg-muted/20"/>
                     </div>
-                    <Input value={editRef} onChange={e => setEditRef(e.target.value)} placeholder={item.type === "EWT" ? "Form 2307 Ref" : "Remarks"} className="h-7 text-xs bg-muted/20 shadow-inner px-2"/>
+                    <Input value={editRef} onChange={e => setEditRef(e.target.value.toUpperCase())} placeholder={item.type === "EWT" ? "Form 2307 Ref" : "Remarks"} className="h-7 text-xs bg-muted/20 shadow-inner px-2"/>
                 </div>
 
                 <Button size="sm" className="w-full h-7 text-[9px] font-black tracking-widest uppercase bg-primary text-white mt-0.5 shadow-md active:scale-95"
@@ -178,7 +177,6 @@ export default function WalletAssetCard({
                             <User size={8} className="shrink-0"/> {item.customerName}
                         </div>
                     )}
-                    {/* 🚀 THE FIX: We utilize cartInvoices to show the actual invoice string! */}
                     {item.invoiceId && (
                         <div className="flex items-center gap-1.5 text-[8px] font-black text-blue-600 dark:text-blue-400 truncate" title="Pre-linked Invoice">
                             <Receipt size={8} className="shrink-0"/>
