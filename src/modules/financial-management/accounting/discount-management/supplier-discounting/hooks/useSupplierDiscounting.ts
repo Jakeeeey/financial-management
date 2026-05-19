@@ -37,12 +37,14 @@ function failedRuleDescription(failed: SupplierDiscountBulkResult["failed"], sav
  * Coordinates supplier selection, product loading, and bulk discount mutations.
  */
 export function useSupplierDiscounting(initialModuleData: SupplierDiscountModuleData) {
-  const [moduleData] = useState<SupplierDiscountModuleData>(initialModuleData);
+  const [moduleData, setModuleData] = useState<SupplierDiscountModuleData>(initialModuleData);
+  const [moduleDataLoading, setModuleDataLoading] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<SupplierDiscountSupplier | null>(null);
   const [rules, setRules] = useState<SupplierDiscountRule[]>([]);
   const [productPage, setProductPage] = useState<SupplierDiscountProductPage>(emptyProductPage);
   const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
-  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productError, setProductError] = useState<string | null>(null);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [includeChildren, setIncludeChildren] = useState(false);
@@ -62,12 +64,15 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
     const seq = ++loadSeqRef.current;
     try {
       setProductsLoading(true);
+      setProductError(null);
       const result = await supplierDiscountingApi.getProducts(query);
       if (seq !== loadSeqRef.current) return;
       setProductPage(result);
     } catch (err) {
       if (seq !== loadSeqRef.current) return;
-      toast.error(err instanceof Error ? err.message : "Failed to load parent products");
+      const message = err instanceof Error ? err.message : "Failed to load parent products";
+      toast.error(message);
+      setProductError(message);
       setProductPage(emptyProductPage);
     } finally {
       if (seq === loadSeqRef.current) setProductsLoading(false);
@@ -157,7 +162,10 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
         });
         setSelectedProductIds(result.failed.map((item) => item.productId));
       } else {
-        toast.success(`Applied ${result.created + result.updated} supplier discount rule(s)`);
+        const parts: string[] = [];
+        if (result.created > 0) parts.push(`${result.created} created`);
+        if (result.updated > 0) parts.push(`${result.updated} updated`);
+        toast.success(parts.length > 0 ? parts.join(", ") : `Applied ${result.created + result.updated} supplier discount rule(s)`);
         setSelectedProductIds([]);
       }
 
@@ -174,6 +182,23 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
   /**
    * Deletes an existing supplier discount rule and refreshes the rule list.
    */
+  /**
+   * Retries loading the module metadata (suppliers, categories, brands, discounts).
+   */
+  const refreshModuleData = useCallback(async () => {
+    try {
+      setModuleDataLoading(true);
+      const data = await supplierDiscountingApi.getModuleData();
+      setModuleData(data);
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to reload module data");
+      return false;
+    } finally {
+      setModuleDataLoading(false);
+    }
+  }, []);
+
   const deleteRule = useCallback(async (id: number) => {
     if (!selectedSupplier) return;
 
@@ -196,7 +221,10 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
     productPage,
     selectedProductIds,
     productsLoading,
+    productError,
+    setProductError,
     rulesLoading,
+    moduleDataLoading,
     saving,
     includeChildren,
     setIncludeChildren,
@@ -207,5 +235,6 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
     setSelectedProductIds,
     applyBulkDiscount,
     deleteRule,
+    refreshModuleData,
   };
 }
