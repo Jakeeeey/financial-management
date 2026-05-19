@@ -1,5 +1,5 @@
 // src/modules/financial-management/accounting/discount-management/customer-discounting/hooks/useCustomerDiscounting.ts
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { customerDiscountingApi } from "../providers/customerDiscountingApi";
 import type {
@@ -22,20 +22,29 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerDiscountingCustomer | null>(null);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const rulesSeqRef = useRef(0);
+  const selectedCustomerCodeRef = useRef<string | null>(null);
 
   /**
    * Loads the supplier/category and product rules for a selected customer code.
    */
   const loadRules = useCallback(async (customerCode: string) => {
+    const seq = ++rulesSeqRef.current;
     try {
       setRulesLoading(true);
-      setRules(await customerDiscountingApi.getRules(customerCode));
+      const nextRules = await customerDiscountingApi.getRules(customerCode);
+      if (seq === rulesSeqRef.current && selectedCustomerCodeRef.current === customerCode) {
+        setRules(nextRules);
+      }
     } catch (err) {
+      if (seq !== rulesSeqRef.current || selectedCustomerCodeRef.current !== customerCode) return;
       const message = err instanceof Error ? err.message : "Failed to load customer discounting rules";
       toast.error(message);
       setRules(emptyRules);
     } finally {
-      setRulesLoading(false);
+      if (seq === rulesSeqRef.current && selectedCustomerCodeRef.current === customerCode) {
+        setRulesLoading(false);
+      }
     }
   }, []);
 
@@ -43,7 +52,9 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
    * Selects a customer and eagerly loads its rules for the configuration sheet.
    */
   const selectCustomer = useCallback((customer: CustomerDiscountingCustomer) => {
+    selectedCustomerCodeRef.current = customer.customerCode;
     setSelectedCustomer(customer);
+    setRules(emptyRules);
     void loadRules(customer.customerCode);
   }, [loadRules]);
 
@@ -100,13 +111,14 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     if (!selectedCustomer) return false;
     try {
       setSaving(true);
+      const customerCode = selectedCustomer.customerCode;
       await customerDiscountingApi.addSupplierCategoryRule({
-        customerCode: selectedCustomer.customerCode,
+        customerCode,
         ...payload,
         createdBy: userId,
       });
       toast.success("Supplier/category discount added");
-      await loadRules(selectedCustomer.customerCode);
+      if (selectedCustomerCodeRef.current === customerCode) await loadRules(customerCode);
       return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to add supplier/category discount");
@@ -127,13 +139,14 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     if (!selectedCustomer) return false;
     try {
       setSaving(true);
+      const customerCode = selectedCustomer.customerCode;
       await customerDiscountingApi.addProductRule({
-        customerCode: selectedCustomer.customerCode,
+        customerCode,
         ...payload,
         createdBy: userId,
       });
       toast.success("Product discount added");
-      await loadRules(selectedCustomer.customerCode);
+      if (selectedCustomerCodeRef.current === customerCode) await loadRules(customerCode);
       return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to add product discount");
@@ -150,9 +163,10 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     if (!selectedCustomer) return;
     try {
       setSaving(true);
-      await customerDiscountingApi.deleteSupplierCategoryRule(id, userId);
+      const customerCode = selectedCustomer.customerCode;
+      await customerDiscountingApi.deleteSupplierCategoryRule(id, customerCode, userId);
       toast.success("Supplier/category discount removed");
-      await loadRules(selectedCustomer.customerCode);
+      if (selectedCustomerCodeRef.current === customerCode) await loadRules(customerCode);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete supplier/category discount");
     } finally {
@@ -167,9 +181,10 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     if (!selectedCustomer) return;
     try {
       setSaving(true);
-      await customerDiscountingApi.deleteProductRule(id, userId);
+      const customerCode = selectedCustomer.customerCode;
+      await customerDiscountingApi.deleteProductRule(id, customerCode, userId);
       toast.success("Product discount removed");
-      await loadRules(selectedCustomer.customerCode);
+      if (selectedCustomerCodeRef.current === customerCode) await loadRules(customerCode);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete product discount");
     } finally {

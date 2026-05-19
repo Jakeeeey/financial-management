@@ -252,17 +252,16 @@ async function fetchProductRule(customerCode: string, productId: number) {
   const paramsWithSoftDelete = new URLSearchParams(params);
   addSoftDeleteFilters(paramsWithSoftDelete);
 
-  let res: DirectusList<ProductRuleRow>;
   try {
-    res = await directusFetch<DirectusList<ProductRuleRow>>(
+    const res = await directusFetch<DirectusList<ProductRuleRow>>(
       `/items/product_per_customer?${paramsWithSoftDelete.toString()}`,
     );
+    return res.data?.[0] ?? null;
   } catch (error) {
     if (!isDeletedAtAccessError(error)) throw error;
-    res = await directusFetch<DirectusList<ProductRuleRow>>(`/items/product_per_customer?${params.toString()}`);
+    const res = await directusFetch<DirectusList<ProductRuleRow>>(`/items/product_per_customer?${params.toString()}`);
+    return res.data?.[0] ?? null;
   }
-
-  return res.data?.[0] ?? null;
 }
 
 /**

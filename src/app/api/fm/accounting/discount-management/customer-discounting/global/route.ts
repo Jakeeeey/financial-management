@@ -7,6 +7,10 @@ type CustomerRow = {
   customer_code?: unknown;
 };
 
+type ReferenceRow = {
+  id?: unknown;
+};
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -18,9 +22,23 @@ async function resolveCustomerId(customerCode: string) {
   params.set("limit", "1");
   params.set("fields", "id,customer_code");
   params.set("filter[customer_code][_eq]", customerCode);
+  params.set("filter[isActive][_eq]", "1");
 
   const res = await directusFetch<DirectusList<CustomerRow>>(`/items/customer?${params.toString()}`);
   return asNumber(res.data?.[0]?.id);
+}
+
+/**
+ * Verifies global discount assignments reference an existing discount type.
+ */
+async function hasDiscountType(discountTypeId: number) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "id");
+  params.set("filter[id][_eq]", String(discountTypeId));
+
+  const res = await directusFetch<DirectusList<ReferenceRow>>(`/items/discount_type?${params.toString()}`);
+  return (res.data ?? []).length > 0;
 }
 
 /**
@@ -37,9 +55,17 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "customerCode is required" }, { status: 400 });
     }
 
-    const customerId = asNumber(body.customerId ?? body.id) ?? await resolveCustomerId(customerCode);
+    if (discountTypeId !== null && discountTypeId <= 0) {
+      return NextResponse.json({ error: "Discount type was not found" }, { status: 404 });
+    }
+
+    if (discountTypeId !== null && !(await hasDiscountType(discountTypeId))) {
+      return NextResponse.json({ error: "Discount type was not found" }, { status: 404 });
+    }
+
+    const customerId = await resolveCustomerId(customerCode);
     if (!customerId) {
-      return NextResponse.json({ error: "Customer was not found" }, { status: 404 });
+      return NextResponse.json({ error: "Customer was not found or is inactive" }, { status: 404 });
     }
 
     const payload: Record<string, unknown> = {

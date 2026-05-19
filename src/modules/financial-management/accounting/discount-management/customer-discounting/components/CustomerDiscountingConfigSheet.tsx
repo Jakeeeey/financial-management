@@ -7,6 +7,17 @@ import { Check, ChevronsUpDown, Loader2, Plus, Save, Search, Trash2 } from "luci
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Command,
   CommandEmpty,
   CommandGroup,
@@ -203,6 +214,10 @@ export function CustomerDiscountingConfigSheet({
     setUnitPrice("");
   };
 
+  const parsedUnitPrice = parseMoney(unitPrice);
+  const hasUnitPriceInput = unitPrice.trim().length > 0;
+  const hasUnitPriceError = hasUnitPriceInput && (parsedUnitPrice === null || parsedUnitPrice < 0);
+
   const saveSupplierCategoryRule = async () => {
     const success = await onAddSupplierCategoryRule({
       supplierId: Number(supplierId),
@@ -213,16 +228,16 @@ export function CustomerDiscountingConfigSheet({
   };
 
   const saveProductRule = async () => {
-    if (!selectedProduct) return;
+    if (!selectedProduct || hasUnitPriceError) return;
     const success = await onAddProductRule({
       productId: selectedProduct.productId,
       discountTypeId: productDiscountId ? Number(productDiscountId) : null,
-      unitPrice: parseMoney(unitPrice),
+      unitPrice: hasUnitPriceInput ? parsedUnitPrice : null,
     });
     if (success) resetProductForm();
   };
 
-  const canSaveProduct = !!selectedProduct && (!!productDiscountId || unitPrice.trim().length > 0);
+  const canSaveProduct = !!selectedProduct && !hasUnitPriceError && (!!productDiscountId || hasUnitPriceInput);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -313,15 +328,12 @@ export function CustomerDiscountingConfigSheet({
                     </TableCell>
                     <TableCell>{rule.categoryName || `Category #${rule.categoryId}`}</TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      <DeleteRuleButton
                         disabled={saving}
-                        onClick={() => onDeleteSupplierCategoryRule(rule.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        title="Remove supplier/category discount?"
+                        description={`This will remove the discount for ${rule.supplierName || `Supplier #${rule.supplierId}`} and ${rule.categoryName || `Category #${rule.categoryId}`}.`}
+                        onConfirm={() => onDeleteSupplierCategoryRule(rule.id)}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -398,6 +410,9 @@ export function CustomerDiscountingConfigSheet({
                       placeholder="Optional"
                       inputMode="decimal"
                     />
+                    {hasUnitPriceError ? (
+                      <p className="text-xs text-destructive">Enter a non-negative unit price.</p>
+                    ) : null}
                   </div>
                   <Button disabled={saving || !canSaveProduct} onClick={saveProductRule}>
                     {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
@@ -423,15 +438,12 @@ export function CustomerDiscountingConfigSheet({
                     </TableCell>
                     <TableCell>{rule.unitPrice === null ? "No override" : Number(rule.unitPrice).toFixed(2)}</TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      <DeleteRuleButton
                         disabled={saving}
-                        onClick={() => onDeleteProductRule(rule.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        title="Remove product discount?"
+                        description={`This will remove the discount rule for ${rule.productName || `Product #${rule.productId}`}.`}
+                        onConfirm={() => onDeleteProductRule(rule.id)}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -441,6 +453,56 @@ export function CustomerDiscountingConfigSheet({
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * Delete trigger that asks for confirmation before removing a discount rule.
+ */
+function DeleteRuleButton({
+  disabled,
+  title,
+  description,
+  onConfirm,
+}: {
+  disabled: boolean;
+  title: string;
+  description: string;
+  onConfirm: () => Promise<void>;
+}) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          disabled={disabled}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {description} This action cannot be undone from this screen.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={disabled}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={disabled}
+            onClick={() => {
+              void onConfirm();
+            }}
+          >
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
