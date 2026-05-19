@@ -47,7 +47,7 @@ type Props = {
   onUpdateGlobalDiscount: (discountTypeId: number | null) => Promise<void>;
   onAddSupplierCategoryRule: (payload: {
     supplierId: number;
-    categoryId: number;
+    categoryId: number | null;
     discountTypeId: number;
   }) => Promise<boolean>;
   onAddProductRule: (payload: {
@@ -135,7 +135,7 @@ export function CustomerDiscountingConfigSheet({
 }: Props) {
   const [globalOverride, setGlobalOverride] = useState<{ customerCode: string; value: string } | null>(null);
   const [supplierId, setSupplierId] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+  const [categoryId, setCategoryId] = useState(noneValue);
   const [supplierDiscountId, setSupplierDiscountId] = useState("");
   const [productQuery, setProductQuery] = useState("");
   const [productOptions, setProductOptions] = useState<CustomerDiscountingProduct[]>([]);
@@ -191,7 +191,7 @@ export function CustomerDiscountingConfigSheet({
 
   const resetSupplierForm = () => {
     setSupplierId("");
-    setCategoryId("");
+    setCategoryId(noneValue);
     setSupplierDiscountId("");
   };
 
@@ -206,7 +206,7 @@ export function CustomerDiscountingConfigSheet({
   const saveSupplierCategoryRule = async () => {
     const success = await onAddSupplierCategoryRule({
       supplierId: Number(supplierId),
-      categoryId: Number(categoryId),
+      categoryId: categoryId && categoryId !== noneValue ? Number(categoryId) : null,
       discountTypeId: Number(supplierDiscountId),
     });
     if (success) resetSupplierForm();
@@ -282,7 +282,10 @@ export function CustomerDiscountingConfigSheet({
                   <ConfigSearchableSelect
                     value={categoryId}
                     onValueChange={setCategoryId}
-                    options={categories.map((item) => ({ value: String(item.categoryId), label: item.categoryName }))}
+                    options={[
+                      { value: noneValue, label: "NO CATEGORY" },
+                      ...categories.map((item) => ({ value: String(item.categoryId), label: item.categoryName })),
+                    ]}
                     placeholder="Select category"
                   />
                 </div>
@@ -296,7 +299,7 @@ export function CustomerDiscountingConfigSheet({
                   />
                 </div>
                 <Button
-                  disabled={saving || !supplierId || !categoryId || !supplierDiscountId}
+                  disabled={saving || !supplierId || !supplierDiscountId}
                   onClick={saveSupplierCategoryRule}
                 >
                   {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
@@ -311,7 +314,7 @@ export function CustomerDiscountingConfigSheet({
                     <TableCell>
                       <Badge variant="outline">{discountText(rule.discount)}</Badge>
                     </TableCell>
-                    <TableCell>{rule.categoryName || `Category #${rule.categoryId}`}</TableCell>
+                    <TableCell>{rule.categoryId ? rule.categoryName : "N/A"}</TableCell>
                     <TableCell className="text-right">
                       <Button
                         variant="ghost"

@@ -94,7 +94,7 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
    */
   const addSupplierCategoryRule = useCallback(async (payload: {
     supplierId: number;
-    categoryId: number;
+    categoryId: number | null;
     discountTypeId: number;
   }) => {
     if (!selectedCustomer) return false;

@@ -81,7 +81,7 @@ export const customerDiscountingApi = {
   async addSupplierCategoryRule(payload: {
     customerCode: string;
     supplierId: number;
-    categoryId: number;
+    categoryId: number | null;
     discountTypeId: number;
     createdBy: number | null;
   }) {
