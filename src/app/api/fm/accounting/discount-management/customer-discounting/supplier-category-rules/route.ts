@@ -18,25 +18,33 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Checks for an existing active supplier/category rule before insert.
+ * Finds an existing active rule for the exact customer, supplier, and category combination.
+ * Returns the found record's id, or null if not found.
  */
-async function hasDuplicate(customerCode: string, supplierId: number, categoryId: number) {
+async function findExistingBySupplier(customerCode: string, supplierId: number, categoryId: number | null) {
   const params = new URLSearchParams();
   params.set("limit", "1");
   params.set("fields", "id");
   params.set("filter[customer_code][_eq]", customerCode);
   params.set("filter[supplier_id][_eq]", String(supplierId));
-  params.set("filter[category_id][_eq]", String(categoryId));
+  if (categoryId !== null) {
+    params.set("filter[category_id][_eq]", String(categoryId));
+  } else {
+    params.set("filter[category_id][_null]", "true");
+  }
   addSoftDeleteFilters(params);
 
   const res = await directusFetch<DirectusList<RuleRow>>(
     `/items/supplier_category_discount_per_customer?${params.toString()}`,
   );
-  return (res.data ?? []).length > 0;
+  const rows = res.data ?? [];
+  if (rows.length === 0) return null;
+  return asNumber(rows[0].id) ?? null;
 }
 
 /**
- * Creates a customer supplier/category discount rule.
+ * Creates or updates a customer supplier/category discount rule.
+ * Supplier-level null-category rules and category-specific rules are kept separate.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -47,18 +55,27 @@ export async function POST(request: NextRequest) {
     const discountTypeId = asNumber(body.discountTypeId ?? body.discount_type);
     const createdBy = asNumber(body.createdBy ?? body.created_by);
 
-    if (!customerCode || !supplierId || !categoryId || !discountTypeId) {
+    if (!customerCode || !supplierId || !discountTypeId) {
       return NextResponse.json(
-        { error: "customerCode, supplierId, categoryId, and discountTypeId are required" },
+        { error: "customerCode, supplierId, and discountTypeId are required" },
         { status: 400 },
       );
     }
 
-    if (await hasDuplicate(customerCode, supplierId, categoryId)) {
-      return NextResponse.json(
-        { error: "A supplier/category discount already exists for this customer, supplier, and category." },
-        { status: 409 },
+    const existingId = await findExistingBySupplier(customerCode, supplierId, categoryId);
+    if (existingId) {
+      const updatePayload: Record<string, unknown> = {
+        category_id: categoryId,
+        discount_type: discountTypeId,
+      };
+      if (createdBy) updatePayload.updated_by = createdBy;
+
+      await directusFetch<DirectusItem<RuleRow>>(
+        `/items/supplier_category_discount_per_customer/${existingId}`,
+        { method: "PATCH", body: JSON.stringify(updatePayload) },
       );
+
+      return NextResponse.json({ success: true, updated: true, id: existingId });
     }
 
     const payload: Record<string, unknown> = {
@@ -69,12 +86,12 @@ export async function POST(request: NextRequest) {
     };
     if (createdBy) payload.created_by = createdBy;
 
-    const res = await directusFetch<DirectusItem<RuleRow>>("/items/supplier_category_discount_per_customer", {
+    const createRes = await directusFetch<DirectusItem<RuleRow>>("/items/supplier_category_discount_per_customer", {
       method: "POST",
       body: JSON.stringify(payload),
     });
 
-    return NextResponse.json(res.data ?? { success: true }, { status: 201 });
+    return NextResponse.json(createRes.data ?? { success: true }, { status: 201 });
   } catch (error) {
     return jsonError(error);
   }
