@@ -139,6 +139,13 @@ function productPickerLabel(product: CustomerDiscountingProduct) {
 }
 
 /**
+ * Shows a stable product label without exposing null relation ids.
+ */
+function productRuleLabel(rule: ProductRule) {
+  return rule.productName || (rule.productId ? `Product #${rule.productId}` : "N/A");
+}
+
+/**
  * Parses optional unit price overrides from the product rule form.
  */
 function parseMoney(value: string) {
@@ -353,7 +360,7 @@ export function CustomerDiscountingConfigSheet({
       case "delete-product":
         return {
           title: "Delete product discount?",
-          description: `Remove the product discount rule for ${pendingConfirmation.rule.productName || `Product #${pendingConfirmation.rule.productId}`}.`,
+          description: `Remove the product discount rule for ${productRuleLabel(pendingConfirmation.rule)}.`,
           action: "Delete",
           destructive: true,
         };
@@ -591,7 +598,7 @@ export function CustomerDiscountingConfigSheet({
                 {productRules.map((rule) => (
                   <TableRow key={rule.id}>
                     <TableCell>
-                      <div className="font-medium">{rule.productName || `Product #${rule.productId}`}</div>
+                      <div className="font-medium">{productRuleLabel(rule)}</div>
                       <div className="text-xs text-muted-foreground">
                         {rule.productCode || "No code"} | {rule.barcode || "No barcode"}
                       </div>
