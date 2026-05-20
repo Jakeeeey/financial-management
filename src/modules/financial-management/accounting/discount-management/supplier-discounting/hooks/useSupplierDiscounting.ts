@@ -4,9 +4,9 @@ import { toast } from "sonner";
 import { supplierDiscountingApi } from "../providers/supplierDiscountingApi";
 import type {
   SupplierDiscountBulkResult,
+  SupplierDiscountFilterState,
   SupplierDiscountModuleData,
   SupplierDiscountProductPage,
-  SupplierDiscountRule,
   SupplierDiscountSupplier,
 } from "../types";
 
@@ -45,16 +45,12 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
   const [moduleData, setModuleData] = useState<SupplierDiscountModuleData>(initialModuleData);
   const [moduleDataLoading, setModuleDataLoading] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<SupplierDiscountSupplier | null>(null);
-  const [rules, setRules] = useState<SupplierDiscountRule[]>([]);
   const [productPage, setProductPage] = useState<SupplierDiscountProductPage>(emptyProductPage);
   const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [productError, setProductError] = useState<string | null>(null);
-  const [rulesLoading, setRulesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [includeChildren, setIncludeChildren] = useState(false);
   const loadSeqRef = useRef(0);
-  const rulesSeqRef = useRef(0);
 
   /**
    * Loads parent products that match the current assignment filters.
@@ -66,6 +62,8 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
     categoryId?: number | null;
     brandId?: number | null;
     supplierId?: number | null;
+    discountState?: SupplierDiscountFilterState;
+    discountTypeId?: number | null;
   }) => {
     const seq = ++loadSeqRef.current;
     try {
@@ -86,39 +84,13 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
   }, []);
 
   /**
-   * Loads discount rules for the currently selected supplier.
-   */
-  const loadRules = useCallback(async (supplierId: number, includeChildrenOverride?: boolean) => {
-    const seq = ++rulesSeqRef.current;
-    const shouldIncludeChildren = includeChildrenOverride ?? includeChildren;
-    try {
-      setRulesLoading(true);
-      const result = await supplierDiscountingApi.getRules(supplierId, shouldIncludeChildren);
-      if (seq !== rulesSeqRef.current) return;
-      setRules(result);
-    } catch (err) {
-      if (seq !== rulesSeqRef.current) return;
-      toast.error(err instanceof Error ? err.message : "Failed to load supplier discount rules");
-      setRules([]);
-    } finally {
-      if (seq === rulesSeqRef.current) setRulesLoading(false);
-    }
-  }, [includeChildren]);
-
-  /**
-   * Updates supplier selection and refreshes that supplier's rules.
+   * Updates supplier selection and clears stale row selections.
    */
   const selectSupplier = useCallback((supplierId: number | null) => {
     const supplier = moduleData.suppliers.find((item) => item.id === supplierId) ?? null;
     setSelectedSupplier(supplier);
     setSelectedProductIds([]);
-
-    if (supplier) {
-      void loadRules(supplier.id);
-    } else {
-      setRules([]);
-    }
-  }, [loadRules, moduleData.suppliers]);
+  }, [moduleData.suppliers]);
 
   /**
    * Toggles a product in the bulk assignment selection.
@@ -175,7 +147,6 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
         setSelectedProductIds([]);
       }
 
-      await loadRules(selectedSupplier.id);
       return result.failed.length === 0;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to apply supplier discounts");
@@ -183,7 +154,7 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
     } finally {
       setSaving(false);
     }
-  }, [loadRules, selectedProductIds, selectedSupplier]);
+  }, [selectedProductIds, selectedSupplier]);
 
   /**
    * Retries loading the module metadata (suppliers, categories, brands, discounts).
@@ -209,7 +180,6 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
       setSaving(true);
       await supplierDiscountingApi.deleteRule(id, selectedSupplier.id);
       toast.success("Supplier discount cleared");
-      await loadRules(selectedSupplier.id);
       return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to clear supplier discount");
@@ -217,24 +187,19 @@ export function useSupplierDiscounting(initialModuleData: SupplierDiscountModule
     } finally {
       setSaving(false);
     }
-  }, [loadRules, selectedSupplier]);
+  }, [selectedSupplier]);
 
   return {
     moduleData,
     selectedSupplier,
-    rules,
     productPage,
     selectedProductIds,
     productsLoading,
     productError,
     setProductError,
-    rulesLoading,
     moduleDataLoading,
     saving,
-    includeChildren,
-    setIncludeChildren,
     loadProducts,
-    loadRules,
     selectSupplier,
     toggleProduct,
     setSelectedProductIds,

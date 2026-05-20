@@ -21,7 +21,10 @@ export type SupplierDiscountBrand = {
   brandName: string;
 };
 
+export type SupplierDiscountFilterState = "all" | "none" | "any" | "specific";
+
 export type SupplierDiscountProduct = {
+  ruleId: number | null;
   productId: number;
   productCode: string;
   barcode: string;

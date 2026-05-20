@@ -114,8 +114,9 @@ export async function GET(request: NextRequest) {
       ].join(","),
     );
     params.set("filter[_and][0][supplier_id][_eq]", String(supplierId));
+    params.set("filter[_and][1][discount_type][_nnull]", "true");
     const includeChildren = searchParams.get("include_children") === "true";
-    if (!includeChildren) addRelatedParentProductFilter(params, 1);
+    if (!includeChildren) addRelatedParentProductFilter(params, 2);
 
     const res = await directusFetch<DirectusList<RuleRow>>(`/items/product_per_supplier?${params.toString()}`);
     const rules = (res.data ?? [])
@@ -136,7 +137,7 @@ export async function GET(request: NextRequest) {
           discount: discountLabel(row.discount_type),
         };
       })
-      .filter((row) => row.id > 0);
+      .filter((row) => row.id > 0 && row.discount);
     const activityByRuleId = await latestRuleActivity(rules.map((rule) => rule.id));
     rules.sort((a, b) =>
       (activityByRuleId.get(b.id) ?? 0) - (activityByRuleId.get(a.id) ?? 0)

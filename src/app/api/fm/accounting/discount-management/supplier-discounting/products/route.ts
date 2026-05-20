@@ -12,6 +12,7 @@ import {
   relationId,
   relationName,
 } from "../_utils";
+import type { SupplierDiscountFilterState } from "@/modules/financial-management/accounting/discount-management/supplier-discounting/types";
 
 type ProductRow = {
   product_id?: unknown;
@@ -26,6 +27,7 @@ type ProductRow = {
 };
 
 type ProductSupplierRow = {
+  id?: unknown;
   product_id?: unknown;
   discount_type?: unknown;
 };
@@ -48,6 +50,10 @@ function normalizePageSize(value: unknown) {
   return Math.min(100, Math.floor(parsed));
 }
 
+function normalizeDiscountState(value: unknown): SupplierDiscountFilterState {
+  return value === "none" || value === "any" || value === "specific" ? value : "all";
+}
+
 function readProductQuery(searchParams: URLSearchParams) {
   const page = normalizePage(searchParams.get("page"));
   const pageSize = normalizePageSize(searchParams.get("page_size") ?? searchParams.get("pageSize"));
@@ -55,7 +61,10 @@ function readProductQuery(searchParams: URLSearchParams) {
   const categoryId = asNumber(searchParams.get("category_id") ?? searchParams.get("categoryId"));
   const brandId = asNumber(searchParams.get("brand_id") ?? searchParams.get("brandId"));
   const supplierId = asNumber(searchParams.get("supplier_id") ?? searchParams.get("supplierId"));
-  return { page, pageSize, search, categoryId, brandId, supplierId };
+  let discountState = normalizeDiscountState(searchParams.get("discount_state") ?? searchParams.get("discountState"));
+  const discountTypeId = asNumber(searchParams.get("discount_type_id") ?? searchParams.get("discountTypeId"));
+  if (discountState === "specific" && !discountTypeId) discountState = "all";
+  return { page, pageSize, search, categoryId, brandId, supplierId, discountState, discountTypeId };
 }
 
 function productFields() {
@@ -123,6 +132,7 @@ function buildSupplierProductParams(query: ReturnType<typeof readProductQuery> &
   params.set(
     "fields",
     [
+      "id",
       "product_id",
       `product_id.${productFields().replaceAll(",", ",product_id.")}`,
       "discount_type",
@@ -145,6 +155,17 @@ function buildSupplierProductParams(query: ReturnType<typeof readProductQuery> &
 
   if (query.brandId) {
     params.set(`filter[_and][${filterIndex}][product_id][product_brand][_eq]`, String(query.brandId));
+    filterIndex += 1;
+  }
+
+  if (query.discountState === "none") {
+    params.set(`filter[_and][${filterIndex}][discount_type][_null]`, "true");
+    filterIndex += 1;
+  } else if (query.discountState === "any") {
+    params.set(`filter[_and][${filterIndex}][discount_type][_nnull]`, "true");
+    filterIndex += 1;
+  } else if (query.discountState === "specific" && query.discountTypeId) {
+    params.set(`filter[_and][${filterIndex}][discount_type][_eq]`, String(query.discountTypeId));
     filterIndex += 1;
   }
 
@@ -184,9 +205,14 @@ function buildSupplierFilterOptionParams(supplierId: number) {
   return params;
 }
 
-function normalizeProduct(row: ProductRow, discount: ReturnType<typeof discountLabel> = null) {
+function normalizeProduct(
+  row: ProductRow,
+  discount: ReturnType<typeof discountLabel> = null,
+  ruleId: number | null = null,
+) {
   const productId = asNumber(row.product_id) ?? 0;
   return {
+    ruleId,
     productId,
     productCode: asString(row.product_code),
     barcode: asString(row.barcode),
@@ -256,12 +282,18 @@ export async function GET(request: NextRequest) {
     const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
     const products = (res.data ?? [])
       .map((row) => query.supplierId
-        ? normalizeProduct(relationProduct(row.product_id), discountLabel((row as ProductSupplierRow).discount_type))
+        ? normalizeProduct(
+            relationProduct(row.product_id),
+            discountLabel((row as ProductSupplierRow).discount_type),
+            asNumber((row as ProductSupplierRow).id),
+          )
         : normalizeProduct(row as ProductRow))
       .filter((row) => row.productId > 0);
 
     const emptyStateMessage =
-      products.length === 0 && query.supplierId
+      products.length === 0 && query.supplierId && query.discountState !== "all"
+        ? "No parent products match the selected discount filter."
+        : products.length === 0 && query.supplierId
         ? "No parent products found for this supplier."
         : products.length === 0 && query.search
         ? "No results found. Please select the parent product to apply discounts."

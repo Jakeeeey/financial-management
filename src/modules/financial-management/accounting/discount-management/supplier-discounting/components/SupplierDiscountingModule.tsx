@@ -1,8 +1,8 @@
 // src/modules/financial-management/accounting/discount-management/supplier-discounting/components/SupplierDiscountingModule.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { FilterX, Loader2, PackageSearch, Percent, RefreshCw, Search, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FilterX, Loader2, PackageSearch, Percent, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -40,13 +40,13 @@ import { useSupplierDiscounting } from "../hooks/useSupplierDiscounting";
 import { supplierDiscountingApi } from "../providers/supplierDiscountingApi";
 import type {
   SupplierDiscountModuleData,
+  SupplierDiscountFilterState,
   SupplierDiscountOption,
   SupplierDiscountProduct,
-  SupplierDiscountRule,
 } from "../types";
 
 const PRODUCT_PAGE_SIZE = 10;
-const RULE_PAGE_SIZE = 5;
+const DISCOUNT_FILTER_ALL = "all";
 
 type SupplierDiscountingModuleProps = {
   initialModuleData: SupplierDiscountModuleData;
@@ -78,6 +78,24 @@ function discountText(discount: SupplierDiscountOption | null) {
   return `${discount.discountType} (${discount.totalPercent.toFixed(2)}%)`;
 }
 
+function discountFilterQuery(value: string): {
+  discountState: SupplierDiscountFilterState;
+  discountTypeId: number | null;
+} {
+  if (value === "none" || value === "any") {
+    return { discountState: value, discountTypeId: null };
+  }
+
+  if (value.startsWith("type:")) {
+    const discountTypeId = numberValue(value.replace("type:", ""));
+    return discountTypeId
+      ? { discountState: "specific", discountTypeId }
+      : { discountState: "all", discountTypeId: null };
+  }
+
+  return { discountState: "all", discountTypeId: null };
+}
+
 function ProductIdentity({ product }: { product: SupplierDiscountProduct }) {
   return (
     <div className="min-w-0">
@@ -85,17 +103,6 @@ function ProductIdentity({ product }: { product: SupplierDiscountProduct }) {
       <div className="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground">
         {product.productCode ? <span>{product.productCode}</span> : null}
         {product.barcode ? <span>{product.barcode}</span> : null}
-      </div>
-    </div>
-  );
-}
-
-function RuleIdentity({ rule }: { rule: SupplierDiscountRule }) {
-  return (
-    <div className="min-w-0">
-      <div className="break-words font-medium leading-snug">{rule.productName}</div>
-      <div className="mt-1 break-words text-xs text-muted-foreground">
-        {[rule.productCode, rule.barcode].filter(Boolean).join(" / ") || "No product code"}
       </div>
     </div>
   );
@@ -111,19 +118,14 @@ export default function SupplierDiscountingModule({
   const {
     moduleData,
     selectedSupplier,
-    rules,
     productPage,
     selectedProductIds,
     productsLoading,
     productError,
     setProductError,
-    rulesLoading,
     moduleDataLoading,
     saving,
-    includeChildren,
-    setIncludeChildren,
     loadProducts,
-    loadRules,
     selectSupplier,
     toggleProduct,
     setSelectedProductIds,
@@ -134,12 +136,10 @@ export default function SupplierDiscountingModule({
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [brandId, setBrandId] = useState<number | null>(null);
+  const [currentDiscountFilter, setCurrentDiscountFilter] = useState(DISCOUNT_FILTER_ALL);
   const [discountTypeId, setDiscountTypeId] = useState<number | null>(null);
-  const [ruleSearch, setRuleSearch] = useState("");
   const [metadataMessage, setMetadataMessage] = useState(metadataError ?? null);
-  const ruleSearchRef = useRef<HTMLInputElement>(null);
   const [page, setPage] = useState(1);
-  const [rulePage, setRulePage] = useState(1);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [preflighting, setPreflighting] = useState(false);
   const [pendingApplyId, setPendingApplyId] = useState<number | null>(null);
@@ -154,9 +154,34 @@ export default function SupplierDiscountingModule({
     if (!selectedSupplierId) return moduleData.brands;
     return supplierFiltersReady ? productPage.filterOptions.brands : [];
   }, [moduleData.brands, productPage.filterOptions.brands, selectedSupplierId, supplierFiltersReady]);
-  const pendingDeleteRule = useMemo(
-    () => (pendingDeleteId ? rules.find((r) => r.id === pendingDeleteId) ?? null : null),
-    [pendingDeleteId, rules],
+  const currentDiscountQuery = useMemo(
+    () => selectedSupplierId
+      ? discountFilterQuery(currentDiscountFilter)
+      : { discountState: "all" as SupplierDiscountFilterState, discountTypeId: null },
+    [currentDiscountFilter, selectedSupplierId],
+  );
+  const loadCurrentProducts = useCallback(() => loadProducts({
+    page,
+    pageSize: PRODUCT_PAGE_SIZE,
+    search,
+    categoryId,
+    brandId,
+    supplierId: selectedSupplierId,
+    discountState: currentDiscountQuery.discountState,
+    discountTypeId: currentDiscountQuery.discountTypeId,
+  }), [
+    brandId,
+    categoryId,
+    currentDiscountQuery.discountState,
+    currentDiscountQuery.discountTypeId,
+    loadProducts,
+    page,
+    search,
+    selectedSupplierId,
+  ]);
+  const pendingDeleteProduct = useMemo(
+    () => (pendingDeleteId ? productPage.products.find((product) => product.ruleId === pendingDeleteId) ?? null : null),
+    [pendingDeleteId, productPage.products],
   );
 
   const visibleProductIds = useMemo(
@@ -165,48 +190,13 @@ export default function SupplierDiscountingModule({
   );
   const allVisibleSelected = visibleProductIds.length > 0
     && visibleProductIds.every((productId) => selectedProductIds.includes(productId));
-  const filteredRules = useMemo(() => {
-    const query = ruleSearch.trim().toLowerCase();
-    if (!query) return rules;
-
-    return rules.filter((rule) =>
-      [
-        rule.productName,
-        rule.productCode,
-        rule.barcode,
-        rule.categoryName,
-        rule.brandName,
-        discountText(rule.discount),
-      ].some((value) => value.toLowerCase().includes(query)),
-    );
-  }, [ruleSearch, rules]);
-  const ruleTotalPages = Math.max(1, Math.ceil(filteredRules.length / RULE_PAGE_SIZE));
-  const ruleCurrentPage = Math.min(rulePage, ruleTotalPages);
-  const paginatedRules = useMemo(() => {
-    const start = (ruleCurrentPage - 1) * RULE_PAGE_SIZE;
-    return filteredRules.slice(start, start + RULE_PAGE_SIZE);
-  }, [filteredRules, ruleCurrentPage]);
-  const ruleRangeStart = filteredRules.length === 0 ? 0 : (ruleCurrentPage - 1) * RULE_PAGE_SIZE + 1;
-  const ruleRangeEnd = Math.min(ruleCurrentPage * RULE_PAGE_SIZE, filteredRules.length);
-
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadProducts({
-        page,
-        pageSize: PRODUCT_PAGE_SIZE,
-        search,
-        categoryId,
-        brandId,
-        supplierId: selectedSupplierId,
-      });
+      void loadCurrentProducts();
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [brandId, categoryId, loadProducts, page, search, selectedSupplierId]);
-
-  useEffect(() => {
-    if (rulePage > ruleTotalPages) setRulePage(ruleTotalPages);
-  }, [rulePage, ruleTotalPages]);
+  }, [loadCurrentProducts]);
 
   useEffect(() => {
     if (!selectedSupplierId || !supplierFiltersReady) return;
@@ -226,16 +216,6 @@ export default function SupplierDiscountingModule({
     setMetadataMessage(metadataError ?? null);
   }, [metadataError]);
 
-  useEffect(() => {
-    if (!selectedSupplier) return;
-
-    const timer = window.setTimeout(() => {
-      ruleSearchRef.current?.focus();
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [selectedSupplier]);
-
   /**
    * Selects or clears every product visible on the current product page.
    */
@@ -250,6 +230,8 @@ export default function SupplierDiscountingModule({
     setSearch("");
     setCategoryId(null);
     setBrandId(null);
+    setCurrentDiscountFilter(DISCOUNT_FILTER_ALL);
+    setSelectedProductIds([]);
     setPage(1);
   }
 
@@ -309,15 +291,14 @@ export default function SupplierDiscountingModule({
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.3fr_1fr_1fr_1fr_auto]">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[1.3fr_1fr_1fr_1fr_1fr_auto]">
           <div className="grid gap-1.5 text-sm">
             <span className="font-medium">Supplier</span>
             <SearchableSelect
               className="w-full"
               value={selectedSupplier?.id ? String(selectedSupplier.id) : ""}
               onValueChange={(value) => {
-                setRuleSearch("");
-                setRulePage(1);
+                setCurrentDiscountFilter(DISCOUNT_FILTER_ALL);
                 setDiscountTypeId(null);
                 setPage(1);
                 selectSupplier(numberValue(value));
@@ -341,6 +322,7 @@ export default function SupplierDiscountingModule({
               value={categoryId ? String(categoryId) : ""}
               onValueChange={(value) => {
                 setCategoryId(numberValue(value));
+                setSelectedProductIds([]);
                 setPage(1);
               }}
               options={[
@@ -362,6 +344,7 @@ export default function SupplierDiscountingModule({
               value={brandId ? String(brandId) : ""}
               onValueChange={(value) => {
                 setBrandId(numberValue(value));
+                setSelectedProductIds([]);
                 setPage(1);
               }}
               options={[
@@ -376,9 +359,34 @@ export default function SupplierDiscountingModule({
           </div>
 
           <div className="grid gap-1.5 text-sm">
-            <span className="font-medium">Discount</span>
+            <span className="font-medium">Current Discount</span>
             <SearchableSelect
               className="w-full"
+              disabled={saving || !selectedSupplierId}
+              value={currentDiscountFilter}
+              onValueChange={(value) => {
+                setCurrentDiscountFilter(value || DISCOUNT_FILTER_ALL);
+                setSelectedProductIds([]);
+                setPage(1);
+              }}
+              options={[
+                { value: DISCOUNT_FILTER_ALL, label: "All discounts" },
+                { value: "none", label: "No discount" },
+                { value: "any", label: "Any discount" },
+                ...moduleData.discountTypes.map((discount) => ({
+                  value: `type:${discount.id}`,
+                  label: discountText(discount),
+                })),
+              ]}
+              placeholder="All discounts"
+            />
+          </div>
+
+          <div className="grid gap-1.5 text-sm">
+            <span className="font-medium">Apply Discount</span>
+            <SearchableSelect
+              className="w-full"
+              disabled={saving || preflighting}
               value={discountTypeId ? String(discountTypeId) : ""}
               onValueChange={(value) => setDiscountTypeId(numberValue(value))}
               options={[
@@ -416,17 +424,17 @@ export default function SupplierDiscountingModule({
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.8fr)]">
+      <section>
         <Card className="overflow-hidden rounded-md">
           <CardHeader className="gap-3 border-b">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <PackageSearch className="size-4" />
-                  Parent Products
+                  Supplier Products
                 </CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Only parent products are shown. Child variants are excluded from discount assignment.
+                  Review and manage parent-product discounts for the selected supplier.
                 </p>
               </div>
               <Button
@@ -434,14 +442,7 @@ export default function SupplierDiscountingModule({
                 variant="outline"
                 size="sm"
                 disabled={saving}
-                onClick={() => void loadProducts({
-                  page,
-                  pageSize: PRODUCT_PAGE_SIZE,
-                  search,
-                  categoryId,
-                  brandId,
-                  supplierId: selectedSupplierId,
-                })}
+                onClick={() => void loadCurrentProducts()}
               >
                 <RefreshCw />
                 Refresh
@@ -452,6 +453,7 @@ export default function SupplierDiscountingModule({
                 disabled={saving}
                 onChange={(event) => {
                   setSearch(event.target.value);
+                  setSelectedProductIds([]);
                   setPage(1);
                 }}
                 placeholder="Search product name, code, or barcode"
@@ -469,14 +471,7 @@ export default function SupplierDiscountingModule({
                   disabled={productsLoading}
                   onClick={() => {
                     setProductError(null);
-                    void loadProducts({
-                      page,
-                      pageSize: PRODUCT_PAGE_SIZE,
-                      search,
-                      categoryId,
-                      brandId,
-                      supplierId: selectedSupplierId,
-                    });
+                    void loadCurrentProducts();
                   }}
                 >
                   {productsLoading ? <Loader2 className="size-3 animate-spin" /> : null}
@@ -495,23 +490,24 @@ export default function SupplierDiscountingModule({
                       aria-label="Select all products on this page"
                     />
                   </TableHead>
-                  <TableHead className="w-[30%]">Product</TableHead>
-                  <TableHead className="w-[17%]">Category</TableHead>
-                  <TableHead className="w-[17%]">Brand</TableHead>
-                  <TableHead className="w-[21%]">Discount</TableHead>
-                  <TableHead className="w-[15%] text-right">Cost</TableHead>
+                  <TableHead className="w-[28%]">Product</TableHead>
+                  <TableHead className="w-[16%]">Category</TableHead>
+                  <TableHead className="w-[15%]">Brand</TableHead>
+                  <TableHead className="w-[20%]">Discount</TableHead>
+                  <TableHead className="w-[12%] text-right">Cost</TableHead>
+                  <TableHead className="w-[9%] text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {productsLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">
                       Loading parent products...
                     </TableCell>
                   </TableRow>
                 ) : productPage.products.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">
                       {productPage.emptyStateMessage ?? "No parent products found."}
                     </TableCell>
                   </TableRow>
@@ -539,6 +535,22 @@ export default function SupplierDiscountingModule({
                       </Badge>
                     </TableCell>
                     <TableCell className="whitespace-normal text-right tabular-nums">{money(product.costPerUnit)}</TableCell>
+                    <TableCell className="text-right">
+                      {product.ruleId && product.discount ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={saving}
+                          onClick={() => setPendingDeleteId(product.ruleId)}
+                          aria-label={`Clear ${product.productName} supplier discount`}
+                        >
+                          <Trash2 />
+                        </Button>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">N/A</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -582,146 +594,6 @@ export default function SupplierDiscountingModule({
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden rounded-md">
-          <CardHeader className="gap-3 border-b">
-            <CardTitle className="text-base">Current Supplier Discounts</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {selectedSupplier ? selectedSupplier.supplierName : "Select a supplier to review existing item discounts."}
-            </p>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                ref={ruleSearchRef}
-                value={ruleSearch}
-                onChange={(event) => {
-                  setRuleSearch(event.target.value);
-                  setRulePage(1);
-                }}
-                placeholder="Search current rules"
-                className="pl-9"
-                disabled={!selectedSupplier}
-                aria-label="Search current supplier discount rules"
-              />
-            </div>
-            {rules.length > 0 ? (
-              <div className="text-sm text-muted-foreground">
-                Showing {ruleRangeStart}-{ruleRangeEnd} of {filteredRules.length} rule{filteredRules.length !== 1 ? "s" : ""}
-                {filteredRules.length !== rules.length ? ` (${rules.length} total)` : ""}
-              </div>
-            ) : null}
-            {selectedSupplier ? (
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-foreground"
-                  checked={includeChildren}
-                  onChange={(event) => {
-                    const checked = event.target.checked;
-                    setRulePage(1);
-                    setIncludeChildren(checked);
-                    loadRules(selectedSupplier.id, checked);
-                  }}
-                />
-                Show legacy child-product rules
-              </label>
-            ) : null}
-          </CardHeader>
-          <CardContent className="p-0">
-            {!selectedSupplier ? (
-              <div className="flex h-28 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                Select a supplier to show configured discounts.
-              </div>
-            ) : rulesLoading && rules.length === 0 ? (
-              <div className="flex h-28 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                Loading supplier rules...
-              </div>
-            ) : rules.length === 0 ? (
-              <div className="flex h-28 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                No supplier discount rules configured.
-              </div>
-            ) : filteredRules.length === 0 ? (
-              <div className="flex h-28 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                No supplier discount rules match your search.
-              </div>
-            ) : (
-              <>
-                {rulesLoading ? (
-                  <div className="flex items-center justify-center gap-2 border-b py-2 text-sm text-muted-foreground">
-                    <Loader2 className="size-3 animate-spin" />
-                    Refreshing...
-                  </div>
-                ) : null}
-                <div className="divide-y">
-                  {paginatedRules.map((rule) => (
-                    <div key={rule.id} className="grid min-w-0 gap-3 p-4">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <div className="min-w-0 flex-1">
-                          <RuleIdentity rule={rule} />
-                          <div className="mt-2 flex min-w-0 flex-wrap gap-1">
-                            <Badge variant="outline" className="max-w-full whitespace-normal text-left">
-                              {rule.categoryName || "Uncategorized"}
-                            </Badge>
-                            <Badge variant="outline" className="max-w-full whitespace-normal text-left">
-                              {rule.brandName || "No brand"}
-                            </Badge>
-                          </div>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="shrink-0"
-                          disabled={saving}
-                          onClick={() => setPendingDeleteId(rule.id)}
-                          aria-label={`Clear ${rule.productName} supplier discount`}
-                        >
-                          <Trash2 />
-                        </Button>
-                      </div>
-                      <div className="grid min-w-0 gap-1 rounded-md bg-muted/40 p-3 text-sm sm:grid-cols-[5rem_minmax(0,1fr)]">
-                        <span className="text-muted-foreground">Discount</span>
-                        <span className="min-w-0 break-words font-medium">{discountText(rule.discount)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {filteredRules.length > RULE_PAGE_SIZE ? (
-                  <div className="flex flex-col gap-3 border-t p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-muted-foreground">
-                      Page {ruleCurrentPage} of {ruleTotalPages}
-                    </p>
-                    <Pagination className="mx-0 w-auto justify-end">
-                      <PaginationContent>
-                        <PaginationItem>
-                          <PaginationPrevious
-                            aria-disabled={ruleCurrentPage <= 1 || saving}
-                            aria-label={ruleCurrentPage <= 1 ? "No previous rules page" : "Previous rules page"}
-                            className={cn((ruleCurrentPage <= 1 || saving) && "pointer-events-none opacity-50")}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              if (!saving) setRulePage((current) => Math.max(1, current - 1));
-                            }}
-                          />
-                        </PaginationItem>
-                        <PaginationItem>
-                          <PaginationNext
-                            aria-disabled={ruleCurrentPage >= ruleTotalPages || saving}
-                            aria-label={ruleCurrentPage >= ruleTotalPages ? "No next rules page" : "Next rules page"}
-                            className={cn((ruleCurrentPage >= ruleTotalPages || saving) && "pointer-events-none opacity-50")}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              if (!saving) setRulePage((current) => Math.min(ruleTotalPages, current + 1));
-                            }}
-                          />
-                        </PaginationItem>
-                      </PaginationContent>
-                    </Pagination>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </CardContent>
-        </Card>
       </section>
 
       <AlertDialog open={pendingDeleteId !== null} onOpenChange={(open) => { if (!open) setPendingDeleteId(null); }}>
@@ -729,7 +601,7 @@ export default function SupplierDiscountingModule({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove supplier discount</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to clear the discount for &ldquo;{pendingDeleteRule?.productName}&rdquo;?
+              Are you sure you want to clear the discount for &ldquo;{pendingDeleteProduct?.productName ?? "this product"}&rdquo;?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -744,14 +616,7 @@ export default function SupplierDiscountingModule({
 
                 const cleared = await deleteRule(id);
                 if (cleared) {
-                  void loadProducts({
-                    page,
-                    pageSize: PRODUCT_PAGE_SIZE,
-                    search,
-                    categoryId,
-                    brandId,
-                    supplierId: selectedSupplierId,
-                  });
+                  void loadCurrentProducts();
                 }
               }}
             >
@@ -787,14 +652,7 @@ export default function SupplierDiscountingModule({
                 if (id == null) return;
                 const saved = await applyBulkDiscount(id);
                 if (saved) setDiscountTypeId(null);
-                void loadProducts({
-                  page,
-                  pageSize: PRODUCT_PAGE_SIZE,
-                  search,
-                  categoryId,
-                  brandId,
-                  supplierId: selectedSupplierId,
-                });
+                void loadCurrentProducts();
                 setPendingApplyId(null);
               }}
             >

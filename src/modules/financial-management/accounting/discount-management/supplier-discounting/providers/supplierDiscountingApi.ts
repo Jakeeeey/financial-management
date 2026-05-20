@@ -1,6 +1,7 @@
 // src/modules/financial-management/accounting/discount-management/supplier-discounting/providers/supplierDiscountingApi.ts
 import type {
   SupplierDiscountBulkResult,
+  SupplierDiscountFilterState,
   SupplierDiscountModuleData,
   SupplierDiscountPreflightResult,
   SupplierDiscountPricingResult,
@@ -49,6 +50,8 @@ export const supplierDiscountingApi = {
     categoryId?: number | null;
     brandId?: number | null;
     supplierId?: number | null;
+    discountState?: SupplierDiscountFilterState;
+    discountTypeId?: number | null;
   }): Promise<SupplierDiscountProductPage> {
     const params = new URLSearchParams();
     if (query?.page) params.set("page", String(query.page));
@@ -57,6 +60,8 @@ export const supplierDiscountingApi = {
     if (query?.categoryId) params.set("category_id", String(query.categoryId));
     if (query?.brandId) params.set("brand_id", String(query.brandId));
     if (query?.supplierId) params.set("supplier_id", String(query.supplierId));
+    if (query?.discountState && query.discountState !== "all") params.set("discount_state", query.discountState);
+    if (query?.discountTypeId) params.set("discount_type_id", String(query.discountTypeId));
 
     const url = params.size > 0 ? `${BASE}/products?${params.toString()}` : `${BASE}/products`;
     const res = await fetch(url, { cache: "no-store" });
