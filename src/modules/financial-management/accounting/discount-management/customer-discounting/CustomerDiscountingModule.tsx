@@ -204,15 +204,15 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
       </div>
 
       {viewMode === "table" ? (
-      <div className="overflow-x-auto rounded-md border bg-card">
-        <Table className="min-w-[720px]">
+      <div className="overflow-hidden rounded-md border bg-card">
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[140px]">Code</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Store</TableHead>
-              <TableHead>Global Discount</TableHead>
-              <TableHead className="sticky right-0 z-10 w-[132px] bg-card text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.45)]">
+              <TableHead className="w-[8rem] whitespace-normal">Code</TableHead>
+              <TableHead className="w-[28%] whitespace-normal">Customer</TableHead>
+              <TableHead className="w-[22%] whitespace-normal">Store</TableHead>
+              <TableHead className="w-[22%] whitespace-normal">Global Discount</TableHead>
+              <TableHead className="w-[7rem] whitespace-normal text-right">
                 Action
               </TableHead>
             </TableRow>
@@ -221,12 +221,12 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
             {displayLoading ? (
               Array.from({ length: 6 }).map((_, index) => (
                 <TableRow key={index}>
-                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-56" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-36" /></TableCell>
-                  <TableCell className="sticky right-0 z-10 bg-card shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.45)]">
-                    <Skeleton className="ml-auto h-8 w-28" />
+                  <TableCell><Skeleton className="h-4 w-20 max-w-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-56 max-w-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-32 max-w-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-36 max-w-full" /></TableCell>
+                  <TableCell>
+                    <Skeleton className="ml-auto h-8 w-24 max-w-full" />
                   </TableCell>
                 </TableRow>
               ))
@@ -239,16 +239,23 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
             ) : (
               customers.map((customer) => (
                 <TableRow key={customer.id}>
-                  <TableCell className="font-mono text-xs">{customer.customerCode}</TableCell>
-                  <TableCell className="font-medium">{customer.customerName}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{customer.storeName || "No store"}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{discountText(customer.globalDiscount)}</Badge>
+                  <TableCell className="whitespace-normal break-all font-mono text-xs">{customer.customerCode}</TableCell>
+                  <TableCell className="whitespace-normal break-words font-medium">{customer.customerName}</TableCell>
+                  <TableCell className="whitespace-normal break-words text-sm text-muted-foreground">{customer.storeName || "No store"}</TableCell>
+                  <TableCell className="whitespace-normal">
+                    <Badge variant="outline" className="max-w-full whitespace-normal text-left">
+                      {discountText(customer.globalDiscount)}
+                    </Badge>
                   </TableCell>
-                  <TableCell className="sticky right-0 z-10 bg-card text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.45)]">
-                    <Button variant="outline" size="sm" onClick={() => openCustomer(customer)}>
-                      <Settings2 className="mr-2 h-4 w-4" />
-                      Configure
+                  <TableCell className="whitespace-normal text-right">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full px-2"
+                      onClick={() => openCustomer(customer)}
+                    >
+                      <Settings2 className="h-4 w-4" />
+                      <span className="min-w-0 truncate">Configure</span>
                     </Button>
                   </TableCell>
                 </TableRow>
