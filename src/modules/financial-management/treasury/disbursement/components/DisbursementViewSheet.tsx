@@ -5,14 +5,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     Loader2, CheckCircle, Send, SendIcon, Wallet, Building2,
     Printer, Pencil, Lock, AlertTriangle, FileText, Receipt,
-    CheckCircle2, CircleDashed, ArrowLeftRight, X, Sparkles
+    CheckCircle2, CircleDashed, X, Sparkles, ArrowDownToLine, ArrowUpFromLine
 } from "lucide-react";
-import { Disbursement, BankAccountDto } from "../types"; // 🚀 FIX: Imported BankAccountDto
-import { disbursementProvider } from "../providers/fetchProvider"; // 🚀 FIX: Imported the provider
+import { Disbursement, BankAccountDto } from "../types";
+import { disbursementProvider } from "../providers/fetchProvider";
 import { format } from "date-fns";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { cn } from "@/lib/utils";
@@ -30,11 +29,8 @@ const VOUCHER_STEPS = ["Draft", "Submitted", "Approved", "Released", "Posted"];
 
 export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading }: DisbursementViewSheetProps) {
     const [showPrintOptions, setShowPrintOptions] = useState(false);
-
-    // 🚀 NEW: State to hold our bank dictionary!
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
 
-    // 🚀 NEW: Fetch the banks exactly like the create sheet does so we can translate IDs to names
     useEffect(() => {
         if (open) {
             disbursementProvider.getBanks()
@@ -63,10 +59,11 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
     const isBalanced = Math.abs(balance) < 0.01;
 
     const currentStepIndex = VOUCHER_STEPS.indexOf(disbursement.status);
+    const isAutoApprove = disbursement.totalAmount < 1000;
 
     return (
         <Sheet open={open} onOpenChange={(val) => { onOpenChange(val); setShowPrintOptions(false); }}>
-            <SheetContent className="sm:max-w-[750px] w-full p-0 flex flex-col bg-background border-l border-border overflow-hidden shadow-2xl">
+            <SheetContent className="sm:max-w-[1000px] w-full p-0 flex flex-col bg-background border-l border-border overflow-hidden shadow-2xl">
 
                 <SheetHeader className="p-6 border-b border-border bg-card shrink-0 shadow-sm relative z-10">
                     <div className="flex items-start justify-between gap-4">
@@ -82,6 +79,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                 Transaction Date: {disbursement.transactionDate ? format(new Date(disbursement.transactionDate), "MMMM dd, yyyy") : "No Date Recorded"}
                             </SheetDescription>
                         </div>
+                        <Badge variant="outline" className="px-3 py-1 bg-muted font-black uppercase tracking-widest text-[10px]">
+                            {disbursement.status}
+                        </Badge>
                     </div>
 
                     <div className="mt-6 pt-4 border-t border-border/50">
@@ -117,6 +117,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                 </SheetHeader>
 
                 <div className="flex-1 overflow-y-auto p-6 scrollbar-thin bg-muted/10 space-y-6">
+                    {/* SUMMARY CARDS */}
                     <div className="grid grid-cols-2 gap-4 p-5 bg-card rounded-xl border border-border shadow-sm relative overflow-hidden">
                         <div className={`absolute top-0 left-0 w-1 h-full ${disbursement.isPosted ? 'bg-muted-foreground' : 'bg-primary'}`} />
                         <div>
@@ -132,7 +133,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                             <p className="text-xl font-black text-emerald-600 dark:text-emerald-500">{formatCurrency(disbursement.totalAmount)}</p>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2 col-span-2 border-t border-border pt-3 mt-1">
+                        <div className="grid grid-cols-3 gap-2 col-span-2 border-t border-border pt-3 mt-1 bg-muted/30 -mx-5 px-5 pb-2">
                             <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total Debits</p>
                                 <p className="text-xs font-bold text-foreground">{formatCurrency(totalDebit)}</p>
@@ -143,15 +144,15 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                             </div>
                             <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Balance</p>
-                                <p className={cn("text-xs font-bold", isBalanced ? "text-emerald-600" : "text-orange-600")}>
+                                <p className={cn("text-xs font-bold", isBalanced ? "text-emerald-600" : "text-destructive")}>
                                     {formatCurrency(balance)}
                                 </p>
                             </div>
                         </div>
 
-                        <div className="col-span-2 border-t border-border pt-3 mt-1">
+                        <div className="col-span-2 mt-1">
                             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Particulars / Remarks</p>
-                            <p className="text-xs font-bold text-foreground bg-muted p-2 rounded-md">{disbursement.remarks || "No remarks provided."}</p>
+                            <p className="text-xs font-bold text-foreground bg-muted p-2 rounded-md border border-border/50">{disbursement.remarks || "No remarks provided."}</p>
                         </div>
                         <div className="grid grid-cols-2 col-span-2 mt-1 gap-2">
                             <div>
@@ -168,168 +169,175 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                     {!isBalanced && disbursement.status !== "Posted" && (
                         <div className="bg-destructive/10 text-destructive border border-destructive/20 p-3 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4 shrink-0" />
-                            <span>Warning: Debits do not match Credits. This voucher cannot be submitted or posted.</span>
+                            <span>Warning: Debits do not match Credits. This voucher cannot be posted.</span>
                         </div>
                     )}
 
-                    <div className="bg-card p-1 rounded-xl border border-border shadow-sm">
-                        <Tabs defaultValue="payables" className="w-full">
-                            <div className="px-4 pt-4 pb-2 border-b border-border flex justify-between items-center bg-muted/30">
-                                <TabsList className="h-9 bg-muted">
-                                    <TabsTrigger value="payables" className="text-[10px] font-black uppercase tracking-widest">
-                                        Payables <Badge variant="secondary" className="ml-2 h-4 px-1">{disbursement.payables?.length || 0}</Badge>
-                                    </TabsTrigger>
-                                    <TabsTrigger value="payments" className="text-[10px] font-black uppercase tracking-widest">
-                                        Payments <Badge variant="secondary" className="ml-2 h-4 px-1">{disbursement.payments?.length || 0}</Badge>
-                                    </TabsTrigger>
-                                </TabsList>
-                                <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground hidden sm:block">
-                                    <ArrowLeftRight className="w-3 h-3 inline mr-1" /> Balanced Check
+                    {/* 🚀 UI FIX: STACKED TABLES (ZERO CLICKS) */}
+                    <div className="space-y-4">
+
+                        {/* PAYABLES SECTION */}
+                        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
+                            <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-foreground font-black uppercase tracking-widest text-[11px]">
+                                    <ArrowDownToLine className="w-4 h-4 text-orange-500"/> Payables (Debits)
                                 </div>
+                                <Badge variant="secondary" className="h-5 px-2">{disbursement.payables?.length || 0} Lines</Badge>
                             </div>
-
-                            <TabsContent value="payables" className="p-0 m-0">
-                                <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                                    <Table>
-                                        <TableHeader className="bg-muted/50 sticky top-0">
-                                            <TableRow className="border-border">
-                                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Ref No</TableHead>
-                                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Account</TableHead>
-                                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Remarks</TableHead>
-                                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground">Amount</TableHead>
+                            <div className="overflow-x-auto custom-scrollbar">
+                                <Table>
+                                    <TableHeader className="bg-muted/50">
+                                        <TableRow className="border-border">
+                                            <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Ref No</TableHead>
+                                            <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[300px]">Chart of Account</TableHead>
+                                            <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Remarks</TableHead>
+                                            <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground min-w-[120px]">Amount</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {!disbursement.payables?.length ? (
+                                            <TableRow><TableCell colSpan={4} className="text-center text-[10px] text-muted-foreground py-6 font-bold">No payables attached.</TableCell></TableRow>
+                                        ) : disbursement.payables.map((p, i) => (
+                                            <TableRow key={i} className="hover:bg-muted/50 border-border">
+                                                <TableCell className="text-xs font-bold uppercase text-foreground">{p.referenceNo || "N/A"}</TableCell>
+                                                <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">{p.accountTitle || `COA: ${p.coaId}`}</TableCell>
+                                                <TableCell className="text-[10px] font-medium text-muted-foreground truncate max-w-[200px]">{p.remarks || "-"}</TableCell>
+                                                <TableCell className="text-xs font-black text-right text-foreground">{formatCurrency(p.amount)}</TableCell>
                                             </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {!disbursement.payables?.length ? (
-                                                <TableRow><TableCell colSpan={4} className="text-center text-[10px] text-muted-foreground py-8 font-bold">No payables attached.</TableCell></TableRow>
-                                            ) : disbursement.payables.map((p, i) => (
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                            <div className="bg-muted/50 px-4 py-2 border-t border-border flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                                <span className="text-muted-foreground">Total Debits</span>
+                                <span className="text-foreground">{formatCurrency(totalDebit)}</span>
+                            </div>
+                        </div>
+
+                        {/* PAYMENTS SECTION */}
+                        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
+                            <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-foreground font-black uppercase tracking-widest text-[11px]">
+                                    <ArrowUpFromLine className="w-4 h-4 text-emerald-500"/> Bank Checks (Credits)
+                                </div>
+                                <Badge variant="secondary" className="h-5 px-2">{disbursement.payments?.length || 0} Lines</Badge>
+                            </div>
+                            <div className="overflow-x-auto custom-scrollbar">
+                                <Table>
+                                    <TableHeader className="bg-muted/50">
+                                        <TableRow className="border-border">
+                                            <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[120px]">Date</TableHead>
+                                            <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Check No</TableHead>
+                                            <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[300px]">Bank Acct & GL</TableHead>
+                                            <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground min-w-[120px]">Amount</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {!disbursement.payments?.length ? (
+                                            <TableRow><TableCell colSpan={4} className="text-center text-[10px] text-muted-foreground py-6 font-bold">No payments processed yet.</TableCell></TableRow>
+                                        ) : disbursement.payments.map((p, i) => {
+                                            const matchedBank = banks.find(b => b.bankId === p.bankId);
+                                            const displayBank = matchedBank
+                                                ? `${matchedBank.bankName} - ${matchedBank.accountNumber}`
+                                                : (p.bankId ? `Bank ID: ${p.bankId}` : "No Bank Selected");
+
+                                            return (
                                                 <TableRow key={i} className="hover:bg-muted/50 border-border">
-                                                    <TableCell className="text-xs font-bold uppercase text-foreground">{p.referenceNo || "N/A"}</TableCell>
-                                                    <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">{p.accountTitle || `COA: ${p.coaId}`}</TableCell>
-                                                    <TableCell className="text-[10px] font-medium text-muted-foreground truncate max-w-[150px]">{p.remarks || "-"}</TableCell>
-                                                    <TableCell className="text-xs font-black text-right text-foreground">{formatCurrency(p.amount)}</TableCell>
+                                                    <TableCell className="text-[10px] font-bold uppercase text-muted-foreground">
+                                                        {p.date ? format(new Date(p.date), "MMM dd, yyyy") : "N/A"}
+                                                    </TableCell>
+                                                    <TableCell className="text-xs font-bold uppercase text-foreground">{p.checkNo || "N/A"}</TableCell>
+                                                    <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <span className="text-foreground">{displayBank}</span>
+                                                            <span className="text-primary/70">{p.accountTitle || `GL: ${p.coaId}`}</span>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell className="text-xs font-black text-emerald-600 dark:text-emerald-500 text-right">{formatCurrency(p.amount)}</TableCell>
                                                 </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-                                <div className="bg-muted p-2 border-t border-border flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
-                                    <span className="text-muted-foreground">Total Debits</span>
-                                    <span className="text-foreground">{formatCurrency(totalDebit)}</span>
-                                </div>
-                            </TabsContent>
+                                            )
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                            <div className="bg-muted/50 px-4 py-2 border-t border-border flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                                <span className="text-muted-foreground">Total Credits</span>
+                                <span className="text-emerald-600 dark:text-emerald-500">{formatCurrency(totalCredit)}</span>
+                            </div>
+                        </div>
 
-                            <TabsContent value="payments" className="p-0 m-0">
-                                <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                                    <Table>
-                                        <TableHeader className="bg-muted/50 sticky top-0">
-                                            <TableRow className="border-border">
-                                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Date</TableHead>
-                                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Check No</TableHead>
-                                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-full">Bank Acct & GL</TableHead>
-                                                <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground">Amount</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {!disbursement.payments?.length ? (
-                                                <TableRow><TableCell colSpan={4} className="text-center text-[10px] text-muted-foreground py-8 font-bold">No payments processed yet.</TableCell></TableRow>
-                                            ) : disbursement.payments.map((p, i) => {
-
-                                                // 🚀 THE MAGIC: We look up the bank details using the ID!
-                                                const matchedBank = banks.find(b => b.bankId === p.bankId);
-                                                const displayBank = matchedBank
-                                                    ? `${matchedBank.bankName} - ${matchedBank.accountNumber}`
-                                                    : (p.bankId ? `Bank ID: ${p.bankId}` : "No Bank Selected");
-
-                                                return (
-                                                    <TableRow key={i} className="hover:bg-muted/50 border-border">
-                                                        <TableCell className="text-[10px] font-bold uppercase text-muted-foreground">
-                                                            {p.date ? format(new Date(p.date), "MMM dd, yyyy") : "N/A"}
-                                                        </TableCell>
-                                                        <TableCell className="text-xs font-bold uppercase text-foreground">{p.checkNo || "N/A"}</TableCell>
-                                                        <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">
-                                                            <div className="flex flex-col gap-0.5">
-                                                                {/* 🚀 Render our human-readable string! */}
-                                                                <span className="text-foreground">{displayBank}</span>
-                                                                <span className="text-primary/70">{p.accountTitle || `GL: ${p.coaId}`}</span>
-                                                            </div>
-                                                        </TableCell>
-                                                        <TableCell className="text-xs font-black text-emerald-600 dark:text-emerald-500 text-right">{formatCurrency(p.amount)}</TableCell>
-                                                    </TableRow>
-                                                )
-                                            })}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-                                <div className="bg-muted p-2 border-t border-border flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
-                                    <span className="text-muted-foreground">Total Credits</span>
-                                    <span className="text-emerald-600 dark:text-emerald-500">{formatCurrency(totalCredit)}</span>
-                                </div>
-                            </TabsContent>
-                        </Tabs>
                     </div>
                 </div>
 
-                <div className="p-4 sm:p-6 bg-card border-t border-border shrink-0 flex justify-between items-center z-10">
-                    <div className="relative">
-                        {showPrintOptions ? (
-                            <div className="flex items-center gap-2 animate-in slide-in-from-left-4 fade-in absolute bottom-0 left-0 bg-card p-1 border border-border shadow-lg rounded-lg">
-                                <Button variant="outline" onClick={() => handlePrint("A4")} className="text-[10px] font-black uppercase tracking-widest h-9 px-3 hover:bg-muted">
-                                    <FileText className="w-3.5 h-3.5 mr-2 text-blue-500" /> A4
+                {/* 🚀 FOOTER: CONSOLIDATED ACTIONS */}
+                <div className="p-4 sm:p-6 bg-card border-t border-border shrink-0 flex justify-between items-center z-10 shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.1)]">
+
+                    {/* LEFT SIDE: Secondary Tools */}
+                    <div className="flex items-center gap-2">
+                        <div className="relative">
+                            {showPrintOptions ? (
+                                <div className="flex items-center gap-2 animate-in slide-in-from-bottom-2 fade-in absolute bottom-full mb-2 left-0 bg-card p-1 border border-border shadow-lg rounded-lg">
+                                    <Button variant="outline" onClick={() => handlePrint("A4")} className="text-[10px] font-black uppercase tracking-widest h-9 px-3 hover:bg-muted">
+                                        <FileText className="w-3.5 h-3.5 mr-2 text-blue-500" /> A4
+                                    </Button>
+                                    <Button variant="outline" onClick={() => handlePrint("58mm")} className="text-[10px] font-black uppercase tracking-widest h-9 px-3 hover:bg-muted">
+                                        <Receipt className="w-3.5 h-3.5 mr-2 text-amber-500" /> Thermal
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={() => setShowPrintOptions(false)} className="h-9 w-9 text-muted-foreground"><X className="w-4 h-4"/></Button>
+                                </div>
+                            ) : (
+                                <Button variant="outline" onClick={() => setShowPrintOptions(true)} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 border-input shadow-sm">
+                                    <Printer className="w-4 h-4 sm:mr-2" /> <span className="hidden sm:inline">Print</span>
                                 </Button>
-                                <Button variant="outline" onClick={() => handlePrint("58mm")} className="text-[10px] font-black uppercase tracking-widest h-9 px-3 hover:bg-muted">
-                                    <Receipt className="w-3.5 h-3.5 mr-2 text-amber-500" /> Thermal
-                                </Button>
-                                <Button variant="ghost" size="icon" onClick={() => setShowPrintOptions(false)} className="h-9 w-9 text-muted-foreground"><X className="w-4 h-4"/></Button>
-                            </div>
-                        ) : (
-                            <Button variant="outline" onClick={() => setShowPrintOptions(true)} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-6 border-input shadow-sm">
-                                <Printer className="w-4 h-4 sm:mr-2" /> <span className="hidden sm:inline">Print</span>
+                            )}
+                        </div>
+
+                        {/* Dynamic Edit Button */}
+                        {(disbursement.status === "Draft" || disbursement.status === "Approved") && onEdit && (
+                            <Button variant="outline" onClick={() => onEdit(disbursement)} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-6 text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/30">
+                                <Pencil className="w-4 h-4 sm:mr-2" />
+                                <span className="hidden sm:inline">{disbursement.status === "Draft" ? "Edit Draft" : "Add/Edit Checks"}</span>
+                            </Button>
+                        )}
+
+                        {/* Revert Tool */}
+                        {disbursement.status !== "Draft" && disbursement.status !== "Posted" && (
+                            <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
+                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
                             </Button>
                         )}
                     </div>
 
+                    {/* RIGHT SIDE: Dynamic Primary Action Pipeline */}
                     <div className="flex gap-2">
-                        {disbursement.status === "Draft" && onEdit && (
-                            <Button variant="outline" onClick={() => onEdit(disbursement)} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-6 text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/30">
-                                <Pencil className="w-4 h-4 sm:mr-2" /> <span className="hidden sm:inline">Edit Draft</span>
-                            </Button>
-                        )}
-                        {disbursement.status !== "Draft" && disbursement.status !== "Posted" && (
-                            <Button variant="outline" onClick={() => handleAction("Draft")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-6 text-destructive border-destructive/20 hover:bg-destructive/10">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 sm:mr-2" />}
-                                <span className="hidden sm:inline">Return to Draft</span>
+                        {disbursement.status === "Draft" && (
+                            <Button onClick={() => handleAction("Submitted")} disabled={loading} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
+                                {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
+                                {isAutoApprove ? "Submit & Auto-Approve" : "Submit for Approval"}
                             </Button>
                         )}
 
-                        {disbursement.status === "Draft" && (
-                            <Button onClick={() => handleAction("Submitted")} disabled={loading} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-8 text-white shadow-md disabled:opacity-50", disbursement.totalAmount < 1000 ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (disbursement.totalAmount < 1000 ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
-                                <span className="hidden sm:inline">
-                                    {disbursement.totalAmount < 1000 ? "Submit & Auto-Approve" : "Submit for Approval"}
-                                </span>
-                                <span className="sm:hidden">Submit</span>
-                            </Button>
-                        )}
                         {disbursement.status === "Submitted" && (
-                            <Button onClick={() => handleAction("Approved")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-8 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
+                            <Button onClick={() => handleAction("Approved")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
-                                <span className="hidden sm:inline">Approve Voucher</span>
-                                <span className="sm:hidden">Approve</span>
+                                Approve Voucher
                             </Button>
                         )}
+
                         {disbursement.status === "Approved" && (
-                            <Button onClick={() => handleAction("Released")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-8 bg-purple-600 hover:bg-purple-700 text-white shadow-md">
+                            <Button
+                                onClick={() => handleAction("Released")}
+                                disabled={loading || !disbursement.payments || disbursement.payments.length === 0}
+                                className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-purple-600 hover:bg-purple-700 text-white shadow-md disabled:opacity-50">
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Send className="w-4 h-4 sm:mr-2" />}
-                                <span className="hidden sm:inline">Release Check</span>
-                                <span className="sm:hidden">Release</span>
+                                Release Check
                             </Button>
                         )}
+
                         {disbursement.status === "Released" && (
-                            <Button onClick={() => handleAction("Posted")} disabled={loading || !isBalanced} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-8 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md disabled:opacity-50">
+                            <Button onClick={() => handleAction("Posted")} disabled={loading || !isBalanced} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md disabled:opacity-50">
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
-                                <span className="hidden sm:inline">Post to GL</span>
-                                <span className="sm:hidden">Post</span>
+                                Post to Ledger
                             </Button>
                         )}
                     </div>

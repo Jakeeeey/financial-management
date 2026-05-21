@@ -191,7 +191,7 @@ async function upsertProductPerPriceType(args: {
             price: proposed_price,
             created_by: userId,
             updated_by: userId,
-            status: "final",
+            status: "published",
         }),
     });
 }

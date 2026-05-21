@@ -23,7 +23,7 @@ export function useSupplierProducts(supplierId: number | null) {
       setError(null);
 
       // DEBUGGER
-      const apiUrl = `/api/supplier-registration/suppliers/${id}/products`;
+      const apiUrl = `/api/fm/supplier-registration/suppliers/${id}/products`;
 
       const response = await fetch(apiUrl);
 
@@ -50,7 +50,7 @@ export function useSupplierProducts(supplierId: number | null) {
       try {
         // Logic: The API route already handles the "isProductAlreadyAdded" check server-side
         const response = await fetch(
-          `/api/supplier-registration/suppliers/${supplierId}/products`,
+          `/api/fm/supplier-registration/suppliers/${supplierId}/products`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -88,7 +88,7 @@ export function useSupplierProducts(supplierId: number | null) {
       if (!supplierId) return false;
       try {
         const response = await fetch(
-          `/api/supplier-registration/products-per-supplier/${itemId}`,
+          `/api/fm/supplier-registration/products-per-supplier/${itemId}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -116,7 +116,7 @@ export function useSupplierProducts(supplierId: number | null) {
       if (!supplierId) return false;
       try {
         const response = await fetch(
-          `/api/supplier-registration/products-per-supplier/${itemId}`,
+          `/api/fm/supplier-registration/products-per-supplier/${itemId}`,
           {
             method: "DELETE",
           },
@@ -165,7 +165,7 @@ export function useSupplierProducts(supplierId: number | null) {
         setIsLoading(true);
 
         const response = await fetch(
-          `/api/supplier-registration/suppliers/${supplierId}/products/bulk`,
+          `/api/fm/supplier-registration/suppliers/${supplierId}/products/bulk`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },

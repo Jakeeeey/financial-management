@@ -131,7 +131,7 @@ export function EditSupplierForm({
         formData.append("file", selectedFile);
         formData.append("folder_name", "supplier_profile_image");
 
-        const uploadRes = await fetch("/api/supplier-registration/supplier-image-upload", {
+        const uploadRes = await fetch("/api/fm/supplier-registration/supplier-image-upload", {
           method: "POST",
           body: formData,
         });
@@ -148,7 +148,7 @@ export function EditSupplierForm({
       }
 
       const response = await fetch(
-        `/api/supplier-registration/suppliers/${supplier.id}`,
+        `/api/fm/supplier-registration/suppliers/${supplier.id}`,
         {
           method: "PATCH",
           headers: {
