@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useState, ReactNode } from "react";
 import { 
   FinancialPerformanceFilterState, 
   ValidationStatus, 
@@ -97,7 +97,7 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
         issues: [],
       });
       
-    } catch (error) {
+    } catch {
       toast.error("Failed to load financial statement data");
       setValidation({
         isValidated: false,
@@ -117,7 +117,7 @@ export function FinancialPerformanceProvider({ children }: { children: ReactNode
     setIsInitialLoad(true);
   };
 
-  const certifyStatement = async (certifiedBy: string, role: string, remarks?: string) => {
+  const certifyStatement = async (certifiedBy: string, role: string) => {
     // Simulate certification process
     setIsLoading(true);
     await new Promise(resolve => setTimeout(resolve, 1000));

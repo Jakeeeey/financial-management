@@ -34,7 +34,7 @@ const buildExportRows = (items: TrialBalanceItem[]) => {
   let grandTotalDebit = 0;
   let grandTotalCredit = 0;
 
-  const rows: any[][] = items.map(item => {
+  const rows: (string | number)[][] = items.map(item => {
     grandTotalDebit = round(grandTotalDebit + item.totalDebit);
     grandTotalCredit = round(grandTotalCredit + item.totalCredit);
     return [
@@ -112,7 +112,7 @@ export const exportTrialBalanceToPdf = (items: TrialBalanceItem[], startDate: st
   doc.text(BASIS, pageWidth / 2, 32, { align: "center" });
 
   const formattedRows = rows.map(row => 
-    row.map((cell: any, index: number) => {
+    row.map((cell: string | number, index: number) => {
       if ((index === 2 || index === 3) && typeof cell === "number") return formatNumber(cell);
       return cell;
     })

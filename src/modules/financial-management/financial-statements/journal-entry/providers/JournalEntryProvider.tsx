@@ -2,17 +2,10 @@
 
 import * as React from "react";
 import { 
-  JournalEntry, 
   JournalEntryGroup, 
   AnalyticsSummary, 
   FilterState 
 } from "../types";
-import { 
-  groupJournalEntries, 
-  calculateAnalytics, 
-  filterJournalEntries,
-  sortJournalEntryGroups
-} from "../services/journal-entry.helpers";
 import { toast } from "sonner";
 
 interface JournalEntryContextType {
@@ -122,7 +115,7 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
         endDate: endStr
       }));
     }
-  }, [filters.presetRange, filters.selectedMonth, filters.selectedQuarter, filters.selectedYear]);
+  }, [filters.presetRange, filters.selectedMonth, filters.selectedQuarter, filters.selectedYear, filters.startDate, filters.endDate]);
 
   const lastFetchedQueryRef = React.useRef<string>("");
   const fetchData = React.useCallback(async () => {
@@ -166,10 +159,11 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
       setUniqueSourceModules(["All Source Modules", ...(response.metadata.uniqueSourceModules || [])]);
       
       lastFetchedQueryRef.current = queryString;
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Journal Entry Fetch Error:", e);
-      setError(e.message);
-      toast.error(`Database Error: ${e.message}`);
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      setError(msg);
+      toast.error(`Database Error: ${msg}`);
     } finally {
       setIsLoading(false);
     }

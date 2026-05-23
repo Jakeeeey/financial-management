@@ -111,10 +111,10 @@ export async function GET(request: NextRequest) {
       analytics,
       data: paginatedGroups
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("API Route Error (Journal Entry):", error);
     return NextResponse.json(
-      { error: "Failed to fetch journal entries from the master database", details: error.message },
+      { error: "Failed to fetch journal entries from the master database", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }

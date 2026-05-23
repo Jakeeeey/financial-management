@@ -12,8 +12,7 @@ import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 
 import { cookies } from "next/headers";
 
-// ✅ Wire the module you asked for
-import ComingSoon from "../../_components/ComingSoon";
+
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

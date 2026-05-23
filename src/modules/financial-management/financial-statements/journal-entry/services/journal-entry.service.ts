@@ -58,7 +58,7 @@ export async function getJournalEntries(
 export async function getJournalEntryDrillDown(
   jeNo: string,
   token?: string
-): Promise<any> {
+): Promise<unknown> {
   const API_BASE = `${process.env.SPRING_API_BASE_URL}/api/journal-entry/drill-down`;
   const url = `${API_BASE}?jeNo=${jeNo}`;
 

@@ -131,12 +131,12 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
 
       const data = await res.json();
 
-      const safeAbs = (num: any) => (typeof num === "number" ? Math.abs(num) : 0);
+      const safeAbs = (num: unknown) => (typeof num === "number" ? Math.abs(num) : 0);
       
-      const normalizeEntries = (entries: any[]) => 
-        entries.map(e => ({ ...e, amount: safeAbs(e.amount) }));
+      const normalizeEntries = (entries: Record<string, unknown>[]) => 
+        entries.map(e => ({ ...e, amount: safeAbs(e.amount) } as unknown as BalanceSheetEntry));
         
-      const normalizeSummary = (s: any) => {
+      const normalizeSummary = (s: Record<string, unknown> | null) => {
         if (!s) return null;
         let variance = safeAbs(s.totalAssets) - (safeAbs(s.totalLiabilities) + safeAbs(s.totalEquity));
         // Handle floating point precision issues
@@ -148,7 +148,7 @@ export function BalanceSheetProvider({ children }: { children: React.ReactNode }
           totalLiabilities: safeAbs(s.totalLiabilities),
           totalEquity: safeAbs(s.totalEquity),
           balanceVariance: variance
-        };
+        } as unknown as BalanceSheetSummary;
       };
 
       setEntries(Array.isArray(data.entries) ? normalizeEntries(data.entries) : []);

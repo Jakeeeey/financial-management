@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Filter, CalendarIcon, CheckCircle2, AlertTriangle, Download, FileSpreadsheet, Lock } from "lucide-react";
+import { Filter, CheckCircle2, AlertTriangle, Download, FileSpreadsheet, Lock } from "lucide-react";
 import { ValidationStatus, KeyRatios } from "../types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -75,7 +75,7 @@ export function ReportControlSection({ validation, ratios }: Props) {
     };
 
     const handleComparisonBasisChange = (basis: typeof filters.comparisonBasis) => {
-        let updates: Partial<typeof filters> = { comparisonBasis: basis };
+        const updates: Partial<typeof filters> = { comparisonBasis: basis };
         
         if (basis === "match") {
             const yearStr = filters.startDate.split("-")[0];
@@ -92,7 +92,7 @@ export function ReportControlSection({ validation, ratios }: Props) {
         return variance.toFixed(2);
     };
 
-    const RatioItem = ({ title, subtitle, value, priorValue, variance }: { title: string; subtitle: string; value: number; priorValue: number; variance: number }) => {
+    const renderRatioItem = ({ title, subtitle, value, priorValue, variance }: { title: string; subtitle: string; value: number; priorValue: number; variance: number }) => {
         const isPositive = variance > 0;
         const isNegative = variance < 0;
         const isNeutral = variance === 0;
@@ -495,34 +495,34 @@ export function ReportControlSection({ validation, ratios }: Props) {
                         <div className="p-5 sm:p-6 lg:px-8 flex-1 flex flex-col bg-card">
                             <h4 className="font-bold mb-8 text-xs uppercase tracking-widest text-muted-foreground">Key Ratios</h4>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-12">
-                                <RatioItem
-                                    title="Current Ratio"
-                                    subtitle="Current Assets / Current Liabilities"
-                                    value={ratios.currentRatio.current}
-                                    priorValue={ratios.currentRatio.prior}
-                                    variance={ratios.currentRatio.variance}
-                                />
-                                <RatioItem
-                                    title="Debt to Equity"
-                                    subtitle="Total Liabilities / Total Equity"
-                                    value={ratios.debtToEquity.current}
-                                    priorValue={ratios.debtToEquity.prior}
-                                    variance={ratios.debtToEquity.variance}
-                                />
-                                <RatioItem
-                                    title="Quick Ratio"
-                                    subtitle="(CA - Inventory) / CL"
-                                    value={ratios.quickRatio.current}
-                                    priorValue={ratios.quickRatio.prior}
-                                    variance={ratios.quickRatio.variance}
-                                />
-                                <RatioItem
-                                    title="Debt Ratio"
-                                    subtitle="Total Liabilities / Total Assets"
-                                    value={ratios.debtRatio.current}
-                                    priorValue={ratios.debtRatio.prior}
-                                    variance={ratios.debtRatio.variance}
-                                />
+                                {renderRatioItem({
+                                    title: "Current Ratio",
+                                    subtitle: "Current Assets / Current Liabilities",
+                                    value: ratios.currentRatio.current,
+                                    priorValue: ratios.currentRatio.prior,
+                                    variance: ratios.currentRatio.variance
+                                })}
+                                {renderRatioItem({
+                                    title: "Debt to Equity",
+                                    subtitle: "Total Liabilities / Total Equity",
+                                    value: ratios.debtToEquity.current,
+                                    priorValue: ratios.debtToEquity.prior,
+                                    variance: ratios.debtToEquity.variance
+                                })}
+                                {renderRatioItem({
+                                    title: "Quick Ratio",
+                                    subtitle: "(CA - Inventory) / CL",
+                                    value: ratios.quickRatio.current,
+                                    priorValue: ratios.quickRatio.prior,
+                                    variance: ratios.quickRatio.variance
+                                })}
+                                {renderRatioItem({
+                                    title: "Debt Ratio",
+                                    subtitle: "Total Liabilities / Total Assets",
+                                    value: ratios.debtRatio.current,
+                                    priorValue: ratios.debtRatio.prior,
+                                    variance: ratios.debtRatio.variance
+                                })}
                             </div>
                         </div>
                     </div>

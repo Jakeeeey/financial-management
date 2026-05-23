@@ -2,19 +2,12 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Download, FileDown, Printer, LayoutGrid, List } from "lucide-react";
+import { FileDown, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
 
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { 
-  JournalEntry, 
-  JournalEntryGroup, 
-  AnalyticsSummary, 
-  FilterState 
-} from "./types";
+import { JournalEntryGroup } from "./types";
 import { useJournalEntries } from "./hooks/useJournalEntries";
 import { JournalEntryProvider } from "./providers/JournalEntryProvider";
 
@@ -191,8 +184,8 @@ function JournalEntryDashboard() {
 }
 
 // Inline Badge for local use if UI component is not globally exposed in index
-function Badge({ variant = "default", className = "", children }: any) {
-    const variants: any = {
+function Badge({ variant = "default", className = "", children }: { variant?: "default" | "secondary" | "outline", className?: string, children?: React.ReactNode }) {
+    const variants: Record<string, string> = {
         default: "bg-primary text-primary-foreground",
         secondary: "bg-secondary text-secondary-foreground",
         outline: "border border-input bg-background",

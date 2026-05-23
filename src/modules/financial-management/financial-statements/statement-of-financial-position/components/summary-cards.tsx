@@ -10,7 +10,6 @@ interface Props {
 }
 
 function SummaryCardItem({
-    id, 
     title, 
     currentValue, 
     priorValue, 
@@ -20,7 +19,6 @@ function SummaryCardItem({
     isComparisonEnabled, 
     comparisonBasis
 }: {
-    id: string; 
     title: string; 
     currentValue: number; 
     priorValue: number; 
@@ -177,7 +175,6 @@ export function SummaryCards({ validation }: Props) {
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <SummaryCardItem
-                id="assets"
                 title="Total Assets"
                 currentValue={summary?.totalAssets || 0}
                 priorValue={comparisonSummary?.totalAssets || 0}
@@ -189,7 +186,6 @@ export function SummaryCards({ validation }: Props) {
             />
             
             <SummaryCardItem
-                id="liabilities"
                 title="Total Liabilities"
                 currentValue={summary?.totalLiabilities || 0}
                 priorValue={comparisonSummary?.totalLiabilities || 0}
@@ -201,7 +197,6 @@ export function SummaryCards({ validation }: Props) {
             />
             
             <SummaryCardItem
-                id="equity"
                 title="Total Equity"
                 currentValue={summary?.totalEquity || 0}
                 priorValue={comparisonSummary?.totalEquity || 0}
@@ -213,7 +208,6 @@ export function SummaryCards({ validation }: Props) {
             />
             
             <SummaryCardItem
-                id="variance"
                 title="Balance Variance"
                 currentValue={summary?.balanceVariance || 0}
                 priorValue={comparisonSummary?.balanceVariance || 0}

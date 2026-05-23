@@ -4,7 +4,6 @@ import * as React from "react";
 import { 
   Dialog, 
   DialogContent, 
-  DialogHeader, 
   DialogTitle, 
   DialogClose,
 } from "@/components/ui/dialog";
@@ -19,7 +18,7 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { format } from "date-fns";
-import { Clock, ShieldCheck, Link2, Download, Printer, FileDown } from "lucide-react";
+import { Clock, ShieldCheck, Link2, Printer, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { exportJournalToExcel, exportJournalToPdf } from "../services/export.service";
 import { toast } from "sonner";
@@ -113,7 +112,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                   const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
                   exportJournalToPdf([group], dateStr, `Journal_Entry_${group.jeNo}.pdf`);
                   toast.success("PDF exported successfully!");
-                } catch(e) {
+                } catch {
                   toast.error("Failed to export PDF");
                 }
               }}
@@ -128,7 +127,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
                   const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
                   exportJournalToExcel([group], dateStr, `Journal_Entry_${group.jeNo}.xlsx`);
                   toast.success("Excel exported successfully!");
-                } catch(e) {
+                } catch {
                   toast.error("Failed to export Excel");
                 }
               }}

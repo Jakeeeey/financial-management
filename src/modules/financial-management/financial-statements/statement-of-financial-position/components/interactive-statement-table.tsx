@@ -129,7 +129,7 @@ export function InteractiveStatementTable() {
                 </div>
                 <h3 className="text-lg font-bold text-foreground mb-1">No Statement Generated</h3>
                 <p className="text-muted-foreground text-sm max-w-xs text-center">
-                    Please adjust the filters above and click "Generate Report" to view the Statement of Financial Position.
+                    Please adjust the filters above and click &quot;Generate Report&quot; to view the Statement of Financial Position.
                 </p>
             </Card>
         );

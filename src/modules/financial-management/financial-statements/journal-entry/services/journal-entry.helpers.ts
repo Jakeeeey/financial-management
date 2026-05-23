@@ -71,8 +71,8 @@ export function sortJournalEntryGroups(groups: JournalEntryGroup[], filters: Fil
   const multiplier = sortOrder === "asc" ? 1 : -1;
 
   return [...groups].sort((a, b) => {
-    let valA: any = "";
-    let valB: any = "";
+    let valA: string | number | null = "";
+    let valB: string | number | null = "";
 
     switch (sortField) {
       case "date":
@@ -148,7 +148,7 @@ export function calculateAnalytics(
             reasons.push("Weekend Posting");
             severity += 1;
         }
-    } catch(e) {}
+    } catch {}
 
     // 4. Late Posting Risk
     if (g.postingDate && g.transactionDate) {
@@ -161,7 +161,7 @@ export function calculateAnalytics(
                 reasons.push("Late Posting");
                 severity += 1;
             }
-        } catch(e) {}
+        } catch {}
     }
 
     if (reasons.length > 0) {

@@ -5,7 +5,6 @@ import { SummaryCards } from "./summary-cards";
 import { InteractiveStatementTable } from "./interactive-statement-table";
 import { BalanceSheetProvider } from "../providers/BalanceSheetProvider";
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
-import { Loader2 } from "lucide-react";
 
 function StatementContent() {
     const { validation, ratios, error } = useBalanceSheet();

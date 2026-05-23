@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { FinancialPerformanceResponse, FinancialPerformanceEntry } from "../types";
+import { FinancialPerformanceResponse } from "../types";
 
 const COMPANY_NAME = "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
 const REPORT_TITLE = "STATEMENT OF FINANCIAL PERFORMANCE";
@@ -234,7 +234,7 @@ export const exportToPdf = (
     doc.text(BASIS, pageWidth / 2, 32, { align: "center" });
 
     // Setup column styles dynamically - remove fixed cellWidth to allow full-width stretching
-    const colStyles: Record<number, any> = {
+    const colStyles: { [key: number]: { halign: "left" | "center" | "right" } } = {
         0: { halign: "left" } // First column (Particulars) will take the remaining space
     };
     for (let i = 1; i < headers.length; i++) {

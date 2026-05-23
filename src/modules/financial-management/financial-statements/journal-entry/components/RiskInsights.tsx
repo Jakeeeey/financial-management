@@ -11,7 +11,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AnalyticsSummary } from "../types";
-import { cn } from "@/lib/utils";
 
 interface RiskInsightsProps {
   data: AnalyticsSummary;
@@ -142,7 +141,7 @@ export default function RiskInsights({ data }: RiskInsightsProps) {
   );
 }
 
-function Zap({ className, ...props }: any) {
+function Zap({ className, ...props }: React.SVGProps<SVGSVGElement>) {
     return (
         <svg
             xmlns="http://www.w3.org/2000/svg"

@@ -5,9 +5,7 @@ import {
   Search,
   Calendar as CalendarIcon,
   RotateCcw,
-  Bookmark,
-  Filter,
-  CheckCircle2
+  Filter
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -45,7 +43,7 @@ export default function FilterPanel({ filters, setFilters, uniqueSourceModules, 
     setLocalFilters(filters);
   }, [filters]);
 
-  const updateFilter = (key: keyof FilterState, value: any) => {
+  const updateFilter = (key: keyof FilterState, value: unknown) => {
     setLocalFilters((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -282,7 +280,7 @@ export default function FilterPanel({ filters, setFilters, uniqueSourceModules, 
         <div key={item.key} className="space-y-2">
           <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{item.label}</Label>
           <Select
-            value={(localFilters as any)[item.key]}
+            value={(localFilters as unknown as Record<string, string | boolean | number>)[item.key] as string}
             onValueChange={(v) => updateFilter(item.key as keyof FilterState, v)}
           >
             <SelectTrigger className="h-9 text-sm">

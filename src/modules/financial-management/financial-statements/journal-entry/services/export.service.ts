@@ -18,7 +18,7 @@ const formatNumber = (val: number) => {
 };
 
 const buildExportData = (groups: JournalEntryGroup[]) => {
-  const rows: any[][] = [];
+  const rows: (string | number)[][] = [];
   let sumDebit = 0;
   let sumCredit = 0;
 

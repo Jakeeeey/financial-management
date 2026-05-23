@@ -101,7 +101,7 @@ export function InteractiveStatementTable() {
                     </div>
                     <h3 className="text-xl font-bold text-foreground mb-2">No Statement Generated</h3>
                     <p className="text-muted-foreground text-sm max-w-md text-center">
-                        Please adjust the filters above and click "Generate Report" to view the Statement of Financial Performance.
+                        Please adjust the filters above and click &quot;Generate Report&quot; to view the Statement of Financial Performance.
                     </p>
                 </Card>
             </div>
@@ -123,7 +123,7 @@ export function InteractiveStatementTable() {
     };
 
     // ----- SUMMARY VIEW RENDERER -----
-    const SummaryRow = ({
+    const renderSummaryRow = ({
         label,
         currentValue,
         priorValue,
@@ -135,7 +135,19 @@ export function InteractiveStatementTable() {
         hasBorderBottom = false,
         expandable = false,
         sectionKey = "",
-    }: any) => {
+    }: {
+        label: React.ReactNode;
+        currentValue?: number;
+        priorValue?: number;
+        isBold?: boolean;
+        isIndented?: boolean;
+        isDoubleIndented?: boolean;
+        isNegativeFormat?: boolean;
+        hasBorderTop?: boolean;
+        hasBorderBottom?: boolean;
+        expandable?: boolean;
+        sectionKey?: string;
+    }) => {
         const variance = currentValue !== undefined && priorValue !== undefined ? currentValue - priorValue : undefined;
         
         return (
@@ -285,153 +297,158 @@ export function InteractiveStatementTable() {
                                 </TableHeader>
                                 <TableBody className="bg-card">
                                     {/* --- SALES --- */}
-                                    <SummaryRow label="Gross Sales" currentValue={Math.abs(summary.totalRevenue)} priorValue={comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) : undefined} isBold hasBorderTop={false} />
+                                    {renderSummaryRow({ label: "Gross Sales", currentValue: Math.abs(summary.totalRevenue), priorValue: comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) : undefined, isBold: true, hasBorderTop: false })}
                                     
                                     {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Contra Revenue").map((entry: FinancialPerformanceEntry, idx: number) => {
                                         const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                         return (
-                                            <SummaryRow 
-                                                key={`sales-${entry.glCode}-${idx}`} 
-                                                label={`Less: ${entry.accountTitle}`} 
-                                                currentValue={entry.amount} 
-                                                priorValue={compEntry?.amount} 
-                                                isIndented 
-                                                isNegativeFormat 
-                                            />
+                                            <div key={`sales-${entry.glCode}-${idx}`}>
+                                                {renderSummaryRow({
+                                                    label: `Less: ${entry.accountTitle}`, 
+                                                    currentValue: entry.amount, 
+                                                    priorValue: compEntry?.amount, 
+                                                    isIndented: true, 
+                                                    isNegativeFormat: true 
+                                                })}
+                                            </div>
                                         );
                                     })}
 
-                                    <SummaryRow 
-                                        label="Total Deductions" 
-                                        currentValue={getSectionTotal(summary, "Contra Revenue")} 
-                                        priorValue={getSectionTotal(comparisonSummary, "Contra Revenue")} 
-                                        isBold hasBorderTop isNegativeFormat 
-                                    />
+                                    {renderSummaryRow({
+                                        label: "Total Deductions", 
+                                        currentValue: getSectionTotal(summary, "Contra Revenue"), 
+                                        priorValue: getSectionTotal(comparisonSummary, "Contra Revenue"), 
+                                        isBold: true, hasBorderTop: true, isNegativeFormat: true 
+                                    })}
                                     
-                                    <SummaryRow 
-                                        label="Net Sales" 
-                                        currentValue={Math.abs(summary.totalRevenue) - Math.abs(getSectionTotal(summary, "Contra Revenue") || 0)} 
-                                        priorValue={comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) - Math.abs(getSectionTotal(comparisonSummary, "Contra Revenue") || 0) : undefined} 
-                                        isBold hasBorderTop hasBorderBottom 
-                                    />
+                                    {renderSummaryRow({
+                                        label: "Net Sales", 
+                                        currentValue: Math.abs(summary.totalRevenue) - Math.abs(getSectionTotal(summary, "Contra Revenue") || 0), 
+                                        priorValue: comparisonSummary ? Math.abs(comparisonSummary.totalRevenue) - Math.abs(getSectionTotal(comparisonSummary, "Contra Revenue") || 0) : undefined, 
+                                        isBold: true, hasBorderTop: true, hasBorderBottom: true 
+                                    })}
                                     
                                     {/* --- COGS --- */}
-                                    <SummaryRow 
-                                        label="Cost of Goods Sold" 
-                                        currentValue={summary.totalCostOfSales} 
-                                        priorValue={comparisonSummary?.totalCostOfSales} 
-                                        isBold 
-                                        expandable 
-                                        sectionKey="cogs" 
-                                    />
+                                    {renderSummaryRow({
+                                        label: "Cost of Goods Sold", 
+                                        currentValue: summary.totalCostOfSales, 
+                                        priorValue: comparisonSummary?.totalCostOfSales, 
+                                        isBold: true, 
+                                        expandable: true, 
+                                        sectionKey: "cogs" 
+                                    })}
                                     {expandedSections.cogs && (
                                         <>
                                             {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Purchases / Cost of Sales").map((entry: FinancialPerformanceEntry, idx: number) => {
                                                 const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
-                                                    <SummaryRow 
-                                                        key={`cogs-${entry.glCode}-${idx}`} 
-                                                        label={entry.accountTitle} 
-                                                        currentValue={entry.amount} 
-                                                        priorValue={compEntry?.amount} 
-                                                        isIndented 
-                                                    />
+                                                    <div key={`cogs-${entry.glCode}-${idx}`}>
+                                                        {renderSummaryRow({
+                                                            label: entry.accountTitle, 
+                                                            currentValue: entry.amount, 
+                                                            priorValue: compEntry?.amount, 
+                                                            isIndented: true 
+                                                        })}
+                                                    </div>
                                                 );
                                             })}
                                         </>
                                     )}
 
-                                    <SummaryRow label="Gross Profit" currentValue={summary.grossProfit} priorValue={comparisonSummary?.grossProfit} isBold hasBorderTop hasBorderBottom />
+                                    {renderSummaryRow({ label: "Gross Profit", currentValue: summary.grossProfit, priorValue: comparisonSummary?.grossProfit, isBold: true, hasBorderTop: true, hasBorderBottom: true })}
                                     
                                     {/* --- EXPENSES --- */}
-                                    <SummaryRow 
-                                        label="Operating Expenses" 
-                                        currentValue={summary.totalOperatingExpenses} 
-                                        priorValue={comparisonSummary?.totalOperatingExpenses} 
-                                        isBold 
-                                        expandable 
-                                        sectionKey="opex" 
-                                        isNegativeFormat
-                                    />
+                                    {renderSummaryRow({
+                                        label: "Operating Expenses", 
+                                        currentValue: summary.totalOperatingExpenses, 
+                                        priorValue: comparisonSummary?.totalOperatingExpenses, 
+                                        isBold: true, 
+                                        expandable: true, 
+                                        sectionKey: "opex", 
+                                        isNegativeFormat: true
+                                    })}
                                     {expandedSections.opex && (
                                         <>
                                             {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Operating Expenses").map((entry: FinancialPerformanceEntry, idx: number) => {
                                                 const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
-                                                    <SummaryRow 
-                                                        key={`opex-${entry.glCode}-${idx}`} 
-                                                        label={entry.accountTitle} 
-                                                        currentValue={entry.amount} 
-                                                        priorValue={compEntry?.amount} 
-                                                        isIndented 
-                                                    />
+                                                    <div key={`opex-${entry.glCode}-${idx}`}>
+                                                        {renderSummaryRow({
+                                                            label: entry.accountTitle, 
+                                                            currentValue: entry.amount, 
+                                                            priorValue: compEntry?.amount, 
+                                                            isIndented: true 
+                                                        })}
+                                                    </div>
                                                 );
                                             })}
                                         </>
                                     )}
 
                                     {/* --- OTHER INC/EXP --- */}
-                                    <SummaryRow 
-                                        label="Other Expense" 
-                                        currentValue={summary.totalOtherExpense} 
-                                        priorValue={comparisonSummary?.totalOtherExpense} 
-                                        isBold 
-                                        expandable 
-                                        sectionKey="otherExp" 
-                                        isNegativeFormat
-                                    />
+                                    {renderSummaryRow({
+                                        label: "Other Expense", 
+                                        currentValue: summary.totalOtherExpense, 
+                                        priorValue: comparisonSummary?.totalOtherExpense, 
+                                        isBold: true, 
+                                        expandable: true, 
+                                        sectionKey: "otherExp", 
+                                        isNegativeFormat: true
+                                    })}
                                     {expandedSections.otherExp && (
                                         <>
                                             {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Other Expense").map((entry: FinancialPerformanceEntry, idx: number) => {
                                                 const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
-                                                    <SummaryRow 
-                                                        key={`oexp-${entry.glCode}-${idx}`} 
-                                                        label={entry.accountTitle} 
-                                                        currentValue={entry.amount} 
-                                                        priorValue={compEntry?.amount} 
-                                                        isIndented 
-                                                    />
+                                                    <div key={`oexp-${entry.glCode}-${idx}`}>
+                                                        {renderSummaryRow({
+                                                            label: entry.accountTitle, 
+                                                            currentValue: entry.amount, 
+                                                            priorValue: compEntry?.amount, 
+                                                            isIndented: true 
+                                                        })}
+                                                    </div>
                                                 );
                                             })}
                                         </>
                                     )}
 
-                                    <SummaryRow 
-                                        label="Other Income" 
-                                        currentValue={summary.totalOtherIncome} 
-                                        priorValue={comparisonSummary?.totalOtherIncome} 
-                                        isBold 
-                                        expandable 
-                                        sectionKey="otherInc" 
-                                    />
+                                    {renderSummaryRow({
+                                        label: "Other Income", 
+                                        currentValue: summary.totalOtherIncome, 
+                                        priorValue: comparisonSummary?.totalOtherIncome, 
+                                        isBold: true, 
+                                        expandable: true, 
+                                        sectionKey: "otherInc" 
+                                    })}
                                     {expandedSections.otherInc && (
                                         <>
                                             {data.entries.filter((e: FinancialPerformanceEntry) => e.reportSection === "Other Income").map((entry: FinancialPerformanceEntry, idx: number) => {
                                                 const compEntry = comparisonSummary?.entries.find((c: FinancialPerformanceEntry) => c.accountTitle === entry.accountTitle);
                                                 return (
-                                                    <SummaryRow 
-                                                        key={`oinc-${entry.glCode}-${idx}`} 
-                                                        label={entry.accountTitle} 
-                                                        currentValue={entry.amount} 
-                                                        priorValue={compEntry?.amount} 
-                                                        isIndented 
-                                                    />
+                                                    <div key={`oinc-${entry.glCode}-${idx}`}>
+                                                        {renderSummaryRow({
+                                                            label: entry.accountTitle, 
+                                                            currentValue: entry.amount, 
+                                                            priorValue: compEntry?.amount, 
+                                                            isIndented: true 
+                                                        })}
+                                                    </div>
                                                 );
                                             })}
                                         </>
                                     )}
 
-                                    <SummaryRow 
-                                        label="Net Other Income (Loss)" 
-                                        currentValue={summary.totalOtherIncome - summary.totalOtherExpense} 
-                                        priorValue={comparisonSummary ? comparisonSummary.totalOtherIncome - comparisonSummary.totalOtherExpense : undefined} 
-                                        isBold hasBorderTop 
-                                    />
+                                    {renderSummaryRow({
+                                        label: "Net Other Income (Loss)", 
+                                        currentValue: summary.totalOtherIncome - summary.totalOtherExpense, 
+                                        priorValue: comparisonSummary ? comparisonSummary.totalOtherIncome - comparisonSummary.totalOtherExpense : undefined, 
+                                        isBold: true, hasBorderTop: true 
+                                    })}
                                     
                                     {/* --- FINAL --- */}
-                                    <SummaryRow label="Income Before Tax" currentValue={summary.incomeBeforeTax} priorValue={comparisonSummary?.incomeBeforeTax} isBold hasBorderTop />
-                                    <SummaryRow label={`Tax (${filters.taxRate}%)`} currentValue={summary.incomeTaxExpense} priorValue={comparisonSummary?.incomeTaxExpense} isIndented isNegativeFormat hasBorderBottom />
+                                    {renderSummaryRow({ label: "Income Before Tax", currentValue: summary.incomeBeforeTax, priorValue: comparisonSummary?.incomeBeforeTax, isBold: true, hasBorderTop: true })}
+                                    {renderSummaryRow({ label: `Tax (${filters.taxRate}%)`, currentValue: summary.incomeTaxExpense, priorValue: comparisonSummary?.incomeTaxExpense, isIndented: true, isNegativeFormat: true, hasBorderBottom: true })}
                                     
                                     {/* Final output table row custom style */}
                                     <TableRow className="bg-zinc-950 hover:bg-zinc-900 border-0 shadow-lg group transition-colors">

@@ -19,10 +19,10 @@ export async function GET(request: NextRequest) {
   try {
     const data = await getJournalEntryDrillDown(jeNo, token);
     return NextResponse.json(data);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("API Route Error (Journal Entry Drill Down):", error);
     return NextResponse.json(
-      { error: "Failed to fetch journal entry drill down", details: error.message },
+      { error: "Failed to fetch journal entry drill down", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }

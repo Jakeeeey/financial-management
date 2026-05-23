@@ -90,7 +90,7 @@ export const exportDrillDownToExcel = (opts: DrillDownExportOptions) => {
 };
 
 export const exportDrillDownToCSV = (opts: DrillDownExportOptions) => {
-  const { items, glCode, startDate, endDate } = opts;
+  const { items, glCode } = opts;
 
   const csvRows: string[] = [];
   csvRows.push(HEADERS.join(","));

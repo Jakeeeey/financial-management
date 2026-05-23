@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useFinancialPerformance } from "../hooks/useFinancialPerformance";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -16,7 +15,6 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Filter, Download, FileSpreadsheet, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -61,12 +59,7 @@ export function ReportControlSection() {
         updateFilter({ comparisonBasis: basis });
     };
 
-    const formatVariance = (variance: number) => {
-        if (variance > 0) return `+${variance.toFixed(1)}`;
-        return variance.toFixed(1);
-    };
-
-    const RatioItem = ({ title, subtitle, value, priorValue }: { title: string; subtitle: string; value?: number; priorValue?: number }) => {
+    const renderRatioItem = ({ title, subtitle, value, priorValue }: { title: string; subtitle: string; value?: number; priorValue?: number }) => {
         const current = value ?? 0;
         const prior = priorValue ?? 0;
         const variance = current - prior;
@@ -119,7 +112,7 @@ export function ReportControlSection() {
             const startStr = format(new Date(filters.startDate), "MMM d, yyyy");
             const endStr = format(new Date(filters.endDate), "MMM d, yyyy");
             return `${startStr} to ${endStr}`;
-        } catch (e) {
+        } catch {
             return `${filters.startDate} to ${filters.endDate}`;
         }
     };
@@ -591,30 +584,30 @@ export function ReportControlSection() {
                     <div className="p-5 sm:p-6 lg:px-8 flex flex-col bg-card shrink-0 min-h-0 min-w-0">
                         <h4 className="font-bold text-sm tracking-tight text-foreground mb-6">Key Ratios</h4>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <RatioItem
-                                title="Gross Profit Margin"
-                                subtitle="Gross Profit ÷ Revenue"
-                                value={data?.grossProfitMargin}
-                                priorValue={data?.comparisonData?.grossProfitMargin}
-                            />
-                            <RatioItem
-                                title="Operating Expense Ratio"
-                                subtitle="Operating Expenses ÷ Revenue"
-                                value={data?.operatingExpenseRatio}
-                                priorValue={data?.comparisonData?.operatingExpenseRatio}
-                            />
-                            <RatioItem
-                                title="Net Profit Margin"
-                                subtitle="Net Income ÷ Revenue"
-                                value={data?.netProfitMargin}
-                                priorValue={data?.comparisonData?.netProfitMargin}
-                            />
-                            <RatioItem
-                                title="Effective Tax Rate"
-                                subtitle="Income Tax Expense ÷ Income Before Tax"
-                                value={data?.effectiveTaxRate}
-                                priorValue={data?.comparisonData?.effectiveTaxRate}
-                            />
+                            {renderRatioItem({
+                                title: "Gross Profit Margin",
+                                subtitle: "Gross Profit ÷ Revenue",
+                                value: data?.grossProfitMargin,
+                                priorValue: data?.comparisonData?.grossProfitMargin
+                            })}
+                            {renderRatioItem({
+                                title: "Operating Expense Ratio",
+                                subtitle: "Operating Expenses ÷ Revenue",
+                                value: data?.operatingExpenseRatio,
+                                priorValue: data?.comparisonData?.operatingExpenseRatio
+                            })}
+                            {renderRatioItem({
+                                title: "Net Profit Margin",
+                                subtitle: "Net Income ÷ Revenue",
+                                value: data?.netProfitMargin,
+                                priorValue: data?.comparisonData?.netProfitMargin
+                            })}
+                            {renderRatioItem({
+                                title: "Effective Tax Rate",
+                                subtitle: "Income Tax Expense ÷ Income Before Tax",
+                                value: data?.effectiveTaxRate,
+                                priorValue: data?.comparisonData?.effectiveTaxRate
+                            })}
                         </div>
                     </div>
                 </div>

@@ -22,9 +22,21 @@ import { toast } from "sonner";
 import { exportDrillDownToExcel, exportDrillDownToCSV } from "../services/drill-down-export.service";
 
 const safeGet = {
-    journalId: (row: any) => row.journalEntryId || row.jeNo || row.reference || row.journalNo || "",
-    debit: (row: any) => Number(row.debit || row.debitAmount || 0),
-    credit: (row: any) => Number(row.credit || row.creditAmount || 0),
+    journalId: (row: TrialBalanceDrillDownItem) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = row as any;
+        return (r.journalEntryId || r.jeNo || r.reference || r.journalNo || "") as string;
+    },
+    debit: (row: TrialBalanceDrillDownItem) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = row as any;
+        return Number(r.debit || r.debitAmount || 0);
+    },
+    credit: (row: TrialBalanceDrillDownItem) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = row as any;
+        return Number(r.credit || r.creditAmount || 0);
+    },
 };
 
 const columns: ColumnDef<TrialBalanceDrillDownItem>[] = [
@@ -153,8 +165,8 @@ export function TrialBalanceDrillDown({
       try {
         const data = await fetchDrillDown(activeStartDate, activeEndDate);
         setLines(data);
-      } catch (err: any) {
-        toast.error(`Error loading records: ${err.message}`);
+      } catch (err: unknown) {
+        toast.error(`Error loading records: ${err instanceof Error ? err.message : "Unknown error"}`);
         setLines([]);
       } finally {
         setIsLoading(false);
@@ -162,6 +174,7 @@ export function TrialBalanceDrillDown({
     }
 
     initialFetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account.glCode]); // Only on initial mount / account change
 
   const filteredLines = useMemo(() => {
@@ -215,8 +228,8 @@ export function TrialBalanceDrillDown({
       }
 
       toast.success("Filters applied successfully.", { id: loadingToastId });
-    } catch (err: any) {
-      toast.error(`Failed to apply filters: ${err.message}`, { id: loadingToastId });
+    } catch (err: unknown) {
+      toast.error(`Failed to apply filters: ${err instanceof Error ? err.message : "Unknown error"}`, { id: loadingToastId });
     } finally {
       setIsApplyingFilters(false);
     }

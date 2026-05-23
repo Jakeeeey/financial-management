@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DataTable } from "@/components/ui/new-data-table";
 import { ColumnDef } from "@tanstack/react-table";
 import { FinancialAccount } from "../types";
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { DrillDownEntry } from "../types/balance-sheet.schema";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
 interface Props {
@@ -45,8 +44,8 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
                     // Assuming result is DrillDownEntry[]
                     setData(Array.isArray(result) ? result : []);
                 }
-            } catch (err: any) {
-                if (isMounted) setError(err.message || "An error occurred");
+            } catch (err: unknown) {
+                if (isMounted) setError(err instanceof Error ? err.message : "An error occurred");
             } finally {
                 if (isMounted) setIsLoading(false);
             }

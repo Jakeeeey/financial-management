@@ -4,10 +4,7 @@ import * as React from "react";
 import {
   ChevronDown,
   ChevronUp,
-  ExternalLink,
   AlertCircle,
-  CheckCircle2,
-  MoreHorizontal,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -22,7 +19,7 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
-import { JournalEntryGroup, JournalEntry } from "../types";
+import { JournalEntryGroup } from "../types";
 import { cn, formatNumber } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
