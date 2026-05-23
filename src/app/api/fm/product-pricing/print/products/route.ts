@@ -281,6 +281,14 @@ function applyCommonFilters(args: {
     }
 }
 
+function groupKey(product: ProductRow): number {
+    const parentId = pickId(product.parent_id);
+    if (parentId) return parentId;
+
+    const selfId = pickId(product.product_id);
+    return selfId ?? 0;
+}
+
 export async function GET(req: NextRequest) {
     try {
         if (!DIRECTUS_URL) {
@@ -344,6 +352,8 @@ export async function GET(req: NextRequest) {
             "priceE",
         ].join(",");
 
+        let matchedProducts: ProductRow[] = [];
+
         if (supplierScope !== "LINKED_ONLY" || supplierIdsRaw.length === 0) {
             const params = new URLSearchParams();
             params.set("limit", "-1");
@@ -368,71 +378,132 @@ export async function GET(req: NextRequest) {
             }
 
             const json = JSON.parse(text) as { data?: ProductRow[] };
-            return NextResponse.json({ data: (json.data ?? []).map(normalizeProductRow) });
+            matchedProducts = (json.data ?? []).map(normalizeProductRow);
+        } else {
+            const allSupplierProductIds: number[] = [];
+            for (const supplierRaw of supplierIdsRaw) {
+                const ids = await fetchSupplierProductIds(supplierRaw);
+                allSupplierProductIds.push(...ids);
+            }
+
+            const supplierProductIds = uniqNums(allSupplierProductIds);
+            if (supplierProductIds.length === 0) {
+                return NextResponse.json({ data: [] });
+            }
+
+            const idsChunks = chunk(supplierProductIds, 200);
+
+            const arrays = await Promise.all(
+                idsChunks.map(async (ids) => {
+                    const params = new URLSearchParams();
+                    params.set("limit", "-1");
+                    params.set("fields", fields);
+                    params.set("sort", "product_name");
+
+                    applyCommonFilters({
+                        params,
+                        q,
+                        categoryIds,
+                        brandIds,
+                        unitIds,
+                        activeOnly,
+                        missingTier,
+                        productIdsIn: ids,
+                    });
+
+                    const directusUrl = `${DIRECTUS_URL}/items/${PRODUCTS}?${params.toString()}`;
+                    const { ok, status, text } = await fetchDirectusRaw(directusUrl);
+
+                    if (!ok) {
+                        throw new Error(
+                            JSON.stringify({
+                                message: "Directus request failed (products chunk)",
+                                status,
+                                url: directusUrl,
+                                body: text,
+                            }),
+                        );
+                    }
+
+                    const json = JSON.parse(text) as { data?: ProductRow[] };
+                    return (json.data ?? []).map(normalizeProductRow);
+                }),
+            );
+
+            const byId = new Map<number, ProductRow>();
+            for (const arr of arrays) {
+                for (const row of arr) {
+                    const id = pickId(row.product_id);
+                    if (id) byId.set(id, row);
+                }
+            }
+
+            matchedProducts = Array.from(byId.values());
         }
 
-        const allSupplierProductIds: number[] = [];
-        for (const supplierRaw of supplierIdsRaw) {
-            const ids = await fetchSupplierProductIds(supplierRaw);
-            allSupplierProductIds.push(...ids);
-        }
+        // Expand matchedProducts to include all active variants of their groups (e.g. PCS, BOX)
+        let finalProducts: ProductRow[] = [];
+        if (matchedProducts.length > 0) {
+            const matchedGroupIds = uniqNums(matchedProducts.map(groupKey));
 
-        const supplierProductIds = uniqNums(allSupplierProductIds);
-        if (supplierProductIds.length === 0) {
-            return NextResponse.json({ data: [] });
-        }
+            if (matchedGroupIds.length > 0) {
+                const groupChunks = chunk(matchedGroupIds, 150);
+                const allGroupVariantsArrays = await Promise.all(
+                    groupChunks.map(async (ids) => {
+                        const params = new URLSearchParams();
+                        params.set("limit", "-1");
+                        params.set("fields", fields);
 
-        const idsChunks = chunk(supplierProductIds, 200);
+                        let andIdx = 0;
+                        const addAnd = (suffix: string, value: string) => {
+                            params.set(`filter[_and][${andIdx}]${suffix}`, value);
+                            andIdx += 1;
+                        };
 
-        const arrays = await Promise.all(
-            idsChunks.map(async (ids) => {
-                const params = new URLSearchParams();
-                params.set("limit", "-1");
-                params.set("fields", fields);
-                params.set("sort", "product_name");
+                        if (activeOnly) {
+                            addAnd("[isActive][_eq]", "1");
+                        }
 
-                applyCommonFilters({
-                    params,
-                    q,
-                    categoryIds,
-                    brandIds,
-                    unitIds,
-                    activeOnly,
-                    missingTier,
-                    productIdsIn: ids,
-                });
+                        addAnd("[_or][0][product_id][_in]", ids.join(","));
+                        params.set(`filter[_and][${andIdx - 1}][_or][1][parent_id][_in]`, ids.join(","));
 
-                const directusUrl = `${DIRECTUS_URL}/items/${PRODUCTS}?${params.toString()}`;
-                const { ok, status, text } = await fetchDirectusRaw(directusUrl);
+                        const url = `${DIRECTUS_URL}/items/${PRODUCTS}?${params.toString()}`;
+                        const { ok, status, text } = await fetchDirectusRaw(url);
+                        if (!ok) {
+                            throw new Error(
+                                JSON.stringify({
+                                    message: "Directus request failed (print products group variants fetch)",
+                                    status,
+                                    url,
+                                    body: text,
+                                }),
+                            );
+                        }
+                        const json = JSON.parse(text) as { data?: ProductRow[] };
+                        return (json.data ?? []).map(normalizeProductRow);
+                    }),
+                );
 
-                if (!ok) {
-                    throw new Error(
-                        JSON.stringify({
-                            message: "Directus request failed (products chunk)",
-                            status,
-                            url: directusUrl,
-                            body: text,
-                        }),
-                    );
+                const byId = new Map<number, ProductRow>();
+                for (const arr of allGroupVariantsArrays) {
+                    for (const row of arr) {
+                        const id = pickId(row.product_id);
+                        if (id) byId.set(id, row);
+                    }
                 }
 
-                const json = JSON.parse(text) as { data?: ProductRow[] };
-                return (json.data ?? []).map(normalizeProductRow);
-            }),
-        );
-
-        const byId = new Map<number, ProductRow>();
-        for (const arr of arrays) {
-            for (const row of arr) {
-                const id = pickId(row.product_id);
-                if (id) byId.set(id, row);
+                finalProducts = Array.from(byId.values());
+                if (unitIds.length > 0) {
+                    finalProducts = finalProducts.filter(
+                        (v) => v.unit_of_measurement && unitIds.includes(String(v.unit_of_measurement)),
+                    );
+                }
             }
         }
 
-        const allRows = Array.from(byId.values());
-        allRows.sort((a, b) => String(a.product_name ?? "").localeCompare(String(b.product_name ?? "")));
+        finalProducts.sort((a, b) => String(a.product_name ?? "").localeCompare(String(b.product_name ?? "")));
 
-        return NextResponse.json({ data: allRows });
+        return NextResponse.json({ data: finalProducts });
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         const parsed = parseErrorMessage(message);
