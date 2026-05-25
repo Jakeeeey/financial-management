@@ -76,6 +76,11 @@ const emptyForm: AccountManagementFormValues = {
 
 type FormMode = "create" | "edit";
 
+type BankNameMatch = {
+  bankName: string;
+  kind: "duplicate" | "similar";
+};
+
 type TextFieldProps = {
   id: keyof AccountManagementFormValues;
   label: string;
@@ -90,7 +95,9 @@ type BankNameSelectProps = {
   bankNames: Array<{ bankName: string }>;
   value: string;
   disabled?: boolean;
+  creating?: boolean;
   onValueChange: (value: string) => void;
+  onCreateBankName: (bankName: string) => void;
 };
 
 type PsgcSelectProps = {
@@ -119,6 +126,53 @@ type PsgcLoadingState = {
 
 function sanitizeAccountNumber(value: string) {
   return value.replace(/[^A-Za-z0-9-]/g, "").replace(/-+/g, "-");
+}
+
+function normalizeBankNameInput(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function normalizeBankNameKey(value: string) {
+  return normalizeBankNameInput(value).toLowerCase();
+}
+
+function compactBankNameKey(value: string) {
+  return normalizeBankNameKey(value).replace(/[^a-z0-9]/g, "");
+}
+
+function findSimilarBankNames(
+  bankName: string,
+  bankNames: Array<{ bankName: string }>,
+): BankNameMatch[] {
+  const normalizedName = normalizeBankNameKey(bankName);
+  const compactName = compactBankNameKey(bankName);
+  if (!normalizedName) return [];
+
+  return bankNames
+    .map((bank) => {
+      const existingName = normalizeBankNameKey(bank.bankName);
+      const existingCompact = compactBankNameKey(bank.bankName);
+
+      if (existingName === normalizedName || existingCompact === compactName) {
+        return { bankName: bank.bankName, kind: "duplicate" } as const;
+      }
+
+      const isSimilar =
+        compactName.length >= 4 &&
+        existingCompact.length >= 4 &&
+        (existingCompact.includes(compactName) ||
+          compactName.includes(existingCompact));
+
+      return isSimilar
+        ? ({ bankName: bank.bankName, kind: "similar" } as const)
+        : null;
+    })
+    .filter((match): match is BankNameMatch => Boolean(match))
+    .sort((first, second) => {
+      if (first.kind === second.kind) return 0;
+      return first.kind === "duplicate" ? -1 : 1;
+    })
+    .slice(0, 5);
 }
 
 function formatMoney(value: number) {
@@ -189,13 +243,41 @@ function BankNameSelect({
   bankNames,
   value,
   disabled,
+  creating,
   onValueChange,
+  onCreateBankName,
 }: BankNameSelectProps) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const selectedBank = bankNames.find((bank) => bank.bankName === value);
+  const normalizedQuery = normalizeBankNameInput(query);
+  const normalizedQueryKey = normalizedQuery.toLowerCase();
+  const visibleBankNames = normalizedQueryKey
+    ? bankNames.filter((bank) =>
+        normalizeBankNameInput(bank.bankName)
+          .toLowerCase()
+          .includes(normalizedQueryKey),
+      )
+    : bankNames;
+  const canCreateBankName =
+    Boolean(normalizedQuery) && !disabled && !creating;
+
+  function createBankName() {
+    if (!canCreateBankName) return;
+
+    onCreateBankName(normalizedQuery);
+    setQuery("");
+    setOpen(false);
+  }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) setQuery("");
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -205,33 +287,58 @@ function BankNameSelect({
           disabled={disabled}
           className={cn("w-full min-w-0 justify-between", !value && "text-muted-foreground")}
         >
-          <span className="min-w-0 flex-1 truncate text-left">{selectedBank?.bankName || "Select bank"}</span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <span className="min-w-0 flex-1 truncate text-left">{selectedBank?.bankName || value || "Select bank"}</span>
+          {creating ? (
+            <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin opacity-70" />
+          ) : (
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search bank..." />
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={query}
+            disabled={disabled || creating}
+            placeholder="Search or add bank..."
+            onValueChange={setQuery}
+          />
           <CommandList
             className="max-h-64 overflow-y-auto"
             onWheelCapture={(event) => event.stopPropagation()}
           >
-            <CommandEmpty>No banks found.</CommandEmpty>
-            <CommandGroup>
-              {bankNames.map((bank) => (
-                <CommandItem
-                  key={bank.bankName}
-                  value={bank.bankName}
-                  onSelect={() => {
-                    onValueChange(bank.bankName);
-                    setOpen(false);
-                  }}
-                >
-                  <Check className={cn("mr-2 h-4 w-4", value === bank.bankName ? "opacity-100" : "opacity-0")} />
-                  {bank.bankName}
-                </CommandItem>
-              ))}
-            </CommandGroup>
+            {visibleBankNames.length === 0 && !canCreateBankName ? (
+              <CommandEmpty>No banks found.</CommandEmpty>
+            ) : null}
+            {visibleBankNames.length > 0 || canCreateBankName ? (
+              <CommandGroup>
+                {canCreateBankName ? (
+                  <CommandItem
+                    key="__create_bank_name"
+                    value={`Add ${normalizedQuery}`}
+                    onSelect={() => {
+                      void createBankName();
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    <span className="truncate">Add &quot;{normalizedQuery}&quot;</span>
+                  </CommandItem>
+                ) : null}
+                {visibleBankNames.map((bank) => (
+                  <CommandItem
+                    key={bank.bankName}
+                    value={bank.bankName}
+                    onSelect={() => {
+                      onValueChange(bank.bankName);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check className={cn("mr-2 h-4 w-4", value === bank.bankName ? "opacity-100" : "opacity-0")} />
+                    {bank.bankName}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : null}
           </CommandList>
         </Command>
       </PopoverContent>
@@ -335,11 +442,10 @@ export default function AccountManagementModule() {
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [formValues, setFormValues] = useState<AccountManagementFormValues>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
-  const [bankNameDialogOpen, setBankNameDialogOpen] = useState(false);
-  const [bankNameInput, setBankNameInput] = useState("");
   const [bankNameError, setBankNameError] = useState<string | null>(null);
   const [bankNameSaving, setBankNameSaving] = useState(false);
-  const [duplicateBankName, setDuplicateBankName] = useState<string | null>(null);
+  const [pendingBankName, setPendingBankName] = useState<string | null>(null);
+  const [pendingBankNameMatches, setPendingBankNameMatches] = useState<BankNameMatch[]>([]);
   const [provinceOptions, setProvinceOptions] = useState<PsgcOption[]>([]);
   const [cityOptions, setCityOptions] = useState<PsgcOption[]>([]);
   const [barangayOptions, setBarangayOptions] = useState<PsgcOption[]>([]);
@@ -379,6 +485,12 @@ export default function AccountManagementModule() {
     }
     return cityOptions;
   }, [cityOptions, locationCodes.barangayCode, selectedCity]);
+  const pendingBankNameHasDuplicate = pendingBankNameMatches.some(
+    (match) => match.kind === "duplicate",
+  );
+  const pendingBankNameHasSimilar = pendingBankNameMatches.some(
+    (match) => match.kind === "similar",
+  );
 
   const loadPsgcOptions = useCallback(async (
     kind: "provinces" | "cities" | "barangays",
@@ -451,6 +563,9 @@ export default function AccountManagementModule() {
     setEditingAccount(null);
     setFormValues(emptyForm);
     setFormError(null);
+    setBankNameError(null);
+    setPendingBankName(null);
+    setPendingBankNameMatches([]);
     setPsgcError(null);
     setLocationCodes({ provinceCode: "", cityCode: "", barangayCode: "" });
     setDialogOpen(true);
@@ -461,6 +576,9 @@ export default function AccountManagementModule() {
     setEditingAccount(account);
     setFormValues(accountToForm(account));
     setFormError(null);
+    setBankNameError(null);
+    setPendingBankName(null);
+    setPendingBankNameMatches([]);
     setPsgcError(null);
     setLocationCodes({ provinceCode: "", cityCode: "", barangayCode: "" });
     setDialogOpen(true);
@@ -539,44 +657,41 @@ export default function AccountManagementModule() {
     await loadAccounts({ page, pageSize: PAGE_SIZE, search, status });
   }
 
-  function openBankNameDialog() {
-    setBankNameInput("");
-    setBankNameError(null);
-    setDuplicateBankName(null);
-    setBankNameDialogOpen(true);
-  }
-
-  async function submitBankName(allowDuplicate = false) {
-    const bankName = bankNameInput.trim().replace(/\s+/g, " ");
+  function requestBankNameCreate(bankNameInput: string) {
+    const bankName = normalizeBankNameInput(bankNameInput);
 
     if (!bankName) {
       setBankNameError("Bank name is required");
       return;
     }
 
+    setBankNameError(null);
+    setPendingBankName(bankName);
+    setPendingBankNameMatches(findSimilarBankNames(bankName, data.bankNames));
+  }
+
+  async function confirmBankNameCreate() {
+    if (!pendingBankName) return;
+
+    const shouldAllowDuplicate = pendingBankNameMatches.some(
+      (match) => match.kind === "duplicate",
+    );
+
     try {
       setBankNameSaving(true);
       setBankNameError(null);
       const result = await accountManagementApi.createBankName(
-        bankName,
-        allowDuplicate,
+        pendingBankName,
+        shouldAllowDuplicate,
       );
-
-      if (result.status === "duplicate") {
-        setDuplicateBankName(result.bankName);
-        return;
-      }
-
-      updateFormValue("bankName", result.bankName.bankName || bankName);
-      setBankNameInput("");
-      setBankNameDialogOpen(false);
-      setDuplicateBankName(null);
+      updateFormValue("bankName", result.bankName || pendingBankName);
+      setPendingBankName(null);
+      setPendingBankNameMatches([]);
       toast.success("Bank name added");
       await reloadCurrentPage();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to add bank name";
-      setDuplicateBankName(null);
       setBankNameError(message);
       toast.error(message);
     } finally {
@@ -850,25 +965,21 @@ export default function AccountManagementModule() {
                 <h2 className="text-sm font-semibold">Account Details</h2>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="grid min-w-0 gap-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label>Bank Name *</Label>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        disabled={saving || bankNameSaving}
-                        onClick={openBankNameDialog}
-                      >
-                        <Plus />
-                        Add bank
-                      </Button>
-                    </div>
+                    <Label>Bank Name *</Label>
                     <BankNameSelect
                       bankNames={data.bankNames}
                       value={formValues.bankName}
-                      disabled={saving}
-                      onValueChange={(value) => updateFormValue("bankName", value)}
+                      disabled={saving || bankNameSaving}
+                      creating={bankNameSaving}
+                      onValueChange={(value) => {
+                        setBankNameError(null);
+                        updateFormValue("bankName", value);
+                      }}
+                      onCreateBankName={requestBankNameCreate}
                     />
+                    {bankNameError ? (
+                      <p className="text-sm text-destructive">{bankNameError}</p>
+                    ) : null}
                   </div>
                   <TextField
                     id="accountNumber"
@@ -976,76 +1087,46 @@ export default function AccountManagementModule() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={bankNameDialogOpen}
+      <AlertDialog
+        open={Boolean(pendingBankName)}
         onOpenChange={(open) => {
           if (bankNameSaving) return;
-          setBankNameDialogOpen(open);
           if (!open) {
-            setBankNameError(null);
-            setDuplicateBankName(null);
+            setPendingBankName(null);
+            setPendingBankNameMatches([]);
           }
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitBankName();
-            }}
-            className="grid gap-4"
-          >
-            <DialogHeader>
-              <DialogTitle>Add Bank Name</DialogTitle>
-              <DialogDescription>
-                Add a bank name to the selectable bank list.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-1.5">
-              <Label htmlFor="newBankName">Bank Name *</Label>
-              <Input
-                id="newBankName"
-                value={bankNameInput}
-                disabled={bankNameSaving}
-                autoComplete="off"
-                onChange={(event) => setBankNameInput(event.target.value)}
-              />
-              {bankNameError ? (
-                <p className="text-sm text-destructive">{bankNameError}</p>
-              ) : null}
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={bankNameSaving}
-                onClick={() => setBankNameDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={bankNameSaving}>
-                {bankNameSaving ? <Loader2 className="animate-spin" /> : null}
-                Add Bank Name
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog
-        open={Boolean(duplicateBankName)}
-        onOpenChange={(open) => {
-          if (!open && !bankNameSaving) setDuplicateBankName(null);
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Bank name already exists</AlertDialogTitle>
+            <AlertDialogTitle>
+              {pendingBankNameHasDuplicate
+                ? "Bank name already exists"
+                : pendingBankNameHasSimilar
+                  ? "Similar bank names found"
+                  : "Add bank name?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {duplicateBankName} is already in the bank names list. Do you
-              still want to add another record with this bank name?
+              {pendingBankNameHasDuplicate || pendingBankNameHasSimilar
+                ? `Review the existing bank names before adding "${pendingBankName}".`
+                : `Are you sure you want to add "${pendingBankName}" to the bank names list?`}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {pendingBankNameMatches.length > 0 ? (
+            <div className="rounded-md border bg-muted/40 p-3 text-sm">
+              <p className="mb-2 font-medium">Existing matches</p>
+              <ul className="grid gap-1">
+                {pendingBankNameMatches.map((match) => (
+                  <li key={`${match.kind}-${match.bankName}`} className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 truncate">{match.bankName}</span>
+                    <Badge variant={match.kind === "duplicate" ? "destructive" : "secondary"}>
+                      {match.kind === "duplicate" ? "Duplicate" : "Similar"}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={bankNameSaving}>
               Cancel
@@ -1054,11 +1135,11 @@ export default function AccountManagementModule() {
               disabled={bankNameSaving}
               onClick={(event) => {
                 event.preventDefault();
-                void submitBankName(true);
+                void confirmBankNameCreate();
               }}
             >
               {bankNameSaving ? <Loader2 className="animate-spin" /> : null}
-              Continue
+              Add Bank Name
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

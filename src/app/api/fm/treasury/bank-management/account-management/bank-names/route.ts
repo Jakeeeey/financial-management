@@ -130,6 +130,7 @@ export async function POST(request: NextRequest) {
     if (!allowDuplicate && isDuplicateBankName(bankName, bankNames)) {
       return NextResponse.json(
         {
+          error: "Bank name already exists",
           duplicate: true,
           bankName,
           message: "A bank name with this value already exists",

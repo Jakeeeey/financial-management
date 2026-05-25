@@ -22,17 +22,6 @@ export type BankNameOption = {
   isActive?: boolean;
 };
 
-export type CreateBankNameResult =
-  | {
-      status: "created";
-      bankName: BankNameOption;
-    }
-  | {
-      status: "duplicate";
-      bankName: string;
-      message: string;
-    };
-
 export type PsgcOption = {
   code: string;
   name: string;
