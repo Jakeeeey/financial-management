@@ -35,30 +35,45 @@ export const accountManagementApi = {
     if (query?.page) params.set("page", String(query.page));
     if (query?.pageSize) params.set("page_size", String(query.pageSize));
     if (query?.search) params.set("q", query.search);
-    if (query?.status && query.status !== "all") params.set("status", query.status);
+    if (query?.status && query.status !== "all")
+      params.set("status", query.status);
 
     const url = params.size > 0 ? `${BASE}?${params.toString()}` : BASE;
     const res = await fetch(url, { cache: "no-store" });
-    return parseResponse<AccountManagementData>(res, "Failed to load bank accounts");
+    return parseResponse<AccountManagementData>(
+      res,
+      "Failed to load bank accounts",
+    );
   },
 
-  async createAccount(payload: AccountManagementFormValues): Promise<BankAccount> {
+  async createAccount(
+    payload: AccountManagementFormValues,
+  ): Promise<BankAccount> {
     const res = await fetch(BASE, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const json = await parseResponse<{ account: BankAccount }>(res, "Failed to create bank account");
+    const json = await parseResponse<{ account: BankAccount }>(
+      res,
+      "Failed to create bank account",
+    );
     return json.account;
   },
 
-  async updateAccount(id: number, payload: Partial<AccountManagementFormValues> & { isActive?: boolean }): Promise<BankAccount> {
-    const res = await fetch(`${BASE}/${id}`, {
+  async updateAccount(
+    bankId: number,
+    payload: Partial<AccountManagementFormValues> & { isActive?: boolean },
+  ): Promise<BankAccount> {
+    const res = await fetch(`${BASE}/${bankId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const json = await parseResponse<{ account: BankAccount }>(res, "Failed to update bank account");
+    const json = await parseResponse<{ account: BankAccount }>(
+      res,
+      "Failed to update bank account",
+    );
     return json.account;
   },
 };

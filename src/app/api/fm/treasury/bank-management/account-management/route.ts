@@ -20,8 +20,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type BankAccountRow = {
-  id?: unknown;
-  bank_account_id?: unknown;
+  bank_id?: unknown;
   bank_name?: unknown;
   account_number?: unknown;
   bank_description?: unknown;
@@ -69,7 +68,7 @@ type AccountQueryConfig = {
 };
 
 const fullAccountFields = [
-  "id",
+  "bank_id",
   "bank_name",
   "account_number",
   "bank_description",
@@ -86,7 +85,7 @@ const fullAccountFields = [
 ];
 
 const baseAccountFields = [
-  "id",
+  "bank_id",
   "bank_name",
   "account_number",
   "branch",
@@ -96,15 +95,11 @@ const baseAccountFields = [
 ];
 
 const minimalAccountFields = [
-  "id",
+  "bank_id",
   "bank_name",
   "account_number",
   "branch",
 ];
-
-const altFullAccountFields = fullAccountFields.map((field) => field === "id" ? "bank_account_id" : field);
-const altBaseAccountFields = baseAccountFields.map((field) => field === "id" ? "bank_account_id" : field);
-const altMinimalAccountFields = minimalAccountFields.map((field) => field === "id" ? "bank_account_id" : field);
 
 const createOptionalFields = [
   "created_by",
@@ -118,6 +113,8 @@ const createOptionalFields = [
   "contact_person",
   "is_active",
 ] as const;
+
+const bankIdNewestSort = "-created_at,-bank_id";
 
 function normalizePage(value: unknown) {
   const parsed = Number(value);
@@ -137,7 +134,7 @@ function nullableString(value: unknown) {
 
 function normalizeAccount(row: BankAccountRow) {
   return {
-    id: asNumber(row.id ?? row.bank_account_id) ?? 0,
+    bankId: asNumber(row.bank_id) ?? 0,
     bankName: asString(row.bank_name),
     accountNumber: asString(row.account_number),
     bankDescription: asString(row.bank_description),
@@ -162,9 +159,30 @@ function normalizeBankName(row: BankNameRow) {
   };
 }
 
-function buildAccountParams(searchParams: URLSearchParams, config: AccountQueryConfig) {
+function uniqueBankNames(rows: ReturnType<typeof normalizeBankName>[]) {
+  const uniqueByName = new Map<string, ReturnType<typeof normalizeBankName>>();
+
+  for (const row of rows) {
+    const normalizedName = row.bankName.trim();
+    if (!normalizedName) continue;
+
+    const key = normalizedName.toLowerCase();
+    if (!uniqueByName.has(key)) {
+      uniqueByName.set(key, { ...row, bankName: normalizedName });
+    }
+  }
+
+  return Array.from(uniqueByName.values());
+}
+
+function buildAccountParams(
+  searchParams: URLSearchParams,
+  config: AccountQueryConfig,
+) {
   const page = normalizePage(searchParams.get("page"));
-  const pageSize = normalizePageSize(searchParams.get("page_size") ?? searchParams.get("pageSize"));
+  const pageSize = normalizePageSize(
+    searchParams.get("page_size") ?? searchParams.get("pageSize"),
+  );
   const search = asString(searchParams.get("q") ?? searchParams.get("search"));
   const status = asString(searchParams.get("status"));
   const params = new URLSearchParams();
@@ -178,16 +196,31 @@ function buildAccountParams(searchParams: URLSearchParams, config: AccountQueryC
   params.set("fields", config.fields.join(","));
 
   if (config.includeStatus && (status === "active" || status === "inactive")) {
-    params.set(`filter[_and][${filterIndex}][is_active][_eq]`, status === "active" ? "1" : "0");
+    params.set(
+      `filter[_and][${filterIndex}][is_active][_eq]`,
+      status === "active" ? "1" : "0",
+    );
     filterIndex += 1;
   }
 
   if (config.includeSearch && search) {
-    params.set(`filter[_and][${filterIndex}][_or][0][bank_name][_contains]`, search);
-    params.set(`filter[_and][${filterIndex}][_or][1][account_number][_contains]`, search);
-    params.set(`filter[_and][${filterIndex}][_or][2][branch][_contains]`, search);
+    params.set(
+      `filter[_and][${filterIndex}][_or][0][bank_name][_contains]`,
+      search,
+    );
+    params.set(
+      `filter[_and][${filterIndex}][_or][1][account_number][_contains]`,
+      search,
+    );
+    params.set(
+      `filter[_and][${filterIndex}][_or][2][branch][_contains]`,
+      search,
+    );
     if (config.includeContactSearch) {
-      params.set(`filter[_and][${filterIndex}][_or][3][contact_person][_contains]`, search);
+      params.set(
+        `filter[_and][${filterIndex}][_or][3][contact_person][_contains]`,
+        search,
+      );
     }
   }
 
@@ -198,7 +231,10 @@ function bankNameParams(includeActiveFilter: boolean) {
   const params = new URLSearchParams();
   params.set("limit", "-1");
   params.set("sort", "bank_name");
-  params.set("fields", includeActiveFilter ? "id,bank_name,is_active" : "id,bank_name");
+  params.set(
+    "fields",
+    includeActiveFilter ? "id,bank_name,is_active" : "id,bank_name",
+  );
   if (includeActiveFilter) params.set("filter[is_active][_eq]", "1");
   return params;
 }
@@ -216,7 +252,9 @@ async function getBankNames() {
     const res = await directusFetch<DirectusList<BankNameRow>>(
       `/items/bank_names?${bankNameParams(true).toString()}`,
     );
-    return (res.data ?? []).map(normalizeBankName).filter((bank) => bank.id > 0 && bank.bankName);
+    return uniqueBankNames(
+      (res.data ?? []).map(normalizeBankName).filter((bank) => bank.id > 0),
+    );
   } catch (error) {
     if (!isFieldAccessError(error, "is_active")) throw error;
 
@@ -224,14 +262,14 @@ async function getBankNames() {
       const res = await directusFetch<DirectusList<BankNameRow>>(
         `/items/bank_names?${bankNameParams(false).toString()}`,
       );
-      return (res.data ?? []).map(normalizeBankName).filter((bank) => bank.bankName);
+      return uniqueBankNames((res.data ?? []).map(normalizeBankName));
     } catch (fallbackError) {
       if (!isDirectusAccessError(fallbackError)) throw fallbackError;
 
       const res = await directusFetch<DirectusList<BankNameRow>>(
         `/items/bank_names?${bankNameOnlyParams().toString()}`,
       );
-      return (res.data ?? []).map(normalizeBankName).filter((bank) => bank.bankName);
+      return uniqueBankNames((res.data ?? []).map(normalizeBankName));
     }
   }
 }
@@ -245,18 +283,35 @@ async function getOptionalBankNames() {
   }
 }
 
-function assertBankName(bankName: string, bankNames: Array<{ bankName: string }>) {
-  if (!bankNames.some((bank) => bank.bankName.toLowerCase() === bankName.toLowerCase())) {
+function assertBankName(
+  bankName: string,
+  bankNames: Array<{ bankName: string }>,
+) {
+  if (
+    !bankNames.some(
+      (bank) => bank.bankName.toLowerCase() === bankName.toLowerCase(),
+    )
+  ) {
     throw new Error("Select a valid bank name from the bank names list");
   }
 }
 
-function normalizeCreatePayload(body: Record<string, unknown>, bankNames: Array<{ bankName: string }>, userId: number | null) {
-  const openingBalance = parseMoney(body.openingBalance ?? body.opening_balance);
+function normalizeCreatePayload(
+  body: Record<string, unknown>,
+  bankNames: Array<{ bankName: string }>,
+  userId: number | null,
+) {
+  const openingBalance = parseMoney(
+    body.openingBalance ?? body.opening_balance,
+  );
   const payload: NormalizedPayload = {
     bank_name: asString(body.bankName ?? body.bank_name),
-    account_number: sanitizeAccountNumber(body.accountNumber ?? body.account_number),
-    bank_description: nullableString(body.bankDescription ?? body.bank_description),
+    account_number: sanitizeAccountNumber(
+      body.accountNumber ?? body.account_number,
+    ),
+    bank_description: nullableString(
+      body.bankDescription ?? body.bank_description,
+    ),
     branch: asString(body.branch),
     ifsc_code: nullableString(body.ifscCode ?? body.ifsc_code),
     opening_balance: openingBalance ?? 0,
@@ -273,7 +328,8 @@ function normalizeCreatePayload(body: Record<string, unknown>, bankNames: Array<
   if (!payload.bank_name) throw new Error("Bank name is required");
   if (!payload.account_number) throw new Error("Account number is required");
   if (!payload.branch) throw new Error("Branch is required");
-  if (openingBalance === null) throw new Error("Opening balance must be a valid amount");
+  if (openingBalance === null)
+    throw new Error("Opening balance must be a valid amount");
   assertBankName(payload.bank_name, bankNames);
   return payload;
 }
@@ -285,66 +341,31 @@ async function fetchAccounts(searchParams: URLSearchParams) {
       includeStatus: true,
       includeContactSearch: true,
       includeSearch: true,
-      sort: "bank_name,account_number",
+      sort: bankIdNewestSort,
     },
     {
       fields: baseAccountFields,
       includeStatus: true,
       includeContactSearch: false,
       includeSearch: true,
-      sort: "bank_name,account_number",
+      sort: bankIdNewestSort,
     },
     {
       fields: minimalAccountFields,
       includeStatus: false,
       includeContactSearch: false,
       includeSearch: true,
-      sort: "bank_name,account_number",
+      sort: bankIdNewestSort,
     },
     {
-      fields: altFullAccountFields,
-      includeStatus: true,
-      includeContactSearch: true,
-      includeSearch: true,
-      sort: "bank_name,account_number",
-    },
-    {
-      fields: altBaseAccountFields,
-      includeStatus: true,
-      includeContactSearch: false,
-      includeSearch: true,
-      sort: "bank_name,account_number",
-    },
-    {
-      fields: altMinimalAccountFields,
-      includeStatus: false,
-      includeContactSearch: false,
-      includeSearch: true,
-      sort: "bank_name,account_number",
-    },
-    {
-      fields: ["id", "bank_name"],
+      fields: ["bank_id", "bank_name"],
       includeStatus: false,
       includeContactSearch: false,
       includeSearch: false,
       sort: "bank_name",
     },
     {
-      fields: ["id"],
-      includeStatus: false,
-      includeContactSearch: false,
-      includeSearch: false,
-      sort: null,
-    },
-    {
-      fields: ["bank_account_id", "bank_name"],
-      includeStatus: false,
-      includeContactSearch: false,
-      includeSearch: false,
-      sort: "bank_name",
-    },
-    {
-      fields: ["bank_account_id"],
+      fields: ["bank_id"],
       includeStatus: false,
       includeContactSearch: false,
       includeSearch: false,
@@ -367,10 +388,15 @@ async function fetchAccounts(searchParams: URLSearchParams) {
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error("Unable to load bank accounts");
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Unable to load bank accounts");
 }
 
-function removeInaccessibleCreateField(payload: Partial<NormalizedPayload>, error: unknown) {
+function removeInaccessibleCreateField(
+  payload: Partial<NormalizedPayload>,
+  error: unknown,
+) {
   for (const field of createOptionalFields) {
     if (field in payload && isFieldAccessError(error, field)) {
       delete payload[field];
@@ -386,16 +412,21 @@ async function createBankAccount(payload: NormalizedPayload) {
 
   for (let attempt = 0; attempt <= createOptionalFields.length; attempt += 1) {
     try {
-      return await directusFetch<DirectusItem<BankAccountRow>>("/items/bank_accounts", {
-        method: "POST",
-        body: JSON.stringify(nextPayload),
-      });
+      return await directusFetch<DirectusItem<BankAccountRow>>(
+        "/items/bank_accounts",
+        {
+          method: "POST",
+          body: JSON.stringify(nextPayload),
+        },
+      );
     } catch (error) {
       if (!removeInaccessibleCreateField(nextPayload, error)) throw error;
     }
   }
 
-  throw new Error("Unable to create bank account with the permitted Directus fields");
+  throw new Error(
+    "Unable to create bank account with the permitted Directus fields",
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -407,7 +438,9 @@ export async function GET(request: NextRequest) {
     const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
 
     return NextResponse.json({
-      accounts: (accountsRes.data ?? []).map(normalizeAccount).filter((account) => account.id > 0),
+      accounts: (accountsRes.data ?? [])
+        .map(normalizeAccount)
+        .filter((account) => account.bankId > 0),
       bankNames,
       pagination: {
         page: Math.min(query.page, totalPages),
@@ -425,13 +458,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
     const cookieStore = await cookies();
     const userId = getTokenUserId(cookieStore.get("vos_access_token")?.value);
     const bankNames = await getBankNames();
     const payload = normalizeCreatePayload(body, bankNames, userId);
     const res = await createBankAccount(payload);
-    return NextResponse.json({ account: normalizeAccount(res.data ?? {}) }, { status: 201 });
+    return NextResponse.json(
+      { account: normalizeAccount(res.data ?? {}) },
+      { status: 201 },
+    );
   } catch (error) {
     return jsonError(error);
   }

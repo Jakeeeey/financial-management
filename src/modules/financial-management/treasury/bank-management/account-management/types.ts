@@ -1,6 +1,6 @@
 // src/modules/financial-management/treasury/bank-management/account-management/types.ts
 export type BankAccount = {
-  id: number;
+  bankId: number;
   bankName: string;
   accountNumber: string;
   bankDescription: string;

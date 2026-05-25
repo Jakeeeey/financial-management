@@ -16,7 +16,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type BankAccountRow = {
-  id?: unknown;
+  bank_id?: unknown;
   bank_name?: unknown;
   account_number?: unknown;
   bank_description?: unknown;
@@ -56,7 +56,7 @@ function nullableString(value: unknown) {
 
 function normalizeAccount(row: BankAccountRow) {
   return {
-    id: asNumber(row.id) ?? 0,
+    bankId: asNumber(row.bank_id) ?? 0,
     bankName: asString(row.bank_name),
     accountNumber: asString(row.account_number),
     bankDescription: asString(row.bank_description),
@@ -84,7 +84,10 @@ function bankNameParams(includeActiveFilter: boolean) {
   const params = new URLSearchParams();
   params.set("limit", "-1");
   params.set("sort", "bank_name");
-  params.set("fields", includeActiveFilter ? "id,bank_name,is_active" : "id,bank_name");
+  params.set(
+    "fields",
+    includeActiveFilter ? "id,bank_name,is_active" : "id,bank_name",
+  );
   if (includeActiveFilter) params.set("filter[is_active][_eq]", "1");
   return params;
 }
@@ -94,19 +97,30 @@ async function getBankNames() {
     const res = await directusFetch<DirectusList<BankNameRow>>(
       `/items/bank_names?${bankNameParams(true).toString()}`,
     );
-    return (res.data ?? []).map(normalizeBankName).filter((bank) => bank.id > 0 && bank.bankName);
+    return (res.data ?? [])
+      .map(normalizeBankName)
+      .filter((bank) => bank.id > 0 && bank.bankName);
   } catch (error) {
     if (!isFieldAccessError(error, "is_active")) throw error;
 
     const res = await directusFetch<DirectusList<BankNameRow>>(
       `/items/bank_names?${bankNameParams(false).toString()}`,
     );
-    return (res.data ?? []).map(normalizeBankName).filter((bank) => bank.id > 0 && bank.bankName);
+    return (res.data ?? [])
+      .map(normalizeBankName)
+      .filter((bank) => bank.id > 0 && bank.bankName);
   }
 }
 
-function assertBankName(bankName: string, bankNames: Array<{ bankName: string }>) {
-  if (!bankNames.some((bank) => bank.bankName.toLowerCase() === bankName.toLowerCase())) {
+function assertBankName(
+  bankName: string,
+  bankNames: Array<{ bankName: string }>,
+) {
+  if (
+    !bankNames.some(
+      (bank) => bank.bankName.toLowerCase() === bankName.toLowerCase(),
+    )
+  ) {
     throw new Error("Select a valid bank name from the bank names list");
   }
 }
@@ -122,7 +136,9 @@ async function buildUpdatePayload(body: Record<string, unknown>) {
   }
 
   if ("accountNumber" in body || "account_number" in body) {
-    const accountNumber = sanitizeAccountNumber(body.accountNumber ?? body.account_number);
+    const accountNumber = sanitizeAccountNumber(
+      body.accountNumber ?? body.account_number,
+    );
     if (!accountNumber) throw new Error("Account number is required");
     payload.account_number = accountNumber;
   }
@@ -134,7 +150,9 @@ async function buildUpdatePayload(body: Record<string, unknown>) {
   }
 
   if ("bankDescription" in body || "bank_description" in body) {
-    payload.bank_description = nullableString(body.bankDescription ?? body.bank_description);
+    payload.bank_description = nullableString(
+      body.bankDescription ?? body.bank_description,
+    );
   }
 
   if ("ifscCode" in body || "ifsc_code" in body) {
@@ -145,17 +163,25 @@ async function buildUpdatePayload(body: Record<string, unknown>) {
   if ("city" in body) payload.city = nullableString(body.city);
   if ("baranggay" in body) payload.baranggay = nullableString(body.baranggay);
   if ("email" in body) payload.email = nullableString(body.email);
-  if ("mobileNo" in body || "mobile_no" in body) payload.mobile_no = nullableString(body.mobileNo ?? body.mobile_no);
+  if ("mobileNo" in body || "mobile_no" in body)
+    payload.mobile_no = nullableString(body.mobileNo ?? body.mobile_no);
   if ("contactPerson" in body || "contact_person" in body) {
-    payload.contact_person = nullableString(body.contactPerson ?? body.contact_person);
+    payload.contact_person = nullableString(
+      body.contactPerson ?? body.contact_person,
+    );
   }
-  if ("isActive" in body || "is_active" in body) payload.is_active = asBoolean(body.isActive ?? body.is_active) ? 1 : 0;
+  if ("isActive" in body || "is_active" in body)
+    payload.is_active = asBoolean(body.isActive ?? body.is_active) ? 1 : 0;
 
-  if (Object.keys(payload).length === 0) throw new Error("No account changes were provided");
+  if (Object.keys(payload).length === 0)
+    throw new Error("No account changes were provided");
   return payload;
 }
 
-function removeInaccessibleUpdateField(payload: Record<string, unknown>, error: unknown) {
+function removeInaccessibleUpdateField(
+  payload: Record<string, unknown>,
+  error: unknown,
+) {
   for (const field of updateOptionalFields) {
     if (field in payload && isFieldAccessError(error, field)) {
       delete payload[field];
@@ -166,35 +192,49 @@ function removeInaccessibleUpdateField(payload: Record<string, unknown>, error: 
   return false;
 }
 
-async function updateBankAccount(accountId: number, payload: Record<string, unknown>) {
+async function updateBankAccount(
+  bankId: number,
+  payload: Record<string, unknown>,
+) {
   const nextPayload = { ...payload };
 
   for (let attempt = 0; attempt <= updateOptionalFields.length; attempt += 1) {
     try {
-      return await directusFetch<DirectusItem<BankAccountRow>>(`/items/bank_accounts/${accountId}`, {
-        method: "PATCH",
-        body: JSON.stringify(nextPayload),
-      });
+      return await directusFetch<DirectusItem<BankAccountRow>>(
+        `/items/bank_accounts/${bankId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(nextPayload),
+        },
+      );
     } catch (error) {
       if (!removeInaccessibleUpdateField(nextPayload, error)) throw error;
       if (Object.keys(nextPayload).length === 0) throw error;
     }
   }
 
-  throw new Error("Unable to update bank account with the permitted Directus fields");
+  throw new Error(
+    "Unable to update bank account with the permitted Directus fields",
+  );
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
-    const { id } = await params;
-    const accountId = asNumber(id);
-    if (!accountId) {
-      return NextResponse.json({ error: "Invalid bank account id" }, { status: 400 });
+    const { id: bankIdParam } = await params;
+    const bankId = asNumber(bankIdParam);
+    if (!bankId) {
+      return NextResponse.json({ error: "Invalid bank_id" }, { status: 400 });
     }
 
-    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
     const payload = await buildUpdatePayload(body);
-    const res = await updateBankAccount(accountId, payload);
+    const res = await updateBankAccount(bankId, payload);
 
     return NextResponse.json({ account: normalizeAccount(res.data ?? {}) });
   } catch (error) {

@@ -2,10 +2,18 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Building2, FilterX, Loader2, Pencil, Plus, RefreshCw, Search } from "lucide-react";
+import { Building2, Check, ChevronsUpDown, FilterX, Loader2, Pencil, Plus, RefreshCw, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +31,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -62,6 +71,13 @@ type TextFieldProps = {
   required?: boolean;
   type?: string;
   onChange: (id: keyof AccountManagementFormValues, value: string) => void;
+};
+
+type BankNameSelectProps = {
+  bankNames: Array<{ bankName: string }>;
+  value: string;
+  disabled?: boolean;
+  onValueChange: (value: string) => void;
 };
 
 function sanitizeAccountNumber(value: string) {
@@ -132,6 +148,60 @@ function TextField({
   );
 }
 
+function BankNameSelect({
+  bankNames,
+  value,
+  disabled,
+  onValueChange,
+}: BankNameSelectProps) {
+  const [open, setOpen] = useState(false);
+  const selectedBank = bankNames.find((bank) => bank.bankName === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className={cn("w-full min-w-0 justify-between", !value && "text-muted-foreground")}
+        >
+          <span className="min-w-0 flex-1 truncate text-left">{selectedBank?.bankName || "Select bank"}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search bank..." />
+          <CommandList
+            className="max-h-64 overflow-y-auto"
+            onWheelCapture={(event) => event.stopPropagation()}
+          >
+            <CommandEmpty>No banks found.</CommandEmpty>
+            <CommandGroup>
+              {bankNames.map((bank) => (
+                <CommandItem
+                  key={bank.bankName}
+                  value={bank.bankName}
+                  onSelect={() => {
+                    onValueChange(bank.bankName);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === bank.bankName ? "opacity-100" : "opacity-0")} />
+                  {bank.bankName}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function AccountManagementModule() {
   const { data, loading, saving, error, loadAccounts, createAccount, updateAccount } = useAccountManagement();
   const [page, setPage] = useState(1);
@@ -197,7 +267,7 @@ export default function AccountManagementModule() {
     const saved = formMode === "create"
       ? await createAccount(normalizedValues)
       : editingAccount
-        ? await updateAccount(editingAccount.id, normalizedValues)
+        ? await updateAccount(editingAccount.bankId, normalizedValues)
         : false;
 
     if (!saved) return;
@@ -302,7 +372,7 @@ export default function AccountManagementModule() {
             <div className="border-b px-4 py-3 text-sm text-destructive">{error}</div>
           ) : null}
           <div className="overflow-x-auto">
-            <Table className="min-w-[980px] table-fixed">
+            <Table className="min-w-245 table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[18%]">Bank</TableHead>
@@ -331,25 +401,25 @@ export default function AccountManagementModule() {
                     </TableCell>
                   </TableRow>
                 ) : data.accounts.map((account) => (
-                  <TableRow key={account.id}>
+                  <TableRow key={account.bankId}>
                     <TableCell className="min-w-0 whitespace-normal">
                       <div className="min-w-0">
-                        <div className="break-words font-medium">{account.bankName || "N/A"}</div>
-                        <div className="mt-1 break-words text-xs text-muted-foreground">
+                        <div className="wrap-break-word font-medium">{account.bankName || "N/A"}</div>
+                        <div className="mt-1 wrap-break-word text-xs text-muted-foreground">
                           {account.bankDescription || "No description"}
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="break-words font-mono text-sm">{account.accountNumber || "N/A"}</TableCell>
-                    <TableCell className="whitespace-normal break-words">
+                    <TableCell className="wrap-break-word font-mono text-sm">{account.accountNumber || "N/A"}</TableCell>
+                    <TableCell className="whitespace-normal wrap-break-word">
                       <div>{account.branch || "N/A"}</div>
                       <div className="mt-1 text-xs text-muted-foreground">
                         {[account.city, account.province].filter(Boolean).join(", ") || "No location"}
                       </div>
                     </TableCell>
-                    <TableCell className="break-words">{account.ifscCode || "N/A"}</TableCell>
+                    <TableCell className="wrap-break-word">{account.ifscCode || "N/A"}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatMoney(account.openingBalance)}</TableCell>
-                    <TableCell className="whitespace-normal break-words">
+                    <TableCell className="whitespace-normal wrap-break-word">
                       <div>{account.contactPerson || "N/A"}</div>
                       <div className="mt-1 text-xs text-muted-foreground">{account.mobileNo || account.email || "No contact"}</div>
                     </TableCell>
@@ -358,7 +428,7 @@ export default function AccountManagementModule() {
                         checked={account.isActive}
                         disabled={saving}
                         onCheckedChange={async (checked) => {
-                          const saved = await updateAccount(account.id, { isActive: checked });
+                          const saved = await updateAccount(account.bankId, { isActive: checked });
                           if (saved) await reloadCurrentPage();
                         }}
                         aria-label={`Toggle ${account.bankName} active status`}
@@ -423,16 +493,16 @@ export default function AccountManagementModule() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!saving) setDialogOpen(open); }}>
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-hidden p-0">
-          <form onSubmit={submitForm} className="flex max-h-[90vh] flex-col">
-            <DialogHeader className="border-b p-6 pb-4">
+        <DialogContent className="flex max-h-[calc(100vh-2rem)] max-w-4xl flex-col overflow-hidden p-0">
+          <form onSubmit={submitForm} className="flex min-h-0 max-h-[calc(100vh-2rem)] flex-col">
+            <DialogHeader className="shrink-0 border-b p-6 pb-4">
               <DialogTitle>{formMode === "create" ? "New Bank Account" : "Edit Bank Account"}</DialogTitle>
               <DialogDescription>
                 {formMode === "create" ? "Create a corporate bank account record." : "Update corporate bank account details."}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-5 overflow-y-auto p-6">
+            <div className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto overscroll-contain p-6">
               {formError ? (
                 <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {formError}
@@ -442,20 +512,13 @@ export default function AccountManagementModule() {
               <section className="grid gap-4">
                 <h2 className="text-sm font-semibold">Account Details</h2>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <div className="grid gap-1.5">
+                  <div className="grid min-w-0 gap-1.5">
                     <Label>Bank Name *</Label>
-                    <SearchableSelect
+                    <BankNameSelect
+                      bankNames={data.bankNames}
                       value={formValues.bankName}
                       disabled={saving}
                       onValueChange={(value) => updateFormValue("bankName", value)}
-                      options={[
-                        { value: "", label: "Select bank" },
-                        ...data.bankNames.map((bank) => ({
-                          value: bank.bankName,
-                          label: bank.bankName,
-                        })),
-                      ]}
-                      placeholder="Select bank"
                     />
                   </div>
                   <TextField
@@ -514,7 +577,7 @@ export default function AccountManagementModule() {
               </section>
             </div>
 
-            <DialogFooter className="border-t p-6 pt-4">
+            <DialogFooter className="shrink-0 border-t p-6 pt-4">
               <Button type="button" variant="outline" disabled={saving} onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
