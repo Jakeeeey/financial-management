@@ -4,6 +4,8 @@ import type {
   AccountManagementFormValues,
   AccountStatusFilter,
   BankAccount,
+  BankNameOption,
+  CreateBankNameResult,
   PsgcOption,
 } from "../types";
 
@@ -76,6 +78,56 @@ export const accountManagementApi = {
       "Failed to update bank account",
     );
     return json.account;
+  },
+
+  async createBankName(
+    bankName: string,
+    allowDuplicate = false,
+  ): Promise<CreateBankNameResult> {
+    const res = await fetch(`${BASE}/bank-names`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bankName, allowDuplicate }),
+    });
+    const json = await res.json().catch(() => null);
+
+    if (res.status === 409 && json && typeof json === "object") {
+      const body = json as {
+        bankName?: unknown;
+        duplicate?: unknown;
+        message?: unknown;
+      };
+
+      if (body.duplicate) {
+        return {
+          status: "duplicate",
+          bankName: String(body.bankName ?? bankName).trim(),
+          message: String(
+            body.message ?? "A bank name with this value already exists",
+          ),
+        };
+      }
+    }
+
+    if (!res.ok) {
+      const message =
+        json && typeof json === "object" && "error" in json
+          ? String(
+              (json as { error?: unknown }).error ?? "Failed to add bank name",
+            )
+          : json && typeof json === "object" && "message" in json
+            ? String(
+                (json as { message?: unknown }).message ??
+                  "Failed to add bank name",
+              )
+            : "Failed to add bank name";
+      throw new Error(message);
+    }
+
+    return {
+      status: "created",
+      bankName: (json as { bankName: BankNameOption }).bankName,
+    };
   },
 
   async getPsgcOptions(query: {

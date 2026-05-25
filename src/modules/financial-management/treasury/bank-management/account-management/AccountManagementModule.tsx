@@ -1,6 +1,16 @@
 // src/modules/financial-management/treasury/bank-management/account-management/AccountManagementModule.tsx
 "use client";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -37,6 +47,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Building2, Check, ChevronsUpDown, FilterX, Loader2, Pencil, Plus, RefreshCw, Search } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useAccountManagement } from "./hooks/useAccountManagement";
 import { accountManagementApi } from "./providers/accountManagementApi";
 import type {
@@ -324,6 +335,11 @@ export default function AccountManagementModule() {
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [formValues, setFormValues] = useState<AccountManagementFormValues>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
+  const [bankNameDialogOpen, setBankNameDialogOpen] = useState(false);
+  const [bankNameInput, setBankNameInput] = useState("");
+  const [bankNameError, setBankNameError] = useState<string | null>(null);
+  const [bankNameSaving, setBankNameSaving] = useState(false);
+  const [duplicateBankName, setDuplicateBankName] = useState<string | null>(null);
   const [provinceOptions, setProvinceOptions] = useState<PsgcOption[]>([]);
   const [cityOptions, setCityOptions] = useState<PsgcOption[]>([]);
   const [barangayOptions, setBarangayOptions] = useState<PsgcOption[]>([]);
@@ -521,6 +537,51 @@ export default function AccountManagementModule() {
 
   async function reloadCurrentPage() {
     await loadAccounts({ page, pageSize: PAGE_SIZE, search, status });
+  }
+
+  function openBankNameDialog() {
+    setBankNameInput("");
+    setBankNameError(null);
+    setDuplicateBankName(null);
+    setBankNameDialogOpen(true);
+  }
+
+  async function submitBankName(allowDuplicate = false) {
+    const bankName = bankNameInput.trim().replace(/\s+/g, " ");
+
+    if (!bankName) {
+      setBankNameError("Bank name is required");
+      return;
+    }
+
+    try {
+      setBankNameSaving(true);
+      setBankNameError(null);
+      const result = await accountManagementApi.createBankName(
+        bankName,
+        allowDuplicate,
+      );
+
+      if (result.status === "duplicate") {
+        setDuplicateBankName(result.bankName);
+        return;
+      }
+
+      updateFormValue("bankName", result.bankName.bankName || bankName);
+      setBankNameInput("");
+      setBankNameDialogOpen(false);
+      setDuplicateBankName(null);
+      toast.success("Bank name added");
+      await reloadCurrentPage();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to add bank name";
+      setDuplicateBankName(null);
+      setBankNameError(message);
+      toast.error(message);
+    } finally {
+      setBankNameSaving(false);
+    }
   }
 
   async function submitForm(event: FormEvent<HTMLFormElement>) {
@@ -789,7 +850,19 @@ export default function AccountManagementModule() {
                 <h2 className="text-sm font-semibold">Account Details</h2>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="grid min-w-0 gap-1.5">
-                    <Label>Bank Name *</Label>
+                    <div className="flex items-center justify-between gap-2">
+                      <Label>Bank Name *</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        disabled={saving || bankNameSaving}
+                        onClick={openBankNameDialog}
+                      >
+                        <Plus />
+                        Add bank
+                      </Button>
+                    </div>
                     <BankNameSelect
                       bankNames={data.bankNames}
                       value={formValues.bankName}
@@ -902,6 +975,94 @@ export default function AccountManagementModule() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={bankNameDialogOpen}
+        onOpenChange={(open) => {
+          if (bankNameSaving) return;
+          setBankNameDialogOpen(open);
+          if (!open) {
+            setBankNameError(null);
+            setDuplicateBankName(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitBankName();
+            }}
+            className="grid gap-4"
+          >
+            <DialogHeader>
+              <DialogTitle>Add Bank Name</DialogTitle>
+              <DialogDescription>
+                Add a bank name to the selectable bank list.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-1.5">
+              <Label htmlFor="newBankName">Bank Name *</Label>
+              <Input
+                id="newBankName"
+                value={bankNameInput}
+                disabled={bankNameSaving}
+                autoComplete="off"
+                onChange={(event) => setBankNameInput(event.target.value)}
+              />
+              {bankNameError ? (
+                <p className="text-sm text-destructive">{bankNameError}</p>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={bankNameSaving}
+                onClick={() => setBankNameDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={bankNameSaving}>
+                {bankNameSaving ? <Loader2 className="animate-spin" /> : null}
+                Add Bank Name
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={Boolean(duplicateBankName)}
+        onOpenChange={(open) => {
+          if (!open && !bankNameSaving) setDuplicateBankName(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bank name already exists</AlertDialogTitle>
+            <AlertDialogDescription>
+              {duplicateBankName} is already in the bank names list. Do you
+              still want to add another record with this bank name?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bankNameSaving}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={bankNameSaving}
+              onClick={(event) => {
+                event.preventDefault();
+                void submitBankName(true);
+              }}
+            >
+              {bankNameSaving ? <Loader2 className="animate-spin" /> : null}
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
