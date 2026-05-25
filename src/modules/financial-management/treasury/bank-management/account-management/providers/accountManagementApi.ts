@@ -4,6 +4,7 @@ import type {
   AccountManagementFormValues,
   AccountStatusFilter,
   BankAccount,
+  PsgcOption,
 } from "../types";
 
 const BASE = "/api/fm/treasury/bank-management/account-management";
@@ -75,5 +76,24 @@ export const accountManagementApi = {
       "Failed to update bank account",
     );
     return json.account;
+  },
+
+  async getPsgcOptions(query: {
+    kind: "provinces" | "cities" | "barangays";
+    provinceCode?: string;
+    cityCode?: string;
+  }): Promise<PsgcOption[]> {
+    const params = new URLSearchParams({ kind: query.kind });
+    if (query.provinceCode) params.set("province_code", query.provinceCode);
+    if (query.cityCode) params.set("city_code", query.cityCode);
+
+    const res = await fetch(`${BASE}/psgc?${params.toString()}`, {
+      cache: "no-store",
+    });
+    const json = await parseResponse<{ options: PsgcOption[] }>(
+      res,
+      "Failed to load PSGC address data",
+    );
+    return json.options;
   },
 };

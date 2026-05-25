@@ -22,6 +22,13 @@ export type BankNameOption = {
   isActive?: boolean;
 };
 
+export type PsgcOption = {
+  code: string;
+  name: string;
+  provinceCode?: string;
+  cityCode?: string;
+};
+
 export type AccountManagementPagination = {
   page: number;
   pageSize: number;

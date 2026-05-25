@@ -1,8 +1,6 @@
 // src/modules/financial-management/treasury/bank-management/account-management/AccountManagementModule.tsx
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Building2, Check, ChevronsUpDown, FilterX, Loader2, Pencil, Plus, RefreshCw, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -37,11 +35,15 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { Building2, Check, ChevronsUpDown, FilterX, Loader2, Pencil, Plus, RefreshCw, Search } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccountManagement } from "./hooks/useAccountManagement";
+import { accountManagementApi } from "./providers/accountManagementApi";
 import type {
   AccountManagementFormValues,
   AccountStatusFilter,
   BankAccount,
+  PsgcOption,
 } from "./types";
 
 const PAGE_SIZE = 10;
@@ -78,6 +80,30 @@ type BankNameSelectProps = {
   value: string;
   disabled?: boolean;
   onValueChange: (value: string) => void;
+};
+
+type PsgcSelectProps = {
+  options: PsgcOption[];
+  value: string;
+  placeholder: string;
+  searchPlaceholder: string;
+  emptyText: string;
+  disabled?: boolean;
+  loading?: boolean;
+  onOpen?: () => void;
+  onSelect: (option: PsgcOption) => void;
+};
+
+type LocationCodes = {
+  provinceCode: string;
+  cityCode: string;
+  barangayCode: string;
+};
+
+type PsgcLoadingState = {
+  provinces: boolean;
+  cities: boolean;
+  barangays: boolean;
 };
 
 function sanitizeAccountNumber(value: string) {
@@ -202,6 +228,92 @@ function BankNameSelect({
   );
 }
 
+function PsgcSelect({
+  options,
+  value,
+  placeholder,
+  searchPlaceholder,
+  emptyText,
+  disabled,
+  loading,
+  onOpen,
+  onSelect,
+}: PsgcSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selectedOption = options.find((option) => option.name === value);
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleOptions = (normalizedQuery
+    ? options.filter((option) =>
+      `${option.name} ${option.code}`.toLowerCase().includes(normalizedQuery),
+    )
+    : options
+  ).slice(0, 100);
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) {
+          setQuery("");
+          onOpen?.();
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className={cn("w-full min-w-0 justify-between", !value && "text-muted-foreground")}
+        >
+          <span className="min-w-0 flex-1 truncate text-left">
+            {selectedOption?.name || value || placeholder}
+          </span>
+          {loading ? (
+            <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin opacity-70" />
+          ) : (
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder={searchPlaceholder}
+          />
+          <CommandList
+            className="max-h-64 overflow-y-auto"
+            onWheelCapture={(event) => event.stopPropagation()}
+          >
+            <CommandEmpty>{loading ? "Loading..." : emptyText}</CommandEmpty>
+            <CommandGroup>
+              {visibleOptions.map((option) => (
+                <CommandItem
+                  key={option.code}
+                  value={`${option.name} ${option.code}`}
+                  onSelect={() => {
+                    onSelect(option);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === option.name ? "opacity-100" : "opacity-0")} />
+                  <span className="truncate">{option.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function AccountManagementModule() {
   const { data, loading, saving, error, loadAccounts, createAccount, updateAccount } = useAccountManagement();
   const [page, setPage] = useState(1);
@@ -212,10 +324,73 @@ export default function AccountManagementModule() {
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [formValues, setFormValues] = useState<AccountManagementFormValues>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
+  const [provinceOptions, setProvinceOptions] = useState<PsgcOption[]>([]);
+  const [cityOptions, setCityOptions] = useState<PsgcOption[]>([]);
+  const [barangayOptions, setBarangayOptions] = useState<PsgcOption[]>([]);
+  const [locationCodes, setLocationCodes] = useState<LocationCodes>({
+    provinceCode: "",
+    cityCode: "",
+    barangayCode: "",
+  });
+  const [psgcLoading, setPsgcLoading] = useState<PsgcLoadingState>({
+    provinces: false,
+    cities: false,
+    barangays: false,
+  });
+  const [psgcError, setPsgcError] = useState<string | null>(null);
+  const psgcSeqRef = useRef({ provinces: 0, cities: 0, barangays: 0 });
 
   const activeCount = useMemo(() => data.accounts.filter((account) => account.isActive).length, [data.accounts]);
   const inactiveCount = data.accounts.length - activeCount;
   const totalPages = Math.max(1, data.pagination.totalPages);
+  const selectedCity = useMemo(
+    () => cityOptions.find((city) => city.code === locationCodes.cityCode),
+    [cityOptions, locationCodes.cityCode],
+  );
+  const selectedProvince = useMemo(
+    () => provinceOptions.find((province) => province.code === locationCodes.provinceCode),
+    [provinceOptions, locationCodes.provinceCode],
+  );
+  const displayedProvinceOptions = useMemo(() => {
+    if (locationCodes.cityCode || locationCodes.barangayCode) {
+      return selectedProvince ? [selectedProvince] : [];
+    }
+    return provinceOptions;
+  }, [locationCodes.barangayCode, locationCodes.cityCode, provinceOptions, selectedProvince]);
+  const displayedCityOptions = useMemo(() => {
+    if (locationCodes.barangayCode) {
+      return selectedCity ? [selectedCity] : [];
+    }
+    return cityOptions;
+  }, [cityOptions, locationCodes.barangayCode, selectedCity]);
+
+  const loadPsgcOptions = useCallback(async (
+    kind: "provinces" | "cities" | "barangays",
+    filters: { provinceCode?: string; cityCode?: string } = {},
+  ) => {
+    const seq = psgcSeqRef.current[kind] + 1;
+    psgcSeqRef.current[kind] = seq;
+
+    setPsgcLoading((current) => ({ ...current, [kind]: true }));
+    setPsgcError(null);
+
+    try {
+      const options = await accountManagementApi.getPsgcOptions({ kind, ...filters });
+      if (seq !== psgcSeqRef.current[kind]) return options;
+
+      if (kind === "provinces") setProvinceOptions(options);
+      if (kind === "cities") setCityOptions(options);
+      if (kind === "barangays") setBarangayOptions(options);
+      return options;
+    } catch {
+      if (seq === psgcSeqRef.current[kind]) {
+        setPsgcError("Failed to load PSGC address data");
+      }
+      return [];
+    } finally {
+      setPsgcLoading((current) => ({ ...current, [kind]: false }));
+    }
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -224,6 +399,29 @@ export default function AccountManagementModule() {
 
     return () => window.clearTimeout(timer);
   }, [loadAccounts, page, search, status]);
+
+  useEffect(() => {
+    if (!dialogOpen) return;
+
+    void loadPsgcOptions("provinces");
+    void loadPsgcOptions("cities");
+  }, [dialogOpen, loadPsgcOptions]);
+
+  useEffect(() => {
+    if (!locationCodes.provinceCode || formValues.province) return;
+    const province = provinceOptions.find((option) => option.code === locationCodes.provinceCode);
+    if (province) {
+      setFormValues((current) => ({ ...current, province: province.name }));
+    }
+  }, [formValues.province, locationCodes.provinceCode, provinceOptions]);
+
+  useEffect(() => {
+    if (!locationCodes.cityCode || formValues.city) return;
+    const city = cityOptions.find((option) => option.code === locationCodes.cityCode);
+    if (city) {
+      setFormValues((current) => ({ ...current, city: city.name }));
+    }
+  }, [cityOptions, formValues.city, locationCodes.cityCode]);
 
   function updateFormValue(id: keyof AccountManagementFormValues, value: string) {
     setFormValues((current) => ({
@@ -237,6 +435,8 @@ export default function AccountManagementModule() {
     setEditingAccount(null);
     setFormValues(emptyForm);
     setFormError(null);
+    setPsgcError(null);
+    setLocationCodes({ provinceCode: "", cityCode: "", barangayCode: "" });
     setDialogOpen(true);
   }
 
@@ -245,7 +445,78 @@ export default function AccountManagementModule() {
     setEditingAccount(account);
     setFormValues(accountToForm(account));
     setFormError(null);
+    setPsgcError(null);
+    setLocationCodes({ provinceCode: "", cityCode: "", barangayCode: "" });
     setDialogOpen(true);
+  }
+
+  function selectProvince(option: PsgcOption) {
+    setLocationCodes({
+      provinceCode: option.code,
+      cityCode: "",
+      barangayCode: "",
+    });
+    setFormValues((current) => ({
+      ...current,
+      province: option.name,
+      city: "",
+      baranggay: "",
+    }));
+    void loadPsgcOptions("cities", { provinceCode: option.code });
+    void loadPsgcOptions("barangays", { provinceCode: option.code });
+  }
+
+  function selectCity(option: PsgcOption) {
+    const province = provinceOptions.find((item) => item.code === option.provinceCode);
+
+    setLocationCodes({
+      provinceCode: option.provinceCode || "",
+      cityCode: option.code,
+      barangayCode: "",
+    });
+    setFormValues((current) => ({
+      ...current,
+      province: province?.name || "",
+      city: option.name,
+      baranggay: "",
+    }));
+    if (option.provinceCode) {
+      void loadPsgcOptions("cities", { provinceCode: option.provinceCode });
+    }
+    void loadPsgcOptions("barangays", { cityCode: option.code });
+  }
+
+  function selectBarangay(option: PsgcOption) {
+    const city = cityOptions.find((item) => item.code === option.cityCode);
+    const province = provinceOptions.find((item) => item.code === (city?.provinceCode || option.provinceCode));
+
+    setLocationCodes({
+      provinceCode: city?.provinceCode || option.provinceCode || "",
+      cityCode: city?.code || option.cityCode || "",
+      barangayCode: option.code,
+    });
+    setFormValues((current) => ({
+      ...current,
+      province: province?.name || current.province,
+      city: city?.name || current.city,
+      baranggay: option.name,
+    }));
+  }
+
+  function loadBarangaysForCurrentLocation() {
+    if (locationCodes.cityCode) {
+      void loadPsgcOptions("barangays", { cityCode: locationCodes.cityCode });
+      return;
+    }
+
+    if (locationCodes.provinceCode) {
+      void loadPsgcOptions("barangays", { provinceCode: locationCodes.provinceCode });
+      return;
+    }
+
+    if (barangayOptions.length === 0) {
+      void loadPsgcOptions("barangays");
+    }
   }
 
   async function reloadCurrentPage() {
@@ -508,6 +779,11 @@ export default function AccountManagementModule() {
                   {formError}
                 </div>
               ) : null}
+              {psgcError ? (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {psgcError}
+                </div>
+              ) : null}
 
               <section className="grid gap-4">
                 <h2 className="text-sm font-semibold">Account Details</h2>
@@ -561,9 +837,46 @@ export default function AccountManagementModule() {
                 <h2 className="text-sm font-semibold">Branch Location</h2>
                 <div className="grid gap-4 md:grid-cols-2">
                   <TextField id="branch" label="Branch Name" value={formValues.branch} disabled={saving} required onChange={updateFormValue} />
-                  <TextField id="province" label="Province" value={formValues.province} disabled={saving} onChange={updateFormValue} />
-                  <TextField id="city" label="City" value={formValues.city} disabled={saving} onChange={updateFormValue} />
-                  <TextField id="baranggay" label="Baranggay" value={formValues.baranggay} disabled={saving} onChange={updateFormValue} />
+                  <div className="grid min-w-0 gap-1.5">
+                    <Label>Province</Label>
+                    <PsgcSelect
+                      options={displayedProvinceOptions}
+                      value={formValues.province}
+                      disabled={saving || psgcLoading.provinces || displayedProvinceOptions.length === 0}
+                      loading={psgcLoading.provinces}
+                      placeholder="Select province"
+                      searchPlaceholder="Search province..."
+                      emptyText="No provinces found."
+                      onSelect={selectProvince}
+                    />
+                  </div>
+                  <div className="grid min-w-0 gap-1.5">
+                    <Label>City / Municipality</Label>
+                    <PsgcSelect
+                      options={displayedCityOptions}
+                      value={formValues.city}
+                      disabled={saving || psgcLoading.cities || displayedCityOptions.length === 0}
+                      loading={psgcLoading.cities}
+                      placeholder="Select city or municipality"
+                      searchPlaceholder="Search city or municipality..."
+                      emptyText="No cities or municipalities found."
+                      onSelect={selectCity}
+                    />
+                  </div>
+                  <div className="grid min-w-0 gap-1.5">
+                    <Label>Barangay</Label>
+                    <PsgcSelect
+                      options={barangayOptions}
+                      value={formValues.baranggay}
+                      disabled={saving || psgcLoading.barangays || psgcLoading.cities}
+                      loading={psgcLoading.barangays}
+                      placeholder="Select barangay"
+                      searchPlaceholder="Search barangay..."
+                      emptyText="No barangays found."
+                      onOpen={loadBarangaysForCurrentLocation}
+                      onSelect={selectBarangay}
+                    />
+                  </div>
                 </div>
               </section>
 
