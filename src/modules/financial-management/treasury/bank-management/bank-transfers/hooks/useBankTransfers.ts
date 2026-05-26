@@ -12,6 +12,7 @@ import type {
 const emptyData: BankTransfersData = {
   transfers: [],
   banks: [],
+  paymentMethods: [],
   pagination: {
     page: 1,
     pageSize: 10,

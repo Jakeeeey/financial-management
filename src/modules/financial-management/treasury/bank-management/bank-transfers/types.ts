@@ -7,11 +7,21 @@ export type BankTransferBank = {
   branch: string;
   label: string;
   isActive: boolean;
+  currentBalance?: number;
+};
+
+export type BankTransferPaymentMethod = {
+  methodId: number;
+  methodName: string;
+  isActive: boolean;
 };
 
 export type BankTransfer = {
   transferId: number;
   transferNo: string;
+  referenceNumber: string;
+  transactionTypeId: number;
+  transactionTypeName: string;
   transferDate: string;
   sourceBankId: number;
   sourceBankName: string;
@@ -40,6 +50,7 @@ export type BankTransfersPagination = {
 export type BankTransfersData = {
   transfers: BankTransfer[];
   banks: BankTransferBank[];
+  paymentMethods: BankTransferPaymentMethod[];
   pagination: BankTransfersPagination;
 };
 
@@ -56,6 +67,8 @@ export type BankTransferQuery = {
 
 export type BankTransferFormValues = {
   transferDate: string;
+  referenceNumber: string;
+  transactionTypeId: string;
   sourceBankId: string;
   destinationBankId: string;
   amount: string;

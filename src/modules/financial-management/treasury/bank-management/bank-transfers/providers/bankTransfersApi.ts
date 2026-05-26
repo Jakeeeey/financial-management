@@ -54,6 +54,8 @@ export const bankTransfersApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         transferDate: payload.transferDate,
+        referenceNumber: payload.referenceNumber,
+        transactionTypeId: Number(payload.transactionTypeId),
         sourceBankId: Number(payload.sourceBankId),
         destinationBankId: Number(payload.destinationBankId),
         amount: payload.amount,

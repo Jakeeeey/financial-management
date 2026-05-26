@@ -14,22 +14,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -39,7 +23,6 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -55,12 +38,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeftRight,
   Check,
-  ChevronsUpDown,
   Clock3,
   Loader2,
   Plus,
@@ -68,11 +49,11 @@ import {
   Search,
   XCircle,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { BankTransferDialog } from "./components/BankTransferDialog";
 import { useBankTransfers } from "./hooks/useBankTransfers";
 import type {
   BankTransfer,
-  BankTransferBank,
   BankTransferFormValues,
   TransferStatus,
 } from "./types";
@@ -85,24 +66,6 @@ const statuses: Array<TransferStatus | "ALL"> = [
   "COMPLETED",
   "CANCELLED",
 ];
-
-const emptyForm: BankTransferFormValues = {
-  transferDate: new Date().toISOString().slice(0, 10),
-  sourceBankId: "",
-  destinationBankId: "",
-  amount: "",
-  transferFee: "0.00",
-  remarks: "",
-};
-
-type BankSelectProps = {
-  banks: BankTransferBank[];
-  value: string;
-  placeholder: string;
-  disabled?: boolean;
-  excludeBankId?: string;
-  onValueChange: (value: string) => void;
-};
 
 type PendingStatusChange = {
   transfer: BankTransfer;
@@ -151,87 +114,8 @@ function statusActions(status: TransferStatus) {
   return [];
 }
 
-function validateForm(values: BankTransferFormValues) {
-  const amount = Number(values.amount);
-  const transferFee = Number(values.transferFee || 0);
-
-  if (!values.transferDate) return "Transfer date is required";
-  if (!values.sourceBankId) return "Source bank is required";
-  if (!values.destinationBankId) return "Destination bank is required";
-  if (values.sourceBankId === values.destinationBankId) {
-    return "Source and destination banks must be different";
-  }
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return "Amount must be greater than zero";
-  }
-  if (!Number.isFinite(transferFee) || transferFee < 0) {
-    return "Transfer fee cannot be negative";
-  }
-  return null;
-}
-
-function BankSelect({
-  banks,
-  value,
-  placeholder,
-  disabled,
-  excludeBankId,
-  onValueChange,
-}: BankSelectProps) {
-  const [open, setOpen] = useState(false);
-  const selectedBank = banks.find((bank) => String(bank.bankId) === value);
-  const visibleBanks = banks.filter((bank) => String(bank.bankId) !== excludeBankId);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className={cn("w-full min-w-0 justify-between", !value && "text-muted-foreground")}
-        >
-          <span className="min-w-0 flex-1 truncate text-left">
-            {selectedBank?.label || placeholder}
-          </span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search bank..." />
-          <CommandList
-            className="max-h-64 overflow-y-auto"
-            onWheelCapture={(event) => event.stopPropagation()}
-          >
-            <CommandEmpty>No banks found.</CommandEmpty>
-            <CommandGroup>
-              {visibleBanks.map((bank) => (
-                <CommandItem
-                  key={bank.bankId}
-                  value={bank.label}
-                  onSelect={() => {
-                    onValueChange(String(bank.bankId));
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      value === String(bank.bankId) ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                  <span className="truncate">{bank.label}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
+function displayText(value: string) {
+  return value?.trim() || "N/A";
 }
 
 export default function BankTransfersModule() {
@@ -252,8 +136,6 @@ export default function BankTransfersModule() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [formValues, setFormValues] = useState<BankTransferFormValues>(emptyForm);
-  const [formError, setFormError] = useState<string | null>(null);
   const [pendingStatus, setPendingStatus] = useState<PendingStatusChange>(null);
 
   const totalPages = Math.max(1, data.pagination.totalPages);
@@ -297,22 +179,7 @@ export default function BankTransfersModule() {
     status,
   ]);
 
-  function updateFormValue(id: keyof BankTransferFormValues, value: string) {
-    setFormValues((current) => ({
-      ...current,
-      [id]: value,
-      ...(id === "sourceBankId" && value === current.destinationBankId
-        ? { destinationBankId: "" }
-        : {}),
-      ...(id === "destinationBankId" && value === current.sourceBankId
-        ? { sourceBankId: "" }
-        : {}),
-    }));
-  }
-
   function openCreateDialog() {
-    setFormValues(emptyForm);
-    setFormError(null);
     setDialogOpen(true);
   }
 
@@ -330,20 +197,13 @@ export default function BankTransfersModule() {
     });
   }
 
-  async function submitForm(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const validationError = validateForm(formValues);
-    if (validationError) {
-      setFormError(validationError);
-      return;
-    }
+  async function handleCreateTransfer(values: BankTransferFormValues) {
+    const saved = await createTransfer(values);
+    if (!saved) return false;
 
-    const saved = await createTransfer(formValues);
-    if (!saved) return;
-
-    setDialogOpen(false);
     setPage(1);
     await reloadCurrentPage(1);
+    return true;
   }
 
   async function confirmStatusChange() {
@@ -392,7 +252,7 @@ export default function BankTransfersModule() {
                   <Input
                     id="transferSearch"
                     value={search}
-                    placeholder="Transfer no. or remarks"
+                    placeholder="Transfer no., reference no., or remarks"
                     className="pl-9"
                     onChange={(event) => {
                       setSearch(event.target.value);
@@ -516,57 +376,67 @@ export default function BankTransfersModule() {
           ) : null}
 
           <div className="hidden md:block">
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Transfer No.</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Destination</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Fee</TableHead>
-                  <TableHead className="text-right">Outflow</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
+                  <TableHead className="w-[22%] whitespace-normal">Transfer</TableHead>
+                  <TableHead className="w-[11%] whitespace-normal">Date</TableHead>
+                  <TableHead className="w-[25%] whitespace-normal">Route</TableHead>
+                  <TableHead className="w-[18%] whitespace-normal text-right">Amounts</TableHead>
+                  <TableHead className="w-[11%] whitespace-normal">Status</TableHead>
+                  <TableHead className="w-[13%] whitespace-normal text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
                       <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
                       Loading transfers...
                     </TableCell>
                   </TableRow>
                 ) : data.transfers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
                       No bank transfers found.
                     </TableCell>
                   </TableRow>
                 ) : (
                   data.transfers.map((transfer) => (
                     <TableRow key={transfer.transferId}>
-                      <TableCell className="font-medium">{transfer.transferNo}</TableCell>
-                      <TableCell>{formatDate(transfer.transferDate)}</TableCell>
-                      <TableCell className="max-w-56 truncate">{transfer.sourceBankLabel}</TableCell>
-                      <TableCell className="max-w-56 truncate">{transfer.destinationBankLabel}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatMoney(transfer.amount)}
+                      <TableCell className="min-w-0 whitespace-normal align-top">
+                        <p className="break-all font-medium">{transfer.transferNo}</p>
+                        <p className="mt-1 break-all text-xs text-muted-foreground">
+                          Ref: {displayText(transfer.referenceNumber)}
+                        </p>
+                        <p className="break-words text-xs text-muted-foreground">
+                          {displayText(transfer.transactionTypeName)}
+                        </p>
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatMoney(transfer.transferFee)}
+                      <TableCell className="whitespace-normal align-top">
+                        {formatDate(transfer.transferDate)}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatMoney(transfer.totalOutflow)}
+                      <TableCell className="min-w-0 whitespace-normal align-top">
+                        <p className="break-words font-medium">{transfer.sourceBankLabel}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">to</p>
+                        <p className="break-words">{transfer.destinationBankLabel}</p>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal text-right align-top text-sm tabular-nums">
+                        <p>{formatMoney(transfer.amount)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Fee: {formatMoney(transfer.transferFee)}
+                        </p>
+                        <p className="font-medium">
+                          Outflow: {formatMoney(transfer.totalOutflow)}
+                        </p>
+                      </TableCell>
+                      <TableCell className="whitespace-normal align-top">
                         <Badge variant={statusBadgeVariant(transfer.status)}>
                           {transfer.status}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <div className="flex justify-end gap-2">
+                      <TableCell className="whitespace-normal align-top">
+                        <div className="flex flex-wrap justify-end gap-2">
                           {statusActions(transfer.status).map((action) => (
                             <Button
                               key={action.status}
@@ -616,6 +486,16 @@ export default function BankTransfersModule() {
                     </Badge>
                   </div>
                   <div className="grid gap-2 text-sm">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <p className="text-muted-foreground">Reference</p>
+                        <p className="truncate">{displayText(transfer.referenceNumber)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Type</p>
+                        <p className="truncate">{displayText(transfer.transactionTypeName)}</p>
+                      </div>
+                    </div>
                     <div>
                       <p className="text-muted-foreground">Source</p>
                       <p className="truncate">{transfer.sourceBankLabel}</p>
@@ -697,115 +577,14 @@ export default function BankTransfersModule() {
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!saving) setDialogOpen(open); }}>
-        <DialogContent className="flex max-h-[calc(100vh-2rem)] max-w-3xl flex-col overflow-hidden p-0">
-          <form onSubmit={submitForm} className="flex min-h-0 max-h-[calc(100vh-2rem)] flex-col">
-            <DialogHeader className="shrink-0 border-b p-6 pb-4">
-              <DialogTitle>New Bank Transfer</DialogTitle>
-              <DialogDescription>
-                Prepare an internal transfer. Ledger balances update only when the transfer is completed.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto overscroll-contain p-6">
-              {formError ? (
-                <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {formError}
-                </div>
-              ) : null}
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-1.5">
-                  <Label htmlFor="transferDate">Transfer Date *</Label>
-                  <Input
-                    id="transferDate"
-                    type="date"
-                    value={formValues.transferDate}
-                    disabled={saving}
-                    onChange={(event) => updateFormValue("transferDate", event.target.value)}
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="amount">Amount *</Label>
-                  <Input
-                    id="amount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formValues.amount}
-                    disabled={saving}
-                    onChange={(event) => updateFormValue("amount", event.target.value)}
-                  />
-                </div>
-                <div className="grid min-w-0 gap-1.5">
-                  <Label>Source Bank *</Label>
-                  <BankSelect
-                    banks={data.banks}
-                    value={formValues.sourceBankId}
-                    placeholder="Select source bank"
-                    disabled={saving}
-                    excludeBankId={formValues.destinationBankId}
-                    onValueChange={(value) => updateFormValue("sourceBankId", value)}
-                  />
-                </div>
-                <div className="grid min-w-0 gap-1.5">
-                  <Label>Destination Bank *</Label>
-                  <BankSelect
-                    banks={data.banks}
-                    value={formValues.destinationBankId}
-                    placeholder="Select destination bank"
-                    disabled={saving}
-                    excludeBankId={formValues.sourceBankId}
-                    onValueChange={(value) => updateFormValue("destinationBankId", value)}
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="transferFee">Transfer Fee</Label>
-                  <Input
-                    id="transferFee"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formValues.transferFee}
-                    disabled={saving}
-                    onChange={(event) => updateFormValue("transferFee", event.target.value)}
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label>Total Cash Outflow</Label>
-                  <div className="flex h-9 items-center rounded-md border bg-muted/40 px-3 text-sm font-medium tabular-nums">
-                    {formatMoney(
-                      (Number(formValues.amount) || 0) +
-                        (Number(formValues.transferFee) || 0),
-                    )}
-                  </div>
-                </div>
-                <div className="grid gap-1.5 md:col-span-2">
-                  <Label htmlFor="remarks">Remarks</Label>
-                  <Textarea
-                    id="remarks"
-                    value={formValues.remarks}
-                    disabled={saving}
-                    onChange={(event) => updateFormValue("remarks", event.target.value)}
-                  />
-                </div>
-              </div>
-            </div>
-            <DialogFooter className="shrink-0 border-t p-6 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={saving}
-                onClick={() => setDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? <Loader2 className="animate-spin" /> : null}
-                Prepare Transfer
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <BankTransferDialog
+        open={dialogOpen}
+        banks={data.banks}
+        paymentMethods={data.paymentMethods}
+        saving={saving}
+        onOpenChange={setDialogOpen}
+        onSubmit={handleCreateTransfer}
+      />
 
       <AlertDialog
         open={Boolean(pendingStatus)}
