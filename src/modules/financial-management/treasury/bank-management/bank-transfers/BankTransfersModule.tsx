@@ -45,6 +45,7 @@ import {
   Clock3,
   Loader2,
   Plus,
+  Printer,
   RefreshCw,
   Search,
   XCircle,
@@ -52,6 +53,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { BankTransferDialog } from "./components/BankTransferDialog";
 import { useBankTransfers } from "./hooks/useBankTransfers";
+import { printBankTransferCheck } from "./utils/printBankTransferCheck";
 import type {
   BankTransfer,
   BankTransferFormValues,
@@ -118,6 +120,14 @@ function displayText(value: string) {
   return value?.trim() || "N/A";
 }
 
+function isPrintableCheckTransfer(transfer: BankTransfer) {
+  return (
+    transfer.status !== "CANCELLED" &&
+    (transfer.transactionTypeId === 4 ||
+      transfer.transactionTypeName.trim().toUpperCase() === "CHECK")
+  );
+}
+
 export default function BankTransfersModule() {
   const {
     data,
@@ -131,6 +141,7 @@ export default function BankTransfersModule() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<TransferStatus | "ALL">("ALL");
+  const [paymentMethodId, setPaymentMethodId] = useState("ALL");
   const [sourceBankId, setSourceBankId] = useState("ALL");
   const [destinationBankId, setDestinationBankId] = useState("ALL");
   const [startDate, setStartDate] = useState("");
@@ -159,6 +170,8 @@ export default function BankTransfersModule() {
         pageSize: PAGE_SIZE,
         search,
         status,
+        transactionTypeId:
+          paymentMethodId === "ALL" ? null : Number(paymentMethodId),
         sourceBankId: sourceBankId === "ALL" ? null : Number(sourceBankId),
         destinationBankId:
           destinationBankId === "ALL" ? null : Number(destinationBankId),
@@ -173,6 +186,7 @@ export default function BankTransfersModule() {
     endDate,
     loadTransfers,
     page,
+    paymentMethodId,
     search,
     sourceBankId,
     startDate,
@@ -189,6 +203,8 @@ export default function BankTransfersModule() {
       pageSize: PAGE_SIZE,
       search,
       status,
+      transactionTypeId:
+        paymentMethodId === "ALL" ? null : Number(paymentMethodId),
       sourceBankId: sourceBankId === "ALL" ? null : Number(sourceBankId),
       destinationBankId:
         destinationBankId === "ALL" ? null : Number(destinationBankId),
@@ -277,6 +293,28 @@ export default function BankTransfersModule() {
                     {statuses.map((item) => (
                       <SelectItem key={item} value={item}>
                         {item === "ALL" ? "All statuses" : item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Payment Method</Label>
+                <Select
+                  value={paymentMethodId}
+                  onValueChange={(value) => {
+                    setPaymentMethodId(value);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="All payment methods" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All payment methods</SelectItem>
+                    {data.paymentMethods.map((method) => (
+                      <SelectItem key={method.methodId} value={String(method.methodId)}>
+                        {method.methodName}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -402,60 +440,77 @@ export default function BankTransfersModule() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  data.transfers.map((transfer) => (
-                    <TableRow key={transfer.transferId}>
-                      <TableCell className="min-w-0 whitespace-normal align-top">
-                        <p className="break-all font-medium">{transfer.transferNo}</p>
-                        <p className="mt-1 break-all text-xs text-muted-foreground">
-                          Ref: {displayText(transfer.referenceNumber)}
-                        </p>
-                        <p className="break-words text-xs text-muted-foreground">
-                          {displayText(transfer.transactionTypeName)}
-                        </p>
-                      </TableCell>
-                      <TableCell className="whitespace-normal align-top">
-                        {formatDate(transfer.transferDate)}
-                      </TableCell>
-                      <TableCell className="min-w-0 whitespace-normal align-top">
-                        <p className="break-words font-medium">{transfer.sourceBankLabel}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">to</p>
-                        <p className="break-words">{transfer.destinationBankLabel}</p>
-                      </TableCell>
-                      <TableCell className="whitespace-normal text-right align-top text-sm tabular-nums">
-                        <p>{formatMoney(transfer.amount)}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Fee: {formatMoney(transfer.transferFee)}
-                        </p>
-                        <p className="font-medium">
-                          Outflow: {formatMoney(transfer.totalOutflow)}
-                        </p>
-                      </TableCell>
-                      <TableCell className="whitespace-normal align-top">
-                        <Badge variant={statusBadgeVariant(transfer.status)}>
-                          {transfer.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="whitespace-normal align-top">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          {statusActions(transfer.status).map((action) => (
-                            <Button
-                              key={action.status}
-                              type="button"
-                              size="sm"
-                              variant={action.status === "CANCELLED" ? "outline" : "default"}
-                              disabled={saving}
-                              onClick={() => setPendingStatus({ transfer, status: action.status })}
-                            >
-                              {action.label}
-                            </Button>
-                          ))}
-                          {statusActions(transfer.status).length === 0 ? (
-                            <span className="text-sm text-muted-foreground">No actions</span>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  data.transfers.map((transfer) => {
+                    const actions = statusActions(transfer.status);
+                    const showPrintCheck = isPrintableCheckTransfer(transfer);
+
+                    return (
+                      <TableRow key={transfer.transferId}>
+                        <TableCell className="min-w-0 whitespace-normal align-top">
+                          <p className="break-all font-medium">{transfer.transferNo}</p>
+                          <p className="mt-1 break-all text-xs text-muted-foreground">
+                            Ref: {displayText(transfer.referenceNumber)}
+                          </p>
+                          <p className="break-words text-xs text-muted-foreground">
+                            {displayText(transfer.transactionTypeName)}
+                          </p>
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top">
+                          {formatDate(transfer.transferDate)}
+                        </TableCell>
+                        <TableCell className="min-w-0 whitespace-normal align-top">
+                          <p className="break-words font-medium">{transfer.sourceBankLabel}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">to</p>
+                          <p className="break-words">{transfer.destinationBankLabel}</p>
+                        </TableCell>
+                        <TableCell className="whitespace-normal text-right align-top text-sm tabular-nums">
+                          <p>{formatMoney(transfer.amount)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Fee: {formatMoney(transfer.transferFee)}
+                          </p>
+                          <p className="font-medium">
+                            Outflow: {formatMoney(transfer.totalOutflow)}
+                          </p>
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top">
+                          <Badge variant={statusBadgeVariant(transfer.status)}>
+                            {transfer.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {showPrintCheck ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={saving}
+                                onClick={() => printBankTransferCheck(transfer)}
+                              >
+                                <Printer />
+                                Print Check
+                              </Button>
+                            ) : null}
+                            {actions.map((action) => (
+                              <Button
+                                key={action.status}
+                                type="button"
+                                size="sm"
+                                variant={action.status === "CANCELLED" ? "outline" : "default"}
+                                disabled={saving}
+                                onClick={() => setPendingStatus({ transfer, status: action.status })}
+                              >
+                                {action.label}
+                              </Button>
+                            ))}
+                            {actions.length === 0 && !showPrintCheck ? (
+                              <span className="text-sm text-muted-foreground">No actions</span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -472,71 +527,88 @@ export default function BankTransfersModule() {
                 No bank transfers found.
               </div>
             ) : (
-              data.transfers.map((transfer) => (
-                <div key={transfer.transferId} className="grid gap-3 rounded-md border p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{transfer.transferNo}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {formatDate(transfer.transferDate)}
-                      </p>
+              data.transfers.map((transfer) => {
+                const actions = statusActions(transfer.status);
+                const showPrintCheck = isPrintableCheckTransfer(transfer);
+
+                return (
+                  <div key={transfer.transferId} className="grid gap-3 rounded-md border p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{transfer.transferNo}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {formatDate(transfer.transferDate)}
+                        </p>
+                      </div>
+                      <Badge variant={statusBadgeVariant(transfer.status)}>
+                        {transfer.status}
+                      </Badge>
                     </div>
-                    <Badge variant={statusBadgeVariant(transfer.status)}>
-                      {transfer.status}
-                    </Badge>
+                    <div className="grid gap-2 text-sm">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="text-muted-foreground">Reference</p>
+                          <p className="truncate">{displayText(transfer.referenceNumber)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Type</p>
+                          <p className="truncate">{displayText(transfer.transactionTypeName)}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Source</p>
+                        <p className="truncate">{transfer.sourceBankLabel}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Destination</p>
+                        <p className="truncate">{transfer.destinationBankLabel}</p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <p className="text-muted-foreground">Amount</p>
+                          <p className="tabular-nums">{formatMoney(transfer.amount)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Fee</p>
+                          <p className="tabular-nums">{formatMoney(transfer.transferFee)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Outflow</p>
+                          <p className="tabular-nums">{formatMoney(transfer.totalOutflow)}</p>
+                        </div>
+                      </div>
+                    </div>
+                    {actions.length > 0 || showPrintCheck ? (
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {showPrintCheck ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={saving}
+                            onClick={() => printBankTransferCheck(transfer)}
+                          >
+                            <Printer />
+                            Print Check
+                          </Button>
+                        ) : null}
+                        {actions.map((action) => (
+                          <Button
+                            key={action.status}
+                            type="button"
+                            size="sm"
+                            variant={action.status === "CANCELLED" ? "outline" : "default"}
+                            disabled={saving}
+                            onClick={() => setPendingStatus({ transfer, status: action.status })}
+                          >
+                            {action.label}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="grid gap-2 text-sm">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-muted-foreground">Reference</p>
-                        <p className="truncate">{displayText(transfer.referenceNumber)}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Type</p>
-                        <p className="truncate">{displayText(transfer.transactionTypeName)}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Source</p>
-                      <p className="truncate">{transfer.sourceBankLabel}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Destination</p>
-                      <p className="truncate">{transfer.destinationBankLabel}</p>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <p className="text-muted-foreground">Amount</p>
-                        <p className="tabular-nums">{formatMoney(transfer.amount)}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Fee</p>
-                        <p className="tabular-nums">{formatMoney(transfer.transferFee)}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Outflow</p>
-                        <p className="tabular-nums">{formatMoney(transfer.totalOutflow)}</p>
-                      </div>
-                    </div>
-                  </div>
-                  {statusActions(transfer.status).length > 0 ? (
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {statusActions(transfer.status).map((action) => (
-                        <Button
-                          key={action.status}
-                          type="button"
-                          size="sm"
-                          variant={action.status === "CANCELLED" ? "outline" : "default"}
-                          disabled={saving}
-                          onClick={() => setPendingStatus({ transfer, status: action.status })}
-                        >
-                          {action.label}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 

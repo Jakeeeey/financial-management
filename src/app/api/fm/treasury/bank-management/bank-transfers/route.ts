@@ -53,7 +53,13 @@ type BankDepositRow = {
 };
 
 type DisbursementPaymentRow = {
+  disbursement_id?: unknown;
   amount?: unknown;
+};
+
+type DisbursementRow = {
+  id?: unknown;
+  status?: unknown;
 };
 
 type BankTransferPayload = {
@@ -164,6 +170,7 @@ function normalizeTransfer(
     transferDate: asString(row.transfer_date),
     sourceBankId,
     sourceBankName: sourceBank?.bankName || `Bank #${sourceBankId}`,
+    sourceBankAccountNumber: sourceBank?.accountNumber || "",
     sourceBankLabel: sourceBank?.label || `Bank #${sourceBankId}`,
     destinationBankId,
     destinationBankName: destinationBank?.bankName || `Bank #${destinationBankId}`,
@@ -193,6 +200,9 @@ function buildTransferParams(searchParams: URLSearchParams) {
   );
   const search = asString(searchParams.get("q") ?? searchParams.get("search"));
   const status = asString(searchParams.get("status"));
+  const transactionTypeId = asNumber(
+    searchParams.get("transaction_type") ?? searchParams.get("payment_method_id"),
+  );
   const sourceBankId = asNumber(searchParams.get("source_bank_id"));
   const destinationBankId = asNumber(searchParams.get("destination_bank_id"));
   const startDate = asString(searchParams.get("start_date"));
@@ -209,6 +219,14 @@ function buildTransferParams(searchParams: URLSearchParams) {
 
   if (status && status !== "ALL") {
     params.set(`filter[_and][${filterIndex}][status][_eq]`, status);
+    filterIndex += 1;
+  }
+
+  if (transactionTypeId) {
+    params.set(
+      `filter[_and][${filterIndex}][transaction_type][_eq]`,
+      String(transactionTypeId),
+    );
     filterIndex += 1;
   }
 
@@ -253,7 +271,7 @@ function buildTransferParams(searchParams: URLSearchParams) {
     );
   }
 
-  return { page, pageSize, search, status, params };
+  return { page, pageSize, search, status, transactionTypeId, params };
 }
 
 function bankParams(includeActiveFilter: boolean) {
@@ -354,13 +372,50 @@ async function getCompletedTransferRows(bankId: number) {
 async function getDisbursementRows(bankId: number) {
   const params = new URLSearchParams();
   params.set("limit", "-1");
-  params.set("fields", "amount");
+  params.set("fields", "amount,disbursement_id");
   params.set("filter[bank_id][_eq]", String(bankId));
 
   const res = await directusFetch<DirectusList<DisbursementPaymentRow>>(
     `/items/disbursement_payments?${params.toString()}`,
   );
-  return res.data ?? [];
+  return filterReleasedDisbursementPayments(res.data ?? []);
+}
+
+function isReleasedDisbursement(row: DisbursementRow) {
+  return asString(row.status).toUpperCase() === "RELEASED";
+}
+
+async function getReleasedDisbursementIds(disbursementIds: number[]) {
+  const uniqueIds = Array.from(new Set(disbursementIds)).filter(Boolean);
+  if (uniqueIds.length === 0) return new Set<number>();
+
+  const params = new URLSearchParams();
+  params.set("limit", "-1");
+  params.set("fields", "id,status");
+  params.set("filter[id][_in]", uniqueIds.join(","));
+
+  const res = await directusFetch<DirectusList<DisbursementRow>>(
+    `/items/disbursement?${params.toString()}`,
+  );
+
+  return new Set(
+    (res.data ?? [])
+      .filter(isReleasedDisbursement)
+      .map((row) => asNumber(row.id) ?? 0)
+      .filter(Boolean),
+  );
+}
+
+async function filterReleasedDisbursementPayments(
+  payments: DisbursementPaymentRow[],
+) {
+  const releasedIds = await getReleasedDisbursementIds(
+    payments.map((payment) => asNumber(payment.disbursement_id) ?? 0),
+  );
+
+  return payments.filter((payment) =>
+    releasedIds.has(asNumber(payment.disbursement_id) ?? 0),
+  );
 }
 
 async function getCurrentBankBalance(
@@ -503,6 +558,7 @@ export async function GET(request: NextRequest) {
         totalPages,
         search: query.search,
         status: query.status || "ALL",
+        transactionTypeId: query.transactionTypeId,
       },
     });
   } catch (error) {

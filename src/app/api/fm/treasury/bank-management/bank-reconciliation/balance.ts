@@ -28,7 +28,13 @@ type BankTransferRow = {
 
 type DisbursementPaymentRow = {
   bank_id?: unknown;
+  disbursement_id?: unknown;
   amount?: unknown;
+};
+
+type DisbursementRow = {
+  id?: unknown;
+  status?: unknown;
 };
 
 function dateOnly(value: unknown) {
@@ -91,14 +97,51 @@ async function getCompletedTransferRows(bankId: number, statementDate: string) {
 async function getDisbursementRows(bankId: number, statementDate: string) {
   const params = new URLSearchParams();
   params.set("limit", "-1");
-  params.set("fields", "bank_id,date,amount");
+  params.set("fields", "bank_id,date,amount,disbursement_id");
   params.set("filter[_and][0][bank_id][_eq]", String(bankId));
   params.set("filter[_and][1][date][_lte]", statementDate);
 
   const res = await directusFetch<DirectusList<DisbursementPaymentRow>>(
     `/items/disbursement_payments?${params.toString()}`,
   );
-  return res.data ?? [];
+  return filterReleasedDisbursementPayments(res.data ?? []);
+}
+
+function isReleasedDisbursement(row: DisbursementRow) {
+  return asString(row.status).toUpperCase() === "RELEASED";
+}
+
+async function getReleasedDisbursementIds(disbursementIds: number[]) {
+  const uniqueIds = Array.from(new Set(disbursementIds)).filter(Boolean);
+  if (uniqueIds.length === 0) return new Set<number>();
+
+  const params = new URLSearchParams();
+  params.set("limit", "-1");
+  params.set("fields", "id,status");
+  params.set("filter[id][_in]", uniqueIds.join(","));
+
+  const res = await directusFetch<DirectusList<DisbursementRow>>(
+    `/items/disbursement?${params.toString()}`,
+  );
+
+  return new Set(
+    (res.data ?? [])
+      .filter(isReleasedDisbursement)
+      .map((row) => asNumber(row.id) ?? 0)
+      .filter(Boolean),
+  );
+}
+
+async function filterReleasedDisbursementPayments(
+  payments: DisbursementPaymentRow[],
+) {
+  const releasedIds = await getReleasedDisbursementIds(
+    payments.map((payment) => asNumber(payment.disbursement_id) ?? 0),
+  );
+
+  return payments.filter((payment) =>
+    releasedIds.has(asNumber(payment.disbursement_id) ?? 0),
+  );
 }
 
 export async function calculateSystemBalance(

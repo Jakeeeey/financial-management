@@ -34,6 +34,9 @@ export const bankTransfersApi = {
     if (query?.status && query.status !== "ALL") {
       params.set("status", query.status);
     }
+    if (query?.transactionTypeId) {
+      params.set("transaction_type", String(query.transactionTypeId));
+    }
     if (query?.sourceBankId) {
       params.set("source_bank_id", String(query.sourceBankId));
     }

@@ -25,6 +25,7 @@ export type BankTransfer = {
   transferDate: string;
   sourceBankId: number;
   sourceBankName: string;
+  sourceBankAccountNumber: string;
   sourceBankLabel: string;
   destinationBankId: number;
   destinationBankName: string;
@@ -45,6 +46,7 @@ export type BankTransfersPagination = {
   totalPages: number;
   search: string;
   status: string;
+  transactionTypeId?: number | null;
 };
 
 export type BankTransfersData = {
@@ -59,6 +61,7 @@ export type BankTransferQuery = {
   pageSize?: number;
   search?: string;
   status?: TransferStatus | "ALL";
+  transactionTypeId?: number | null;
   sourceBankId?: number | null;
   destinationBankId?: number | null;
   startDate?: string;
