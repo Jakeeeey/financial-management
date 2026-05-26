@@ -17,6 +17,46 @@ const getHeaders = () => ({
   Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
 });
 
+const nonTradeNeutralFields = {
+  supplier_shortcut: "",
+  address: "",
+  city: "",
+  brgy: "",
+  state_province: "",
+  postal_code: "",
+  country: "",
+  payment_terms: "",
+  delivery_terms: "",
+  agreement_or_contract: "",
+  preferred_communication_method: "",
+  supplier_image: "",
+};
+
+/**
+ * Enforces Single Table Inheritance rules for Treasury payees.
+ */
+function normalizePayeePayload(data: Partial<Payee>): Partial<Payee> {
+  const supplierType = data.supplier_type === "Trade" ? "Trade" : "Non-Trade";
+
+  if (supplierType === "Trade") {
+    return {
+      ...data,
+      supplier_type: "Trade",
+      nonBuy: false,
+    };
+  }
+
+  return {
+    ...data,
+    ...nonTradeNeutralFields,
+    supplier_name: data.supplier_name,
+    supplier_type: "Non-Trade",
+    contact_person: data.contact_person || data.supplier_name || "",
+    isActive: 1,
+    nonBuy: true,
+  };
+}
+
 /**
  * Fetch all payees (Non-Trade)
  */
@@ -73,8 +113,7 @@ export async function createPayee(
   data: Partial<Payee>,
 ): Promise<Payee> {
   try {
-    // Force Non-Trade type
-    const payload = { ...data, supplier_type: "Non-Trade" };
+    const payload = normalizePayeePayload(data);
     
     const response = await fetch(`${API_BASE}/suppliers`, {
       method: "POST",
@@ -105,10 +144,11 @@ export async function updatePayee(
   data: Partial<Payee>,
 ): Promise<Payee> {
   try {
+    const payload = normalizePayeePayload(data);
     const response = await fetch(`${API_BASE}/suppliers/${id}`, {
       method: "PATCH",
       headers: getHeaders(),
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

@@ -57,6 +57,24 @@ interface SearchableDropdownProps<T extends string | number> {
     overrideLabel?: string;
 }
 
+type FastPayeeFormValues = {
+    supplier_name: string;
+    supplier_type: "Non-Trade";
+    tin_number: string;
+    bank_details: string;
+    email_address: string;
+    phone_number: string;
+};
+
+const emptyFastPayeeForm: FastPayeeFormValues = {
+    supplier_name: "",
+    supplier_type: "Non-Trade",
+    tin_number: "",
+    bank_details: "",
+    email_address: "",
+    phone_number: "",
+};
+
 function SearchableDropdown<T extends string | number>({
                                                            options,
                                                            value,
@@ -147,8 +165,12 @@ export function DisbursementCreateSheet({
     const [departments, setDepartments] = useState<DepartmentDto[]>([]);
 
     const [poSearchQuery, setPoSearchQuery] = useState("");
+    const [isPayeeRegistrationOpen, setIsPayeeRegistrationOpen] = useState(false);
+    const [creatingPayee, setCreatingPayee] = useState(false);
+    const [fastPayeeForm, setFastPayeeForm] = useState<FastPayeeFormValues>(emptyFastPayeeForm);
 
     const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+    const isNonTradeVoucher = transactionTypeId === 2;
 
     useEffect(() => {
         if (open) {
@@ -238,6 +260,55 @@ export function DisbursementCreateSheet({
 
     const handleAddPayable = () => setPayables([...payables, {referenceNo: "", date: today, amount: 0, remarks: ""}]);
     const handleAddPayment = () => setPayments([...payments, {checkNo: "", date: today, amount: 0, remarks: ""}]);
+
+    const updateFastPayeeField = (field: keyof FastPayeeFormValues, value: string) => {
+        setFastPayeeForm((current) => ({...current, [field]: value}));
+    };
+
+    const resetFastPayeeForm = () => setFastPayeeForm(emptyFastPayeeForm);
+
+    const handleCreateNonTradePayee = async () => {
+        const tinDigits = fastPayeeForm.tin_number.replace(/\D/g, "");
+        const email = fastPayeeForm.email_address.trim();
+
+        if (fastPayeeForm.supplier_name.trim().length < 2) {
+            return toast.error("Payee name must be at least 2 characters.");
+        }
+        if (tinDigits.length < 9 || tinDigits.length > 12) {
+            return toast.error("TIN must be 9-12 digits.");
+        }
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return toast.error("Enter a valid email address.");
+        }
+
+        setCreatingPayee(true);
+        try {
+            const createdPayee = await disbursementProvider.createNonTradePayee({
+                supplier_name: fastPayeeForm.supplier_name.trim(),
+                supplier_type: "Non-Trade",
+                tin_number: tinDigits,
+                bank_details: fastPayeeForm.bank_details.trim(),
+                email_address: email,
+                phone_number: fastPayeeForm.phone_number.trim(),
+            });
+            const refreshed = await disbursementProvider.getSuppliers("Non-Trade");
+            const nextSuppliers = Array.isArray(refreshed) ? refreshed : [];
+
+            setSuppliers(
+                nextSuppliers.some((supplier) => supplier.id === createdPayee.id)
+                    ? nextSuppliers
+                    : [...nextSuppliers, createdPayee],
+            );
+            setPayeeId(createdPayee.id);
+            resetFastPayeeForm();
+            setIsPayeeRegistrationOpen(false);
+            toast.success("Non-Trade payee created and selected.");
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Failed to create payee");
+        } finally {
+            setCreatingPayee(false);
+        }
+    };
 
     const handleOpenPoModal = async () => {
         if (!payeeId) return toast.error("Please select a Payee first.");
@@ -455,11 +526,27 @@ export function DisbursementCreateSheet({
                                             className="h-9 w-full bg-background border-input text-xs font-bold uppercase"
                                         />
                                     </div>
-                                    <Button type="button" onClick={handleOpenPoModal} disabled={!payeeId}
-                                            className="h-9 px-3 bg-amber-500 hover:bg-amber-600 text-white shadow-sm shrink-0"
-                                            title="Pull Unpaid POs">
-                                        <DownloadCloud className="w-4 h-4"/>
-                                    </Button>
+                                    {isNonTradeVoucher ? (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() => {
+                                                resetFastPayeeForm();
+                                                setIsPayeeRegistrationOpen(true);
+                                            }}
+                                            className="h-9 px-3 text-[10px] font-black uppercase tracking-widest shrink-0"
+                                            title="Register a Non-Trade payee"
+                                        >
+                                            <Plus className="w-4 h-4 mr-1"/>
+                                            New Payee
+                                        </Button>
+                                    ) : (
+                                        <Button type="button" onClick={handleOpenPoModal} disabled={!payeeId}
+                                                className="h-9 px-3 bg-amber-500 hover:bg-amber-600 text-white shadow-sm shrink-0"
+                                                title="Pull Unpaid POs">
+                                            <DownloadCloud className="w-4 h-4"/>
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
 
@@ -752,6 +839,125 @@ export function DisbursementCreateSheet({
                     </div>
                 </SheetContent>
             </Sheet>
+
+            <Dialog open={isPayeeRegistrationOpen} onOpenChange={(nextOpen) => {
+                if (!creatingPayee) setIsPayeeRegistrationOpen(nextOpen);
+            }}>
+                <DialogContent className="sm:max-w-[560px] bg-background border-border">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-black uppercase text-foreground">
+                            Register Non-Trade Payee
+                        </DialogTitle>
+                        <DialogDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                            Fast registration for utilities, government agencies, employees, and one-off refunds.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="grid gap-4 py-2">
+                        <div className="grid gap-1.5">
+                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                Payee Name <span className="text-destructive">*</span>
+                            </Label>
+                            <Input
+                                value={fastPayeeForm.supplier_name}
+                                onChange={(event) => updateFastPayeeField("supplier_name", event.target.value)}
+                                disabled={creatingPayee}
+                                placeholder="e.g. BIR, Meralco, Employee Name"
+                                className="h-9 text-xs"
+                            />
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="grid gap-1.5">
+                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                    Supplier Type <span className="text-destructive">*</span>
+                                </Label>
+                                <select
+                                    value={fastPayeeForm.supplier_type}
+                                    disabled
+                                    className="flex h-9 w-full rounded-md border border-input bg-muted px-3 py-1 text-xs font-bold uppercase text-muted-foreground shadow-sm"
+                                >
+                                    <option value="Non-Trade">Non-Trade</option>
+                                </select>
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                    TIN Number <span className="text-destructive">*</span>
+                                </Label>
+                                <Input
+                                    value={fastPayeeForm.tin_number}
+                                    onChange={(event) => updateFastPayeeField("tin_number", event.target.value)}
+                                    disabled={creatingPayee}
+                                    placeholder="000-000-000-000"
+                                    className="h-9 text-xs"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid gap-1.5">
+                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                Bank Details
+                            </Label>
+                            <Input
+                                value={fastPayeeForm.bank_details}
+                                onChange={(event) => updateFastPayeeField("bank_details", event.target.value)}
+                                disabled={creatingPayee}
+                                placeholder="Bank name, account number, or payment instructions"
+                                className="h-9 text-xs"
+                            />
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="grid gap-1.5">
+                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                    Email Address
+                                </Label>
+                                <Input
+                                    type="email"
+                                    value={fastPayeeForm.email_address}
+                                    onChange={(event) => updateFastPayeeField("email_address", event.target.value)}
+                                    disabled={creatingPayee}
+                                    placeholder="name@example.com"
+                                    className="h-9 text-xs"
+                                />
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                    Phone Number
+                                </Label>
+                                <Input
+                                    value={fastPayeeForm.phone_number}
+                                    onChange={(event) => updateFastPayeeField("phone_number", event.target.value)}
+                                    disabled={creatingPayee}
+                                    placeholder="Mobile or landline"
+                                    className="h-9 text-xs"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <DialogFooter className="border-t border-border pt-4">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={creatingPayee}
+                            onClick={() => setIsPayeeRegistrationOpen(false)}
+                            className="text-[10px] font-black uppercase tracking-widest"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={creatingPayee}
+                            onClick={handleCreateNonTradePayee}
+                            className="text-[10px] font-black uppercase tracking-widest"
+                        >
+                            {creatingPayee ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Plus className="w-4 h-4 mr-2"/>}
+                            Create Payee
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <Dialog open={isPoModalOpen} onOpenChange={setIsPoModalOpen}>
                 <DialogContent className="sm:max-w-[750px] bg-background border-border">

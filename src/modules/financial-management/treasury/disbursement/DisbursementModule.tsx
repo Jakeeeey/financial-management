@@ -6,14 +6,16 @@ import { DisbursementTable } from "./components/DisbursementTable";
 import { DisbursementCreateSheet } from "./components/DisbursementCreateSheet";
 import { DisbursementViewSheet } from "./components/DisbursementViewSheet";
 import { Disbursement } from "./types";
+import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Plus, RefreshCw, FileText, Search, Check, ChevronsUpDown, X, Filter } from "lucide-react"; // 🚀 Added Filter Icon
+import { Plus, RefreshCw, FileText, Search, Check, ChevronsUpDown, X, Filter, UserPlus } from "lucide-react"; // 🚀 Added Filter Icon
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export default function DisbursementModule() {
     const {
@@ -27,6 +29,7 @@ export default function DisbursementModule() {
 
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isViewOpen, setIsViewOpen] = useState(false);
+    const [isAddPayeeOpen, setIsAddPayeeOpen] = useState(false);
     const [isComboboxOpen, setIsComboboxOpen] = useState(false);
     const [selectedDisbursement, setSelectedDisbursement] = useState<Disbursement | null>(null);
     const [formMode, setFormMode] = useState<"create" | "edit">("create");
@@ -37,6 +40,10 @@ export default function DisbursementModule() {
     const handleView = (d: Disbursement) => { setSelectedDisbursement(d); setIsViewOpen(true); };
     const handleEdit = (d: Disbursement) => { setSelectedDisbursement(d); setFormMode("edit"); setIsViewOpen(false); setIsCreateOpen(true); };
     const handleNewVoucherClick = () => { setSelectedDisbursement(null); setFormMode("create"); setIsCreateOpen(true); };
+    const handleAddPayeeSuccess = () => {
+        refresh();
+        toast.success("Payee created successfully");
+    };
 
     return (
         <div className="flex flex-col gap-6 p-2 sm:p-6 animate-in fade-in duration-500">
@@ -53,6 +60,9 @@ export default function DisbursementModule() {
                 <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={refresh} disabled={loading} className="h-9">
                         <RefreshCw className={`w-3.5 h-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setIsAddPayeeOpen(true)} className="h-9 font-bold uppercase tracking-wider text-[10px]">
+                        <UserPlus className="w-4 h-4 mr-2" /> New Payee
                     </Button>
                     <Button size="sm" onClick={handleNewVoucherClick} className="h-9 font-bold uppercase tracking-wider text-[10px]">
                         <Plus className="w-4 h-4 mr-2" /> New Voucher
@@ -203,6 +213,11 @@ export default function DisbursementModule() {
 
             <DisbursementCreateSheet open={isCreateOpen} onOpenChange={setIsCreateOpen} onSubmit={(payload) => formMode === "edit" ? update(selectedDisbursement!.id, payload) : create(payload)} editData={formMode === "edit" ? selectedDisbursement : null} loading={actionLoading} />
             <DisbursementViewSheet open={isViewOpen} onOpenChange={setIsViewOpen} disbursement={selectedDisbursement} onUpdateStatus={changeStatus} onEdit={handleEdit} loading={actionLoading} />
+            <AddPayeeModal
+                open={isAddPayeeOpen}
+                onClose={() => setIsAddPayeeOpen(false)}
+                onSuccess={handleAddPayeeSuccess}
+            />
         </div>
     );
 }
