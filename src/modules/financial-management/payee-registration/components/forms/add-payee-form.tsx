@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   Form,
   FormControl,
@@ -14,8 +16,9 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { Payee, PayeeFormSchema, PayeeFormValues } from "../../types/payee.schema";
 import {
   useDeliveryTerms,
@@ -27,6 +30,166 @@ interface AddPayeeFormProps {
   onCancel: () => void;
   supplierType?: "TRADE" | "NON-TRADE";
   allowSupplierTypeSelect?: boolean;
+}
+
+type PsgcKind = "provinces" | "cities" | "barangays";
+
+type PsgcOption = {
+  code: string;
+  name: string;
+  provinceCode?: string;
+  cityCode?: string;
+};
+
+type LocationCodes = {
+  provinceCode: string;
+  cityCode: string;
+  barangayCode: string;
+};
+
+type PsgcLoadingState = Record<PsgcKind, boolean>;
+
+type PostalCodeOption = {
+  postalCode: string;
+  placeName: string;
+  provinceName?: string;
+};
+
+type PsgcSelectProps = {
+  options: PsgcOption[];
+  value: string;
+  placeholder: string;
+  searchPlaceholder: string;
+  emptyText: string;
+  disabled?: boolean;
+  loading?: boolean;
+  onOpen?: () => void;
+  onSelect: (option: PsgcOption) => void;
+};
+
+async function getPsgcOptions(
+  kind: PsgcKind,
+  filters: { provinceCode?: string; cityCode?: string } = {},
+) {
+  const params = new URLSearchParams({ kind });
+  if (filters.provinceCode) params.set("province_code", filters.provinceCode);
+  if (filters.cityCode) params.set("city_code", filters.cityCode);
+
+  const response = await fetch(
+    `/api/fm/treasury/bank-management/account-management/psgc?${params.toString()}`,
+    { cache: "no-store" },
+  );
+
+  if (!response.ok) throw new Error("Failed to load PSGC address data");
+
+  const json = await response.json();
+  return (json.options || []) as PsgcOption[];
+}
+
+async function getPostalCodeOptions(
+  province: string,
+  city: string,
+  barangay: string,
+) {
+  const params = new URLSearchParams({ city });
+  if (province) params.set("province", province);
+  if (barangay) params.set("barangay", barangay);
+
+  const response = await fetch(
+    `/api/fm/payee-registration/postal-code?${params.toString()}`,
+    { cache: "no-store" },
+  );
+
+  if (!response.ok) throw new Error("Failed to load postal code suggestions");
+
+  const json = await response.json();
+  return (json.options || []) as PostalCodeOption[];
+}
+
+function PsgcSelect({
+  options,
+  value,
+  placeholder,
+  searchPlaceholder,
+  emptyText,
+  disabled,
+  loading,
+  onOpen,
+  onSelect,
+}: PsgcSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selectedOption = options.find((option) => option.name === value);
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleOptions = (normalizedQuery
+    ? options.filter((option) =>
+      `${option.name} ${option.code}`.toLowerCase().includes(normalizedQuery),
+    )
+    : options
+  ).slice(0, 100);
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) {
+          setQuery("");
+          onOpen?.();
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className={cn("w-full min-w-0 justify-between", !value && "text-muted-foreground")}
+        >
+          <span className="min-w-0 flex-1 truncate text-left">
+            {selectedOption?.name || value || placeholder}
+          </span>
+          {loading ? (
+            <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin opacity-70" />
+          ) : (
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder={searchPlaceholder}
+          />
+          <CommandList
+            className="max-h-64 overflow-y-auto"
+            onWheelCapture={(event) => event.stopPropagation()}
+          >
+            <CommandEmpty>{loading ? "Loading..." : emptyText}</CommandEmpty>
+            <CommandGroup>
+              {visibleOptions.map((option) => (
+                <CommandItem
+                  key={option.code}
+                  value={`${option.name} ${option.code}`}
+                  onSelect={() => {
+                    onSelect(option);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", value === option.name ? "opacity-100" : "opacity-0")} />
+                  <span className="truncate">{option.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export function AddPayeeForm({
@@ -66,6 +229,223 @@ export function AddPayeeForm({
   });
   const selectedSupplierType = String(form.watch("supplier_type") ?? supplierType);
   const isTrade = selectedSupplierType === "TRADE";
+  const provinceValue = form.watch("state_province");
+  const cityValue = form.watch("city");
+  const barangayValue = form.watch("brgy");
+  const [provinceOptions, setProvinceOptions] = useState<PsgcOption[]>([]);
+  const [cityOptions, setCityOptions] = useState<PsgcOption[]>([]);
+  const [barangayOptions, setBarangayOptions] = useState<PsgcOption[]>([]);
+  const [postalCodeOptions, setPostalCodeOptions] = useState<PostalCodeOption[]>([]);
+  const [postalCodeLoading, setPostalCodeLoading] = useState(false);
+  const [postalCodeError, setPostalCodeError] = useState<string | null>(null);
+  const [postalCodeEditedManually, setPostalCodeEditedManually] = useState(false);
+  const [locationCodes, setLocationCodes] = useState<LocationCodes>({
+    provinceCode: "",
+    cityCode: "",
+    barangayCode: "",
+  });
+  const [psgcLoading, setPsgcLoading] = useState<PsgcLoadingState>({
+    provinces: false,
+    cities: false,
+    barangays: false,
+  });
+  const [psgcError, setPsgcError] = useState<string | null>(null);
+  const psgcSeqRef = useRef({ provinces: 0, cities: 0, barangays: 0 });
+  const postalCodeSeqRef = useRef(0);
+  const postalCodeEditedManuallyRef = useRef(false);
+
+  const selectedCity = useMemo(
+    () => cityOptions.find((city) => city.code === locationCodes.cityCode),
+    [cityOptions, locationCodes.cityCode],
+  );
+  const selectedProvince = useMemo(
+    () => provinceOptions.find((province) => province.code === locationCodes.provinceCode),
+    [provinceOptions, locationCodes.provinceCode],
+  );
+  const displayedProvinceOptions = useMemo(() => {
+    if (locationCodes.cityCode || locationCodes.barangayCode) {
+      return selectedProvince ? [selectedProvince] : [];
+    }
+    return provinceOptions;
+  }, [locationCodes.barangayCode, locationCodes.cityCode, provinceOptions, selectedProvince]);
+  const displayedCityOptions = useMemo(() => {
+    if (locationCodes.barangayCode) {
+      return selectedCity ? [selectedCity] : [];
+    }
+    return cityOptions;
+  }, [cityOptions, locationCodes.barangayCode, selectedCity]);
+
+  const loadPsgcOptions = useCallback(async (
+    kind: PsgcKind,
+    filters: { provinceCode?: string; cityCode?: string } = {},
+  ) => {
+    const seq = psgcSeqRef.current[kind] + 1;
+    psgcSeqRef.current[kind] = seq;
+    setPsgcLoading((current) => ({ ...current, [kind]: true }));
+    setPsgcError(null);
+
+    try {
+      const options = await getPsgcOptions(kind, filters);
+      if (seq !== psgcSeqRef.current[kind]) return options;
+
+      if (kind === "provinces") setProvinceOptions(options);
+      if (kind === "cities") setCityOptions(options);
+      if (kind === "barangays") setBarangayOptions(options);
+      return options;
+    } catch {
+      if (seq === psgcSeqRef.current[kind]) {
+        setPsgcError("Failed to load PSGC address data");
+      }
+      return [];
+    } finally {
+      setPsgcLoading((current) => ({ ...current, [kind]: false }));
+    }
+  }, []);
+
+  const loadPostalCodeOptions = useCallback(async (
+    province: string,
+    city: string,
+    barangay: string,
+  ) => {
+    const seq = postalCodeSeqRef.current + 1;
+    postalCodeSeqRef.current = seq;
+    const trimmedProvince = province.trim();
+    const trimmedCity = city.trim();
+    const trimmedBarangay = barangay.trim();
+
+    if (!trimmedCity) {
+      setPostalCodeOptions([]);
+      setPostalCodeError(null);
+      setPostalCodeLoading(false);
+      return;
+    }
+
+    setPostalCodeLoading(true);
+    setPostalCodeError(null);
+
+    try {
+      const options = await getPostalCodeOptions(
+        trimmedProvince,
+        trimmedCity,
+        trimmedBarangay,
+      );
+      if (seq !== postalCodeSeqRef.current) return;
+
+      setPostalCodeOptions(options);
+      if (options.length === 1 && !postalCodeEditedManuallyRef.current) {
+        form.setValue("postal_code", options[0].postalCode, { shouldValidate: true });
+      }
+    } catch {
+      if (seq === postalCodeSeqRef.current) {
+        setPostalCodeOptions([]);
+        setPostalCodeError("Postal code could not be suggested. Enter it manually.");
+      }
+    } finally {
+      if (seq === postalCodeSeqRef.current) {
+        setPostalCodeLoading(false);
+      }
+    }
+  }, [form]);
+
+  useEffect(() => {
+    if (!isTrade) return;
+
+    void loadPsgcOptions("provinces");
+    void loadPsgcOptions("cities");
+  }, [isTrade, loadPsgcOptions]);
+
+  useEffect(() => {
+    if (!locationCodes.provinceCode || provinceValue) return;
+    const province = provinceOptions.find((option) => option.code === locationCodes.provinceCode);
+    if (province) form.setValue("state_province", province.name, { shouldValidate: true });
+  }, [form, locationCodes.provinceCode, provinceOptions, provinceValue]);
+
+  useEffect(() => {
+    if (!locationCodes.cityCode || cityValue) return;
+    const city = cityOptions.find((option) => option.code === locationCodes.cityCode);
+    if (city) form.setValue("city", city.name, { shouldValidate: true });
+  }, [cityOptions, cityValue, form, locationCodes.cityCode]);
+
+  useEffect(() => {
+    if (!isTrade) return;
+    void loadPostalCodeOptions(
+      provinceValue || "",
+      cityValue || "",
+      barangayValue || "",
+    );
+  }, [barangayValue, cityValue, isTrade, loadPostalCodeOptions, provinceValue]);
+
+  function resetPostalCodeForLocationChange() {
+    postalCodeEditedManuallyRef.current = false;
+    setPostalCodeEditedManually(false);
+    setPostalCodeOptions([]);
+    setPostalCodeError(null);
+    form.setValue("postal_code", "", { shouldValidate: true });
+  }
+
+  function selectProvince(option: PsgcOption) {
+    resetPostalCodeForLocationChange();
+    setLocationCodes({
+      provinceCode: option.code,
+      cityCode: "",
+      barangayCode: "",
+    });
+    form.setValue("state_province", option.name, { shouldValidate: true });
+    form.setValue("city", "", { shouldValidate: true });
+    form.setValue("brgy", "", { shouldValidate: true });
+    void loadPsgcOptions("cities", { provinceCode: option.code });
+    void loadPsgcOptions("barangays", { provinceCode: option.code });
+  }
+
+  function selectCity(option: PsgcOption) {
+    const province = provinceOptions.find((item) => item.code === option.provinceCode);
+
+    resetPostalCodeForLocationChange();
+    setLocationCodes({
+      provinceCode: option.provinceCode || "",
+      cityCode: option.code,
+      barangayCode: "",
+    });
+    form.setValue("state_province", province?.name || "", { shouldValidate: true });
+    form.setValue("city", option.name, { shouldValidate: true });
+    form.setValue("brgy", "", { shouldValidate: true });
+
+    if (option.provinceCode) {
+      void loadPsgcOptions("cities", { provinceCode: option.provinceCode });
+    }
+    void loadPsgcOptions("barangays", { cityCode: option.code });
+  }
+
+  function selectBarangay(option: PsgcOption) {
+    const city = cityOptions.find((item) => item.code === option.cityCode);
+    const province = provinceOptions.find((item) => item.code === (city?.provinceCode || option.provinceCode));
+
+    resetPostalCodeForLocationChange();
+    setLocationCodes({
+      provinceCode: city?.provinceCode || option.provinceCode || "",
+      cityCode: city?.code || option.cityCode || "",
+      barangayCode: option.code,
+    });
+    form.setValue("state_province", province?.name || form.getValues("state_province"), { shouldValidate: true });
+    form.setValue("city", city?.name || form.getValues("city"), { shouldValidate: true });
+    form.setValue("brgy", option.name, { shouldValidate: true });
+  }
+
+  function loadBarangaysForCurrentLocation() {
+    if (locationCodes.cityCode) {
+      void loadPsgcOptions("barangays", { cityCode: locationCodes.cityCode });
+      return;
+    }
+
+    if (locationCodes.provinceCode) {
+      void loadPsgcOptions("barangays", { provinceCode: locationCodes.provinceCode });
+      return;
+    }
+
+    if (barangayOptions.length === 0) {
+      void loadPsgcOptions("barangays");
+    }
+  }
 
   const onSubmit = async (data: PayeeFormValues) => {
     if (String(data.supplier_type) === "TRADE") {
@@ -312,17 +692,32 @@ export function AddPayeeForm({
                   )}
                 />
 
+                {psgcError ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    {psgcError}
+                  </div>
+                ) : null}
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
-                    name="brgy"
+                    name="state_province"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>
-                          Barangay <span className="text-destructive">*</span>
+                          Province <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="Barangay" {...field} />
+                          <PsgcSelect
+                            options={displayedProvinceOptions}
+                            value={field.value || ""}
+                            disabled={isSubmitting || psgcLoading.provinces || displayedProvinceOptions.length === 0}
+                            loading={psgcLoading.provinces}
+                            placeholder="Select province"
+                            searchPlaceholder="Search province..."
+                            emptyText="No provinces found."
+                            onSelect={selectProvince}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -338,7 +733,16 @@ export function AddPayeeForm({
                           City <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="City" {...field} />
+                          <PsgcSelect
+                            options={displayedCityOptions}
+                            value={field.value || ""}
+                            disabled={isSubmitting || psgcLoading.cities || displayedCityOptions.length === 0}
+                            loading={psgcLoading.cities}
+                            placeholder="Select city or municipality"
+                            searchPlaceholder="Search city or municipality..."
+                            emptyText="No cities or municipalities found."
+                            onSelect={selectCity}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -349,14 +753,24 @@ export function AddPayeeForm({
                 <div className="grid gap-4 md:grid-cols-3">
                   <FormField
                     control={form.control}
-                    name="state_province"
+                    name="brgy"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>
-                          Province <span className="text-destructive">*</span>
+                          Barangay <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="Province" {...field} />
+                          <PsgcSelect
+                            options={barangayOptions}
+                            value={field.value || ""}
+                            disabled={isSubmitting || psgcLoading.barangays || psgcLoading.cities}
+                            loading={psgcLoading.barangays}
+                            placeholder="Select barangay"
+                            searchPlaceholder="Search barangay..."
+                            emptyText="No barangays found."
+                            onOpen={loadBarangaysForCurrentLocation}
+                            onSelect={selectBarangay}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -372,8 +786,51 @@ export function AddPayeeForm({
                           Postal Code <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                          <Input placeholder="0000" {...field} />
+                          <Input
+                            placeholder="0000"
+                            {...field}
+                            onChange={(event) => {
+                              postalCodeEditedManuallyRef.current = true;
+                              setPostalCodeEditedManually(true);
+                              field.onChange(event.target.value.replace(/\D/g, "").slice(0, 4));
+                            }}
+                          />
                         </FormControl>
+                        {postalCodeLoading ? (
+                          <p className="text-xs text-muted-foreground">
+                            Looking up postal code...
+                          </p>
+                        ) : null}
+                        {postalCodeError ? (
+                          <p className="text-xs text-muted-foreground">
+                            {postalCodeError}
+                          </p>
+                        ) : null}
+                        {postalCodeOptions.length > 1 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {postalCodeOptions.slice(0, 5).map((option) => (
+                              <Button
+                                key={`${option.postalCode}-${option.placeName}`}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => {
+                                  postalCodeEditedManuallyRef.current = false;
+                                  setPostalCodeEditedManually(false);
+                                  field.onChange(option.postalCode);
+                                }}
+                              >
+                                {option.postalCode}
+                              </Button>
+                            ))}
+                          </div>
+                        ) : null}
+                        {postalCodeEditedManually && postalCodeOptions.length > 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            Postal code is manually edited.
+                          </p>
+                        ) : null}
                         <FormMessage />
                       </FormItem>
                     )}
