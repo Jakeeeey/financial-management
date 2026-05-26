@@ -33,6 +33,7 @@ export default function DisbursementModule() {
     const [isComboboxOpen, setIsComboboxOpen] = useState(false);
     const [selectedDisbursement, setSelectedDisbursement] = useState<Disbursement | null>(null);
     const [formMode, setFormMode] = useState<"create" | "edit">("create");
+    const addPayeeSupplierType = activeType === "Trade" ? "TRADE" : "NON-TRADE";
 
     // 🚀 NEW: State to toggle the advanced filters!
     const [showFilters, setShowFilters] = useState(false);
@@ -217,6 +218,8 @@ export default function DisbursementModule() {
                 open={isAddPayeeOpen}
                 onClose={() => setIsAddPayeeOpen(false)}
                 onSuccess={handleAddPayeeSuccess}
+                supplierType={addPayeeSupplierType}
+                allowSupplierTypeSelect
             />
         </div>
     );

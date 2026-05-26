@@ -59,7 +59,7 @@ interface SearchableDropdownProps<T extends string | number> {
 
 type FastPayeeFormValues = {
     supplier_name: string;
-    supplier_type: "Non-Trade";
+    supplier_type: "TRADE" | "NON-TRADE";
     tin_number: string;
     bank_details: string;
     email_address: string;
@@ -68,7 +68,7 @@ type FastPayeeFormValues = {
 
 const emptyFastPayeeForm: FastPayeeFormValues = {
     supplier_name: "",
-    supplier_type: "Non-Trade",
+    supplier_type: "NON-TRADE",
     tin_number: "",
     bank_details: "",
     email_address: "",
@@ -171,6 +171,8 @@ export function DisbursementCreateSheet({
 
     const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
     const isNonTradeVoucher = transactionTypeId === 2;
+    const payeeSupplierType = isNonTradeVoucher ? "NON-TRADE" : "TRADE";
+    const payeeSupplierTypeLabel = isNonTradeVoucher ? "Non-Trade" : "Trade";
 
     useEffect(() => {
         if (open) {
@@ -184,7 +186,7 @@ export function DisbursementCreateSheet({
     useEffect(() => {
         if (open && transactionTypeId) {
             setLoadingData(true);
-            const typeString = transactionTypeId === 1 ? "Trade" : "Non-Trade";
+            const typeString = transactionTypeId === 1 ? "TRADE" : "NON-TRADE";
             disbursementProvider.getSuppliers(typeString)
                 .then(res => setSuppliers(Array.isArray(res) ? res : []))
                 .finally(() => setLoadingData(false));
@@ -265,9 +267,12 @@ export function DisbursementCreateSheet({
         setFastPayeeForm((current) => ({...current, [field]: value}));
     };
 
-    const resetFastPayeeForm = () => setFastPayeeForm(emptyFastPayeeForm);
+    const resetFastPayeeForm = () => setFastPayeeForm({
+        ...emptyFastPayeeForm,
+        supplier_type: payeeSupplierType,
+    });
 
-    const handleCreateNonTradePayee = async () => {
+    const handleCreatePayee = async () => {
         const tinDigits = fastPayeeForm.tin_number.replace(/\D/g, "");
         const email = fastPayeeForm.email_address.trim();
 
@@ -283,15 +288,15 @@ export function DisbursementCreateSheet({
 
         setCreatingPayee(true);
         try {
-            const createdPayee = await disbursementProvider.createNonTradePayee({
+            const createdPayee = await disbursementProvider.createPayee({
                 supplier_name: fastPayeeForm.supplier_name.trim(),
-                supplier_type: "Non-Trade",
+                supplier_type: payeeSupplierType,
                 tin_number: tinDigits,
                 bank_details: fastPayeeForm.bank_details.trim(),
                 email_address: email,
                 phone_number: fastPayeeForm.phone_number.trim(),
             });
-            const refreshed = await disbursementProvider.getSuppliers("Non-Trade");
+            const refreshed = await disbursementProvider.getSuppliers(payeeSupplierType);
             const nextSuppliers = Array.isArray(refreshed) ? refreshed : [];
 
             setSuppliers(
@@ -302,7 +307,7 @@ export function DisbursementCreateSheet({
             setPayeeId(createdPayee.id);
             resetFastPayeeForm();
             setIsPayeeRegistrationOpen(false);
-            toast.success("Non-Trade payee created and selected.");
+            toast.success(`${payeeSupplierTypeLabel} payee created and selected.`);
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "Failed to create payee");
         } finally {
@@ -526,21 +531,20 @@ export function DisbursementCreateSheet({
                                             className="h-9 w-full bg-background border-input text-xs font-bold uppercase"
                                         />
                                     </div>
-                                    {isNonTradeVoucher ? (
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            onClick={() => {
-                                                resetFastPayeeForm();
-                                                setIsPayeeRegistrationOpen(true);
-                                            }}
-                                            className="h-9 px-3 text-[10px] font-black uppercase tracking-widest shrink-0"
-                                            title="Register a Non-Trade payee"
-                                        >
-                                            <Plus className="w-4 h-4 mr-1"/>
-                                            New Payee
-                                        </Button>
-                                    ) : (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => {
+                                            resetFastPayeeForm();
+                                            setIsPayeeRegistrationOpen(true);
+                                        }}
+                                        className="h-9 px-3 text-[10px] font-black uppercase tracking-widest shrink-0"
+                                        title={`Register a ${payeeSupplierTypeLabel} payee`}
+                                    >
+                                        <Plus className="w-4 h-4 mr-1"/>
+                                        New Payee
+                                    </Button>
+                                    {!isNonTradeVoucher && (
                                         <Button type="button" onClick={handleOpenPoModal} disabled={!payeeId}
                                                 className="h-9 px-3 bg-amber-500 hover:bg-amber-600 text-white shadow-sm shrink-0"
                                                 title="Pull Unpaid POs">
@@ -846,10 +850,10 @@ export function DisbursementCreateSheet({
                 <DialogContent className="sm:max-w-[560px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase text-foreground">
-                            Register Non-Trade Payee
+                            Register {payeeSupplierTypeLabel} Payee
                         </DialogTitle>
                         <DialogDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Fast registration for utilities, government agencies, employees, and one-off refunds.
+                            Fast registration for the selected voucher transaction type.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -877,7 +881,8 @@ export function DisbursementCreateSheet({
                                     disabled
                                     className="flex h-9 w-full rounded-md border border-input bg-muted px-3 py-1 text-xs font-bold uppercase text-muted-foreground shadow-sm"
                                 >
-                                    <option value="Non-Trade">Non-Trade</option>
+                                    <option value="TRADE">Trade</option>
+                                    <option value="NON-TRADE">Non-Trade</option>
                                 </select>
                             </div>
                             <div className="grid gap-1.5">
@@ -886,9 +891,9 @@ export function DisbursementCreateSheet({
                                 </Label>
                                 <Input
                                     value={fastPayeeForm.tin_number}
-                                    onChange={(event) => updateFastPayeeField("tin_number", event.target.value)}
+                                    onChange={(event) => updateFastPayeeField("tin_number", event.target.value.replace(/\D/g, "").slice(0, 12))}
                                     disabled={creatingPayee}
-                                    placeholder="000-000-000-000"
+                                    placeholder="000000000"
                                     className="h-9 text-xs"
                                 />
                             </div>
@@ -949,7 +954,7 @@ export function DisbursementCreateSheet({
                         <Button
                             type="button"
                             disabled={creatingPayee}
-                            onClick={handleCreateNonTradePayee}
+                            onClick={handleCreatePayee}
                             className="text-[10px] font-black uppercase tracking-widest"
                         >
                             {creatingPayee ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Plus className="w-4 h-4 mr-2"/>}

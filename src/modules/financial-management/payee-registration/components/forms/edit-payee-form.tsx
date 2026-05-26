@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { formatTIN } from "@/modules/financial-management/supplier-registration/utils/utils";
 
 interface EditPayeeFormProps {
   payee: Payee;
@@ -35,7 +34,7 @@ export function EditPayeeForm({
     resolver: zodResolver(PayeeFormSchema),
     defaultValues: {
       supplier_name: payee.supplier_name || "",
-      supplier_type: "Non-Trade",
+      supplier_type: "NON-TRADE",
       tin_number: payee.tin_number || "",
       bank_details: payee.bank_details || "",
       email_address: payee.email_address || "",
@@ -106,11 +105,11 @@ export function EditPayeeForm({
                     </FormLabel>
                     <FormControl>
                       <select
-                        value={field.value}
+                        value={String(field.value ?? "NON-TRADE")}
                         disabled
                         className="flex h-9 w-full rounded-md border border-input bg-muted px-3 py-1 text-sm text-muted-foreground shadow-sm"
                       >
-                        <option value="Non-Trade">Non-Trade</option>
+                        <option value="NON-TRADE">Non-Trade</option>
                       </select>
                     </FormControl>
                     <FormMessage />
@@ -128,10 +127,10 @@ export function EditPayeeForm({
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="000-000-000-000"
+                        placeholder="000000000"
                         {...field}
                         onChange={(event) => {
-                          field.onChange(formatTIN(event.target.value));
+                          field.onChange(event.target.value.replace(/\D/g, "").slice(0, 12));
                         }}
                       />
                     </FormControl>

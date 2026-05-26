@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+const SupplierTypeSchema = z.preprocess((value) => {
+  const normalized = String(value ?? "NON-TRADE")
+    .replace(/[-_\s]/g, "")
+    .toUpperCase();
+
+  return normalized === "TRADE" ? "TRADE" : "NON-TRADE";
+}, z.enum(["TRADE", "NON-TRADE"]));
+
 /**
  * Payee Schema - Zod validation for payee entity (Non-Trade)
  */
@@ -10,7 +18,7 @@ export const PayeeSchema = z.object({
     .min(2, "Payee name must be at least 2 characters")
     .max(255, "Payee name is too long"),
   supplier_shortcut: z.string().optional().default(""),
-  supplier_type: z.enum(["Trade", "Non-Trade"]).default("Non-Trade"),
+  supplier_type: SupplierTypeSchema.default("NON-TRADE"),
   tin_number: z
     .string()
     .transform((val) => val.replace(/\D/g, ""))

@@ -32,16 +32,26 @@ const nonTradeNeutralFields = {
   supplier_image: "",
 };
 
+function normalizeSupplierType(value: unknown): "TRADE" | "NON-TRADE" {
+  const normalized = String(value ?? "NON-TRADE")
+    .replace(/[-_\s]/g, "")
+    .toUpperCase();
+
+  return normalized === "TRADE" ? "TRADE" : "NON-TRADE";
+}
+
 /**
  * Enforces Single Table Inheritance rules for Treasury payees.
  */
 function normalizePayeePayload(data: Partial<Payee>): Partial<Payee> {
-  const supplierType = data.supplier_type === "Trade" ? "Trade" : "Non-Trade";
+  const supplierType = normalizeSupplierType(data.supplier_type);
 
-  if (supplierType === "Trade") {
+  if (supplierType === "TRADE") {
     return {
       ...data,
-      supplier_type: "Trade",
+      supplier_type: "TRADE",
+      contact_person: data.contact_person || data.supplier_name || "",
+      isActive: 1,
       nonBuy: false,
     };
   }
@@ -50,7 +60,7 @@ function normalizePayeePayload(data: Partial<Payee>): Partial<Payee> {
     ...data,
     ...nonTradeNeutralFields,
     supplier_name: data.supplier_name,
-    supplier_type: "Non-Trade",
+    supplier_type: "NON-TRADE",
     contact_person: data.contact_person || data.supplier_name || "",
     isActive: 1,
     nonBuy: true,
@@ -62,8 +72,13 @@ function normalizePayeePayload(data: Partial<Payee>): Partial<Payee> {
  */
 export async function fetchAllPayees(): Promise<Payee[]> {
   try {
+    const filter = encodeURIComponent(
+      JSON.stringify({
+        supplier_type: { _eq: "NON-TRADE" },
+      }),
+    );
     const response = await fetch(
-      `${API_BASE}/suppliers?limit=-1&fields=*&filter[supplier_type][_eq]=Non-Trade`,
+      `${API_BASE}/suppliers?limit=-1&fields=*&filter=${filter}`,
       {
         method: "GET",
         headers: getHeaders(),
@@ -173,7 +188,7 @@ export async function searchPayees(query: string): Promise<Payee[]> {
   try {
     const filter = {
       _and: [
-        { supplier_type: { _eq: "Non-Trade" } },
+        { supplier_type: { _eq: "NON-TRADE" } },
         {
           _or: [
             { supplier_name: { _contains: query } },

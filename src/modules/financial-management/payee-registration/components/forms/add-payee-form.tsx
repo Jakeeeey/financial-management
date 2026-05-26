@@ -17,29 +17,81 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { PayeeFormSchema, PayeeFormValues } from "../../types/payee.schema";
-import { formatTIN } from "@/modules/financial-management/supplier-registration/utils/utils";
+import {
+  useDeliveryTerms,
+  usePaymentTerms,
+} from "@/modules/financial-management/supplier-registration/hooks/useTerms";
 
 interface AddPayeeFormProps {
   onSuccess: () => void;
   onCancel: () => void;
+  supplierType?: "TRADE" | "NON-TRADE";
+  allowSupplierTypeSelect?: boolean;
 }
 
-export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
+export function AddPayeeForm({
+  onSuccess,
+  onCancel,
+  supplierType = "NON-TRADE",
+  allowSupplierTypeSelect = false,
+}: AddPayeeFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const supplierTypeLabel = supplierType === "TRADE" ? "Trade" : "Non-Trade";
+  const { paymentTerms, isLoading: isLoadingPaymentTerms } = usePaymentTerms();
+  const { deliveryTerms, isLoading: isLoadingDeliveryTerms } = useDeliveryTerms();
   const form = useForm({
     resolver: zodResolver(PayeeFormSchema),
     defaultValues: {
       supplier_name: "",
-      supplier_type: "Non-Trade",
+      supplier_shortcut: "",
+      supplier_type: supplierType,
       tin_number: "",
+      contact_person: "",
       bank_details: "",
       email_address: "",
       phone_number: "",
+      address: "",
+      brgy: "",
+      city: "",
+      state_province: "",
+      postal_code: "",
+      country: "Philippines",
+      payment_terms: "",
+      delivery_terms: "",
+      notes_or_comments: "",
+      agreement_or_contract: "",
+      preferred_communication_method: "",
       isActive: 1,
     },
   });
+  const selectedSupplierType = String(form.watch("supplier_type") ?? supplierType);
+  const isTrade = selectedSupplierType === "TRADE";
 
   const onSubmit = async (data: PayeeFormValues) => {
+    if (String(data.supplier_type) === "TRADE") {
+      const requiredTradeFields: Array<keyof PayeeFormValues> = [
+        "supplier_shortcut",
+        "contact_person",
+        "address",
+        "brgy",
+        "city",
+        "state_province",
+        "postal_code",
+        "country",
+        "payment_terms",
+        "delivery_terms",
+      ];
+      const missingField = requiredTradeFields.find((field) => {
+        const value = data[field];
+        return typeof value !== "string" || value.trim().length === 0;
+      });
+
+      if (missingField) {
+        toast.error("Please complete the required Trade supplier fields.");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const response = await fetch("/api/fm/payee-registration/payees", {
@@ -87,6 +139,24 @@ export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
               )}
             />
 
+            {isTrade && (
+              <FormField
+                control={form.control}
+                name="supplier_shortcut"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Supplier Shortcut <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. NFPI" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <div className="grid gap-4 md:grid-cols-2">
               <FormField
                 control={form.control}
@@ -98,11 +168,23 @@ export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
                     </FormLabel>
                     <FormControl>
                       <select
-                        value={field.value}
-                        disabled
-                        className="flex h-9 w-full rounded-md border border-input bg-muted px-3 py-1 text-sm text-muted-foreground shadow-sm"
+                        value={String(field.value ?? "NON-TRADE")}
+                        onChange={(event) => field.onChange(event.target.value)}
+                        disabled={!allowSupplierTypeSelect}
+                        className={`flex h-9 w-full rounded-md border border-input px-3 py-1 text-sm shadow-sm ${
+                          allowSupplierTypeSelect
+                            ? "bg-background text-foreground"
+                            : "bg-muted text-muted-foreground"
+                        }`}
                       >
-                        <option value="Non-Trade">Non-Trade</option>
+                        {allowSupplierTypeSelect ? (
+                          <>
+                            <option value="TRADE">Trade</option>
+                            <option value="NON-TRADE">Non-Trade</option>
+                          </>
+                        ) : (
+                          <option value={supplierType}>{supplierTypeLabel}</option>
+                        )}
                       </select>
                     </FormControl>
                     <FormMessage />
@@ -120,10 +202,10 @@ export function AddPayeeForm({ onSuccess, onCancel }: AddPayeeFormProps) {
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="000-000-000-000"
+                        placeholder="000000000"
                         {...field}
                         onChange={(event) => {
-                          field.onChange(formatTIN(event.target.value));
+                          field.onChange(event.target.value.replace(/\D/g, "").slice(0, 12));
                         }}
                       />
                     </FormControl>
