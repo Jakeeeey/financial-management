@@ -8,11 +8,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AddPayeeForm } from "../forms/add-payee-form";
+import type { Payee } from "../../types/payee.schema";
 
 interface AddPayeeModalProps {
   open: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (payee?: Payee) => void | Promise<void>;
   supplierType?: "TRADE" | "NON-TRADE";
   allowSupplierTypeSelect?: boolean;
 }
@@ -43,8 +44,8 @@ export function AddPayeeModal({
           key={`${supplierType}-${allowSupplierTypeSelect ? "selectable" : "locked"}`}
           supplierType={supplierType}
           allowSupplierTypeSelect={allowSupplierTypeSelect}
-          onSuccess={() => {
-            onSuccess();
+          onSuccess={async (payee) => {
+            await onSuccess(payee);
             onClose();
           }}
           onCancel={onClose}

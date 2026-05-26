@@ -31,6 +31,8 @@ import {
 } from "../types";
 import {disbursementProvider} from "../providers/fetchProvider";
 import {toast} from "sonner";
+import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
+import type { Payee } from "@/modules/financial-management/payee-registration/types/payee.schema";
 
 export interface ExtendedDisbursement extends Disbursement {
     payeeId?: number;
@@ -56,24 +58,6 @@ interface SearchableDropdownProps<T extends string | number> {
     popoverWidth?: string;
     overrideLabel?: string;
 }
-
-type FastPayeeFormValues = {
-    supplier_name: string;
-    supplier_type: "TRADE" | "NON-TRADE";
-    tin_number: string;
-    bank_details: string;
-    email_address: string;
-    phone_number: string;
-};
-
-const emptyFastPayeeForm: FastPayeeFormValues = {
-    supplier_name: "",
-    supplier_type: "NON-TRADE",
-    tin_number: "",
-    bank_details: "",
-    email_address: "",
-    phone_number: "",
-};
 
 function SearchableDropdown<T extends string | number>({
                                                            options,
@@ -166,8 +150,6 @@ export function DisbursementCreateSheet({
 
     const [poSearchQuery, setPoSearchQuery] = useState("");
     const [isPayeeRegistrationOpen, setIsPayeeRegistrationOpen] = useState(false);
-    const [creatingPayee, setCreatingPayee] = useState(false);
-    const [fastPayeeForm, setFastPayeeForm] = useState<FastPayeeFormValues>(emptyFastPayeeForm);
 
     const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
     const isNonTradeVoucher = transactionTypeId === 2;
@@ -263,55 +245,28 @@ export function DisbursementCreateSheet({
     const handleAddPayable = () => setPayables([...payables, {referenceNo: "", date: today, amount: 0, remarks: ""}]);
     const handleAddPayment = () => setPayments([...payments, {checkNo: "", date: today, amount: 0, remarks: ""}]);
 
-    const updateFastPayeeField = (field: keyof FastPayeeFormValues, value: string) => {
-        setFastPayeeForm((current) => ({...current, [field]: value}));
-    };
-
-    const resetFastPayeeForm = () => setFastPayeeForm({
-        ...emptyFastPayeeForm,
-        supplier_type: payeeSupplierType,
-    });
-
-    const handleCreatePayee = async () => {
-        const tinDigits = fastPayeeForm.tin_number.replace(/\D/g, "");
-        const email = fastPayeeForm.email_address.trim();
-
-        if (fastPayeeForm.supplier_name.trim().length < 2) {
-            return toast.error("Payee name must be at least 2 characters.");
-        }
-        if (tinDigits.length < 9 || tinDigits.length > 12) {
-            return toast.error("TIN must be 9-12 digits.");
-        }
-        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            return toast.error("Enter a valid email address.");
-        }
-
-        setCreatingPayee(true);
+    const handlePayeeCreated = async (createdPayee?: Payee) => {
         try {
-            const createdPayee = await disbursementProvider.createPayee({
-                supplier_name: fastPayeeForm.supplier_name.trim(),
-                supplier_type: payeeSupplierType,
-                tin_number: tinDigits,
-                bank_details: fastPayeeForm.bank_details.trim(),
-                email_address: email,
-                phone_number: fastPayeeForm.phone_number.trim(),
-            });
             const refreshed = await disbursementProvider.getSuppliers(payeeSupplierType);
             const nextSuppliers = Array.isArray(refreshed) ? refreshed : [];
+            const createdPayeeId = createdPayee?.id;
 
             setSuppliers(
-                nextSuppliers.some((supplier) => supplier.id === createdPayee.id)
+                createdPayeeId == null || nextSuppliers.some((supplier) => supplier.id === createdPayeeId)
                     ? nextSuppliers
-                    : [...nextSuppliers, createdPayee],
+                    : [
+                        ...nextSuppliers,
+                        {
+                            id: createdPayeeId,
+                            supplier_name: createdPayee?.supplier_name || "New Payee",
+                            isActive: true,
+                        },
+                    ],
             );
-            setPayeeId(createdPayee.id);
-            resetFastPayeeForm();
-            setIsPayeeRegistrationOpen(false);
+            if (createdPayeeId != null) setPayeeId(createdPayeeId);
             toast.success(`${payeeSupplierTypeLabel} payee created and selected.`);
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Failed to create payee");
-        } finally {
-            setCreatingPayee(false);
+            toast.error(error instanceof Error ? error.message : "Payee created, but the payee list could not be refreshed.");
         }
     };
 
@@ -534,10 +489,7 @@ export function DisbursementCreateSheet({
                                     <Button
                                         type="button"
                                         variant="outline"
-                                        onClick={() => {
-                                            resetFastPayeeForm();
-                                            setIsPayeeRegistrationOpen(true);
-                                        }}
+                                        onClick={() => setIsPayeeRegistrationOpen(true)}
                                         className="h-9 px-3 text-[10px] font-black uppercase tracking-widest shrink-0"
                                         title={`Register a ${payeeSupplierTypeLabel} payee`}
                                     >
@@ -844,125 +796,12 @@ export function DisbursementCreateSheet({
                 </SheetContent>
             </Sheet>
 
-            <Dialog open={isPayeeRegistrationOpen} onOpenChange={(nextOpen) => {
-                if (!creatingPayee) setIsPayeeRegistrationOpen(nextOpen);
-            }}>
-                <DialogContent className="sm:max-w-[560px] bg-background border-border">
-                    <DialogHeader>
-                        <DialogTitle className="text-lg font-black uppercase text-foreground">
-                            Register {payeeSupplierTypeLabel} Payee
-                        </DialogTitle>
-                        <DialogDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Fast registration for the selected voucher transaction type.
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="grid gap-4 py-2">
-                        <div className="grid gap-1.5">
-                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                Payee Name <span className="text-destructive">*</span>
-                            </Label>
-                            <Input
-                                value={fastPayeeForm.supplier_name}
-                                onChange={(event) => updateFastPayeeField("supplier_name", event.target.value)}
-                                disabled={creatingPayee}
-                                placeholder="e.g. BIR, Meralco, Employee Name"
-                                className="h-9 text-xs"
-                            />
-                        </div>
-
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="grid gap-1.5">
-                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                    Supplier Type <span className="text-destructive">*</span>
-                                </Label>
-                                <select
-                                    value={fastPayeeForm.supplier_type}
-                                    disabled
-                                    className="flex h-9 w-full rounded-md border border-input bg-muted px-3 py-1 text-xs font-bold uppercase text-muted-foreground shadow-sm"
-                                >
-                                    <option value="TRADE">Trade</option>
-                                    <option value="NON-TRADE">Non-Trade</option>
-                                </select>
-                            </div>
-                            <div className="grid gap-1.5">
-                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                    TIN Number <span className="text-destructive">*</span>
-                                </Label>
-                                <Input
-                                    value={fastPayeeForm.tin_number}
-                                    onChange={(event) => updateFastPayeeField("tin_number", event.target.value.replace(/\D/g, "").slice(0, 12))}
-                                    disabled={creatingPayee}
-                                    placeholder="000000000"
-                                    className="h-9 text-xs"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="grid gap-1.5">
-                            <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                Bank Details
-                            </Label>
-                            <Input
-                                value={fastPayeeForm.bank_details}
-                                onChange={(event) => updateFastPayeeField("bank_details", event.target.value)}
-                                disabled={creatingPayee}
-                                placeholder="Bank name, account number, or payment instructions"
-                                className="h-9 text-xs"
-                            />
-                        </div>
-
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="grid gap-1.5">
-                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                    Email Address
-                                </Label>
-                                <Input
-                                    type="email"
-                                    value={fastPayeeForm.email_address}
-                                    onChange={(event) => updateFastPayeeField("email_address", event.target.value)}
-                                    disabled={creatingPayee}
-                                    placeholder="name@example.com"
-                                    className="h-9 text-xs"
-                                />
-                            </div>
-                            <div className="grid gap-1.5">
-                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                    Phone Number
-                                </Label>
-                                <Input
-                                    value={fastPayeeForm.phone_number}
-                                    onChange={(event) => updateFastPayeeField("phone_number", event.target.value)}
-                                    disabled={creatingPayee}
-                                    placeholder="Mobile or landline"
-                                    className="h-9 text-xs"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <DialogFooter className="border-t border-border pt-4">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            disabled={creatingPayee}
-                            onClick={() => setIsPayeeRegistrationOpen(false)}
-                            className="text-[10px] font-black uppercase tracking-widest"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="button"
-                            disabled={creatingPayee}
-                            onClick={handleCreatePayee}
-                            className="text-[10px] font-black uppercase tracking-widest"
-                        >
-                            {creatingPayee ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Plus className="w-4 h-4 mr-2"/>}
-                            Create Payee
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <AddPayeeModal
+                open={isPayeeRegistrationOpen}
+                onClose={() => setIsPayeeRegistrationOpen(false)}
+                onSuccess={handlePayeeCreated}
+                supplierType={payeeSupplierType}
+            />
 
             <Dialog open={isPoModalOpen} onOpenChange={setIsPoModalOpen}>
                 <DialogContent className="sm:max-w-[750px] bg-background border-border">

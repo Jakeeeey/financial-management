@@ -16,14 +16,14 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { PayeeFormSchema, PayeeFormValues } from "../../types/payee.schema";
+import { Payee, PayeeFormSchema, PayeeFormValues } from "../../types/payee.schema";
 import {
   useDeliveryTerms,
   usePaymentTerms,
 } from "@/modules/financial-management/supplier-registration/hooks/useTerms";
 
 interface AddPayeeFormProps {
-  onSuccess: () => void;
+  onSuccess: (payee?: Payee) => void | Promise<void>;
   onCancel: () => void;
   supplierType?: "TRADE" | "NON-TRADE";
   allowSupplierTypeSelect?: boolean;
@@ -108,7 +108,7 @@ export function AddPayeeForm({
       }
 
       form.reset();
-      onSuccess();
+      await onSuccess(result.data);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to create payee",
@@ -261,6 +261,218 @@ export function AddPayeeForm({
                 )}
               />
             </div>
+
+            {isTrade && (
+              <div className="grid gap-4 border-t pt-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="contact_person"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Contact Person <span className="text-destructive">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input placeholder="Enter contact person" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="preferred_communication_method"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Preferred Communication</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Email, phone, or messaging app" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="address"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Address <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input placeholder="Street address" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="brgy"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Barangay <span className="text-destructive">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input placeholder="Barangay" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="city"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          City <span className="text-destructive">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input placeholder="City" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-3">
+                  <FormField
+                    control={form.control}
+                    name="state_province"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Province <span className="text-destructive">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input placeholder="Province" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="postal_code"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Postal Code <span className="text-destructive">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input placeholder="0000" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="country"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Country <span className="text-destructive">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input placeholder="Philippines" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="payment_terms"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Payment Terms <span className="text-destructive">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <select
+                            value={String(field.value ?? "")}
+                            onChange={(event) => field.onChange(event.target.value)}
+                            disabled={isLoadingPaymentTerms}
+                            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                          >
+                            <option value="">
+                              {isLoadingPaymentTerms ? "Loading terms..." : "Select payment terms"}
+                            </option>
+                            {paymentTerms.map((term) => (
+                              <option key={term.id} value={term.name}>
+                                {term.name}
+                              </option>
+                            ))}
+                          </select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="delivery_terms"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Delivery Terms <span className="text-destructive">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <select
+                            value={String(field.value ?? "")}
+                            onChange={(event) => field.onChange(event.target.value)}
+                            disabled={isLoadingDeliveryTerms}
+                            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                          >
+                            <option value="">
+                              {isLoadingDeliveryTerms ? "Loading terms..." : "Select delivery terms"}
+                            </option>
+                            {deliveryTerms.map((term) => (
+                              <option key={term.id} value={term.name}>
+                                {term.name}
+                              </option>
+                            ))}
+                          </select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="agreement_or_contract"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Agreement / Contract</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Contract reference or URL" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
 
