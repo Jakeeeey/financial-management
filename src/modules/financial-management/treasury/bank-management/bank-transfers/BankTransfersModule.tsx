@@ -454,6 +454,9 @@ export default function BankTransfersModule() {
                           <p className="break-words text-xs text-muted-foreground">
                             {displayText(transfer.transactionTypeName)}
                           </p>
+                          <p className="mt-1 break-words text-xs text-muted-foreground">
+                            Remarks: {displayText(transfer.remarks)}
+                          </p>
                         </TableCell>
                         <TableCell className="whitespace-normal align-top">
                           {formatDate(transfer.transferDate)}
@@ -554,6 +557,10 @@ export default function BankTransfersModule() {
                           <p className="text-muted-foreground">Type</p>
                           <p className="truncate">{displayText(transfer.transactionTypeName)}</p>
                         </div>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Remarks</p>
+                        <p className="break-words">{displayText(transfer.remarks)}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Source</p>

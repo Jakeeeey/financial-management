@@ -19,17 +19,6 @@ function formatMoney(value: number) {
   });
 }
 
-function formatDate(value: string) {
-  if (!value) return "";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-PH", {
-    month: "2-digit",
-    day: "2-digit",
-    year: "numeric",
-  });
-}
-
 function numberUnderThousandToWords(value: number) {
   const ones = [
     "",
@@ -117,8 +106,43 @@ function amountToPesoWords(amount: number) {
   return `${pesoWords} and ${integerToWords(cents)} ${cents === 1 ? "centavo" : "centavos"} only`.toUpperCase();
 }
 
+function getCheckDateParts(value: string) {
+  const emptyParts = {
+    month: ["", ""],
+    day: ["", ""],
+    year: ["", "", "", ""],
+  };
+
+  if (!value) return emptyParts;
+
+  const isoDate = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) {
+    return {
+      month: isoDate[2].split(""),
+      day: isoDate[3].split(""),
+      year: isoDate[1].split(""),
+    };
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return emptyParts;
+
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return {
+    month: pad(date.getMonth() + 1).split(""),
+    day: pad(date.getDate()).split(""),
+    year: String(date.getFullYear()).padStart(4, "0").split(""),
+  };
+}
+
+function renderDateCells(values: string[]) {
+  return values.map((value) => `<span class="dateCell">${esc(value)}</span>`).join("");
+}
+
 export function printBankTransferCheck(transfer: BankTransfer) {
   const amountWords = amountToPesoWords(transfer.amount);
+  const dateParts = getCheckDateParts(transfer.transferDate);
+  const payTo = transfer.remarks || transfer.destinationBankName;
   const title = `Check ${transfer.referenceNumber || transfer.transferNo}`;
   const html = `<!doctype html>
 <html lang="en">
@@ -146,19 +170,6 @@ export function printBankTransferCheck(transfer: BankTransfer) {
     position: relative;
     overflow: hidden;
     border: 1px solid #d6c98d;
-  }
-  .watermark {
-    position: absolute;
-    inset: .1in;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: rgba(151, 121, 38, .08);
-    font-size: .72in;
-    font-weight: 800;
-    letter-spacing: .05in;
-    text-transform: uppercase;
-    pointer-events: none;
   }
   .top {
     display: grid;
@@ -305,12 +316,44 @@ export function printBankTransferCheck(transfer: BankTransfer) {
     right: .26in;
     top: .84in;
     display: grid;
-    grid-template-columns: .35in 1.05in;
+    grid-template-columns: .35in auto;
     gap: .08in;
     align-items: end;
     z-index: 2;
   }
-  .date .line { font-size: .13in; text-align: center; }
+  .dateBox {
+    display: flex;
+    align-items: center;
+    gap: .025in;
+    padding-top: .015in;
+  }
+  .dateGroup {
+    display: flex;
+    align-items: center;
+  }
+  .dateCell {
+    display: inline-flex;
+    width: .13in;
+    height: .21in;
+    align-items: center;
+    justify-content: center;
+    border-top: 1px solid rgba(46, 42, 34, .55);
+    border-bottom: 1.5px solid #2e2a22;
+    border-left: 1px solid rgba(46, 42, 34, .55);
+    font-size: .095in;
+    font-weight: 700;
+    line-height: 1.1;
+    padding-top: .005in;
+  }
+  .dateCell:last-child {
+    border-right: 1px solid rgba(46, 42, 34, .55);
+  }
+  .dateDash {
+    padding: 0 .015in .01in;
+    font-size: .1in;
+    font-weight: 700;
+    line-height: 1;
+  }
   @media print {
     body { background: #fff; }
     .sheet { border: none; margin: 0; }
@@ -320,7 +363,6 @@ export function printBankTransferCheck(transfer: BankTransfer) {
 </head>
 <body>
 <div class="sheet">
-  <div class="watermark">Check Preview</div>
   <div class="top">
     <div>
       <div class="bank">${esc(transfer.sourceBankName)}</div>
@@ -339,11 +381,17 @@ export function printBankTransferCheck(transfer: BankTransfer) {
   </div>
   <div class="date">
     <div class="label">Date</div>
-    <div class="line">${esc(formatDate(transfer.transferDate))}</div>
+    <div class="dateBox">
+      <div class="dateGroup">${renderDateCells(dateParts.month)}</div>
+      <span class="dateDash">-</span>
+      <div class="dateGroup">${renderDateCells(dateParts.day)}</div>
+      <span class="dateDash">-</span>
+      <div class="dateGroup">${renderDateCells(dateParts.year)}</div>
+    </div>
   </div>
   <div class="main">
     <div class="label">Pay to the<br/>order of</div>
-    <div class="line">${esc(transfer.destinationBankName)}</div>
+    <div class="line">${esc(payTo)}</div>
     <div class="amountBox">
       <div class="currency">PHP</div>
       <div class="amount">${esc(formatMoney(transfer.amount))}</div>
