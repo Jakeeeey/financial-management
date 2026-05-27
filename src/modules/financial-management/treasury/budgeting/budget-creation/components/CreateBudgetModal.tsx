@@ -6,6 +6,7 @@ import React, { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +19,19 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   X,
   Loader2,
   Plus,
@@ -27,6 +41,7 @@ import {
   FileText,
   ImageIcon,
   ChevronDown,
+  Check,
 } from "lucide-react";
 import { useCreateBudgetContext } from "../providers/CreateBudgetProvider";
 import { useCreateBudgetForm } from "../hooks/useCreateBudgetForm";
@@ -35,8 +50,11 @@ import {
   YEAR_OPTIONS,
   formatFileSize,
 } from "../utils";
+import { toast } from "sonner";
 
-// ─── Simple native select wrapper ─────────────────────────────────────────────
+// Searchable select wrapper for budget modal fields.
+type FieldSelectOption = { value: string; label: string; disabled?: boolean };
+
 function FieldSelect({
   id,
   value,
@@ -51,29 +69,72 @@ function FieldSelect({
   value:       string;
   onChange:    (val: string) => void;
   placeholder: string;
-  options:     { value: string; label: string; disabled?: boolean }[];
+  options:     FieldSelectOption[];
   disabled?:   boolean;
   error?:      string;
   loading?:    boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const selectedLabel = options.find(o => o.value === value)?.label;
+  const isDisabled = disabled || loading;
+
+  const handleSelect = (nextValue: string, optionDisabled?: boolean) => {
+    if (optionDisabled) return;
+    onChange(nextValue);
+    setOpen(false);
+  };
+
   return (
-    <div className="relative">
-      <select
-        id={id}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        disabled={disabled || loading}
-        className={`flex h-9 w-full appearance-none rounded-md border ${
-          error ? "border-destructive" : "border-input"
-        } bg-background px-3 py-2 pr-8 text-xs text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
-      >
-        <option value="" disabled>{loading ? "Loading..." : placeholder}</option>
-        {options.map((o, idx) => (
-          <option key={`${o.value}-${idx}`} value={o.value} disabled={o.disabled}>{o.label}</option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-    </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          id={id}
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          aria-invalid={!!error}
+          disabled={isDisabled}
+          className={cn(
+            "h-9 w-full justify-between rounded-md border px-3 py-2 text-xs font-normal",
+            "bg-background text-foreground shadow-none hover:bg-background",
+            !selectedLabel && "text-muted-foreground",
+            error && "border-destructive",
+            isDisabled && "cursor-not-allowed opacity-50"
+          )}
+        >
+          <span className="truncate">{loading ? "Loading..." : selectedLabel || placeholder}</span>
+          <ChevronDown className="ml-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[--radix-popover-trigger-width] p-0">
+        <Command>
+          <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} className="h-9 text-xs" />
+          <CommandList className="max-h-[240px]">
+            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandGroup>
+              {options.map((o, idx) => (
+                <CommandItem
+                  key={`${o.value}-${idx}`}
+                  value={`${o.label} ${o.value}`}
+                  disabled={o.disabled}
+                  onSelect={() => handleSelect(o.value, o.disabled)}
+                  className="text-xs"
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-3.5 w-3.5",
+                      value === o.value ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  <span className="truncate">{o.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -126,6 +187,7 @@ export function CreateBudgetModal() {
             closeModal();
         } catch (error) {
             console.error("Submission failed:", error);
+            toast.error(error instanceof Error ? error.message : "Budget submission failed. Please try again.");
         }
     },
     editingBudget,
@@ -439,12 +501,15 @@ export function CreateBudgetModal() {
                   </div>
                   <div className="text-center">
                     <p className="text-xs font-semibold">{isDragging ? "Drop files here" : "Click or drag files to attach"}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">PDF, DOCX, PNG, JPG, XLSX and more</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Excel, PDF, Word, and image files only (Max 25MB)</p>
                   </div>
                   <input
                     type="file"
                     ref={fileInputRef}
-                    onChange={e => addFiles(e.target.files)}
+                    onChange={e => {
+                      addFiles(e.target.files);
+                      e.currentTarget.value = "";
+                    }}
                     multiple
                     className="hidden"
                   />

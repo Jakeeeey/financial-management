@@ -27,9 +27,8 @@ export function ApprovalActionDialog({
   onConfirm,
   type,
   count,
-  loading = false
+  loading = false,
 }: ApprovalActionDialogProps) {
-
   const config = {
     approve: {
       title: "Confirm Approval",
@@ -56,7 +55,9 @@ export function ApprovalActionDialog({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open && !loading) onClose();
+    }}>
       <DialogContent className="max-w-md p-0 overflow-hidden rounded-2xl border-border/40 shadow-2xl">
         <div className="bg-muted/20 p-6 border-b border-border/50">
           <div className="flex items-center gap-4">
@@ -78,13 +79,13 @@ export function ApprovalActionDialog({
           <DialogDescription className="text-sm font-medium leading-relaxed">
             {config.description}
           </DialogDescription>
-
         </div>
 
         <DialogFooter className="p-4 bg-muted/10 border-t border-border/40 flex items-center gap-2">
           <Button
             variant="ghost"
             onClick={onClose}
+            disabled={loading}
             className="flex-1 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-muted/50"
           >
             Cancel

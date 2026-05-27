@@ -9,10 +9,6 @@ interface BudgetApprovalContextValue {
   displayedItems:  Budget[];
   loading:         boolean;
   initialLoading:  boolean;
-  hasMore:         boolean;
-  total:           number;
-  // Infinite scroll
-  loadMore:        () => void;
   // Filters
   filters:         BudgetApprovalFilters;
   updateFilter:    <K extends keyof BudgetApprovalFilters>(key: K, value: BudgetApprovalFilters[K]) => void;

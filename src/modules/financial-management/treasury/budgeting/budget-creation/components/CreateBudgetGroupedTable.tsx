@@ -36,6 +36,7 @@ import {
   FileText,
   ExternalLink,
   Download,
+  MessageSquareText,
 } from "lucide-react";
 
 import { useCreateBudgetContext } from "../providers/CreateBudgetProvider";
@@ -74,6 +75,42 @@ interface DivisionGroup {
   division_name: string;
   departments: DepartmentGroup[];
   total: number;
+}
+
+function BudgetRemarksPopover({ remarks }: { remarks?: string | null }) {
+  const cleanRemarks = remarks?.trim();
+  if (!cleanRemarks) return null;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="link"
+          className="h-auto max-w-[180px] justify-start gap-1 p-0 text-[10px] font-medium italic leading-none text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <MessageSquareText className="h-2.5 w-2.5 shrink-0 opacity-60" />
+          <span className="truncate">{cleanRemarks}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={5}
+        className="z-50 w-80 rounded-2xl border-border/50 bg-card/95 p-4 shadow-xl backdrop-blur-sm"
+      >
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center gap-1.5 border-b border-border/40 pb-2">
+            <MessageSquareText className="h-3.5 w-3.5 text-primary" />
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-foreground">
+              Budget Remarks / Justification
+            </h4>
+          </div>
+          <div className="max-h-[200px] overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground scrollbar-thin">
+            {cleanRemarks}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function groupBudgets(items: Budget[] = [], allItems: Budget[] = []): DivisionGroup[] {
@@ -243,7 +280,10 @@ function SupplementRow({ supplement, showCheckbox }: { supplement: Budget; showC
                 </Popover>
               )}
             </div>
-            <p className="text-[11px] font-mono text-blue-500/80">{supplement.gl_code}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] font-mono text-blue-500/80">{supplement.gl_code}</p>
+              <BudgetRemarksPopover remarks={supplement.remarks} />
+            </div>
           </div>
         </div>
       </td>
@@ -434,6 +474,7 @@ function BudgetRow({
               <p className="text-[11px] font-mono text-primary/80">
                 {node.gl_code} • <span className="opacity-60">{node.budget_no}</span>
               </p>
+              <BudgetRemarksPopover remarks={node.remarks} />
             </div>
           </div>
         </td>

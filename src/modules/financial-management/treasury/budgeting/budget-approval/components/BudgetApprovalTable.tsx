@@ -91,6 +91,25 @@ export function BudgetApprovalTable() {
     <div className="w-full overflow-hidden rounded-3xl border border-border/50 bg-card shadow-sm">
       <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-muted">
         <Table>
+          <colgroup>
+            {isPendingTab ? (
+              <>
+                <col className="w-[50px]" />
+                <col className="w-[32%]" />
+                <col className="w-[22%]" />
+                <col className="w-[17%]" />
+                <col className="w-[12%]" />
+                <col className="w-[17%]" />
+              </>
+            ) : (
+              <>
+                <col className="w-[40%]" />
+                <col className="w-[26%]" />
+                <col className="w-[18%]" />
+                <col className="w-[16%]" />
+              </>
+            )}
+          </colgroup>
           <TableHeader className="bg-muted/30">
             <TableRow className="hover:bg-transparent border-border/40">
               {isPendingTab && (
@@ -104,8 +123,10 @@ export function BudgetApprovalTable() {
               <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground py-4">Budget Details</TableHead>
               <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Department / Division</TableHead>
               <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Amount</TableHead>
-              <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Type</TableHead>
-              <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right pr-6">Actions</TableHead>
+              <TableHead className={`text-[10px] font-black uppercase tracking-widest text-muted-foreground ${!isPendingTab ? "text-right pr-8" : ""}`}>Type</TableHead>
+              {isPendingTab && (
+                <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right pr-6">Actions</TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -273,7 +294,7 @@ export function BudgetApprovalTable() {
                 </TableCell>
 
                 {/* Type */}
-                <TableCell>
+                <TableCell className={!isPendingTab ? "text-right pr-8" : ""}>
                   <Badge variant="secondary" className={`h-5 text-[8px] font-black uppercase tracking-widest border-none ${
                     budget.entry_type === 'original' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'
                   }`}>
@@ -282,8 +303,9 @@ export function BudgetApprovalTable() {
                 </TableCell>
 
                 {/* Actions */}
-                <TableCell className="text-right pr-6">
-                  {budget.status === "Pending" ? (
+                {isPendingTab && (
+                  <TableCell className="text-right pr-6">
+                    {budget.status === "Pending" && (
                     <div className="flex items-center justify-end gap-2">
                       <Button
                         variant="ghost"
@@ -304,14 +326,9 @@ export function BudgetApprovalTable() {
                         Approve
                       </Button>
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-end gap-2 opacity-30 grayscale pointer-events-none">
-                      <Badge variant="outline" className="h-6 px-3 text-[8px] font-black uppercase tracking-widest bg-muted/50 border-border/40">
-                         Processed
-                      </Badge>
-                    </div>
-                  )}
-                </TableCell>
+                    )}
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
