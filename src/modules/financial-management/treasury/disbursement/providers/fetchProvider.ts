@@ -14,6 +14,9 @@ import {
 const API_BASE = "/api/fm/treasury/disbursements";
 const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
 
+const toStoredSupplierType = (type: string) =>
+    type.toUpperCase().startsWith("NON") ? "NON-TRADE" : "TRADE";
+
 export const disbursementProvider = {
     getDisbursements: async (
         page: number = 0, size: number = 20, type: string = "All",
@@ -57,9 +60,27 @@ export const disbursementProvider = {
 
     // 🚀 Fetch Suppliers for the Dropdown
     getSuppliers: async (type: string = "Trade"): Promise<SupplierDto[]> => {
-        const res = await fetch(`${SUPPLIER_API_BASE}?type=${encodeURIComponent(type)}`);
+        const res = await fetch(`${SUPPLIER_API_BASE}?type=${encodeURIComponent(toStoredSupplierType(type))}`);
         if (!res.ok) throw new Error("Failed to fetch suppliers");
         return res.json();
+    },
+
+    createPayee: async (payload: {
+        supplier_name: string;
+        supplier_type: "TRADE" | "NON-TRADE";
+        tin_number: string;
+        bank_details?: string;
+        email_address?: string;
+        phone_number?: string;
+    }): Promise<SupplierDto> => {
+        const res = await fetch("/api/fm/payee-registration/payees", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || "Failed to create payee");
+        return json.data as SupplierDto;
     },
 
     // 🚀 Fetch COAs for the Line Items
