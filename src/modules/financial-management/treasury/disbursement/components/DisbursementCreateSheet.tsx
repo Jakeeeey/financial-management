@@ -31,6 +31,8 @@ import {
 } from "../types";
 import {disbursementProvider} from "../providers/fetchProvider";
 import {toast} from "sonner";
+import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
+import type { Payee } from "@/modules/financial-management/payee-registration/types/payee.schema";
 
 export interface ExtendedDisbursement extends Disbursement {
     payeeId?: number;
@@ -147,8 +149,12 @@ export function DisbursementCreateSheet({
     const [departments, setDepartments] = useState<DepartmentDto[]>([]);
 
     const [poSearchQuery, setPoSearchQuery] = useState("");
+    const [isPayeeRegistrationOpen, setIsPayeeRegistrationOpen] = useState(false);
 
     const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+    const isNonTradeVoucher = transactionTypeId === 2;
+    const payeeSupplierType = isNonTradeVoucher ? "NON-TRADE" : "TRADE";
+    const payeeSupplierTypeLabel = isNonTradeVoucher ? "Non-Trade" : "Trade";
 
     useEffect(() => {
         if (open) {
@@ -162,7 +168,7 @@ export function DisbursementCreateSheet({
     useEffect(() => {
         if (open && transactionTypeId) {
             setLoadingData(true);
-            const typeString = transactionTypeId === 1 ? "Trade" : "Non-Trade";
+            const typeString = transactionTypeId === 1 ? "TRADE" : "NON-TRADE";
             disbursementProvider.getSuppliers(typeString)
                 .then(res => setSuppliers(Array.isArray(res) ? res : []))
                 .finally(() => setLoadingData(false));
@@ -238,6 +244,31 @@ export function DisbursementCreateSheet({
 
     const handleAddPayable = () => setPayables([...payables, {referenceNo: "", date: today, amount: 0, remarks: ""}]);
     const handleAddPayment = () => setPayments([...payments, {checkNo: "", date: today, amount: 0, remarks: ""}]);
+
+    const handlePayeeCreated = async (createdPayee?: Payee) => {
+        try {
+            const refreshed = await disbursementProvider.getSuppliers(payeeSupplierType);
+            const nextSuppliers = Array.isArray(refreshed) ? refreshed : [];
+            const createdPayeeId = createdPayee?.id;
+
+            setSuppliers(
+                createdPayeeId == null || nextSuppliers.some((supplier) => supplier.id === createdPayeeId)
+                    ? nextSuppliers
+                    : [
+                        ...nextSuppliers,
+                        {
+                            id: createdPayeeId,
+                            supplier_name: createdPayee?.supplier_name || "New Payee",
+                            isActive: true,
+                        },
+                    ],
+            );
+            if (createdPayeeId != null) setPayeeId(createdPayeeId);
+            toast.success(`${payeeSupplierTypeLabel} payee created and selected.`);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Payee created, but the payee list could not be refreshed.");
+        }
+    };
 
     const handleOpenPoModal = async () => {
         if (!payeeId) return toast.error("Please select a Payee first.");
@@ -455,11 +486,23 @@ export function DisbursementCreateSheet({
                                             className="h-9 w-full bg-background border-input text-xs font-bold uppercase"
                                         />
                                     </div>
-                                    <Button type="button" onClick={handleOpenPoModal} disabled={!payeeId}
-                                            className="h-9 px-3 bg-amber-500 hover:bg-amber-600 text-white shadow-sm shrink-0"
-                                            title="Pull Unpaid POs">
-                                        <DownloadCloud className="w-4 h-4"/>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => setIsPayeeRegistrationOpen(true)}
+                                        className="h-9 px-3 text-[10px] font-black uppercase tracking-widest shrink-0"
+                                        title={`Register a ${payeeSupplierTypeLabel} payee`}
+                                    >
+                                        <Plus className="w-4 h-4 mr-1"/>
+                                        New Payee
                                     </Button>
+                                    {!isNonTradeVoucher && (
+                                        <Button type="button" onClick={handleOpenPoModal} disabled={!payeeId}
+                                                className="h-9 px-3 bg-amber-500 hover:bg-amber-600 text-white shadow-sm shrink-0"
+                                                title="Pull Unpaid POs">
+                                            <DownloadCloud className="w-4 h-4"/>
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
 
@@ -752,6 +795,13 @@ export function DisbursementCreateSheet({
                     </div>
                 </SheetContent>
             </Sheet>
+
+            <AddPayeeModal
+                open={isPayeeRegistrationOpen}
+                onClose={() => setIsPayeeRegistrationOpen(false)}
+                onSuccess={handlePayeeCreated}
+                supplierType={payeeSupplierType}
+            />
 
             <Dialog open={isPoModalOpen} onOpenChange={setIsPoModalOpen}>
                 <DialogContent className="sm:max-w-[750px] bg-background border-border">
