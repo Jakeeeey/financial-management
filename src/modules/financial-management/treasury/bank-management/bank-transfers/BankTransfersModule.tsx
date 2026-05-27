@@ -43,9 +43,9 @@ import {
   ArrowLeftRight,
   Check,
   Clock3,
+  FileText,
   Loader2,
   Plus,
-  Printer,
   RefreshCw,
   Search,
   XCircle,
@@ -53,7 +53,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { BankTransferDialog } from "./components/BankTransferDialog";
 import { useBankTransfers } from "./hooks/useBankTransfers";
-import { printBankTransferCheck } from "./utils/printBankTransferCheck";
+import { bankTransfersApi } from "./providers/bankTransfersApi";
 import type {
   BankTransfer,
   BankTransferFormValues,
@@ -235,6 +235,22 @@ export default function BankTransfersModule() {
     await reloadCurrentPage();
   }
 
+  function previewCheckPdf(transfer: BankTransfer) {
+    window.open(
+      bankTransfersApi.getCheckPdfUrl(transfer.transferId),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
+  function previewCalibrationPdf() {
+    window.open(
+      bankTransfersApi.getCheckCalibrationPdfUrl(),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
   return (
     <div className="space-y-4 p-4 md:p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -394,6 +410,15 @@ export default function BankTransfersModule() {
                 type="button"
                 variant="outline"
                 disabled={saving}
+                onClick={previewCalibrationPdf}
+              >
+                <FileText />
+                Calibration PDF
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving}
                 onClick={() => void reloadCurrentPage()}
               >
                 <RefreshCw className={cn(loading && "animate-spin")} />
@@ -483,16 +508,18 @@ export default function BankTransfersModule() {
                         <TableCell className="whitespace-normal align-top">
                           <div className="flex flex-wrap justify-end gap-2">
                             {showPrintCheck ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                disabled={saving}
-                                onClick={() => printBankTransferCheck(transfer)}
-                              >
-                                <Printer />
-                                Print Check
-                              </Button>
+                              <>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={saving}
+                                  onClick={() => previewCheckPdf(transfer)}
+                                >
+                                  <FileText />
+                                  Preview PDF
+                                </Button>
+                              </>
                             ) : null}
                             {actions.map((action) => (
                               <Button
@@ -588,16 +615,18 @@ export default function BankTransfersModule() {
                     {actions.length > 0 || showPrintCheck ? (
                       <div className="flex flex-wrap justify-end gap-2">
                         {showPrintCheck ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={saving}
-                            onClick={() => printBankTransferCheck(transfer)}
-                          >
-                            <Printer />
-                            Print Check
-                          </Button>
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={saving}
+                              onClick={() => previewCheckPdf(transfer)}
+                            >
+                              <FileText />
+                              Preview PDF
+                            </Button>
+                          </>
                         ) : null}
                         {actions.map((action) => (
                           <Button
