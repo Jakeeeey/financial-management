@@ -74,6 +74,7 @@ function integerToWords(value: number) {
   if (value === 0) return "zero";
 
   const scales = [
+    { value: 1_000_000_000_000, label: "trillion" },
     { value: 1_000_000_000, label: "billion" },
     { value: 1_000_000, label: "million" },
     { value: 1_000, label: "thousand" },
@@ -137,10 +138,42 @@ function renderDateCells(values: string[]) {
   return values.map((value) => `<span class="dateCell">${esc(value)}</span>`).join("");
 }
 
+function renderCheckDate(dateParts: ReturnType<typeof getCheckDateParts>) {
+  return [
+    renderDateCells(dateParts.month),
+    '<span class="dateSeparator" aria-hidden="true"></span>',
+    renderDateCells(dateParts.day),
+    '<span class="dateSeparator" aria-hidden="true"></span>',
+    renderDateCells(dateParts.year),
+  ].join("");
+}
+
+function normalizeCheckText(value: unknown) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+function fitClass(base: string, value: string, mediumAt: number, smallAt: number) {
+  if (value.length >= smallAt) return `${base} fitSmall`;
+  if (value.length >= mediumAt) return `${base} fitMedium`;
+  return base;
+}
+
+function fitAmountWordsClass(value: string) {
+  if (value.length >= 170) return "value fitTiny";
+  return fitClass("value", value, 92, 124);
+}
+
 export function printBankTransferCheck(transfer: BankTransfer) {
   const amountWords = amountToPesoWords(transfer.amount);
   const dateParts = getCheckDateParts(transfer.transferDate);
-  const payTo = transfer.remarks || transfer.destinationBankName;
+  const payTo = normalizeCheckText(transfer.remarks || transfer.destinationBankName);
+  const amountFigure = formatMoney(transfer.amount);
+  const payToClass = fitClass("value", payTo, 48, 64);
+  const amountFigureClass = fitClass("value", amountFigure, 13, 18);
+  const amountWordsClass = fitAmountWordsClass(amountWords);
   const title = `Check ${transfer.referenceNumber || transfer.transferNo}`;
   const html = `<!doctype html>
 <html lang="en">
@@ -173,39 +206,41 @@ export function printBankTransferCheck(transfer: BankTransfer) {
   }
   .date {
     position: absolute;
-    right: .26in;
-    top: .84in;
+    left: 6.16in;
+    top: .57in;
+    width: 1.82in;
     z-index: 1;
   }
-  .dateValue {
-    display: flex;
-    align-items: center;
-    gap: .025in;
-  }
-  .dateGroup {
-    display: flex;
+  .dateGrid {
+    display: grid;
+    grid-template-columns:
+      .18in .18in
+      .17in
+      .18in .18in
+      .17in
+      .18in .18in .18in .18in;
     align-items: center;
   }
   .dateCell {
     display: inline-flex;
-    width: .13in;
-    height: .18in;
+    width: .18in;
+    height: .21in;
     align-items: center;
     justify-content: center;
-    font-size: .13in;
+    font-size: .14in;
     font-weight: 800;
     line-height: 1;
   }
-  .dateDash {
-    font-size: .13in;
-    font-weight: 800;
-    line-height: 1;
+  .dateSeparator {
+    display: block;
+    width: .17in;
+    height: .21in;
   }
   .payTo {
     position: absolute;
-    left: 1.68in;
-    right: 1.95in;
-    top: 1.22in;
+    left: 1.16in;
+    right: 2.72in;
+    top: .99in;
     z-index: 1;
   }
   .payTo .value {
@@ -214,32 +249,63 @@ export function printBankTransferCheck(transfer: BankTransfer) {
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .payTo .fitMedium {
+    font-size: .145in;
+  }
+  .payTo .fitSmall {
+    font-size: .125in;
+  }
   .amountBox {
     position: absolute;
-    right: .38in;
-    top: 1.22in;
-    width: 1.22in;
+    left: 5.99in;
+    top: .98in;
+    width: 1.9in;
     z-index: 1;
   }
   .amountBox .value {
     display: block;
-    text-align: right;
+    text-align: left;
     white-space: nowrap;
-    font-size: .18in;
+    font-size: .17in;
     font-weight: 800;
+  }
+  .amountBox .fitMedium {
+    font-size: .145in;
+  }
+  .amountBox .fitSmall {
+    font-size: .118in;
   }
   .pesos {
     position: absolute;
-    left: 1.36in;
-    right: .5in;
-    top: 1.73in;
+    left: .74in;
+    right: .48in;
+    top: 1.09in;
+    height: .38in;
     z-index: 1;
+    display: flex;
+    align-items: flex-end;
+    overflow: visible;
   }
   .pesos .value {
     display: block;
-    font-size: .13in;
-    line-height: 1.25;
+    width: 100%;
+    font-size: .145in;
+    line-height: 1.16;
     white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+  .pesos .fitMedium {
+    font-size: .128in;
+    line-height: 1.12;
+  }
+  .pesos .fitSmall {
+    font-size: .112in;
+    line-height: 1.08;
+  }
+  .pesos .fitTiny {
+    font-size: .094in;
+    line-height: 1.04;
   }
   @media print {
     .sheet { margin: 0; }
@@ -250,22 +316,16 @@ export function printBankTransferCheck(transfer: BankTransfer) {
 <body>
 <div class="sheet">
   <div class="date">
-    <div class="dateValue">
-      <div class="dateGroup">${renderDateCells(dateParts.month)}</div>
-      <span class="dateDash">-</span>
-      <div class="dateGroup">${renderDateCells(dateParts.day)}</div>
-      <span class="dateDash">-</span>
-      <div class="dateGroup">${renderDateCells(dateParts.year)}</div>
-    </div>
+    <div class="dateGrid">${renderCheckDate(dateParts)}</div>
   </div>
   <div class="payTo">
-    <div class="value">${esc(payTo)}</div>
+    <div class="${payToClass}">${esc(payTo)}</div>
   </div>
   <div class="amountBox">
-    <div class="value">${esc(formatMoney(transfer.amount))}</div>
+    <div class="${amountFigureClass}">${esc(amountFigure)}</div>
   </div>
   <div class="pesos">
-    <div class="value">${esc(amountWords)}</div>
+    <div class="${amountWordsClass}">${esc(amountWords)}</div>
   </div>
 </div>
 <script>setTimeout(() => window.print(), 300);</script>
