@@ -50,6 +50,7 @@ type PaymentMethodRow = {
 type BankDepositRow = {
   total_cash?: unknown;
   total_checks?: unknown;
+  status?: unknown;
 };
 
 type DisbursementPaymentRow = {
@@ -340,8 +341,9 @@ function roundMoney(value: number) {
 async function getDepositRows(bankId: number) {
   const params = new URLSearchParams();
   params.set("limit", "-1");
-  params.set("fields", "total_cash,total_checks");
-  params.set("filter[target_bank_id][_eq]", String(bankId));
+  params.set("fields", "total_cash,total_checks,status");
+  params.set("filter[_and][0][target_bank_id][_eq]", String(bankId));
+  params.set("filter[_and][1][status][_eq]", "CLEARED");
 
   const res = await directusFetch<DirectusList<BankDepositRow>>(
     `/items/bank_deposit?${params.toString()}`,

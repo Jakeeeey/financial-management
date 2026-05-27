@@ -37,6 +37,7 @@ type BankDepositRow = {
   target_bank_id?: unknown;
   total_cash?: unknown;
   total_checks?: unknown;
+  status?: unknown;
 };
 
 type BankTransferRow = {
@@ -168,8 +169,13 @@ async function getActiveBanks() {
   }
 }
 
-function addEndDateFilter(params: URLSearchParams, field: string, endDate: string) {
-  if (endDate) params.set(`filter[_and][1][${field}][_lte]`, endDate);
+function addEndDateFilter(
+  params: URLSearchParams,
+  field: string,
+  endDate: string,
+  filterIndex = 1,
+) {
+  if (endDate) params.set(`filter[_and][${filterIndex}][${field}][_lte]`, endDate);
 }
 
 async function getDepositRows(bankId: number, endDate: string) {
@@ -177,10 +183,11 @@ async function getDepositRows(bankId: number, endDate: string) {
   params.set("limit", "-1");
   params.set(
     "fields",
-    "id,deposit_no,deposit_date,target_bank_id,total_cash,total_checks",
+    "id,deposit_no,deposit_date,target_bank_id,total_cash,total_checks,status",
   );
   params.set("filter[_and][0][target_bank_id][_eq]", String(bankId));
-  addEndDateFilter(params, "deposit_date", endDate);
+  params.set("filter[_and][1][status][_eq]", "CLEARED");
+  addEndDateFilter(params, "deposit_date", endDate, 2);
 
   const res = await directusFetch<DirectusList<BankDepositRow>>(
     `/items/bank_deposit?${params.toString()}`,

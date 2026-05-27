@@ -59,6 +59,7 @@ export const bankReconciliationApi = {
         bankId: Number(payload.bankId),
         statementDate: payload.statementDate,
         statementBalance: payload.statementBalance,
+        remarks: payload.remarks,
       }),
     });
     const json = await parseResponse<{ reconciliation: BankReconciliation }>(

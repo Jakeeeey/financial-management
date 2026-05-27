@@ -321,7 +321,7 @@ function BankTransferForm({
           : {}),
       };
 
-      if (id === "sourceBankId") {
+      if (id === "sourceBankId" && current.amount.trim() === "") {
         const nextSourceBank = banks.find((bank) => String(bank.bankId) === value);
         if (nextSourceBank?.currentBalance !== undefined) {
           nextValues.amount =

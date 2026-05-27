@@ -55,6 +55,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   Calculator,
@@ -86,6 +87,7 @@ const emptyForm: BankReconciliationFormValues = {
   bankId: "",
   statementDate: new Date().toISOString().slice(0, 10),
   statementBalance: "",
+  remarks: "",
 };
 
 type BankSelectProps = {
@@ -390,7 +392,7 @@ export default function BankReconciliationModule() {
                   <Input
                     id="reconciliationSearch"
                     value={search}
-                    placeholder="Bank, status, or record id"
+                    placeholder="Bank, status, remarks, or record id"
                     className="pl-9"
                     onChange={(event) => {
                       setSearch(event.target.value);
@@ -491,18 +493,36 @@ export default function BankReconciliationModule() {
             </div>
           ) : null}
 
-          <div className="hidden md:block">
-            <Table>
+          <div className="hidden lg:block">
+            <Table className="table-fixed">
+              <colgroup>
+                <col className="w-[31%]" />
+                <col className="w-[10%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[8%]" />
+                <col className="w-[9%]" />
+                <col className="w-[9%]" />
+              </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Bank</TableHead>
-                  <TableHead>Statement Date</TableHead>
-                  <TableHead className="text-right">Statement</TableHead>
-                  <TableHead className="text-right">System</TableHead>
-                  <TableHead className="text-right">Variance</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
+                  <TableHead className="whitespace-normal">Bank</TableHead>
+                  <TableHead className="whitespace-normal leading-tight">
+                    Statement Date
+                  </TableHead>
+                  <TableHead className="whitespace-normal text-right leading-tight">
+                    Statement
+                  </TableHead>
+                  <TableHead className="whitespace-normal text-right leading-tight">
+                    System
+                  </TableHead>
+                  <TableHead className="whitespace-normal text-right leading-tight">
+                    Variance
+                  </TableHead>
+                  <TableHead className="whitespace-normal">Status</TableHead>
+                  <TableHead className="whitespace-normal">Created</TableHead>
+                  <TableHead className="whitespace-normal text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -522,17 +542,22 @@ export default function BankReconciliationModule() {
                 ) : (
                   data.reconciliations.map((item) => (
                     <TableRow key={item.id}>
-                      <TableCell className="max-w-64 truncate font-medium">
-                        {item.bankLabel}
+                      <TableCell className="whitespace-normal align-top font-medium">
+                        <p className="break-words leading-snug">{item.bankLabel}</p>
+                        <p className="mt-1 break-words text-xs font-normal leading-snug text-muted-foreground">
+                          {item.remarks || "No remarks"}
+                        </p>
                       </TableCell>
-                      <TableCell>{formatDate(item.statementDate)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="whitespace-normal align-top leading-snug">
+                        {formatDate(item.statementDate)}
+                      </TableCell>
+                      <TableCell className="whitespace-normal align-top text-right text-xs tabular-nums xl:text-sm">
                         {formatMoney(item.statementBalance)}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="whitespace-normal align-top text-right text-xs tabular-nums xl:text-sm">
                         {formatMoney(item.systemBalance)}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="whitespace-normal align-top text-right text-xs tabular-nums xl:text-sm">
                         <span
                           className={cn(
                             isZeroVariance(item.variance)
@@ -543,13 +568,15 @@ export default function BankReconciliationModule() {
                           {formatMoney(item.variance)}
                         </span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         <Badge variant={statusBadgeVariant(item.status)}>
                           {item.status}
                         </Badge>
                       </TableCell>
-                      <TableCell>{formatDateTime(item.createdAt)}</TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal align-top text-xs leading-snug xl:text-sm">
+                        {formatDateTime(item.createdAt)}
+                      </TableCell>
+                      <TableCell className="align-top">
                         <div className="flex justify-end">
                           {item.status === "DRAFT" ? (
                             <Button
@@ -562,6 +589,7 @@ export default function BankReconciliationModule() {
                                   : "Resolve the variance before reconciling"
                               }
                               onClick={() => setPendingReconciliation(item)}
+                              className="px-2"
                             >
                               Reconcile
                             </Button>
@@ -579,7 +607,7 @@ export default function BankReconciliationModule() {
             </Table>
           </div>
 
-          <div className="grid gap-3 p-4 md:hidden">
+          <div className="grid gap-3 p-4 lg:hidden">
             {loading ? (
               <div className="rounded-md border p-6 text-center text-sm text-muted-foreground">
                 <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
@@ -593,8 +621,11 @@ export default function BankReconciliationModule() {
               data.reconciliations.map((item) => (
                 <div key={item.id} className="grid gap-3 rounded-md border p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{item.bankLabel}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words font-medium">{item.bankLabel}</p>
+                      <p className="mt-1 break-words text-sm text-muted-foreground">
+                        {item.remarks || "No remarks"}
+                      </p>
                       <p className="text-sm text-muted-foreground">
                         {formatDate(item.statementDate)}
                       </p>
@@ -748,6 +779,19 @@ export default function BankReconciliationModule() {
                     }
                   />
                 </div>
+                <div className="grid gap-1.5 md:col-span-2">
+                  <Label htmlFor="reconciliationRemarks">Remarks</Label>
+                  <Textarea
+                    id="reconciliationRemarks"
+                    value={formValues.remarks}
+                    disabled={saving}
+                    placeholder="Add bank statement notes or reconciliation context"
+                    className="min-h-24 resize-none"
+                    onChange={(event) =>
+                      updateFormValue("remarks", event.target.value)
+                    }
+                  />
+                </div>
                 <div className="grid gap-3 rounded-md border bg-muted/40 p-4 md:col-span-2">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -848,6 +892,8 @@ export default function BankReconciliationModule() {
                 <span className="tabular-nums">
                   {formatMoney(pendingReconciliation.variance)}
                 </span>
+                <span className="text-muted-foreground">Remarks</span>
+                <span>{pendingReconciliation.remarks || "No remarks"}</span>
               </div>
             </div>
           ) : null}

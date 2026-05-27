@@ -34,6 +34,7 @@ type BankReconciliationRow = {
   system_balance?: unknown;
   variance?: unknown;
   status?: unknown;
+  remarks?: unknown;
   prepared_by?: unknown;
   approved_by?: unknown;
   created_at?: unknown;
@@ -46,10 +47,11 @@ type BankReconciliationPayload = {
   system_balance: number;
   variance: number;
   status: "DRAFT";
+  remarks?: string | null;
   prepared_by: number;
 };
 
-const reconciliationFields = [
+const baseReconciliationFields = [
   "id",
   "bank_id",
   "statement_date",
@@ -61,6 +63,7 @@ const reconciliationFields = [
   "approved_by",
   "created_at",
 ];
+const reconciliationFields = [...baseReconciliationFields, "remarks"];
 const bankFields = [
   "bank_id",
   "bank_name",
@@ -113,6 +116,7 @@ function normalizeReconciliation(
     systemBalance: asNumber(row.system_balance) ?? 0,
     variance: asNumber(row.variance) ?? 0,
     status: asString(row.status).toUpperCase() || "DRAFT",
+    remarks: asString(row.remarks),
     preparedBy: asNumber(row.prepared_by),
     approvedBy: asNumber(row.approved_by),
     createdAt: asString(row.created_at),
@@ -149,6 +153,7 @@ async function getActiveBanks() {
 function buildReconciliationParams(
   searchParams: URLSearchParams,
   matchingBankIds: number[],
+  includeRemarks: boolean,
 ) {
   const page = normalizePage(searchParams.get("page"));
   const pageSize = normalizePageSize(
@@ -167,7 +172,10 @@ function buildReconciliationParams(
   params.set("offset", String(offset));
   params.set("meta", "filter_count");
   params.set("sort", "-created_at,-id");
-  params.set("fields", reconciliationFields.join(","));
+  params.set(
+    "fields",
+    (includeRemarks ? reconciliationFields : baseReconciliationFields).join(","),
+  );
 
   if (status && status !== "ALL") {
     params.set(`filter[_and][${filterIndex}][status][_eq]`, status);
@@ -214,6 +222,14 @@ function buildReconciliationParams(
       `filter[_and][${filterIndex}][_or][${searchIndex}][status][_contains]`,
       search,
     );
+    searchIndex += 1;
+
+    if (includeRemarks) {
+      params.set(
+        `filter[_and][${filterIndex}][_or][${searchIndex}][remarks][_contains]`,
+        search,
+      );
+    }
   }
 
   return { page, pageSize, search, status, params };
@@ -243,6 +259,8 @@ function normalizeCreatePayload(
     throw new Error("Statement balance is required");
   }
 
+  const remarks = asString(body.remarks);
+
   return {
     bank_id: bankId,
     statement_date: statementDate,
@@ -250,6 +268,7 @@ function normalizeCreatePayload(
     system_balance: systemBalance,
     variance: roundMoney(statementBalance - systemBalance),
     status: "DRAFT",
+    ...(remarks ? { remarks } : {}),
     prepared_by: userId,
   };
 }
@@ -266,10 +285,19 @@ export async function GET(request: NextRequest) {
           )
           .map((bank) => bank.bankId)
       : [];
-    const query = buildReconciliationParams(searchParams, matchingBankIds);
-    const reconciliationsRes = await directusFetch<
-      DirectusList<BankReconciliationRow>
-    >(`/items/bank_reconciliation?${query.params.toString()}`);
+    let query = buildReconciliationParams(searchParams, matchingBankIds, true);
+    let reconciliationsRes: DirectusList<BankReconciliationRow>;
+    try {
+      reconciliationsRes = await directusFetch<DirectusList<BankReconciliationRow>>(
+        `/items/bank_reconciliation?${query.params.toString()}`,
+      );
+    } catch (error) {
+      if (!isFieldAccessError(error, "remarks")) throw error;
+      query = buildReconciliationParams(searchParams, matchingBankIds, false);
+      reconciliationsRes = await directusFetch<DirectusList<BankReconciliationRow>>(
+        `/items/bank_reconciliation?${query.params.toString()}`,
+      );
+    }
     const bankMap = new Map(banks.map((bank) => [bank.bankId, bank]));
     const total = asNumber(reconciliationsRes.meta?.filter_count) ?? 0;
     const totalPages = Math.max(1, Math.ceil(total / query.pageSize));

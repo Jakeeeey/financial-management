@@ -17,6 +17,7 @@ type BankDepositRow = {
   deposit_date?: unknown;
   total_cash?: unknown;
   total_checks?: unknown;
+  status?: unknown;
 };
 
 type BankTransferRow = {
@@ -63,9 +64,10 @@ async function getBankAccount(bankId: number) {
 async function getDepositRows(bankId: number, statementDate: string) {
   const params = new URLSearchParams();
   params.set("limit", "-1");
-  params.set("fields", "target_bank_id,deposit_date,total_cash,total_checks");
+  params.set("fields", "target_bank_id,deposit_date,total_cash,total_checks,status");
   params.set("filter[_and][0][target_bank_id][_eq]", String(bankId));
-  params.set("filter[_and][1][deposit_date][_lte]", statementDate);
+  params.set("filter[_and][1][status][_eq]", "CLEARED");
+  params.set("filter[_and][2][deposit_date][_lte]", statementDate);
 
   const res = await directusFetch<DirectusList<BankDepositRow>>(
     `/items/bank_deposit?${params.toString()}`,

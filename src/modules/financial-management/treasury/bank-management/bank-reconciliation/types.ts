@@ -19,6 +19,7 @@ export type BankReconciliation = {
   systemBalance: number;
   variance: number;
   status: ReconciliationStatus;
+  remarks: string;
   preparedBy: number | null;
   approvedBy: number | null;
   createdAt: string;
@@ -59,4 +60,5 @@ export type BankReconciliationFormValues = {
   bankId: string;
   statementDate: string;
   statementBalance: string;
+  remarks: string;
 };

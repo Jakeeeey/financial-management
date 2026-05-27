@@ -260,7 +260,7 @@ export default function BankTransfersModule() {
       <Card className="rounded-md">
         <CardHeader className="gap-3 border-b">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-            <div className="grid w-full gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px] xl:max-w-5xl">
+            <div className="grid w-full gap-3 md:grid-cols-[minmax(240px,1fr)_180px_240px] xl:max-w-5xl">
               <div className="grid gap-1.5">
                 <Label htmlFor="transferSearch">Search</Label>
                 <div className="relative">
@@ -307,11 +307,11 @@ export default function BankTransfersModule() {
                     setPage(1);
                   }}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full min-w-[220px]">
                     <SelectValue placeholder="All payment methods" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ALL">All payment methods</SelectItem>
+                    <SelectItem value="ALL">All methods</SelectItem>
                     {data.paymentMethods.map((method) => (
                       <SelectItem key={method.methodId} value={String(method.methodId)}>
                         {method.methodName}
