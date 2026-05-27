@@ -682,7 +682,7 @@ export default function BankTransfersModule() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingStatus?.status === "COMPLETED"
-                ? "Completed transfers will be included in the unified ledger as transfer out and transfer in entries."
+                ? "Completed transfers will be included in the bank ledger as transfer out and transfer in entries."
                 : pendingStatus?.status === "CANCELLED"
                   ? "Cancelled transfers are terminal and cannot be completed later."
                   : "Submitted transfers move from prepared to pending for completion."}

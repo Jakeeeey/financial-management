@@ -1,13 +1,13 @@
-// src/modules/financial-management/treasury/bank-management/unified-bank-ledger/hooks/useUnifiedBankLedger.ts
+// src/modules/financial-management/treasury/bank-management/bank-ledger/hooks/useBankLedger.ts
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
-import { unifiedBankLedgerApi } from "../providers/unifiedBankLedgerApi";
+import { bankLedgerApi } from "../providers/bankLedgerApi";
 import type {
-  UnifiedBankLedgerData,
-  UnifiedBankLedgerQuery,
+  BankLedgerData,
+  BankLedgerQuery,
 } from "../types";
 
-const emptyData: UnifiedBankLedgerData = {
+const emptyData: BankLedgerData = {
   banks: [],
   selectedBankId: null,
   entries: [],
@@ -25,25 +25,25 @@ const emptyData: UnifiedBankLedgerData = {
   },
 };
 
-export function useUnifiedBankLedger() {
-  const [data, setData] = useState<UnifiedBankLedgerData>(emptyData);
+export function useBankLedger() {
+  const [data, setData] = useState<BankLedgerData>(emptyData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadSeqRef = useRef(0);
 
-  const loadLedger = useCallback(async (query?: UnifiedBankLedgerQuery) => {
+  const loadLedger = useCallback(async (query?: BankLedgerQuery) => {
     const seq = ++loadSeqRef.current;
 
     try {
       setLoading(true);
       setError(null);
-      const result = await unifiedBankLedgerApi.getLedger(query);
+      const result = await bankLedgerApi.getLedger(query);
       if (seq !== loadSeqRef.current) return;
       setData(result);
     } catch (err) {
       if (seq !== loadSeqRef.current) return;
       const message =
-        err instanceof Error ? err.message : "Failed to load unified bank ledger";
+        err instanceof Error ? err.message : "Failed to load bank ledger";
       setError(message);
       toast.error(message);
     } finally {

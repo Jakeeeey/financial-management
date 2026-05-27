@@ -9,7 +9,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "@/components/shared/app-sidebar/nav-user";
-import { UnifiedBankLedgerModule } from "@/modules/financial-management/treasury/bank-management/unified-bank-ledger";
+import { BankLedgerModule } from "@/modules/financial-management/treasury/bank-management/bank-ledger";
 import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
@@ -101,7 +101,7 @@ export default async function Page() {
                 <BreadcrumbSeparator className="hidden shrink-0 md:block" />
                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                   <BreadcrumbPage className="max-w-[56vw] truncate sm:max-w-[60vw] md:max-w-none">
-                    Unified Bank Ledger
+                    Bank Ledger
                   </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
@@ -115,7 +115,7 @@ export default async function Page() {
       </header>
 
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-        <UnifiedBankLedgerModule />
+        <BankLedgerModule />
       </main>
     </div>
   );

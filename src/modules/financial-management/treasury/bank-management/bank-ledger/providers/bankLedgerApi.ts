@@ -1,10 +1,10 @@
-// src/modules/financial-management/treasury/bank-management/unified-bank-ledger/providers/unifiedBankLedgerApi.ts
+// src/modules/financial-management/treasury/bank-management/bank-ledger/providers/bankLedgerApi.ts
 import type {
-  UnifiedBankLedgerData,
-  UnifiedBankLedgerQuery,
+  BankLedgerData,
+  BankLedgerQuery,
 } from "../types";
 
-const BASE = "/api/fm/treasury/bank-management/unified-bank-ledger";
+const BASE = "/api/fm/treasury/bank-management/bank-ledger";
 
 async function parseResponse<T>(res: Response, fallback: string): Promise<T> {
   const json = await res.json().catch(() => null);
@@ -22,10 +22,10 @@ async function parseResponse<T>(res: Response, fallback: string): Promise<T> {
   return json as T;
 }
 
-export const unifiedBankLedgerApi = {
+export const bankLedgerApi = {
   async getLedger(
-    query?: UnifiedBankLedgerQuery,
-  ): Promise<UnifiedBankLedgerData> {
+    query?: BankLedgerQuery,
+  ): Promise<BankLedgerData> {
     const params = new URLSearchParams();
     if (query?.bankId) params.set("bank_id", String(query.bankId));
     if (query?.startDate) params.set("start_date", query.startDate);
@@ -35,9 +35,9 @@ export const unifiedBankLedgerApi = {
 
     const url = params.size > 0 ? `${BASE}?${params.toString()}` : BASE;
     const res = await fetch(url, { cache: "no-store" });
-    return parseResponse<UnifiedBankLedgerData>(
+    return parseResponse<BankLedgerData>(
       res,
-      "Failed to load unified bank ledger",
+      "Failed to load bank ledger",
     );
   },
 };

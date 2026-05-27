@@ -5,7 +5,7 @@ export type LedgerEntryType =
   | "TRANSFER_IN"
   | "DISBURSEMENT";
 
-export type UnifiedBankLedgerBank = {
+export type BankLedgerBank = {
   bankId: number;
   bankName: string;
   accountNumber: string;
@@ -14,7 +14,7 @@ export type UnifiedBankLedgerBank = {
   isActive: boolean;
 };
 
-export type UnifiedBankLedgerEntry = {
+export type BankLedgerEntry = {
   id: string;
   bankId: number;
   transactionDate: string;
@@ -28,29 +28,29 @@ export type UnifiedBankLedgerEntry = {
   runningBalance: number;
 };
 
-export type UnifiedBankLedgerSummary = {
+export type BankLedgerSummary = {
   currentBalance: number;
   totalDebits: number;
   totalCredits: number;
   entryCount: number;
 };
 
-export type UnifiedBankLedgerPagination = {
+export type BankLedgerPagination = {
   page: number;
   pageSize: number;
   total: number;
   totalPages: number;
 };
 
-export type UnifiedBankLedgerData = {
-  banks: UnifiedBankLedgerBank[];
+export type BankLedgerData = {
+  banks: BankLedgerBank[];
   selectedBankId: number | null;
-  entries: UnifiedBankLedgerEntry[];
-  summary: UnifiedBankLedgerSummary;
-  pagination: UnifiedBankLedgerPagination;
+  entries: BankLedgerEntry[];
+  summary: BankLedgerSummary;
+  pagination: BankLedgerPagination;
 };
 
-export type UnifiedBankLedgerQuery = {
+export type BankLedgerQuery = {
   bankId?: number | null;
   startDate?: string;
   endDate?: string;

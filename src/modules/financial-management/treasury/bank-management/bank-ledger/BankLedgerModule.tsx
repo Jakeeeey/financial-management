@@ -1,4 +1,4 @@
-// src/modules/financial-management/treasury/bank-management/unified-bank-ledger/UnifiedBankLedgerModule.tsx
+// src/modules/financial-management/treasury/bank-management/bank-ledger/BankLedgerModule.tsx
 "use client";
 
 import { Badge } from "@/components/ui/badge";
@@ -41,17 +41,17 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useUnifiedBankLedger } from "./hooks/useUnifiedBankLedger";
+import { useBankLedger } from "./hooks/useBankLedger";
 import type {
   LedgerEntryType,
-  UnifiedBankLedgerBank,
-  UnifiedBankLedgerEntry,
+  BankLedgerBank,
+  BankLedgerEntry,
 } from "./types";
 
 const PAGE_SIZE = 10;
 
 type BankSelectProps = {
-  banks: UnifiedBankLedgerBank[];
+  banks: BankLedgerBank[];
   value: string;
   disabled?: boolean;
   onValueChange: (value: string) => void;
@@ -100,7 +100,7 @@ function entryBadgeVariant(type: LedgerEntryType) {
   return "default";
 }
 
-function amountTone(entry: UnifiedBankLedgerEntry) {
+function amountTone(entry: BankLedgerEntry) {
   if (entry.creditAmount > 0) return "text-emerald-700";
   if (entry.debitAmount > 0) return "text-destructive";
   return "text-muted-foreground";
@@ -165,8 +165,8 @@ function BankSelect({ banks, value, disabled, onValueChange }: BankSelectProps) 
   );
 }
 
-export default function UnifiedBankLedgerModule() {
-  const { data, loading, error, loadLedger } = useUnifiedBankLedger();
+export default function BankLedgerModule() {
+  const { data, loading, error, loadLedger } = useBankLedger();
   const [page, setPage] = useState(1);
   const [bankId, setBankId] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -213,7 +213,7 @@ export default function UnifiedBankLedgerModule() {
           </div>
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-normal">
-              Unified Bank Ledger
+              Bank Ledger
             </h1>
             <p className="text-sm text-muted-foreground">
               Review money movement and running balances for company bank accounts.
