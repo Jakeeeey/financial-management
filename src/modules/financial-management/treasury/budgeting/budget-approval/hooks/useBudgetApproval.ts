@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import type { Budget, BudgetApprovalFilters, BudgetStatus, AuditAction } from "../types";
 import { budgetApprovalService } from "../services/budgetService";
 
-const PAGE_SIZE = 20;
 
 const DEFAULT_FILTERS: BudgetApprovalFilters = {
   search: "",
@@ -19,19 +18,15 @@ const DEFAULT_FILTERS: BudgetApprovalFilters = {
 export function useBudgetApproval() {
   const [displayedItems, setDisplayed] = useState<Budget[]>([]);
   const [filters, setFilters] = useState<BudgetApprovalFilters>(DEFAULT_FILTERS);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [hasMore, setHasMore] = useState(false);
-  const [totalCount, setTotalCount] = useState(0);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const fetchSequenceRef = useRef(0);
 
   // ---------- Data fetching ----------
-  const fetchPage = useCallback(async (pg: number) => {
-    const offset = (pg - 1) * PAGE_SIZE;
+  const fetchData = useCallback(async () => {
     const params: Record<string, unknown> = {
-      limit: PAGE_SIZE,
-      offset,
+      limit: "-1",
       "filter[status][_eq]": filters.status,
     };
 
@@ -58,42 +53,35 @@ export function useBudgetApproval() {
 
   // Initial load & filter change
   useEffect(() => {
+    const requestId = fetchSequenceRef.current + 1;
+    fetchSequenceRef.current = requestId;
+
     const load = async () => {
       setLoading(true);
       try {
-        const { data, total } = await fetchPage(1);
+        const { data, attachmentLoadFailed } = await fetchData();
+        if (requestId !== fetchSequenceRef.current) return;
+
         setDisplayed(data);
-        setTotalCount(total);
-        setPage(2);
-        setHasMore(data.length === PAGE_SIZE && data.length < total);
+        if (attachmentLoadFailed) {
+          toast.warning("Budgets loaded, but some attachments could not be loaded.");
+        }
       } catch (error) {
+        if (requestId !== fetchSequenceRef.current) return;
+
         toast.error("Failed to load budgets.");
         console.error(error);
       } finally {
+        if (requestId !== fetchSequenceRef.current) return;
+
         setLoading(false);
         setInitialLoading(false);
       }
     };
     load();
     setSelectedIds(new Set());
-  }, [fetchPage]);
+  }, [fetchData]);
 
-  // Infinite scroll loader
-  const loadMore = useCallback(async () => {
-    if (loading || !hasMore) return;
-    setLoading(true);
-    try {
-      const { data, total } = await fetchPage(page);
-      setDisplayed((prev) => [...prev, ...data]);
-      setPage((p) => p + 1);
-      setHasMore(data.length === PAGE_SIZE && (displayedItems.length + data.length) < total);
-    } catch (error) {
-      console.error(error);
-      toast.error("Failed to load more budgets.");
-    } finally {
-      setLoading(false);
-    }
-  }, [loading, hasMore, page, fetchPage, displayedItems.length]);
 
   // ---------- Filters ----------
   const updateFilter = <K extends keyof BudgetApprovalFilters>(
@@ -143,11 +131,11 @@ export function useBudgetApproval() {
       }
       
       setDisplayed((prev) => prev.filter((b) => !ids.includes(String(b.id))));
-      setTotalCount((prev) => prev - ids.length);
       toast.success(`${ids.length} budget(s) ${status.toLowerCase()} successfully.`);
       clearSelection();
     } catch (error) {
-      toast.error(`Failed to ${status.toLowerCase()} budget(s).`);
+      const message = error instanceof Error ? error.message : `Failed to ${status.toLowerCase()} budget(s).`;
+      toast.error(message);
       console.error(error);
     } finally {
       setLoading(false);
@@ -170,8 +158,6 @@ export function useBudgetApproval() {
     displayedItems,
     loading,
     initialLoading,
-    hasMore,
-    loadMore,
     filters,
     updateFilter,
     clearFilters,
@@ -184,6 +170,5 @@ export function useBudgetApproval() {
     rejectBudget,
     bulkApprove,
     bulkReject,
-    total: totalCount,
   };
 }

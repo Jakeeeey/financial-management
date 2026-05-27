@@ -12,8 +12,12 @@ export function useBudgetAuditTrail() {
   // Initialize with 1 month gap
   const getInitialDates = () => {
     const today = new Date();
-    const lastMonth = new Date();
-    lastMonth.setMonth(today.getMonth() - 1);
+    const lastMonth = new Date(today);
+    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    // Fix JS date overflow (e.g. Mar 31 -> Feb 28 instead of Mar 3)
+    if (today.getMonth() === lastMonth.getMonth()) {
+      lastMonth.setDate(0);
+    }
 
     return {
       to: today.toISOString().split('T')[0],
@@ -31,6 +35,7 @@ export function useBudgetAuditTrail() {
     date_to: initialDates.to,
     division_id: "",
     department_id: "",
+    coa_id: "",
   });
 
   const updateFilter = <K extends keyof AuditTrailFilters>(key: K, value: AuditTrailFilters[K]) => {
@@ -53,6 +58,7 @@ export function useBudgetAuditTrail() {
       date_to: dates.to,
       division_id: "",
       department_id: "",
+      coa_id: "",
     });
   };
 

@@ -136,6 +136,8 @@ export function useCreateBudgetForm(
         if (deptDivId) {
             const coaList = await budgetService.getCOAs(deptDivId);
             setCoas(coaList);
+        } else {
+            setCoas([]);
         }
       } finally {
         setFetchingLookups(false);
@@ -149,23 +151,28 @@ export function useCreateBudgetForm(
     const coa = coas.find(c => String(c.coa_id) === form.coa_id);
     if (coa) {
       setForm(prev => ({ ...prev, gl_code: coa.gl_code || "" }));
+    } else if (form.coa_id) {
+      setForm(prev => ({ ...prev, gl_code: "" }));
     }
   }, [form.coa_id, coas]);
 
   // Fetch used COA IDs for the selected Year + Month + Division + Department
   useEffect(() => {
-    if (!form.year || !form.month || !form.division_id || !form.department_id || initialData) {
+    if (!form.year || !form.month || !form.division_id || !form.department_id) {
       setUsedCoaIds(new Set());
       return;
     }
     async function loadUsedCoas() {
       const monthName = MONTH_NAMES[Number(form.month) - 1];
       if (!monthName) return;
+      
+      const excludeId = initialData ? String(initialData.id) : undefined;
       const ids = await budgetService.getUsedCoaIds(
         Number(form.year), 
         monthName,
         Number(form.division_id),
-        Number(form.department_id)
+        Number(form.department_id),
+        excludeId
       );
       setUsedCoaIds(new Set(ids));
     }
@@ -173,17 +180,88 @@ export function useCreateBudgetForm(
   }, [form.year, form.month, form.division_id, form.department_id, initialData]);
 
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) => {
-    setForm(prev => ({ ...prev, [field]: value }));
+    setForm(prev => {
+      const next = { ...prev, [field]: value };
+
+      if (field === "division_id" && value !== prev.division_id) {
+        next.department_id = "";
+        next.coa_id = "";
+        next.gl_code = "";
+      }
+
+      if (field === "department_id" && value !== prev.department_id) {
+        next.coa_id = "";
+        next.gl_code = "";
+      }
+
+      if (field === "coa_id" && !value) {
+        next.gl_code = "";
+      }
+
+      return next;
+    });
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: "" }));
   };
 
   const addFiles = (files: FileList | null) => {
     if (!files) return;
-    const newFiles = Array.from(files);
-    setForm(prev => ({
-      ...prev,
-      attachments: [...prev.attachments, ...newFiles],
-    }));
+    
+    const MAX_SIZE_MB = 25;
+    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+    const ALLOWED_EXTENSIONS = new Set([
+      "pdf",
+      "doc",
+      "docx",
+      "xls",
+      "xlsx",
+      "xlsm",
+      "csv",
+      "png",
+      "jpg",
+      "jpeg",
+      "gif",
+      "webp",
+      "bmp",
+      "svg",
+      "tif",
+      "tiff",
+      "heic",
+      "heif",
+    ]);
+    const ALLOWED_MIME_TYPES = new Set([
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel.sheet.macroenabled.12",
+      "text/csv",
+    ]);
+
+    const isAllowedFile = (file: File) => {
+      const extension = file.name.split(".").pop()?.toLowerCase() || "";
+      return file.type.startsWith("image/") || ALLOWED_MIME_TYPES.has(file.type) || ALLOWED_EXTENSIONS.has(extension);
+    };
+    
+    const allFiles = Array.from(files);
+    const oversizedFiles = allFiles.filter(f => f.size > MAX_SIZE_BYTES);
+    const unsupportedFiles = allFiles.filter(f => f.size <= MAX_SIZE_BYTES && !isAllowedFile(f));
+    const validFiles = allFiles.filter(f => f.size <= MAX_SIZE_BYTES && isAllowedFile(f));
+
+    if (oversizedFiles.length > 0) {
+      toast.error(`Some files were rejected because they exceed the ${MAX_SIZE_MB}MB limit: ${oversizedFiles.map(f => f.name).join(', ')}`);
+    }
+
+    if (unsupportedFiles.length > 0) {
+      toast.error(`Only Excel, PDF, Word, and image files can be attached: ${unsupportedFiles.map(f => f.name).join(', ')}`);
+    }
+
+    if (validFiles.length > 0) {
+      setForm(prev => ({
+        ...prev,
+        attachments: [...prev.attachments, ...validFiles],
+      }));
+    }
   };
 
   const removeFile = (index: number) => {

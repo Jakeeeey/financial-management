@@ -36,9 +36,9 @@ function BudgetApprovalContent() {
             .reduce((sum: number, b: Budget) => sum + Number(b.amount || 0), 0);
     }, [displayedItems, selectedIds]);
 
-    const handleBulkConfirm = (remarks: string) => {
-        if (bulkAction === "approve") bulkApprove(remarks);
-        if (bulkAction === "reject") bulkReject(remarks);
+    const handleBulkConfirm = () => {
+        if (bulkAction === "approve") bulkApprove();
+        if (bulkAction === "reject") bulkReject();
         setBulkAction(null);
     };
 

@@ -12,6 +12,12 @@ export type BudgetAuditTrail = z.infer<typeof schemas.BudgetAuditTrailSchema>;
 export type Division = z.infer<typeof schemas.DivisionSchema>;
 export type Department = z.infer<typeof schemas.DepartmentSchema>;
 
+export interface COA {
+  coa_id: number;
+  account_title: string;
+  gl_code?: string;
+}
+
 export interface AuditTrailFilters {
   search: string;
   status: BudgetStatus | "";
@@ -20,4 +26,5 @@ export interface AuditTrailFilters {
   date_to: string;
   division_id: string;
   department_id: string;
+  coa_id: string;
 }

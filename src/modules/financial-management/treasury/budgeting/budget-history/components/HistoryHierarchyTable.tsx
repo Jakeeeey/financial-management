@@ -39,13 +39,22 @@ export function HistoryHierarchyTable({ data, expandedKeys, toggleKey }: History
   const renderRow = (node: HistoryNode, depth: number = 0) => {
     const isExpanded = expandedKeys.has(node.id);
     const hasChildren = node.children && node.children.length > 0;
+    const isSupplementalEntry = node.entryType === "supplemental";
+    const supplementalCount = node.supplementalCount || 0;
+    const showMergedBadge = node.level === "coa" && !!node.itemCount && node.itemCount > 1;
+    const mergedBadgeLabel = supplementalCount > 0
+      ? `${supplementalCount} Supplemental`
+      : `${node.itemCount || 0} Combined`;
+    const mergedBadgeTitle = supplementalCount > 0
+      ? `${node.itemCount} merged budget allocations, including ${supplementalCount} supplemental allocation${supplementalCount === 1 ? "" : "s"}.`
+      : `${node.itemCount} distinct upstream budget allocations automatically merged.`;
 
     return (
       <React.Fragment key={node.id}>
         <tr 
           className={`group border-b border-border/40 hover:bg-muted/30 transition-colors ${
             depth === 0 ? "bg-muted/10" : ""
-          }`}
+          } ${isSupplementalEntry ? "bg-primary/[0.02]" : ""}`}
         >
           <td className="py-3 px-4">
             <div 
@@ -76,18 +85,18 @@ export function HistoryHierarchyTable({ data, expandedKeys, toggleKey }: History
               </div>
               
               <span className={`text-xs font-bold tracking-tight line-clamp-1 ${
-                node.level === 'coa' ? "text-muted-foreground font-medium" : "text-foreground"
-              }`}>
+                isSupplementalEntry ? "text-primary font-bold" : node.level === 'coa' ? "text-muted-foreground font-medium" : "text-foreground"
+              }`} title={node.name}>
                 {node.name}
               </span>
 
               {/* Accumulated Supplemental Items Pill Badge */}
-              {node.itemCount && node.itemCount > 1 ? (
+              {showMergedBadge ? (
                 <span 
                   className="inline-flex items-center px-1.5 py-0.25 rounded-full text-[9px] font-black uppercase tracking-widest bg-primary/10 text-primary border border-primary/20 shrink-0 ml-1.5 animate-in fade-in transition-all"
-                  title={`${node.itemCount} distinct upstream budget/supplemental allocations automatically merged`}
+                  title={mergedBadgeTitle}
                 >
-                  {node.itemCount} Combined
+                  {mergedBadgeLabel}
                 </span>
               ) : null}
             </div>

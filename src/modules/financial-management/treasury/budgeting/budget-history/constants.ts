@@ -1,4 +1,4 @@
-export const HISTORY_YEARS = [2026, 2025, 2024];
+export const HISTORY_YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() + 1 - i);
 export const HISTORY_MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
@@ -12,6 +12,9 @@ export interface HistoryNode {
   children?: HistoryNode[];
   level: 'division' | 'department' | 'coa';
   itemCount?: number;
+  supplementalCount?: number;
+  entryType?: "original" | "supplemental" | "realignment" | string;
+  originalBudgetNos?: string[];
 }
 
 export const BUDGET_HISTORY_DATA: HistoryNode[] = [
