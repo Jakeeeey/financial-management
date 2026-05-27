@@ -60,7 +60,7 @@ interface ReviewSheetProps {
 export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting, onPost }: ReviewSheetProps) {
 
     const reviewMath = useMemo(() => {
-        if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, groupedAllocations: {} as Record<string, PouchAllocation[]>, totalCash: 0, totalChecks: 0, nonCashBuckets: [] as CashBucket[], cashDenominations: [] as CashBucket[] };
+        if (!pouch) return { physical: 0, applied: 0, variance: 0, isShortage: false, isOverage: false, groupedAllocations: {} as Record<string, PouchAllocation[]>, totalCash: 0, totalChecks: 0, nonCashBuckets: [] as CashBucket[], cashDenominations: [] as CashBucket[], totalCredits: 0, expectedPhysicalCash: 0 };
 
         let physical = 0;
         let totalCash = 0;
@@ -73,58 +73,46 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
             const tempId = String(b.tempId || "").toLowerCase();
             const refNo = String(b.referenceNo || "").toLowerCase();
 
-            // 🚀 COMPLETELY REMOVED THE ROGUE STRING. STRICT ID MATCHING ONLY.
             let typeLabel = "ADJUSTMENT";
 
-            // 1. CASH (Method ID 1 or COA 1)
             const isCash = b.coaId === 1 || b.paymentMethodId === 1 || tempId.startsWith("cash") || refNo.includes(" x ") || refNo === "cash_summary" || refNo === "physical cash";
 
             if (isCash) {
                 typeLabel = "CASH";
-            }
-            // 2. CHECK (Method ID 2)
-            else if (tempId.startsWith("chk") || b.paymentMethodId === 2) {
+            } else if (tempId.startsWith("chk") || b.paymentMethodId === 4) {
                 typeLabel = "CHECK";
-            }
-            // 3. EWT (Method ID 10)
-            else if (tempId.startsWith("ewt") || b.paymentMethodId === 10) {
+            } else if (tempId.startsWith("ewt") || b.paymentMethodId === 10) {
                 typeLabel = "EWT";
-            }
-            // 4. OTHER METHODS
-            else if (b.paymentMethodId != null) {
+            } else if (b.paymentMethodId != null) {
                 typeLabel = `METHOD_${b.paymentMethodId}`;
             }
 
             const isCredit = b.balanceTypeId === 1;
 
-            // APPLY TO GRAND PHYSICAL TOTAL
             if (isCredit) {
                 physical -= amt;
             } else {
                 physical += amt;
             }
 
-            // MERGE OR SEPARATE BASED ON TYPE
             if (typeLabel === "CASH") {
                 if (isCredit) totalCash -= amt;
                 else totalCash += amt;
 
-                // Push to hover tooltip breakdown (skip the summary row)
                 if (refNo !== "cash_summary" && amt > 0) {
                     cashDenominations.push(b);
                 }
             } else {
-                // Non-cash items stay separated
                 if (typeLabel === "CHECK" && !isCredit) totalChecks += amt;
                 nonCashBuckets.push({ ...b, resolvedType: typeLabel });
             }
         });
 
-        // Sort denominations highest to lowest
         cashDenominations.sort((a, b) => (b.amount || 0) - (a.amount || 0));
 
         let totalApplied = 0;
         let expectedPhysicalCash = 0;
+        let totalCredits = 0; // 🚀 NEW: Track exactly how much is memos/returns
         const groupedAllocations: Record<string, PouchAllocation[]> = {};
 
         pouch.allocations?.forEach((a) => {
@@ -132,7 +120,11 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
             totalApplied += amt;
 
             const typeStr = String(a.allocationType || "PAYMENT").toUpperCase();
-            if (!typeStr.includes("EWT") && !typeStr.includes("TAX") && !typeStr.includes("MEMO") && !typeStr.includes("CM") && !typeStr.includes("DM") && !typeStr.includes("RETURN") && !typeStr.includes("RTN")) {
+
+            // Separate pure credits from expected physical collections
+            if (typeStr.includes("MEMO") || typeStr.includes("CM") || typeStr.includes("DM") || typeStr.includes("RETURN") || typeStr.includes("RTN")) {
+                totalCredits += amt;
+            } else {
                 expectedPhysicalCash += amt;
             }
 
@@ -146,6 +138,8 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
         return {
             physical, totalCash, totalChecks, nonCashBuckets, cashDenominations,
             applied: totalApplied,
+            expectedPhysicalCash, // 🚀 Exposed for UI
+            totalCredits,         // 🚀 Exposed for UI
             variance: Math.abs(variance),
             isShortage: variance > 0.01,
             isOverage: variance < -0.01,
@@ -256,11 +250,8 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                     <div className="space-y-2.5">
                                         {pouch.cashBuckets?.length === 0 && <p className="text-xs text-muted-foreground italic bg-card p-4 rounded-xl border border-dashed text-center font-bold">No assets declared in this pouch.</p>}
 
-                                        {/* MERGED CASH ROW */}
                                         {reviewMath.totalCash !== 0 && (
                                             <div className={`relative group cursor-help flex justify-between items-center p-3.5 rounded-xl border bg-card shadow-sm transition-all hover:shadow-md hover:border-emerald-300 ${reviewMath.totalCash < 0 ? 'border-red-200' : 'border-border'}`}>
-
-                                                {/* THE HOVER TOOLTIP */}
                                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 hidden group-hover:block w-56 bg-popover border border-border shadow-2xl rounded-xl p-4 z-50 animate-in fade-in zoom-in-95">
                                                     <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 border-8 border-transparent border-t-popover drop-shadow-sm"></div>
                                                     <h5 className="text-[9px] font-black uppercase text-muted-foreground tracking-widest border-b border-border pb-1.5 mb-2.5">Denomination Breakdown</h5>
@@ -309,7 +300,6 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                             </div>
                                         )}
 
-                                        {/* NON-CASH BUCKETS */}
                                         {reviewMath.nonCashBuckets.map((b, i) => {
                                             const isCredit = b.balanceTypeId === 1;
                                             const typeLabel = b.resolvedType || "ADJUSTMENT";
@@ -340,7 +330,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                         })}
                                     </div>
                                     <div className="flex justify-between items-center px-3 pt-3 border-t-2 border-border">
-                                        <span className="text-xs font-black uppercase tracking-widest text-muted-foreground">Total Pouch Target:</span>
+                                        <span className="text-xs font-black uppercase tracking-widest text-muted-foreground">Total Pouch Contents:</span>
                                         <span className="font-mono font-black text-emerald-600 text-lg">₱{reviewMath.physical.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                                     </div>
                                 </div>
@@ -418,10 +408,25 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                             );
                                         })}
                                     </div>
-                                    <div className="flex justify-between items-center px-3 pt-3 border-t-2 border-border">
-                                        <span className="text-xs font-black uppercase tracking-widest text-muted-foreground">Total AR Applied:</span>
-                                        <span className="font-mono font-black text-blue-600 text-lg">₱{reviewMath.applied.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+
+                                    {/* 🚀 THE NEW, EXPLICIT MATH BREAKDOWN FOR THE AUDITOR */}
+                                    <div className="flex flex-col px-3 pt-3 border-t-2 border-border gap-1.5">
+                                        <div className="flex justify-between items-center text-[10px] font-black uppercase text-muted-foreground">
+                                            <span>Gross AR Invoices Settled:</span>
+                                            <span className="font-mono">₱{reviewMath.applied.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                        </div>
+                                        {reviewMath.totalCredits > 0 && (
+                                            <div className="flex justify-between items-center text-[10px] font-black uppercase text-amber-600">
+                                                <span>Less Applied Credits (Memos/Returns):</span>
+                                                <span className="font-mono">- ₱{reviewMath.totalCredits.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between items-center pt-2 mt-1 border-t border-dashed border-border">
+                                            <span className="text-xs font-black uppercase tracking-widest text-blue-600">Net Expected Cash Target:</span>
+                                            <span className="font-mono font-black text-blue-600 text-lg">₱{reviewMath.expectedPhysicalCash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                        </div>
                                     </div>
+
                                 </div>
                             </div>
                         </div>
