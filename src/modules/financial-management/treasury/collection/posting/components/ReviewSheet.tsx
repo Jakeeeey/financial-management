@@ -79,6 +79,9 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
 
             if (isCash) {
                 typeLabel = "CASH";
+            }
+            // 2. CHECK (Method ID 2)
+            else if (tempId.startsWith("chk") || b.paymentMethodId === 4) {
             } else if (tempId.startsWith("chk") || b.paymentMethodId === 4) {
                 typeLabel = "CHECK";
             } else if (tempId.startsWith("ewt") || b.paymentMethodId === 10) {
