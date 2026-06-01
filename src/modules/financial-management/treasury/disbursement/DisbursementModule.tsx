@@ -14,10 +14,9 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Plus, RefreshCw, FileText, Search, Check, ChevronsUpDown, X, Filter, UserPlus } from "lucide-react"; // 🚀 Added Filter Icon
 import {
     Plus, RefreshCw, FileText, Search, Check, ChevronsUpDown,
-    X, BarChart3, Receipt, SlidersHorizontal
+    X, UserPlus, BarChart3, Receipt, SlidersHorizontal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -38,17 +37,20 @@ export default function DisbursementModule() {
     const [isComboboxOpen, setIsComboboxOpen] = useState(false);
     const [selectedDisbursement, setSelectedDisbursement] = useState<Disbursement | null>(null);
     const [formMode, setFormMode] = useState<"create" | "edit">("create");
-    const addPayeeSupplierType = activeType === "Non-Trade" ? "NON-TRADE" : "TRADE";
 
-    // 🚀 NEW: State to toggle the advanced filters!
+    // 🚀 State to toggle the advanced filters!
     const [showFilters, setShowFilters] = useState(false);
+
+    const addPayeeSupplierType = activeType === "Non-Trade" ? "NON-TRADE" : "TRADE";
 
     const handleView = (d: Disbursement) => { setSelectedDisbursement(d); setIsViewOpen(true); };
     const handleEdit = (d: Disbursement) => { setSelectedDisbursement(d); setFormMode("edit"); setIsViewOpen(false); setIsCreateOpen(true); };
     const handleNewVoucherClick = () => { setSelectedDisbursement(null); setFormMode("create"); setIsCreateOpen(true); };
+
     const handleAddPayeeSuccess = () => {
         refresh();
         toast.success("Payee created successfully");
+        setIsAddPayeeOpen(false);
     };
 
     return (
@@ -77,14 +79,18 @@ export default function DisbursementModule() {
                         Refresh Data
                     </Button>
                     <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsAddPayeeOpen(true)}
+                        className="h-10 px-4 font-bold uppercase tracking-wider text-[10px]"
+                    >
+                        <UserPlus className="w-4 h-4 mr-2" /> New Payee
+                    </Button>
+                    <Button
                         size="sm"
                         onClick={handleNewVoucherClick}
                         className="h-10 px-5 font-black uppercase tracking-widest text-xs shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-95"
                     >
-                    <Button variant="outline" size="sm" onClick={() => setIsAddPayeeOpen(true)} className="h-9 font-bold uppercase tracking-wider text-[10px]">
-                        <UserPlus className="w-4 h-4 mr-2" /> New Payee
-                    </Button>
-                    <Button size="sm" onClick={handleNewVoucherClick} className="h-9 font-bold uppercase tracking-wider text-[10px]">
                         <Plus className="w-4 h-4 mr-2" /> New Voucher
                     </Button>
                 </div>
@@ -291,22 +297,13 @@ export default function DisbursementModule() {
                     </div>
                 </TabsContent>
 
-            <DisbursementCreateSheet open={isCreateOpen} onOpenChange={setIsCreateOpen} onSubmit={(payload) => formMode === "edit" ? update(selectedDisbursement!.id, payload) : create(payload)} editData={formMode === "edit" ? selectedDisbursement : null} loading={actionLoading} />
-            <DisbursementViewSheet open={isViewOpen} onOpenChange={setIsViewOpen} disbursement={selectedDisbursement} onUpdateStatus={changeStatus} onEdit={handleEdit} loading={actionLoading} />
-            <AddPayeeModal
-                open={isAddPayeeOpen}
-                onClose={() => setIsAddPayeeOpen(false)}
-                onSuccess={handleAddPayeeSuccess}
-                supplierType={addPayeeSupplierType}
-                allowSupplierTypeSelect
-            />
                 {/* TAB 2: DASHBOARD & REPORTS */}
                 <TabsContent value="dashboard" className="m-0 focus-visible:outline-none focus-visible:ring-0">
                     <DisbursementDashboardTab />
                 </TabsContent>
             </Tabs>
 
-            {/* GLOBAL MODALS */}
+            {/* GLOBAL MODALS - Rendered exactly once */}
             <DisbursementCreateSheet
                 open={isCreateOpen}
                 onOpenChange={setIsCreateOpen}
@@ -314,6 +311,7 @@ export default function DisbursementModule() {
                 editData={formMode === "edit" ? selectedDisbursement : null}
                 loading={actionLoading}
             />
+
             <DisbursementViewSheet
                 open={isViewOpen}
                 onOpenChange={setIsViewOpen}
@@ -321,6 +319,14 @@ export default function DisbursementModule() {
                 onUpdateStatus={changeStatus}
                 onEdit={handleEdit}
                 loading={actionLoading}
+            />
+
+            <AddPayeeModal
+                open={isAddPayeeOpen}
+                onClose={() => setIsAddPayeeOpen(false)}
+                onSuccess={handleAddPayeeSuccess}
+                supplierType={addPayeeSupplierType}
+                allowSupplierTypeSelect
             />
         </div>
     );
