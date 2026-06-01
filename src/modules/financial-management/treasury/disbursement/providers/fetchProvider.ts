@@ -8,7 +8,7 @@ import {
     SupplierDto,
     COADto,
     BankAccountDto,
-    UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto
+    UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto, DisbursementDashboardData, DashboardFilters
 } from "../types";
 
 const API_BASE = "/api/fm/treasury/disbursements";
@@ -107,4 +107,14 @@ export const disbursementProvider = {
         if (!res.ok) throw new Error("Failed to fetch departments");
         return res.json();
     },
-};
+    getDashboardData: async (filters: DashboardFilters): Promise<DisbursementDashboardData> => {
+        const params = new URLSearchParams();
+        if (filters.startDate) params.append("startDate", filters.startDate);
+        if (filters.endDate) params.append("endDate", filters.endDate);
+        if (filters.status) params.append("status", filters.status);
+        if (filters.payeeId) params.append("payeeId", filters.payeeId.toString());
+        if (filters.transactionType) params.append("transactionType", filters.transactionType.toString()); // 🚀 NEW
+        const res = await fetch(`${API_BASE}/dashboard?${params.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch dashboard data");
+        return res.json();
+    }};

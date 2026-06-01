@@ -131,3 +131,47 @@ export interface MemoDto {
     coa_id: number;
     account_title: string;
 }
+
+// Add to your existing types.ts in the disbursement module
+export interface DivisionExpense {
+    divisionId: number;
+    divisionName: string;
+    totalExpense: number;
+}
+
+export interface VoucherSummary {
+    id: number;
+    docNo: string;
+    transactionDate: string;
+    status: string;
+    payeeName: string;
+    totalAmount: number;
+    paidAmount: number;
+    checkNumbers: string;
+    bankNames: string;
+    expenseAccountsHit: string;
+}
+
+export interface DisbursementDashboardData {
+    totalDisbursed: number;
+    totalPaid: number;
+    totalUnpaidPayables: number;
+    divisionExpenses: DivisionExpense[];
+    coaExpenses: CoaExpense[]; // 🚀 NEW
+    vouchers: VoucherSummary[];
+
+}
+
+export interface DashboardFilters {
+    startDate?: string;
+    endDate?: string;
+    status?: string;
+    payeeId?: number;
+    transactionType?: number | ""; // 🚀 NEW
+}
+
+export interface CoaExpense {
+    coaId: number;
+    accountTitle: string;
+    totalExpense: number;
+}

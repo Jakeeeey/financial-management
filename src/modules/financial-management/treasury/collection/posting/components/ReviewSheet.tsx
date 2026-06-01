@@ -83,7 +83,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                 typeLabel = "CASH";
             }
             // 2. CHECK (Method ID 2)
-            else if (tempId.startsWith("chk") || b.paymentMethodId === 2) {
+            else if (tempId.startsWith("chk") || b.paymentMethodId === 4) {
                 typeLabel = "CHECK";
             }
             // 3. EWT (Method ID 10)
