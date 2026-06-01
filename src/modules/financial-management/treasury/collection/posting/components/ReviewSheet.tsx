@@ -75,15 +75,22 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
 
             let typeLabel = "ADJUSTMENT";
 
+            // 1. CASH (Method ID 1 or COA 1)
             const isCash = b.coaId === 1 || b.paymentMethodId === 1 || tempId.startsWith("cash") || refNo.includes(" x ") || refNo === "cash_summary" || refNo === "physical cash";
 
             if (isCash) {
                 typeLabel = "CASH";
-            } else if (tempId.startsWith("chk") || b.paymentMethodId === 4) {
+            }
+            // 2. CHECK (Method ID 2)
+            else if (tempId.startsWith("chk") || b.paymentMethodId === 2) {
                 typeLabel = "CHECK";
-            } else if (tempId.startsWith("ewt") || b.paymentMethodId === 10) {
+            }
+            // 3. EWT (Method ID 10)
+            else if (tempId.startsWith("ewt") || b.paymentMethodId === 10) {
                 typeLabel = "EWT";
-            } else if (b.paymentMethodId != null) {
+            }
+            // 4. OTHER METHODS
+            else if (b.paymentMethodId != null) {
                 typeLabel = `METHOD_${b.paymentMethodId}`;
             }
 
@@ -112,7 +119,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
 
         let totalApplied = 0;
         let expectedPhysicalCash = 0;
-        let totalCredits = 0; // 🚀 NEW: Track exactly how much is memos/returns
+        let totalCredits = 0;
         const groupedAllocations: Record<string, PouchAllocation[]> = {};
 
         pouch.allocations?.forEach((a) => {
@@ -121,10 +128,13 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
 
             const typeStr = String(a.allocationType || "PAYMENT").toUpperCase();
 
-            // Separate pure credits from expected physical collections
-            if (typeStr.includes("MEMO") || typeStr.includes("CM") || typeStr.includes("DM") || typeStr.includes("RETURN") || typeStr.includes("RTN")) {
+            // Separate pure credits/taxes from expected physical collections
+            const isCreditOrReturn = typeStr.includes("MEMO") || typeStr.includes("CM") || typeStr.includes("DM") || typeStr.includes("RETURN") || typeStr.includes("RTN");
+            const isTax = typeStr.includes("EWT") || typeStr.includes("TAX");
+
+            if (isCreditOrReturn) {
                 totalCredits += amt;
-            } else {
+            } else if (!isTax) {
                 expectedPhysicalCash += amt;
             }
 
@@ -138,8 +148,8 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
         return {
             physical, totalCash, totalChecks, nonCashBuckets, cashDenominations,
             applied: totalApplied,
-            expectedPhysicalCash, // 🚀 Exposed for UI
-            totalCredits,         // 🚀 Exposed for UI
+            expectedPhysicalCash,
+            totalCredits,
             variance: Math.abs(variance),
             isShortage: variance > 0.01,
             isOverage: variance < -0.01,
@@ -330,7 +340,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                         })}
                                     </div>
                                     <div className="flex justify-between items-center px-3 pt-3 border-t-2 border-border">
-                                        <span className="text-xs font-black uppercase tracking-widest text-muted-foreground">Total Pouch Contents:</span>
+                                        <span className="text-xs font-black uppercase tracking-widest text-muted-foreground">Total Pouch Target:</span>
                                         <span className="font-mono font-black text-emerald-600 text-lg">₱{reviewMath.physical.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                                     </div>
                                 </div>
@@ -409,7 +419,7 @@ export function ReviewSheet({ isOpen, onOpenChange, isLoading, pouch, isPosting,
                                         })}
                                     </div>
 
-                                    {/* 🚀 THE NEW, EXPLICIT MATH BREAKDOWN FOR THE AUDITOR */}
+                                    {/* 🚀 THE EXPLICIT MATH BREAKDOWN FOR THE AUDITOR */}
                                     <div className="flex flex-col px-3 pt-3 border-t-2 border-border gap-1.5">
                                         <div className="flex justify-between items-center text-[10px] font-black uppercase text-muted-foreground">
                                             <span>Gross AR Invoices Settled:</span>
