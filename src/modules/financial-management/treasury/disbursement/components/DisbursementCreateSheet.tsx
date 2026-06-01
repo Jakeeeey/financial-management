@@ -70,7 +70,15 @@ function SearchableDropdown<T extends string | number>({
                                                            overrideLabel
                                                        }: SearchableDropdownProps<T>) {
     const [open, setOpen] = useState(false);
+    const listRef = React.useRef<HTMLDivElement>(null);
     const selectedLabel = options.find((o) => String(o.value) === String(value))?.label || overrideLabel || placeholder;
+    const handlePopoverWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+        const list = listRef.current;
+        if (!list) return;
+
+        event.stopPropagation();
+        list.scrollTop += event.deltaY;
+    };
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -81,10 +89,17 @@ function SearchableDropdown<T extends string | number>({
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className={cn("p-0 shadow-lg border-border", popoverWidth)} align="start">
+            <PopoverContent
+                className={cn("p-0 shadow-lg border-border pointer-events-auto z-[100]", popoverWidth)}
+                align="start"
+                onWheelCapture={handlePopoverWheel}
+            >
                 <Command>
                     <CommandInput placeholder="Search..." className="h-9 text-xs"/>
-                    <CommandList className="max-h-[250px] scrollbar-thin">
+                    <CommandList
+                        ref={listRef}
+                        className="max-h-[250px] overflow-y-auto overscroll-contain scrollbar-thin"
+                    >
                         <CommandEmpty className="py-4 text-center text-xs text-muted-foreground">No results
                             found.</CommandEmpty>
                         <CommandGroup>
