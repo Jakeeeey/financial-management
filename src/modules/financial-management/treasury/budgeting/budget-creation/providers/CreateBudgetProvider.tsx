@@ -10,6 +10,7 @@ interface CreateBudgetContextValue {
   // Data & state
   displayedItems:  Budget[];
   budgets:         Budget[];
+  kpiTotals:       { draft: number; pending: number; approved: number; rejected: number };
   loading:         boolean;
   initialLoading:  boolean;
   hasMore:         boolean;
