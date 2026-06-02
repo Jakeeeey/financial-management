@@ -413,7 +413,7 @@ export default function BankTransfersModule() {
                 onClick={previewCalibrationPdf}
               >
                 <FileText />
-                Calibration PDF
+                Print Calibration PDF
               </Button>
               <Button
                 type="button"
@@ -517,7 +517,7 @@ export default function BankTransfersModule() {
                                   onClick={() => previewCheckPdf(transfer)}
                                 >
                                   <FileText />
-                                  Preview PDF
+                                  Print Check
                                 </Button>
                               </>
                             ) : null}
@@ -624,7 +624,7 @@ export default function BankTransfersModule() {
                               onClick={() => previewCheckPdf(transfer)}
                             >
                               <FileText />
-                              Preview PDF
+                              Print Check
                             </Button>
                           </>
                         ) : null}

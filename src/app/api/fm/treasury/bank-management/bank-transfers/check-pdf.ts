@@ -3,7 +3,7 @@ import {
   asNumber,
   asString,
   directusFetch,
-  DirectusItem,
+  DirectusList,
 } from "./_utils";
 
 type BankTransferCheckRow = {
@@ -56,10 +56,16 @@ export class CheckPrintError extends Error {
 
 const POINTS_PER_INCH = 72;
 const POINTS_PER_MM = POINTS_PER_INCH / 25.4;
+const A4_WIDTH_MM = 210;
+const A4_HEIGHT_MM = 297;
 const CHECK_WIDTH_MM = 203.2;
 const CHECK_HEIGHT_MM = 76.2;
+const A4_WIDTH = A4_WIDTH_MM * POINTS_PER_MM;
+const A4_HEIGHT = A4_HEIGHT_MM * POINTS_PER_MM;
 const CHECK_WIDTH = CHECK_WIDTH_MM * POINTS_PER_MM;
 const CHECK_HEIGHT = CHECK_HEIGHT_MM * POINTS_PER_MM;
+const CHECK_ORIGIN_X = (A4_WIDTH - CHECK_WIDTH) / 2;
+const CHECK_ORIGIN_Y = 0;
 
 type PointOffset = {
   xMm: number;
@@ -106,6 +112,11 @@ type CheckCalibrationOffsets = {
   amountWords: PointOffset;
 };
 
+type CheckOrigin = {
+  x: number;
+  y: number;
+};
+
 const bpiMeasuredTemplate: CheckTemplateMm = {
   date: {
     xMm: 156.46,
@@ -142,10 +153,10 @@ const bpiMeasuredTemplate: CheckTemplateMm = {
 // Enter measured drift here after printing the calibration PDF at actual size.
 // Positive X moves right. Negative X moves left. Positive Y moves down. Negative Y moves up.
 const checkCalibrationOffsets: CheckCalibrationOffsets = {
-  date: { xMm: 0, yMm: 0 },
-  payee: { xMm: 0, yMm: 0 },
-  amountFigure: { xMm: 0, yMm: 0 },
-  amountWords: { xMm: 0, yMm: 0 },
+  date: { xMm: -5, yMm: 0 },
+  payee: { xMm: 3, yMm: -2 },
+  amountFigure: { xMm: -5, yMm: -3 },
+  amountWords: { xMm: 4, yMm: 0 },
 };
 
 function mmToPt(value: number) {
@@ -156,32 +167,37 @@ function applyOffset(valueMm: number, offsetMm: number) {
   return mmToPt(valueMm + offsetMm);
 }
 
-function resolveCheckTemplate(template: CheckTemplateMm, offsets: CheckCalibrationOffsets) {
+function resolveCheckTemplate(
+  template: CheckTemplateMm,
+  offsets: CheckCalibrationOffsets,
+  origin: CheckOrigin,
+) {
   return {
     date: {
-      x: applyOffset(template.date.xMm, offsets.date.xMm),
-      y: applyOffset(template.date.yMm, offsets.date.yMm),
+      x: origin.x + applyOffset(template.date.xMm, offsets.date.xMm),
+      y: origin.y + applyOffset(template.date.yMm, offsets.date.yMm),
       cellWidth: mmToPt(template.date.cellWidthMm),
       separatorWidth: mmToPt(template.date.separatorWidthMm),
       fontSize: template.date.fontSize,
     },
     payee: {
-      x: applyOffset(template.payee.xMm, offsets.payee.xMm),
-      y: applyOffset(template.payee.yMm, offsets.payee.yMm),
+      x: origin.x + applyOffset(template.payee.xMm, offsets.payee.xMm),
+      y: origin.y + applyOffset(template.payee.yMm, offsets.payee.yMm),
       width: mmToPt(template.payee.widthMm),
       fontSize: template.payee.fontSize,
       minimumFontSize: template.payee.minimumFontSize,
     },
     amountFigure: {
-      x: applyOffset(template.amountFigure.xMm, offsets.amountFigure.xMm),
-      y: applyOffset(template.amountFigure.yMm, offsets.amountFigure.yMm),
+      x: origin.x + applyOffset(template.amountFigure.xMm, offsets.amountFigure.xMm),
+      y: origin.y + applyOffset(template.amountFigure.yMm, offsets.amountFigure.yMm),
       width: mmToPt(template.amountFigure.widthMm),
       fontSize: template.amountFigure.fontSize,
       minimumFontSize: template.amountFigure.minimumFontSize,
     },
     amountWords: {
-      x: applyOffset(template.amountWords.xMm, offsets.amountWords.xMm),
-      bottomY: applyOffset(template.amountWords.bottomYMm, offsets.amountWords.yMm),
+      x: origin.x + applyOffset(template.amountWords.xMm, offsets.amountWords.xMm),
+      bottomY:
+        origin.y + applyOffset(template.amountWords.bottomYMm, offsets.amountWords.yMm),
       width: mmToPt(template.amountWords.widthMm),
       fontSize: template.amountWords.fontSize,
       minimumFontSize: template.amountWords.minimumFontSize,
@@ -194,13 +210,28 @@ function resolveCheckTemplate(template: CheckTemplateMm, offsets: CheckCalibrati
 const checkTemplate = resolveCheckTemplate(
   bpiMeasuredTemplate,
   checkCalibrationOffsets,
+  { x: CHECK_ORIGIN_X, y: CHECK_ORIGIN_Y },
 );
+
+function applyCheckPrintPreferences(doc: jsPDF) {
+  // Printer drivers may still ask for confirmation, but these hints keep the A4 carrier page at actual size.
+  doc.viewerPreferences({
+    DisplayDocTitle: true,
+    ViewArea: "MediaBox",
+    ViewClip: "MediaBox",
+    PrintArea: "MediaBox",
+    PrintClip: "MediaBox",
+    PrintScaling: "None",
+    PickTrayByPDFSize: true,
+  });
+  doc.autoPrint({ variant: "javascript" });
+}
 
 function createCheckPdf(title: string) {
   const doc = new jsPDF({
-    orientation: "landscape",
+    orientation: "portrait",
     unit: "pt",
-    format: [CHECK_WIDTH, CHECK_HEIGHT],
+    format: [A4_WIDTH, A4_HEIGHT],
     compress: true,
   });
 
@@ -208,6 +239,8 @@ function createCheckPdf(title: string) {
     title,
     subject: "Bank transfer check print",
   });
+
+  applyCheckPrintPreferences(doc);
 
   return doc;
 }
@@ -448,24 +481,26 @@ function drawCalibrationField(
 function drawCalibrationGrid(doc: jsPDF) {
   const minorStep = mmToPt(5);
   const majorStep = mmToPt(10);
+  const checkRight = CHECK_ORIGIN_X + CHECK_WIDTH;
+  const checkBottom = CHECK_ORIGIN_Y + CHECK_HEIGHT;
 
   doc.setDrawColor(220, 220, 220);
   doc.setLineWidth(0.2);
 
-  for (let x = 0; x <= CHECK_WIDTH; x += minorStep) {
-    doc.line(x, 0, x, CHECK_HEIGHT);
+  for (let x = CHECK_ORIGIN_X; x <= checkRight; x += minorStep) {
+    doc.line(x, CHECK_ORIGIN_Y, x, checkBottom);
   }
-  for (let y = 0; y <= CHECK_HEIGHT; y += minorStep) {
-    doc.line(0, y, CHECK_WIDTH, y);
+  for (let y = CHECK_ORIGIN_Y; y <= checkBottom; y += minorStep) {
+    doc.line(CHECK_ORIGIN_X, y, checkRight, y);
   }
 
   doc.setDrawColor(150, 150, 150);
   doc.setLineWidth(0.35);
-  for (let x = 0; x <= CHECK_WIDTH; x += majorStep) {
-    doc.line(x, 0, x, CHECK_HEIGHT);
+  for (let x = CHECK_ORIGIN_X; x <= checkRight; x += majorStep) {
+    doc.line(x, CHECK_ORIGIN_Y, x, checkBottom);
   }
-  for (let y = 0; y <= CHECK_HEIGHT; y += majorStep) {
-    doc.line(0, y, CHECK_WIDTH, y);
+  for (let y = CHECK_ORIGIN_Y; y <= checkBottom; y += majorStep) {
+    doc.line(CHECK_ORIGIN_X, y, checkRight, y);
   }
 }
 
@@ -501,7 +536,11 @@ function drawCalibrationInstructions(doc: jsPDF) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(5.5);
   lines.forEach((line, index) => {
-    doc.text(line, 8, CHECK_HEIGHT - 16 + index * 6);
+    doc.text(
+      line,
+      CHECK_ORIGIN_X + 8,
+      CHECK_ORIGIN_Y + CHECK_HEIGHT - 16 + index * 6,
+    );
   });
 }
 
@@ -517,7 +556,7 @@ export function generateBankTransferCheckCalibrationPdf() {
 
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(1);
-  doc.rect(0, 0, CHECK_WIDTH, CHECK_HEIGHT);
+  doc.rect(CHECK_ORIGIN_X, CHECK_ORIGIN_Y, CHECK_WIDTH, CHECK_HEIGHT);
 
   drawCalibrationDate(doc);
   drawCalibrationField(
@@ -564,10 +603,12 @@ async function getBank(bankId: number) {
 
   const params = new URLSearchParams();
   params.set("fields", "bank_id,bank_name,account_number,branch");
-  const res = await directusFetch<DirectusItem<BankAccountRow>>(
-    `/items/bank_accounts/${bankId}?${params.toString()}`,
+  params.set("limit", "1");
+  params.set("filter[bank_id][_eq]", String(bankId));
+  const res = await directusFetch<DirectusList<BankAccountRow>>(
+    `/items/bank_accounts?${params.toString()}`,
   );
-  return normalizeBank(res.data);
+  return normalizeBank(res.data?.[0]);
 }
 
 async function getPaymentMethod(methodId: number) {
@@ -575,10 +616,12 @@ async function getPaymentMethod(methodId: number) {
 
   const params = new URLSearchParams();
   params.set("fields", "method_id,method_name");
-  const res = await directusFetch<DirectusItem<PaymentMethodRow>>(
-    `/items/payment_methods/${methodId}?${params.toString()}`,
+  params.set("limit", "1");
+  params.set("filter[method_id][_eq]", String(methodId));
+  const res = await directusFetch<DirectusList<PaymentMethodRow>>(
+    `/items/payment_methods?${params.toString()}`,
   );
-  return asString(res.data?.method_name);
+  return asString(res.data?.[0]?.method_name);
 }
 
 function isCheckTransfer(transfer: CheckPrintTransfer) {
@@ -610,11 +653,15 @@ export async function getPrintableCheckTransfer(transferId: number) {
       "remarks",
     ].join(","),
   );
+  params.set("limit", "1");
+  params.set("filter[transfer_id][_eq]", String(transferId));
 
-  const res = await directusFetch<DirectusItem<BankTransferCheckRow>>(
-    `/items/bank_transfers/${transferId}?${params.toString()}`,
+  const res = await directusFetch<DirectusList<BankTransferCheckRow>>(
+    `/items/bank_transfers?${params.toString()}`,
   );
-  const row = res.data;
+  const row = res.data?.[0];
+  if (!row) throw new CheckPrintError("Bank transfer not found", 404);
+
   const destinationBankId = asNumber(row?.destination_bank_id) ?? 0;
   const transactionTypeId = asNumber(row?.transaction_type) ?? 0;
   const [destinationBank, transactionTypeName] = await Promise.all([
@@ -635,7 +682,7 @@ export async function getPrintableCheckTransfer(transferId: number) {
     remarks: asString(row?.remarks),
   };
 
-  if (!transfer.transferId) throw new Error("Bank transfer not found");
+  if (!transfer.transferId) throw new CheckPrintError("Bank transfer not found", 404);
   if (transfer.status === "CANCELLED") {
     throw new CheckPrintError("Cancelled transfers cannot be printed as checks");
   }
