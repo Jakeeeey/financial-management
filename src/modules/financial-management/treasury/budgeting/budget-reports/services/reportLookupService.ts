@@ -1,7 +1,7 @@
 import { fetchProxy } from "./reportApiService";
 import { Division, Department } from "../types";
 
-const PROXY_LOOKUP_URL = "/api/fm/treasury/budgeting/budget-reports/items";
+const PROXY_LOOKUP_URL = "/api/fm/treasury/budgeting/budget-creation";
 
 interface RawDeptPerDiv {
   id?: number;
@@ -28,7 +28,7 @@ export const reportLookupService = {
     
     return data.map((d) => ({
       department_id:   d.department_id?.department_id || d.department_id?.id || 0,
-      department_name: d.department_id?.department_name || "—",
+      department_name: d.department_id?.department_name || "-",
       dept_div_id:     d.id,
     }));
   }

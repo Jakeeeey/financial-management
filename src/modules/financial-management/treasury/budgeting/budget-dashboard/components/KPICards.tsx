@@ -69,10 +69,10 @@ export function KPICards({ metrics }: { metrics: DashboardMetrics }) {
                     {formatCurrency(metrics.utilized)}
                  </h2>
                  <p className="text-[10px] text-muted-foreground mt-1 font-bold flex items-center gap-1">
-                    <span className="text-blue-500 flex items-center gap-0.5">
-                       <ArrowUpRight className="h-3 w-3" /> 70%
+                     <span className="text-blue-500 flex items-center gap-0.5">
+                       <ArrowUpRight className="h-3 w-3" /> {metrics.utilizationRate.toFixed(2)}%
                     </span> 
-                    simulated spend
+                    actual utilization
                  </p>
               </div>
            </div>
@@ -98,7 +98,7 @@ export function KPICards({ metrics }: { metrics: DashboardMetrics }) {
                  </h2>
                  <p className="text-[10px] text-muted-foreground mt-1 font-bold flex items-center gap-1">
                     <span className="text-emerald-500 flex items-center gap-0.5">
-                       <ArrowDownRight className="h-3 w-3" /> 30%
+                       <ArrowDownRight className="h-3 w-3" /> {Math.max(0, 100 - metrics.utilizationRate).toFixed(2)}%
                     </span> 
                     available funds
                  </p>
@@ -119,7 +119,7 @@ export function KPICards({ metrics }: { metrics: DashboardMetrics }) {
               </div>
               <div>
                  <h2 className="text-3xl font-black tracking-tighter text-foreground leading-tight">
-                    {metrics.utilizationRate}%
+                    {metrics.utilizationRate.toFixed(2)}%
                  </h2>
                  <p className="text-[10px] text-muted-foreground mt-1 font-bold">
                     System-wide usage
@@ -152,7 +152,7 @@ export function KPICards({ metrics }: { metrics: DashboardMetrics }) {
                   strokeLinecap="round"
                 />
               </svg>
-              <span className="absolute text-[10px] font-black text-purple-700">{metrics.utilizationRate}%</span>
+              <span className="absolute text-[10px] font-black text-purple-700">{metrics.utilizationRate.toFixed(2)}%</span>
            </div>
         </CardContent>
       </Card>

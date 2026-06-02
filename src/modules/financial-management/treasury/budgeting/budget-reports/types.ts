@@ -10,11 +10,15 @@ export interface Department {
 }
 
 export interface AllocationReportItem {
+  divisionId?: string;
+  departmentId?: string;
+  coaId?: string;
   divisionName: string;
   department: string;
   accountCode: string;
   accountTitle: string;
   amount: number;
+  utilized?: number;
   revisionDate?: string;
   originalAmount?: number;
   revisedAmount?: number;

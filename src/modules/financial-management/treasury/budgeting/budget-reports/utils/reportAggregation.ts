@@ -27,36 +27,39 @@ export const aggregateBudgetData = (
   reportId: string, 
   rawItems: AllocationReportItem[]
 ): AggregatedRow[] => {
-  const groupMap: Record<string, { label: string; subLabel: string; budgeted: number }> = {};
+  const groupMap: Record<string, { label: string; subLabel: string; budgeted: number; utilized: number }> = {};
 
   if (reportId === "summary") {
     // Group by Department
     rawItems.forEach(item => {
       const key = item.department.toUpperCase();
-      if (!groupMap[key]) groupMap[key] = { label: key, subLabel: "", budgeted: 0 };
+      if (!groupMap[key]) groupMap[key] = { label: key, subLabel: "", budgeted: 0, utilized: 0 };
       groupMap[key].budgeted += item.amount;
+      groupMap[key].utilized += item.utilized || 0;
     });
   } else if (reportId === "account-wise") {
-    // Group by GL Code
+    // Group by account identity so rows without GL codes do not collapse together.
     rawItems.forEach(item => {
-      const key = item.accountCode || "N/A";
-      if (!groupMap[key]) groupMap[key] = { label: key, subLabel: item.accountTitle.toUpperCase(), budgeted: 0 };
+      const key = item.coaId || item.accountCode || item.accountTitle || "N/A";
+      if (!groupMap[key]) groupMap[key] = { label: item.accountCode || "N/A", subLabel: item.accountTitle.toUpperCase(), budgeted: 0, utilized: 0 };
       groupMap[key].budgeted += item.amount;
+      groupMap[key].utilized += item.utilized || 0;
     });
   } else if (reportId === "utilization") {
-    // Group by Account Title
+    // Group by Department and Account Title
     rawItems.forEach(item => {
-      const key = item.accountTitle.toUpperCase();
-      if (!groupMap[key]) groupMap[key] = { label: key, subLabel: "", budgeted: 0 };
+      const key = `${item.department.toUpperCase()}|${item.accountTitle.toUpperCase()}`;
+      if (!groupMap[key]) groupMap[key] = { label: item.department.toUpperCase(), subLabel: item.accountTitle.toUpperCase(), budgeted: 0, utilized: 0 };
       groupMap[key].budgeted += item.amount;
+      groupMap[key].utilized += item.utilized || 0;
     });
   }
 
-  // Sort and Map to final structure safely (defaulting utilized to 0 since backend source is not yet active)
+  // Sort and map to final structure.
   return Object.entries(groupMap)
     .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
     .map(([, vals]) => {
-      const utilized = 0; // Deterministic default until live backend integration is prepared
+      const utilized = vals.utilized;
       const remaining = vals.budgeted - utilized;
       const percentage = vals.budgeted > 0 ? (utilized / vals.budgeted) * 100 : 0;
 
@@ -82,5 +85,5 @@ export const formatCurrency = (num: number) => {
  * Formats percentage values consistently
  */
 export const formatPercentage = (num: number) => {
-  return `${num.toFixed(1)}%`;
+  return `${num.toFixed(2)}%`;
 };

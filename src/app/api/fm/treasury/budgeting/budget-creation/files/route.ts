@@ -31,3 +31,30 @@ export async function POST(req: Request) {
         return NextResponse.json({ message: "BFF Error", detail: err instanceof Error ? err.message : "Unknown error" }, { status: 502 });
     }
 }
+
+export async function DELETE(req: Request) {
+    try {
+        const { searchParams } = new URL(req.url);
+        const id = searchParams.get("id");
+
+        if (!id) {
+            return NextResponse.json({ message: "ID is required" }, { status: 400 });
+        }
+
+        const res = await fetch(`${API_BASE_URL}/files/${id}`, {
+            method: "DELETE",
+            headers: AUTH_HEADERS,
+        });
+
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({ message: "Directus Error" }));
+            console.error("Files Proxy Delete: Directus Error", error);
+            return NextResponse.json(error, { status: res.status });
+        }
+
+        return new Response(null, { status: 204 });
+    } catch (err: unknown) {
+        console.error("Files Proxy Delete Error:", err);
+        return NextResponse.json({ message: "BFF Error", detail: err instanceof Error ? err.message : "Unknown error" }, { status: 502 });
+    }
+}
