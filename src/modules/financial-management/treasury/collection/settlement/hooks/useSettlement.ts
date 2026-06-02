@@ -115,6 +115,7 @@ export function useSettlement(pouchId: string | number) {
     const [dispatchPlans, setDispatchPlans] = useState<DispatchPlan[]>([]);
     const [isLoadingPlans, setIsLoadingPlans] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [isLoadingCredits, setIsLoadingCredits] = useState(false);
 
     const fetchData = useCallback(async () => {
         if (!pouchId) return;
@@ -258,6 +259,7 @@ export function useSettlement(pouchId: string | number) {
             const uniqueCustomers = Array.from(new Set(cartInvoices.map(inv => inv.customerName).filter(Boolean)));
             if (uniqueCustomers.length === 0) return;
 
+            setIsLoadingCredits(true);
             try {
                 const namesQuery = encodeURIComponent(uniqueCustomers.join(','));
                 const [memos, returns] = await Promise.all([
@@ -284,6 +286,8 @@ export function useSettlement(pouchId: string | number) {
                 });
             } catch (err) {
                 console.error("Failed to fetch credits dynamically for linked customers", err);
+            } finally {
+                setIsLoadingCredits(false);
             }
         };
         fetchCreditsByCustomers();
@@ -635,6 +639,6 @@ export function useSettlement(pouchId: string | number) {
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
-        collectedByName
+        collectedByName, isLoadingCredits
     };
 }
