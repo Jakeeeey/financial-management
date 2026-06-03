@@ -83,6 +83,7 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "endDate", query.endDate);
     appendOptional(params, "divisionId", query.divisionId);
     appendOptional(params, "departmentId", query.departmentId);
+    appendOptional(params, "sort", query.sort);
 
     const res = await fetch(`${BASE}?${params.toString()}`, { cache: "no-store" });
     return parseResponse<AdjustingEntryPage>(res, "Failed to load adjusting journal entries");

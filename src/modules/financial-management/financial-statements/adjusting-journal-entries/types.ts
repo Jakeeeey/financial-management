@@ -60,6 +60,7 @@ export type AdjustingEntryQuery = {
   endDate?: string;
   divisionId?: number | null;
   departmentId?: number | null;
+  sort?: string;
 };
 
 export type LookupOption = {
