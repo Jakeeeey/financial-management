@@ -10,7 +10,7 @@ import {
     Printer, Pencil, Lock, AlertTriangle, FileText, Receipt,
     CheckCircle2, CircleDashed, X, Sparkles, ArrowDownToLine, ArrowUpFromLine
 } from "lucide-react";
-import { Disbursement, BankAccountDto } from "../types";
+import { Disbursement, BankAccountDto, COADto } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { format } from "date-fns";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
@@ -27,19 +27,54 @@ interface DisbursementViewSheetProps {
 
 const VOUCHER_STEPS = ["Draft", "Submitted", "Approved", "Released", "Posted"];
 
+function getCookie(name: string) {
+    if (typeof window === "undefined") return "";
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop()?.split(';').shift() || "";
+    return "";
+}
+
+function decodeToken(token: string) {
+    if (!token) return null;
+    try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+            window.atob(base64)
+                .split('')
+                .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+        );
+        return JSON.parse(jsonPayload);
+    } catch (e) {
+        console.error("Failed to decode token", e);
+        return null;
+    }
+}
+
 export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading }: DisbursementViewSheetProps) {
     const [showPrintOptions, setShowPrintOptions] = useState(false);
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
+    const [coas, setCoas] = useState<COADto[]>([]);
 
     useEffect(() => {
         if (open) {
             disbursementProvider.getBanks()
                 .then(setBanks)
                 .catch(() => console.warn("Failed to fetch banks for view lookup."));
+            disbursementProvider.getCOAs()
+                .then(setCoas)
+                .catch(() => console.warn("Failed to fetch COAs for view lookup."));
         }
     }, [open]);
 
     if (!disbursement) return null;
+
+    const token = getCookie("vos_access_token");
+    const tokenPayload = decodeToken(token);
+    const currentUserId = tokenPayload?.sub;
+    const isApprover = disbursement.approverId != null && currentUserId != null && String(disbursement.approverId) === String(currentUserId);
 
     const formatCurrency = (amount: number) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
 
@@ -241,6 +276,11 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                                 ? `${matchedBank.bankName} - ${matchedBank.accountNumber}`
                                                 : (p.bankId ? `Bank ID: ${p.bankId}` : "No Bank Selected");
 
+                                            const matchedCoa = coas.find(c => c.coaId === p.coaId);
+                                            const displayCoa = matchedCoa
+                                                ? matchedCoa.accountTitle
+                                                : (p.accountTitle || `GL Code: ${p.coaId}`);
+
                                             return (
                                                 <TableRow key={i} className="hover:bg-muted/50 border-border">
                                                     <TableCell className="text-[10px] font-bold uppercase text-muted-foreground">
@@ -250,7 +290,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                                     <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">
                                                         <div className="flex flex-col gap-0.5">
                                                             <span className="text-foreground">{displayBank}</span>
-                                                            <span className="text-primary/70">{p.accountTitle || `GL: ${p.coaId}`}</span>
+                                                            <span className="text-primary/70">{displayCoa}</span>
                                                         </div>
                                                     </TableCell>
                                                     <TableCell className="text-xs font-black text-emerald-600 dark:text-emerald-500 text-right">{formatCurrency(p.amount)}</TableCell>
@@ -335,10 +375,21 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         )}
 
                         {disbursement.status === "Released" && (
-                            <Button onClick={() => handleAction("Posted")} disabled={loading || !isBalanced} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md disabled:opacity-50">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
-                                Post to Ledger
-                            </Button>
+                            <div className="flex flex-col items-end gap-1">
+                                <Button 
+                                    onClick={() => handleAction("Posted")} 
+                                    disabled={loading || !isBalanced || isApprover} 
+                                    className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md disabled:opacity-50"
+                                >
+                                    {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
+                                    Post to Ledger
+                                </Button>
+                                {isApprover && (
+                                    <span className="text-[9px] text-destructive font-black uppercase tracking-widest mt-1">
+                                        Segregation of Duties: Approver cannot post
+                                    </span>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>

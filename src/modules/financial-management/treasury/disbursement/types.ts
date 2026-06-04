@@ -39,6 +39,9 @@ export interface Disbursement {
     encoderName?: string;
     approverName?: string;
     postedByName?: string;
+    encoderId?: number;
+    approverId?: number;
+    postedById?: number;
 
     isPosted: number;
     transactionDate?: string;
@@ -166,8 +169,11 @@ export interface DashboardFilters {
     startDate?: string;
     endDate?: string;
     status?: string;
-    payeeId?: number;
+    payeeId?: number | "";
     transactionType?: number | ""; // 🚀 NEW
+    encoderId?: number | "";
+    coaId?: number | "";
+    amount?: number | "";
 }
 
 export interface CoaExpense {
