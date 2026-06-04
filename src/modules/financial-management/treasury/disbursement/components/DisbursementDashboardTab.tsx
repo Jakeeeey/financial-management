@@ -34,7 +34,7 @@ export function DisbursementDashboardTab() {
             .then(res => res.json())
             .then(data => {
                 if (Array.isArray(data)) {
-                    setUsers(data.map((u: any) => ({
+                    setUsers(data.map((u: { id: number; firstName?: string; lastName?: string }) => ({
                         id: u.id,
                         name: `${u.firstName || ""} ${u.lastName || ""}`.trim() || `User #${u.id}`
                     })));

@@ -10,7 +10,7 @@ import {
     Printer, Pencil, Lock, AlertTriangle, FileText, Receipt,
     CheckCircle2, CircleDashed, X, Sparkles, ArrowDownToLine, ArrowUpFromLine
 } from "lucide-react";
-import { Disbursement, BankAccountDto } from "../types";
+import { Disbursement, BankAccountDto, COADto } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { format } from "date-fns";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
@@ -56,7 +56,7 @@ function decodeToken(token: string) {
 export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading }: DisbursementViewSheetProps) {
     const [showPrintOptions, setShowPrintOptions] = useState(false);
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
-    const [coas, setCoas] = useState<any[]>([]);
+    const [coas, setCoas] = useState<COADto[]>([]);
 
     useEffect(() => {
         if (open) {
