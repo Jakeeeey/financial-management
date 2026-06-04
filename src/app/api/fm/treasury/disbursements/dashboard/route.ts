@@ -22,7 +22,10 @@ export async function GET(req: NextRequest) {
     const endDate = url.searchParams.get("endDate");
     const status = url.searchParams.get("status") || "ALL";
     const payeeId = url.searchParams.get("payeeId");
-    const transactionType = url.searchParams.get("transactionType"); // 🚀 NEW
+    const transactionType = url.searchParams.get("transactionType");
+    const encoderId = url.searchParams.get("encoderId");
+    const coaId = url.searchParams.get("coaId");
+    const amount = url.searchParams.get("amount");
 
     // 2. Rebuild the query string for Spring Boot
     const springParams = new URLSearchParams();
@@ -30,8 +33,12 @@ export async function GET(req: NextRequest) {
     if (endDate) springParams.append("endDate", endDate);
     if (status) springParams.append("status", status);
     if (payeeId) springParams.append("payeeId", payeeId);
-    if (transactionType) springParams.append("transactionType", transactionType); // 🚀 NEW
-    // 3. 🚀 Point directly to the /v1/ Spring Boot Controller
+    if (transactionType) springParams.append("transactionType", transactionType);
+    if (encoderId) springParams.append("encoderId", encoderId);
+    if (coaId) springParams.append("coaId", coaId);
+    if (amount) springParams.append("amount", amount);
+
+    // 3. Point directly to the /v1/ Spring Boot Controller
     const targetUrl = `${getSpringBaseUrl()}/api/v1/treasury/disbursements/dashboard?${springParams.toString()}`;
 
     try {
