@@ -31,6 +31,7 @@ export type AdjustingEntry = {
   totalDebit: number;
   totalCredit: number;
   variance: number;
+  combinedVariance?: number;
   details: AdjustingEntryDetail[];
 };
 

@@ -125,6 +125,7 @@ type SortDirection = "asc" | "desc";
 type PendingAction = {
   entry: AdjustingEntry;
   action: EntryAction;
+  combinedVariance?: number;
 };
 
 const pageSizes = [10, 20, 50];
@@ -485,6 +486,7 @@ export function AdjustingJournalEntriesModule() {
   const [coaOptions, setCoaOptions] = React.useState<LookupOption[]>([]);
   const [divisions, setDivisions] = React.useState<DivisionLookup[]>([]);
   const [departments, setDepartments] = React.useState<DepartmentLookup[]>([]);
+  const [entryCombinedVariance, setEntryCombinedVariance] = React.useState<Record<number, number>>({});
 
   const loadEntries = React.useCallback(async () => {
     setIsLoading(true);
@@ -574,6 +576,44 @@ export function AdjustingJournalEntriesModule() {
       mounted = false;
     };
   }, []);
+
+  React.useEffect(() => {
+    const entriesWithSource = entries.filter((e) => e.sourceJeNo);
+    if (entriesWithSource.length === 0) {
+      setEntryCombinedVariance({});
+      return;
+    }
+
+    let cancelled = false;
+    const uniqueJeNos = [...new Set(entriesWithSource.map((e) => e.sourceJeNo!))];
+    Promise.all(
+      uniqueJeNos.map((jeNo) =>
+        adjustingJournalEntriesApi.sourceJournalEntry(jeNo).catch(() => null),
+      ),
+    )
+      .then((results) => {
+        if (cancelled) return;
+        const sourceVarianceByJeNo: Record<string, number> = {};
+        for (let i = 0; i < uniqueJeNos.length; i += 1) {
+          const source = results[i];
+          if (!source) continue;
+          const sourceDebit = source.details.reduce((sum, d) => sum + d.debit, 0);
+          const sourceCredit = source.details.reduce((sum, d) => sum + d.credit, 0);
+          sourceVarianceByJeNo[uniqueJeNos[i]] = Math.round((sourceDebit - sourceCredit) * 100) / 100;
+        }
+        const combined: Record<number, number> = {};
+        for (const entry of entriesWithSource) {
+          const sourceVariance = sourceVarianceByJeNo[entry.sourceJeNo!] ?? 0;
+          combined[entry.id] = Math.round((entry.variance + sourceVariance) * 100) / 100;
+        }
+        setEntryCombinedVariance(combined);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entries]);
 
   const loadSourceJournalEntry = React.useCallback(async (jeNo: string) => {
     const normalizedJeNo = jeNo.trim();
@@ -695,6 +735,43 @@ export function AdjustingJournalEntriesModule() {
     };
   }, [form.details]);
 
+  const sourceTotals = React.useMemo(() => {
+    const totalDebit = sourceJournalEntry?.details.reduce((sum, row) => sum + Number(row.debit || 0), 0) ?? 0;
+    const totalCredit = sourceJournalEntry?.details.reduce((sum, row) => sum + Number(row.credit || 0), 0) ?? 0;
+    return {
+      totalDebit: Math.round(totalDebit * 100) / 100,
+      totalCredit: Math.round(totalCredit * 100) / 100,
+      variance: Math.round((totalDebit - totalCredit) * 100) / 100,
+      hasDetails: Boolean(sourceJournalEntry?.details?.length),
+    };
+  }, [sourceJournalEntry]);
+
+  const combinedTotals = React.useMemo(() => {
+    const netByAccount = new Map<number, number>();
+    for (const d of sourceJournalEntry?.details ?? []) {
+      const coaId = d.coaId ?? 0;
+      netByAccount.set(coaId, (netByAccount.get(coaId) ?? 0) + d.debit - d.credit);
+    }
+    for (const row of form.details) {
+      const coaId = Number(row.coaId);
+      if (!coaId) continue;
+      netByAccount.set(coaId, (netByAccount.get(coaId) ?? 0) + parseMoney(row.debit) - parseMoney(row.credit));
+    }
+    let totalDebit = 0;
+    let totalCredit = 0;
+    for (const net of netByAccount.values()) {
+      if (net > 0) totalDebit += net;
+      else totalCredit += Math.abs(net);
+    }
+    totalDebit = Math.round(totalDebit * 100) / 100;
+    totalCredit = Math.round(totalCredit * 100) / 100;
+    return {
+      totalDebit,
+      totalCredit,
+      variance: Math.round((totalDebit - totalCredit) * 100) / 100,
+    };
+  }, [form.details, sourceJournalEntry]);
+
   const filteredDepartments = React.useMemo(() => {
     if (!form.divisionId) return departments;
     const divisionId = Number(form.divisionId);
@@ -783,7 +860,8 @@ export function AdjustingJournalEntriesModule() {
 
   const hasLineErrors = lineErrors.some(Boolean);
   const hasDetailRows = form.details.some((row) => !isBlankDetailRow(row));
-  const isBalanced = Math.abs(totals.variance) < balancedTolerance;
+  const displayTotals = sourceJournalEntry ? combinedTotals : totals;
+  const isBalanced = Math.abs(displayTotals.variance) < balancedTolerance;
   const canPostFromModal = Boolean(editingEntry && editingEntry.status === "Draft" && hasDetailRows && isBalanced && !hasLineErrors);
   const hasActiveFilters = Boolean(
     search.trim() ||
@@ -991,23 +1069,25 @@ export function AdjustingJournalEntriesModule() {
     if (!editingEntry) return;
     const savedEntry = await persistDraft(false);
     if (!savedEntry) return;
-    if (Math.abs(savedEntry.variance) >= balancedTolerance) {
+    if (Math.abs(displayTotals.variance) >= balancedTolerance) {
       toast.error("Cannot post an imbalanced entry");
       return;
     }
-    setPendingAction({ entry: savedEntry, action: "post" });
+    setPendingAction({ entry: savedEntry, action: "post", combinedVariance: displayTotals.variance });
   }
 
   function requestAction(entry: AdjustingEntry, action: EntryAction) {
-    if (action === "post" && Math.abs(entry.variance) >= balancedTolerance) {
+    const checkVariance = entryCombinedVariance[entry.id] ?? entry.combinedVariance ?? entry.variance;
+    if (action === "post" && Math.abs(checkVariance) >= balancedTolerance) {
       toast.error("Cannot post an imbalanced entry");
       return;
     }
-    setPendingAction({ entry, action });
+    setPendingAction({ entry, action, combinedVariance: action === "post" ? checkVariance : undefined });
   }
 
   async function runAction(entry: AdjustingEntry, action: EntryAction) {
-    if (action === "post" && Math.abs(entry.variance) >= balancedTolerance) {
+    const checkVariance = pendingAction?.combinedVariance ?? entry.variance;
+    if (action === "post" && Math.abs(checkVariance) >= balancedTolerance) {
       toast.error("Cannot post an imbalanced entry");
       setPendingAction(null);
       return;
@@ -1278,7 +1358,8 @@ export function AdjustingJournalEntriesModule() {
                 ) : (
                   entries.map((entry) => {
                     const actionBusy = actionId === entry.id;
-                    const canPost = entry.status === "Draft" && Math.abs(entry.variance) < balancedTolerance;
+                    const entryVariance = entryCombinedVariance[entry.id] ?? entry.combinedVariance ?? entry.variance;
+                    const canPost = entry.status === "Draft" && Math.abs(entryVariance) < balancedTolerance;
                     const postTooltip = canPost
                       ? "Post to ledger"
                       : entry.status !== "Draft"
@@ -1310,8 +1391,8 @@ export function AdjustingJournalEntriesModule() {
                         </TableCell>
                         <TableCell className="break-all text-right font-mono text-[11px] xl:text-xs">{money(entry.totalDebit)}</TableCell>
                         <TableCell className="break-all text-right font-mono text-[11px] xl:text-xs">{money(entry.totalCredit)}</TableCell>
-                        <TableCell className={cn("break-all text-right font-mono text-[11px] xl:text-xs", Math.abs(entry.variance) >= 0.005 && "text-destructive")}>
-                          {money(entry.variance)}
+                        <TableCell className={cn("break-all text-right font-mono text-[11px] xl:text-xs", Math.abs(entryCombinedVariance[entry.id] ?? entry.combinedVariance ?? entry.variance) >= 0.005 && "text-destructive")}>
+                          {money(entryCombinedVariance[entry.id] ?? entry.combinedVariance ?? entry.variance)}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap justify-end gap-0.5">
@@ -1589,8 +1670,19 @@ export function AdjustingJournalEntriesModule() {
                             <TableCell className="text-right font-mono text-xs">{line.credit > 0 ? money(line.credit) : ""}</TableCell>
                           </TableRow>
                         ))}
+                        <TableRow className="bg-muted/40">
+                          <TableCell colSpan={2} className="text-xs font-semibold">Source Total</TableCell>
+                          <TableCell className="text-right font-mono text-xs font-semibold">{money(sourceTotals.totalDebit)}</TableCell>
+                          <TableCell className="text-right font-mono text-xs font-semibold">{money(sourceTotals.totalCredit)}</TableCell>
+                        </TableRow>
                       </TableBody>
                     </Table>
+                    <div className="flex items-center justify-between border-t bg-background px-3 py-2 text-xs">
+                      <span className="text-muted-foreground">Source Variance</span>
+                      <span className={cn("font-mono font-semibold", Math.abs(sourceTotals.variance) >= balancedTolerance && "text-destructive")}>
+                        {money(sourceTotals.variance)}
+                      </span>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -1692,11 +1784,11 @@ export function AdjustingJournalEntriesModule() {
               <div className="sticky bottom-0 z-10 grid gap-3 border-t bg-background/95 px-3 py-3 text-sm shadow-[0_-8px_16px_rgba(15,23,42,0.06)] backdrop-blur md:grid-cols-3">
                 <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
                   <span className="text-muted-foreground">Total Debits</span>
-                  <span className="font-mono font-semibold">{money(totals.totalDebit)}</span>
+                  <span className="font-mono font-semibold">{money(displayTotals.totalDebit)}</span>
                 </div>
                 <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
                   <span className="text-muted-foreground">Total Credits</span>
-                  <span className="font-mono font-semibold">{money(totals.totalCredit)}</span>
+                  <span className="font-mono font-semibold">{money(displayTotals.totalCredit)}</span>
                 </div>
                 <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
                   <span className="flex items-center gap-2 text-muted-foreground">
@@ -1708,8 +1800,8 @@ export function AdjustingJournalEntriesModule() {
                       {isBalanced ? "Ready" : "Hold"}
                     </Badge>
                   </span>
-                  <span className={cn("font-mono font-semibold", Math.abs(totals.variance) >= balancedTolerance && "text-destructive")}>
-                    {money(totals.variance)}
+                  <span className={cn("font-mono font-semibold", Math.abs(displayTotals.variance) >= balancedTolerance && "text-destructive")}>
+                    {money(displayTotals.variance)}
                   </span>
                 </div>
               </div>
@@ -1768,8 +1860,8 @@ export function AdjustingJournalEntriesModule() {
                 </div>
                 <div>
                   <div className="text-xs uppercase text-muted-foreground">Variance</div>
-                  <div className={cn("font-mono font-medium", Math.abs(pendingAction.entry.variance) >= balancedTolerance && "text-destructive")}>
-                    {money(pendingAction.entry.variance)}
+                  <div className={cn("font-mono font-medium", Math.abs(pendingAction.combinedVariance ?? pendingAction.entry.variance) >= balancedTolerance && "text-destructive")}>
+                    {money(pendingAction.combinedVariance ?? pendingAction.entry.variance)}
                   </div>
                 </div>
                 <div>

@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from "next/navigation";
 import { adjustingJournalEntriesApi } from "../../adjusting-journal-entries/services/adjusting-journal-entries.api";
+import { AdjustingEntry } from "../../adjusting-journal-entries/types";
 
 interface JournalEntryDetailModalProps {
   group: JournalEntryGroup | null;
@@ -60,11 +61,14 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
   const [drillThrough, setDrillThrough] = React.useState<DrillThroughContext | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isAdjusting, setIsAdjusting] = React.useState(false);
+  const [linkedAjes, setLinkedAjes] = React.useState<AdjustingEntry[]>([]);
+  const [isLoadingAjes, setIsLoadingAjes] = React.useState(false);
 
   React.useEffect(() => {
     if (open && group?.jeNo) {
       let isMounted = true;
       setIsLoading(true);
+      setIsLoadingAjes(true);
       
       const fetchDrillDown = async () => {
         try {
@@ -81,15 +85,38 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
         }
       };
 
+      const fetchLinkedAjes = async () => {
+        try {
+          const res = await adjustingJournalEntriesApi.list({
+            page: 0,
+            pageSize: 50,
+            status: "Posted",
+            sourceJeNo: group.jeNo,
+          });
+          if (isMounted) {
+            setLinkedAjes(res.content ?? []);
+          }
+        } catch (err) {
+          console.error(err);
+        } finally {
+          if (isMounted) setIsLoadingAjes(false);
+        }
+      };
+
       fetchDrillDown();
+      fetchLinkedAjes();
       
       return () => { isMounted = false; };
     } else {
        setDrillThrough(null);
+       setLinkedAjes([]);
     }
   }, [group, open]);
 
   if (!group) return null;
+
+  const ajeTotalDebit = linkedAjes.reduce((sum, aje) => sum + aje.totalDebit, 0);
+  const ajeTotalCredit = linkedAjes.reduce((sum, aje) => sum + aje.totalCredit, 0);
 
   // Audit trail is empty for now, ready for real data integration
   const auditTrail: AuditEntry[] = [];
@@ -154,7 +181,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
               onClick={() => {
                 try {
                   const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
-                  exportJournalToPdf([group], dateStr, `Journal_Entry_${group.jeNo}.pdf`);
+                  exportJournalToPdf([group], dateStr, `Journal_Entry_${group.jeNo}.pdf`, linkedAjes);
                   toast.success("PDF exported successfully!");
                 } catch {
                   toast.error("Failed to export PDF");
@@ -169,7 +196,7 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
               onClick={() => {
                 try {
                   const dateStr = `Transaction Date: ${format(new Date(group.transactionDate), "MMMM d, yyyy")}`;
-                  exportJournalToExcel([group], dateStr, `Journal_Entry_${group.jeNo}.xlsx`);
+                  exportJournalToExcel([group], dateStr, `Journal_Entry_${group.jeNo}.xlsx`, linkedAjes);
                   toast.success("Excel exported successfully!");
                 } catch {
                   toast.error("Failed to export Excel");
@@ -206,67 +233,139 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
 
               {/* LEFT: Distribution Table */}
               <div className="flex-1 min-w-0 border border-border rounded-lg overflow-hidden bg-background">
-                <Table>
+                <Table className="table-fixed w-full">
                   <TableHeader>
                     <TableRow className="bg-muted/50 hover:bg-muted/50 border-b border-border">
-                      <TableHead className="text-xs font-bold text-muted-foreground w-[100px] py-2.5">Account No.</TableHead>
-                      <TableHead className="text-xs font-bold text-muted-foreground py-2.5">Account Title</TableHead>
-                      <TableHead className="text-xs font-bold text-muted-foreground py-2.5">Description</TableHead>
-                      <TableHead className="text-xs font-bold text-muted-foreground py-2.5 text-right">Debit</TableHead>
-                      <TableHead className="text-xs font-bold text-muted-foreground py-2.5 text-right">Credit</TableHead>
+                      <TableHead className="text-xs font-bold text-muted-foreground w-[80px] py-2.5">Account No.</TableHead>
+                      <TableHead className="text-xs font-bold text-muted-foreground w-[160px] py-2.5 truncate">Account Title</TableHead>
+                      <TableHead className="text-xs font-bold text-muted-foreground py-2.5 truncate">Description</TableHead>
+                      <TableHead className="text-xs font-bold text-muted-foreground w-[100px] py-2.5 text-right">Debit</TableHead>
+                      <TableHead className="text-xs font-bold text-muted-foreground w-[100px] py-2.5 text-right">Credit</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
-                    {isLoading ? (
-                      Array.from({ length: Math.max(3, group.entries.length) }).map((_, i) => (
-                        <TableRow key={`sk-${i}`} className="hover:bg-muted/50 border-b border-border/60">
-                          <TableCell className="py-3"><Skeleton className="h-4 w-16" /></TableCell>
-                          <TableCell className="py-3"><Skeleton className="h-4 w-32" /></TableCell>
-                          <TableCell className="py-3">
-                            <Skeleton className="h-4 w-full max-w-[200px]" />
-                            {i === 0 && <Skeleton className="h-3 w-32 mt-1.5" />}
+                    <TableBody>
+                      {isLoading ? (
+                        Array.from({ length: Math.max(3, group.entries.length) }).map((_, i) => (
+                          <TableRow key={`sk-${i}`} className="hover:bg-muted/50 border-b border-border/60">
+                            <TableCell className="py-3"><Skeleton className="h-4 w-16" /></TableCell>
+                            <TableCell className="py-3"><Skeleton className="h-4 w-32" /></TableCell>
+                            <TableCell className="py-3">
+                              <Skeleton className="h-4 w-full max-w-[200px]" />
+                              {i === 0 && <Skeleton className="h-3 w-32 mt-1.5" />}
+                            </TableCell>
+                            <TableCell className="py-3 text-right"><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
+                            <TableCell className="py-3 text-right"><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        group.entries.map((e, i) => (
+                          <TableRow key={i} className="hover:bg-muted/50 border-b border-border/60">
+                            <TableCell className="py-3 text-sm font-mono text-muted-foreground truncate">
+                              {e.accountNumber || "N/A"}
+                            </TableCell>
+                            <TableCell className="py-3 text-sm font-semibold text-foreground truncate">
+                              {e.accountTitle}
+                            </TableCell>
+                            <TableCell className="py-3 text-sm text-muted-foreground">
+                              <span className="truncate block">{group.description}</span>
+                              {i === 0 && (
+                                <span className="block text-xs italic text-muted-foreground/80 mt-0.5 truncate">
+                                  - {e.accountTitle} distribution
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-3 text-sm font-semibold tabular-nums text-right whitespace-nowrap">
+                              {e.debit > 0 ? `₱${formatNumber(e.debit)}` : ""}
+                            </TableCell>
+                            <TableCell className="py-3 text-sm font-semibold tabular-nums text-right whitespace-nowrap">
+                              {e.credit > 0 ? `₱${formatNumber(e.credit)}` : ""}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+
+                      {/* Adjusting Entries section */}
+                      {isLoadingAjes && (
+                        <TableRow className="border-b border-border/60">
+                          <TableCell colSpan={5} className="py-4 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <Skeleton className="h-4 w-4 rounded" />
+                              <Skeleton className="h-4 w-40" />
+                            </div>
                           </TableCell>
-                          <TableCell className="py-3 text-right"><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
-                          <TableCell className="py-3 text-right"><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
                         </TableRow>
-                      ))
-                    ) : (
-                      group.entries.map((e, i) => (
-                        <TableRow key={i} className="hover:bg-muted/50 border-b border-border/60">
-                          <TableCell className="py-3 text-sm font-mono text-muted-foreground">
-                            {e.accountNumber || "N/A"}
+                      )}
+
+                      {!isLoadingAjes && linkedAjes.length > 0 && (
+                        <TableRow className="bg-muted/20 hover:bg-muted/20 border-y border-border/60">
+                          <TableCell colSpan={5} className="py-2 text-center">
+                            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                              ═══ Adjusting Entries ═══
+                            </span>
                           </TableCell>
-                          <TableCell className="py-3 text-sm font-semibold text-foreground">
-                            {e.accountTitle}
-                          </TableCell>
-                          <TableCell className="py-3 text-sm text-muted-foreground">
-                            {group.description}
-                            {i === 0 && (
-                              <span className="block text-xs italic text-muted-foreground/80 mt-0.5">
-                                - {e.accountTitle} distribution
+                        </TableRow>
+                      )}
+
+                      {!isLoadingAjes && linkedAjes.map((aje) => (
+                        <React.Fragment key={aje.id}>
+                          <TableRow className="bg-muted/10 hover:bg-muted/10 border-b border-border/40">
+                            <TableCell colSpan={5} className="py-1.5 px-4">
+                              <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                                ── {aje.jeNo} ({aje.status})
                               </span>
-                            )}
-                          </TableCell>
-                          <TableCell className="py-3 text-sm font-semibold tabular-nums text-right">
-                            {e.debit > 0 ? `₱${formatNumber(e.debit)}` : ""}
-                          </TableCell>
-                          <TableCell className="py-3 text-sm font-semibold tabular-nums text-right">
-                            {e.credit > 0 ? `₱${formatNumber(e.credit)}` : ""}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                    {/* TOTAL */}
-                    <TableRow className="bg-muted/30 hover:bg-muted/30 border-t-2 border-border/80">
-                      <TableCell colSpan={3} className="py-3 font-black text-sm text-foreground">TOTAL</TableCell>
-                      <TableCell className="py-3 text-right font-black text-sm tabular-nums">
-                        {isLoading ? <Skeleton className="h-5 w-24 ml-auto" /> : `₱${formatNumber(group.totalDebit)}`}
-                      </TableCell>
-                      <TableCell className="py-3 text-right font-black text-sm tabular-nums">
-                        {isLoading ? <Skeleton className="h-5 w-24 ml-auto" /> : `₱${formatNumber(group.totalCredit)}`}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
+                              {aje.transactionDate && (
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  {format(new Date(aje.transactionDate), "yyyy-MM-dd")}
+                                </span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                          {aje.details.map((detail, di) => (
+                            <TableRow key={di} className="hover:bg-muted/50 border-b border-border/60">
+                              <TableCell className="py-2.5 text-sm font-mono text-muted-foreground truncate">
+                                {detail.accountNumber || "N/A"}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-sm font-semibold text-foreground truncate">
+                                {detail.accountTitle}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-sm text-muted-foreground">
+                                <span className="truncate block">{aje.description}</span>
+                                {di === 0 && (
+                                  <span className="block text-xs italic text-muted-foreground/80 mt-0.5 truncate">
+                                    - {detail.accountTitle || "Adjustment"} distribution
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-sm font-semibold tabular-nums text-right whitespace-nowrap">
+                                {detail.debit > 0 ? `₱${formatNumber(detail.debit)}` : ""}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-sm font-semibold tabular-nums text-right whitespace-nowrap">
+                                {detail.credit > 0 ? `₱${formatNumber(detail.credit)}` : ""}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </React.Fragment>
+                      ))}
+
+                      {/* Combined Total */}
+                      <TableRow className="bg-muted/30 hover:bg-muted/30 border-t-2 border-border/80">
+                        <TableCell colSpan={3} className="py-3 font-black text-sm text-foreground">TOTAL</TableCell>
+                        <TableCell className="py-3 text-right font-black text-sm tabular-nums whitespace-nowrap">
+                          {isLoading ? (
+                            <Skeleton className="h-5 w-24 ml-auto" />
+                          ) : (
+                            `₱${formatNumber(group.totalDebit + ajeTotalDebit)}`
+                          )}
+                        </TableCell>
+                        <TableCell className="py-3 text-right font-black text-sm tabular-nums whitespace-nowrap">
+                          {isLoading ? (
+                            <Skeleton className="h-5 w-24 ml-auto" />
+                          ) : (
+                            `₱${formatNumber(group.totalCredit + ajeTotalCredit)}`
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
                 </Table>
               </div>
 

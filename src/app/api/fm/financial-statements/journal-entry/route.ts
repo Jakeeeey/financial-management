@@ -57,13 +57,17 @@ export async function GET(request: NextRequest) {
     
     // 2. Apply filtering (Search, Status, Division, etc.)
     const filteredEntries = filterJournalEntries(entries, filters);
+
+    // 3. Exclude adjusting journal entries from the main JE list
+    const isAJE = (e: typeof filteredEntries[number]) => e.jeNo?.startsWith("AJE-");
+    const regularEntries = filteredEntries.filter((e) => !isAJE(e));
     
     // Optimization: if in flat mode, bypass expensive grouping and analytics
     if (mode === "flat") {
         let totalDebit = 0;
         let totalCredit = 0;
         
-        filteredEntries.forEach(e => {
+        regularEntries.forEach(e => {
             totalDebit += e.debit;
             totalCredit += e.credit;
         });
@@ -73,32 +77,32 @@ export async function GET(request: NextRequest) {
                 totalDebit,
                 totalCredit,
                 netBalance: Number((totalDebit - totalCredit).toFixed(2)),
-                count: filteredEntries.length,
+                count: regularEntries.length,
                 currentPage: 0,
-                pageSize: filteredEntries.length,
+                pageSize: regularEntries.length,
                 totalPages: 1
             },
-            data: filteredEntries
+            data: regularEntries
         });
     }
     
-    // 3. Group flat entries into transaction blocks (groups)
-    const groups = groupJournalEntries(filteredEntries);
+    // 4. Group flat entries into transaction blocks (groups)
+    const groups = groupJournalEntries(regularEntries);
     
-    // 4. Calculate Analytics on the ENTIRE filtered range (consistent with dashboard totals)
-    const analytics = calculateAnalytics(filteredEntries, groups);
+    // 5. Calculate Analytics on the ENTIRE filtered range (consistent with dashboard totals)
+    const analytics = calculateAnalytics(regularEntries, groups);
     
-    // 5. Apply user requested sorting
+    // 6. Apply user requested sorting
     const sortedGroups = sortJournalEntryGroups(groups, filters);
     
-    // 6. Paginate the grouped results
+    // 7. Paginate the grouped results
     const totalGroups = sortedGroups.length;
     const totalPages = Math.ceil(totalGroups / pageSize);
     const startIdx = page * pageSize;
     const paginatedGroups = sortedGroups.slice(startIdx, startIdx + pageSize);
     
-    // 7. Extract unique source modules for the client filters
-    const uniqueSourceModules = Array.from(new Set(entries.map(e => e.sourceModule).filter(Boolean))).sort();
+    // 8. Extract unique source modules for the client filters (excluding AJEs)
+    const uniqueSourceModules = Array.from(new Set(regularEntries.map(e => e.sourceModule).filter(Boolean))).sort();
     
     return NextResponse.json({
       metadata: {
