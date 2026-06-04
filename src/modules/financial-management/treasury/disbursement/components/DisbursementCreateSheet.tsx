@@ -15,7 +15,6 @@ import {Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandL
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
-import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {Checkbox} from "@/components/ui/checkbox";
 import {Badge} from "@/components/ui/badge";
@@ -126,17 +125,14 @@ function SearchableDropdown<T extends string | number>({
     );
 }
 
-const isPayableOrExpenseCOA = (c: COADto) => {
-    const gl = (c.glCode || "").trim();
-    const title = (c.accountTitle || "").toLowerCase();
-    return gl.startsWith("2") || gl.startsWith("5") || gl.startsWith("6") || gl.startsWith("7") || gl.startsWith("8") || gl.startsWith("9") || title.includes("payable") || title.includes("expense");
-};
-
 const isPaymentCOA = (c: COADto) => {
     if (c.isPayment || c.isPaymentDuplicate) return true;
     const title = (c.accountTitle || "").toLowerCase();
     return title.includes("petty cash") || title.includes("revolving fund") || title.includes("revolving funds");
 };
+
+// Show all accounts that are NOT flagged as payment accounts
+const isPayableOrExpenseCOA = (c: COADto) => !isPaymentCOA(c);
 
 export function DisbursementCreateSheet({
                                             open,
@@ -177,6 +173,9 @@ export function DisbursementCreateSheet({
 
     const [poSearchQuery, setPoSearchQuery] = useState("");
     const [isPayeeRegistrationOpen, setIsPayeeRegistrationOpen] = useState(false);
+    
+    const [previewDocNo, setPreviewDocNo] = useState("");
+    const [loadingDocNo, setLoadingDocNo] = useState(false);
 
     const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
     const totalPayments = payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
@@ -203,6 +202,22 @@ export function DisbursementCreateSheet({
                 .finally(() => setLoadingData(false));
         }
     }, [open, transactionTypeId]);
+
+    useEffect(() => {
+        if (open && !editData) {
+            setLoadingDocNo(true);
+            const supplierType = transactionTypeId === 2 ? "Non-Trade" : "Trade";
+            disbursementProvider.getNextDocNo(supplierType)
+                .then(setPreviewDocNo)
+                .catch(err => {
+                    console.warn("Failed to load next doc no preview:", err);
+                    setPreviewDocNo("");
+                })
+                .finally(() => setLoadingDocNo(false));
+        } else {
+            setPreviewDocNo("");
+        }
+    }, [open, transactionTypeId, editData]);
 
     useEffect(() => {
         if (open) {
@@ -243,8 +258,9 @@ export function DisbursementCreateSheet({
                 setDivisionId("");
                 setDepartmentId("");
                 setRemarks("");
-                setPayables([]);
-                setPayments([]);
+                // Start with one blank row each so the user can begin typing immediately
+                setPayables([{referenceNo: "", date: today, amount: 0, remarks: ""}]);
+                setPayments([{checkNo: "", date: today, amount: 0, remarks: ""}]);
                 setTransactionDate(today);
             }
         }
@@ -272,7 +288,20 @@ export function DisbursementCreateSheet({
     }, [open, editData, departmentId, departments]);
 
     const handleAddPayable = () => setPayables([...payables, {referenceNo: "", date: today, amount: 0, remarks: ""}]);
-    const handleAddPayment = () => setPayments([...payments, {checkNo: "", date: today, amount: 0, remarks: ""}]);
+
+    // Pre-fill payment amount with the outstanding balance; auto-select COA if only one payment option exists
+    const handleAddPayment = () => {
+        const remaining = Number((totalAmount - totalPayments).toFixed(2));
+        const paymentCoas = coas.filter(isPaymentCOA);
+        const autoCoaId = paymentCoas.length === 1 ? paymentCoas[0].coaId : undefined;
+        setPayments([...payments, {
+            checkNo: "",
+            date: today,
+            amount: remaining > 0 ? remaining : 0,
+            remarks: "",
+            coaId: autoCoaId,
+        }]);
+    };
 
     const handlePayeeCreated = async (createdPayee?: Payee) => {
         try {
@@ -299,12 +328,13 @@ export function DisbursementCreateSheet({
         }
     };
 
-    const handleOpenPoModal = async () => {
-        if (!payeeId) return toast.error("Please select a Payee first.");
+    const handleOpenPoModal = async (supplierIdOverride?: number) => {
+        const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
+        if (!sid) return toast.error("Please select a Payee first.");
         setLoadingPos(true);
         setIsPoModalOpen(true);
         try {
-            const pos = await disbursementProvider.getUnpaidPos(Number(payeeId));
+            const pos = await disbursementProvider.getUnpaidPos(sid);
             setUnpaidPos(pos);
             setSelectedPoIds([]);
             setTaxTypes({});
@@ -314,6 +344,14 @@ export function DisbursementCreateSheet({
             setIsPoModalOpen(false);
         } finally {
             setLoadingPos(false);
+        }
+    };
+
+    // Auto-open PO modal when a Trade payee is selected (no extra click needed)
+    const handlePayeeSelect = (val: number) => {
+        setPayeeId(val);
+        if (!isNonTradeVoucher && val) {
+            handleOpenPoModal(val);
         }
     };
 
@@ -463,7 +501,7 @@ export function DisbursementCreateSheet({
                                 <Label
                                     className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Document
                                     No.</Label>
-                                <Input value={editData ? editData.docNo : "AUTO-GENERATED"} disabled
+                                <Input value={editData ? editData.docNo : (loadingDocNo ? "LOADING..." : (previewDocNo || "AUTO-GENERATED"))} disabled
                                        className="h-9 text-[10px] font-black text-muted-foreground uppercase border-border bg-muted"/>
                             </div>
 
@@ -509,7 +547,7 @@ export function DisbursementCreateSheet({
                                                 value: s.id ?? 0,
                                                 label: s.supplier_name || `Supplier-${s.id}`
                                             }))}
-                                            value={payeeId as number | ""} onSelect={(val) => setPayeeId(val)}
+                                            value={payeeId as number | ""} onSelect={handlePayeeSelect}
                                             placeholder={`-- Search Payee --`}
                                             disabled={loadingData || !transactionTypeId}
                                             className="h-9 w-full bg-background border-input text-xs font-bold uppercase"
@@ -526,7 +564,7 @@ export function DisbursementCreateSheet({
                                         New Payee
                                     </Button>
                                     {!isNonTradeVoucher && (
-                                        <Button type="button" onClick={handleOpenPoModal} disabled={!payeeId}
+                                        <Button type="button" onClick={() => handleOpenPoModal()} disabled={!payeeId}
                                                 className="h-9 px-3 bg-amber-500 hover:bg-amber-600 text-white shadow-sm shrink-0"
                                                 title="Pull Unpaid POs">
                                             <DownloadCloud className="w-4 h-4"/>
@@ -604,20 +642,14 @@ export function DisbursementCreateSheet({
                             </div>
                         </div>
 
+                        {/* ── PAYABLES SECTION ── */}
                         <div className="bg-card p-1 rounded-xl border border-border shadow-sm">
-                            <Tabs defaultValue="payables" className="w-full">
-                                <div className="px-4 pt-4 pb-2 border-b border-border">
-                                    <TabsList className="grid w-full grid-cols-2 h-10 bg-muted">
-                                        <TabsTrigger value="payables"
-                                                     className="text-[10px] font-black uppercase tracking-widest">Payables
-                                            (Expense)</TabsTrigger>
-                                        <TabsTrigger value="payments"
-                                                     className="text-[10px] font-black uppercase tracking-widest">Payments
-                                            (Checks)</TabsTrigger>
-                                    </TabsList>
-                                </div>
-
-                                <TabsContent value="payables" className="p-4 m-0 space-y-4">
+                            <div className="px-4 pt-4 pb-2 border-b border-border flex items-center gap-2">
+                                <FileText className="w-3.5 h-3.5 text-primary"/>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-foreground">Payables (Expense Lines)</span>
+                                <span className="ml-auto text-[10px] font-bold text-muted-foreground">{payables.length} row{payables.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="p-4 space-y-4">
                                     <div className="rounded-md border border-border overflow-hidden">
                                         <Table>
                                             <TableHeader className="bg-muted/50">
@@ -709,9 +741,17 @@ export function DisbursementCreateSheet({
                                             <FileText className="w-3.5 h-3.5 mr-2"/> Apply Credit/Debit Memo
                                         </Button>
                                     </div>
-                                </TabsContent>
+                            </div>
+                        </div>
 
-                                <TabsContent value="payments" className="p-4 m-0 space-y-4">
+                        {/* ── PAYMENTS SECTION ── */}
+                        <div className="bg-card p-1 rounded-xl border border-border shadow-sm">
+                            <div className="px-4 pt-4 pb-2 border-b border-border flex items-center gap-2">
+                                <Wallet className="w-3.5 h-3.5 text-primary"/>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-foreground">Payments (Checks / Cash)</span>
+                                <span className="ml-auto text-[10px] font-bold text-muted-foreground">{payments.length} row{payments.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="p-4 space-y-4">
                                     <div className="rounded-md border border-border overflow-hidden">
                                         <Table>
                                             <TableHeader className="bg-muted/50">
@@ -807,11 +847,10 @@ export function DisbursementCreateSheet({
                                         <Button variant="outline" size="sm"
                                                 className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border"
                                                 onClick={handleAddPayment}>
-                                            <Plus className="w-3.5 h-3.5 mr-2"/> Add Manual Payment
+                                            <Plus className="w-3.5 h-3.5 mr-2"/> Add Payment Row
                                         </Button>
                                     </div>
-                                </TabsContent>
-                            </Tabs>
+                            </div>
                         </div>
                     </div>
 
