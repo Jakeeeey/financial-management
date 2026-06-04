@@ -437,40 +437,37 @@ export function AddPayeeForm({
       return;
     }
 
-        const uploadRes = await fetch("/api/fm/payee-registration/payee-image-upload", {
-          method: "POST",
-          body: formData,
-        });
-
     if (barangayOptions.length === 0) {
       void loadPsgcOptions("barangays");
     }
   }
 
   const onSubmit = async (data: PayeeFormValues) => {
-    if (String(data.supplier_type) === "TRADE") {
-      const requiredTradeFields: Array<keyof PayeeFormValues> = [
-        "supplier_shortcut",
-        "contact_person",
-        "address",
-        "brgy",
-        "city",
-        "state_province",
-        "postal_code",
-        "country",
-        "payment_terms",
-        "delivery_terms",
-      ];
-      const missingField = requiredTradeFields.find((field) => {
-        const value = data[field];
-        return typeof value !== "string" || value.trim().length === 0;
-      });
+    setIsSubmitting(true);
+    try {
+      if (String(data.supplier_type) === "TRADE") {
+        const requiredTradeFields: Array<keyof PayeeFormValues> = [
+          "supplier_shortcut",
+          "contact_person",
+          "address",
+          "brgy",
+          "city",
+          "state_province",
+          "postal_code",
+          "country",
+          "payment_terms",
+          "delivery_terms",
+        ];
+        const missingField = requiredTradeFields.find((field) => {
+          const value = data[field];
+          return typeof value !== "string" || value.trim().length === 0;
+        });
 
-      if (missingField) {
-        toast.error("Please complete the required Trade supplier fields.");
-        return;
+        if (missingField) {
+          toast.error("Please complete the required Trade supplier fields.");
+          return;
+        }
       }
-    }
 
       const response = await fetch("/api/fm/payee-registration/payees", {
         method: "POST",

@@ -46,29 +46,6 @@ export function EditPayeeForm({
   const onSubmit = async (data: PayeeFormValues) => {
     setIsSubmitting(true);
     try {
-      let imageId = payee.supplier_image || "";
-
-      if (selectedFile) {
-        const formData = new FormData();
-        formData.append("file", selectedFile);
-        formData.append("folder_name", "payee_profile_image");
-
-        const uploadRes = await fetch("/api/fm/payee-registration/payee-image-upload", {
-          method: "POST",
-          body: formData,
-        });
-
-        const uploadResult = await uploadRes.json();
-
-        if (!uploadRes.ok) {
-          throw new Error(uploadResult.error || "Image upload failed");
-        }
-
-        imageId = uploadResult.data?.id || "";
-      } else if (imageCleared) {
-        imageId = "";
-      }
-
       const response = await fetch(
         `/api/fm/payee-registration/payees/${payee.id}`,
         {
