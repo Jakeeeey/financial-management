@@ -438,7 +438,7 @@ export async function resolveEncoderId(email: string | null): Promise<number | n
     }
 }
 
-let docNoPromiseChain = Promise.resolve<any>(null);
+let docNoPromiseChain = Promise.resolve<unknown>(null);
 
 async function generateDocumentNumber(supplierType: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -520,7 +520,7 @@ async function getPreviewDocumentNumber(supplierType: string): Promise<string> {
     try {
         // 1. Get current sequence row
         const getRes = await directusFetch<DirectusList<DirectusDisbursementNo>>("/items/disbursement_no?limit=1");
-        let seqRow = getRes.data?.[0];
+        const seqRow = getRes.data?.[0];
         if (seqRow) {
             const currentSeq = (Number(seqRow[field]) || 0) + 1;
             const seqStr = String(currentSeq).padStart(6, "0");

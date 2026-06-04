@@ -6,6 +6,11 @@ export const runtime = "nodejs";
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
 const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 
+interface DirectusCOA {
+    coa_id: number;
+    account_title: string;
+}
+
 interface DirectusMemo {
     id: number;
     memo_number: string;
@@ -13,7 +18,7 @@ interface DirectusMemo {
     date: string;
     amount: number;
     reason?: string | null;
-    chart_of_account?: any;
+    chart_of_account?: DirectusCOA | number | null;
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ supplierId: string }> }) {
@@ -52,10 +57,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const coaIds = Array.from(new Set(
             rawData
                 .map(row => {
-                    if (row.chart_of_account && typeof row.chart_of_account === "object") {
-                        return Number(row.chart_of_account.coa_id);
+                    const coa = row.chart_of_account;
+                    if (coa && typeof coa === "object") {
+                        return Number(coa.coa_id);
                     }
-                    return row.chart_of_account ? Number(row.chart_of_account) : null;
+                    return coa ? Number(coa) : null;
                 })
                 .filter((id): id is number => id !== null && !isNaN(id))
         ));
@@ -81,15 +87,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             let coaId: number | null = null;
             let accountTitle = "";
 
-            if (row.chart_of_account) {
-                if (typeof row.chart_of_account === "object") {
-                    coaId = Number(row.chart_of_account.coa_id) || null;
-                    accountTitle = row.chart_of_account.account_title || "";
+            const coa = row.chart_of_account;
+
+            if (coa) {
+                if (typeof coa === "object") {
+                    coaId = Number(coa.coa_id) || null;
+                    accountTitle = coa.account_title || "";
                 } else {
-                    coaId = Number(row.chart_of_account) || null;
-                    const coa = coaId ? coaMap.get(coaId) : null;
-                    if (coa) {
-                        accountTitle = coa.account_title || "";
+                    coaId = Number(coa) || null;
+                    const foundCoa = coaId ? coaMap.get(coaId) : null;
+                    if (foundCoa) {
+                        accountTitle = foundCoa.account_title || "";
                     }
                 }
             }
