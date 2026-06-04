@@ -40,12 +40,13 @@ const buildExportData = (groups: JournalEntryGroup[]) => {
     debitEntries.forEach((entry, idx) => {
       const isFirst = idx === 0;
       const isLast = idx === lastDebitIdx;
+      const accountTitle = entry.accountTitle || "N/A";
       rows.push([
         isFirst ? formattedDate : "",
         isFirst ? group.sourceModule.split(" ")[0] : "",
         isFirst ? group.jeNo : "",
-        entry.accountTitle,
-        isFirst ? (group.description || "N/A") : `- ${entry.accountTitle} distribution`,
+        accountTitle,
+        isFirst ? (group.description || "N/A") : `- ${accountTitle} distribution`,
         entry.debit,
         "",
         isLast ? currentDebitTotal : "",
@@ -56,12 +57,13 @@ const buildExportData = (groups: JournalEntryGroup[]) => {
     const lastCreditIdx = Math.max(0, creditEntries.length - 1);
     creditEntries.forEach((entry, idx) => {
       const isLast = idx === lastCreditIdx;
+      const accountTitle = entry.accountTitle || "N/A";
       rows.push([
         "",
         "",
         "",
-        `    ${entry.accountTitle}`,
-        `- ${entry.accountTitle} distribution`,
+        `    ${accountTitle}`,
+        `- ${accountTitle} distribution`,
         "",
         entry.credit,
         isLast ? netBalance : "",

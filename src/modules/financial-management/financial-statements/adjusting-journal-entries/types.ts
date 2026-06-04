@@ -23,6 +23,11 @@ export type AdjustingEntry = {
   creatorName: string | null;
   dateCreated: string | null;
   datePosted: string | null;
+  sourceJeNo: string | null;
+  sourceJeGroupCounter: number | null;
+  sourceModule: string | null;
+  sourceTransactionRef: string | null;
+  sourceTransactionDate: string | null;
   totalDebit: number;
   totalCredit: number;
   variance: number;
@@ -34,6 +39,11 @@ export type AdjustingEntryPayload = {
   description: string;
   divisionId: number | null;
   departmentId: number | null;
+  sourceJeNo?: string | null;
+  sourceJeGroupCounter?: number | null;
+  sourceModule?: string | null;
+  sourceTransactionRef?: string | null;
+  sourceTransactionDate?: string | null;
   details: Array<{
     coaId: number;
     debit: number;
@@ -60,7 +70,40 @@ export type AdjustingEntryQuery = {
   endDate?: string;
   divisionId?: number | null;
   departmentId?: number | null;
+  sourceJeNo?: string | null;
   sort?: string;
+};
+
+export type AdjustingEntrySourceJournal = {
+  jeNo: string;
+  jeGroupCounter: number | null;
+  sourceModule: string | null;
+  transactionRef: string | null;
+  transactionDate: string | null;
+  description: string | null;
+  status: string | null;
+  division: string | null;
+  divisionName: string | null;
+  department: string | null;
+  departmentName: string | null;
+  creator: string | null;
+  details: Array<{
+    coaId: number | null;
+    accountNumber: string | null;
+    accountTitle: string | null;
+    debit: number;
+    credit: number;
+  }>;
+};
+
+export type AdjustingEntrySourceJournalSummary = {
+  jeNo: string;
+  jeGroupCounter: number | null;
+  sourceModule: string | null;
+  transactionRef: string | null;
+  transactionDate: string | null;
+  description: string | null;
+  status: string | null;
 };
 
 export type LookupOption = {

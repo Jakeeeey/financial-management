@@ -18,11 +18,13 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { format } from "date-fns";
-import { Clock, ShieldCheck, Link2, Printer, FileDown } from "lucide-react";
+import { Clock, ShieldCheck, Link2, Printer, FileDown, Loader2, PencilLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { exportJournalToExcel, exportJournalToPdf } from "../services/export.service";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useRouter } from "next/navigation";
+import { adjustingJournalEntriesApi } from "../../adjusting-journal-entries/services/adjusting-journal-entries.api";
 
 interface JournalEntryDetailModalProps {
   group: JournalEntryGroup | null;
@@ -54,8 +56,10 @@ interface DrillThroughContext {
 // MAIN COMPONENT
 // =============================================================================
 export default function JournalEntryDetailModal({ group, open, onOpenChange }: JournalEntryDetailModalProps) {
+  const router = useRouter();
   const [drillThrough, setDrillThrough] = React.useState<DrillThroughContext | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [isAdjusting, setIsAdjusting] = React.useState(false);
 
   React.useEffect(() => {
     if (open && group?.jeNo) {
@@ -90,6 +94,36 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
   // Audit trail is empty for now, ready for real data integration
   const auditTrail: AuditEntry[] = [];
 
+  async function handleAdjustEntry() {
+    if (!group?.jeNo) return;
+
+    setIsAdjusting(true);
+    try {
+      const linkedDrafts = await adjustingJournalEntriesApi.list({
+        page: 0,
+        pageSize: 1,
+        status: "Draft",
+        sourceJeNo: group.jeNo,
+        sort: "id,desc",
+      });
+      const params = new URLSearchParams({ sourceJeNo: group.jeNo });
+      const existingDraft = linkedDrafts.content?.[0];
+
+      if (existingDraft) {
+        params.set("editAjeId", String(existingDraft.id));
+      } else {
+        params.set("mode", "create");
+      }
+
+      onOpenChange(false);
+      router.push(`/fm/financial-statements/adjusting-journal-entries?${params.toString()}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to start adjusting entry");
+    } finally {
+      setIsAdjusting(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
@@ -103,6 +137,16 @@ export default function JournalEntryDetailModal({ group, open, onOpenChange }: J
             Journal Entry Detail · <span className="font-mono text-muted-foreground">{group.jeNo}</span>
           </DialogTitle>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 text-sm font-semibold gap-1.5"
+              onClick={() => void handleAdjustEntry()}
+              disabled={isAdjusting}
+            >
+              {isAdjusting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PencilLine className="w-3.5 h-3.5" />}
+              Adjust Entry
+            </Button>
             <Button 
               variant="outline" 
               size="sm" 

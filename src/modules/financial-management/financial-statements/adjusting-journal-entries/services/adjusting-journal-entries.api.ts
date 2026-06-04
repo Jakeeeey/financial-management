@@ -3,6 +3,8 @@ import type {
   AdjustingEntryPage,
   AdjustingEntryPayload,
   AdjustingEntryQuery,
+  AdjustingEntrySourceJournal,
+  AdjustingEntrySourceJournalSummary,
   DepartmentLookup,
   DivisionLookup,
 } from "../types";
@@ -58,9 +60,22 @@ function extractMessage(json: unknown, fallback: string): string {
 
 async function parseResponse<T>(res: Response, fallback: string): Promise<T> {
   const text = await res.text();
-  const json = text ? JSON.parse(text) as unknown : null;
+  let json: unknown = null;
+  if (text) {
+    try {
+      json = JSON.parse(text) as unknown;
+    } catch {
+      json = { message: text };
+    }
+  }
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error(extractMessage(
+        json,
+        "Your session has expired. Please sign in again before saving adjusting journal entries.",
+      ));
+    }
     throw new Error(extractMessage(json, fallback));
   }
 
@@ -70,6 +85,30 @@ async function parseResponse<T>(res: Response, fallback: string): Promise<T> {
 function appendOptional(params: URLSearchParams, key: string, value: unknown) {
   if (value === undefined || value === null || value === "") return;
   params.set(key, String(value));
+}
+
+async function refreshSession() {
+  const res = await fetch("/api/auth/refresh", {
+    method: "POST",
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+
+  return res.ok;
+}
+
+async function fetchWithAuthRetry(input: RequestInfo | URL, init?: RequestInit) {
+  const requestInit: RequestInit = {
+    ...init,
+    credentials: init?.credentials ?? "same-origin",
+  };
+  const res = await fetch(input, requestInit);
+  if (res.status !== 401) return res;
+
+  const refreshed = await refreshSession();
+  if (!refreshed) return res;
+
+  return fetch(input, requestInit);
 }
 
 export const adjustingJournalEntriesApi = {
@@ -83,14 +122,34 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "endDate", query.endDate);
     appendOptional(params, "divisionId", query.divisionId);
     appendOptional(params, "departmentId", query.departmentId);
+    appendOptional(params, "sourceJeNo", query.sourceJeNo?.trim());
     appendOptional(params, "sort", query.sort);
 
-    const res = await fetch(`${BASE}?${params.toString()}`, { cache: "no-store" });
+    const res = await fetchWithAuthRetry(`${BASE}?${params.toString()}`, { cache: "no-store" });
     return parseResponse<AdjustingEntryPage>(res, "Failed to load adjusting journal entries");
   },
 
+  async get(id: number): Promise<AdjustingEntry> {
+    const res = await fetchWithAuthRetry(`${BASE}/${id}`, { cache: "no-store" });
+    return parseResponse<AdjustingEntry>(res, "Failed to load adjusting journal entry");
+  },
+
+  async sourceJournalEntry(jeNo: string): Promise<AdjustingEntrySourceJournal> {
+    const res = await fetchWithAuthRetry(`${BASE}/source-journal-entry/${encodeURIComponent(jeNo)}`, { cache: "no-store" });
+    return parseResponse<AdjustingEntrySourceJournal>(res, "Failed to load source journal entry");
+  },
+
+  async searchSourceJournalEntries(query: string, limit = 10): Promise<AdjustingEntrySourceJournalSummary[]> {
+    const params = new URLSearchParams({
+      q: query.trim(),
+      limit: String(limit),
+    });
+    const res = await fetchWithAuthRetry(`${BASE}/source-journal-entries?${params.toString()}`, { cache: "no-store" });
+    return parseResponse<AdjustingEntrySourceJournalSummary[]>(res, "Failed to search source journal entries");
+  },
+
   async create(payload: AdjustingEntryPayload): Promise<AdjustingEntry> {
-    const res = await fetch(BASE, {
+    const res = await fetchWithAuthRetry(BASE, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -99,7 +158,7 @@ export const adjustingJournalEntriesApi = {
   },
 
   async update(id: number, payload: AdjustingEntryPayload): Promise<AdjustingEntry> {
-    const res = await fetch(`${BASE}/${id}`, {
+    const res = await fetchWithAuthRetry(`${BASE}/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -108,17 +167,17 @@ export const adjustingJournalEntriesApi = {
   },
 
   async post(id: number): Promise<AdjustingEntry> {
-    const res = await fetch(`${BASE}/${id}/post`, { method: "POST" });
+    const res = await fetchWithAuthRetry(`${BASE}/${id}/post`, { method: "POST" });
     return parseResponse<AdjustingEntry>(res, "Failed to post adjusting journal entry");
   },
 
   async void(id: number): Promise<AdjustingEntry> {
-    const res = await fetch(`${BASE}/${id}/void`, { method: "POST" });
+    const res = await fetchWithAuthRetry(`${BASE}/${id}/void`, { method: "POST" });
     return parseResponse<AdjustingEntry>(res, "Failed to void adjusting journal entry");
   },
 
   async delete(id: number): Promise<void> {
-    const res = await fetch(`${BASE}/${id}`, { method: "DELETE" });
+    const res = await fetchWithAuthRetry(`${BASE}/${id}`, { method: "DELETE" });
     if (!res.ok) {
       await parseResponse<unknown>(res, "Failed to delete adjusting journal entry");
     }

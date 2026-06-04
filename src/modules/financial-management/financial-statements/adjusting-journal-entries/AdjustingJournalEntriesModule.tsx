@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowDownUp,
   Ban,
@@ -84,6 +85,8 @@ import type {
   AdjustingEntryDetail,
   AdjustingEntryPage,
   AdjustingEntryPayload,
+  AdjustingEntrySourceJournal,
+  AdjustingEntrySourceJournalSummary,
   DepartmentLookup,
   DivisionLookup,
   LookupOption,
@@ -110,6 +113,11 @@ type EntryForm = {
   description: string;
   details: DetailFormRow[];
 };
+
+type SourceReferencePayload = Pick<
+  AdjustingEntryPayload,
+  "sourceJeNo" | "sourceJeGroupCounter" | "sourceModule" | "sourceTransactionRef" | "sourceTransactionDate"
+>;
 
 type EntryAction = "post" | "void" | "delete";
 type SortKey = "id" | "jeNo" | "transactionDate" | "status";
@@ -165,6 +173,42 @@ function formFromEntry(entry: AdjustingEntry): EntryForm {
   };
 }
 
+function formFromSourceJournal(source: AdjustingEntrySourceJournal): EntryForm {
+  const description = ["Adjustment for", source.jeNo, source.description ? `- ${source.description}` : ""]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    transactionDate: source.transactionDate?.slice(0, 10) || todayInputValue(),
+    divisionId: "",
+    departmentId: "",
+    description,
+    details: [makeRow(), makeRow()],
+  };
+}
+
+function sourceReferenceFromJournal(source: AdjustingEntrySourceJournal): SourceReferencePayload {
+  return {
+    sourceJeNo: source.jeNo,
+    sourceJeGroupCounter: source.jeGroupCounter,
+    sourceModule: source.sourceModule,
+    sourceTransactionRef: source.transactionRef,
+    sourceTransactionDate: source.transactionDate?.slice(0, 10) || null,
+  };
+}
+
+function sourceReferenceFromEntry(entry: AdjustingEntry): SourceReferencePayload | null {
+  if (!entry.sourceJeNo) return null;
+
+  return {
+    sourceJeNo: entry.sourceJeNo,
+    sourceJeGroupCounter: entry.sourceJeGroupCounter,
+    sourceModule: entry.sourceModule,
+    sourceTransactionRef: entry.sourceTransactionRef,
+    sourceTransactionDate: entry.sourceTransactionDate,
+  };
+}
+
 function parseMoney(value: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 0;
@@ -207,21 +251,30 @@ function actionDescription(action: EntryAction) {
   return "This will permanently remove the draft adjusting entry.";
 }
 
-function toPayload(form: EntryForm): AdjustingEntryPayload {
+function isBlankDetailRow(row: DetailFormRow) {
+  return !row.coaId && !row.debit.trim() && !row.credit.trim();
+}
+
+function toPayload(form: EntryForm, sourceReference?: SourceReferencePayload | null): AdjustingEntryPayload {
   return {
     transactionDate: form.transactionDate,
     description: form.description.trim(),
     divisionId: form.divisionId ? Number(form.divisionId) : null,
     departmentId: form.departmentId ? Number(form.departmentId) : null,
-    details: form.details.map((row) => ({
-      coaId: Number(row.coaId),
-      debit: parseMoney(row.debit),
-      credit: parseMoney(row.credit),
-    })),
+    ...(sourceReference ?? {}),
+    details: form.details
+      .filter((row) => !isBlankDetailRow(row))
+      .map((row) => ({
+        coaId: Number(row.coaId),
+        debit: parseMoney(row.debit),
+        credit: parseMoney(row.credit),
+      })),
   };
 }
 
 function validateDetailRow(row: DetailFormRow) {
+  if (isBlankDetailRow(row)) return null;
+
   const debit = parseMoney(row.debit);
   const credit = parseMoney(row.credit);
 
@@ -236,7 +289,7 @@ function validateDetailRow(row: DetailFormRow) {
 function validateForm(form: EntryForm) {
   if (!form.transactionDate) return "Transaction date is required";
   if (!form.description.trim()) return "Description is required";
-  if (form.details.length === 0) return "At least one detail line is required";
+  if (!form.details.some((row) => !isBlankDetailRow(row))) return "At least one detail line is required";
 
   for (let index = 0; index < form.details.length; index += 1) {
     const rowError = validateDetailRow(form.details[index]);
@@ -393,6 +446,8 @@ function SortableHead({
 }
 
 export function AdjustingJournalEntriesModule() {
+  const searchParams = useSearchParams();
+  const handledSourceIntentRef = React.useRef<string | null>(null);
   const [entries, setEntries] = React.useState<AdjustingEntry[]>([]);
   const [summaryEntries, setSummaryEntries] = React.useState<AdjustingEntry[]>([]);
   const [pageData, setPageData] = React.useState<Pick<AdjustingEntryPage, "number" | "size" | "totalElements" | "totalPages">>({
@@ -419,6 +474,14 @@ export function AdjustingJournalEntriesModule() {
   const [editingEntry, setEditingEntry] = React.useState<AdjustingEntry | null>(null);
   const [form, setForm] = React.useState<EntryForm>(() => emptyForm());
   const [saving, setSaving] = React.useState(false);
+  const [sourceJournalEntry, setSourceJournalEntry] = React.useState<AdjustingEntrySourceJournal | null>(null);
+  const [pendingSourceJeNo, setPendingSourceJeNo] = React.useState("");
+  const [sourceSearchValue, setSourceSearchValue] = React.useState("");
+  const [sourceSuggestions, setSourceSuggestions] = React.useState<AdjustingEntrySourceJournalSummary[]>([]);
+  const [sourceSuggestionsOpen, setSourceSuggestionsOpen] = React.useState(false);
+  const [sourceSuggestionsLoading, setSourceSuggestionsLoading] = React.useState(false);
+  const [sourceSuggestionsError, setSourceSuggestionsError] = React.useState("");
+  const [sourceLoading, setSourceLoading] = React.useState(false);
   const [coaOptions, setCoaOptions] = React.useState<LookupOption[]>([]);
   const [divisions, setDivisions] = React.useState<DivisionLookup[]>([]);
   const [departments, setDepartments] = React.useState<DepartmentLookup[]>([]);
@@ -512,6 +575,116 @@ export function AdjustingJournalEntriesModule() {
     };
   }, []);
 
+  const loadSourceJournalEntry = React.useCallback(async (jeNo: string) => {
+    const normalizedJeNo = jeNo.trim();
+    setSourceLoading(true);
+    try {
+      const source = await adjustingJournalEntriesApi.sourceJournalEntry(normalizedJeNo);
+      setSourceJournalEntry(source);
+      setSourceSearchValue(source.jeNo);
+      return source;
+    } finally {
+      setSourceLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const query = sourceSearchValue.trim();
+    const selectedJeNo = sourceJournalEntry?.jeNo || "";
+
+    if (editingEntry || readOnly || sourceLoading || query.length < 2 || query === selectedJeNo) {
+      setSourceSuggestions([]);
+      setSourceSuggestionsError("");
+      setSourceSuggestionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSourceSuggestionsLoading(true);
+    setSourceSuggestionsError("");
+
+    const timeout = window.setTimeout(() => {
+      adjustingJournalEntriesApi.searchSourceJournalEntries(query, 10)
+        .then((results) => {
+          if (cancelled) return;
+          setSourceSuggestions(results);
+          setSourceSuggestionsOpen(true);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setSourceSuggestions([]);
+          setSourceSuggestionsError(error instanceof Error ? error.message : "Failed to search source journal entries");
+          setSourceSuggestionsOpen(true);
+        })
+        .finally(() => {
+          if (!cancelled) setSourceSuggestionsLoading(false);
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [editingEntry, readOnly, sourceJournalEntry?.jeNo, sourceLoading, sourceSearchValue]);
+
+  React.useEffect(() => {
+    const sourceJeNo = searchParams.get("sourceJeNo")?.trim() || "";
+    const editAjeId = searchParams.get("editAjeId")?.trim() || "";
+    const mode = searchParams.get("mode")?.trim() || "";
+    const intentKey = `${sourceJeNo}|${editAjeId}|${mode}`;
+
+    if (!sourceJeNo && !editAjeId) return;
+    if (handledSourceIntentRef.current === intentKey) return;
+
+    handledSourceIntentRef.current = intentKey;
+    let cancelled = false;
+
+    async function openLinkedAdjustingEntry() {
+      try {
+        const source = sourceJeNo ? await loadSourceJournalEntry(sourceJeNo) : null;
+        if (cancelled) return;
+
+        if (editAjeId) {
+          const entry = await adjustingJournalEntriesApi.get(Number(editAjeId));
+          if (cancelled) return;
+          setEditingEntry(entry);
+          setReadOnly(entry.status !== "Draft");
+          setForm(formFromEntry(entry));
+          setDialogOpen(true);
+          return;
+        }
+
+        if (source && mode === "create") {
+          setEditingEntry(null);
+          setReadOnly(false);
+          setForm(formFromSourceJournal(source));
+          setDialogOpen(true);
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to open linked adjusting entry");
+      }
+    }
+
+    if (sourceJeNo && mode === "create" && !editAjeId) {
+      setPendingSourceJeNo(sourceJeNo);
+      setSourceSearchValue(sourceJeNo);
+      setSourceJournalEntry(null);
+      setEditingEntry(null);
+      setReadOnly(false);
+      setForm({
+        ...emptyForm(),
+        description: `Adjustment for ${sourceJeNo}`,
+      });
+      setDialogOpen(true);
+    }
+
+    void openLinkedAdjustingEntry();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSourceJournalEntry, searchParams]);
+
   const totals = React.useMemo(() => {
     const totalDebit = form.details.reduce((sum, row) => sum + parseMoney(row.debit), 0);
     const totalCredit = form.details.reduce((sum, row) => sum + parseMoney(row.credit), 0);
@@ -585,6 +758,23 @@ export function AdjustingJournalEntriesModule() {
     imbalanced: summaryEntries.filter((entry) => entry.status === "Draft" && Math.abs(entry.variance) >= balancedTolerance).length,
   }), [summaryEntries]);
   const summaryRecordCount = summaryEntries.length;
+  const activeSummaryRecordCount = React.useMemo(() => {
+    if (status === "Draft") return pageSummary.draft + pageSummary.imbalanced;
+    if (status === "Posted") return pageSummary.posted;
+    if (status === "Voided") return pageSummary.voided;
+    return summaryRecordCount;
+  }, [pageSummary, status, summaryRecordCount]);
+  const fallbackTotalElements = Math.max(activeSummaryRecordCount, page * pageSize + entries.length);
+  const effectiveTotalElements = pageData.totalElements > 0 ? pageData.totalElements : fallbackTotalElements;
+  const effectiveTotalPages = pageData.totalPages > 0 ? pageData.totalPages : Math.ceil(effectiveTotalElements / pageSize);
+  const displayPageNumber = effectiveTotalPages === 0 ? 0 : Math.min(page + 1, effectiveTotalPages);
+  const activeSourceReference = React.useMemo<SourceReferencePayload | null>(() => {
+    if (sourceJournalEntry) return sourceReferenceFromJournal(sourceJournalEntry);
+    if (editingEntry) return sourceReferenceFromEntry(editingEntry);
+    return null;
+  }, [editingEntry, sourceJournalEntry]);
+  const linkedSourceJeNo = activeSourceReference?.sourceJeNo || pendingSourceJeNo;
+  const sourceLinkPending = Boolean(pendingSourceJeNo && !activeSourceReference);
 
   const lineErrors = React.useMemo(
     () => form.details.map((row) => validateDetailRow(row)),
@@ -592,8 +782,9 @@ export function AdjustingJournalEntriesModule() {
   );
 
   const hasLineErrors = lineErrors.some(Boolean);
+  const hasDetailRows = form.details.some((row) => !isBlankDetailRow(row));
   const isBalanced = Math.abs(totals.variance) < balancedTolerance;
-  const canPostFromModal = Boolean(editingEntry && editingEntry.status === "Draft" && isBalanced && !hasLineErrors);
+  const canPostFromModal = Boolean(editingEntry && editingEntry.status === "Draft" && hasDetailRows && isBalanced && !hasLineErrors);
   const hasActiveFilters = Boolean(
     search.trim() ||
     status !== "All" ||
@@ -606,6 +797,9 @@ export function AdjustingJournalEntriesModule() {
   function openCreate() {
     setEditingEntry(null);
     setReadOnly(false);
+    setSourceJournalEntry(null);
+    setPendingSourceJeNo("");
+    setSourceSearchValue("");
     setForm(emptyForm());
     setDialogOpen(true);
   }
@@ -613,8 +807,101 @@ export function AdjustingJournalEntriesModule() {
   function openEntry(entry: AdjustingEntry, viewOnly: boolean) {
     setEditingEntry(entry);
     setReadOnly(viewOnly || entry.status !== "Draft");
+    setSourceJournalEntry(null);
+    setPendingSourceJeNo(entry.sourceJeNo || "");
+    setSourceSearchValue(entry.sourceJeNo || "");
+    if (entry.sourceJeNo) {
+      void loadSourceJournalEntry(entry.sourceJeNo).catch((error) => {
+        toast.error(error instanceof Error ? error.message : "Failed to load linked source journal entry");
+      });
+    }
     setForm(formFromEntry(entry));
     setDialogOpen(true);
+  }
+
+  function clearSourceJournalEntry() {
+    if (editingEntry) return;
+
+    setSourceJournalEntry(null);
+    setPendingSourceJeNo("");
+    setSourceSearchValue("");
+    setSourceSuggestions([]);
+    setSourceSuggestionsOpen(false);
+    setForm((current) => ({
+      ...current,
+      description: current.description.startsWith("Adjustment for ") ? "" : current.description,
+    }));
+  }
+
+  function applySourceJournalToForm(source: AdjustingEntrySourceJournal) {
+    const sourceForm = formFromSourceJournal(source);
+    setForm((current) => ({
+      ...current,
+      transactionDate: sourceForm.transactionDate,
+      description: !current.description.trim() || current.description.startsWith("Adjustment for ")
+        ? sourceForm.description
+        : current.description,
+    }));
+  }
+
+  async function searchSourceJournalEntry() {
+    if (editingEntry) return;
+
+    const query = sourceSearchValue.trim();
+    if (!query) {
+      toast.error("Enter a JE No. or transaction reference to search");
+      return;
+    }
+
+    setSourceSuggestionsError("");
+    setSourceSuggestionsLoading(true);
+    setSourceSuggestionsOpen(true);
+    try {
+      const results = await adjustingJournalEntriesApi.searchSourceJournalEntries(query, 10);
+      const normalizedQuery = query.toLowerCase();
+      const exactOrSingleMatch = results.find((result) => (
+        result.jeNo.toLowerCase() === normalizedQuery ||
+        result.transactionRef?.toLowerCase() === normalizedQuery
+      )) ?? (results.length === 1 ? results[0] : null);
+
+      setSourceSuggestions(results);
+
+      if (exactOrSingleMatch) {
+        await selectSourceJournalSuggestion(exactOrSingleMatch);
+        return;
+      }
+
+      if (results.length === 0) {
+        toast.error("No matching source journal entries found");
+      } else {
+        toast.info("Select a source journal entry from the results");
+      }
+    } catch (error) {
+      setSourceSuggestions([]);
+      setSourceSuggestionsError(error instanceof Error ? error.message : "Failed to search source journal entries");
+      toast.error(error instanceof Error ? error.message : "Failed to search source journal entries");
+    } finally {
+      setSourceSuggestionsLoading(false);
+    }
+  }
+
+  async function selectSourceJournalSuggestion(sourceSummary: AdjustingEntrySourceJournalSummary) {
+    if (editingEntry) return;
+
+    setPendingSourceJeNo(sourceSummary.jeNo);
+    setSourceSearchValue(sourceSummary.jeNo);
+    setSourceJournalEntry(null);
+    setSourceSuggestions([]);
+    setSourceSuggestionsOpen(false);
+
+    try {
+      const source = await loadSourceJournalEntry(sourceSummary.jeNo);
+      applySourceJournalToForm(source);
+      toast.success(`Loaded source journal entry ${source.jeNo}`);
+    } catch (error) {
+      setPendingSourceJeNo("");
+      toast.error(error instanceof Error ? error.message : "Failed to load source journal entry");
+    }
   }
 
   function updateForm<K extends keyof EntryForm>(key: K, value: EntryForm[K]) {
@@ -662,6 +949,11 @@ export function AdjustingJournalEntriesModule() {
   }
 
   async function persistDraft(closeAfterSave: boolean) {
+    if (sourceLinkPending) {
+      toast.error("Wait for the source journal entry to finish loading before saving");
+      return null;
+    }
+
     const validationError = validateForm(form);
     if (validationError) {
       toast.error(validationError);
@@ -670,7 +962,7 @@ export function AdjustingJournalEntriesModule() {
 
     setSaving(true);
     try {
-      const payload = toPayload(form);
+      const payload = toPayload(form, activeSourceReference);
       let savedEntry: AdjustingEntry;
       if (editingEntry) {
         savedEntry = await adjustingJournalEntriesApi.update(editingEntry.id, payload);
@@ -745,7 +1037,7 @@ export function AdjustingJournalEntriesModule() {
   }
 
   const canPrev = page > 0;
-  const canNext = pageData.totalPages > 0 && page + 1 < pageData.totalPages;
+  const canNext = effectiveTotalPages > 0 && page + 1 < effectiveTotalPages;
 
   return (
     <div className="flex min-h-full flex-col bg-muted/10">
@@ -994,7 +1286,7 @@ export function AdjustingJournalEntriesModule() {
                         : "Cannot post until debits equal credits";
                     return (
                       <TableRow key={entry.id}>
-                        <TableCell className="whitespace-normal break-words font-mono text-xs font-medium">
+                        <TableCell className="whitespace-normal wrap-break-word font-mono text-xs font-medium">
                           {entry.jeNo || `AJE-${entry.id}`}
                         </TableCell>
                         <TableCell className="whitespace-normal text-xs">{formatDate(entry.transactionDate)}</TableCell>
@@ -1080,7 +1372,7 @@ export function AdjustingJournalEntriesModule() {
 
         <div className="flex flex-col gap-3 rounded-md border bg-background px-3 py-2 text-sm shadow-sm md:flex-row md:items-center md:justify-between">
           <div className="text-muted-foreground">
-            Page {pageData.totalPages === 0 ? 0 : page + 1} of {pageData.totalPages}
+            Page {displayPageNumber} of {effectiveTotalPages}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" disabled={!canPrev} onClick={() => setPage((current) => Math.max(0, current - 1))}>
@@ -1096,14 +1388,14 @@ export function AdjustingJournalEntriesModule() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="flex max-h-[92vh] !w-[96vw] !max-w-[1200px] flex-col overflow-hidden">
+        <DialogContent className="flex max-h-[92vh] w-[96vw]! max-w-300! flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>
-              {readOnly ? "View Adjusting Entry" : editingEntry ? "Edit Draft AJE" : "New Adjusting Entry"}
+              {readOnly ? "View Adjusting Entry" : editingEntry ? "Edit Draft Adjusting Entry" : "New Adjusting Entry"}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-1">
             <div className="grid gap-4 md:grid-cols-4">
               <div className="space-y-2">
                 <Label htmlFor="transactionDate">Transaction Date</Label>
@@ -1146,6 +1438,95 @@ export function AdjustingJournalEntriesModule() {
                   </Badge>
                 </div>
               </div>
+              {!editingEntry && !readOnly && (
+                <div className="space-y-2 md:col-span-4">
+                  <Label htmlFor="sourceJeNo">Source Journal Entry <span className="text-muted-foreground">(Optional)</span></Label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="relative flex-1">
+                      <Input
+                        id="sourceJeNo"
+                        value={sourceSearchValue}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setSourceSearchValue(nextValue);
+                          setSourceSuggestionsOpen(nextValue.trim().length >= 2);
+                          if (sourceJournalEntry && nextValue.trim() !== sourceJournalEntry.jeNo) {
+                            setSourceJournalEntry(null);
+                            setPendingSourceJeNo("");
+                          }
+                        }}
+                        onFocus={() => {
+                          if (sourceSearchValue.trim().length >= 2) setSourceSuggestionsOpen(true);
+                        }}
+                        onBlur={() => {
+                          window.setTimeout(() => setSourceSuggestionsOpen(false), 150);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void searchSourceJournalEntry();
+                          }
+                        }}
+                        placeholder="Search JE No. or transaction ref"
+                        className="font-mono"
+                        disabled={sourceLoading}
+                        autoComplete="off"
+                      />
+                      {sourceSuggestionsOpen && (
+                        <div className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+                          {sourceSuggestionsLoading ? (
+                            <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                              <Loader2 className="size-4 animate-spin" />
+                              Searching source entries
+                            </div>
+                          ) : sourceSuggestionsError ? (
+                            <div className="px-3 py-2 text-sm text-destructive">{sourceSuggestionsError}</div>
+                          ) : sourceSuggestions.length > 0 ? (
+                            sourceSuggestions.map((suggestion) => (
+                              <button
+                                key={`${suggestion.jeNo}-${suggestion.transactionRef ?? ""}`}
+                                type="button"
+                                className="flex w-full flex-col rounded-sm px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none"
+                                onMouseDown={(event) => {
+                                  event.preventDefault();
+                                  void selectSourceJournalSuggestion(suggestion);
+                                }}
+                              >
+                                <span className="font-mono text-sm font-medium">{suggestion.jeNo}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {[suggestion.transactionRef, suggestion.sourceModule, suggestion.transactionDate ? formatDate(suggestion.transactionDate) : null].filter(Boolean).join(" - ")}
+                                </span>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">No similar source entries found.</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void searchSourceJournalEntry()}
+                      disabled={sourceLoading || !sourceSearchValue.trim()}
+                    >
+                      {sourceLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Search className="mr-2 size-4" />}
+                      Search
+                    </Button>
+                    {linkedSourceJeNo && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={clearSourceJournalEntry}
+                        disabled={sourceLoading}
+                      >
+                        <X className="mr-2 size-4" />
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="space-y-2 md:col-span-4">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
@@ -1154,9 +1535,66 @@ export function AdjustingJournalEntriesModule() {
                   onChange={(event) => updateForm("description", event.target.value)}
                   disabled={readOnly}
                   rows={3}
+                  className="bg-background selection:bg-primary selection:text-primary-foreground"
                 />
               </div>
             </div>
+
+            {linkedSourceJeNo && (
+              <div className="mt-5 rounded-md border bg-muted/20">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+                  <div className="font-medium">Source Journal Entry</div>
+                  <Badge variant="outline">{linkedSourceJeNo}</Badge>
+                </div>
+                <div className="grid gap-3 px-3 py-3 text-sm md:grid-cols-4">
+                  <div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Source Module</div>
+                    <div className="mt-1 font-medium">{activeSourceReference?.sourceModule || sourceJournalEntry?.sourceModule || "-"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Transaction Ref</div>
+                    <div className="mt-1 font-medium">{activeSourceReference?.sourceTransactionRef || sourceJournalEntry?.transactionRef || "-"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Source Date</div>
+                    <div className="mt-1 font-medium">{formatDate(activeSourceReference?.sourceTransactionDate || sourceJournalEntry?.transactionDate)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Source Status</div>
+                    <div className="mt-1 font-medium">{sourceJournalEntry?.status || "Linked"}</div>
+                  </div>
+                </div>
+                {sourceLoading ? (
+                  <div className="flex items-center gap-2 border-t px-3 py-3 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading source journal entry
+                  </div>
+                ) : sourceJournalEntry?.details?.length ? (
+                  <div className="overflow-x-auto border-t">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-24 text-xs">Account No.</TableHead>
+                          <TableHead className="text-xs">Account Title</TableHead>
+                          <TableHead className="w-32 text-right text-xs">Debit</TableHead>
+                          <TableHead className="w-32 text-right text-xs">Credit</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sourceJournalEntry.details.map((line, index) => (
+                          <TableRow key={`${line.coaId ?? "coa"}-${index}`}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{line.accountNumber || "-"}</TableCell>
+                            <TableCell className="text-xs font-medium">{line.accountTitle || "-"}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{line.debit > 0 ? money(line.debit) : ""}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{line.credit > 0 ? money(line.credit) : ""}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : null}
+              </div>
+            )}
 
             <div className="mt-5 rounded-md border">
               <div className="flex items-center justify-between border-b px-3 py-2">
@@ -1186,66 +1624,66 @@ export function AdjustingJournalEntriesModule() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="min-w-[360px]">Chart of Account</TableHead>
-                      <TableHead className="w-[170px] text-right">Debit</TableHead>
-                      <TableHead className="w-[170px] text-right">Credit</TableHead>
-                      <TableHead className="w-[64px] text-right"></TableHead>
+                      <TableHead className="min-w-90">Chart of Account</TableHead>
+                      <TableHead className="w-42.5 text-right">Debit</TableHead>
+                      <TableHead className="w-42.5 text-right">Credit</TableHead>
+                      <TableHead className="w-16 text-right"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {form.details.map((row, index) => {
                       const rowError = lineErrors[index];
-                      const showRowError = !readOnly && Boolean(rowError) && Boolean(row.coaId || row.debit || row.credit);
+                      const showRowError = !readOnly && Boolean(rowError) && !isBlankDetailRow(row);
                       return (
-                      <TableRow key={row.localId}>
-                        <TableCell>
-                          <AjeSearchableSelect
-                            options={coaOptions}
-                            value={row.coaId}
-                            onValueChange={(value) => updateRow(row.localId, "coaId", value)}
-                            placeholder="Select account"
-                            disabled={readOnly}
-                          />
-                          {showRowError && (
-                            <div className="mt-1 text-xs text-destructive">{rowError}</div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={row.debit}
-                            onChange={(event) => updateRow(row.localId, "debit", event.target.value)}
-                            className="text-right font-mono"
-                            disabled={readOnly || parseMoney(row.credit) > 0}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={row.credit}
-                            onChange={(event) => updateRow(row.localId, "credit", event.target.value)}
-                            className="text-right font-mono"
-                            disabled={readOnly || parseMoney(row.debit) > 0}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {!readOnly && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-8 text-muted-foreground"
-                              onClick={() => removeRow(row.localId)}
-                              disabled={form.details.length <= 1}
-                            >
-                              <X className="size-4" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
+                        <TableRow key={row.localId}>
+                          <TableCell>
+                            <AjeSearchableSelect
+                              options={coaOptions}
+                              value={row.coaId}
+                              onValueChange={(value) => updateRow(row.localId, "coaId", value)}
+                              placeholder="Select account"
+                              disabled={readOnly}
+                            />
+                            {showRowError && (
+                              <div className="mt-1 text-xs text-destructive">{rowError}</div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={row.debit}
+                              onChange={(event) => updateRow(row.localId, "debit", event.target.value)}
+                              className="text-right font-mono"
+                              disabled={readOnly || parseMoney(row.credit) > 0}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={row.credit}
+                              onChange={(event) => updateRow(row.localId, "credit", event.target.value)}
+                              className="text-right font-mono"
+                              disabled={readOnly || parseMoney(row.debit) > 0}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {!readOnly && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 text-muted-foreground"
+                                onClick={() => removeRow(row.localId)}
+                                disabled={form.details.length <= 1}
+                              >
+                                <X className="size-4" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
                   </TableBody>
@@ -1289,13 +1727,13 @@ export function AdjustingJournalEntriesModule() {
                     type="button"
                     variant="outline"
                     onClick={() => void saveAndRequestPost()}
-                    disabled={saving || !canPostFromModal}
+                    disabled={saving || sourceLinkPending || !canPostFromModal}
                   >
                     {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Send className="mr-2 size-4" />}
                     Post Draft
                   </Button>
                 )}
-                <Button onClick={() => void saveDraft()} disabled={saving}>
+                <Button onClick={() => void saveDraft()} disabled={saving || sourceLinkPending}>
                   {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}
                   Save Draft
                 </Button>
