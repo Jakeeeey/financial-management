@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { decodeJwtPayload } from "@/lib/auth-utils";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,35 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const status = searchParams.get("status");
 
     if (!status) return NextResponse.json({ message: "Status is required" }, { status: 400 });
+
+    // Enforce segregation of duties
+    if (status === "Posted") {
+        try {
+            const payload = decodeJwtPayload(token);
+            const currentUserId = payload?.sub;
+            const directusUrl = `${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/items/disbursement/${id}`;
+            const directusToken = process.env.DIRECTUS_STATIC_TOKEN || "";
+            const directusRes = await fetch(directusUrl, {
+                headers: {
+                    Authorization: `Bearer ${directusToken}`,
+                    "Content-Type": "application/json",
+                },
+                cache: "no-store",
+            });
+            if (directusRes.ok) {
+                const disData = await directusRes.json();
+                const approverId = disData?.data?.approver_id;
+                if (approverId && currentUserId && String(approverId) === String(currentUserId)) {
+                    return NextResponse.json({
+                        message: "Segregation of Duties Violation",
+                        detail: "Segregation of Duties: The user who approved this voucher cannot be the same user who posts it to the ledger."
+                    }, { status: 400 });
+                }
+            }
+        } catch (e) {
+            console.error("Segregation of duties check failed:", e);
+        }
+    }
 
     const targetUrl = `${getSpringBaseUrl()}/api/disbursements/${id}/status?status=${encodeURIComponent(status)}`;
 

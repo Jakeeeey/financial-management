@@ -319,12 +319,21 @@ function normalizeDisbursement(
     row: DisbursementRow,
     payablesMap: Map<number, PayableRow[]>,
     paymentsMap: Map<number, PaymentRow[]>,
+    userMap?: Map<string, string>,
 ) {
     const id = asNumber(row.id) ?? 0;
     const payables = (payablesMap.get(id) ?? []).map(normalizePayable);
     const payments = (paymentsMap.get(id) ?? []).map(normalizePayment);
     const totalDebit = roundMoney(payables.reduce((sum, line) => sum + line.amount, 0));
     const totalCredit = roundMoney(payments.reduce((sum, line) => sum + line.amount, 0));
+
+    const encoderIdVal = asNumber(row.encoder_id);
+    const approverIdVal = asNumber(row.approver_id);
+    const postedByVal = asNumber(row.posted_by);
+
+    const encoderName = encoderIdVal ? (userMap?.get(String(encoderIdVal)) || `User #${encoderIdVal}`) : "";
+    const approverName = approverIdVal ? (userMap?.get(String(approverIdVal)) || `User #${approverIdVal}`) : "";
+    const postedByName = postedByVal ? (userMap?.get(String(postedByVal)) || `User #${postedByVal}`) : "";
 
     return {
         id,
@@ -338,9 +347,12 @@ function normalizeDisbursement(
         totalDebit,
         totalCredit,
         balance: roundMoney(totalDebit - totalCredit),
-        encoderName: row.encoder_id ? `User #${row.encoder_id}` : "",
-        approverName: row.approver_id ? `User #${row.approver_id}` : "",
-        postedByName: row.posted_by ? `User #${row.posted_by}` : "",
+        encoderName,
+        approverName,
+        postedByName,
+        encoderId: encoderIdVal,
+        approverId: approverIdVal,
+        postedById: postedByVal,
         isPosted: asNumber(row.isPosted) ?? 0,
         transactionDate: asString(row.transaction_date),
         dateCreated: asString(row.date_created),
@@ -354,6 +366,32 @@ function normalizeDisbursement(
         payables,
         payments,
     };
+}
+
+async function getUserMap(token: string) {
+    const map = new Map<string, string>();
+    try {
+        const url = process.env.SPRING_API_BASE_URL || "http://localhost:8080";
+        const targetUrl = `${url.replace(/\/$/, "")}/users`;
+        const usersRes = await fetch(targetUrl, {
+            headers: { "Authorization": `Bearer ${token}` },
+        });
+        if (usersRes.ok) {
+            const list = await usersRes.json();
+            if (Array.isArray(list)) {
+                list.forEach((u: { id?: unknown; firstName?: unknown; lastName?: unknown }) => {
+                    const id = String(u.id);
+                    const name = `${u.firstName || ""} ${u.lastName || ""}`.trim();
+                    if (id && name) {
+                        map.set(id, name);
+                    }
+                });
+            }
+        }
+    } catch (e) {
+        console.warn("Failed to fetch users map:", e);
+    }
+    return map;
 }
 
 export async function GET(request: NextRequest) {
@@ -385,9 +423,10 @@ export async function GET(request: NextRequest) {
         const ids = rows.map((row) => asNumber(row.id) ?? 0).filter(Boolean);
         const lineItems = await getLineItems(ids);
         const totalElements = asNumber(disbursementsRes.meta?.filter_count) ?? rows.length;
+        const userMap = await getUserMap(token);
 
         return NextResponse.json({
-            content: rows.map((row) => normalizeDisbursement(row, lineItems.payables, lineItems.payments)),
+            content: rows.map((row) => normalizeDisbursement(row, lineItems.payables, lineItems.payments, userMap)),
             totalElements,
             totalPages: Math.ceil(totalElements / query.size),
             number: query.page,
