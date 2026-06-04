@@ -1,13 +1,9 @@
 import React from "react";
-import { CalendarDays, Search, Printer, Download, Scale, ChevronDown } from "lucide-react";
+import { CalendarDays, Search, Printer, Download, Scale, Clock } from "lucide-react";
+import { format, subDays, startOfWeek, startOfMonth, startOfQuarter, startOfYear, endOfQuarter, subMonths, subYears } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface ReportHeaderProps {
     startDate: string; setStartDate: (v: string) => void;
@@ -19,109 +15,138 @@ interface ReportHeaderProps {
     onPrint: () => void;
 }
 
-const getQuickRangeDates = (range: string) => {
-    const today = new Date();
-    const formatDate = (date: Date) => date.toISOString().split('T')[0];
-
-    switch (range) {
-        case 'today':
-            return { start: formatDate(today), end: formatDate(today) };
-        case 'yesterday':
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-            return { start: formatDate(yesterday), end: formatDate(yesterday) };
-        case 'last7days':
-            const last7 = new Date(today);
-            last7.setDate(last7.getDate() - 6);
-            return { start: formatDate(last7), end: formatDate(today) };
-        case 'last30days':
-            const last30 = new Date(today);
-            last30.setDate(last30.getDate() - 29);
-            return { start: formatDate(last30), end: formatDate(today) };
-        case 'thisWeek':
-            const dayOfWeek = today.getDay();
-            const startOfWeek = new Date(today);
-            startOfWeek.setDate(today.getDate() - dayOfWeek);
-            return { start: formatDate(startOfWeek), end: formatDate(today) };
-        case 'thisMonth':
-            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-            return { start: formatDate(startOfMonth), end: formatDate(today) };
-        case 'lastMonth':
-            const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-            const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
-            return { start: formatDate(lastMonth), end: formatDate(endOfLastMonth) };
-        default:
-            return { start: '', end: '' };
-    }
-};
-
 export function ReportHeader({
                                  startDate, setStartDate, endDate, setEndDate,
                                  isLoading, hasData, onGenerate, onExportExcel, onPrint
                              }: ReportHeaderProps) {
-    const handleQuickRange = (range: string) => {
-        const { start, end } = getQuickRangeDates(range);
-        setStartDate(start);
-        setEndDate(end);
+
+    // 🚀 The Quick Range Logic
+    const handleQuickRange = (value: string) => {
+        const today = new Date();
+
+        switch (value) {
+            case "today":
+                setStartDate(format(today, "yyyy-MM-dd"));
+                setEndDate(format(today, "yyyy-MM-dd"));
+                break;
+            case "yesterday":
+                const yesterday = subDays(today, 1);
+                setStartDate(format(yesterday, "yyyy-MM-dd"));
+                setEndDate(format(yesterday, "yyyy-MM-dd"));
+                break;
+            case "last7":
+                setStartDate(format(subDays(today, 7), "yyyy-MM-dd"));
+                setEndDate(format(today, "yyyy-MM-dd"));
+                break;
+            case "last30":
+                setStartDate(format(subDays(today, 30), "yyyy-MM-dd"));
+                setEndDate(format(today, "yyyy-MM-dd"));
+                break;
+            case "last90":
+                setStartDate(format(subDays(today, 90), "yyyy-MM-dd"));
+                setEndDate(format(today, "yyyy-MM-dd"));
+                break;
+            case "thisWeek":
+                setStartDate(format(startOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd"));
+                setEndDate(format(today, "yyyy-MM-dd"));
+                break;
+            case "thisMonth":
+                setStartDate(format(startOfMonth(today), "yyyy-MM-dd"));
+                setEndDate(format(today, "yyyy-MM-dd"));
+                break;
+            case "lastMonth":
+                const lastMonth = subMonths(today, 1);
+                setStartDate(format(startOfMonth(lastMonth), "yyyy-MM-dd"));
+                setEndDate(format(endOfQuarter(lastMonth), "yyyy-MM-dd"));
+                break;
+            case "thisQuarter":
+                setStartDate(format(startOfQuarter(today), "yyyy-MM-dd"));
+                setEndDate(format(today, "yyyy-MM-dd"));
+                break;
+            case "lastQuarter":
+                const lastQuarter = subMonths(today, 3);
+                setStartDate(format(startOfQuarter(lastQuarter), "yyyy-MM-dd"));
+                setEndDate(format(endOfQuarter(lastQuarter), "yyyy-MM-dd"));
+                break;
+            case "thisYear":
+                setStartDate(format(startOfYear(today), "yyyy-MM-dd"));
+                setEndDate(format(today, "yyyy-MM-dd"));
+                break;
+            case "lastYear":
+                const lastYear = subYears(today, 1);
+                setStartDate(format(startOfYear(lastYear), "yyyy-MM-dd"));
+                setEndDate(format(endOfQuarter(lastYear), "yyyy-MM-dd"));
+                break;
+            case "ytd":
+                setStartDate(format(startOfYear(today), "yyyy-MM-dd"));
+                setEndDate(format(today, "yyyy-MM-dd"));
+                break;
+        }
     };
+
     return (
-        <div className="bg-card border border-border p-3 rounded-xl shadow-sm flex flex-wrap gap-3 items-center justify-between shrink-0 relative overflow-hidden z-10">
-            <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
-            <div className="flex items-center gap-3">
-                <h1 className="text-lg font-black flex items-center gap-2 pl-2">
-                    <Scale className="text-primary" size={18}/> Collection Summary
+        <div className="bg-card border border-border/60 p-4 rounded-2xl shadow-sm flex flex-wrap gap-4 items-center justify-between shrink-0 relative overflow-hidden z-10">
+            {/* Subtle left accent */}
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-primary/80 to-primary/20" />
+
+            <div className="flex flex-wrap items-center gap-4 pl-2">
+                <h1 className="text-xl font-black flex items-center gap-2.5 tracking-tight">
+                    <div className="p-1.5 bg-primary/10 rounded-lg text-primary">
+                        <Scale size={18}/>
+                    </div>
+                    Collection Summary
                 </h1>
-                <div className="flex items-center gap-2 bg-muted/30 border border-border/50 rounded-md p-1 ml-4 focus-within:ring-1 ring-primary transition-all">
-                    <div className="flex items-center gap-1.5 px-2 cursor-pointer">
-                        <CalendarDays size={14} className="text-muted-foreground" />
-                        <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-7 w-[120px] text-xs font-bold border-none shadow-none bg-transparent cursor-pointer" />
+
+                <div className="flex items-center gap-2 ml-4">
+                    {/* 🚀 Modern Quick Range Dropdown */}
+                    <Select onValueChange={handleQuickRange}>
+                        <SelectTrigger className="h-10 w-[140px] rounded-xl bg-muted/40 border-border/50 text-xs font-bold focus:ring-primary/20">
+                            <div className="flex items-center gap-2">
+                                <Clock size={14} className="text-muted-foreground" />
+                                <SelectValue placeholder="Quick Range" />
+                            </div>
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                            <SelectItem value="today" className="text-xs font-bold">Today</SelectItem>
+                            <SelectItem value="yesterday" className="text-xs font-bold">Yesterday</SelectItem>
+                            <SelectItem value="last7" className="text-xs font-bold">Last 7 Days</SelectItem>
+                            <SelectItem value="last30" className="text-xs font-bold">Last 30 Days</SelectItem>
+                            <SelectItem value="last90" className="text-xs font-bold">Last 90 Days</SelectItem>
+                            <SelectItem value="thisWeek" className="text-xs font-bold">This Week</SelectItem>
+                            <SelectItem value="thisMonth" className="text-xs font-bold">This Month</SelectItem>
+                            <SelectItem value="lastMonth" className="text-xs font-bold">Last Month</SelectItem>
+                            <SelectItem value="thisQuarter" className="text-xs font-bold">This Quarter</SelectItem>
+                            <SelectItem value="lastQuarter" className="text-xs font-bold">Last Quarter</SelectItem>
+                            <SelectItem value="thisYear" className="text-xs font-bold">This Year</SelectItem>
+                            <SelectItem value="lastYear" className="text-xs font-bold">Last Year</SelectItem>
+                            <SelectItem value="ytd" className="text-xs font-bold">Year to Date</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    {/* Modern Date Pill */}
+                    <div className="flex items-center gap-2 bg-muted/40 border border-border/50 rounded-xl p-1.5 focus-within:ring-2 focus-within:ring-primary/20 transition-all hover:bg-muted/60">
+                        <div className="flex items-center gap-2 px-2 cursor-pointer">
+                            <CalendarDays size={14} className="text-muted-foreground" />
+                            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-7 w-[125px] text-xs font-bold border-none shadow-none bg-transparent cursor-pointer focus-visible:ring-0 px-0" />
+                        </div>
+                        <div className="w-px h-4 bg-border/80 mx-1"></div>
+                        <div className="flex items-center gap-2 px-2 cursor-pointer">
+                            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-7 w-[125px] text-xs font-bold border-none shadow-none bg-transparent cursor-pointer focus-visible:ring-0 px-0" />
+                        </div>
                     </div>
-                    <span className="text-muted-foreground text-xs font-black">TO</span>
-                    <div className="flex items-center gap-1.5 px-2 cursor-pointer">
-                        <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-7 w-[120px] text-xs font-bold border-none shadow-none bg-transparent cursor-pointer" />
-                    </div>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs font-bold text-muted-foreground hover:text-foreground">
-                                Quick Range
-                                <ChevronDown size={12} className="ml-1" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-[160px]">
-                            <DropdownMenuItem onClick={() => handleQuickRange('today')} className="text-xs font-bold cursor-pointer">
-                                Today
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleQuickRange('yesterday')} className="text-xs font-bold cursor-pointer">
-                                Yesterday
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleQuickRange('last7days')} className="text-xs font-bold cursor-pointer">
-                                Last 7 Days
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleQuickRange('last30days')} className="text-xs font-bold cursor-pointer">
-                                Last 30 Days
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleQuickRange('thisWeek')} className="text-xs font-bold cursor-pointer">
-                                This Week
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleQuickRange('thisMonth')} className="text-xs font-bold cursor-pointer">
-                                This Month
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleQuickRange('lastMonth')} className="text-xs font-bold cursor-pointer">
-                                Last Month
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
                 </div>
-                <Button onClick={onGenerate} disabled={isLoading} size="sm" className="h-9 text-xs font-black tracking-widest uppercase shadow-sm active:scale-95 transition-transform">
-                    <Search size={14} className={`mr-1.5 ${isLoading ? "animate-spin" : ""}`}/> {isLoading ? "Crunching..." : "Generate"}
+
+                <Button onClick={onGenerate} disabled={isLoading} size="sm" className="h-10 rounded-xl px-5 text-xs font-bold tracking-wider uppercase shadow-sm active:scale-95 transition-all">
+                    <Search size={14} className={`mr-2 ${isLoading ? "animate-spin" : ""}`}/> {isLoading ? "Crunching..." : "Generate"}
                 </Button>
             </div>
-            <div className="flex items-center gap-2">
-                <Button onClick={onExportExcel} disabled={!hasData} variant="outline" size="sm" className="h-9 text-xs font-black tracking-widest uppercase border-emerald-200 text-emerald-700 hover:bg-emerald-50 active:scale-95 transition-all">
-                    <Download size={14} className="mr-1.5"/> Excel
+
+            <div className="flex items-center gap-3">
+                <Button onClick={onExportExcel} disabled={!hasData} variant="outline" size="sm" className="h-10 rounded-xl px-4 text-xs font-bold tracking-wider uppercase border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 active:scale-95 transition-all bg-background">
+                    <Download size={14} className="mr-2"/> Excel
                 </Button>
-                <Button onClick={onPrint} disabled={!hasData} variant="default" size="sm" className="h-9 text-xs font-black tracking-widest uppercase bg-blue-600 hover:bg-blue-700 text-white shadow-sm active:scale-95 transition-all">
-                    <Printer size={14} className="mr-1.5"/> Print Report
+                <Button onClick={onPrint} disabled={!hasData} variant="default" size="sm" className="h-10 rounded-xl px-4 text-xs font-bold tracking-wider uppercase bg-blue-600 hover:bg-blue-700 text-white shadow-sm active:scale-95 transition-all">
+                    <Printer size={14} className="mr-2"/> PDF Report
                 </Button>
             </div>
         </div>

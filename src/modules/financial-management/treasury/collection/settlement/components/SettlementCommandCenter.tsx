@@ -49,7 +49,7 @@ export interface SettlementCommandCenterProps {
 
 export default function SettlementCommandCenter({ id, onClose }: SettlementCommandCenterProps) {
     const {
-        isLoading, wallet, credits, cartInvoices, allocations, salesmanName, salesmanId, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, salesmanName, findings, docNo, isPosted,
         isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
@@ -129,7 +129,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
             setIsSearching(true);
             try {
                 const data = await fetchProvider.get<UnpaidInvoice[]>(
-                    `/api/fm/treasury/collections/search-unpaid?salesmanId=${salesmanId || 0}&query=${encodeURIComponent(searchQuery.trim())}`
+                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}`
                 );
                 const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
                 setSearchResults(cleanResults);
@@ -141,7 +141,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         }, 300);
 
         return () => clearTimeout(delayDebounceFn);
-    }, [searchQuery, salesmanId, cartInvoices, isPosted]);
+    }, [searchQuery, cartInvoices, isPosted]);
 
     useEffect(() => {
         if (cartInvoices.length > 0 && !activeInvoiceId) {

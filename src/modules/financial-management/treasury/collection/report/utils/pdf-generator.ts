@@ -32,20 +32,27 @@ export const generateCollectionPDF = (
     currentY += 35;
 
     // --- 2. KPI SUMMARY BLOCK ---
-    const netVariance = (reportData.totalOverages || 0) - (reportData.totalShortages || 0);
+    const netVariance = (reportData.globalOverages || 0) - (reportData.globalShortages || 0);
+
+    const totalEwt = reportData.pouches.reduce((acc, p) => 
+        acc + p.variances.filter(v => v.type.toLowerCase().includes('ewt')).reduce((sum, v) => sum + v.amount, 0)
+    , 0);
+
+    const totalMemos = reportData.pouches.reduce((acc, p) => acc + p.totalMemos, 0);
+    const totalReturns = reportData.pouches.reduce((acc, p) => acc + p.totalReturns, 0);
 
     autoTable(doc, {
         startY: currentY,
         head: [["Asset Type", "Amount (PHP)"], ["Liabilities Cleared", "Amount (PHP)"]],
         body: [
-            ["Total Physical Cash", `P ${reportData.totalPhysicalCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`],
-            ["Total Checks", `P ${reportData.totalChecks.toLocaleString(undefined, {minimumFractionDigits: 2})}`],
-            ["Total EWT Collected", `P ${reportData.totalEwt.toLocaleString(undefined, {minimumFractionDigits: 2})}`],
+            ["Total Physical Cash", `P ${(reportData.globalCash || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`],
+            ["Total Checks", `P ${(reportData.globalChecks || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`],
+            ["Total EWT Collected", `P ${totalEwt.toLocaleString(undefined, {minimumFractionDigits: 2})}`],
             ["Net Variance", `${netVariance < 0 ? '-' : ''}P ${Math.abs(netVariance).toLocaleString(undefined, {minimumFractionDigits: 2})}`],
             ["", ""],
-            ["Total Invoices Cleared", `P ${reportData.totalInvoicesCleared.toLocaleString(undefined, {minimumFractionDigits: 2})}`],
-            ["Total Memos Consumed", `P ${reportData.totalMemosConsumed.toLocaleString(undefined, {minimumFractionDigits: 2})}`],
-            ["Total Returns Consumed", `P ${reportData.totalReturnsConsumed.toLocaleString(undefined, {minimumFractionDigits: 2})}`]
+            ["Total Invoices Cleared", `P ${(reportData.globalNetInvoice || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`],
+            ["Total Memos Consumed", `P ${totalMemos.toLocaleString(undefined, {minimumFractionDigits: 2})}`],
+            ["Total Returns Consumed", `P ${totalReturns.toLocaleString(undefined, {minimumFractionDigits: 2})}`]
         ],
         theme: "plain",
         styles: { fontSize: 9, cellPadding: 4 },
@@ -64,15 +71,17 @@ export const generateCollectionPDF = (
     doc.text("Accounts Settled (Invoices & Credits)", 40, currentY);
 
     currentY += 10;
-    const invoiceRows = reportData.invoiceBreakdown.map(i => [
-        format(new Date(i.date), "MM/dd"),
-        i.docNo,
-        i.isPosted ? "POSTED" : "DRAFT",
-        i.invoiceNo,
-        i.customerName,
-        i.paymentType,
-        i.amountApplied.toLocaleString(undefined, {minimumFractionDigits: 2})
-    ]);
+    const invoiceRows = reportData.pouches.flatMap(p =>
+        p.invoices.map(i => [
+            format(new Date(p.date), "MM/dd"),
+            p.docNo,
+            p.isPosted ? "POSTED" : "DRAFT",
+            i.invoiceNo,
+            i.customerName,
+            "Net Application",
+            i.netAmount.toLocaleString(undefined, {minimumFractionDigits: 2})
+        ])
+    );
 
     autoTable(doc, {
         startY: currentY,
@@ -94,15 +103,17 @@ export const generateCollectionPDF = (
     doc.text("Deposits (Checks)", 40, currentY);
 
     currentY += 10;
-    const checkRows = reportData.checkBreakdown.map(c => [
-        format(new Date(c.date), "MM/dd"),
-        c.docNo,
-        c.isPosted ? "POSTED" : "DRAFT",
-        c.bankName,
-        c.checkNo,
-        c.customerName,
-        c.amount.toLocaleString(undefined, {minimumFractionDigits: 2})
-    ]);
+    const checkRows = reportData.pouches.flatMap(p =>
+        p.checks.map(c => [
+            c.date ? format(new Date(c.date), "MM/dd") : format(new Date(p.date), "MM/dd"),
+            c.docNo || p.docNo,
+            p.isPosted ? "POSTED" : "DRAFT",
+            c.bankName,
+            c.checkNo,
+            c.customerName,
+            c.amount.toLocaleString(undefined, {minimumFractionDigits: 2})
+        ])
+    );
 
     autoTable(doc, {
         startY: currentY,
@@ -119,13 +130,21 @@ export const generateCollectionPDF = (
     currentY = (doc as any).lastAutoTable.finalY + 30;
 
     // --- 5. VARIANCES TABLE ---
-    if (reportData.varianceBreakdown.length > 0) {
+    const flatVariances = reportData.pouches.flatMap(p =>
+        p.variances.map(v => ({
+            ...v,
+            date: p.date,
+            isPosted: p.isPosted
+        }))
+    );
+
+    if (flatVariances.length > 0) {
         doc.setFontSize(11);
         doc.setFont("helvetica", "bold");
         doc.text("Adjustments / Variances", 40, currentY);
 
         currentY += 10;
-        const varRows = reportData.varianceBreakdown.map(v => [
+        const varRows = flatVariances.map(v => [
             format(new Date(v.date), "MM/dd"),
             v.docNo,
             v.isPosted ? "POSTED" : "DRAFT",
@@ -164,9 +183,5 @@ export const generateCollectionPDF = (
     }
 
     // --- 7. EXPORT ---
-    // Either save it directly:
     doc.save(`Collection_Report_${startDate}_to_${endDate}.pdf`);
-
-    // OR output to a new tab/blob for preview:
-    // window.open(doc.output('bloburl'), '_blank');
 };
