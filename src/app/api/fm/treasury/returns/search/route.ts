@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     if (!documentNo) return NextResponse.json({ message: "Missing documentNo" }, { status: 400 });
 
     const baseUrl = (process.env.SPRING_API_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
-    const targetUrl = `${baseUrl}/api/v1/collections/memos/search?documentNo=${encodeURIComponent(documentNo)}`;
+    const targetUrl = `${baseUrl}/api/v1/collections/returns/search?documentNo=${encodeURIComponent(documentNo)}`;
 
     try {
         const springRes = await fetch(targetUrl, {

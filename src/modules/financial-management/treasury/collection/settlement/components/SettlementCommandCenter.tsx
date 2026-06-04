@@ -40,6 +40,7 @@ import SettlementInvoiceCartTable from "./SettlementInvoiceCartTable";
 import WalletAssetCard from "./WalletAssetCard";
 import InvoiceSearchPopover from "./InvoiceSearchPopover";
 import AllocationSidePanel from "./AllocationSidePanel";
+import { generateAdjustmentPDF } from "../utils/adjustment-pdf-generator";
 
 export interface SettlementCommandCenterProps {
     id: string | number;
@@ -48,10 +49,11 @@ export interface SettlementCommandCenterProps {
 
 export default function SettlementCommandCenter({ id, onClose }: SettlementCommandCenterProps) {
     const {
-        isLoading, wallet, credits, cartInvoices, allocations, salesmanName, salesmanId, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, salesmanName, findings, docNo, isPosted,
         isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
-        deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate
+        deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
+        isLoadingCredits
     } = useSettlement(id);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,7 +129,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
             setIsSearching(true);
             try {
                 const data = await fetchProvider.get<UnpaidInvoice[]>(
-                    `/api/fm/treasury/collections/search-unpaid?salesmanId=${salesmanId || 0}&query=${encodeURIComponent(searchQuery.trim())}`
+                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}`
                 );
                 const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
                 setSearchResults(cleanResults);
@@ -139,7 +141,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         }, 300);
 
         return () => clearTimeout(delayDebounceFn);
-    }, [searchQuery, salesmanId, cartInvoices, isPosted]);
+    }, [searchQuery, cartInvoices, isPosted]);
 
     useEffect(() => {
         if (cartInvoices.length > 0 && !activeInvoiceId) {
@@ -232,6 +234,10 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         }
     };
 
+    const handlePrintAdjustments = () => {
+        generateAdjustmentPDF(wallet, findings, allocations, docNo, salesmanName);
+    };
+
     if (isLoading) return <div className="p-10 flex h-full items-center justify-center text-center animate-pulse font-bold text-muted-foreground uppercase tracking-widest">Initializing Command Center...</div>;
 
     const combinedSources = [...wallet, ...credits];
@@ -288,6 +294,12 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                     {!isPosted && Math.abs(remainingToAllocate) > 0.01 && (
                         <Button onClick={handleAutoBalance} disabled={isSubmitting || isSuccess} variant="outline" size="sm" className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-orange-500 text-orange-600 hover:bg-orange-50 h-8">
                             <Wand2 size={12} className="mr-1.5"/> Auto-Balance
+                        </Button>
+                    )}
+
+                    {wallet.filter(w => w.type === 'ADJUSTMENT').length > 0 && (
+                        <Button onClick={handlePrintAdjustments} disabled={isSubmitting || isSuccess} variant="outline" size="sm" className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-purple-500 text-purple-600 hover:bg-purple-50 h-8">
+                            <Printer size={12} className="mr-1.5"/> Print Adjustments
                         </Button>
                     )}
 
@@ -423,24 +435,33 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                             <Input placeholder="Search local pool..." value={creditSearch} onChange={(e) => setCreditSearch(e.target.value)} className="h-6 text-[10px] font-bold shadow-inner bg-background border-purple-200 focus-visible:ring-purple-500 px-2"/>
                         </div>
                         <div className="p-2 flex-1 overflow-y-auto space-y-1.5 scrollbar-thin">
-                            {filteredCredits.length === 0 ? <p className="text-[10px] text-center text-muted-foreground font-bold uppercase pt-6 italic">No matching credits</p> : filteredCredits.map(c => {
-                                const used = c.originalAmount > 0 ? getUsedAmount(c.id) : 0;
-                                const remaining = c.originalAmount - used;
-                                const isExhausted = c.originalAmount > 0 && remaining <= 0;
-                                return (
-                                    <div key={`source-${c.id}`} className={`p-2 rounded-md border shadow-sm transition-all group ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : 'bg-background border-border border-l-[3px] border-l-purple-500'}`}>
-                                        <div className="flex justify-between items-start mb-1">
-                                            <span className="text-[10px] font-black uppercase tracking-widest truncate pr-2 leading-tight">{c.label}</span>
-                                            <Badge variant="outline" className="text-[7px] uppercase px-1 py-0 h-3.5 leading-none border-purple-200 text-purple-700 bg-purple-50">{c.type}</Badge>
+                            {isLoadingCredits ? (
+                                <div className="flex flex-col items-center justify-center h-full py-8">
+                                    <Loader2 size={20} className="animate-spin text-purple-500 mb-2"/>
+                                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest animate-pulse">Loading Credits...</p>
+                                </div>
+                            ) : filteredCredits.length === 0 ? (
+                                <p className="text-[10px] text-center text-muted-foreground font-bold uppercase pt-6 italic">No matching credits</p>
+                            ) : (
+                                filteredCredits.map(c => {
+                                    const used = c.originalAmount > 0 ? getUsedAmount(c.id) : 0;
+                                    const remaining = c.originalAmount - used;
+                                    const isExhausted = c.originalAmount > 0 && remaining <= 0;
+                                    return (
+                                        <div key={`source-${c.id}`} className={`p-2 rounded-md border shadow-sm transition-all group ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : 'bg-background border-border border-l-[3px] border-l-purple-500'}`}>
+                                            <div className="flex justify-between items-start mb-1">
+                                                <span className="text-[10px] font-black uppercase tracking-widest truncate pr-2 leading-tight">{c.label}</span>
+                                                <Badge variant="outline" className="text-[7px] uppercase px-1 py-0 h-3.5 leading-none border-purple-200 text-purple-700 bg-purple-50">{c.type}</Badge>
+                                            </div>
+                                            {c.customerName && <div className="text-[8px] font-bold text-muted-foreground truncate mb-1 leading-tight" title={c.customerName}>{c.customerName}</div>}
+                                            <div className={`flex justify-between gap-2 text-[10px] ${c.customerName ? 'mt-1 border-t border-border/50 pt-1' : 'mt-1.5'}`}>
+                                                <div className="min-w-0 flex-1"><p className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-0.5">Original</p><p className="font-mono truncate leading-none">₱{c.originalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</p></div>
+                                                <div className="text-right min-w-0 flex-1"><p className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-0.5">Remaining</p><p className={`font-mono font-black truncate leading-none ${isExhausted ? 'text-muted-foreground' : 'text-emerald-600'}`}>₱{remaining.toLocaleString(undefined, {minimumFractionDigits: 2})}</p></div>
+                                            </div>
                                         </div>
-                                        {c.customerName && <div className="text-[8px] font-bold text-muted-foreground truncate mb-1 leading-tight" title={c.customerName}>{c.customerName}</div>}
-                                        <div className={`flex justify-between gap-2 text-[10px] ${c.customerName ? 'mt-1 border-t border-border/50 pt-1' : 'mt-1.5'}`}>
-                                            <div className="min-w-0 flex-1"><p className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-0.5">Original</p><p className="font-mono truncate leading-none">₱{c.originalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</p></div>
-                                            <div className="text-right min-w-0 flex-1"><p className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-0.5">Remaining</p><p className={`font-mono font-black truncate leading-none ${isExhausted ? 'text-muted-foreground' : 'text-emerald-600'}`}>₱{remaining.toLocaleString(undefined, {minimumFractionDigits: 2})}</p></div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })
+                            )}
                         </div>
                     </div>
                 </div>
