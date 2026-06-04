@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from "recharts";
@@ -18,12 +18,84 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDisbursementDashboard } from "../hooks/useDisbursementDashboard";
 import { VoucherSummary } from "../types";
+import { disbursementProvider } from "../providers/fetchProvider";
 
 export function DisbursementDashboardTab() {
     const { data, filters, setFilters, isLoading, handleApplyFilters } = useDisbursementDashboard();
     const [selectedVoucher, setSelectedVoucher] = useState<VoucherSummary | null>(null);
 
+    const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
+    const [payees, setPayees] = useState<{ id: number; name: string }[]>([]);
+    const [coas, setCoas] = useState<{ coaId: number; glCode: string; accountTitle: string }[]>([]);
+
+    useEffect(() => {
+        // Fetch users
+        fetch("/api/fm/treasury/users")
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setUsers(data.map((u: { id: number; firstName?: string; lastName?: string }) => ({
+                        id: u.id,
+                        name: `${u.firstName || ""} ${u.lastName || ""}`.trim() || `User #${u.id}`
+                    })));
+                }
+            })
+            .catch(err => console.warn("Failed to fetch users for filter:", err));
+
+        // Fetch suppliers/payees
+        Promise.all([
+            disbursementProvider.getSuppliers("Trade"),
+            disbursementProvider.getSuppliers("Non-Trade")
+        ])
+            .then(([trade, nonTrade]) => {
+                const combined = [...(trade || []), ...(nonTrade || [])];
+                const seen = new Set();
+                const list: { id: number; name: string }[] = [];
+                combined.forEach(s => {
+                    if (s && s.id && !seen.has(s.id)) {
+                        seen.add(s.id);
+                        list.push({ id: s.id, name: s.supplier_name });
+                    }
+                });
+                setPayees(list);
+            })
+            .catch(err => console.warn("Failed to fetch payees for filter:", err));
+
+        // Fetch COAs
+        disbursementProvider.getCOAs()
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setCoas(data);
+                }
+            })
+            .catch(err => console.warn("Failed to fetch COAs for filter:", err));
+    }, []);
+
     const formatMoney = (amount: number) => `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    const reportSummary = useMemo(() => {
+        const summary: Record<string, { count: number; total: number }> = {
+            "Submitted": { count: 0, total: 0 },
+            "Approved": { count: 0, total: 0 },
+            "Released": { count: 0, total: 0 },
+            "Posted": { count: 0, total: 0 },
+            "Voided": { count: 0, total: 0 }
+        };
+
+        (data?.vouchers || []).forEach(v => {
+            const status = v.status || "Submitted";
+            if (!summary[status]) {
+                summary[status] = { count: 0, total: 0 };
+            }
+            summary[status].count += 1;
+            summary[status].total += v.totalAmount || 0;
+        });
+
+        return Object.entries(summary).map(([status, stats]) => ({
+            status,
+            ...stats
+        }));
+    }, [data?.vouchers]);
 
     // 🚀 FIX: Prevent chart overlap by only taking the Top 10 highest expenses
     const topCoaExpenses = useMemo(() => {
@@ -77,62 +149,120 @@ export function DisbursementDashboardTab() {
         <div className="space-y-6 animate-in fade-in duration-500">
             {/* 1. PREMIUM FILTER BAR */}
             <Card className="shadow-sm border-border/50 bg-card rounded-2xl overflow-hidden">
-                <CardContent className="p-5 flex flex-wrap gap-5 items-end bg-muted/10">
+                <CardContent className="p-5 space-y-4 bg-muted/10">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
+                                <CalendarDays className="w-3.5 h-3.5 text-primary"/> Quick Range
+                            </label>
+                            <Select onValueChange={handleQuickRange}>
+                                <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50">
+                                    <SelectValue placeholder="Custom" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="today" className="text-xs font-bold uppercase">Today</SelectItem>
+                                    <SelectItem value="this_week" className="text-xs font-bold uppercase">This Week</SelectItem>
+                                    <SelectItem value="this_month" className="text-xs font-bold uppercase">This Month</SelectItem>
+                                    <SelectItem value="this_year" className="text-xs font-bold uppercase">This Year</SelectItem>
+                                    <SelectItem value="all_time" className="text-xs font-bold uppercase">All Time</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
 
-                    <div className="space-y-1.5 flex-1 min-w-[140px]">
-                        <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
-                            <CalendarDays className="w-3.5 h-3.5 text-primary"/> Quick Range
-                        </label>
-                        <Select onValueChange={handleQuickRange}>
-                            <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue placeholder="Custom" /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="today" className="text-xs font-bold uppercase">Today</SelectItem>
-                                <SelectItem value="this_week" className="text-xs font-bold uppercase">This Week</SelectItem>
-                                <SelectItem value="this_month" className="text-xs font-bold uppercase">This Month</SelectItem>
-                                <SelectItem value="this_year" className="text-xs font-bold uppercase">This Year</SelectItem>
-                                <SelectItem value="all_time" className="text-xs font-bold uppercase">All Time</SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Start Date</label>
+                            <Input type="date" className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50" value={filters.startDate} onChange={(e) => setFilters({ ...filters, startDate: e.target.value })} />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">End Date</label>
+                            <Input type="date" className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50" value={filters.endDate} onChange={(e) => setFilters({ ...filters, endDate: e.target.value })} />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Trans Type</label>
+                            <Select value={filters.transactionType?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, transactionType: val === "ALL" ? "" : Number(val) })}>
+                                <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="ALL" className="text-xs font-bold uppercase">All Types</SelectItem>
+                                    <SelectItem value="1" className="text-xs font-bold uppercase text-blue-600">Trade</SelectItem>
+                                    <SelectItem value="2" className="text-xs font-bold uppercase text-purple-600">Non-Trade</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Status</label>
+                            <Select value={filters.status} onValueChange={(val) => setFilters({ ...filters, status: val })}>
+                                <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="ALL" className="text-xs font-bold uppercase text-primary">Valid Outflows</SelectItem>
+                                    <SelectItem value="Released" className="text-xs font-bold uppercase">Released Only</SelectItem>
+                                    <SelectItem value="Posted" className="text-xs font-bold uppercase">Posted Only</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
 
-                    <div className="space-y-1.5 flex-1 min-w-[140px]">
-                        <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Start Date</label>
-                        <Input type="date" className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50" value={filters.startDate} onChange={(e) => setFilters({ ...filters, startDate: e.target.value })} />
-                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end">
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Encoder</label>
+                            <Select value={filters.encoderId?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, encoderId: val === "ALL" ? "" : Number(val) })}>
+                                <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue placeholder="All Encoders" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="ALL" className="text-xs font-bold uppercase">All Encoders</SelectItem>
+                                    {users.map(u => (
+                                        <SelectItem key={u.id} value={u.id.toString()} className="text-xs font-bold uppercase">{u.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
 
-                    <div className="space-y-1.5 flex-1 min-w-[140px]">
-                        <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">End Date</label>
-                        <Input type="date" className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50" value={filters.endDate} onChange={(e) => setFilters({ ...filters, endDate: e.target.value })} />
-                    </div>
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Supplier / Payee</label>
+                            <Select value={filters.payeeId?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, payeeId: val === "ALL" ? "" : Number(val) })}>
+                                <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue placeholder="All Payees" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="ALL" className="text-xs font-bold uppercase">All Payees</SelectItem>
+                                    {payees.map(p => (
+                                        <SelectItem key={p.id} value={p.id.toString()} className="text-xs font-bold uppercase">{p.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
 
-                    <div className="space-y-1.5 flex-1 min-w-[140px]">
-                        <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Trans Type</label>
-                        <Select value={filters.transactionType?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, transactionType: val === "ALL" ? "" : Number(val) })}>
-                            <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="ALL" className="text-xs font-bold uppercase">All Types</SelectItem>
-                                <SelectItem value="1" className="text-xs font-bold uppercase text-blue-600">Trade</SelectItem>
-                                <SelectItem value="2" className="text-xs font-bold uppercase text-purple-600">Non-Trade</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
+                        {/* Chart of Accounts Selector and Transaction Amount on the same visual row. */}
+                        <div className="md:col-span-2 grid grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                                <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">GL Account (COA)</label>
+                                <Select value={filters.coaId?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, coaId: val === "ALL" ? "" : Number(val) })}>
+                                    <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue placeholder="All COAs" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="ALL" className="text-xs font-bold uppercase">All COAs</SelectItem>
+                                        {coas.map(c => (
+                                            <SelectItem key={c.coaId} value={c.coaId.toString()} className="text-xs font-bold uppercase">{c.glCode} - {truncateText(c.accountTitle, 16)}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-                    <div className="space-y-1.5 flex-1 min-w-[160px]">
-                        <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Status</label>
-                        <Select value={filters.status} onValueChange={(val) => setFilters({ ...filters, status: val })}>
-                            <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="ALL" className="text-xs font-bold uppercase text-primary">Valid Outflows</SelectItem>
-                                <SelectItem value="Released" className="text-xs font-bold uppercase">Released Only</SelectItem>
-                                <SelectItem value="Posted" className="text-xs font-bold uppercase">Posted Only</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Min Amount</label>
+                                <Input
+                                    type="number"
+                                    placeholder="Amount"
+                                    className="h-10 text-xs font-bold bg-background shadow-sm border-border/50"
+                                    value={filters.amount || ""}
+                                    onChange={(e) => setFilters({ ...filters, amount: e.target.value === "" ? "" : Number(e.target.value) })}
+                                />
+                            </div>
+                        </div>
 
-                    <Button onClick={handleApplyFilters} disabled={isLoading} className="h-10 px-8 text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-md hover:shadow-lg rounded-xl">
-                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
-                        Generate
-                    </Button>
+                        <Button onClick={handleApplyFilters} disabled={isLoading} className="h-10 w-full text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-md hover:shadow-lg rounded-xl">
+                            {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
+                            Generate
+                        </Button>
+                    </div>
                 </CardContent>
             </Card>
 
@@ -180,73 +310,118 @@ export function DisbursementDashboardTab() {
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-                {/* 3. 🚀 DYNAMIC CHART: EXPENSE DISTRIBUTION (Tabs for COA vs Division) */}
-                <Card className="xl:col-span-1 shadow-sm flex flex-col rounded-2xl border-border/50">
-                    <CardHeader className="border-b bg-muted/10 pb-4">
-                        <CardTitle className="text-sm font-black uppercase text-foreground flex items-center gap-2">
-                            <PieChart className="w-4 h-4 text-primary" /> Expense Analysis
-                        </CardTitle>
-                        <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Top 10 Breakdown of recorded payables</p>
-                    </CardHeader>
-                    <CardContent className="p-0 flex-1 min-h-[420px] flex flex-col">
-                        <Tabs defaultValue="account" className="w-full h-full flex flex-col">
-                            <TabsList className="w-full rounded-none border-b bg-transparent h-12">
-                                <TabsTrigger value="account" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[10px] tracking-widest">
-                                    By GL Account
-                                </TabsTrigger>
-                                <TabsTrigger value="division" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[10px] tracking-widest">
-                                    By Division
-                                </TabsTrigger>
-                            </TabsList>
+                {/* COLUMN 1: CHARTS AND SUMMARIES */}
+                <div className="xl:col-span-1 space-y-6 flex flex-col">
+                    {/* 3. 🚀 DYNAMIC CHART: EXPENSE DISTRIBUTION (Tabs for COA vs Division) */}
+                    <Card className="shadow-sm flex flex-col rounded-2xl border-border/50">
+                        <CardHeader className="border-b bg-muted/10 pb-4">
+                            <CardTitle className="text-sm font-black uppercase text-foreground flex items-center gap-2">
+                                <PieChart className="w-4 h-4 text-primary" /> Expense Analysis
+                            </CardTitle>
+                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Top 10 Breakdown of recorded payables</p>
+                        </CardHeader>
+                        <CardContent className="p-0 flex-1 min-h-[420px] flex flex-col">
+                            <Tabs defaultValue="account" className="w-full h-full flex flex-col">
+                                <TabsList className="w-full rounded-none border-b bg-transparent h-12">
+                                    <TabsTrigger value="account" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[10px] tracking-widest">
+                                        By GL Account
+                                    </TabsTrigger>
+                                    <TabsTrigger value="division" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[10px] tracking-widest">
+                                        By Division
+                                    </TabsTrigger>
+                                </TabsList>
 
-                            {/* CHART A: BY COA */}
-                            <TabsContent value="account" className="flex-1 p-4 m-0">
-                                {topCoaExpenses.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={topCoaExpenses} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--muted))" />
-                                            <XAxis type="number" tickFormatter={(val) => `₱${val/1000}k`} className="text-[9px] font-bold" />
-                                            {/* 🚀 FIX: Increased width to 140 and added tick formatter */}
-                                            <YAxis dataKey="accountTitle" type="category" className="text-[9px] font-bold uppercase" width={140} tickFormatter={(val) => truncateText(val, 20)} tick={{fill: 'hsl(var(--foreground))'}} />
-                                            <Tooltip
-                                                formatter={(value: number) => [formatMoney(value), "Expense"]}
-                                                labelFormatter={(label) => <span className="font-black uppercase text-xs">{label}</span>}
-                                                cursor={{fill: 'hsl(var(--muted))'}}
-                                                contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}
-                                            />
-                                            <Bar dataKey="totalExpense" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={20} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div className="h-full flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No GL Data Available</div>
-                                )}
-                            </TabsContent>
+                                {/* CHART A: BY COA */}
+                                <TabsContent value="account" className="flex-1 p-4 m-0">
+                                    {topCoaExpenses.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={topCoaExpenses} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                                                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--muted))" />
+                                                <XAxis type="number" tickFormatter={(val) => `₱${val/1000}k`} className="text-[9px] font-bold" />
+                                                <YAxis dataKey="accountTitle" type="category" className="text-[9px] font-bold uppercase" width={140} tickFormatter={(val) => truncateText(val, 20)} tick={{fill: 'hsl(var(--foreground))'}} />
+                                                <Tooltip
+                                                    formatter={(value: number) => [formatMoney(value), "Expense"]}
+                                                    labelFormatter={(label) => <span className="font-black uppercase text-xs">{label}</span>}
+                                                    cursor={{fill: 'hsl(var(--muted))'}}
+                                                    contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}
+                                                />
+                                                <Bar dataKey="totalExpense" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={20} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No GL Data Available</div>
+                                    )}
+                                </TabsContent>
 
-                            {/* CHART B: BY DIVISION */}
-                            <TabsContent value="division" className="flex-1 p-4 m-0">
-                                {topDivisionExpenses.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={topDivisionExpenses} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--muted))" />
-                                            <XAxis type="number" tickFormatter={(val) => `₱${val/1000}k`} className="text-[9px] font-bold" />
-                                            {/* 🚀 FIX: Increased width to 140 and added tick formatter */}
-                                            <YAxis dataKey="divisionName" type="category" className="text-[9px] font-bold uppercase" width={140} tickFormatter={(val) => truncateText(val, 20)} tick={{fill: 'hsl(var(--foreground))'}} />
-                                            <Tooltip
-                                                formatter={(value: number) => [formatMoney(value), "Expense"]}
-                                                labelFormatter={(label) => <span className="font-black uppercase text-xs">{label}</span>}
-                                                cursor={{fill: 'hsl(var(--muted))'}}
-                                                contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}
-                                            />
-                                            <Bar dataKey="totalExpense" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} barSize={20} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div className="h-full flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No Division Data Available</div>
-                                )}
-                            </TabsContent>
-                        </Tabs>
-                    </CardContent>
-                </Card>
+                                {/* CHART B: BY DIVISION */}
+                                <TabsContent value="division" className="flex-1 p-4 m-0">
+                                    {topDivisionExpenses.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={topDivisionExpenses} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                                                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--muted))" />
+                                                <XAxis type="number" tickFormatter={(val) => `₱${val/1000}k`} className="text-[9px] font-bold" />
+                                                <YAxis dataKey="divisionName" type="category" className="text-[9px] font-bold uppercase" width={140} tickFormatter={(val) => truncateText(val, 20)} tick={{fill: 'hsl(var(--foreground))'}} />
+                                                <Tooltip
+                                                    formatter={(value: number) => [formatMoney(value), "Expense"]}
+                                                    labelFormatter={(label) => <span className="font-black uppercase text-xs">{label}</span>}
+                                                    cursor={{fill: 'hsl(var(--muted))'}}
+                                                    contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}
+                                                />
+                                                <Bar dataKey="totalExpense" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} barSize={20} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No Division Data Available</div>
+                                    )}
+                                </TabsContent>
+                            </Tabs>
+                        </CardContent>
+                    </Card>
+
+                    {/* DISBURSEMENT REPORT SUMMARY */}
+                    <Card className="shadow-sm rounded-2xl border-border/50 overflow-hidden">
+                        <CardHeader className="border-b bg-muted/10 py-4">
+                            <CardTitle className="text-sm font-black uppercase text-foreground">
+                                Disbursement Report Summary
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <Table>
+                                <TableHeader className="bg-muted/30">
+                                    <TableRow>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-4">Status</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-center">Vouchers</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right pr-4">Total Amount</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {reportSummary.map((row) => (
+                                        <TableRow key={row.status} className="hover:bg-muted/10 border-border">
+                                            <TableCell className="pl-4 py-2.5 font-bold text-xs">
+                                                <Badge variant="secondary" className="text-[9px] uppercase tracking-wider bg-muted/60">{row.status}</Badge>
+                                            </TableCell>
+                                            <TableCell className="text-center py-2.5 font-mono text-xs font-bold text-foreground">
+                                                {row.count}
+                                            </TableCell>
+                                            <TableCell className="text-right pr-4 py-2.5 font-mono text-xs font-black text-foreground">
+                                                {formatMoney(row.total)}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                    <TableRow className="bg-muted/20 border-t font-black">
+                                        <TableCell className="pl-4 py-3 text-xs uppercase tracking-wider">Total</TableCell>
+                                        <TableCell className="text-center py-3 font-mono text-xs">
+                                            {reportSummary.reduce((sum, r) => sum + r.count, 0)}
+                                        </TableCell>
+                                        <TableCell className="text-right pr-4 py-3 font-mono text-xs text-primary">
+                                            {formatMoney(reportSummary.reduce((sum, r) => sum + r.total, 0))}
+                                        </TableCell>
+                                    </TableRow>
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+                </div>
 
                 {/* 4. MASTER TABLE */}
                 <Card className="xl:col-span-2 shadow-sm flex flex-col rounded-2xl border-border/50">
@@ -254,14 +429,14 @@ export function DisbursementDashboardTab() {
                         <CardTitle className="text-sm font-black uppercase text-foreground">Outflow Register</CardTitle>
                         <Badge variant="outline" className="font-mono bg-background shadow-sm">{data?.vouchers?.length || 0} Records</Badge>
                     </CardHeader>
-                    <CardContent className="p-0 overflow-auto max-h-[500px] custom-scrollbar">
+                    <CardContent className="p-0 overflow-auto max-h-[500px] custom-scrollbar relative">
                         <Table>
-                            <TableHeader className="bg-muted/50 sticky top-0 z-10 shadow-sm backdrop-blur-md">
-                                <TableRow>
-                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-6">Doc No</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Payee & Date</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right">Total Amt</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right pr-6">Paid Amt</TableHead>
+                            <TableHeader className="bg-muted sticky top-0 z-10 shadow-sm">
+                                <TableRow className="bg-muted">
+                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-6 bg-muted sticky top-0 z-10">Doc No</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground bg-muted sticky top-0 z-10">Payee & Date</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right bg-muted sticky top-0 z-10">Total Amt</TableHead>
+                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right pr-6 bg-muted sticky top-0 z-10">Paid Amt</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>

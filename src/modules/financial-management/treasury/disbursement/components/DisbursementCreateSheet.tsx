@@ -126,6 +126,18 @@ function SearchableDropdown<T extends string | number>({
     );
 }
 
+const isPayableOrExpenseCOA = (c: COADto) => {
+    const gl = (c.glCode || "").trim();
+    const title = (c.accountTitle || "").toLowerCase();
+    return gl.startsWith("2") || gl.startsWith("5") || gl.startsWith("6") || gl.startsWith("7") || gl.startsWith("8") || gl.startsWith("9") || title.includes("payable") || title.includes("expense");
+};
+
+const isPaymentCOA = (c: COADto) => {
+    if (c.isPayment || c.isPaymentDuplicate) return true;
+    const title = (c.accountTitle || "").toLowerCase();
+    return title.includes("petty cash") || title.includes("revolving fund") || title.includes("revolving funds");
+};
+
 export function DisbursementCreateSheet({
                                             open,
                                             onOpenChange,
@@ -167,6 +179,8 @@ export function DisbursementCreateSheet({
     const [isPayeeRegistrationOpen, setIsPayeeRegistrationOpen] = useState(false);
 
     const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+    const totalPayments = payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+    const paymentDifference = totalAmount - totalPayments;
     const isNonTradeVoucher = transactionTypeId === 2;
     const payeeSupplierType = isNonTradeVoucher ? "NON-TRADE" : "TRADE";
     const payeeSupplierTypeLabel = isNonTradeVoucher ? "Non-Trade" : "Trade";
@@ -560,19 +574,32 @@ export function DisbursementCreateSheet({
                                        placeholder="What is this payment for?"/>
                             </div>
 
-                            <div className="space-y-1.5 col-span-2 pt-2 border-t border-border mt-2">
-                                <Label
-                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex justify-between items-center">
-                                    Total Voucher Amount <span
-                                    className="text-emerald-600 dark:text-emerald-500 font-medium flex items-center gap-1"><Calculator
-                                    className="w-3 h-3"/> Auto-Calculated</span>
+                            <div className="col-span-2 pt-2 border-t border-border mt-2 space-y-2">
+                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1">
+                                    <Calculator className="w-3.5 h-3.5 text-primary"/> Financial Summary (Payables vs Payments)
                                 </Label>
-                                <div className="relative">
-                                    <span
-                                        className="absolute left-3 top-2.5 text-xs font-black text-muted-foreground">₱</span>
-                                    <Input type="number" value={totalAmount.toFixed(2)} readOnly
-                                           className="h-10 pl-7 text-sm font-black text-emerald-600 dark:text-emerald-500 border-border bg-muted cursor-not-allowed shadow-inner"
-                                           placeholder="0.00"/>
+                                <div className="grid grid-cols-3 gap-3 p-3 rounded-lg border border-border bg-muted/40 shadow-inner">
+                                    <div className="space-y-1">
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Total Payables</span>
+                                        <div className="text-sm font-black text-foreground">
+                                            ₱ {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Total Payments</span>
+                                        <div className="text-sm font-black text-foreground">
+                                            ₱ {totalPayments.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Difference / Balance</span>
+                                        <div className={cn("text-sm font-black", paymentDifference === 0 ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500")}>
+                                            ₱ {paymentDifference.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {paymentDifference === 0 && (
+                                                <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200/50">Balanced</span>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -626,20 +653,19 @@ export function DisbursementCreateSheet({
                                                         </TableCell>
                                                         <TableCell className="p-2 align-top pt-3">
                                                             <SearchableDropdown<number>
-                                                                options={coas.map((c) => ({
+                                                                options={coas.filter(isPayableOrExpenseCOA).map((c) => ({
                                                                     value: c.coaId ?? 0,
                                                                     label: `${c.glCode || 'NO-CODE'} - ${c.accountTitle || 'Unknown'}`
                                                                 }))}
-                                                                value={p.coaId || ""} onSelect={(val) => {
-                                                                const n = [...payables];
-                                                                // 🚀 FIX: TypeScript error resolved here!
-                                                                n[i].coaId = val;
-                                                                setPayables(n);
-                                                            }}
-                                                                placeholder="Search GL..."
+                                                                value={p.coaId || ""}
+                                                                onSelect={(val) => {
+                                                                    const n = [...payables];
+                                                                    n[i].coaId = val;
+                                                                    setPayables(n);
+                                                                }}
+                                                                placeholder="Search GL Code..."
                                                                 className="h-8 w-full bg-background border-input text-[11px] font-medium"
-                                                                popoverWidth="w-[350px]"
-                                                                overrideLabel={p.accountTitle}
+                                                                popoverWidth="w-[400px]"
                                                             />
                                                         </TableCell>
                                                         <TableCell className="p-2 align-top pt-3">
@@ -690,103 +716,100 @@ export function DisbursementCreateSheet({
                                         <Table>
                                             <TableHeader className="bg-muted/50">
                                                 <TableRow className="border-border">
-                                                    <TableHead
-                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Date</TableHead>
-                                                    <TableHead
-                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Check
-                                                        No / Ref</TableHead>
-                                                    <TableHead
-                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[300px]">Bank
-                                                        Account & GL Code</TableHead>
-                                                    <TableHead
-                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Amount</TableHead>
+                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Date</TableHead>
+                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Check No</TableHead>
+                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Bank Account</TableHead>
+                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[200px]">GL Account (COA)</TableHead>
+                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[100px]">Amount</TableHead>
                                                     <TableHead className="w-[40px]"></TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
                                                 {payments.length === 0 ? (
-                                                    <TableRow><TableCell colSpan={5}
+                                                    <TableRow><TableCell colSpan={6}
                                                                          className="text-center text-xs text-muted-foreground py-8 font-medium">No
                                                         payments added.</TableCell></TableRow>
                                                 ) : payments.map((p, i) => (
                                                     <TableRow key={i} className="border-border hover:bg-muted/50">
                                                         <TableCell className="p-2 align-top pt-3">
-                                                            <Input type="date"
-                                                                   className="h-8 text-xs font-bold uppercase bg-background"
-                                                                   value={p.date} onChange={e => {
-                                                                const n = [...payments];
-                                                                n[i].date = e.target.value;
-                                                                setPayments(n);
-                                                            }}/>
+                                                            <Input type="date" className="h-8 text-xs bg-background"
+                                                                   value={p.date ? p.date.split('T')[0] : ""}
+                                                                   onChange={e => {
+                                                                       const n = [...payments];
+                                                                       n[i].date = e.target.value;
+                                                                       setPayments(n);
+                                                                   }}/>
                                                         </TableCell>
                                                         <TableCell className="p-2 align-top pt-3">
-                                                            <Input className="h-8 text-xs uppercase bg-background"
-                                                                   placeholder="e.g. CHK-123" value={p.checkNo}
+                                                            <Input className="h-8 text-xs bg-background"
+                                                                   placeholder="Check #" value={p.checkNo}
                                                                    onChange={e => {
                                                                        const n = [...payments];
                                                                        n[i].checkNo = e.target.value;
                                                                        setPayments(n);
                                                                    }}/>
                                                         </TableCell>
-                                                        <TableCell className="p-2 align-top">
-                                                            <div className="flex flex-col gap-2 pt-3">
-                                                                <SearchableDropdown<number>
-                                                                    options={banks.map((b) => ({
-                                                                        value: b.bankId ?? 0,
-                                                                        label: `${b.bankName || 'Bank'} - ${b.accountNumber || 'No Acct'}`
-                                                                    }))}
-                                                                    value={p.bankId || ""} onSelect={(val) => {
+                                                        <TableCell className="p-2 align-top pt-3">
+                                                            <SearchableDropdown<number>
+                                                                options={banks.map((b) => ({
+                                                                    value: b.bankId ?? 0,
+                                                                    label: `${b.bankName || 'Unknown Bank'} - ${b.accountNumber || ''}`
+                                                                }))}
+                                                                value={p.bankId || ""}
+                                                                onSelect={(val) => {
                                                                     const n = [...payments];
-                                                                    // 🚀 FIX: TypeScript error resolved here!
                                                                     n[i].bankId = val;
                                                                     setPayments(n);
                                                                 }}
-                                                                    placeholder="Search Bank Account..."
-                                                                    className="h-8 w-full border-primary/20 bg-primary/5 text-[11px] font-bold text-foreground"
-                                                                    popoverWidth="w-[350px]"
-                                                                    overrideLabel={p.bankId ? `Bank ID: ${p.bankId}` : undefined}
-                                                                />
-                                                                <SearchableDropdown<number>
-                                                                    options={coas.filter(c => c.isPayment || c.isPaymentDuplicate).map((c) => ({
-                                                                        value: c.coaId ?? 0,
-                                                                        label: `${c.glCode || 'NO-CODE'} - ${c.accountTitle || 'Unknown'}`
-                                                                    }))}
-                                                                    value={p.coaId || ""} onSelect={(val) => {
+                                                                placeholder="Select Bank..."
+                                                                className="h-8 w-full bg-background border-input text-[11px] font-medium"
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell className="p-2 align-top pt-3">
+                                                            <SearchableDropdown<number>
+                                                                options={coas.filter(isPaymentCOA).map((c) => ({
+                                                                    value: c.coaId ?? 0,
+                                                                    label: `${c.glCode || 'NO-CODE'} - ${c.accountTitle || 'Unknown'}`
+                                                                }))}
+                                                                value={p.coaId || ""}
+                                                                onSelect={(val) => {
                                                                     const n = [...payments];
-                                                                    // 🚀 FIX: TypeScript error resolved here!
                                                                     n[i].coaId = val;
                                                                     setPayments(n);
                                                                 }}
-                                                                    placeholder="Search General Ledger Code..."
-                                                                    className="h-8 w-full bg-background border-input text-[11px] font-medium"
-                                                                    popoverWidth="w-[450px]"
-                                                                    overrideLabel={p.accountTitle}
-                                                                />
-                                                            </div>
+                                                                placeholder="Search COA..."
+                                                                className="h-8 w-full bg-background border-input text-[11px] font-medium"
+                                                                popoverWidth="w-[400px]"
+                                                            />
                                                         </TableCell>
-                                                        <TableCell className="p-2 align-top pt-3"><Input type="number"
-                                                                                                         className="h-8 text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-background"
-                                                                                                         value={p.amount || ""}
-                                                                                                         onChange={e => {
-                                                                                                             const n = [...payments];
-                                                                                                             n[i].amount = Number(e.target.value);
-                                                                                                             setPayments(n);
-                                                                                                         }}/></TableCell>
-                                                        <TableCell className="p-2 text-right align-top pt-3"><Button
-                                                            variant="ghost" size="icon"
-                                                            className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                                                            onClick={() => setPayments(payments.filter((_, idx) => idx !== i))}><Trash2
-                                                            className="w-4 h-4"/></Button></TableCell>
+                                                        <TableCell className="p-2 align-top pt-3">
+                                                            <Input type="number"
+                                                                   className="h-8 text-xs font-bold bg-background text-emerald-600 dark:text-emerald-500"
+                                                                   value={p.amount || ""}
+                                                                   onChange={e => {
+                                                                       const n = [...payments];
+                                                                       n[i].amount = Number(e.target.value);
+                                                                       setPayments(n);
+                                                                   }}/>
+                                                        </TableCell>
+                                                        <TableCell className="p-2 text-right align-top pt-3">
+                                                            <Button variant="ghost" size="icon"
+                                                                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                                                                    onClick={() => setPayments(payments.filter((_, idx) => idx !== i))}><Trash2
+                                                                className="w-4 h-4"/></Button>
+                                                        </TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>
                                         </Table>
                                     </div>
-                                    <Button variant="outline" size="sm"
-                                            className="w-full text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border"
-                                            onClick={handleAddPayment}>
-                                        <Plus className="w-3.5 h-3.5 mr-2"/> Add Payment Line
-                                    </Button>
+                                    <div className="flex gap-2 w-full">
+                                        <Button variant="outline" size="sm"
+                                                className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border"
+                                                onClick={handleAddPayment}>
+                                            <Plus className="w-3.5 h-3.5 mr-2"/> Add Manual Payment
+                                        </Button>
+                                    </div>
                                 </TabsContent>
                             </Tabs>
                         </div>
