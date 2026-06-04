@@ -64,7 +64,7 @@ export function ManageProductsModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh] gap-0 p-0 flex flex-col">
+        <DialogContent className="sm:max-w-[800px] max-h-[80vh] gap-0 p-0 flex flex-col">
           {/* Header */}
           <DialogHeader className="px-6 py-4 border-b shrink-0">
             <DialogTitle>Manage Products</DialogTitle>
