@@ -177,7 +177,7 @@ export async function GET(request: NextRequest) {
                         child_invoice_id: childId,
                         child_invoice_no: childInv ? childInv.invoice_no : `ID: ${childId} (Deleted/Missing)`,
                         child_total_amount: childInv ? Number(childInv.total_amount) : 0,
-                        child_date: childInv ? childInv.invoice_date : null,
+                        child_date: childInv ? (childInv.invoice_date ?? null) : null,
                         amount_applied: Number(m.amount_applied || 0)
                     };
                 });
