@@ -1,10 +1,30 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useSettlement } from "../hooks/useSettlement";
 import {
-    Receipt, ShieldCheck, Wallet, Save, ChevronDown, Plus, X, Loader2,
-    Percent, Trash2, Lock, Printer, Wand2, Truck, ChevronsUpDown, Check, Layers, MapPin, Calendar, FileText, CheckCircle2, Search
+    ShieldCheck,
+    Wallet,
+    Save,
+    ChevronDown,
+    Plus,
+    X,
+    Loader2,
+    Percent,
+    Trash2,
+    Lock,
+    Printer,
+    Wand2,
+    Truck,
+    ChevronsUpDown,
+    Check,
+    Layers,
+    MapPin,
+    Calendar,
+    FileText,
+    CheckCircle2,
+    Search,
+    Receipt
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -19,18 +39,21 @@ import { toast } from "sonner";
 import SettlementInvoiceCartTable from "./SettlementInvoiceCartTable";
 import WalletAssetCard from "./WalletAssetCard";
 import InvoiceSearchPopover from "./InvoiceSearchPopover";
+import AllocationSidePanel from "./AllocationSidePanel";
+import { generateAdjustmentPDF } from "../utils/adjustment-pdf-generator";
 
 export interface SettlementCommandCenterProps {
     id: string | number;
-    onClose?: () => void;
+    onClose?: (hasSaved?: boolean) => void;
 }
 
 export default function SettlementCommandCenter({ id, onClose }: SettlementCommandCenterProps) {
     const {
-        isLoading, wallet, credits, cartInvoices, allocations, salesmanName, salesmanId, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, salesmanName, findings, docNo, isPosted,
         isLoadingRoute, loadRouteInvoices, addToCart, removeFromCart, clearCart, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
-        deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate
+        deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
+        isLoadingCredits
     } = useSettlement(id);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -73,6 +96,8 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
 
     const [routePopoverOpen, setRoutePopoverOpen] = useState(false);
 
+    const [activeInvoiceId, setActiveInvoiceId] = useState<number | null>(null);
+
     const uniqueCategories = useMemo(() => {
         const coaMap = new Map<number, {id: number, title: string}>();
         findings.forEach(f => {
@@ -104,7 +129,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
             setIsSearching(true);
             try {
                 const data = await fetchProvider.get<UnpaidInvoice[]>(
-                    `/api/fm/treasury/collections/search-unpaid?salesmanId=${salesmanId || 0}&query=${encodeURIComponent(searchQuery)}`
+                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}`
                 );
                 const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
                 setSearchResults(cleanResults);
@@ -116,7 +141,15 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         }, 300);
 
         return () => clearTimeout(delayDebounceFn);
-    }, [searchQuery, salesmanId, cartInvoices, isPosted]);
+    }, [searchQuery, cartInvoices, isPosted]);
+
+    useEffect(() => {
+        if (cartInvoices.length > 0 && !activeInvoiceId) {
+            setActiveInvoiceId(cartInvoices[0].id);
+        } else if (cartInvoices.length === 0) {
+            setActiveInvoiceId(null);
+        }
+    }, [cartInvoices, activeInvoiceId]);
 
     const pouchTotal = useMemo(() => wallet.filter(w => w.type === 'CASH' || w.type === 'CHECK').reduce((sum, w) => sum + w.originalAmount, 0), [wallet]);
     const ewtTotal = useMemo(() => wallet.filter(w => w.type === 'EWT').reduce((sum, w) => sum + w.originalAmount, 0), [wallet]);
@@ -136,7 +169,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         const success = await submitSettlement();
         if (success) {
             setIsSuccess(true);
-            setTimeout(() => { if (onClose) onClose(); }, 1200);
+            setTimeout(() => { if (onClose) onClose(true); }, 1200);
         } else {
             setIsSubmitting(false);
         }
@@ -185,7 +218,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         if (refNo) createEwt(netOfVat * 0.01, refNo, inv.id);
     };
 
-    // 🚀 THE FIX: Pass the string document number safely to the hook!
     const handleFetchExternalCredit = async () => {
         const docNo = externalCreditInput.trim();
         if (!docNo) return toast.error("Please enter a valid Document Number.");
@@ -202,18 +234,22 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
         }
     };
 
+    const handlePrintAdjustments = () => {
+        generateAdjustmentPDF(wallet, findings, allocations, docNo, salesmanName);
+    };
+
     if (isLoading) return <div className="p-10 flex h-full items-center justify-center text-center animate-pulse font-bold text-muted-foreground uppercase tracking-widest">Initializing Command Center...</div>;
 
     const combinedSources = [...wallet, ...credits];
     const filteredCredits = credits.filter(c => !creditSearch || c.label.toLowerCase().includes(creditSearch.toLowerCase()) || (c.customerName && c.customerName.toLowerCase().includes(creditSearch.toLowerCase())));
 
     return (
-        <div className="w-full h-full flex flex-col bg-muted/10 overflow-hidden relative">
+        <div className="fixed inset-0 w-full h-screen flex flex-col bg-muted/10 overflow-hidden relative z-50">
 
             {/* TOP NAVBAR */}
             <div className="bg-card border-b border-border py-2.5 px-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 shadow-sm shrink-0 relative z-20">
                 <div className="flex items-start lg:items-center gap-3 w-full lg:w-auto">
-                    {onClose && <Button variant="ghost" size="icon" onClick={onClose} disabled={isSubmitting || isSuccess} className="shrink-0 h-8 w-8 rounded-full hover:bg-muted border border-border/50 disabled:opacity-50"><X size={16} className="text-muted-foreground hover:text-foreground"/></Button>}
+                    {onClose && <Button variant="ghost" size="icon" onClick={() => onClose(false)} disabled={isSubmitting || isSuccess} className="shrink-0 h-8 w-8 rounded-full hover:bg-muted border border-border/50 disabled:opacity-50"><X size={16} className="text-muted-foreground hover:text-foreground"/></Button>}
                     <div className="min-w-0">
                         <h1 className="text-lg font-black flex items-center gap-1.5 truncate leading-none"><ShieldCheck className="text-primary shrink-0" size={16}/><span className="truncate">Settlement Console</span>{isPosted && <Badge variant="destructive" className="ml-2 bg-red-600 tracking-widest shadow-sm text-[8px] shrink-0 h-4 py-0"><Lock size={8} className="mr-1"/> LOCKED</Badge>}</h1>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1.5 truncate leading-none">Doc No: <span className="font-mono text-primary">{docNo}</span> • Collector: <span className="text-primary">{salesmanName}</span></p>
@@ -221,7 +257,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                 </div>
 
                 <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 lg:gap-3 bg-muted/50 p-1.5 px-2.5 rounded-lg border border-border w-full lg:w-auto overflow-x-auto scrollbar-none">
-
                     <div className="flex flex-col border-r pr-2 lg:pr-3 border-border/50 shrink-0">
                         <span className="text-[8px] font-black uppercase text-muted-foreground tracking-tighter leading-none mb-0.5">Physical Pouch</span>
                         <span className="text-sm font-black font-mono text-foreground truncate leading-none">₱{pouchTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
@@ -230,9 +265,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                     {ewtTotal > 0 && (
                         <div className="flex flex-col border-r pr-2 lg:pr-3 border-border/50 shrink-0 animate-in fade-in slide-in-from-left-2">
                             <span className="text-[8px] font-black uppercase text-teal-600 tracking-tighter leading-none mb-0.5">EWT Holdings</span>
-                            <span className="text-sm font-black font-mono text-teal-600 truncate leading-none">
-                                +₱{ewtTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}
-                            </span>
+                            <span className="text-sm font-black font-mono text-teal-600 truncate leading-none">+₱{ewtTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                         </div>
                     )}
 
@@ -264,6 +297,12 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                         </Button>
                     )}
 
+                    {wallet.filter(w => w.type === 'ADJUSTMENT').length > 0 && (
+                        <Button onClick={handlePrintAdjustments} disabled={isSubmitting || isSuccess} variant="outline" size="sm" className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-purple-500 text-purple-600 hover:bg-purple-50 h-8">
+                            <Printer size={12} className="mr-1.5"/> Print Adjustments
+                        </Button>
+                    )}
+
                     {isPosted ? (
                         <Button onClick={() => window.print()} variant="outline" size="sm" className="flex-1 lg:flex-none font-black text-[10px] uppercase tracking-widest shadow-sm border-primary text-primary hover:bg-primary/10 h-8">
                             <Printer size={12} className="mr-1.5"/> Print Receipt
@@ -291,19 +330,18 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                                     {remainingToAllocate < -0.01 ? "Over-Allocated!" : (remainingToAllocate > 0.01 ? "Save Partial" : "Commit")}
                                 </span>
                             )}
-                            {isSubmitting && <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent" />}
                         </Button>
                     )}
                 </div>
             </div>
 
-            {/* MAIN WORKSPACE */}
+            {/* MAIN WORKSPACE - NOW 3 COLUMNS */}
             <div className={cn(
                 "flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 p-3 lg:p-4 overflow-y-auto lg:overflow-hidden transition-all duration-500",
                 (isSubmitting || isSuccess) ? "opacity-60 blur-[1px] pointer-events-none grayscale-[20%]" : "opacity-100"
             )}>
-                {/* LEFT SIDEBAR: WALLET & CREDITS */}
-                <div className="col-span-1 lg:col-span-4 flex flex-col gap-3 overflow-hidden lg:h-full">
+                {/* LEFT SIDEBAR: WALLET & CREDITS (col-span-3) */}
+                <div className="col-span-1 lg:col-span-3 flex flex-col gap-3 overflow-hidden lg:h-full">
                     <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
                         <div className="bg-emerald-500/10 py-2 px-3 border-b border-emerald-500/20 flex justify-between items-center shrink-0">
                             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5"><Wallet size={12}/> Liquidation Pool</span>
@@ -361,7 +399,6 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
 
                     <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
                         <div className="bg-purple-500/10 py-2 px-3 border-b border-purple-500/20 flex flex-col gap-1.5 shrink-0">
-
                             <div className="flex justify-between items-center">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-purple-700 dark:text-purple-400 flex items-center gap-1.5"><Percent size={12}/> Available Credits</span>
                                 {!isPosted && (
@@ -384,8 +421,7 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                                                 </div>
                                                 <div className="flex flex-col gap-1">
                                                     <label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Document No.</label>
-                                                    {/* 🚀 THE FIX: Input is now text to support alphanumeric document numbers! */}
-                                                    <Input type="text" placeholder="E.g. CM-152" value={externalCreditInput} onChange={(e) => setExternalCreditInput(e.target.value)} className="h-7 text-xs font-mono uppercase"/>
+                                                    <Input type="text" placeholder="E.g. CM-152" value={externalCreditInput} onChange={(e) => setExternalCreditInput(e.target.value.toUpperCase())} className="h-7 text-xs font-mono uppercase"/>
                                                 </div>
                                                 <Button className="w-full mt-1 h-7 text-[9px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white" disabled={isFetchingExternal || !externalCreditInput} onClick={handleFetchExternalCredit}>
                                                     {isFetchingExternal ? <Loader2 size={12} className="animate-spin"/> : "Pull into Wallet"}
@@ -399,33 +435,44 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                             <Input placeholder="Search local pool..." value={creditSearch} onChange={(e) => setCreditSearch(e.target.value)} className="h-6 text-[10px] font-bold shadow-inner bg-background border-purple-200 focus-visible:ring-purple-500 px-2"/>
                         </div>
                         <div className="p-2 flex-1 overflow-y-auto space-y-1.5 scrollbar-thin">
-                            {filteredCredits.length === 0 ? <p className="text-[10px] text-center text-muted-foreground font-bold uppercase pt-6 italic">No matching credits</p> : filteredCredits.map(c => {
-                                const used = c.originalAmount > 0 ? getUsedAmount(c.id) : 0;
-                                const remaining = c.originalAmount - used;
-                                const isExhausted = c.originalAmount > 0 && remaining <= 0;
-                                return (
-                                    <div key={`source-${c.id}`} className={`p-2 rounded-md border shadow-sm transition-all group ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : 'bg-background border-border border-l-[3px] border-l-purple-500'}`}>
-                                        <div className="flex justify-between items-start mb-1">
-                                            <span className="text-[10px] font-black uppercase tracking-widest truncate pr-2 leading-tight">{c.label}</span>
-                                            <Badge variant="outline" className="text-[7px] uppercase px-1 py-0 h-3.5 leading-none border-purple-200 text-purple-700 bg-purple-50">{c.type}</Badge>
+                            {isLoadingCredits ? (
+                                <div className="flex flex-col items-center justify-center h-full py-8">
+                                    <Loader2 size={20} className="animate-spin text-purple-500 mb-2"/>
+                                    <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest animate-pulse">Loading Credits...</p>
+                                </div>
+                            ) : filteredCredits.length === 0 ? (
+                                <p className="text-[10px] text-center text-muted-foreground font-bold uppercase pt-6 italic">No matching credits</p>
+                            ) : (
+                                filteredCredits.map(c => {
+                                    const used = c.originalAmount > 0 ? getUsedAmount(c.id) : 0;
+                                    const remaining = c.originalAmount - used;
+                                    const isExhausted = c.originalAmount > 0 && remaining <= 0;
+                                    return (
+                                        <div key={`source-${c.id}`} className={`p-2 rounded-md border shadow-sm transition-all group ${isExhausted ? 'bg-muted/30 border-dashed opacity-60' : 'bg-background border-border border-l-[3px] border-l-purple-500'}`}>
+                                            <div className="flex justify-between items-start mb-1">
+                                                <span className="text-[10px] font-black uppercase tracking-widest truncate pr-2 leading-tight">{c.label}</span>
+                                                <Badge variant="outline" className="text-[7px] uppercase px-1 py-0 h-3.5 leading-none border-purple-200 text-purple-700 bg-purple-50">{c.type}</Badge>
+                                            </div>
+                                            {c.customerName && <div className="text-[8px] font-bold text-muted-foreground truncate mb-1 leading-tight" title={c.customerName}>{c.customerName}</div>}
+                                            <div className={`flex justify-between gap-2 text-[10px] ${c.customerName ? 'mt-1 border-t border-border/50 pt-1' : 'mt-1.5'}`}>
+                                                <div className="min-w-0 flex-1"><p className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-0.5">Original</p><p className="font-mono truncate leading-none">₱{c.originalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</p></div>
+                                                <div className="text-right min-w-0 flex-1"><p className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-0.5">Remaining</p><p className={`font-mono font-black truncate leading-none ${isExhausted ? 'text-muted-foreground' : 'text-emerald-600'}`}>₱{remaining.toLocaleString(undefined, {minimumFractionDigits: 2})}</p></div>
+                                            </div>
                                         </div>
-                                        {c.customerName && <div className="text-[8px] font-bold text-muted-foreground truncate mb-1 leading-tight" title={c.customerName}>{c.customerName}</div>}
-                                        <div className={`flex justify-between gap-2 text-[10px] ${c.customerName ? 'mt-1 border-t border-border/50 pt-1' : 'mt-1.5'}`}>
-                                            <div className="min-w-0 flex-1"><p className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-0.5">Original</p><p className="font-mono truncate leading-none">₱{c.originalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</p></div>
-                                            <div className="text-right min-w-0 flex-1"><p className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-0.5">Remaining</p><p className={`font-mono font-black truncate leading-none ${isExhausted ? 'text-muted-foreground' : 'text-emerald-600'}`}>₱{remaining.toLocaleString(undefined, {minimumFractionDigits: 2})}</p></div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })
+                            )}
                         </div>
                     </div>
                 </div>
 
-                {/* RIGHT PANEL: CART TABLE */}
-                <div className="col-span-1 lg:col-span-8 bg-card rounded-xl border border-border shadow-sm flex flex-col overflow-hidden lg:h-full min-h-0">
+                {/* MIDDLE PANEL: CART TABLE (col-span-6) */}
+                <div className="col-span-1 lg:col-span-6 bg-card rounded-xl border border-border shadow-sm flex flex-col overflow-hidden lg:h-full min-h-0">
                     <div className="bg-blue-500/10 py-2.5 px-4 border-b border-blue-500/20 flex flex-col gap-2 shrink-0">
                         <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-400 flex items-center gap-1.5"><Receipt size={14}/> Active Cart</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
+                                <Receipt size={14}/> Active Cart
+                            </span>
                             <div className="flex gap-1.5 items-center">
                                 {!isPosted && (
                                     <>
@@ -465,13 +512,29 @@ export default function SettlementCommandCenter({ id, onClose }: SettlementComma
                         )}
                     </div>
 
-                    <div className="flex-1 overflow-y-auto scrollbar-thin bg-muted/5 relative [&_div.relative.w-full.overflow-auto]:!overflow-visible">
+                    <div className="flex-1 overflow-y-auto scrollbar-thin bg-muted/5 relative">
                         <SettlementInvoiceCartTable
                             isPosted={isPosted} cartInvoices={cartInvoices} allocations={allocations} wallet={wallet} credits={credits} combinedSources={combinedSources}
                             cartTotalBalance={cartTotalBalance} cartTotalAppliedSession={cartTotalAppliedSession} removeFromCart={removeFromCart} handleInvoiceDiscrepancy={handleInvoiceDiscrepancy}
-                            handleAutoCalculateEWT={handleAutoCalculateEWT} handleAllocate={handleAllocate} getInvoiceApplied={getInvoiceApplied} getUsedAmount={getUsedAmount}
+                            handleAutoCalculateEWT={handleAutoCalculateEWT} getInvoiceApplied={getInvoiceApplied} getUsedAmount={getUsedAmount}
+                            activeInvoiceId={activeInvoiceId}
+                            setActiveInvoiceId={setActiveInvoiceId}
                         />
                     </div>
+                </div>
+
+                {/* RIGHT PANEL: NEW ALLOCATION SIDE PANEL (col-span-3) */}
+                <div className="col-span-1 lg:col-span-3 bg-card rounded-xl border border-border shadow-sm overflow-hidden lg:h-full">
+                    <AllocationSidePanel
+                        activeInvoiceId={activeInvoiceId}
+                        cartInvoices={cartInvoices}
+                        wallet={wallet}
+                        credits={credits}
+                        allocations={allocations}
+                        handleAllocate={handleAllocate}
+                        getUsedAmount={getUsedAmount}
+                        getInvoiceApplied={getInvoiceApplied}
+                    />
                 </div>
             </div>
         </div>

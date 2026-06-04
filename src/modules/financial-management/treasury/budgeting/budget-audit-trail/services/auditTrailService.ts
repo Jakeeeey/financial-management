@@ -1,4 +1,4 @@
-import type { AuditTrailFilters, Division, Department } from "../types";
+import type { AuditTrailFilters, Division, Department, COA } from "../types";
 import { BudgetAuditTrailSchema } from "../schemas";
 import type { BudgetAuditTrail } from "../types";
 
@@ -58,6 +58,13 @@ interface RawDepartmentPerDiv {
     department_name?: string;
     id?: number;
   };
+}
+
+interface RawCOA {
+  coa_id?: number;
+  id?: number;
+  account_title?: string;
+  gl_code?: string;
 }
 
 const PROXY_URL = "/api/fm/treasury/budgeting/budget-audit-trail";
@@ -122,6 +129,20 @@ export const auditTrailService = {
     }));
   },
 
+  async getCOAs(): Promise<COA[]> {
+    const url = `${PROXY_URL}?collection=chart_of_accounts&fields=coa_id,account_title,gl_code&limit=-1&sort=account_title`;
+    const result = await fetchProxy<{ data: RawCOA[] }>(url);
+    const rawData = result?.data || [];
+
+    return rawData
+      .map((coa) => ({
+        coa_id: coa.coa_id || coa.id || 0,
+        account_title: coa.account_title || "—",
+        gl_code: coa.gl_code || "—",
+      }))
+      .filter((coa) => coa.coa_id);
+  },
+
   async getAuditLogs(filters: AuditTrailFilters): Promise<BudgetAuditTrail[]> {
     const query = new URLSearchParams({
       collection: "budget", // Use budget collection as primary source
@@ -132,15 +153,16 @@ export const auditTrailService = {
     
     if (filters.status) query.append("filter[status][_eq]", filters.status);
     
-    // For budgets, we filter by their creation/update dates if needed
-    if (filters.date_from) query.append("filter[created_at][_gte]", filters.date_from);
+    // For budgets, we filter by their update dates to capture recent activity
+    if (filters.date_from) query.append("filter[updated_at][_gte]", filters.date_from);
     if (filters.date_to) {
-        // Handle end-of-day by adding 23:59:59 or just using next day logic if it's a date string
-        query.append("filter[created_at][_lte]", `${filters.date_to}T23:59:59Z`);
+        // Handle end-of-day by adding 23:59:59
+        query.append("filter[updated_at][_lte]", `${filters.date_to}T23:59:59Z`);
     }
 
     if (filters.division_id && filters.division_id !== "all") query.append("filter[division_id][_eq]", filters.division_id);
     if (filters.department_id && filters.department_id !== "all") query.append("filter[department_id][_eq]", filters.department_id);
+    if (filters.coa_id && filters.coa_id !== "all") query.append("filter[coa_id][_eq]", filters.coa_id);
 
     if (filters.search) {
       const search = filters.search.trim();
@@ -218,7 +240,7 @@ export const auditTrailService = {
         gl_code:         coa?.gl_code || "—",
         department_name: dept?.department_name || "—",
         division_name:   div?.division_name || "—",
-        month:           typeof budget.month === 'string' ? MONTH_NAMES.indexOf(budget.month) + 1 : (Number(budget.month) || 0),
+        month:           typeof budget.month === 'string' ? MONTH_NAMES.findIndex(m => m.toLowerCase() === (budget.month as string).toLowerCase()) + 1 : (Number(budget.month) || 0),
         year:            Number(budget.year) || 0,
         budget_no:       budget.budget_no || "—",
         entry_type:      budget.entry_type?.toLowerCase() || "original",
@@ -243,7 +265,7 @@ export const auditTrailService = {
       // Unified Lifecycle: Fetch logs for this budget OR any supplemental budgets attached to it
       "filter[_or][0][budget_id][_eq]": String(budgetId),
       "filter[_or][1][budget_id][parent_budget_id][_eq]": String(budgetId),
-      sort: "performed_at",
+      sort: "-performed_at",
       limit: "-1",
     });
 

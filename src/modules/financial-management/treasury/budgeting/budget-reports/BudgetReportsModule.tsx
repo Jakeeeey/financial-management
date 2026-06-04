@@ -4,15 +4,16 @@ import React from "react";
 import { BUDGET_REPORTS } from "./constants";
 import { ReportCard } from "./components/ReportCard";
 import { FileChartColumn } from "lucide-react";
-import { useBudgetReports, MONTH_NAMES } from "./hooks/useBudgetReports";
-import { ReportPreviewModal } from "./components/ReportPreviewModal";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  useBudgetReports,
+  MONTH_NAMES,
+  PERIOD_TYPE_OPTIONS,
+  QUARTER_OPTIONS,
+  ReportPeriodType,
+} from "./hooks/useBudgetReports";
+import { HISTORY_YEARS } from "../budget-history/constants";
+import { ReportPreviewModal } from "./components/ReportPreviewModal";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 export default function BudgetReportsModule() {
   const {
@@ -30,6 +31,26 @@ export default function BudgetReportsModule() {
   } = useBudgetReports();
 
   const activeReport = BUDGET_REPORTS.find(r => r.id === activeReportId);
+  const divisionOptions = React.useMemo(
+    () => [
+      { value: "all", label: "All Divisions" },
+      ...divisions.map((division) => ({ value: division.id, label: division.name })),
+    ],
+    [divisions]
+  );
+  const monthOptions = React.useMemo(
+    () => MONTH_NAMES.map((name, i) => ({ value: String(i + 1), label: name })),
+    []
+  );
+  const quarterOptions = React.useMemo(
+    () => QUARTER_OPTIONS.map((quarter) => ({ value: quarter.value, label: quarter.label })),
+    []
+  );
+  const yearOptions = React.useMemo(
+    () => HISTORY_YEARS.map((year) => ({ value: year.toString(), label: year.toString() })),
+    []
+  );
+  const filterSelectClassName = "h-9 rounded-xl text-[10px] font-black uppercase tracking-widest border-none bg-transparent hover:bg-white transition-colors shadow-none";
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6 min-h-0 min-w-0 flex-1">
@@ -50,38 +71,48 @@ export default function BudgetReportsModule() {
         </div>
 
         <div className="flex items-center gap-2 bg-muted/30 p-1.5 rounded-2xl border border-border/40 shrink-0">
-          <Select 
-            value={filters.division_id || "all"} 
+          <SearchableSelect
+            options={divisionOptions}
+            value={filters.division_id || "all"}
             onValueChange={(val) => updateFilter("division_id", val === "all" ? "" : val)}
-          >
-            <SelectTrigger className="h-9 w-40 rounded-xl text-[10px] font-black uppercase tracking-widest border-none bg-transparent hover:bg-white transition-colors">
-              <SelectValue placeholder="Division" />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              <SelectItem value="all" className="text-[10px] font-bold uppercase">All Divisions</SelectItem>
-              {divisions.map(d => (
-                <SelectItem key={d.id} value={d.id} className="text-[10px] font-bold uppercase">
-                  {d.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            placeholder="Division"
+            className={`w-40 ${filterSelectClassName}`}
+          />
           <div className="h-4 w-px bg-border/60" />
-          <Select 
-            value={filters.month} 
-            onValueChange={(val) => updateFilter("month", val)}
-          >
-            <SelectTrigger className="h-9 w-32 rounded-xl text-[10px] font-black uppercase tracking-widest border-none bg-transparent hover:bg-white transition-colors">
-              <SelectValue placeholder="Month" />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              {MONTH_NAMES.map((name, i) => (
-                <SelectItem key={name} value={String(i + 1)} className="text-[10px] font-bold uppercase">
-                  {name} {filters.year}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            options={PERIOD_TYPE_OPTIONS}
+            value={filters.periodType}
+            onValueChange={(val) => updateFilter("periodType", val as ReportPeriodType)}
+            placeholder="Period Type"
+            className={`w-32 ${filterSelectClassName}`}
+          />
+          {filters.periodType !== "yearly" && <div className="h-4 w-px bg-border/60" />}
+          {filters.periodType === "monthly" && (
+            <SearchableSelect
+              options={monthOptions}
+              value={filters.month}
+              onValueChange={(val) => updateFilter("month", val)}
+              placeholder="Month"
+              className={`w-32 ${filterSelectClassName}`}
+            />
+          )}
+          {filters.periodType === "quarterly" && (
+            <SearchableSelect
+              options={quarterOptions}
+              value={filters.quarter}
+              onValueChange={(val) => updateFilter("quarter", val)}
+              placeholder="Quarter"
+              className={`w-36 ${filterSelectClassName}`}
+            />
+          )}
+          <div className="h-4 w-px bg-border/60" />
+          <SearchableSelect
+            options={yearOptions}
+            value={filters.year}
+            onValueChange={(val) => updateFilter("year", val)}
+            placeholder="Year"
+            className={`w-24 ${filterSelectClassName}`}
+          />
         </div>
       </div>
 

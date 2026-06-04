@@ -54,6 +54,14 @@ export function BudgetLifecycleModal({ budgetId, budgetNo, isOpen, onClose }: Bu
   // Use the first log as reference for header (Original creation context)
   const referenceLog = lifecycle[0];
   const latestLog = lifecycle[lifecycle.length - 1];
+  const contextLog = referenceLog || latestLog;
+  const displayValue = (value?: string | null) => {
+    if (!value || value === "â€”") return "-";
+    return value;
+  };
+  const coaContext = contextLog
+    ? `${contextLog.gl_code && contextLog.gl_code !== "â€”" ? `${contextLog.gl_code} - ` : ""}${displayValue(contextLog.coa_name)}`
+    : "-";
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -74,7 +82,29 @@ export function BudgetLifecycleModal({ budgetId, budgetNo, isOpen, onClose }: Bu
           </div>
           
           {(referenceLog || latestLog) && (
-            <div className="flex flex-wrap items-center gap-3 mt-4">
+            <div className="mt-4 space-y-3">
+              <div className="grid gap-2 rounded-xl border border-border/30 bg-background/45 px-3 py-2 text-[10px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.6fr)]">
+                <div className="min-w-0">
+                  <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/50">Division</p>
+                  <p className="truncate font-bold uppercase tracking-tight text-foreground/70" title={displayValue(contextLog?.division_name)}>
+                    {displayValue(contextLog?.division_name)}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/50">Department</p>
+                  <p className="truncate font-bold uppercase tracking-tight text-foreground/70" title={displayValue(contextLog?.department_name)}>
+                    {displayValue(contextLog?.department_name)}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/50">COA</p>
+                  <p className="truncate font-bold uppercase tracking-tight text-foreground/70" title={coaContext}>
+                    {coaContext}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1.5 bg-background px-3 py-1.5 rounded-lg border border-border/50 shadow-sm">
                 <FileText className="h-3 w-3 text-muted-foreground" />
                 <span className="text-xs font-black tracking-tight">{budgetNo}</span>
@@ -91,6 +121,7 @@ export function BudgetLifecycleModal({ budgetId, budgetNo, isOpen, onClose }: Bu
                 <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                   {latestLog?.year && latestLog?.month ? format(new Date(latestLog.year, latestLog.month - 1), "MMMM yyyy") : "—"}
                 </span>
+              </div>
               </div>
             </div>
           )}
@@ -120,7 +151,7 @@ export function BudgetLifecycleModal({ budgetId, budgetNo, isOpen, onClose }: Bu
                 <div key={log.id} className="relative flex items-start gap-4 group">
                   {/* Timeline Node */}
                   <div className={`mt-0.5 flex items-center justify-center h-10 w-10 rounded-full border-4 border-background shrink-0 z-10 transition-transform group-hover:scale-110 shadow-sm ${
-                    idx === lifecycle.length - 1 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                    idx === 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                   }`}>
                     <div className="h-2 w-2 rounded-full bg-current" />
                   </div>
@@ -142,38 +173,32 @@ export function BudgetLifecycleModal({ budgetId, budgetNo, isOpen, onClose }: Bu
                       </div>
                     </div>
 
-                    <div className={`grid gap-3 py-2 border-y border-border/30 relative ${
-                      (idx === 0 || (log.previous_amount !== null && log.previous_amount !== log.new_amount)) 
-                        ? 'grid-cols-1 sm:grid-cols-2' 
-                        : 'grid-cols-1'
-                    }`}>
-                       {(idx === 0 || (log.previous_amount !== null && log.previous_amount !== log.new_amount)) && (
-                         <div className="space-y-1">
-                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Amount Change</p>
-                            <div className="flex items-center gap-2">
-                               {log.previous_amount !== null && idx > 0 && (
-                                  <>
-                                    <span className="text-[11px] font-mono tabular-nums text-muted-foreground line-through opacity-50">{fmt(log.previous_amount || 0)}</span>
-                                    <ArrowRight className="h-2.5 w-2.5 text-muted-foreground/30" />
-                                  </>
-                               )}
-                               <span className="text-xs font-mono font-black tabular-nums">{fmt(log.new_amount)}</span>
-                               {log.previous_amount !== null && idx > 0 && log.previous_amount !== log.new_amount && (
-                                  <div className={`text-[9px] font-bold ${log.new_amount < (log.previous_amount || 0) ? "text-emerald-600" : "text-amber-600"}`}>
-                                    {log.new_amount < (log.previous_amount || 0) ? "▼" : "▲"}
-                                    {Math.abs(((log.new_amount - (log.previous_amount || 0)) / (log.previous_amount || 1)) * 100).toFixed(0)}%
-                                  </div>
-                                )}
-                            </div>
-                         </div>
-                       )}
+                    <div className="grid gap-3 py-2 border-y border-border/30 relative grid-cols-1 sm:grid-cols-2">
+                       {(() => {
+                         const hasPreviousAmount = log.previous_amount !== null && log.previous_amount !== undefined;
+                         const amountChanged = hasPreviousAmount && log.previous_amount !== log.new_amount;
 
-                       {/* Vertical Divider for Desktop - only show if amount is visible */}
-                       {(idx === 0 || (log.previous_amount !== null && log.previous_amount !== log.new_amount)) && (
-                         <div className="hidden sm:block absolute left-1/2 top-2 bottom-2 w-px bg-border/40 -translate-x-px" />
-                       )}
+                         return (
+                           <div className="space-y-1">
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                                {amountChanged ? "Amount Change" : "Amount"}
+                              </p>
+                              <div className="flex items-center gap-2">
+                                 {amountChanged && (
+                                    <>
+                                      <span className="text-[11px] font-mono tabular-nums text-muted-foreground line-through opacity-50">{fmt(log.previous_amount || 0)}</span>
+                                      <ArrowRight className="h-2.5 w-2.5 text-muted-foreground/30" />
+                                    </>
+                                 )}
+                                 <span className="text-xs font-mono font-black tabular-nums">{fmt(log.new_amount)}</span>
+                              </div>
+                           </div>
+                         );
+                       })()}
 
-                       <div className={`space-y-1 ${(idx === 0 || (log.previous_amount !== null && log.previous_amount !== log.new_amount)) ? 'sm:pl-3' : ''}`}>
+                       <div className="hidden sm:block absolute left-1/2 top-2 bottom-2 w-px bg-border/40 -translate-x-px" />
+
+                       <div className="space-y-1 sm:pl-3">
                           <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Status</p>
                           <div className="flex items-center gap-2">
                              {log.previous_status && (

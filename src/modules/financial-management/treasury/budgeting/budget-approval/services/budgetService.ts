@@ -65,7 +65,7 @@ export const budgetApprovalService = {
   /**
    * Fetch budgets for approval with optional filters
    */
-  getBudgets: async (params: Record<string, unknown>): Promise<{ data: Budget[]; total: number }> => {
+  getBudgets: async (params: Record<string, unknown>): Promise<{ data: Budget[]; total: number; attachmentLoadFailed?: boolean }> => {
     const query = new URLSearchParams({
       fields: "*,coa_id.*,department_id.*,division_id.*,budget_attachments.*",
       sort: "-created_at",
@@ -80,6 +80,7 @@ export const budgetApprovalService = {
     // Fetch attachments manually since Directus O2M relationship might not be configured
     const budgetIds = rawData.map(b => b.id).filter(Boolean);
     const attachmentsMap: Record<string, RawApprovalAttachment[]> = {};
+    let attachmentLoadFailed = false;
     
     if (budgetIds.length > 0) {
       try {
@@ -98,6 +99,7 @@ export const budgetApprovalService = {
           });
         }
       } catch (err) {
+        attachmentLoadFailed = true;
         console.error("Failed to fetch budget attachments for approval list:", err);
       }
     }
@@ -156,7 +158,8 @@ export const budgetApprovalService = {
 
     return {
       data: validatedData,
-      total: res.meta?.filter_count ?? validatedData.length
+      total: res.meta?.filter_count ?? validatedData.length,
+      attachmentLoadFailed,
     };
   },
 

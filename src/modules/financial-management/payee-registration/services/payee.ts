@@ -17,13 +17,68 @@ const getHeaders = () => ({
   Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
 });
 
+const nonTradeNeutralFields = {
+  supplier_shortcut: "",
+  address: "",
+  city: "",
+  brgy: "",
+  state_province: "",
+  postal_code: "",
+  country: "",
+  payment_terms: "",
+  delivery_terms: "",
+  agreement_or_contract: "",
+  preferred_communication_method: "",
+  supplier_image: "",
+};
+
+function normalizeSupplierType(value: unknown): "TRADE" | "NON-TRADE" {
+  const normalized = String(value ?? "NON-TRADE")
+    .replace(/[-_\s]/g, "")
+    .toUpperCase();
+
+  return normalized === "TRADE" ? "TRADE" : "NON-TRADE";
+}
+
+/**
+ * Enforces Single Table Inheritance rules for Treasury payees.
+ */
+function normalizePayeePayload(data: Partial<Payee>): Partial<Payee> {
+  const supplierType = normalizeSupplierType(data.supplier_type);
+
+  if (supplierType === "TRADE") {
+    return {
+      ...data,
+      supplier_type: "TRADE",
+      contact_person: data.contact_person || data.supplier_name || "",
+      isActive: 1,
+      nonBuy: false,
+    };
+  }
+
+  return {
+    ...data,
+    ...nonTradeNeutralFields,
+    supplier_name: data.supplier_name,
+    supplier_type: "NON-TRADE",
+    contact_person: data.contact_person || data.supplier_name || "",
+    isActive: 1,
+    nonBuy: true,
+  };
+}
+
 /**
  * Fetch all payees (Non-Trade)
  */
 export async function fetchAllPayees(): Promise<Payee[]> {
   try {
+    const filter = encodeURIComponent(
+      JSON.stringify({
+        supplier_type: { _eq: "NON-TRADE" },
+      }),
+    );
     const response = await fetch(
-      `${API_BASE}/suppliers?limit=-1&fields=*&filter[supplier_type][_eq]=Non-Trade`,
+      `${API_BASE}/suppliers?limit=-1&fields=*&filter=${filter}`,
       {
         method: "GET",
         headers: getHeaders(),
@@ -73,8 +128,7 @@ export async function createPayee(
   data: Partial<Payee>,
 ): Promise<Payee> {
   try {
-    // Force Non-Trade type
-    const payload = { ...data, supplier_type: "Non-Trade" };
+    const payload = normalizePayeePayload(data);
     
     const response = await fetch(`${API_BASE}/suppliers`, {
       method: "POST",
@@ -105,10 +159,11 @@ export async function updatePayee(
   data: Partial<Payee>,
 ): Promise<Payee> {
   try {
+    const payload = normalizePayeePayload(data);
     const response = await fetch(`${API_BASE}/suppliers/${id}`, {
       method: "PATCH",
       headers: getHeaders(),
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -133,7 +188,7 @@ export async function searchPayees(query: string): Promise<Payee[]> {
   try {
     const filter = {
       _and: [
-        { supplier_type: { _eq: "Non-Trade" } },
+        { supplier_type: { _eq: "NON-TRADE" } },
         {
           _or: [
             { supplier_name: { _contains: query } },
