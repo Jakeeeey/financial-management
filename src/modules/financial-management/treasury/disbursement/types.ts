@@ -103,6 +103,7 @@ export interface COADto {
     coaId: number;
     glCode: string;
     accountTitle: string;
+    accountType?: number | null;
     isPayment?: boolean;
     isPaymentDuplicate?: boolean;
 }
