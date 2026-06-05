@@ -8,13 +8,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
     Loader2, CheckCircle, Send, SendIcon, Wallet, Building2,
     Printer, Pencil, Lock, AlertTriangle, FileText, Receipt,
-    CheckCircle2, CircleDashed, X, Sparkles, ArrowDownToLine, ArrowUpFromLine
+    CheckCircle2, CircleDashed, X, Sparkles, ArrowDownToLine, ArrowUpFromLine,
+    Paperclip, ExternalLink
 } from "lucide-react";
 import { Disbursement, BankAccountDto, COADto } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { format } from "date-fns";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { cn } from "@/lib/utils";
+import { StickyTableWrapper } from "./StickyTableWrapper";
 
 interface DisbursementViewSheetProps {
     disbursement: Disbursement | null;
@@ -51,6 +53,77 @@ function decodeToken(token: string) {
         console.error("Failed to decode token", e);
         return null;
     }
+}
+
+function AttachmentPreview({ docUrl }: { docUrl: string }) {
+    const [contentType, setContentType] = useState<string>("");
+    const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
+    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}`;
+
+    useEffect(() => {
+        if (!viewUrl) return;
+        fetch(viewUrl, { method: "HEAD" })
+            .then((res) => {
+                const type = res.headers.get("content-type");
+                if (type) setContentType(type.toLowerCase());
+            })
+            .catch((err) => console.warn("Failed to fetch document headers:", err));
+    }, [viewUrl]);
+
+    const isPdf = docUrl.toLowerCase().endsWith(".pdf") || viewUrl.toLowerCase().endsWith(".pdf") || contentType.includes("pdf");
+
+    return (
+        <div className="space-y-3">
+            <div className="bg-card rounded-xl border border-border p-4 shadow-sm flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                        <Paperclip className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-0.5">Attachment / Supporting Docs</p>
+                        <p className="text-xs font-bold text-foreground truncate max-w-[220px]">
+                            {docUrl.split("/").pop() || "view_attachment"}
+                        </p>
+                    </div>
+                </div>
+                <Button variant="outline" size="sm" asChild className="text-[10px] font-black uppercase tracking-widest h-8 px-3">
+                    <a href={viewUrl} target="_blank" rel="noopener noreferrer">
+                        View <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
+                    </a>
+                </Button>
+            </div>
+
+            {/* Inline Preview */}
+            <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
+                <div className="px-4 py-2 bg-muted/50 border-b border-border text-[9px] font-black uppercase tracking-widest text-muted-foreground flex items-center justify-between">
+                    <span>Attachment Preview</span>
+                </div>
+                <div className="p-3 flex justify-center items-center bg-card max-h-[320px] overflow-hidden">
+                    {isPdf ? (
+                        <iframe 
+                            src={viewUrl} 
+                            className="w-full h-[280px] border-0 rounded-lg" 
+                            title="Supporting Document PDF" 
+                        />
+                    ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img 
+                            src={viewUrl} 
+                            alt="Supporting Document" 
+                            className="max-h-[280px] max-w-full object-contain rounded-lg shadow-sm"
+                            onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                                const parent = e.currentTarget.parentElement;
+                                if (parent) {
+                                    parent.innerHTML = '<div class="text-[10px] font-black uppercase tracking-widest text-muted-foreground p-4 text-center">Preview not available. Click "View" above to open.</div>';
+                                }
+                            }}
+                        />
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading }: DisbursementViewSheetProps) {
@@ -201,6 +274,10 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         </div>
                     </div>
 
+                    {disbursement.supportingDocumentsUrl ? (
+                        <AttachmentPreview docUrl={disbursement.supportingDocumentsUrl} />
+                    ) : null}
+
                     {!isBalanced && disbursement.status !== "Posted" && (
                         <div className="bg-destructive/10 text-destructive border border-destructive/20 p-3 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -219,9 +296,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                 </div>
                                 <Badge variant="secondary" className="h-5 px-2">{disbursement.payables?.length || 0} Lines</Badge>
                             </div>
-                            <div className="overflow-x-auto custom-scrollbar">
+                            <StickyTableWrapper className="overflow-auto max-h-[280px] custom-scrollbar">
                                 <Table>
-                                    <TableHeader className="bg-muted/50">
+                                    <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                         <TableRow className="border-border">
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Ref No</TableHead>
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[300px]">Chart of Account</TableHead>
@@ -242,7 +319,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                         ))}
                                     </TableBody>
                                 </Table>
-                            </div>
+                            </StickyTableWrapper>
                             <div className="bg-muted/50 px-4 py-2 border-t border-border flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
                                 <span className="text-muted-foreground">Total Debits</span>
                                 <span className="text-foreground">{formatCurrency(totalDebit)}</span>
@@ -257,9 +334,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                 </div>
                                 <Badge variant="secondary" className="h-5 px-2">{disbursement.payments?.length || 0} Lines</Badge>
                             </div>
-                            <div className="overflow-x-auto custom-scrollbar">
+                            <StickyTableWrapper className="overflow-auto max-h-[280px] custom-scrollbar">
                                 <Table>
-                                    <TableHeader className="bg-muted/50">
+                                    <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                         <TableRow className="border-border">
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[120px]">Date</TableHead>
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Check No</TableHead>
@@ -299,7 +376,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                         })}
                                     </TableBody>
                                 </Table>
-                            </div>
+                            </StickyTableWrapper>
                             <div className="bg-muted/50 px-4 py-2 border-t border-border flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
                                 <span className="text-muted-foreground">Total Credits</span>
                                 <span className="text-emerald-600 dark:text-emerald-500">{formatCurrency(totalCredit)}</span>

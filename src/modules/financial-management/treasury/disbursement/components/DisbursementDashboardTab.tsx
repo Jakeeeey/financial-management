@@ -2,12 +2,15 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+    PieChart as RechartsPieChart, Pie, Cell
 } from "recharts";
 import {
-    Search, Loader2, TrendingDown, CreditCard, AlertCircle, FileText,
-    Building2, Wallet, CalendarDays, PieChart
+    Search, Loader2, CreditCard, FileText,
+    Building2, Wallet, CalendarDays, PieChart, SlidersHorizontal,
+    Paperclip, ExternalLink, Download
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,14 +22,109 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDisbursementDashboard } from "../hooks/useDisbursementDashboard";
 import { VoucherSummary } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
+import { StickyTableWrapper } from "./StickyTableWrapper";
+import { generateReportPDF } from "../utils/reportPdfGenerator";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+
+const PIE_COLORS = [
+    "hsl(var(--primary))",
+    "hsl(221.2 83.2% 53.3%)", // blue
+    "hsl(262.1 83.3% 57.8%)", // purple
+    "hsl(142.1 76.2% 36.3%)", // emerald
+    "hsl(346.8 77.2% 49.8%)", // rose
+    "hsl(47.9 95.8% 53.1%)",  // amber
+    "hsl(173.4 80.4% 40%)",   // teal
+    "hsl(25.2 95% 53.1%)",    // orange
+    "hsl(198.6 88.7% 48.4%)", // sky
+    "hsl(326.5 81.2% 50.2%)"  // pink
+];
+
+function AttachmentPreview({ docUrl }: { docUrl: string }) {
+    const [contentType, setContentType] = useState<string>("");
+    const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
+    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}`;
+
+    useEffect(() => {
+        if (!viewUrl) return;
+        fetch(viewUrl, { method: "HEAD" })
+            .then((res) => {
+                const type = res.headers.get("content-type");
+                if (type) setContentType(type.toLowerCase());
+            })
+            .catch((err) => console.warn("Failed to fetch document headers:", err));
+    }, [viewUrl]);
+
+    const isPdf = docUrl.toLowerCase().endsWith(".pdf") || viewUrl.toLowerCase().endsWith(".pdf") || contentType.includes("pdf");
+
+    return (
+        <div className="space-y-3">
+            <div className="bg-card rounded-xl border border-border p-4 shadow-sm flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                        <Paperclip className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-0.5">Attachment / Supporting Docs</p>
+                        <p className="text-xs font-bold text-foreground truncate max-w-[200px]">
+                            {docUrl.split("/").pop() || "view_attachment"}
+                        </p>
+                    </div>
+                </div>
+                <Button variant="outline" size="sm" asChild className="text-[10px] font-black uppercase tracking-widest h-8 px-3">
+                    <a href={viewUrl} target="_blank" rel="noopener noreferrer">
+                        View <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
+                    </a>
+                </Button>
+            </div>
+
+            {/* Inline Preview */}
+            <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
+                <div className="px-4 py-2 bg-muted/50 border-b border-border text-[9px] font-black uppercase tracking-widest text-muted-foreground flex items-center justify-between">
+                    <span>Attachment Preview</span>
+                </div>
+                <div className="p-3 flex justify-center items-center bg-card max-h-[320px] overflow-hidden">
+                    {isPdf ? (
+                        <iframe 
+                            src={viewUrl} 
+                            className="w-full h-[280px] border-0 rounded-lg" 
+                            title="Supporting Document PDF" 
+                        />
+                    ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img 
+                            src={viewUrl} 
+                            alt="Supporting Document" 
+                            className="max-h-[280px] max-w-full object-contain rounded-lg shadow-sm"
+                            onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                                const parent = e.currentTarget.parentElement;
+                                if (parent) {
+                                    parent.innerHTML = '<div class="text-[10px] font-black uppercase tracking-widest text-muted-foreground p-4 text-center">Preview not available. Click "View" above to open.</div>';
+                                }
+                            }}
+                        />
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export function DisbursementDashboardTab() {
     const { data, filters, setFilters, isLoading, handleApplyFilters } = useDisbursementDashboard();
     const [selectedVoucher, setSelectedVoucher] = useState<VoucherSummary | null>(null);
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
     const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
     const [payees, setPayees] = useState<{ id: number; name: string }[]>([]);
     const [coas, setCoas] = useState<{ coaId: number; glCode: string; accountTitle: string }[]>([]);
+
+    const activeEncoders = useMemo(() => {
+        const activeIds = data?.activeEncoderIds;
+        if (!activeIds) return users;
+        const activeSet = new Set(activeIds);
+        return users.filter(u => activeSet.has(u.id));
+    }, [users, data?.activeEncoderIds]);
 
     useEffect(() => {
         // Fetch users
@@ -75,20 +173,16 @@ export function DisbursementDashboardTab() {
 
     const reportSummary = useMemo(() => {
         const summary: Record<string, { count: number; total: number }> = {
-            "Submitted": { count: 0, total: 0 },
-            "Approved": { count: 0, total: 0 },
             "Released": { count: 0, total: 0 },
-            "Posted": { count: 0, total: 0 },
-            "Voided": { count: 0, total: 0 }
+            "Posted": { count: 0, total: 0 }
         };
 
         (data?.vouchers || []).forEach(v => {
-            const status = v.status || "Submitted";
-            if (!summary[status]) {
-                summary[status] = { count: 0, total: 0 };
+            const status = v.status || "";
+            if (status === "Released" || status === "Posted") {
+                summary[status].count += 1;
+                summary[status].total += v.totalAmount || 0;
             }
-            summary[status].count += 1;
-            summary[status].total += v.totalAmount || 0;
         });
 
         return Object.entries(summary).map(([status, stats]) => ({
@@ -97,10 +191,26 @@ export function DisbursementDashboardTab() {
         }));
     }, [data?.vouchers]);
 
-    // 🚀 FIX: Prevent chart overlap by only taking the Top 10 highest expenses
-    const topCoaExpenses = useMemo(() => {
-        return (data?.coaExpenses || []).slice(0, 10);
-    }, [data?.coaExpenses]);
+    // 🚀 FIX: Prevent chart overlap by only taking the Top 10 highest expenses, and resolve titles client-side
+    const topPaymentExpenses = useMemo(() => {
+        return (data?.paymentCoaExpenses || []).map(item => {
+            const matched = coas.find(c => c.coaId === item.coaId);
+            return {
+                ...item,
+                accountTitle: matched ? matched.accountTitle : `Payment Account #${item.coaId}`
+            };
+        }).slice(0, 10);
+    }, [data?.paymentCoaExpenses, coas]);
+
+    const topPayableExpenses = useMemo(() => {
+        return (data?.payableCoaExpenses || []).map(item => {
+            const matched = coas.find(c => c.coaId === item.coaId);
+            return {
+                ...item,
+                accountTitle: matched ? matched.accountTitle : `Payable Account #${item.coaId}`
+            };
+        }).slice(0, 10);
+    }, [data?.payableCoaExpenses, coas]);
 
     const topDivisionExpenses = useMemo(() => {
         return (data?.divisionExpenses || []).slice(0, 10);
@@ -150,7 +260,7 @@ export function DisbursementDashboardTab() {
             {/* 1. PREMIUM FILTER BAR */}
             <Card className="shadow-sm border-border/50 bg-card rounded-2xl overflow-hidden">
                 <CardContent className="p-5 space-y-4 bg-muted/10">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
                         <div className="space-y-1.5">
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
                                 <CalendarDays className="w-3.5 h-3.5 text-primary"/> Quick Range
@@ -179,6 +289,38 @@ export function DisbursementDashboardTab() {
                             <Input type="date" className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50" value={filters.endDate} onChange={(e) => setFilters({ ...filters, endDate: e.target.value })} />
                         </div>
 
+                        <div className="flex gap-2 w-full">
+                            <Button onClick={handleApplyFilters} disabled={isLoading} className="flex-1 h-10 text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-md hover:shadow-lg rounded-xl">
+                                {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
+                                Generate
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => generateReportPDF(data, filters)}
+                                disabled={!data || isLoading}
+                                className="h-10 px-3 rounded-xl border-border/50 shrink-0 hover:bg-muted text-muted-foreground hover:text-foreground"
+                                title="Export Report to PDF"
+                            >
+                                <Download className="w-4 h-4" />
+                            </Button>
+                            <Button
+                                variant={showAdvanced ? "secondary" : "outline"}
+                                onClick={() => setShowAdvanced(!showAdvanced)}
+                                className={cn(
+                                    "h-10 px-3 rounded-xl transition-all border-border/50 shrink-0",
+                                    showAdvanced ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
+                                )}
+                                title="Toggle Advanced Filters"
+                            >
+                                <SlidersHorizontal className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div className={cn(
+                        "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-border/30 transition-all duration-300 ease-in-out overflow-hidden",
+                        showAdvanced ? "opacity-100 max-h-[500px]" : "opacity-0 max-h-0 pt-0 pb-0 border-transparent pointer-events-none"
+                    )}>
                         <div className="space-y-1.5">
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Trans Type</label>
                             <Select value={filters.transactionType?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, transactionType: val === "ALL" ? "" : Number(val) })}>
@@ -202,66 +344,70 @@ export function DisbursementDashboardTab() {
                                 </SelectContent>
                             </Select>
                         </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end">
                         <div className="space-y-1.5">
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Encoder</label>
-                            <Select value={filters.encoderId?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, encoderId: val === "ALL" ? "" : Number(val) })}>
-                                <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue placeholder="All Encoders" /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="ALL" className="text-xs font-bold uppercase">All Encoders</SelectItem>
-                                    {users.map(u => (
-                                        <SelectItem key={u.id} value={u.id.toString()} className="text-xs font-bold uppercase">{u.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <SearchableSelect
+                                value={filters.encoderId?.toString() || "ALL"}
+                                onValueChange={(val) => setFilters({ ...filters, encoderId: val === "ALL" ? "" : Number(val) })}
+                                options={[
+                                    { value: "ALL", label: "All Encoders" },
+                                    ...activeEncoders.map(u => ({ value: u.id.toString(), label: u.name }))
+                                ]}
+                                placeholder="Select Encoder"
+                                className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50 justify-between"
+                            />
                         </div>
 
                         <div className="space-y-1.5">
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Supplier / Payee</label>
-                            <Select value={filters.payeeId?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, payeeId: val === "ALL" ? "" : Number(val) })}>
-                                <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue placeholder="All Payees" /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="ALL" className="text-xs font-bold uppercase">All Payees</SelectItem>
-                                    {payees.map(p => (
-                                        <SelectItem key={p.id} value={p.id.toString()} className="text-xs font-bold uppercase">{p.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <SearchableSelect
+                                value={filters.payeeId?.toString() || "ALL"}
+                                onValueChange={(val) => setFilters({ ...filters, payeeId: val === "ALL" ? "" : Number(val) })}
+                                options={[
+                                    { value: "ALL", label: "All Payees" },
+                                    ...payees.map(p => ({ value: p.id.toString(), label: p.name }))
+                                ]}
+                                placeholder="Select Payee"
+                                className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50 justify-between"
+                            />
                         </div>
 
-                        {/* Chart of Accounts Selector and Transaction Amount on the same visual row. */}
-                        <div className="md:col-span-2 grid grid-cols-2 gap-3">
-                            <div className="space-y-1.5">
-                                <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">GL Account (COA)</label>
-                                <Select value={filters.coaId?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, coaId: val === "ALL" ? "" : Number(val) })}>
-                                    <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue placeholder="All COAs" /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="ALL" className="text-xs font-bold uppercase">All COAs</SelectItem>
-                                        {coas.map(c => (
-                                            <SelectItem key={c.coaId} value={c.coaId.toString()} className="text-xs font-bold uppercase">{c.glCode} - {truncateText(c.accountTitle, 16)}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Min Amount</label>
-                                <Input
-                                    type="number"
-                                    placeholder="Amount"
-                                    className="h-10 text-xs font-bold bg-background shadow-sm border-border/50"
-                                    value={filters.amount || ""}
-                                    onChange={(e) => setFilters({ ...filters, amount: e.target.value === "" ? "" : Number(e.target.value) })}
-                                />
-                            </div>
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">GL COA</label>
+                            <SearchableSelect
+                                value={filters.coaId?.toString() || "ALL"}
+                                onValueChange={(val) => setFilters({ ...filters, coaId: val === "ALL" ? "" : Number(val) })}
+                                options={[
+                                    { value: "ALL", label: "All COAs" },
+                                    ...coas.map(c => ({ value: c.coaId.toString(), label: `${c.glCode} - ${c.accountTitle}` }))
+                                ]}
+                                placeholder="Select COA"
+                                className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50 justify-between"
+                            />
                         </div>
 
-                        <Button onClick={handleApplyFilters} disabled={isLoading} className="h-10 w-full text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-md hover:shadow-lg rounded-xl">
-                            {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
-                            Generate
-                        </Button>
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Min Amount</label>
+                            <Input
+                                type="number"
+                                placeholder="Min"
+                                className="h-10 text-xs font-bold bg-background shadow-sm border-border/50"
+                                value={filters.amount || ""}
+                                onChange={(e) => setFilters({ ...filters, amount: e.target.value === "" ? "" : Number(e.target.value) })}
+                            />
+                        </div>
+
+                        <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Remarks / Particulars</label>
+                            <Input
+                                type="text"
+                                placeholder="Search by remarks or particulars..."
+                                className="h-10 text-xs font-bold bg-background shadow-sm border-border/50 placeholder:text-muted-foreground/40"
+                                value={filters.remarks || ""}
+                                onChange={(e) => setFilters({ ...filters, remarks: e.target.value })}
+                            />
+                        </div>
                     </div>
                 </CardContent>
             </Card>
@@ -272,12 +418,12 @@ export function DisbursementDashboardTab() {
                     <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
                     <CardHeader className="pb-2">
                         <CardTitle className="text-xs font-black uppercase text-blue-700/70 dark:text-blue-400/70 flex items-center justify-between">
-                            Total Disbursed <TrendingDown className="w-4 h-4 text-blue-500" />
+                            Total Cash Outflow <CreditCard className="w-4 h-4 text-blue-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-black text-blue-700 dark:text-blue-400">{formatMoney(data?.totalDisbursed || 0)}</div>
-                        <p className="text-[10px] uppercase font-bold text-blue-700/50 dark:text-blue-400/50 mt-1 tracking-widest">Total Voucher Amount</p>
+                        <div className="text-3xl font-black text-blue-700 dark:text-blue-400">{formatMoney(data?.totalPaid || 0)}</div>
+                        <p className="text-[10px] uppercase font-bold text-blue-700/50 dark:text-blue-400/50 mt-1 tracking-widest">Released & Posted Payments</p>
                     </CardContent>
                 </Card>
 
@@ -285,25 +431,27 @@ export function DisbursementDashboardTab() {
                     <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
                     <CardHeader className="pb-2">
                         <CardTitle className="text-xs font-black uppercase text-emerald-700/70 dark:text-emerald-400/70 flex items-center justify-between">
-                            Total Paid <CreditCard className="w-4 h-4 text-emerald-500" />
+                            Outflow Transactions <FileText className="w-4 h-4 text-emerald-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-black text-emerald-700 dark:text-emerald-400">{formatMoney(data?.totalPaid || 0)}</div>
-                        <p className="text-[10px] uppercase font-bold text-emerald-700/50 dark:text-emerald-400/50 mt-1 tracking-widest">Actual Cash Outflow</p>
+                        <div className="text-3xl font-black text-emerald-700 dark:text-emerald-400">{data?.vouchers?.length || 0}</div>
+                        <p className="text-[10px] uppercase font-bold text-emerald-700/50 dark:text-emerald-400/50 mt-1 tracking-widest">Volume of Outflow Vouchers</p>
                     </CardContent>
                 </Card>
 
-                <Card className="shadow-sm border-none bg-gradient-to-br from-orange-500/10 to-orange-500/5 rounded-2xl relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-orange-500" />
+                <Card className="shadow-sm border-none bg-gradient-to-br from-purple-500/10 to-purple-500/5 rounded-2xl relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-purple-500" />
                     <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-black uppercase text-orange-700/70 dark:text-orange-400/70 flex items-center justify-between">
-                            Unpaid Payables <AlertCircle className="w-4 h-4 text-orange-500" />
+                        <CardTitle className="text-xs font-black uppercase text-purple-700/70 dark:text-purple-400/70 flex items-center justify-between">
+                            Average Outflow Size <Wallet className="w-4 h-4 text-purple-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-black text-orange-700 dark:text-orange-400">{formatMoney(data?.totalUnpaidPayables || 0)}</div>
-                        <p className="text-[10px] uppercase font-bold text-orange-700/50 dark:text-orange-400/50 mt-1 tracking-widest">Pending Settlement</p>
+                        <div className="text-3xl font-black text-purple-700 dark:text-purple-400">
+                            {formatMoney(data && data.vouchers?.length ? data.totalPaid / data.vouchers.length : 0)}
+                        </div>
+                        <p className="text-[10px] uppercase font-bold text-purple-700/50 dark:text-purple-400/50 mt-1 tracking-widest">Average Value per Outflow</p>
                     </CardContent>
                 </Card>
             </div>
@@ -316,31 +464,34 @@ export function DisbursementDashboardTab() {
                     <Card className="shadow-sm flex flex-col rounded-2xl border-border/50">
                         <CardHeader className="border-b bg-muted/10 pb-4">
                             <CardTitle className="text-sm font-black uppercase text-foreground flex items-center gap-2">
-                                <PieChart className="w-4 h-4 text-primary" /> Expense Analysis
+                                <PieChart className="w-4 h-4 text-primary" /> Outflow Analysis
                             </CardTitle>
-                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Top 10 Breakdown of recorded payables</p>
+                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Top 10 Breakdown of actual outflows</p>
                         </CardHeader>
-                        <CardContent className="p-0 flex-1 min-h-[420px] flex flex-col">
-                            <Tabs defaultValue="account" className="w-full h-full flex flex-col">
-                                <TabsList className="w-full rounded-none border-b bg-transparent h-12">
-                                    <TabsTrigger value="account" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[10px] tracking-widest">
-                                        By GL Account
+                        <CardContent className="p-0 flex-1 min-h-[460px] flex flex-col">
+                            <Tabs defaultValue="payment" className="w-full h-full flex flex-col">
+                                <TabsList className="w-full rounded-none border-b bg-transparent h-12 flex">
+                                    <TabsTrigger value="payment" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[9px] tracking-wider truncate">
+                                        Payment Accounts
                                     </TabsTrigger>
-                                    <TabsTrigger value="division" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[10px] tracking-widest">
-                                        By Division
+                                    <TabsTrigger value="payable" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[9px] tracking-wider truncate">
+                                        Payable Accounts
+                                    </TabsTrigger>
+                                    <TabsTrigger value="division" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[9px] tracking-wider truncate">
+                                        Divisions & Depts
                                     </TabsTrigger>
                                 </TabsList>
 
-                                {/* CHART A: BY COA */}
-                                <TabsContent value="account" className="flex-1 p-4 m-0">
-                                    {topCoaExpenses.length > 0 ? (
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={topCoaExpenses} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                                {/* CHART A: BY PAYMENT ACCOUNT */}
+                                <TabsContent value="payment" className="flex-1 p-4 m-0">
+                                    {topPaymentExpenses.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height={240}>
+                                            <BarChart data={topPaymentExpenses} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
                                                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--muted))" />
                                                 <XAxis type="number" tickFormatter={(val) => `₱${val/1000}k`} className="text-[9px] font-bold" />
-                                                <YAxis dataKey="accountTitle" type="category" className="text-[9px] font-bold uppercase" width={140} tickFormatter={(val) => truncateText(val, 20)} tick={{fill: 'hsl(var(--foreground))'}} />
+                                                <YAxis dataKey="accountTitle" type="category" className="text-[9px] font-bold uppercase" width={120} tickFormatter={(val) => truncateText(val, 18)} tick={{fill: 'hsl(var(--foreground))'}} />
                                                 <Tooltip
-                                                    formatter={(value: number) => [formatMoney(value), "Expense"]}
+                                                    formatter={(value: number) => [formatMoney(value), "Outflow"]}
                                                     labelFormatter={(label) => <span className="font-black uppercase text-xs">{label}</span>}
                                                     cursor={{fill: 'hsl(var(--muted))'}}
                                                     contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}
@@ -349,29 +500,92 @@ export function DisbursementDashboardTab() {
                                             </BarChart>
                                         </ResponsiveContainer>
                                     ) : (
-                                        <div className="h-full flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No GL Data Available</div>
+                                        <div className="h-48 flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No Payment Data Available</div>
                                     )}
                                 </TabsContent>
 
-                                {/* CHART B: BY DIVISION */}
-                                <TabsContent value="division" className="flex-1 p-4 m-0">
-                                    {topDivisionExpenses.length > 0 ? (
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={topDivisionExpenses} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                                {/* CHART B: BY PAYABLE ACCOUNT */}
+                                <TabsContent value="payable" className="flex-1 p-4 m-0">
+                                    {topPayableExpenses.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height={240}>
+                                            <BarChart data={topPayableExpenses} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
                                                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--muted))" />
                                                 <XAxis type="number" tickFormatter={(val) => `₱${val/1000}k`} className="text-[9px] font-bold" />
-                                                <YAxis dataKey="divisionName" type="category" className="text-[9px] font-bold uppercase" width={140} tickFormatter={(val) => truncateText(val, 20)} tick={{fill: 'hsl(var(--foreground))'}} />
+                                                <YAxis dataKey="accountTitle" type="category" className="text-[9px] font-bold uppercase" width={120} tickFormatter={(val) => truncateText(val, 18)} tick={{fill: 'hsl(var(--foreground))'}} />
                                                 <Tooltip
-                                                    formatter={(value: number) => [formatMoney(value), "Expense"]}
+                                                    formatter={(value: number) => [formatMoney(value), "Outflow"]}
                                                     labelFormatter={(label) => <span className="font-black uppercase text-xs">{label}</span>}
                                                     cursor={{fill: 'hsl(var(--muted))'}}
                                                     contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}
                                                 />
-                                                <Bar dataKey="totalExpense" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} barSize={20} />
+                                                <Bar dataKey="totalExpense" fill="hsl(262.1 83.3% 57.8%)" radius={[0, 4, 4, 0]} barSize={20} />
                                             </BarChart>
                                         </ResponsiveContainer>
                                     ) : (
-                                        <div className="h-full flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No Division Data Available</div>
+                                        <div className="h-48 flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No Payable Data Available</div>
+                                    )}
+                                </TabsContent>
+
+                                {/* CHART C: BY DIVISION & DEPARTMENT */}
+                                <TabsContent value="division" className="flex-1 p-4 m-0 space-y-4">
+                                    {topDivisionExpenses.length > 0 ? (
+                                        <>
+                                            <div className="h-40">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <RechartsPieChart>
+                                                        <Tooltip
+                                                            formatter={(value: number) => [formatMoney(value), "Outflow"]}
+                                                            contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}
+                                                        />
+                                                        <Pie
+                                                            data={topDivisionExpenses}
+                                                            dataKey="totalExpense"
+                                                            nameKey="divisionName"
+                                                            cx="50%"
+                                                            cy="50%"
+                                                            innerRadius={40}
+                                                            outerRadius={60}
+                                                            paddingAngle={3}
+                                                            label={({ name, percent }) => `${truncateText(name, 8)} (${(percent * 100).toFixed(0)}%)`}
+                                                            labelLine={false}
+                                                        >
+                                                            {topDivisionExpenses.map((entry, index) => (
+                                                                <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                                                            ))}
+                                                        </Pie>
+                                                    </RechartsPieChart>
+                                                </ResponsiveContainer>
+                                            </div>
+
+                                            {/* Department Breakdown list */}
+                                            <div className="space-y-2.5 overflow-y-auto max-h-[160px] pr-1.5 custom-scrollbar">
+                                                {topDivisionExpenses.map((div, i) => (
+                                                    <div key={div.divisionId} className="border border-border/40 rounded-xl p-3 bg-muted/5">
+                                                        <div className="flex justify-between items-center mb-1.5">
+                                                            <span className="text-[10px] font-black uppercase text-foreground flex items-center gap-1.5">
+                                                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                                                                {div.divisionName}
+                                                            </span>
+                                                            <span className="text-[10px] font-black text-primary">{formatMoney(div.totalExpense)}</span>
+                                                        </div>
+                                                        {div.departments && div.departments.length > 0 ? (
+                                                            <div className="pl-3.5 space-y-1 border-l border-border/70 border-dashed">
+                                                                {div.departments.map(dept => (
+                                                                    <div key={dept.departmentId} className="flex justify-between items-center text-[9px] font-bold text-muted-foreground uppercase py-0.5">
+                                                                        <span>{dept.departmentName}</span>
+                                                                        <span className="font-mono">{formatMoney(dept.totalExpense)}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="pl-3.5 text-[8px] text-muted-foreground uppercase font-bold">No departments hit</div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="h-48 flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No Division Data Available</div>
                                     )}
                                 </TabsContent>
                             </Tabs>
@@ -382,12 +596,12 @@ export function DisbursementDashboardTab() {
                     <Card className="shadow-sm rounded-2xl border-border/50 overflow-hidden">
                         <CardHeader className="border-b bg-muted/10 py-4">
                             <CardTitle className="text-sm font-black uppercase text-foreground">
-                                Disbursement Report Summary
+                                Outflow Summary by Status
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-0">
                             <Table>
-                                <TableHeader className="bg-muted/30">
+                                <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                     <TableRow>
                                         <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-4">Status</TableHead>
                                         <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-center">Vouchers</TableHead>
@@ -429,45 +643,47 @@ export function DisbursementDashboardTab() {
                         <CardTitle className="text-sm font-black uppercase text-foreground">Outflow Register</CardTitle>
                         <Badge variant="outline" className="font-mono bg-background shadow-sm">{data?.vouchers?.length || 0} Records</Badge>
                     </CardHeader>
-                    <CardContent className="p-0 overflow-auto max-h-[500px] custom-scrollbar relative">
-                        <Table>
-                            <TableHeader className="bg-muted sticky top-0 z-10 shadow-sm">
-                                <TableRow className="bg-muted">
-                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-6 bg-muted sticky top-0 z-10">Doc No</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground bg-muted sticky top-0 z-10">Payee & Date</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right bg-muted sticky top-0 z-10">Total Amt</TableHead>
-                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right pr-6 bg-muted sticky top-0 z-10">Paid Amt</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {isLoading ? (
-                                    <TableRow><TableCell colSpan={4} className="h-48 text-center"><Loader2 className="animate-spin mx-auto text-primary/50" /></TableCell></TableRow>
-                                ) : data?.vouchers?.length === 0 ? (
-                                    <TableRow><TableCell colSpan={4} className="h-32 text-center text-xs font-bold text-muted-foreground uppercase tracking-widest">No matching records found.</TableCell></TableRow>
-                                ) : data?.vouchers?.map((v) => (
-                                    <TableRow
-                                        key={v.id}
-                                        onClick={() => setSelectedVoucher(v)}
-                                        className="cursor-pointer hover:bg-muted/30 transition-colors"
-                                    >
-                                        <TableCell className="font-black text-xs text-primary pl-6 py-4">{v.docNo}</TableCell>
-                                        <TableCell className="py-4">
-                                            <div className="font-black text-xs uppercase text-foreground">{v.payeeName}</div>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span className="text-[10px] font-mono text-muted-foreground">{v.transactionDate}</span>
-                                                <Badge variant="secondary" className="text-[8px] uppercase tracking-wider px-1.5 py-0 bg-muted/50">{v.status}</Badge>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-right font-black text-xs py-4">
-                                            {formatMoney(v.totalAmount)}
-                                        </TableCell>
-                                        <TableCell className="text-right font-black text-xs text-emerald-600 dark:text-emerald-500 pr-6 py-4">
-                                            {formatMoney(v.paidAmount)}
-                                        </TableCell>
+                    <CardContent className="p-0 relative">
+                        <StickyTableWrapper className="overflow-auto max-h-[500px] custom-scrollbar">
+                            <Table>
+                                <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
+                                    <TableRow>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-6">Doc No</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Payee & Date</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right">Total Amt</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right pr-6">Paid Amt</TableHead>
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                                </TableHeader>
+                                <TableBody>
+                                    {isLoading ? (
+                                        <TableRow><TableCell colSpan={4} className="h-48 text-center"><Loader2 className="animate-spin mx-auto text-primary/50" /></TableCell></TableRow>
+                                    ) : data?.vouchers?.length === 0 ? (
+                                        <TableRow><TableCell colSpan={4} className="h-32 text-center text-xs font-bold text-muted-foreground uppercase tracking-widest">No matching records found.</TableCell></TableRow>
+                                    ) : data?.vouchers?.map((v) => (
+                                        <TableRow
+                                            key={v.id}
+                                            onClick={() => setSelectedVoucher(v)}
+                                            className="cursor-pointer hover:bg-primary/[0.04] transition-all duration-200 even:bg-muted/15"
+                                        >
+                                            <TableCell className="font-black text-xs text-primary pl-6 py-4">{v.docNo}</TableCell>
+                                            <TableCell className="py-4">
+                                                <div className="font-black text-xs uppercase text-foreground">{v.payeeName}</div>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="text-[10px] font-mono text-muted-foreground">{v.transactionDate}</span>
+                                                    <Badge variant="secondary" className="text-[8px] uppercase tracking-wider px-1.5 py-0 bg-muted/50">{v.status}</Badge>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-right font-black text-xs py-4">
+                                                {formatMoney(v.totalAmount)}
+                                            </TableCell>
+                                            <TableCell className="text-right font-black text-xs text-emerald-600 dark:text-emerald-500 pr-6 py-4">
+                                                {formatMoney(v.paidAmount)}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </StickyTableWrapper>
                     </CardContent>
                 </Card>
             </div>
@@ -507,6 +723,10 @@ export function DisbursementDashboardTab() {
                                 <p className="text-xl font-black text-emerald-600 dark:text-emerald-500 mt-1">{formatMoney(selectedVoucher?.paidAmount || 0)}</p>
                             </div>
                         </div>
+
+                        {selectedVoucher?.supportingDocumentsUrl ? (
+                            <AttachmentPreview docUrl={selectedVoucher.supportingDocumentsUrl} />
+                        ) : null}
 
                         <div className="space-y-4">
                             <h4 className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2"><Wallet size={14} className="text-emerald-500"/> Payment Details (Credits)</h4>

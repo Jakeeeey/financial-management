@@ -20,7 +20,8 @@ import {Checkbox} from "@/components/ui/checkbox";
 import {Badge} from "@/components/ui/badge";
 import {
     Plus, Trash2, Loader2, Save, Building2, Wallet, Calculator,
-    DownloadCloud, FileText, Check, ChevronsUpDown, Search
+    DownloadCloud, FileText, Check, ChevronsUpDown, Search,
+    Paperclip, UploadCloud
 } from "lucide-react";
 import {format} from "date-fns";
 import {cn} from "@/lib/utils";
@@ -32,6 +33,7 @@ import {disbursementProvider} from "../providers/fetchProvider";
 import {toast} from "sonner";
 import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
 import type { Payee } from "@/modules/financial-management/payee-registration/types/payee.schema";
+import { StickyTableWrapper } from "./StickyTableWrapper";
 
 export interface ExtendedDisbursement extends Disbursement {
     payeeId?: number;
@@ -168,6 +170,8 @@ export function DisbursementCreateSheet({
 
     const [divisionId, setDivisionId] = useState<number | "">("");
     const [departmentId, setDepartmentId] = useState<number | "">("");
+    const [supportingDocumentsUrl, setSupportingDocumentsUrl] = useState("");
+    const [uploadingFile, setUploadingFile] = useState(false);
     const [divisions, setDivisions] = useState<DivisionDto[]>([]);
     const [departments, setDepartments] = useState<DepartmentDto[]>([]);
 
@@ -229,6 +233,9 @@ export function DisbursementCreateSheet({
                 setDivisionId(editData.divisionId != null ? Number(editData.divisionId) : "");
                 setDepartmentId(editData.departmentId != null ? Number(editData.departmentId) : "");
                 setRemarks(editData.remarks || "");
+                const docUrl = editData.supportingDocumentsUrl || "";
+                const parsedUuid = docUrl.includes("/") ? (docUrl.split("/").pop()?.split("?")[0] || "") : docUrl;
+                setSupportingDocumentsUrl(parsedUuid);
                 setTransactionDate(editData.transactionDate ? editData.transactionDate.split('T')[0] : today);
 
                 setPayables(editData.payables.map(p => ({
@@ -258,6 +265,7 @@ export function DisbursementCreateSheet({
                 setDivisionId("");
                 setDepartmentId("");
                 setRemarks("");
+                setSupportingDocumentsUrl("");
                 // Start with one blank row each so the user can begin typing immediately
                 setPayables([{referenceNo: "", date: today, amount: 0, remarks: ""}]);
                 setPayments([{checkNo: "", date: today, amount: 0, remarks: ""}]);
@@ -451,6 +459,7 @@ export function DisbursementCreateSheet({
             divisionId: Number(divisionId),
             departmentId: Number(departmentId),
             remarks,
+            supportingDocumentsUrl: supportingDocumentsUrl ? (supportingDocumentsUrl.includes("/") ? (supportingDocumentsUrl.split("/").pop()?.split("?")[0] || "") : supportingDocumentsUrl) : "",
             totalAmount: totalAmount,
             transactionDate,
             payables: payables.map(p => ({
@@ -471,6 +480,7 @@ export function DisbursementCreateSheet({
             setDivisionId("");
             setDepartmentId("");
             setRemarks("");
+            setSupportingDocumentsUrl("");
             setPayables([]);
             setPayments([]);
             onOpenChange(false);
@@ -612,6 +622,88 @@ export function DisbursementCreateSheet({
                                        placeholder="What is this payment for?"/>
                             </div>
 
+                            <div className="space-y-1.5 col-span-2">
+                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                                    <Paperclip className="w-3.5 h-3.5 text-primary"/> Supporting Documents / Attachments
+                                </Label>
+                                
+                                {supportingDocumentsUrl ? (
+                                    <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-card shadow-sm">
+                                        <div className="flex items-center gap-2.5 truncate max-w-[85%]">
+                                            <Paperclip className="w-4 h-4 text-emerald-500 shrink-0" />
+                                            <a 
+                                                href={supportingDocumentsUrl.startsWith("http") ? supportingDocumentsUrl : `${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/assets/${supportingDocumentsUrl}`} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer" 
+                                                className="text-xs font-bold text-primary hover:underline truncate"
+                                            >
+                                                {supportingDocumentsUrl.split("/").pop() || "view_attachment"}
+                                            </a>
+                                        </div>
+                                        <Button 
+                                            type="button" 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            onClick={() => setSupportingDocumentsUrl("")} 
+                                            className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive rounded-full"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <div className="relative border border-dashed border-border/70 rounded-xl p-4 hover:border-primary/50 transition-colors flex flex-col items-center justify-center gap-2 bg-muted/10">
+                                        {uploadingFile ? (
+                                            <>
+                                                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Uploading attachment...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <UploadCloud className="w-6 h-6 text-muted-foreground" />
+                                                <span className="text-xs font-semibold text-foreground text-center">
+                                                    Click to upload supporting documents
+                                                </span>
+                                                <span className="text-[10px] text-muted-foreground font-medium">
+                                                    PDF, Images (Max 5MB)
+                                                </span>
+                                                <input 
+                                                    type="file" 
+                                                    accept="image/*,application/pdf"
+                                                    onChange={async (e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (!file) return;
+                                                        try {
+                                                            setUploadingFile(true);
+                                                            const formData = new FormData();
+                                                            formData.append("file", file);
+                                                            const res = await fetch("/api/fm/treasury/disbursements/upload", {
+                                                                method: "POST",
+                                                                body: formData
+                                                            });
+                                                            if (!res.ok) throw new Error("Upload failed");
+                                                            const result = await res.json();
+                                                            const fileId = result?.data?.id;
+                                                            if (fileId) {
+                                                                setSupportingDocumentsUrl(fileId);
+                                                                toast.success("Attachment uploaded successfully!");
+                                                            } else {
+                                                                toast.error("Upload succeeded but returned no ID.");
+                                                            }
+                                                        } catch (err) {
+                                                            toast.error("Failed to upload file.");
+                                                            console.error(err);
+                                                        } finally {
+                                                            setUploadingFile(false);
+                                                        }
+                                                    }}
+                                                    className="absolute inset-0 opacity-0 cursor-pointer" 
+                                                />
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="col-span-2 pt-2 border-t border-border mt-2 space-y-2">
                                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1">
                                     <Calculator className="w-3.5 h-3.5 text-primary"/> Financial Summary (Payables vs Payments)
@@ -650,9 +742,9 @@ export function DisbursementCreateSheet({
                                 <span className="ml-auto text-[10px] font-bold text-muted-foreground">{payables.length} row{payables.length !== 1 ? 's' : ''}</span>
                             </div>
                             <div className="p-4 space-y-4">
-                                    <div className="rounded-md border border-border overflow-hidden">
+                                    <StickyTableWrapper className="rounded-md border border-border overflow-auto max-h-[320px] custom-scrollbar">
                                         <Table>
-                                            <TableHeader className="bg-muted/50">
+                                            <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                                 <TableRow className="border-border">
                                                     <TableHead
                                                         className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Ref
@@ -728,7 +820,7 @@ export function DisbursementCreateSheet({
                                                 ))}
                                             </TableBody>
                                         </Table>
-                                    </div>
+                                    </StickyTableWrapper>
                                     <div className="flex gap-2 w-full">
                                         <Button variant="outline" size="sm"
                                                 className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border"
@@ -752,9 +844,9 @@ export function DisbursementCreateSheet({
                                 <span className="ml-auto text-[10px] font-bold text-muted-foreground">{payments.length} row{payments.length !== 1 ? 's' : ''}</span>
                             </div>
                             <div className="p-4 space-y-4">
-                                    <div className="rounded-md border border-border overflow-hidden">
+                                    <StickyTableWrapper className="rounded-md border border-border overflow-auto max-h-[320px] custom-scrollbar">
                                         <Table>
-                                            <TableHeader className="bg-muted/50">
+                                            <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                                 <TableRow className="border-border">
                                                     <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Date</TableHead>
                                                     <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Check No</TableHead>
@@ -842,7 +934,7 @@ export function DisbursementCreateSheet({
                                                 ))}
                                             </TableBody>
                                         </Table>
-                                    </div>
+                                    </StickyTableWrapper>
                                     <div className="flex gap-2 w-full">
                                         <Button variant="outline" size="sm"
                                                 className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border"
@@ -904,9 +996,9 @@ export function DisbursementCreateSheet({
                         />
                     </div>
 
-                    <div className="max-h-[350px] overflow-y-auto border border-border rounded-md mt-2">
+                    <StickyTableWrapper className="max-h-[350px] overflow-auto border border-border rounded-md mt-2 custom-scrollbar">
                         <Table>
-                            <TableHeader className="bg-muted sticky top-0 z-10 shadow-sm">
+                            <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                 <TableRow className="border-border">
                                     <TableHead className="w-[40px] text-center"></TableHead>
                                     <TableHead
@@ -997,7 +1089,7 @@ export function DisbursementCreateSheet({
                                 )}
                             </TableBody>
                         </Table>
-                    </div>
+                    </StickyTableWrapper>
 
                     <DialogFooter className="mt-4 border-t border-border pt-4">
                         <Button variant="outline" onClick={() => setIsPoModalOpen(false)}
@@ -1023,9 +1115,9 @@ export function DisbursementCreateSheet({
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="max-h-[400px] overflow-y-auto border border-border rounded-md mt-4">
+                    <StickyTableWrapper className="max-h-[400px] overflow-auto border border-border rounded-md mt-4 custom-scrollbar">
                         <Table>
-                            <TableHeader className="bg-muted sticky top-0 z-10 shadow-sm">
+                            <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                 <TableRow className="border-border">
                                     <TableHead
                                         className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Memo
@@ -1085,7 +1177,7 @@ export function DisbursementCreateSheet({
                                 )}
                             </TableBody>
                         </Table>
-                    </div>
+                    </StickyTableWrapper>
                 </DialogContent>
             </Dialog>
         </>
