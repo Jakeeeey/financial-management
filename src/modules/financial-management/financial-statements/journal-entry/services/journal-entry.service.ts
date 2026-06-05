@@ -1,4 +1,4 @@
-import { JournalEntry, JournalEntryListSchema } from "../types";
+import { JournalEntry, JournalEntryListSchema, PostedAdjustmentTotals } from "../types";
 
 /**
  * Server-side service for fetching general ledger entries from the master database.
@@ -51,6 +51,84 @@ export async function getJournalEntries(
     return validated.data;
   } catch (error) {
     console.error("Journal Entry Service Error:", error);
+    throw error;
+  }
+}
+
+export async function getGroupedJournalEntries(
+  searchParams: URLSearchParams,
+  token?: string
+): Promise<unknown> {
+  const API_BASE = `${process.env.SPRING_API_BASE_URL}/api/view-general-ledger-master/grouped`;
+  const url = `${API_BASE}?${searchParams.toString()}`;
+
+  try {
+    const headers: Record<string, string> = {
+      "cache-no-store": "true",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch grouped journal entries: ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error("Grouped Journal Entry Service Error:", error);
+    throw error;
+  }
+}
+
+export async function getPostedAdjustmentTotals(
+  sourceJeNos: string[],
+  token?: string
+): Promise<PostedAdjustmentTotals[]> {
+  const uniqueSourceJeNos = Array.from(new Set(sourceJeNos.map((jeNo) => jeNo.trim()).filter(Boolean)));
+  if (uniqueSourceJeNos.length === 0) return [];
+
+  const url = `${process.env.SPRING_API_BASE_URL}/api/financial-statements/adjusting-journal-entries/posted-totals`;
+
+  try {
+    const headers: Record<string, string> = {
+      "cache-no-store": "true",
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(uniqueSourceJeNos),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch posted adjusting entry totals: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (!Array.isArray(data)) return [];
+
+    return data.map((row: Partial<PostedAdjustmentTotals>) => ({
+      sourceJeNo: String(row.sourceJeNo ?? ""),
+      totalDebit: Number(row.totalDebit ?? 0),
+      totalCredit: Number(row.totalCredit ?? 0),
+      variance: Number(row.variance ?? 0),
+    })).filter((row) => row.sourceJeNo);
+  } catch (error) {
+    console.error("Posted Adjustment Totals Service Error:", error);
     throw error;
   }
 }

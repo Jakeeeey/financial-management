@@ -41,9 +41,22 @@ export interface JournalEntryGroup {
   entries: JournalEntry[];
   totalDebit: number;
   totalCredit: number;
+  adjustmentTotalDebit?: number;
+  adjustmentTotalCredit?: number;
+  adjustedTotalDebit?: number;
+  adjustedTotalCredit?: number;
+  adjustedBalance?: number;
+  hasPostedAdjustments?: boolean;
   balance: number;
   isImbalanced: boolean;
   postingDate: string | null;
+}
+
+export interface PostedAdjustmentTotals {
+  sourceJeNo: string;
+  totalDebit: number;
+  totalCredit: number;
+  variance: number;
 }
 
 export type PresetRange = "Monthly" | "Quarterly" | "Yearly" | "Custom";

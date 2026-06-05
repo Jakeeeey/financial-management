@@ -4,7 +4,6 @@ import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowDownUp,
-  Ban,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -85,8 +84,10 @@ import type {
   AdjustingEntryDetail,
   AdjustingEntryPage,
   AdjustingEntryPayload,
+  AdjustingEntryPostedAdjustmentHistory,
   AdjustingEntrySourceJournal,
   AdjustingEntrySourceJournalSummary,
+  AdjustingEntrySummary,
   DepartmentLookup,
   DivisionLookup,
   LookupOption,
@@ -119,7 +120,7 @@ type SourceReferencePayload = Pick<
   "sourceJeNo" | "sourceJeGroupCounter" | "sourceModule" | "sourceTransactionRef" | "sourceTransactionDate"
 >;
 
-type EntryAction = "post" | "void" | "delete";
+type EntryAction = "post" | "delete";
 type SortKey = "id" | "jeNo" | "transactionDate" | "status";
 type SortDirection = "asc" | "desc";
 type PendingAction = {
@@ -131,6 +132,13 @@ type PendingAction = {
 const pageSizes = [10, 20, 50];
 const statusOptions = ["All", "Draft", "Posted", "Voided"];
 const balancedTolerance = 0.005;
+const emptySummary: AdjustingEntrySummary = {
+  draft: 0,
+  posted: 0,
+  voided: 0,
+  imbalanced: 0,
+  totalRecords: 0,
+};
 const sortableColumns: Record<SortKey, { label: string; field: string }> = {
   id: { label: "Created", field: "id" },
   jeNo: { label: "JE No.", field: "jeNo" },
@@ -242,13 +250,11 @@ function statusBadgeClass(status: string) {
 
 function actionLabel(action: EntryAction) {
   if (action === "post") return "Post";
-  if (action === "void") return "Void";
   return "Delete";
 }
 
 function actionDescription(action: EntryAction) {
   if (action === "post") return "This will move the draft into the posted ledger and prevent future edits.";
-  if (action === "void") return "This will void the posted adjusting entry while preserving the audit record.";
   return "This will permanently remove the draft adjusting entry.";
 }
 
@@ -450,7 +456,7 @@ export function AdjustingJournalEntriesModule() {
   const searchParams = useSearchParams();
   const handledSourceIntentRef = React.useRef<string | null>(null);
   const [entries, setEntries] = React.useState<AdjustingEntry[]>([]);
-  const [summaryEntries, setSummaryEntries] = React.useState<AdjustingEntry[]>([]);
+  const [summary, setSummary] = React.useState<AdjustingEntrySummary>(emptySummary);
   const [pageData, setPageData] = React.useState<Pick<AdjustingEntryPage, "number" | "size" | "totalElements" | "totalPages">>({
     number: 0,
     size: 10,
@@ -476,6 +482,7 @@ export function AdjustingJournalEntriesModule() {
   const [form, setForm] = React.useState<EntryForm>(() => emptyForm());
   const [saving, setSaving] = React.useState(false);
   const [sourceJournalEntry, setSourceJournalEntry] = React.useState<AdjustingEntrySourceJournal | null>(null);
+  const [postedAdjustmentHistory, setPostedAdjustmentHistory] = React.useState<AdjustingEntryPostedAdjustmentHistory | null>(null);
   const [pendingSourceJeNo, setPendingSourceJeNo] = React.useState("");
   const [sourceSearchValue, setSourceSearchValue] = React.useState("");
   const [sourceSuggestions, setSourceSuggestions] = React.useState<AdjustingEntrySourceJournalSummary[]>([]);
@@ -483,6 +490,8 @@ export function AdjustingJournalEntriesModule() {
   const [sourceSuggestionsLoading, setSourceSuggestionsLoading] = React.useState(false);
   const [sourceSuggestionsError, setSourceSuggestionsError] = React.useState("");
   const [sourceLoading, setSourceLoading] = React.useState(false);
+  const [postedAdjustmentHistoryLoading, setPostedAdjustmentHistoryLoading] = React.useState(false);
+  const [postedAdjustmentHistoryError, setPostedAdjustmentHistoryError] = React.useState("");
   const [coaOptions, setCoaOptions] = React.useState<LookupOption[]>([]);
   const [divisions, setDivisions] = React.useState<DivisionLookup[]>([]);
   const [departments, setDepartments] = React.useState<DepartmentLookup[]>([]);
@@ -529,17 +538,14 @@ export function AdjustingJournalEntriesModule() {
 
   const loadSummaryEntries = React.useCallback(async () => {
     try {
-      const data = await adjustingJournalEntriesApi.list({
-        page: 0,
-        pageSize: 1000,
+      const data = await adjustingJournalEntriesApi.summary({
         search,
         startDate,
         endDate,
         divisionId: filterDivisionId === "all" ? null : Number(filterDivisionId),
         departmentId: filterDepartmentId === "all" ? null : Number(filterDepartmentId),
-        sort: "id,desc",
       });
-      setSummaryEntries(data.content ?? []);
+      setSummary(data);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load adjusting entry summary");
     }
@@ -586,25 +592,26 @@ export function AdjustingJournalEntriesModule() {
 
     let cancelled = false;
     const uniqueJeNos = [...new Set(entriesWithSource.map((e) => e.sourceJeNo!))];
-    Promise.all(
-      uniqueJeNos.map((jeNo) =>
-        adjustingJournalEntriesApi.sourceJournalEntry(jeNo).catch(() => null),
-      ),
-    )
-      .then((results) => {
+    Promise.all([
+      adjustingJournalEntriesApi.sourceTotals(uniqueJeNos),
+      adjustingJournalEntriesApi.postedTotals(uniqueJeNos),
+    ])
+      .then(([sourceTotalsBySource, postedTotalsBySource]) => {
         if (cancelled) return;
         const sourceVarianceByJeNo: Record<string, number> = {};
-        for (let i = 0; i < uniqueJeNos.length; i += 1) {
-          const source = results[i];
-          if (!source) continue;
-          const sourceDebit = source.details.reduce((sum, d) => sum + d.debit, 0);
-          const sourceCredit = source.details.reduce((sum, d) => sum + d.credit, 0);
-          sourceVarianceByJeNo[uniqueJeNos[i]] = Math.round((sourceDebit - sourceCredit) * 100) / 100;
+        for (const total of sourceTotalsBySource) {
+          sourceVarianceByJeNo[total.sourceJeNo] = total.variance;
+        }
+        const postedVarianceByJeNo: Record<string, number> = {};
+        for (const total of postedTotalsBySource) {
+          postedVarianceByJeNo[total.sourceJeNo] = total.variance;
         }
         const combined: Record<number, number> = {};
         for (const entry of entriesWithSource) {
           const sourceVariance = sourceVarianceByJeNo[entry.sourceJeNo!] ?? 0;
-          combined[entry.id] = Math.round((entry.variance + sourceVariance) * 100) / 100;
+          const postedVariance = postedVarianceByJeNo[entry.sourceJeNo!] ?? 0;
+          const draftVariance = entry.status === "Draft" ? entry.variance : 0;
+          combined[entry.id] = Math.round((sourceVariance + postedVariance + draftVariance) * 100) / 100;
         }
         setEntryCombinedVariance(combined);
       })
@@ -615,16 +622,37 @@ export function AdjustingJournalEntriesModule() {
     };
   }, [entries]);
 
-  const loadSourceJournalEntry = React.useCallback(async (jeNo: string) => {
+  const loadSourceJournalEntry = React.useCallback(async (jeNo: string, excludeAdjustmentId?: number | null) => {
     const normalizedJeNo = jeNo.trim();
     setSourceLoading(true);
+    setPostedAdjustmentHistoryLoading(true);
+    setPostedAdjustmentHistoryError("");
+    setSourceJournalEntry(null);
+    setPostedAdjustmentHistory(null);
     try {
-      const source = await adjustingJournalEntriesApi.sourceJournalEntry(normalizedJeNo);
+      const [sourceResult, historyResult] = await Promise.allSettled([
+        adjustingJournalEntriesApi.sourceJournalEntry(normalizedJeNo),
+        adjustingJournalEntriesApi.postedAdjustmentHistory(normalizedJeNo, excludeAdjustmentId),
+      ]);
+
+      if (sourceResult.status === "rejected") {
+        throw sourceResult.reason;
+      }
+
+      const source = sourceResult.value;
       setSourceJournalEntry(source);
       setSourceSearchValue(source.jeNo);
+
+      if (historyResult.status === "fulfilled") {
+        setPostedAdjustmentHistory(historyResult.value);
+      } else {
+        setPostedAdjustmentHistoryError(historyResult.reason instanceof Error ? historyResult.reason.message : "Failed to load existing posted adjustments");
+      }
+
       return source;
     } finally {
       setSourceLoading(false);
+      setPostedAdjustmentHistoryLoading(false);
     }
   }, []);
 
@@ -681,18 +709,23 @@ export function AdjustingJournalEntriesModule() {
 
     async function openLinkedAdjustingEntry() {
       try {
-        const source = sourceJeNo ? await loadSourceJournalEntry(sourceJeNo) : null;
-        if (cancelled) return;
-
         if (editAjeId) {
           const entry = await adjustingJournalEntriesApi.get(Number(editAjeId));
           if (cancelled) return;
+          const linkedJeNo = entry.sourceJeNo || sourceJeNo;
+          if (linkedJeNo) {
+            await loadSourceJournalEntry(linkedJeNo, entry.id);
+            if (cancelled) return;
+          }
           setEditingEntry(entry);
           setReadOnly(entry.status !== "Draft");
           setForm(formFromEntry(entry));
           setDialogOpen(true);
           return;
         }
+
+        const source = sourceJeNo ? await loadSourceJournalEntry(sourceJeNo) : null;
+        if (cancelled) return;
 
         if (source && mode === "create") {
           setEditingEntry(null);
@@ -752,6 +785,12 @@ export function AdjustingJournalEntriesModule() {
       const coaId = d.coaId ?? 0;
       netByAccount.set(coaId, (netByAccount.get(coaId) ?? 0) + d.debit - d.credit);
     }
+    for (const entry of postedAdjustmentHistory?.entries ?? []) {
+      for (const d of entry.details) {
+        const coaId = d.coaId ?? 0;
+        netByAccount.set(coaId, (netByAccount.get(coaId) ?? 0) + d.debit - d.credit);
+      }
+    }
     for (const row of form.details) {
       const coaId = Number(row.coaId);
       if (!coaId) continue;
@@ -770,7 +809,7 @@ export function AdjustingJournalEntriesModule() {
       totalCredit,
       variance: Math.round((totalDebit - totalCredit) * 100) / 100,
     };
-  }, [form.details, sourceJournalEntry]);
+  }, [form.details, postedAdjustmentHistory, sourceJournalEntry]);
 
   const filteredDepartments = React.useMemo(() => {
     if (!form.divisionId) return departments;
@@ -828,13 +867,8 @@ export function AdjustingJournalEntriesModule() {
     [filteredDepartmentsForFilters],
   );
 
-  const pageSummary = React.useMemo(() => ({
-    draft: summaryEntries.filter((entry) => entry.status === "Draft" && Math.abs(entry.variance) < balancedTolerance).length,
-    posted: summaryEntries.filter((entry) => entry.status === "Posted").length,
-    voided: summaryEntries.filter((entry) => entry.status === "Voided").length,
-    imbalanced: summaryEntries.filter((entry) => entry.status === "Draft" && Math.abs(entry.variance) >= balancedTolerance).length,
-  }), [summaryEntries]);
-  const summaryRecordCount = summaryEntries.length;
+  const pageSummary = summary;
+  const summaryRecordCount = summary.totalRecords;
   const activeSummaryRecordCount = React.useMemo(() => {
     if (status === "Draft") return pageSummary.draft + pageSummary.imbalanced;
     if (status === "Posted") return pageSummary.posted;
@@ -851,7 +885,9 @@ export function AdjustingJournalEntriesModule() {
     return null;
   }, [editingEntry, sourceJournalEntry]);
   const linkedSourceJeNo = activeSourceReference?.sourceJeNo || pendingSourceJeNo;
-  const sourceLinkPending = Boolean(pendingSourceJeNo && !activeSourceReference);
+  const sourceContextLoading = Boolean(linkedSourceJeNo && (sourceLoading || postedAdjustmentHistoryLoading));
+  const sourceContextBlocked = Boolean(linkedSourceJeNo && postedAdjustmentHistoryError);
+  const sourceLinkPending = Boolean((pendingSourceJeNo && !activeSourceReference) || sourceContextLoading || sourceContextBlocked);
 
   const lineErrors = React.useMemo(
     () => form.details.map((row) => validateDetailRow(row)),
@@ -862,7 +898,7 @@ export function AdjustingJournalEntriesModule() {
   const hasDetailRows = form.details.some((row) => !isBlankDetailRow(row));
   const displayTotals = sourceJournalEntry ? combinedTotals : totals;
   const isBalanced = Math.abs(displayTotals.variance) < balancedTolerance;
-  const canPostFromModal = Boolean(editingEntry && editingEntry.status === "Draft" && hasDetailRows && isBalanced && !hasLineErrors);
+  const canPostFromModal = Boolean(editingEntry && editingEntry.status === "Draft" && hasDetailRows && !hasLineErrors && !sourceLinkPending);
   const hasActiveFilters = Boolean(
     search.trim() ||
     status !== "All" ||
@@ -876,6 +912,8 @@ export function AdjustingJournalEntriesModule() {
     setEditingEntry(null);
     setReadOnly(false);
     setSourceJournalEntry(null);
+    setPostedAdjustmentHistory(null);
+    setPostedAdjustmentHistoryError("");
     setPendingSourceJeNo("");
     setSourceSearchValue("");
     setForm(emptyForm());
@@ -886,10 +924,12 @@ export function AdjustingJournalEntriesModule() {
     setEditingEntry(entry);
     setReadOnly(viewOnly || entry.status !== "Draft");
     setSourceJournalEntry(null);
+    setPostedAdjustmentHistory(null);
+    setPostedAdjustmentHistoryError("");
     setPendingSourceJeNo(entry.sourceJeNo || "");
     setSourceSearchValue(entry.sourceJeNo || "");
     if (entry.sourceJeNo) {
-      void loadSourceJournalEntry(entry.sourceJeNo).catch((error) => {
+      void loadSourceJournalEntry(entry.sourceJeNo, entry.id).catch((error) => {
         toast.error(error instanceof Error ? error.message : "Failed to load linked source journal entry");
       });
     }
@@ -901,6 +941,8 @@ export function AdjustingJournalEntriesModule() {
     if (editingEntry) return;
 
     setSourceJournalEntry(null);
+    setPostedAdjustmentHistory(null);
+    setPostedAdjustmentHistoryError("");
     setPendingSourceJeNo("");
     setSourceSearchValue("");
     setSourceSuggestions([]);
@@ -969,6 +1011,8 @@ export function AdjustingJournalEntriesModule() {
     setPendingSourceJeNo(sourceSummary.jeNo);
     setSourceSearchValue(sourceSummary.jeNo);
     setSourceJournalEntry(null);
+    setPostedAdjustmentHistory(null);
+    setPostedAdjustmentHistoryError("");
     setSourceSuggestions([]);
     setSourceSuggestionsOpen(false);
 
@@ -1028,7 +1072,7 @@ export function AdjustingJournalEntriesModule() {
 
   async function persistDraft(closeAfterSave: boolean) {
     if (sourceLinkPending) {
-      toast.error("Wait for the source journal entry to finish loading before saving");
+      toast.error(postedAdjustmentHistoryError || "Wait for the source journal entry and existing adjustments to finish loading before saving");
       return null;
     }
 
@@ -1069,38 +1113,20 @@ export function AdjustingJournalEntriesModule() {
     if (!editingEntry) return;
     const savedEntry = await persistDraft(false);
     if (!savedEntry) return;
-    if (Math.abs(displayTotals.variance) >= balancedTolerance) {
-      toast.error("Cannot post an imbalanced entry");
-      return;
-    }
     setPendingAction({ entry: savedEntry, action: "post", combinedVariance: displayTotals.variance });
   }
 
   function requestAction(entry: AdjustingEntry, action: EntryAction) {
     const checkVariance = entryCombinedVariance[entry.id] ?? entry.combinedVariance ?? entry.variance;
-    if (action === "post" && Math.abs(checkVariance) >= balancedTolerance) {
-      toast.error("Cannot post an imbalanced entry");
-      return;
-    }
     setPendingAction({ entry, action, combinedVariance: action === "post" ? checkVariance : undefined });
   }
 
   async function runAction(entry: AdjustingEntry, action: EntryAction) {
-    const checkVariance = pendingAction?.combinedVariance ?? entry.variance;
-    if (action === "post" && Math.abs(checkVariance) >= balancedTolerance) {
-      toast.error("Cannot post an imbalanced entry");
-      setPendingAction(null);
-      return;
-    }
-
     setActionId(entry.id);
     try {
       if (action === "post") {
         await adjustingJournalEntriesApi.post(entry.id);
         toast.success("Entry posted");
-      } else if (action === "void") {
-        await adjustingJournalEntriesApi.void(entry.id);
-        toast.success("Entry voided");
       } else {
         await adjustingJournalEntriesApi.delete(entry.id);
         toast.success("Draft deleted");
@@ -1359,12 +1385,12 @@ export function AdjustingJournalEntriesModule() {
                   entries.map((entry) => {
                     const actionBusy = actionId === entry.id;
                     const entryVariance = entryCombinedVariance[entry.id] ?? entry.combinedVariance ?? entry.variance;
-                    const canPost = entry.status === "Draft" && Math.abs(entryVariance) < balancedTolerance;
+                    const canPost = entry.status === "Draft";
                     const postTooltip = canPost
                       ? "Post to ledger"
                       : entry.status !== "Draft"
                         ? "Only draft entries can be posted"
-                        : "Cannot post until debits equal credits";
+                        : "Post unavailable";
                     return (
                       <TableRow key={entry.id}>
                         <TableCell className="whitespace-normal wrap-break-word font-mono text-xs font-medium">
@@ -1391,8 +1417,8 @@ export function AdjustingJournalEntriesModule() {
                         </TableCell>
                         <TableCell className="break-all text-right font-mono text-[11px] xl:text-xs">{money(entry.totalDebit)}</TableCell>
                         <TableCell className="break-all text-right font-mono text-[11px] xl:text-xs">{money(entry.totalCredit)}</TableCell>
-                        <TableCell className={cn("break-all text-right font-mono text-[11px] xl:text-xs", Math.abs(entryCombinedVariance[entry.id] ?? entry.combinedVariance ?? entry.variance) >= 0.005 && "text-destructive")}>
-                          {money(entryCombinedVariance[entry.id] ?? entry.combinedVariance ?? entry.variance)}
+                        <TableCell className={cn("break-all text-right font-mono text-[11px] xl:text-xs", Math.abs(entryVariance) >= 0.005 && "text-destructive")}>
+                          {money(entryVariance)}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap justify-end gap-0.5">
@@ -1421,15 +1447,6 @@ export function AdjustingJournalEntriesModule() {
                               disabled={!canPost || actionBusy}
                             >
                               {actionBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                            </TooltipIconButton>
-                            <TooltipIconButton
-                              label={`Void ${entry.jeNo || "adjusting entry"}`}
-                              tooltip={entry.status === "Posted" ? "Void posted entry" : "Only posted entries can be voided"}
-                              className="size-7"
-                              onClick={() => requestAction(entry, "void")}
-                              disabled={entry.status !== "Posted" || actionBusy}
-                            >
-                              <Ban className="size-3.5" />
                             </TooltipIconButton>
                             <TooltipIconButton
                               label={`Delete ${entry.jeNo || "adjusting entry"}`}
@@ -1797,7 +1814,7 @@ export function AdjustingJournalEntriesModule() {
                       variant="outline"
                       className={isBalanced ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700" : "border-destructive/30 bg-destructive/10 text-destructive"}
                     >
-                      {isBalanced ? "Ready" : "Hold"}
+                      {isBalanced ? "Balanced" : "Variance"}
                     </Badge>
                   </span>
                   <span className={cn("font-mono font-semibold", Math.abs(displayTotals.variance) >= balancedTolerance && "text-destructive")}>

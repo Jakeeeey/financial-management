@@ -62,6 +62,46 @@ export type AdjustingEntryPage = {
   last: boolean;
 };
 
+export type AdjustingEntrySummary = {
+  draft: number;
+  posted: number;
+  voided: number;
+  imbalanced: number;
+  totalRecords: number;
+};
+
+export type AdjustingEntrySourceTotals = {
+  sourceJeNo: string;
+  totalDebit: number;
+  totalCredit: number;
+  variance: number;
+};
+
+export type AdjustingEntryPostedAdjustmentHistory = {
+  sourceJeNo: string;
+  totalDebit: number;
+  totalCredit: number;
+  variance: number;
+  entries: Array<{
+    id: number;
+    jeNo: string | null;
+    transactionDate: string | null;
+    description: string | null;
+    status: string | null;
+    totalDebit: number;
+    totalCredit: number;
+    variance: number;
+    details: Array<{
+      id: number | null;
+      coaId: number | null;
+      accountNumber: string | null;
+      accountTitle: string | null;
+      debit: number;
+      credit: number;
+    }>;
+  }>;
+};
+
 export type AdjustingEntryQuery = {
   page: number;
   pageSize: number;

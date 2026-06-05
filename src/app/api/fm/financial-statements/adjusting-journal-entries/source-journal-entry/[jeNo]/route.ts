@@ -2,41 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 import { buildSpringSourceJournalPath, getSpringBaseUrl } from "../../_spring";
-import { getJournalEntries } from "@/modules/financial-management/financial-statements/journal-entry/services/journal-entry.service";
-import type { JournalEntry } from "@/modules/financial-management/financial-statements/journal-entry/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function mapRowsToSourceJournal(jeNo: string, rows: JournalEntry[]) {
-  const first = rows[0];
-
-  return {
-    jeNo,
-    jeGroupCounter: first.jeGroupCounter ?? null,
-    sourceModule: first.sourceModule ?? null,
-    transactionRef: first.transactionRef ?? null,
-    transactionDate: first.transactionDate ?? null,
-    description: first.description ?? null,
-    status: first.status ?? null,
-    division: first.division ?? null,
-    divisionName: first.divisionName ?? null,
-    department: first.department ?? null,
-    departmentName: first.departmentName ?? null,
-    creator: first.creator ?? null,
-    details: rows.map((row) => ({
-      coaId: row.coaId ?? null,
-      accountNumber: row.accountNumber ?? null,
-      accountTitle: row.accountTitle ?? null,
-      debit: row.debit ?? 0,
-      credit: row.credit ?? 0,
-    })),
-  };
-}
-
-async function fetchSpringSourceEndpoint(jeNo: string, token?: string) {
-  if (!token) return null;
-
+async function fetchSpringSourceEndpoint(jeNo: string, token: string) {
   const springRes = await fetch(`${getSpringBaseUrl()}${buildSpringSourceJournalPath(jeNo)}`, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -45,24 +15,17 @@ async function fetchSpringSourceEndpoint(jeNo: string, token?: string) {
     cache: "no-store",
   });
 
-  if (!springRes.ok) return null;
-
   const text = await springRes.text();
-  return new NextResponse(text || null, {
-    status: springRes.status,
-    headers: text ? { "Content-Type": springRes.headers.get("content-type") || "application/json" } : undefined,
-  });
-}
+  const contentType = springRes.headers.get("content-type") || "application/json";
 
-async function fetchSourceFromMasterLedger(jeNo: string, token?: string) {
-  const entries = await getJournalEntries("2000-01-01", "2100-12-31", token);
-  const rows = entries.filter((entry) => entry.jeNo === jeNo);
-
-  if (rows.length === 0) {
+  if (!springRes.ok && springRes.status === 404) {
     return NextResponse.json({ message: "Source journal entry not found" }, { status: 404 });
   }
 
-  return NextResponse.json(mapRowsToSourceJournal(jeNo, rows));
+  return new NextResponse(text || null, {
+    status: springRes.status,
+    headers: text ? { "Content-Type": contentType } : undefined,
+  });
 }
 
 export async function GET(
@@ -74,10 +37,11 @@ export async function GET(
   const token = cookieStore.get("vos_access_token")?.value;
 
   try {
-    const springSourceResponse = await fetchSpringSourceEndpoint(jeNo, token);
-    if (springSourceResponse) return springSourceResponse;
+    if (!token) {
+      return NextResponse.json({ message: "Please sign in before loading source journal entries" }, { status: 401 });
+    }
 
-    return await fetchSourceFromMasterLedger(jeNo, token);
+    return fetchSpringSourceEndpoint(jeNo, token);
   } catch (error) {
     return NextResponse.json(
       {

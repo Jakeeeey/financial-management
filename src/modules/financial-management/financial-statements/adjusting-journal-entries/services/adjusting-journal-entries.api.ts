@@ -2,9 +2,12 @@ import type {
   AdjustingEntry,
   AdjustingEntryPage,
   AdjustingEntryPayload,
+  AdjustingEntryPostedAdjustmentHistory,
   AdjustingEntryQuery,
   AdjustingEntrySourceJournal,
   AdjustingEntrySourceJournalSummary,
+  AdjustingEntrySourceTotals,
+  AdjustingEntrySummary,
   DepartmentLookup,
   DivisionLookup,
 } from "../types";
@@ -87,6 +90,25 @@ function appendOptional(params: URLSearchParams, key: string, value: unknown) {
   params.set(key, String(value));
 }
 
+function normalizePage(data: AdjustingEntryPage & { page?: Partial<AdjustingEntryPage> }): AdjustingEntryPage {
+  const page = isRecord(data.page) ? data.page : {};
+  const number = asNumber(data.number) ?? asNumber(page.number) ?? 0;
+  const size = asNumber(data.size) ?? asNumber(page.size) ?? 0;
+  const totalElements = asNumber(data.totalElements) ?? asNumber(page.totalElements) ?? 0;
+  const totalPages = asNumber(data.totalPages) ?? asNumber(page.totalPages) ?? 0;
+
+  return {
+    ...data,
+    content: data.content ?? [],
+    number,
+    size,
+    totalElements,
+    totalPages,
+    first: typeof data.first === "boolean" ? data.first : number <= 0,
+    last: typeof data.last === "boolean" ? data.last : totalPages === 0 || number >= totalPages - 1,
+  };
+}
+
 async function refreshSession() {
   const res = await fetch("/api/auth/refresh", {
     method: "POST",
@@ -126,7 +148,20 @@ export const adjustingJournalEntriesApi = {
     appendOptional(params, "sort", query.sort);
 
     const res = await fetchWithAuthRetry(`${BASE}?${params.toString()}`, { cache: "no-store" });
-    return parseResponse<AdjustingEntryPage>(res, "Failed to load adjusting journal entries");
+    const data = await parseResponse<AdjustingEntryPage & { page?: Partial<AdjustingEntryPage> }>(res, "Failed to load adjusting journal entries");
+    return normalizePage(data);
+  },
+
+  async summary(query: Omit<AdjustingEntryQuery, "page" | "pageSize" | "status" | "sourceJeNo" | "sort">): Promise<AdjustingEntrySummary> {
+    const params = new URLSearchParams();
+    appendOptional(params, "search", query.search?.trim());
+    appendOptional(params, "startDate", query.startDate);
+    appendOptional(params, "endDate", query.endDate);
+    appendOptional(params, "divisionId", query.divisionId);
+    appendOptional(params, "departmentId", query.departmentId);
+
+    const res = await fetchWithAuthRetry(`${BASE}/summary?${params.toString()}`, { cache: "no-store" });
+    return parseResponse<AdjustingEntrySummary>(res, "Failed to load adjusting entry summary");
   },
 
   async get(id: number): Promise<AdjustingEntry> {
@@ -139,6 +174,17 @@ export const adjustingJournalEntriesApi = {
     return parseResponse<AdjustingEntrySourceJournal>(res, "Failed to load source journal entry");
   },
 
+  async postedAdjustmentHistory(jeNo: string, excludeId?: number | null): Promise<AdjustingEntryPostedAdjustmentHistory> {
+    const params = new URLSearchParams();
+    appendOptional(params, "excludeId", excludeId);
+    const query = params.toString();
+    const res = await fetchWithAuthRetry(
+      `${BASE}/source-journal-entry/${encodeURIComponent(jeNo)}/posted-adjustments${query ? `?${query}` : ""}`,
+      { cache: "no-store" },
+    );
+    return parseResponse<AdjustingEntryPostedAdjustmentHistory>(res, "Failed to load existing posted adjustments");
+  },
+
   async searchSourceJournalEntries(query: string, limit = 10): Promise<AdjustingEntrySourceJournalSummary[]> {
     const params = new URLSearchParams({
       q: query.trim(),
@@ -146,6 +192,30 @@ export const adjustingJournalEntriesApi = {
     });
     const res = await fetchWithAuthRetry(`${BASE}/source-journal-entries?${params.toString()}`, { cache: "no-store" });
     return parseResponse<AdjustingEntrySourceJournalSummary[]>(res, "Failed to search source journal entries");
+  },
+
+  async sourceTotals(jeNos: string[]): Promise<AdjustingEntrySourceTotals[]> {
+    const uniqueJeNos = [...new Set(jeNos.map((jeNo) => jeNo.trim()).filter(Boolean))];
+    if (uniqueJeNos.length === 0) return [];
+
+    const res = await fetchWithAuthRetry(`${BASE}/source-totals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(uniqueJeNos),
+    });
+    return parseResponse<AdjustingEntrySourceTotals[]>(res, "Failed to load source journal entry totals");
+  },
+
+  async postedTotals(jeNos: string[]): Promise<AdjustingEntrySourceTotals[]> {
+    const uniqueJeNos = [...new Set(jeNos.map((jeNo) => jeNo.trim()).filter(Boolean))];
+    if (uniqueJeNos.length === 0) return [];
+
+    const res = await fetchWithAuthRetry(`${BASE}/posted-totals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(uniqueJeNos),
+    });
+    return parseResponse<AdjustingEntrySourceTotals[]>(res, "Failed to load posted adjusting entry totals");
   },
 
   async create(payload: AdjustingEntryPayload): Promise<AdjustingEntry> {
@@ -169,11 +239,6 @@ export const adjustingJournalEntriesApi = {
   async post(id: number): Promise<AdjustingEntry> {
     const res = await fetchWithAuthRetry(`${BASE}/${id}/post`, { method: "POST" });
     return parseResponse<AdjustingEntry>(res, "Failed to post adjusting journal entry");
-  },
-
-  async void(id: number): Promise<AdjustingEntry> {
-    const res = await fetchWithAuthRetry(`${BASE}/${id}/void`, { method: "POST" });
-    return parseResponse<AdjustingEntry>(res, "Failed to void adjusting journal entry");
   },
 
   async delete(id: number): Promise<void> {

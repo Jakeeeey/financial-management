@@ -35,10 +35,30 @@ export function buildSpringSourceJournalPath(jeNo: string) {
   return `${SPRING_RESOURCE}/source-journal-entry/${encodeURIComponent(jeNo)}`;
 }
 
+export function buildSpringPostedAdjustmentHistoryPath(jeNo: string, searchParams: URLSearchParams) {
+  const params = new URLSearchParams(searchParams);
+  const query = params.toString();
+  return `${SPRING_RESOURCE}/source-journal-entry/${encodeURIComponent(jeNo)}/posted-adjustments${query ? `?${query}` : ""}`;
+}
+
 export function buildSpringSourceJournalSearchPath(searchParams: URLSearchParams) {
   const params = new URLSearchParams(searchParams);
   const query = params.toString();
   return query ? `${SPRING_RESOURCE}/source-journal-entries?${query}` : `${SPRING_RESOURCE}/source-journal-entries`;
+}
+
+export function buildSpringSummaryPath(searchParams: URLSearchParams) {
+  const params = new URLSearchParams(searchParams);
+  const query = params.toString();
+  return query ? `${SPRING_RESOURCE}/summary?${query}` : `${SPRING_RESOURCE}/summary`;
+}
+
+export function buildSpringSourceTotalsPath() {
+  return `${SPRING_RESOURCE}/source-totals`;
+}
+
+export function buildSpringPostedTotalsPath() {
+  return `${SPRING_RESOURCE}/posted-totals`;
 }
 
 type RefreshedToken = {

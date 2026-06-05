@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getJournalEntries } from "@/modules/financial-management/financial-statements/journal-entry/services/journal-entry.service";
+import { getGroupedJournalEntries, getJournalEntries } from "@/modules/financial-management/financial-statements/journal-entry/services/journal-entry.service";
 import { 
   filterJournalEntries, 
-  groupJournalEntries, 
-  sortJournalEntryGroups, 
-  calculateAnalytics 
 } from "@/modules/financial-management/financial-statements/journal-entry/services/journal-entry.helpers";
 import { FilterState, PresetRange } from "@/modules/financial-management/financial-statements/journal-entry/types";
 
@@ -17,9 +14,6 @@ import { FilterState, PresetRange } from "@/modules/financial-management/financi
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   
-  // Pagination parameters
-  const page = parseInt(searchParams.get("page") || "0");
-  const pageSize = parseInt(searchParams.get("pageSize") || "10");
   const mode = searchParams.get("mode") || "grouped";
   
   // Extract the optional accountNumber for Drill Down views
@@ -52,6 +46,11 @@ export async function GET(request: NextRequest) {
 
 
   try {
+    if (mode !== "flat") {
+      const groupedResponse = await getGroupedJournalEntries(searchParams, token);
+      return NextResponse.json(groupedResponse);
+    }
+
     // 1. Fetch raw flat data from the external master database
     const entries = await getJournalEntries(filters.startDate, filters.endDate, token, accountNumber);
     
@@ -85,36 +84,6 @@ export async function GET(request: NextRequest) {
             data: regularEntries
         });
     }
-    
-    // 4. Group flat entries into transaction blocks (groups)
-    const groups = groupJournalEntries(regularEntries);
-    
-    // 5. Calculate Analytics on the ENTIRE filtered range (consistent with dashboard totals)
-    const analytics = calculateAnalytics(regularEntries, groups);
-    
-    // 6. Apply user requested sorting
-    const sortedGroups = sortJournalEntryGroups(groups, filters);
-    
-    // 7. Paginate the grouped results
-    const totalGroups = sortedGroups.length;
-    const totalPages = Math.ceil(totalGroups / pageSize);
-    const startIdx = page * pageSize;
-    const paginatedGroups = sortedGroups.slice(startIdx, startIdx + pageSize);
-    
-    // 8. Extract unique source modules for the client filters (excluding AJEs)
-    const uniqueSourceModules = Array.from(new Set(regularEntries.map(e => e.sourceModule).filter(Boolean))).sort();
-    
-    return NextResponse.json({
-      metadata: {
-        totalGroups,
-        totalPages,
-        currentPage: page,
-        pageSize,
-        uniqueSourceModules
-      },
-      analytics,
-      data: paginatedGroups
-    });
   } catch (error: unknown) {
     console.error("API Route Error (Journal Entry):", error);
     return NextResponse.json(
