@@ -22,6 +22,10 @@ interface DashboardDisbursement {
         division_id?: number;
         division_name?: string;
     };
+    department_id?: {
+        department_id?: number;
+        department_name?: string;
+    };
     payables?: Array<{
         amount?: number;
         coa_id?: {
@@ -38,6 +42,38 @@ interface DashboardDisbursement {
             account_title?: string;
         };
     }>;
+    supporting_documents_url?: string;
+}
+
+interface PayableRow {
+    id: number;
+    disbursement_id: number;
+    division_id?: {
+        division_id?: number;
+        division_name?: string;
+    } | number | null;
+    reference_no?: string;
+    date?: string;
+    coa_id?: {
+        coa_id?: number;
+        account_title?: string;
+    } | number | null;
+    amount?: number;
+    remarks?: string;
+}
+
+interface PaymentRow {
+    id: number;
+    disbursement_id: number;
+    coa_id?: {
+        coa_id?: number;
+        account_title?: string;
+    } | number | null;
+    bank_id?: number;
+    check_no?: string;
+    date?: string;
+    amount?: number;
+    remarks?: string;
 }
 
 export async function GET(req: NextRequest) {
@@ -57,12 +93,25 @@ export async function GET(req: NextRequest) {
     const encoderId = url.searchParams.get("encoderId");
     const coaId = url.searchParams.get("coaId");
     const amount = url.searchParams.get("amount");
+    const remarks = url.searchParams.get("remarks");
 
     try {
+        const encodersPromise = fetch(`${DIRECTUS_URL}/items/disbursement?groupBy[]=encoder_id&filter[encoder_id][_null]=false`, {
+            headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+            cache: "no-store",
+        }).then(res => res.json()).catch(err => {
+            console.warn("Failed to fetch active encoders list:", err);
+            return { data: [] };
+        });
+
         const filterAnd: Record<string, unknown>[] = [];
         if (startDate) filterAnd.push({ transaction_date: { _gte: startDate } });
         if (endDate) filterAnd.push({ transaction_date: { _lte: endDate } });
-        if (status && status !== "ALL") filterAnd.push({ status: { _eq: status } });
+        if (status && status !== "ALL") {
+            filterAnd.push({ status: { _eq: status } });
+        } else {
+            filterAnd.push({ status: { _in: ["Released", "Posted"] } });
+        }
         if (payeeId) filterAnd.push({ payee: { _eq: Number(payeeId) } });
         if (transactionType && transactionType !== "ALL") {
             const typeNum = Number(transactionType);
@@ -72,6 +121,9 @@ export async function GET(req: NextRequest) {
         }
         if (encoderId) filterAnd.push({ encoder_id: { _eq: Number(encoderId) } });
         if (amount) filterAnd.push({ total_amount: { _eq: Number(amount) } });
+        if (remarks && remarks.trim() !== "") {
+            filterAnd.push({ remarks: { _contains: remarks } });
+        }
 
         if (coaId) {
             filterAnd.push({
@@ -95,6 +147,8 @@ export async function GET(req: NextRequest) {
                 "paid_amount",
                 "division_id.division_id",
                 "division_id.division_name",
+                "department_id.department_id",
+                "department_id.department_name",
                 "payables.coa_id.coa_id",
                 "payables.coa_id.account_title",
                 "payables.amount",
@@ -102,7 +156,8 @@ export async function GET(req: NextRequest) {
                 "payments.coa_id.account_title",
                 "payments.amount",
                 "payments.check_no",
-                "payments.bank_id"
+                "payments.bank_id",
+                "supporting_documents_url"
             ].join(",")
         });
 
@@ -120,12 +175,71 @@ export async function GET(req: NextRequest) {
         if (!directusRes.ok) throw new Error(await directusRes.text());
         const disbursements = ((await directusRes.json()).data || []) as DashboardDisbursement[];
 
+        // Extract voucher IDs
+        const ids = disbursements.map(d => d.id).filter(Boolean);
+
+        let payablesList: PayableRow[] = [];
+        let paymentsList: PaymentRow[] = [];
+
+        if (ids.length > 0) {
+            const payableParams = new URLSearchParams({
+                limit: "-1",
+                fields: "id,disbursement_id,division_id.division_id,division_id.division_name,reference_no,date,coa_id,coa_id.coa_id,coa_id.account_title,amount,remarks",
+            });
+            payableParams.set("filter[disbursement_id][_in]", ids.join(","));
+
+            const paymentParams = new URLSearchParams({
+                limit: "-1",
+                fields: "id,disbursement_id,coa_id,coa_id.coa_id,coa_id.account_title,bank_id,check_no,date,amount,remarks",
+            });
+            paymentParams.set("filter[disbursement_id][_in]", ids.join(","));
+
+            const [payablesRes, paymentsRes] = await Promise.all([
+                fetch(`${DIRECTUS_URL}/items/disbursement_payables?${payableParams.toString()}`, {
+                    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+                    cache: "no-store"
+                }),
+                fetch(`${DIRECTUS_URL}/items/disbursement_payments?${paymentParams.toString()}`, {
+                    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+                    cache: "no-store"
+                })
+            ]);
+
+            if (payablesRes.ok) payablesList = (await payablesRes.json()).data || [];
+            if (paymentsRes.ok) paymentsList = (await paymentsRes.json()).data || [];
+        }
+
+        const payablesMap = new Map<number, PayableRow[]>();
+        payablesList.forEach((p) => {
+            const dId = Number(p.disbursement_id);
+            if (dId) {
+                const current = payablesMap.get(dId) || [];
+                current.push(p);
+                payablesMap.set(dId, current);
+            }
+        });
+
+        const paymentsMap = new Map<number, PaymentRow[]>();
+        paymentsList.forEach((p) => {
+            const dId = Number(p.disbursement_id);
+            if (dId) {
+                const current = paymentsMap.get(dId) || [];
+                current.push(p);
+                paymentsMap.set(dId, current);
+            }
+        });
+
         // 2. Perform aggregates in-memory
         let totalDisbursed = 0;
         let totalPaid = 0;
 
-        const divisionMap = new Map<number, { name: string, amount: number }>();
-        const coaMap = new Map<number, { title: string, amount: number }>();
+        const divisionMap = new Map<number, { 
+            name: string; 
+            amount: number;
+            departments: Map<number, { name: string; amount: number }> 
+        }>();
+        const paymentCoaMap = new Map<number, { title: string; amount: number }>();
+        const payableCoaMap = new Map<number, { title: string; amount: number }>();
 
         const vouchers = disbursements.map((d: DashboardDisbursement) => {
             const docAmt = Number(d.total_amount) || 0;
@@ -134,30 +248,60 @@ export async function GET(req: NextRequest) {
             totalDisbursed += docAmt;
             totalPaid += paidAmt;
 
-            // Division expenses grouping
-            const divId = d.division_id?.division_id || d.division_id;
-            const divName = d.division_id?.division_name || "N/A";
-            if (divId) {
-                const idNum = Number(divId);
-                const current = divisionMap.get(idNum) || { name: String(divName), amount: 0 };
-                current.amount += docAmt;
-                divisionMap.set(idNum, current);
-            }
+            const payables = payablesMap.get(d.id) || [];
+            const payments = paymentsMap.get(d.id) || [];
 
-            // COA expenses grouping (from payables)
-            const payables = d.payables || [];
-            payables.forEach((p) => {
-                const pCoaId = p.coa_id?.coa_id || p.coa_id;
-                const title = p.coa_id?.account_title || "N/A";
+            // Group division & department expenses: strictly by the disbursement header division & department & paid amount
+            const divId = d.division_id?.division_id || (typeof d.division_id === "number" ? d.division_id : null);
+            const divName = d.division_id?.division_name || "N/A";
+            const divIdNum = divId ? Number(divId) : 0;
+
+            const deptId = d.department_id?.department_id || (typeof d.department_id === "number" ? d.department_id : null);
+            const deptName = d.department_id?.department_name || "N/A";
+            const deptIdNum = deptId ? Number(deptId) : 0;
+
+            const currentDiv = divisionMap.get(divIdNum) || { name: String(divName), amount: 0, departments: new Map() };
+            currentDiv.amount += paidAmt;
+
+            if (deptIdNum) {
+                const currentDept = currentDiv.departments.get(deptIdNum) || { name: String(deptName), amount: 0 };
+                currentDept.amount += paidAmt;
+                currentDiv.departments.set(deptIdNum, currentDept);
+            }
+            divisionMap.set(divIdNum, currentDiv);
+
+            // Group by cash/bank account of payment (actual cash outflows)
+            payments.forEach((p) => {
+                const pCoaId = p.coa_id && typeof p.coa_id === "object" && "coa_id" in p.coa_id
+                    ? p.coa_id.coa_id
+                    : (typeof p.coa_id === "number" ? p.coa_id : null);
+                const title = p.coa_id && typeof p.coa_id === "object" && "account_title" in p.coa_id
+                    ? p.coa_id.account_title
+                    : "N/A";
                 if (pCoaId) {
                     const idNum = Number(pCoaId);
-                    const current = coaMap.get(idNum) || { title: String(title), amount: 0 };
-                    current.amount += Number(p.amount) || 0;
-                    coaMap.set(idNum, current);
+                    const currentCoa = paymentCoaMap.get(idNum) || { title: String(title), amount: 0 };
+                    currentCoa.amount += Number(p.amount) || 0;
+                    paymentCoaMap.set(idNum, currentCoa);
                 }
             });
 
-            const payments = d.payments || [];
+            // Group by account of payable (expense accounts)
+            payables.forEach((p) => {
+                const pCoaId = p.coa_id && typeof p.coa_id === "object" && "coa_id" in p.coa_id
+                    ? p.coa_id.coa_id
+                    : (typeof p.coa_id === "number" ? p.coa_id : null);
+                const title = p.coa_id && typeof p.coa_id === "object" && "account_title" in p.coa_id
+                    ? p.coa_id.account_title
+                    : "N/A";
+                if (pCoaId) {
+                    const idNum = Number(pCoaId);
+                    const currentCoa = payableCoaMap.get(idNum) || { title: String(title), amount: 0 };
+                    currentCoa.amount += Number(p.amount) || 0;
+                    payableCoaMap.set(idNum, currentCoa);
+                }
+            });
+
             const checkNumbers = Array.from(new Set(
                 payments.map((p) => p.check_no).filter((c): c is string => Boolean(c && c.trim()))
             )).join(", ");
@@ -167,7 +311,12 @@ export async function GET(req: NextRequest) {
             )).map(b => `Bank #${b}`).join(", ");
 
             const expenseAccountsHit = Array.from(new Set(
-                payables.map((p) => p.coa_id?.account_title).filter((t): t is string => Boolean(t && t.trim()))
+                payables.map((p) => {
+                    if (p.coa_id && typeof p.coa_id === "object" && "account_title" in p.coa_id) {
+                        return p.coa_id.account_title;
+                    }
+                    return undefined;
+                }).filter((t): t is string => Boolean(t && t.trim()))
             )).join(", ");
 
             return {
@@ -180,29 +329,48 @@ export async function GET(req: NextRequest) {
                 paidAmount: paidAmt,
                 checkNumbers,
                 bankNames,
-                expenseAccountsHit
+                expenseAccountsHit,
+                supportingDocumentsUrl: d.supporting_documents_url || ""
             };
         });
 
         const divisionExpenses = Array.from(divisionMap.entries()).map(([id, data]) => ({
             divisionId: id,
             divisionName: data.name,
-            totalExpense: Math.round(data.amount * 100) / 100
+            totalExpense: Math.round(data.amount * 100) / 100,
+            departments: Array.from(data.departments.entries()).map(([dId, dData]) => ({
+                departmentId: dId,
+                departmentName: dData.name,
+                totalExpense: Math.round(dData.amount * 100) / 100
+            }))
         }));
 
-        const coaExpenses = Array.from(coaMap.entries()).map(([id, data]) => ({
+        const paymentCoaExpenses = Array.from(paymentCoaMap.entries()).map(([id, data]) => ({
             coaId: id,
             accountTitle: data.title,
             totalExpense: Math.round(data.amount * 100) / 100
         }));
+
+        const payableCoaExpenses = Array.from(payableCoaMap.entries()).map(([id, data]) => ({
+            coaId: id,
+            accountTitle: data.title,
+            totalExpense: Math.round(data.amount * 100) / 100
+        }));
+
+        const encodersJson = (await encodersPromise) as { data?: { encoder_id?: number | null }[] } | null | undefined;
+        const activeEncoderIds = (encodersJson?.data || [])
+            .map((e): number | null | undefined => e?.encoder_id)
+            .filter((id): id is number => typeof id === "number");
 
         return NextResponse.json({
             totalDisbursed: Math.round(totalDisbursed * 100) / 100,
             totalPaid: Math.round(totalPaid * 100) / 100,
             totalUnpaidPayables: Math.round((totalDisbursed - totalPaid) * 100) / 100,
             divisionExpenses,
-            coaExpenses,
-            vouchers
+            paymentCoaExpenses,
+            payableCoaExpenses,
+            vouchers,
+            activeEncoderIds
         });
 
     } catch (err: unknown) {

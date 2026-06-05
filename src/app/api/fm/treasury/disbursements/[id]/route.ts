@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId } from "../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl } from "../route";
 
 export const runtime = "nodejs";
 
@@ -111,6 +111,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             transaction_date: body.transactionDate,
             division_id: body.divisionId ? Number(body.divisionId) : null,
             department_id: body.departmentId ? Number(body.departmentId) : null,
+            supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
             status: newStatus,
             approver_id: approverId,
             date_approved: dateApproved,

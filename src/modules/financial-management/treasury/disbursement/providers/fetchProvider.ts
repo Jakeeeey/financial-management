@@ -154,6 +154,7 @@ export const disbursementProvider = {
         if (filters.encoderId) params.append("encoderId", filters.encoderId.toString());
         if (filters.coaId) params.append("coaId", filters.coaId.toString());
         if (filters.amount) params.append("amount", filters.amount.toString());
+        if (filters.remarks) params.append("remarks", filters.remarks);
 
         const res = await fetch(`${API_BASE}/dashboard?${params.toString()}`);
         if (!res.ok) throw new Error("Failed to fetch dashboard data");
