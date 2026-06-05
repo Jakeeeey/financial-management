@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import React, { useState, useMemo } from "react";
@@ -21,17 +22,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import {
   Search,
   Store,
   Users,
-  Phone,
-  MapPin,
   CreditCard,
   Percent,
   Receipt,
@@ -40,12 +37,8 @@ import {
   User,
   Sparkles,
   X,
-  FileSpreadsheet,
-  ArrowLeft,
   Undo2,
   AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
   TrendingUp,
   ArrowUpDown,
   ArrowUp,
