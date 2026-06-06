@@ -7,6 +7,18 @@ export const runtime = "nodejs";
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
 const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 
+export function cleanSupportingDocsUrl(urlOrUuid: string | null | undefined): string | null {
+    if (!urlOrUuid) return null;
+    const trimmed = urlOrUuid.trim();
+    if (trimmed.includes("/")) {
+        const lastPart = trimmed.split("/").pop();
+        if (lastPart) {
+            return lastPart.split("?")[0];
+        }
+    }
+    return trimmed;
+}
+
 type DirectusList<T> = {
     data?: T[];
     meta?: {
@@ -44,6 +56,7 @@ export type DisbursementRow = {
     division_id?: RelationValue;
     department_id?: RelationValue;
     status?: unknown;
+    supporting_documents_url?: unknown;
 };
 
 export type PayableRow = {
@@ -236,6 +249,7 @@ function buildDisbursementParams(
             "division_id.division_name",
             "department_id.department_id",
             "department_id.department_name",
+            "supporting_documents_url",
             "status",
         ].join(","),
     );
@@ -391,6 +405,7 @@ export function normalizeDisbursement(
         divisionName: relationLabel(row.division_id, "division_name"),
         departmentName: relationLabel(row.department_id, "department_name"),
         status: asString(row.status) || "Draft",
+        supportingDocumentsUrl: asString(row.supporting_documents_url),
         payables,
         payments,
     };
@@ -668,7 +683,7 @@ export async function POST(request: NextRequest) {
             division_id: body.divisionId ? Number(body.divisionId) : null,
             department_id: body.departmentId ? Number(body.departmentId) : null,
             fund_source_id: body.fundSourceId || null,
-            supporting_documents_url: body.supportingDocumentsUrl || null,
+            supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
             status: isAutoApprove ? "Approved" : "Draft",
             approver_id: isAutoApprove ? currentUserId : null,
             date_approved: isAutoApprove ? new Date().toISOString() : null,

@@ -54,7 +54,7 @@ export default function DisbursementModule() {
     };
 
     return (
-        <div className="flex flex-col gap-8 p-4 sm:p-8 animate-in fade-in duration-700 max-w-[1600px] mx-auto min-h-screen">
+        <div className="flex flex-col gap-8 p-4 sm:p-8 animate-in fade-in duration-700 max-w-[1600px] mx-auto min-h-screen" style={{ background: 'linear-gradient(180deg, hsl(var(--muted) / 0.15) 0%, transparent 600px)' }}>
 
             {/* 🌟 PREMIUM GLOBAL HEADER */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pb-2 border-b border-border/50">
@@ -265,7 +265,7 @@ export default function DisbursementModule() {
                                 </TabsList>
                             </div>
 
-                            <div className="bg-card border border-border shadow-sm rounded-2xl overflow-hidden">
+                            <div className="bg-card border border-border shadow-sm rounded-2xl overflow-hidden transition-all duration-300">
                                 <DisbursementTable data={data} loading={loading} onView={handleView} />
                             </div>
                         </Tabs>
