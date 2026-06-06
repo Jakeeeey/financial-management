@@ -51,8 +51,21 @@ export async function GET() {
             paymentTermsRes.json()
         ]);
  
+        interface RawPaymentTerm {
+            id: number | string;
+            payment_name?: string | null;
+            payment_days?: number | string | null;
+        }
+
+        interface RawCustomer {
+            id: number;
+            customer_code: string;
+            customer_name: string;
+            payment_term?: number | string | null;
+        }
+
         const termsMap = new Map<number, { id: number; payment_name: string; payment_days: number }>(
-            (paymentTermsData.data || []).map((t: any) => [
+            (paymentTermsData.data || []).map((t: RawPaymentTerm) => [
                 Number(t.id),
                 {
                     id: Number(t.id),
@@ -62,8 +75,8 @@ export async function GET() {
             ])
         );
  
-        const rawCustomers = customersData.data || [];
-        const mappedCustomers = rawCustomers.map((cust: any) => {
+        const rawCustomers: RawCustomer[] = customersData.data || [];
+        const mappedCustomers = rawCustomers.map((cust: RawCustomer) => {
             const termId = cust.payment_term != null ? Number(cust.payment_term) : null;
             const termObj = termId != null ? termsMap.get(termId) : null;
             return {

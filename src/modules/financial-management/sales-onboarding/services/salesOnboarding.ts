@@ -37,8 +37,15 @@ export async function fetchCustomers(): Promise<Customer[]> {
   );
   if (!res.ok) throw new Error(`Failed to fetch customers: ${res.statusText}`);
   const json = await res.json();
-  const rawCustomers = json.data || [];
-  return rawCustomers.map((cust: any) => {
+  interface RawCustomer {
+    id: number;
+    customer_code: string;
+    customer_name: string;
+    payment_term?: { id: number; payment_days: number } | number | null;
+  }
+
+  const rawCustomers: RawCustomer[] = json.data || [];
+  return rawCustomers.map((cust: RawCustomer) => {
     const termObj = cust.payment_term;
     const paymentDays = termObj && typeof termObj === "object"
       ? (termObj.payment_days || 0)
