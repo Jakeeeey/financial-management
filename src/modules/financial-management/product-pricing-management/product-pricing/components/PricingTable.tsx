@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LayoutGrid, Table2 } from "lucide-react";
 
 import PriceCell from "./PriceCell";
 
@@ -144,6 +144,8 @@ type Props = {
     matrix: PricingMatrixLike;
 };
 
+type ViewMode = "table" | "cards";
+
 function unitLabel(u: Unit) {
     return String(u.unit_shortcut ?? u.unit_name ?? "—").trim() || "—";
 }
@@ -160,6 +162,18 @@ const TIER_STYLES = [
 
 function tierStyle(tierIndex: number) {
     return TIER_STYLES[tierIndex] ?? TIER_STYLES[0];
+}
+
+function isTierName(value: string): value is ProductTierKey {
+    return ["A", "B", "C", "D", "E", "LIST"].includes(value);
+}
+
+function sortPriceTypes(priceTypes: PriceType[]): PriceType[] {
+    return [...priceTypes].sort((a, b) => {
+        const aSort = Number(a.sort ?? Number.MAX_SAFE_INTEGER);
+        const bSort = Number(b.sort ?? Number.MAX_SAFE_INTEGER);
+        return aSort - bSort || String(a.price_type_name ?? "").localeCompare(String(b.price_type_name ?? ""));
+    });
 }
 
 function toNum(v: unknown, fallback: number) {
@@ -196,22 +210,19 @@ function toErrorString(err: unknown): string | null {
     }
 }
 
-const LEFT_COL_WIDTHS = [100, 100, 450] as const;
-const LEFT_TABLE_WIDTH = LEFT_COL_WIDTHS.reduce((a, b) => a + b, 0);
-const PRICE_COL_WIDTH = 140;
+const LEFT_TABLE_WIDTH = 420;
+const PRICE_COL_WIDTH = 120;
 
-const HEAD_ROW_H = 40;
-const SUBHEAD_ROW_H = 36;
-const BODY_ROW_H = 80;
+const HEAD_ROW_H = 36;
+const SUBHEAD_ROW_H = 30;
+const BODY_ROW_H = 68;
 
 function LoadingLeftBody({ rowCount }: { rowCount: number }) {
     return (
         <>
             {Array.from({ length: rowCount }).map((_, i) => (
                 <PTableRow key={`lsk-${i}`} className="hover:bg-transparent">
-                    <PTableCell className="h-[80px] w-[100px]"><Skeleton className="h-4 w-[80px]" /></PTableCell>
-                    <PTableCell className="h-[80px] w-[100px]"><Skeleton className="h-4 w-[80px]" /></PTableCell>
-                    <PTableCell className="h-[80px] w-[450px]">
+                    <PTableCell className="h-[68px] w-[420px]">
                         <Skeleton className="mb-1.5 h-4 w-[260px]" />
                         <Skeleton className="h-3 w-[160px]" />
                     </PTableCell>
@@ -227,9 +238,9 @@ function LoadingRightBody({ rowCount, priceCols }: { rowCount: number; priceCols
             {Array.from({ length: rowCount }).map((_, i) => (
                 <PTableRow key={`rsk-${i}`} className="hover:bg-transparent">
                     {Array.from({ length: priceCols }).map((__, j) => (
-                        <PTableCell key={`rskc-${i}-${j}`} className="h-[80px] border-l align-top">
-                            <Skeleton className="h-8 w-full rounded-md" />
-                            <Skeleton className="mt-2 h-3 w-[56px]" />
+                        <PTableCell key={`rskc-${i}-${j}`} className="h-[68px] border-l align-top">
+                            <Skeleton className="h-7 w-full rounded-md" />
+                            <Skeleton className="mt-1.5 h-3 w-[56px]" />
                         </PTableCell>
                     ))}
                 </PTableRow>
@@ -238,29 +249,181 @@ function LoadingRightBody({ rowCount, priceCols }: { rowCount: number; priceCols
     );
 }
 
+function LoadingCardBody({ rowCount }: { rowCount: number }) {
+    return (
+        <div className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: rowCount }).map((_, i) => (
+                <div key={`csk-${i}`} className="rounded-lg border bg-background p-3">
+                    <Skeleton className="mb-2 h-4 w-3/4" />
+                    <Skeleton className="mb-3 h-3 w-1/2" />
+                    <div className="grid grid-cols-2 gap-2">
+                        <Skeleton className="h-14 rounded-md" />
+                        <Skeleton className="h-14 rounded-md" />
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function ProductMetaPills({ row, display }: { row: MatrixRow; display: NonNullable<MatrixRow["display"]> }) {
+    return (
+        <div className="flex flex-wrap items-center gap-1 text-[10px] leading-none text-muted-foreground/80">
+            <span className="max-w-[130px] truncate rounded bg-muted/50 px-1.5 py-1">{row.brand_name ?? "No brand"}</span>
+            <span className="max-w-[130px] truncate rounded bg-muted/50 px-1.5 py-1">{row.category_name ?? "No category"}</span>
+            <span className="max-w-[120px] truncate rounded bg-muted/50 px-1.5 py-1">Code: {display.product_code ?? "—"}</span>
+            <span className="max-w-[150px] truncate rounded bg-muted/50 px-1.5 py-1">Barcode: {display.barcode ?? "—"}</span>
+        </div>
+    );
+}
+
+function CardPriceCell(props: {
+    matrix: PricingMatrixLike;
+    row: MatrixRow;
+    tier: ProductTierKey;
+    tierIndex: number;
+    unit: Unit | null;
+}) {
+    const { matrix, row, tier, tierIndex, unit } = props;
+    const st = tierStyle(tierIndex);
+    const tierText = tier === "LIST" ? "List" : `Price ${tier}`;
+    const unitText = unit ? unitLabel(unit) : "UOM";
+    const uomId = unit ? Number(unit.unit_id) : 0;
+    const variant = unit ? row.variantsByUnitId?.[String(uomId)] : undefined;
+
+    if (!unit || !variant) {
+        return (
+            <div className={cn("rounded-md border p-2 text-xs text-muted-foreground", st.border, st.cell)}>
+                <div className="mb-1 truncate font-medium text-foreground/70">{tierText} / {unitText}</div>
+                <div className="flex h-7 items-center">—</div>
+            </div>
+        );
+    }
+
+    const variantProductId = Number(variant.product.product_id);
+    if (!Number.isFinite(variantProductId) || variantProductId <= 0) {
+        return (
+            <div className={cn("rounded-md border p-2 text-xs text-muted-foreground", st.border, st.cell)}>
+                <div className="mb-1 truncate font-medium text-foreground/70">{tierText} / {unitText}</div>
+                <div className="flex h-7 items-center">—</div>
+            </div>
+        );
+    }
+
+    const base = toNullableNumber(variant.tiers?.[tier]);
+    const val = matrix.getCellValue(variantProductId, tier, base);
+    const pending = matrix.getPendingValue(variantProductId, tier);
+    const dirty = matrix.isDirty(variantProductId, tier);
+    const err = toErrorString(matrix.getError(variantProductId, tier));
+
+    return (
+        <div className={cn("rounded-md border bg-background p-2", st.border)}>
+            <div className="mb-1 truncate text-[11px] font-semibold text-foreground/75">{tierText} / {unitText}</div>
+            <PriceCell
+                value={val}
+                pendingValue={pending}
+                dirty={dirty}
+                error={err}
+                onChange={(raw) => matrix.setCell(variantProductId, tier, raw)}
+            />
+        </div>
+    );
+}
+
+function PricingCards(props: {
+    matrix: PricingMatrixLike;
+    rows: MatrixRow[];
+    tiers: ProductTierKey[];
+    usedUnits: Unit[];
+    loading: boolean;
+    totalGroups: number;
+}) {
+    const { matrix, rows, tiers, usedUnits, loading, totalGroups } = props;
+
+    if (loading && rows.length === 0) {
+        return <LoadingCardBody rowCount={6} />;
+    }
+
+    if (!loading && totalGroups === 0) {
+        return <div className="p-8 text-center text-sm text-muted-foreground">No products found.</div>;
+    }
+
+    return (
+        <div className={cn("grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3", loading && rows.length > 0 && "pmx-loading-row")}>
+            {rows.map((row) => {
+                const display = row.display ?? {};
+                const groupKey = String(row.group_id);
+
+                return (
+                    <article key={`C-${groupKey}`} className="rounded-lg border bg-background p-3 shadow-sm">
+                        <div className="space-y-1.5">
+                            <div className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
+                                {display.product_name ?? "—"}
+                            </div>
+                            <ProductMetaPills row={row} display={display} />
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            {tiers.flatMap((tier, tierIndex) => {
+                                if (usedUnits.length > 0) {
+                                    return usedUnits.map((unit) => (
+                                        <CardPriceCell
+                                            key={`${groupKey}-${tier}-${unit.unit_id}`}
+                                            matrix={matrix}
+                                            row={row}
+                                            tier={tier}
+                                            tierIndex={tierIndex}
+                                            unit={unit}
+                                        />
+                                    ));
+                                }
+
+                                return [
+                                    <CardPriceCell
+                                        key={`${groupKey}-${tier}-none`}
+                                        matrix={matrix}
+                                        row={row}
+                                        tier={tier}
+                                        tierIndex={tierIndex}
+                                        unit={null}
+                                    />,
+                                ];
+                            })}
+                        </div>
+                    </article>
+                );
+            })}
+        </div>
+    );
+}
+
 export default function PricingTable({ matrix }: Props) {
     const usedUnits: Unit[] = Array.isArray(matrix.usedUnits) ? matrix.usedUnits : [];
     const uomCount = Math.max(1, usedUnits.length);
 
     const tiers = React.useMemo(() => {
-        const selectedIds = matrix.filters.price_type_ids;
-        const showList = matrix.filters.show_list_price;
-
-        // If nothing is specifically selected, show everything (Default)
-        if (selectedIds.length === 0 && !showList) {
+        if (matrix.filters.price_view === "ALL") {
             return [...matrix.TIERS];
         }
 
-        // Otherwise show only what is selected
-        const selectedNames = matrix.priceTypes
-            .filter((pt) => selectedIds.includes(pt.price_type_id))
-            .map((pt) => pt.price_type_name);
+        if (matrix.filters.price_view === "LIST") {
+            return ["LIST"] as ProductTierKey[];
+        }
 
-        return matrix.TIERS.filter((t) => {
-            if (t === "LIST") return showList;
-            return selectedNames.includes(t);
-        });
-    }, [matrix.TIERS, matrix.filters.show_list_price, matrix.filters.price_type_ids, matrix.priceTypes]);
+        const selectedIds = matrix.filters.price_type_ids;
+        const sortedPriceTypes = sortPriceTypes(matrix.priceTypes);
+        const selectedPriceType =
+            sortedPriceTypes.find((pt) => selectedIds.includes(pt.price_type_id)) ??
+            sortedPriceTypes[0] ??
+            null;
+        const selectedName = String(selectedPriceType?.price_type_name ?? "");
+
+        if (isTierName(selectedName) && selectedName !== "LIST" && matrix.TIERS.includes(selectedName)) {
+            return [selectedName];
+        }
+
+        return matrix.TIERS.filter((tier) => tier !== "LIST").slice(0, 1);
+    }, [matrix.TIERS, matrix.filters.price_view, matrix.filters.price_type_ids, matrix.priceTypes]);
 
     const rows: MatrixRow[] = Array.isArray(matrix.rows) ? matrix.rows : [];
     const meta: MatrixMeta = matrix.meta ?? {};
@@ -283,6 +446,8 @@ export default function PricingTable({ matrix }: Props) {
     const headCellBase = "whitespace-nowrap border-b text-[12px] font-semibold text-foreground/80 p-0";
     const subHeadCellBase = "whitespace-nowrap border-b text-[11px] font-medium text-foreground/70 p-0";
 
+    const [viewMode, setViewMode] = React.useState<ViewMode>("table");
+    const manualViewModeRef = React.useRef(false);
     const [hoverKey, setHoverKey] = React.useState<string | null>(null);
 
     const priceScrollRef = React.useRef<HTMLDivElement | null>(null);
@@ -298,14 +463,35 @@ export default function PricingTable({ matrix }: Props) {
     const readMetrics = React.useCallback(() => {
         const sc = priceScrollRef.current;
         const tr = trackRef.current;
-        if (!sc || !tr) return;
+        if (!sc) return;
 
         setMetrics({
             scrollLeft: sc.scrollLeft,
             scrollWidth: Math.max(1, sc.scrollWidth),
             clientWidth: Math.max(1, sc.clientWidth),
-            trackWidth: Math.max(1, tr.clientWidth),
+            trackWidth: Math.max(1, tr?.clientWidth ?? sc.clientWidth),
         });
+    }, []);
+
+    React.useEffect(() => {
+        const query = window.matchMedia("(max-width: 767px)");
+        const syncViewMode = () => {
+            if (!manualViewModeRef.current) {
+                setViewMode(query.matches ? "cards" : "table");
+            }
+        };
+
+        syncViewMode();
+        query.addEventListener("change", syncViewMode);
+
+        return () => {
+            query.removeEventListener("change", syncViewMode);
+        };
+    }, []);
+
+    const setManualViewMode = React.useCallback((next: ViewMode) => {
+        manualViewModeRef.current = true;
+        setViewMode(next);
     }, []);
 
     React.useEffect(() => {
@@ -313,14 +499,14 @@ export default function PricingTable({ matrix }: Props) {
 
         const sc = priceScrollRef.current;
         const tr = trackRef.current;
-        if (!sc || !tr) return;
+        if (!sc) return;
 
         const onResize = () => readMetrics();
         window.addEventListener("resize", onResize);
 
         const ro = new ResizeObserver(() => readMetrics());
         ro.observe(sc);
-        ro.observe(tr);
+        if (tr) ro.observe(tr);
 
         return () => {
             window.removeEventListener("resize", onResize);
@@ -394,6 +580,16 @@ export default function PricingTable({ matrix }: Props) {
     );
 
     const priceCols = tiers.length * uomCount;
+    const priceViewLabel =
+        matrix.filters.price_view === "ALL"
+            ? "All Prices"
+            : tiers[0] === "LIST"
+                ? "List Price"
+                : `Price ${tiers[0] ?? ""}`;
+    const priceViewHelp =
+        matrix.filters.price_view === "ALL"
+            ? "Showing every price type. Use the horizontal bar if more columns are available."
+            : `Focused editing for ${priceViewLabel}. Switch to All Prices only when you need the full matrix.`;
 
     return (
         <div className="relative z-0 flex min-h-0 min-w-0 flex-col rounded-2xl border bg-background shadow-sm">
@@ -412,6 +608,38 @@ export default function PricingTable({ matrix }: Props) {
                 </div>
             )}
 
+            <div className="flex flex-col gap-2 border-b bg-muted/20 px-3 py-2 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                    <div className="text-sm font-semibold text-foreground">{priceViewLabel}</div>
+                    <div className="text-xs text-muted-foreground">{priceViewHelp}</div>
+                </div>
+                <div className="inline-flex w-fit items-center rounded-md border bg-background p-1">
+                    <Button
+                        type="button"
+                        variant={viewMode === "table" ? "secondary" : "ghost"}
+                        size="sm"
+                        className="h-8 gap-1.5 px-2"
+                        onClick={() => setManualViewMode("table")}
+                        title="Table view"
+                    >
+                        <Table2 className="h-4 w-4" />
+                        <span>Table</span>
+                    </Button>
+                    <Button
+                        type="button"
+                        variant={viewMode === "cards" ? "secondary" : "ghost"}
+                        size="sm"
+                        className="h-8 gap-1.5 px-2"
+                        onClick={() => setManualViewMode("cards")}
+                        title="Card view"
+                    >
+                        <LayoutGrid className="h-4 w-4" />
+                        <span>Cards</span>
+                    </Button>
+                </div>
+            </div>
+
+            {viewMode === "table" ? (
             <div className="relative min-h-0 flex-1">
                 <div className="flex min-w-0">
                     {/* LEFT */}
@@ -419,35 +647,22 @@ export default function PricingTable({ matrix }: Props) {
                         <div className="sticky top-0 z-40 overflow-hidden bg-background border-b shadow-md">
                             <PTable className="pmx-table table-fixed" style={{ width: LEFT_TABLE_WIDTH }}>
                                 <colgroup>
-                                    <col style={{ width: LEFT_COL_WIDTHS[0] }} />
-                                    <col style={{ width: LEFT_COL_WIDTHS[1] }} />
-                                    <col style={{ width: LEFT_COL_WIDTHS[2] }} />
+                                    <col style={{ width: LEFT_TABLE_WIDTH }} />
                                 </colgroup>
 
                                 <PTableHeader>
                                     <PTableRow style={{ height: HEAD_ROW_H }}>
-                                        <PTableHead className={headCellBase}>
-                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Brand</div>
-                                        </PTableHead>
-                                        <PTableHead className={headCellBase}>
-                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Category</div>
-                                        </PTableHead>
                                         <PTableHead className={cn(headCellBase, "border-r")}>
                                             <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Product</div>
                                         </PTableHead>
                                     </PTableRow>
 
                                     <PTableRow style={{ height: SUBHEAD_ROW_H }}>
-                                        {Array.from({ length: 3 }).map((_, i) => (
-                                            <PTableHead
-                                                key={`left-sp-${i}`}
-                                                className={cn(subHeadCellBase, i === 2 ? "border-r" : "")}
-                                            >
-                                                <div style={{ height: SUBHEAD_ROW_H }} className="px-3">
-                                                    <span className="sr-only">Spacer</span>
-                                                </div>
-                                            </PTableHead>
-                                        ))}
+                                        <PTableHead className={cn(subHeadCellBase, "border-r")}>
+                                            <div style={{ height: SUBHEAD_ROW_H }} className="flex items-center px-3">
+                                                Brand / Category / Code / Barcode
+                                            </div>
+                                        </PTableHead>
                                     </PTableRow>
                                 </PTableHeader>
                             </PTable>
@@ -455,9 +670,7 @@ export default function PricingTable({ matrix }: Props) {
 
                         <PTable className="pmx-table table-fixed" style={{ width: LEFT_TABLE_WIDTH }}>
                             <colgroup>
-                                <col style={{ width: LEFT_COL_WIDTHS[0] }} />
-                                <col style={{ width: LEFT_COL_WIDTHS[1] }} />
-                                <col style={{ width: LEFT_COL_WIDTHS[2] }} />
+                                <col style={{ width: LEFT_TABLE_WIDTH }} />
                             </colgroup>
 
                             <PTableBody className={cn(loading && rows.length > 0 && "pmx-loading-row")}>
@@ -476,26 +689,32 @@ export default function PricingTable({ matrix }: Props) {
                                                 onMouseEnter={() => setHoverKey(groupKey)}
                                                 onMouseLeave={() => setHoverKey(null)}
                                             >
-                                                <PTableCell className="p-0 border-b overflow-hidden" style={{ width: LEFT_COL_WIDTHS[0], height: BODY_ROW_H }}>
+                                                <PTableCell className="hidden p-0 border-b overflow-hidden" style={{ height: BODY_ROW_H }}>
                                                     <div style={{ height: BODY_ROW_H }} className="flex items-center px-3 truncate text-[13px] text-muted-foreground">
                                                         {r.brand_name ?? "—"}
                                                     </div>
                                                 </PTableCell>
-                                                <PTableCell className="p-0 border-b overflow-hidden" style={{ width: LEFT_COL_WIDTHS[1], height: BODY_ROW_H }}>
+                                                <PTableCell className="hidden p-0 border-b overflow-hidden" style={{ height: BODY_ROW_H }}>
                                                     <div style={{ height: BODY_ROW_H }} className="flex items-center px-3 truncate text-[13px] text-muted-foreground">
                                                         {r.category_name ?? "—"}
                                                     </div>
                                                 </PTableCell>
-                                                <PTableCell className="p-0 border-b" style={{ width: LEFT_COL_WIDTHS[2], height: BODY_ROW_H }}>
-                                                    <div style={{ height: BODY_ROW_H }} className="flex flex-col justify-center gap-1.5 px-3">
-                                                        <span className="text-[13px] font-semibold leading-tight text-foreground/90 whitespace-normal">
+                                                <PTableCell className="p-0 border-b" style={{ width: LEFT_TABLE_WIDTH, height: BODY_ROW_H }}>
+                                                    <div style={{ height: BODY_ROW_H }} className="flex flex-col justify-center gap-1 px-3">
+                                                        <span className="line-clamp-2 text-[13px] font-semibold leading-tight text-foreground/90">
                                                             {display.product_name ?? "—"}
                                                         </span>
-                                                        <div className="flex items-center gap-2 text-[11px] leading-none text-muted-foreground/80">
-                                                            <span className="flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 border border-muted-foreground/10 truncate">
+                                                        <div className="flex flex-wrap items-center gap-1 text-[10px] leading-none text-muted-foreground/80">
+                                                            <span className="max-w-[110px] truncate rounded bg-muted/40 px-1.5 py-0.5">
+                                                                {r.brand_name ?? "No brand"}
+                                                            </span>
+                                                            <span className="max-w-[110px] truncate rounded bg-muted/40 px-1.5 py-0.5">
+                                                                {r.category_name ?? "No category"}
+                                                            </span>
+                                                            <span className="flex max-w-[96px] items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 border border-muted-foreground/10 truncate">
                                                                 Code: <span className="font-medium text-foreground/80">{display.product_code ?? "—"}</span>
                                                             </span>
-                                                            <span className="flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 border border-muted-foreground/10 truncate">
+                                                            <span className="flex max-w-[128px] items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 border border-muted-foreground/10 truncate">
                                                                 Barcode: <span className="font-medium text-foreground/80">{display.barcode ?? "—"}</span>
                                                             </span>
                                                         </div>
@@ -507,7 +726,7 @@ export default function PricingTable({ matrix }: Props) {
 
                                 {!loading && totalGroups === 0 ? (
                                     <PTableRow>
-                                        <PTableCell colSpan={3} className="py-10 text-center text-muted-foreground">
+                                        <PTableCell className="py-10 text-center text-muted-foreground">
                                             No products found.
                                         </PTableCell>
                                     </PTableRow>
@@ -604,7 +823,8 @@ export default function PricingTable({ matrix }: Props) {
                             ref={priceScrollRef}
                             onScroll={onPriceScroll}
                             className="pmx-price-x relative overflow-x-auto overflow-y-hidden"
-                        >                            <div className="w-max min-w-full">
+                        >
+                            <div className="w-max min-w-full">
                                 <PTable className="pmx-table w-max table-fixed">
                                     <colgroup>
                                         {tiers.map((_, ti) =>
@@ -687,7 +907,7 @@ export default function PricingTable({ matrix }: Props) {
                                                                         className={cn("p-0 border-b", st.cell, st.border, borderL)}
                                                                         style={{ height: BODY_ROW_H, width: PRICE_COL_WIDTH }}
                                                                     >
-                                                                        <div style={{ height: BODY_ROW_H }} className="flex items-center justify-center px-3">
+                                                                        <div style={{ height: BODY_ROW_H }} className="flex items-center justify-center px-2">
                                                                             <div className="w-full">
                                                                                 <PriceCell
                                                                                     value={val}
@@ -710,35 +930,44 @@ export default function PricingTable({ matrix }: Props) {
                             </div>
                         </div>
 
-                        <div className="border-t bg-background/60 px-3 py-2">
-                            <div
-                                ref={trackRef}
-                                onMouseDown={onTrackClick}
-                                className={cn(
-                                    "relative h-3 w-full rounded-full bg-muted/70 ring-1 ring-border/60",
-                                    maxScrollLeft <= 0 ? "opacity-40" : "opacity-100"
-                                )}
-                            >
+                        {maxScrollLeft > 0 ? (
+                            <div className="border-t bg-background/60 px-3 py-2">
                                 <div
-                                    role="slider"
-                                    aria-label="Horizontal scroll"
-                                    aria-valuemin={0}
-                                    aria-valuemax={maxScrollLeft}
-                                    aria-valuenow={metrics.scrollLeft}
-                                    tabIndex={0}
-                                    onMouseDown={onThumbMouseDown}
-                                    className={cn(
-                                        "absolute top-0 h-3 rounded-full",
-                                        "bg-foreground/30 hover:bg-foreground/40 active:bg-foreground/50",
-                                        "cursor-grab active:cursor-grabbing"
-                                    )}
-                                    style={{ width: `${thumbWidth}px`, transform: `translateX(${thumbX}px)` }}
-                                />
+                                    ref={trackRef}
+                                    onMouseDown={onTrackClick}
+                                    className="relative h-3 w-full rounded-full bg-muted/70 ring-1 ring-border/60"
+                                >
+                                    <div
+                                        role="slider"
+                                        aria-label="Horizontal scroll"
+                                        aria-valuemin={0}
+                                        aria-valuemax={maxScrollLeft}
+                                        aria-valuenow={metrics.scrollLeft}
+                                        tabIndex={0}
+                                        onMouseDown={onThumbMouseDown}
+                                        className={cn(
+                                            "absolute top-0 h-3 rounded-full",
+                                            "bg-foreground/30 hover:bg-foreground/40 active:bg-foreground/50",
+                                            "cursor-grab active:cursor-grabbing"
+                                        )}
+                                        style={{ width: `${thumbWidth}px`, transform: `translateX(${thumbX}px)` }}
+                                    />
+                                </div>
                             </div>
-                        </div>
+                        ) : null}
                     </div>
                 </div>
             </div>
+            ) : (
+                <PricingCards
+                    matrix={matrix}
+                    rows={rows}
+                    tiers={tiers}
+                    usedUnits={usedUnits}
+                    loading={loading}
+                    totalGroups={totalGroups}
+                />
+            )}
 
             <div className="flex flex-col gap-2 border-t bg-background/60 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

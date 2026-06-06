@@ -1,0 +1,110 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+    BatchDetailRow,
+    decodeUserIdFromJwtCookie,
+    directusErrorResponse,
+    getDetails,
+    getHeader,
+    isRecord,
+    normalizeHeaderId,
+    normalizePriceTypeId,
+    normalizeProductId,
+    pickId,
+} from "../_batch";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type RouteContext = {
+    params: Promise<{ id: string }>;
+};
+
+function productLabel(value: unknown) {
+    if (!isRecord(value)) return "";
+    return String(value.product_name ?? value.product_code ?? "").trim();
+}
+
+function productCode(value: unknown) {
+    return isRecord(value) ? String(value.product_code ?? "").trim() : "";
+}
+
+function priceTypeName(value: unknown) {
+    return isRecord(value) ? String(value.price_type_name ?? "").trim() : "";
+}
+
+function supplierIdOf(value: unknown): number | null {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value === "string") {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : null;
+    }
+    if (isRecord(value)) return pickId(value.id);
+    return null;
+}
+
+function supplierNameOf(value: unknown): string {
+    if (!isRecord(value)) return "";
+    const shortcut = String(value.supplier_shortcut ?? "").trim();
+    const name = String(value.supplier_name ?? "").trim();
+    return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
+}
+
+function mapDetail(line: BatchDetailRow) {
+    const current = line.current_price === null || line.current_price === undefined ? null : Number(line.current_price);
+    const proposed = Number(line.proposed_price);
+    const delta = Number.isFinite(proposed) && current !== null && Number.isFinite(current) ? proposed - current : null;
+    const percentChange = delta !== null && current !== null && current !== 0 ? (delta / current) * 100 : null;
+
+    return {
+        request_id: pickId(line.request_id),
+        product_id: normalizeProductId(line),
+        product_name: productLabel(line.product_id),
+        product_code: productCode(line.product_id),
+        price_type_id: normalizePriceTypeId(line),
+        price_type_name: priceTypeName(line.price_type_id),
+        current_price: Number.isFinite(current) ? current : null,
+        proposed_price: Number.isFinite(proposed) ? proposed : null,
+        delta,
+        percent_change: percentChange,
+        status: line.status ?? "PENDING",
+    };
+}
+
+export async function GET(req: NextRequest, context: RouteContext) {
+    try {
+        const userId = decodeUserIdFromJwtCookie(req);
+        if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+        const { id } = await context.params;
+        const headerId = Number(id);
+        if (!Number.isFinite(headerId) || headerId <= 0) {
+            return NextResponse.json({ error: "Invalid batch id" }, { status: 400 });
+        }
+
+        const header = await getHeader(headerId);
+        if (!header) return NextResponse.json({ error: "Batch not found" }, { status: 404 });
+
+        const details = await getDetails(headerId);
+        return NextResponse.json({
+            data: {
+                id: normalizeHeaderId(header),
+                header_id: normalizeHeaderId(header),
+                supplier_id: supplierIdOf(header.supplier_id),
+                supplier_name: supplierNameOf(header.supplier_id),
+                reference_no: header.reference_no ?? "",
+                remarks: header.remarks ?? "",
+                status: header.status ?? "PENDING",
+                requested_by: header.requested_by ?? null,
+                requested_at: header.requested_at ?? null,
+                approved_by: header.approved_by ?? null,
+                approved_at: header.approved_at ?? null,
+                rejected_by: header.rejected_by ?? null,
+                rejected_at: header.rejected_at ?? null,
+                reject_reason: header.reject_reason ?? null,
+                details: details.map(mapDetail),
+            },
+        });
+    } catch (error: unknown) {
+        return directusErrorResponse(error);
+    }
+}

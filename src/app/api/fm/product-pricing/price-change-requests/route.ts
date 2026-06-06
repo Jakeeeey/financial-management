@@ -219,13 +219,15 @@ export async function GET(req: NextRequest) {
         const date_from = norm(searchParams.get("date_from"));
         const date_to = norm(searchParams.get("date_to"));
 
+        const limit = norm(searchParams.get("limit"));
+        const useAllRows = limit === "-1";
         const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-        const page_size = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
-        const offset = (page - 1) * page_size;
+        const page_size = useAllRows ? -1 : Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
+        const offset = useAllRows ? 0 : (page - 1) * page_size;
 
         const params = new URLSearchParams();
         params.set("limit", String(page_size));
-        params.set("offset", String(offset));
+        if (!useAllRows) params.set("offset", String(offset));
         params.set("meta", "total_count");
         params.set("sort", "-requested_at");
 

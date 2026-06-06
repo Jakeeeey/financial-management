@@ -34,13 +34,13 @@ export default function PriceCell(props: Props) {
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="—"
                 className={cn(
-                    "h-8 text-xs",
+                    "h-7 px-2 text-xs",
                     dirty ? "ring-1 ring-primary/50" : "",
                     error ? "ring-1 ring-destructive" : ""
                 )}
             />
             <div className="flex flex-col gap-0.5 px-0.5">
-                <div className="truncate text-[10px] leading-tight text-muted-foreground font-medium">
+                <div className="truncate text-[10px] leading-none text-muted-foreground font-medium">
                     {error ? (
                         <span className="text-destructive">{error}</span>
                     ) : (
@@ -48,7 +48,7 @@ export default function PriceCell(props: Props) {
                     )}
                 </div>
                 {pendingValue !== null && pendingValue !== undefined && (
-                    <div className="truncate text-[10px] leading-tight text-amber-600 dark:text-amber-500 font-semibold bg-amber-50 dark:bg-amber-950/30 px-1 rounded-sm w-fit border border-amber-200/50 dark:border-amber-800/50">
+                    <div className="truncate text-[10px] leading-none text-amber-600 dark:text-amber-500 font-semibold bg-amber-50 dark:bg-amber-950/30 px-1 rounded-sm w-fit border border-amber-200/50 dark:border-amber-800/50">
                         Request: {formatPHP(pendingValue)}
                     </div>
                 )}

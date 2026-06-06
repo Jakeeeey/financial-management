@@ -11,6 +11,8 @@ import type {
     ProductRow,
     VariantCell,
     PriceType,
+    PriceChangeBatchLineInput,
+    SavePriceChangeBatchInput,
 } from "../types";
 import * as api from "../providers/pricingApi";
 import { TIERS } from "../utils/constants";
@@ -53,6 +55,7 @@ const defaultFilters: PricingFilters = {
     supplier_scope: "ALL",
     active_only: true,
     missing_tier: false,
+    price_view: "FOCUSED",
     price_type_ids: [],
     show_list_price: false,
 };
@@ -95,6 +98,7 @@ export function usePricingMatrix(args: {
                 brand_ids: filters.brand_ids ?? [],
                 unit_ids: filters.unit_ids ?? [],
                 supplier_ids: filters.supplier_ids ?? [],
+                price_view: filters.price_view,
                 price_type_ids: filters.price_type_ids ?? [],
                 show_list_price: filters.show_list_price,
             }),
@@ -107,6 +111,7 @@ export function usePricingMatrix(args: {
             filters.brand_ids,
             filters.unit_ids,
             filters.supplier_ids,
+            filters.price_view,
             filters.price_type_ids,
             filters.show_list_price,
         ],
@@ -315,7 +320,32 @@ export function usePricingMatrix(args: {
         return pendingMap.get(`${productId}:${tier}` as PendingKey) ?? null;
     }, [pendingMap]);
 
-    const saveAll = useCallback(async () => {
+    const dirtyCounts = useMemo(() => {
+        let price = 0;
+        let cost = 0;
+
+        for (const key of dirty.keys()) {
+            const [, tier] = key.split(":") as [string, ProductTierKey];
+            if (tier === "LIST") cost += 1;
+            else price += 1;
+        }
+
+        return { price, cost };
+    }, [dirty]);
+
+    const findCurrentPrice = useCallback((productId: number, tier: ProductTierKey) => {
+        for (const row of rows) {
+            for (const v of Object.values(row.variantsByUnitId)) {
+                const pid = toNumberOrNull(v.product.product_id);
+                if (pid === productId) {
+                    return toNumberOrNull(v.tiers[tier]);
+                }
+            }
+        }
+        return null;
+    }, [rows]);
+
+    const saveAll = useCallback(async (batch?: SavePriceChangeBatchInput) => {
         if (dirtyErrors.size > 0) {
             toast.error("Please fix validation errors before submitting.");
             return;
@@ -326,7 +356,7 @@ export function usePricingMatrix(args: {
             return;
         }
 
-        const pcrItems: { product_id: number; price_type_id: number; proposed_price: number }[] = [];
+        const pcrItems: PriceChangeBatchLineInput[] = [];
         const costPcrItems: { product_id: number; proposed_cost: number; current_cost: number | null }[] = [];
 
         for (const [k, price] of dirty.entries()) {
@@ -366,6 +396,7 @@ export function usePricingMatrix(args: {
             pcrItems.push({
                 product_id: productId,
                 price_type_id: priceTypeId,
+                current_price: findCurrentPrice(productId, tier),
                 proposed_price: proposed,
             });
         }
@@ -375,11 +406,16 @@ export function usePricingMatrix(args: {
             return;
         }
 
+        if (pcrItems.length > 0 && (!batch?.supplier_id || !batch.remarks.trim())) {
+            toast.error("Supplier and batch remarks are required for price change batches.");
+            return;
+        }
+
         try {
             const promises: Promise<unknown>[] = [];
 
             if (pcrItems.length > 0) {
-                promises.push(api.createPriceChangeRequests(pcrItems));
+                promises.push(api.createPriceChangeBatch(batch!, pcrItems));
             }
 
             if (costPcrItems.length > 0) {
@@ -478,7 +514,7 @@ export function usePricingMatrix(args: {
             }
             toast.error(displayMessage);
         }
-    }, [dirty, dirtyErrors, tierIdMap, refresh, rows]);
+    }, [dirty, dirtyErrors, tierIdMap, refresh, rows, findCurrentPrice]);
 
     const discardAll = useCallback(() => {
         setDirty(new Map());
@@ -514,6 +550,8 @@ export function usePricingMatrix(args: {
         getError,
 
         dirtyCount: dirty.size,
+        priceDirtyCount: dirtyCounts.price,
+        costDirtyCount: dirtyCounts.cost,
         saveAll,
         discardAll,
 
@@ -537,6 +575,7 @@ export function usePricingMatrix(args: {
         isDirty,
         getError,
         dirty,
+        dirtyCounts,
         saveAll,
         discardAll,
         refresh,

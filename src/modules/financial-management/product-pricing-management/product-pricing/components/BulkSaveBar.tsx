@@ -52,10 +52,16 @@ export default function BulkSaveBar(props: Props) {
                     </div>
                 </Card>
 
-                <div className="flex items-center gap-2">
-                    <Badge variant={hasDirty ? "default" : "secondary"}>
-                        {dirtyCount} change{dirtyCount === 1 ? "" : "s"}
+                <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                        variant={hasDirty ? "default" : "secondary"}
+                        className={cn(hasDirty && "bg-amber-600 text-white hover:bg-amber-600")}
+                    >
+                        {dirtyCount} unsaved change{dirtyCount === 1 ? "" : "s"}
                     </Badge>
+                    {hasDirty ? (
+                        <span className="text-xs text-muted-foreground">Save will create a batch request.</span>
+                    ) : null}
                     {loading ? <span className="text-sm text-muted-foreground">Loading…</span> : null}
                 </div>
             </div>

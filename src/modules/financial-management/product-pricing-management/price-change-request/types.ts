@@ -36,6 +36,44 @@ export type PriceChangeRequestRow = {
     reject_reason?: string | null;
 };
 
+export type PriceChangeBatchStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+
+export type PriceChangeBatchLine = {
+    request_id: number | null;
+    product_id: number;
+    product_name: string;
+    product_code?: string;
+    price_type_id: number;
+    price_type_name: string;
+    current_price: number | null;
+    proposed_price: number | null;
+    delta: number | null;
+    percent_change: number | null;
+    status: PriceChangeBatchStatus | PCRStatus | string;
+};
+
+export type PriceChangeBatchHeader = {
+    id: number;
+    header_id: number;
+    supplier_id: number | null;
+    supplier_name?: string;
+    reference_no?: string;
+    remarks?: string;
+    status: PriceChangeBatchStatus;
+    requested_by?: number | string | null;
+    requested_at?: string | null;
+    approved_by?: number | string | null;
+    approved_at?: string | null;
+    rejected_by?: number | string | null;
+    rejected_at?: string | null;
+    reject_reason?: string | null;
+    line_count?: number;
+};
+
+export type PriceChangeBatchDetail = PriceChangeBatchHeader & {
+    details: PriceChangeBatchLine[];
+};
+
 export type CostChangeRequestRow = {
     request_id: number;
     product_id: number | ProductRef;
@@ -75,6 +113,18 @@ export type CreatePCRPayload = {
     product_id: number;
     price_type_id: number;
     proposed_price: number;
+};
+
+export type CreatePriceChangeBatchPayload = {
+    supplier_id: number;
+    reference_no?: string;
+    remarks: string;
+    lines: Array<{
+        product_id: number;
+        price_type_id: number;
+        current_price?: number | null;
+        proposed_price: number;
+    }>;
 };
 
 export type CreateCCRPayload = {

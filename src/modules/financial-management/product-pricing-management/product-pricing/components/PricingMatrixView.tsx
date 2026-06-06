@@ -14,6 +14,7 @@ import { usePricingMatrix } from "../hooks/usePricingMatrix";
 import PricingFiltersBar from "./PricingFiltersBar";
 import PricingTable from "./PricingTable";
 import BulkSaveBar from "./BulkSaveBar";
+import { PriceChangeBatchDialog } from "./PriceChangeBatchDialog";
 
 import { pivotPrices } from "../utils/pivot";
 import * as api from "../providers/pricingApi";
@@ -53,6 +54,7 @@ const EMPTY_FILTERS: PricingFilters = {
     supplier_scope: "ALL",
     active_only: true,
     missing_tier: false,
+    price_view: "FOCUSED",
     price_type_ids: [],
     show_list_price: false,
 };
@@ -331,6 +333,7 @@ export default function PricingMatrixView() {
     const supplierScope: SupplierScope = matrix.filters.supplier_scope;
     const supplierFilterActive =
         selectedSupplierIds.length > 0 && supplierScope === "LINKED_ONLY";
+    const defaultBatchSupplierId = selectedSupplierIds.length === 1 ? Number(selectedSupplierIds[0]) : null;
 
     const currentRows = React.useMemo<MatrixRow[]>(
         () => (Array.isArray(matrix.rows) ? matrix.rows : []),
@@ -438,6 +441,7 @@ export default function PricingMatrixView() {
     ]);
 
     const [printOpen, setPrintOpen] = React.useState(false);
+    const [batchDialogOpen, setBatchDialogOpen] = React.useState(false);
     const [printFiltersText, setPrintFiltersText] = React.useState("");
     const [printGeneratedAt, setPrintGeneratedAt] = React.useState("");
     const [isPrinting, setIsPrinting] = React.useState(false);
@@ -558,6 +562,15 @@ export default function PricingMatrixView() {
 
     const isInitialLoad = (lookups.loading || pt.loading) && currentRows.length === 0;
 
+    const handleSave = React.useCallback(() => {
+        if (matrix.priceDirtyCount > 0) {
+            setBatchDialogOpen(true);
+            return;
+        }
+
+        void matrix.saveAll();
+    }, [matrix]);
+
     if (isInitialLoad) {
         return (
             <div className="space-y-3">
@@ -590,7 +603,7 @@ export default function PricingMatrixView() {
                 <div className="shrink-0">
                     <BulkSaveBar
                         dirtyCount={matrix.dirtyCount}
-                        onSave={matrix.saveAll}
+                        onSave={handleSave}
                         onDiscard={matrix.discardAll}
                         onRefresh={matrix.refresh}
                         onPrint={openPrint}
@@ -612,6 +625,18 @@ export default function PricingMatrixView() {
                     units={lookups.units}
                     priceTypes={pt.priceTypes}
                     usedUnitIds={printUsedUnitIds}
+                />
+
+                <PriceChangeBatchDialog
+                    open={batchDialogOpen}
+                    onOpenChange={setBatchDialogOpen}
+                    suppliers={lookups.suppliers}
+                    defaultSupplierId={defaultBatchSupplierId}
+                    priceLineCount={matrix.priceDirtyCount}
+                    costLineCount={matrix.costDirtyCount}
+                    onSubmit={async (payload) => {
+                        await matrix.saveAll(payload);
+                    }}
                 />
             </div>
         </div>

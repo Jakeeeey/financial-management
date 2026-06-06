@@ -46,6 +46,7 @@ export type ProductRow = {
 };
 
 export type ProductTierKey = "A" | "B" | "C" | "D" | "E" | "LIST";
+export type PriceViewMode = "FOCUSED" | "LIST" | "ALL";
 
 export type PriceRow = {
     id: number;
@@ -96,6 +97,7 @@ export type PricingFilters = {
     missing_tier: boolean;
 
     // ✅ New: UI filters for column visibility
+    price_view: PriceViewMode;
     price_type_ids: number[];
     show_list_price: boolean;
 };
@@ -115,6 +117,19 @@ export type PriceChangeRequest = {
     price_type_id: number | { price_type_id: number };
     proposed_price: number;
     status: string;
+};
+
+export type PriceChangeBatchLineInput = {
+    product_id: number;
+    price_type_id: number;
+    current_price: number | null;
+    proposed_price: number;
+};
+
+export type SavePriceChangeBatchInput = {
+    supplier_id: number;
+    reference_no?: string;
+    remarks: string;
 };
 
 export type CostChangeRequest = {

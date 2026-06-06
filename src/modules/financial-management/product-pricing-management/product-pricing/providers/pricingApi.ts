@@ -10,6 +10,8 @@ import type {
     Supplier,
     PriceChangeRequest,
     CostChangeRequest,
+    PriceChangeBatchLineInput,
+    SavePriceChangeBatchInput,
 } from "../types";
 import { http } from "./fetchProvider";
 
@@ -145,6 +147,26 @@ export async function createPriceChangeRequests(items: {
     }>(`/api/fm/product-pricing/price-change-requests/bulk`, {
         method: "POST",
         body: JSON.stringify({ items }),
+    });
+}
+
+export async function createPriceChangeBatch(
+    batch: SavePriceChangeBatchInput,
+    lines: PriceChangeBatchLineInput[],
+) {
+    return http<{
+        data: { id: number; header_id: number; line_count?: number };
+        created: number;
+        skipped_duplicates?: number;
+        skipped_existing_pending?: number;
+    }>(`/api/fm/product-pricing/price-change-batches`, {
+        method: "POST",
+        body: JSON.stringify({
+            supplier_id: batch.supplier_id,
+            reference_no: batch.reference_no,
+            remarks: batch.remarks,
+            lines,
+        }),
     });
 }
 

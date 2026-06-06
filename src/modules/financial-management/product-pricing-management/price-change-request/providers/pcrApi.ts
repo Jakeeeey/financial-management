@@ -1,8 +1,11 @@
 import type {
     ActionPayload,
+    CreatePriceChangeBatchPayload,
     CreatePCRPayload,
     CreateCCRPayload,
     ListQuery,
+    PriceChangeBatchDetail,
+    PriceChangeBatchHeader,
     PriceChangeRequestRow,
     CostChangeRequestRow,
     ListMeta,
@@ -249,4 +252,56 @@ export async function searchProducts(params: {
             };
         })
         .filter((row): row is ProductSearchRow => row !== null);
+}
+
+export async function listPriceChangeBatches(query: ListQuery) {
+    const sp = new URLSearchParams();
+    if (query.status) sp.set("status", query.status);
+    if (query.q) sp.set("q", query.q);
+    if (query.supplier_id) sp.set("supplier_id", String(query.supplier_id));
+    if (query.date_from) sp.set("date_from", query.date_from);
+    if (query.date_to) sp.set("date_to", query.date_to);
+    sp.set("page", String(query.page ?? 1));
+    sp.set("page_size", String(query.page_size ?? 50));
+
+    return http<{ data: PriceChangeBatchHeader[]; meta: ListMeta | null }>(
+        `/api/fm/product-pricing/price-change-batches?${sp.toString()}`,
+    );
+}
+
+export async function getPriceChangeBatch(headerId: number) {
+    return http<{ data: PriceChangeBatchDetail }>(
+        `/api/fm/product-pricing/price-change-batches/${headerId}`,
+    );
+}
+
+export async function createPriceChangeBatch(payload: CreatePriceChangeBatchPayload) {
+    return http<{
+        data: PriceChangeBatchHeader;
+        created: number;
+        skipped_duplicates?: number;
+        skipped_existing_pending?: number;
+    }>(`/api/fm/product-pricing/price-change-batches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function approvePriceChangeBatch(headerId: number) {
+    return http<{ ok: boolean; header_id: number; affected: number }>(
+        `/api/fm/product-pricing/price-change-batches/${headerId}/approve`,
+        { method: "POST" },
+    );
+}
+
+export async function rejectPriceChangeBatch(headerId: number, reject_reason: string) {
+    return http<{ ok: boolean; header_id: number; rejected: number }>(
+        `/api/fm/product-pricing/price-change-batches/${headerId}/reject`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reject_reason }),
+        },
+    );
 }

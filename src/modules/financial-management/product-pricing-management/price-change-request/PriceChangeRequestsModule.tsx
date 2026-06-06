@@ -3,17 +3,22 @@
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, CheckCheck, X, Calendar as CalendarIcon } from "lucide-react";
+import { AlertCircle, Loader2, CheckCheck, X } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
+import { PriceChangeBatchDetailDialog } from "./components/PriceChangeBatchDetailDialog";
+import { PriceChangeBatchesTable } from "./components/PriceChangeBatchesTable";
+import { RequestFiltersBar } from "./components/RequestFiltersBar";
 import RequestsTable from "./components/RequestsTable";
 import { RejectDialog } from "./components/RejectDialog";
+import { ApproveDialog } from "./components/ApproveDialog";
 
+import { usePriceChangeBatches } from "./hooks/usePriceChangeBatches";
 import { usePCRList } from "./hooks/usePCR";
 import { usePCRActions } from "./hooks/usePCRActions";
 import { getLookups, SupplierOption } from "./providers/pcrApi";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import type { ListQuery, PCRStatus } from "./types";
 
 export function PriceChangeRequestsModule() {
     const [suppliers, setSuppliers] = React.useState<SupplierOption[]>([]);
@@ -55,12 +60,180 @@ export function PriceChangeRequestsModule() {
 }
 
 function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers: SupplierOption[] }) {
+    if (type === "price") {
+        return <PriceBatchManager suppliers={suppliers} />;
+    }
+
+    return <ItemRequestManager type={type} suppliers={suppliers} />;
+}
+
+function PriceBatchManager({ suppliers }: { suppliers: SupplierOption[] }) {
+    const batches = usePriceChangeBatches({ status: "PENDING", page_size: 50, page: 1 });
+    const statusTab = batches.query.status || "PENDING";
+
+    const [rejectingId, setRejectingId] = React.useState<number | null>(null);
+    const [viewingId, setViewingId] = React.useState<number | null>(null);
+    const [confirmingApproveId, setConfirmingApproveId] = React.useState<number | null>(null);
+
+    const confirmingBatch = React.useMemo(
+        () => batches.rows.find(r => Number(r.header_id ?? r.id) === confirmingApproveId && r.status === "PENDING"),
+        [batches.rows, confirmingApproveId]
+    );
+
+    const rejectingBatch = React.useMemo(
+        () => batches.rows.find(r => Number(r.header_id ?? r.id) === rejectingId && r.status === "PENDING"),
+        [batches.rows, rejectingId]
+    );
+
+    const handleConfirmApprove = React.useCallback(async () => {
+        if (confirmingApproveId == null) return;
+        await batches.approve(confirmingApproveId);
+        setViewingId(null);
+        setConfirmingApproveId(null);
+    }, [confirmingApproveId, batches]);
+
+    return (
+        <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+                <Tabs value={statusTab as string} onValueChange={(v) => {
+                    batches.setQuery((q) => ({ ...q, status: v as PCRStatus, page: 1 }));
+                }} className="w-full">
+                    <TabsList>
+                        <TabsTrigger value="PENDING">Pending</TabsTrigger>
+                        <TabsTrigger value="APPROVED">Approved</TabsTrigger>
+                        <TabsTrigger value="REJECTED">Rejected</TabsTrigger>
+                    </TabsList>
+                </Tabs>
+            </div>
+
+            <div className="space-y-3">
+                <RequestFiltersBar
+                    query={batches.query}
+                    setQuery={batches.setQuery}
+                    suppliers={suppliers}
+                    loading={batches.loading}
+                    total={batches.total}
+                    totalLabel="batches"
+                    searchLabel="Search batches"
+                    searchPlaceholder="Batch number, reference, or remarks"
+                    searchHelper="Find a price change batch by document number, reference, or remarks."
+                    onRefresh={batches.refresh}
+                />
+
+                {batches.error ? (
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Price change batch storage is not available</AlertTitle>
+                        <AlertDescription>{batches.error}</AlertDescription>
+                    </Alert>
+                ) : null}
+
+                <PriceChangeBatchesTable
+                    rows={batches.rows}
+                    loading={batches.loading}
+                    acting={batches.acting}
+                    meta={{ total_count: batches.total }}
+                    page={Number(batches.query.page ?? 1)}
+                    pageSize={Number(batches.query.page_size ?? 50)}
+                    onPageChange={(page) =>
+                        batches.setQuery((q) => ({
+                            ...q,
+                            page,
+                        }))
+                    }
+                    onPageSizeChange={(page_size) =>
+                        batches.setQuery((q) => ({
+                            ...q,
+                            page_size,
+                            page: 1,
+                        }))
+                    }
+                    onOpen={(id) => setViewingId(id)}
+                    onApprove={(id) => setConfirmingApproveId(id)}
+                    onReject={(id) => setRejectingId(id)}
+                />
+            </div>
+
+            <PriceChangeBatchDetailDialog
+                batchId={viewingId}
+                open={viewingId != null}
+                acting={batches.acting}
+                onOpenChange={(open) => {
+                    if (!open) setViewingId(null);
+                }}
+                onApprove={(id) => setConfirmingApproveId(id)}
+                onReject={(id) => setRejectingId(id)}
+            />
+
+            <RejectDialog
+                open={rejectingId != null}
+                onOpenChange={(v) => !v && setRejectingId(null)}
+                loading={batches.acting}
+                title="Reject Batch"
+                onConfirm={(reason) => {
+                    if (!rejectingId) return;
+                    void batches.reject(rejectingId, reason);
+                    setRejectingId(null);
+                }}
+            >
+                {rejectingBatch && (
+                    <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-1 mb-2">
+                        <div className="font-semibold">PCB-{rejectingBatch.header_id ?? rejectingBatch.id}</div>
+                        <div className="text-muted-foreground">Supplier: {rejectingBatch.supplier_name || "-"}</div>
+                        <div className="text-muted-foreground">Lines: {rejectingBatch.line_count ?? 0} item(s)</div>
+                        {rejectingBatch.reference_no && (
+                            <div className="text-muted-foreground">Ref: {rejectingBatch.reference_no}</div>
+                        )}
+                    </div>
+                )}
+            </RejectDialog>
+
+            <ApproveDialog
+                open={confirmingApproveId != null}
+                onOpenChange={(v) => !v && setConfirmingApproveId(null)}
+                loading={batches.acting}
+                onConfirm={() => void handleConfirmApprove()}
+                title="Confirm Batch Approval"
+                description="Are you sure you want to approve the following batch?"
+            >
+                {confirmingBatch && (
+                    <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-1">
+                        <div className="font-semibold">PCB-{confirmingBatch.header_id ?? confirmingBatch.id}</div>
+                        <div className="text-muted-foreground">Supplier: {confirmingBatch.supplier_name || "-"}</div>
+                        <div className="text-muted-foreground">Lines: {confirmingBatch.line_count ?? 0} item(s)</div>
+                        {confirmingBatch.reference_no && (
+                            <div className="text-muted-foreground">Ref: {confirmingBatch.reference_no}</div>
+                        )}
+                    </div>
+                )}
+            </ApproveDialog>
+        </div>
+    );
+}
+
+function ItemRequestManager({ type, suppliers }: { type: "cost", suppliers: SupplierOption[] }) {
     const inbox = usePCRList({ status: "PENDING", page_size: 50, page: 1, requestType: type });
 
     const statusTab = inbox.query.status || "PENDING";
 
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
     const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
+    const [confirmingApprove, setConfirmingApprove] = React.useState<{
+        type: 'single' | 'batch';
+        id?: number;
+    } | null>(null);
+
+    const confirmingRequest = React.useMemo(
+        () => confirmingApprove?.type === 'single'
+            ? (inbox.rows.find(r => Number(r.request_id) === confirmingApprove.id) ?? null)
+            : null,
+        [inbox.rows, confirmingApprove]
+    );
+
+    const rejectingRequest = React.useMemo(
+        () => inbox.rows.find(r => Number(r.request_id) === rejectingId) ?? null,
+        [inbox.rows, rejectingId]
+    );
 
     const actions = usePCRActions(() => {
         inbox.refresh();
@@ -114,22 +287,41 @@ function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers
         setSelectedIds([]);
     }, []);
 
-    const handleApproveSelected = React.useCallback(async () => {
+    const handleApproveSelected = React.useCallback(() => {
         if (selectedIds.length === 0) return;
+        setConfirmingApprove({ type: 'batch' });
+    }, [selectedIds]);
 
-        const result = await actions.approveMany(selectedIds);
+    const handleConfirmApprove = React.useCallback(async () => {
+        if (!confirmingApprove) return;
 
-        if (result.successIds.length > 0) {
-            setSelectedIds((prev) => prev.filter((id) => !result.successIds.includes(id)));
+        if (confirmingApprove.type === 'single' && confirmingApprove.id != null) {
+            await actions.approve(confirmingApprove.id);
+        } else if (confirmingApprove.type === 'batch' && selectedIds.length > 0) {
+            const result = await actions.approveMany(selectedIds);
+            if (result.successIds.length > 0) {
+                setSelectedIds((prev) => prev.filter((id) => !result.successIds.includes(id)));
+            }
         }
-    }, [actions, selectedIds]);
+
+        setConfirmingApprove(null);
+    }, [confirmingApprove, actions, selectedIds]);
+
+    const rawSetInboxQuery = inbox.setQuery;
+    const setInboxQuery = React.useCallback<React.Dispatch<React.SetStateAction<ListQuery>>>(
+        (updater) => {
+            clearSelection();
+            rawSetInboxQuery(updater);
+        },
+        [clearSelection, rawSetInboxQuery],
+    );
 
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
                 <Tabs value={statusTab as string} onValueChange={(v) => {
                     clearSelection();
-                    inbox.setQuery((q) => ({ ...q, status: v as import("./types").PCRStatus, page: 1 }));
+                    inbox.setQuery((q) => ({ ...q, status: v as PCRStatus, page: 1 }));
                 }} className="w-full">
                     <TabsList>
                         <TabsTrigger value="PENDING">Pending</TabsTrigger>
@@ -137,86 +329,25 @@ function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers
                         <TabsTrigger value="REJECTED">Rejected</TabsTrigger>
                     </TabsList>
                 </Tabs>
-
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                        clearSelection();
-                        inbox.refresh();
-                    }}
-                    disabled={inbox.loading}
-                >
-                    {inbox.loading ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                    )}
-                    Refresh
-                </Button>
             </div>
 
             <div className="space-y-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
-                    <Input
-                        placeholder={`Search ${type === "cost" ? "CCR" : "PCR"} # / product...`}
-                        value={inbox.query.q ?? ""}
-                        onChange={(e) =>
-                            inbox.setQuery((q) => ({
-                                ...q,
-                                q: e.target.value,
-                                page: 1,
-                            }))
-                        }
-                        className="w-full sm:max-w-[200px]"
-                    />
-
-                    <SearchableSelect
-                        className="w-full sm:max-w-[200px]"
-                        placeholder="All Suppliers"
-                        value={String(inbox.query.supplier_id ?? "")}
-                        onValueChange={(val) =>
-                            inbox.setQuery((q) => ({
-                                ...q,
-                                supplier_id: val ? Number(val) : "",
-                                page: 1,
-                            }))
-                        }
-                        options={[
-                            { value: "", label: "All Suppliers" },
-                            ...suppliers.map((s) => ({
-                                value: String(s.id),
-                                label: s.supplier_name,
-                            })),
-                        ]}
-                    />
-
-                    <div className="flex items-center gap-2 h-9 rounded-md border border-input bg-background px-3 shadow-sm focus-within:ring-1 focus-within:ring-ring transition-colors w-full sm:w-auto">
-                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Date:</span>
-                        <input
-                            type="date"
-                            value={inbox.query.date_from ?? ""}
-                            onChange={(e) =>
-                                inbox.setQuery((q) => ({ ...q, date_from: e.target.value, page: 1 }))
-                            }
-                            title="Start Date"
-                            className="bg-transparent text-sm outline-none w-[115px] text-muted-foreground focus:text-foreground [&::-webkit-calendar-picker-indicator]:opacity-50"
-                        />
-                        <span className="text-muted-foreground text-sm">-</span>
-                        <input
-                            type="date"
-                            value={inbox.query.date_to ?? ""}
-                            onChange={(e) =>
-                                inbox.setQuery((q) => ({ ...q, date_to: e.target.value, page: 1 }))
-                            }
-                            title="End Date"
-                            className="bg-transparent text-sm outline-none w-[115px] text-muted-foreground focus:text-foreground [&::-webkit-calendar-picker-indicator]:opacity-50"
-                        />
-                    </div>
-
-                    <div className="text-sm text-muted-foreground ml-auto">Total: {inbox.total.toLocaleString()}</div>
-                </div>
+                <RequestFiltersBar
+                    query={inbox.query}
+                    setQuery={setInboxQuery}
+                    suppliers={suppliers}
+                    loading={inbox.loading}
+                    total={inbox.total}
+                    totalLabel="requests"
+                    searchLabel="Search requests"
+                    searchPlaceholder="Request number or product"
+                    searchHelper="Find list price requests by request number or product."
+                    onRefresh={() => {
+                        clearSelection();
+                        inbox.refresh();
+                    }}
+                    onReset={clearSelection}
+                />
 
                 {statusTab === "PENDING" && (
                     <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -260,7 +391,7 @@ function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers
                     mode={statusTab === "PENDING" ? "approver" : "all"}
                     requestType={type}
                     acting={actions.acting}
-                    onApprove={(id) => actions.approve(id)}
+                    onApprove={(id) => setConfirmingApprove({ type: 'single', id })}
                     onReject={(id) => setRejectingId(id)}
                     meta={{ total_count: inbox.total }}
                     page={Number(inbox.query.page ?? 1)}
@@ -289,12 +420,62 @@ function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers
                 open={rejectingId != null}
                 onOpenChange={(v) => !v && setRejectingId(null)}
                 loading={actions.acting}
+                title="Reject Request"
                 onConfirm={(reason) => {
                     if (!rejectingId) return;
                     actions.reject(rejectingId, reason);
                     setRejectingId(null);
                 }}
-            />
+            >
+                {rejectingRequest && (
+                    <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-1 mb-2">
+                        <div className="font-semibold">Request #{rejectingRequest.request_id}</div>
+                        {'current_cost' in rejectingRequest && rejectingRequest.current_cost != null && (
+                            <div className="text-muted-foreground">
+                                Current Cost: ₱{Number(rejectingRequest.current_cost).toLocaleString("en-PH", { minimumFractionDigits: 2 })} → Proposed: ₱{Number(rejectingRequest.proposed_cost).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                            </div>
+                        )}
+                        {'proposed_price' in rejectingRequest && (
+                            <div className="text-muted-foreground">
+                                Proposed Price: ₱{Number(rejectingRequest.proposed_price).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </RejectDialog>
+
+            <ApproveDialog
+                open={confirmingApprove != null}
+                onOpenChange={() => setConfirmingApprove(null)}
+                loading={actions.acting}
+                onConfirm={() => void handleConfirmApprove()}
+                title={
+                    confirmingApprove?.type === 'batch'
+                        ? "Confirm Batch Approval"
+                        : "Confirm Approval"
+                }
+                description={
+                    confirmingApprove?.type === 'batch'
+                        ? `Are you sure you want to approve ${selectedIds.length} selected request(s)?`
+                        : "Are you sure you want to approve this request?"
+                }
+            >
+                {confirmingRequest && (
+                    <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-1">
+                        <div className="font-semibold">Request #{confirmingRequest.request_id}</div>
+                        {'current_cost' in confirmingRequest && confirmingRequest.current_cost != null && (
+                            <div className="text-muted-foreground">
+                                Current Cost: ₱{Number(confirmingRequest.current_cost).toLocaleString("en-PH", { minimumFractionDigits: 2 })} → Proposed: ₱{Number(confirmingRequest.proposed_cost).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                            </div>
+                        )}
+                        {'proposed_price' in confirmingRequest && (
+                            <div className="text-muted-foreground">
+                                Proposed Price: ₱{Number(confirmingRequest.proposed_price).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </ApproveDialog>
         </div>
     );
 }
