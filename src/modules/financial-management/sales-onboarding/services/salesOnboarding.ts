@@ -1,6 +1,6 @@
 // src/modules/financial-management/sales-onboarding/services/salesOnboarding.ts
 
-import { Salesman, Customer, SalesInvoiceType, SalesInvoice } from "../types";
+import { Salesman, Customer, SalesInvoiceType, SalesInvoice, DiscountType } from "../types";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -66,6 +66,19 @@ export async function fetchInvoiceTypes(): Promise<SalesInvoiceType[]> {
     }
   );
   if (!res.ok) throw new Error(`Failed to fetch invoice types: ${res.statusText}`);
+  const json = await res.json();
+  return json.data || [];
+}
+
+export async function fetchDiscountTypes(): Promise<DiscountType[]> {
+  const res = await fetch(
+    `${DIRECTUS_URL}/items/discount_type?limit=-1&sort=discount_type&fields=id,discount_type,total_percent`,
+    {
+      headers: getHeaders(),
+      cache: "no-store",
+    }
+  );
+  if (!res.ok) throw new Error(`Failed to fetch discount types: ${res.statusText}`);
   const json = await res.json();
   return json.data || [];
 }
