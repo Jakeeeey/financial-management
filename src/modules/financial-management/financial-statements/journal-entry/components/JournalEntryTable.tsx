@@ -223,9 +223,10 @@ export default function JournalEntryTable({
               const debitEntries = group.entries.filter(e => e.debit > 0);
               const creditEntries = group.entries.filter(e => e.credit > 0);
 
-              const currentDebitTotal = debitEntries.reduce((sum, e) => sum + e.debit, 0);
-              const currentCreditTotal = creditEntries.reduce((sum, e) => sum + e.credit, 0);
-              const totalNetBalance = currentDebitTotal - currentCreditTotal;
+              const sourceDebitTotal = debitEntries.reduce((sum, e) => sum + e.debit, 0);
+              const sourceCreditTotal = creditEntries.reduce((sum, e) => sum + e.credit, 0);
+              const currentDebitTotal = group.adjustedTotalDebit ?? sourceDebitTotal;
+              const totalNetBalance = group.adjustedBalance ?? Number((sourceDebitTotal - sourceCreditTotal).toFixed(2));
 
               const renderDistributionStrStack = (
                 entriesToRender: typeof group.entries,

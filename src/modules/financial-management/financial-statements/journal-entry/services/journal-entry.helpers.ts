@@ -2,8 +2,14 @@ import {
   JournalEntry, 
   JournalEntryGroup, 
   AnalyticsSummary, 
-  FilterState 
+  FilterState,
+  PostedAdjustmentTotals
 } from "../types";
+
+const roundMoney = (value: number) => Number(value.toFixed(2));
+const effectiveTotalDebit = (group: JournalEntryGroup) => group.adjustedTotalDebit ?? group.totalDebit;
+const effectiveTotalCredit = (group: JournalEntryGroup) => group.adjustedTotalCredit ?? group.totalCredit;
+const effectiveBalance = (group: JournalEntryGroup) => group.adjustedBalance ?? group.balance;
 
 /**
  * Groups flat journal entries by their group counter and calculates row-level metadata.
@@ -61,6 +67,37 @@ export function groupJournalEntries(entries: JournalEntry[]): JournalEntryGroup[
   });
 }
 
+export function applyPostedAdjustmentTotals(
+  groups: JournalEntryGroup[],
+  adjustmentTotals: PostedAdjustmentTotals[]
+): JournalEntryGroup[] {
+  if (adjustmentTotals.length === 0) return groups;
+
+  const totalsBySourceJeNo = new Map(adjustmentTotals.map((total) => [total.sourceJeNo, total]));
+
+  return groups.map((group) => {
+    const adjustment = totalsBySourceJeNo.get(group.jeNo);
+    if (!adjustment) return group;
+
+    const adjustmentTotalDebit = roundMoney(adjustment.totalDebit);
+    const adjustmentTotalCredit = roundMoney(adjustment.totalCredit);
+    const adjustedTotalDebit = roundMoney(group.totalDebit + adjustmentTotalDebit);
+    const adjustedTotalCredit = roundMoney(group.totalCredit + adjustmentTotalCredit);
+    const adjustedBalance = roundMoney(adjustedTotalDebit - adjustedTotalCredit);
+
+    return {
+      ...group,
+      adjustmentTotalDebit,
+      adjustmentTotalCredit,
+      adjustedTotalDebit,
+      adjustedTotalCredit,
+      adjustedBalance,
+      hasPostedAdjustments: Math.abs(adjustmentTotalDebit) > 0.001 || Math.abs(adjustmentTotalCredit) > 0.001,
+      isImbalanced: Math.abs(adjustedBalance) > 0.01,
+    };
+  });
+}
+
 /**
  * Sorts journal entry groups based on the provided filter state.
  */
@@ -89,16 +126,16 @@ export function sortJournalEntryGroups(groups: JournalEntryGroup[], filters: Fil
         valB = b.entries[0]?.accountTitle || "";
         break;
       case "debit":
-        valA = a.totalDebit;
-        valB = b.totalDebit;
+        valA = effectiveTotalDebit(a);
+        valB = effectiveTotalDebit(b);
         break;
       case "credit":
-        valA = a.totalCredit;
-        valB = b.totalCredit;
+        valA = effectiveTotalCredit(a);
+        valB = effectiveTotalCredit(b);
         break;
       case "balance":
-        valA = a.balance;
-        valB = b.balance;
+        valA = effectiveBalance(a);
+        valB = effectiveBalance(b);
         break;
       default:
         return 0;
@@ -129,13 +166,13 @@ export function calculateAnalytics(
     let severity = 0;
 
     // 1. Imbalance Risk
-    if (g.isImbalanced) {
+    if (Math.abs(effectiveBalance(g)) > 0.01) {
         reasons.push("Imbalance");
         severity += 3; // High priority
     }
 
     // 2. Large Amount Risk
-    if (g.totalDebit > 50000) {
+    if (effectiveTotalDebit(g) > 50000) {
         reasons.push("Large Entry");
         severity += 1;
     }
@@ -169,7 +206,7 @@ export function calculateAnalytics(
             jeNo: g.jeNo,
             jeGroupCounter: g.jeGroupCounter,
             riskReasons: reasons,
-            totalDebit: g.totalDebit,
+            totalDebit: effectiveTotalDebit(g),
             severity
         };
     }
@@ -184,11 +221,11 @@ export function calculateAnalytics(
 
   return {
     jeCount: groups.length,
-    totalDebit: groups.reduce((acc, g) => acc + g.totalDebit, 0),
-    totalCredit: groups.reduce((acc, g) => acc + g.totalCredit, 0),
-    netBalance: Number(groups.reduce((acc, g) => acc + g.balance, 0).toFixed(2)),
+    totalDebit: groups.reduce((acc, g) => acc + effectiveTotalDebit(g), 0),
+    totalCredit: groups.reduce((acc, g) => acc + effectiveTotalCredit(g), 0),
+    netBalance: Number(groups.reduce((acc, g) => acc + effectiveBalance(g), 0).toFixed(2)),
     largestEntry: Math.max(...entries.map(e => Math.max(e.debit, e.credit)), 0),
-    imbalancedCount: groups.filter(g => g.isImbalanced).length,
+    imbalancedCount: groups.filter(g => Math.abs(effectiveBalance(g)) > 0.01).length,
     postedCount: groups.filter(g => (g.status || "").toLowerCase() === "posted").length,
     unpostedCount: groups.filter(g => (g.status || "").toLowerCase() !== "posted").length,
     statusBreakdown,
