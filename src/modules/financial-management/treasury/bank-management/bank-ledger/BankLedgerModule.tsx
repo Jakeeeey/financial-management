@@ -101,8 +101,8 @@ function entryBadgeVariant(type: LedgerEntryType) {
 }
 
 function amountTone(entry: BankLedgerEntry) {
-  if (entry.creditAmount > 0) return "text-emerald-700";
-  if (entry.debitAmount > 0) return "text-destructive";
+  if (entry.debitAmount > 0) return "text-emerald-700";
+  if (entry.creditAmount > 0) return "text-destructive";
   return "text-muted-foreground";
 }
 
@@ -171,6 +171,8 @@ export default function BankLedgerModule() {
   const [bankId, setBankId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [search, setSearch] = useState("");
+  const [transactionType, setTransactionType] = useState<LedgerEntryType | "">("");
   const selectedBankValue = bankId || String(data.selectedBankId ?? "");
   const totalPages = Math.max(1, data.pagination.totalPages);
   const selectedBank = useMemo(
@@ -186,19 +188,23 @@ export default function BankLedgerModule() {
         bankId: bankId ? Number(bankId) : null,
         startDate,
         endDate,
+        search,
+        transactionType: transactionType || undefined,
         page,
         pageSize: PAGE_SIZE,
       });
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [bankId, endDate, loadLedger, page, startDate]);
+  }, [bankId, endDate, loadLedger, page, search, startDate, transactionType]);
 
   async function reloadCurrentPage(nextPage = page) {
     await loadLedger({
       bankId: bankId ? Number(bankId) : null,
       startDate,
       endDate,
+      search,
+      transactionType: transactionType || undefined,
       page: nextPage,
       pageSize: PAGE_SIZE,
     });
@@ -227,7 +233,7 @@ export default function BankLedgerModule() {
 
       <Card className="rounded-md">
         <CardHeader className="gap-3 border-b">
-          <div className="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_180px_180px_auto] lg:items-end">
+          <div className="grid gap-3 min-w-0 lg:grid-cols-[minmax(170px,1.3fr)_minmax(150px,1fr)_140px_140px_150px_auto] lg:items-end">
             <div className="grid min-w-0 gap-1.5">
               <Label>Bank Account</Label>
               <BankSelect
@@ -236,6 +242,19 @@ export default function BankLedgerModule() {
                 disabled={loading && data.banks.length === 0}
                 onValueChange={(value) => {
                   setBankId(value);
+                  setPage(1);
+                }}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="ledgerSearch">Search</Label>
+              <Input
+                id="ledgerSearch"
+                type="text"
+                placeholder="Search ref or description..."
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
                   setPage(1);
                 }}
               />
@@ -263,6 +282,25 @@ export default function BankLedgerModule() {
                   setPage(1);
                 }}
               />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="ledgerType">Transaction Type</Label>
+              <select
+                id="ledgerType"
+                value={transactionType}
+                onChange={(event) => {
+                  setTransactionType(event.target.value as LedgerEntryType | "");
+                  setPage(1);
+                }}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">All Types</option>
+                <option value="OPENING_BALANCE">Opening</option>
+                <option value="DEPOSIT">Deposit</option>
+                <option value="TRANSFER_OUT">Transfer Out</option>
+                <option value="TRANSFER_IN">Transfer In</option>
+                <option value="DISBURSEMENT">Disbursement</option>
+              </select>
             </div>
             <Button
               type="button"
@@ -296,10 +334,10 @@ export default function BankLedgerModule() {
           <CardContent className="p-4">
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <ArrowUpRight className="h-4 w-4 text-emerald-700" />
-              Credits
+              Debits
             </p>
             <p className="mt-2 truncate text-2xl font-semibold tabular-nums">
-              {formatMoney(data.summary.totalCredits)}
+              {formatMoney(data.summary.totalDebits)}
             </p>
           </CardContent>
         </Card>
@@ -307,10 +345,10 @@ export default function BankLedgerModule() {
           <CardContent className="p-4">
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <ArrowDownLeft className="h-4 w-4 text-destructive" />
-              Debits
+              Credits
             </p>
             <p className="mt-2 truncate text-2xl font-semibold tabular-nums">
-              {formatMoney(data.summary.totalDebits)}
+              {formatMoney(data.summary.totalCredits)}
             </p>
           </CardContent>
         </Card>
@@ -385,10 +423,10 @@ export default function BankLedgerModule() {
                         {entry.description}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {entry.debitAmount > 0 ? formatMoney(entry.debitAmount) : "N/A"}
+                        {entry.debitAmount > 0 ? formatMoney(entry.debitAmount) : "-"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {entry.creditAmount > 0 ? formatMoney(entry.creditAmount) : "N/A"}
+                        {entry.creditAmount > 0 ? formatMoney(entry.creditAmount) : "-"}
                       </TableCell>
                       <TableCell className={cn("text-right tabular-nums", amountTone(entry))}>
                         {formatMoney(entry.runningBalance)}
@@ -429,13 +467,13 @@ export default function BankLedgerModule() {
                     <div>
                       <p className="text-muted-foreground">Debit</p>
                       <p className="tabular-nums">
-                        {entry.debitAmount > 0 ? formatMoney(entry.debitAmount) : "N/A"}
+                        {entry.debitAmount > 0 ? formatMoney(entry.debitAmount) : "-"}
                       </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Credit</p>
                       <p className="tabular-nums">
-                        {entry.creditAmount > 0 ? formatMoney(entry.creditAmount) : "N/A"}
+                        {entry.creditAmount > 0 ? formatMoney(entry.creditAmount) : "-"}
                       </p>
                     </div>
                     <div>
