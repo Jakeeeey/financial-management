@@ -49,7 +49,6 @@ type Props = {
   customer: CustomerDiscountingCustomer | null;
   discountTypes: DiscountOption[];
   suppliers: CustomerDiscountingSupplier[];
-  categories: CustomerDiscountingCategory[];
   supplierCategoryRules: SupplierCategoryRule[];
   productRules: ProductRule[];
   loading: boolean;
@@ -125,17 +124,10 @@ function discountText(discount: DiscountOption | null) {
 }
 
 /**
- * Chooses the best available unit-of-measurement label for product rows.
- */
-function unitText(product: { unitName?: string; unitShortcut?: string }) {
-  return product.unitShortcut || product.unitName || "No UOM";
-}
-
-/**
- * Combines the product name and UOM so selected products stay identifiable.
+ * Combines parent product name and code so selected products stay identifiable.
  */
 function productPickerLabel(product: CustomerDiscountingProduct) {
-  return `${product.productName} (${unitText(product)})`;
+  return product.productCode ? `${product.productName} (${product.productCode})` : product.productName;
 }
 
 /**
@@ -180,7 +172,6 @@ export function CustomerDiscountingConfigSheet({
   customer,
   discountTypes,
   suppliers,
-  categories,
   supplierCategoryRules,
   productRules,
   loading,
@@ -194,6 +185,8 @@ export function CustomerDiscountingConfigSheet({
   const [globalOverride, setGlobalOverride] = useState<{ customerCode: string; value: string } | null>(null);
   const [supplierId, setSupplierId] = useState("");
   const [categoryId, setCategoryId] = useState(noneValue);
+  const [supplierCategoryOptions, setSupplierCategoryOptions] = useState<CustomerDiscountingCategory[]>([]);
+  const [supplierCategoryLoading, setSupplierCategoryLoading] = useState(false);
   const [supplierDiscountId, setSupplierDiscountId] = useState("");
   const [productQuery, setProductQuery] = useState("");
   const [productOptions, setProductOptions] = useState<CustomerDiscountingProduct[]>([]);
@@ -233,6 +226,7 @@ export function CustomerDiscountingConfigSheet({
     if (!selectedProduct) return null;
     return productRules.find((rule) => rule.productId === selectedProduct.productId) ?? null;
   }, [productRules, selectedProduct]);
+  const activeCategoryOptions = selectedSupplierId ? supplierCategoryOptions : [];
 
   // Product search stays local to the Product tab and waits until there is enough input.
   useEffect(() => {
@@ -261,9 +255,38 @@ export function CustomerDiscountingConfigSheet({
     };
   }, [open, productQuery, selectedProduct]);
 
+  // Supplier/category configuration should only show categories represented by the selected supplier.
+  useEffect(() => {
+    if (!open || !selectedSupplierId) {
+      return;
+    }
+
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      setSupplierCategoryLoading(true);
+      customerDiscountingApi.getSupplierCategories(selectedSupplierId)
+        .then((rows) => {
+          if (!cancelled) setSupplierCategoryOptions(rows);
+        })
+        .catch(() => {
+          if (!cancelled) setSupplierCategoryOptions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSupplierCategoryLoading(false);
+        });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [open, selectedSupplierId]);
+
   const resetSupplierForm = () => {
     setSupplierId("");
     setCategoryId(noneValue);
+    setSupplierCategoryOptions([]);
+    setSupplierCategoryLoading(false);
     setSupplierDiscountId("");
   };
 
@@ -288,7 +311,7 @@ export function CustomerDiscountingConfigSheet({
 
     const supplierName = suppliers.find((item) => item.id === selectedSupplierId)?.supplierName ?? `Supplier #${selectedSupplierId}`;
     const categoryName = selectedCategoryId
-      ? categories.find((item) => item.categoryId === selectedCategoryId)?.categoryName ?? `Category #${selectedCategoryId}`
+      ? activeCategoryOptions.find((item) => item.categoryId === selectedCategoryId)?.categoryName ?? `Category #${selectedCategoryId}`
       : "N/A";
 
     setPendingConfirmation({
@@ -457,7 +480,12 @@ export function CustomerDiscountingConfigSheet({
                   <Label>Trade Supplier</Label>
                   <ConfigSearchableSelect
                     value={supplierId}
-                    onValueChange={setSupplierId}
+                    onValueChange={(value) => {
+                      setSupplierId(value);
+                      setCategoryId(noneValue);
+                      setSupplierCategoryOptions([]);
+                      setSupplierCategoryLoading(false);
+                    }}
                     options={suppliers.map((item) => ({ value: String(item.id), label: item.supplierName }))}
                     placeholder="Select supplier"
                   />
@@ -468,10 +496,11 @@ export function CustomerDiscountingConfigSheet({
                     value={categoryId}
                     onValueChange={setCategoryId}
                     options={[
-                      { value: noneValue, label: "NO CATEGORY" },
-                      ...categories.map((item) => ({ value: String(item.categoryId), label: item.categoryName })),
+                      { value: noneValue, label: "All supplier categories" },
+                      ...activeCategoryOptions.map((item) => ({ value: String(item.categoryId), label: item.categoryName })),
                     ]}
-                    placeholder="Select category"
+                    placeholder={supplierCategoryLoading ? "Loading categories..." : "Select category"}
+                    disabled={!selectedSupplierId || supplierCategoryLoading}
                   />
                 </div>
                 <div className="space-y-2">
@@ -492,14 +521,18 @@ export function CustomerDiscountingConfigSheet({
                 </Button>
               </div>
 
-              <RuleTable loading={loading} emptyText="No supplier/category rules yet.">
+              <RuleTable
+                loading={loading}
+                emptyText="No supplier/category rules yet."
+                headers={["Supplier", "Category", "Discount", "Action"]}
+              >
                 {supplierCategoryRules.map((rule) => (
                   <TableRow key={rule.id}>
                     <TableCell className="font-medium">{rule.supplierName || `Supplier #${rule.supplierId}`}</TableCell>
+                    <TableCell>{rule.categoryId ? rule.categoryName : "All categories"}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{discountText(rule.discount)}</Badge>
                     </TableCell>
-                    <TableCell>{rule.categoryId ? rule.categoryName : "N/A"}</TableCell>
                     <TableCell className="text-right">
                       <Button
                         variant="ghost"
@@ -557,7 +590,7 @@ export function CustomerDiscountingConfigSheet({
                               {product.productCode || "No code"} | {product.barcode || "No barcode"}
                             </span>
                             <span className="text-xs text-muted-foreground">
-                              UOM: {unitText(product)}
+                              {product.categoryName || "No category"} | Applies to child/UOM variants
                             </span>
                           </button>
                         ))}
@@ -565,7 +598,7 @@ export function CustomerDiscountingConfigSheet({
                     ) : null}
                     {selectedProduct ? (
                       <div className="text-xs text-muted-foreground">
-                        Unit of measurement: {unitText(selectedProduct)}
+                        Applies to child and UOM variants automatically.
                       </div>
                     ) : null}
                   </div>
@@ -579,7 +612,7 @@ export function CustomerDiscountingConfigSheet({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Unit Price</Label>
+                    <Label>Optional Unit Price Override</Label>
                     <Input
                       value={unitPrice}
                       onChange={(event) => setUnitPrice(event.target.value)}
@@ -594,7 +627,11 @@ export function CustomerDiscountingConfigSheet({
                 </div>
               </div>
 
-              <RuleTable loading={loading} emptyText="No product rules yet.">
+              <RuleTable
+                loading={loading}
+                emptyText="No product rules yet."
+                headers={["Product", "Category", "Discount", "Action"]}
+              >
                 {productRules.map((rule) => (
                   <TableRow key={rule.id}>
                     <TableCell>
@@ -603,13 +640,20 @@ export function CustomerDiscountingConfigSheet({
                         {rule.productCode || "No code"} | {rule.barcode || "No barcode"}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        UOM: {unitText(rule)}
+                        Applies to child/UOM variants
                       </div>
                     </TableCell>
+                    <TableCell>{rule.categoryName || "No category"}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{discountText(rule.discount)}</Badge>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant="outline" className="w-fit">{discountText(rule.discount)}</Badge>
+                        {rule.unitPrice === null ? null : (
+                          <span className="text-xs text-muted-foreground">
+                            Unit price override: {Number(rule.unitPrice).toFixed(2)}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
-                    <TableCell>{rule.unitPrice === null ? "No override" : Number(rule.unitPrice).toFixed(2)}</TableCell>
                     <TableCell className="text-right">
                       <Button
                         variant="ghost"
@@ -732,10 +776,12 @@ function ConfigSearchableSelect({
 function RuleTable({
   loading,
   emptyText,
+  headers,
   children,
 }: {
   loading: boolean;
   emptyText: string;
+  headers: [string, string, string, string];
   children: ReactNode;
 }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : !!children;
@@ -745,10 +791,10 @@ function RuleTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Rule</TableHead>
-            <TableHead>Discount</TableHead>
-            <TableHead>Category</TableHead>
-            <TableHead className="text-right">Action</TableHead>
+            <TableHead>{headers[0]}</TableHead>
+            <TableHead>{headers[1]}</TableHead>
+            <TableHead>{headers[2]}</TableHead>
+            <TableHead className="text-right">{headers[3]}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

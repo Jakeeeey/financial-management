@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   addSoftDeleteFilters,
+  addRelatedParentProductFilter,
   asNumber,
   asString,
   directusFetch,
@@ -73,6 +74,25 @@ function productCode(value: unknown) {
 function productBarcode(value: unknown) {
   return value && typeof value === "object"
     ? asString((value as Record<string, unknown>).barcode)
+    : "";
+}
+
+/**
+ * Reads the product category id from a nested product relation.
+ */
+function productCategoryId(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  return relationId((value as Record<string, unknown>).product_category, "category_id");
+}
+
+/**
+ * Reads the product category name from a nested product relation.
+ */
+function productCategoryName(value: unknown) {
+  if (!value || typeof value !== "object") return "";
+  const category = (value as Record<string, unknown>).product_category;
+  return category && typeof category === "object"
+    ? asString((category as Record<string, unknown>).category_name)
     : "";
 }
 
@@ -175,6 +195,9 @@ export async function GET(request: NextRequest) {
         "product_id.product_name",
         "product_id.product_code",
         "product_id.barcode",
+        "product_id.product_category",
+        "product_id.product_category.category_id",
+        "product_id.product_category.category_name",
         "product_id.unit_of_measurement",
         "product_id.unit_of_measurement.unit_id",
         "product_id.unit_of_measurement.unit_name",
@@ -185,7 +208,8 @@ export async function GET(request: NextRequest) {
         "discount_type.total_percent",
       ].join(","),
     );
-    productParams.set("filter[customer_code][_eq]", customerCode);
+    productParams.set("filter[_and][0][customer_code][_eq]", customerCode);
+    addRelatedParentProductFilter(productParams, 1);
 
     const [supplierRulesRes, productRulesRes] = await Promise.all([
       directusFetch<DirectusList<SupplierCategoryRuleRow>>(
@@ -211,6 +235,8 @@ export async function GET(request: NextRequest) {
       productName: productName(row.product_id),
       productCode: productCode(row.product_id),
       barcode: productBarcode(row.product_id),
+      categoryId: productCategoryId(row.product_id),
+      categoryName: productCategoryName(row.product_id),
       unitId: productUnitId(row.product_id),
       unitName: productUnitName(row.product_id),
       unitShortcut: productUnitShortcut(row.product_id),
