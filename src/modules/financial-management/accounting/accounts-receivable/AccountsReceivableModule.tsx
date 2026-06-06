@@ -4,10 +4,11 @@ import { useState, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AlertCircle, Clock, PhilippinePeso, X, Download, TrendingDown, FileSpreadsheet } from 'lucide-react';
+import { AlertCircle, Clock, PhilippinePeso, X, Download, TrendingDown, FileSpreadsheet, Sparkles } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -19,7 +20,7 @@ import { InvoiceTable } from './components/InvoiceTable';
 import { DrilldownChart } from './components/DrilldownChart';
 import { InvoiceDetailSheet } from './components/InvoiceDetailSheet';
 import type { Invoice } from './types';
-import { deriveMetrics, deriveAgingData, formatPeso } from './utils';
+import { deriveMetrics, deriveAgingData, formatPeso, generateAIInsights } from './utils';
 
 // ── Compact stat pill ────────────────────────────────────────────────────────
 function Stat({
@@ -44,7 +45,7 @@ function Stat({
 }
 
 export default function AccountsReceivableModule() {
-  const { loading, error, invoices, agingData, salesmanData, customerData, metrics, operationData } =
+  const { loading, error, invoices, agingData, salesmanData, metrics, operationData } =
       useAccountsReceivable();
 
   const [page, setPage]         = useState(1);
@@ -56,6 +57,7 @@ export default function AccountsReceivableModule() {
   const [branch, setBranch]     = useState('');
   const [salesman, setSalesman] = useState('');
   const [division, setDivision] = useState('');
+  const [showAIInsights, setShowAIInsights] = useState(false);
 
   // ── Filter option lists ────────────────────────────────────────────────────
   const customerOptions = useMemo(
@@ -118,6 +120,10 @@ export default function AccountsReceivableModule() {
       () => isFiltered ? deriveAgingData(filteredInvoices) : agingData,
       [filteredInvoices, isFiltered, agingData]
   );
+
+  const aiInsights = useMemo(() => {
+    return generateAIInsights(displayInvoices, filteredMetrics);
+  }, [displayInvoices, filteredMetrics]);
 
   // ── Exact per-operation data when filtered (uses real salesType on Invoice) ─
   const displayOperationData = useMemo(() => {
@@ -336,6 +342,19 @@ export default function AccountsReceivableModule() {
             <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setShowAIInsights(!showAIInsights)}
+                className={`h-7 px-2.5 text-[10px] gap-1 transition-all ${
+                  showAIInsights 
+                    ? 'bg-purple-500/15 border-purple-500/40 text-purple-700 dark:text-purple-300 font-bold shadow-sm'
+                    : 'border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10'
+                }`}
+            >
+              <Sparkles className={`h-3 w-3 ${showAIInsights ? 'text-purple-600 animate-spin' : 'text-purple-500'}`} />
+              AI Copilot
+            </Button>
+            <Button
+                variant="outline"
+                size="sm"
                 onClick={exportToExcel}
                 className="h-7 px-2.5 text-[10px] gap-1"
             >
@@ -353,6 +372,70 @@ export default function AccountsReceivableModule() {
             </Button>
           </div>
         </div>
+
+        {/* ── AI Executive Insights Card ── */}
+        <AnimatePresence>
+          {showAIInsights && (
+            <motion.div
+              initial={{ height: 0, opacity: 0, marginTop: -8, marginBottom: 0 }}
+              animate={{ height: 'auto', opacity: 1, marginTop: 4, marginBottom: 8 }}
+              exit={{ height: 0, opacity: 0, marginTop: -8, marginBottom: 0 }}
+              transition={{ duration: 0.25 }}
+              className="overflow-hidden"
+            >
+              <div className="bg-gradient-to-br from-purple-500/10 via-indigo-500/5 to-background border border-purple-500/25 shadow-md shadow-purple-500/5 rounded-xl p-4 space-y-3 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
+                
+                <div className="flex items-center justify-between border-b border-purple-500/10 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-purple-500 animate-pulse" />
+                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">AI Executive Insights</h3>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAIInsights(false)}
+                    className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground hover:bg-purple-500/10 rounded-full"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+
+                <p className="text-[11px] leading-relaxed text-foreground/90 font-medium">
+                  {aiInsights.summary}
+                </p>
+
+                <div className="grid gap-4 md:grid-cols-2 pt-1">
+                  <div className="space-y-2">
+                    <h4 className="text-[9px] font-bold uppercase tracking-widest text-rose-500 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Key Exposures &amp; Risks
+                    </h4>
+                    <ul className="space-y-1.5 pl-3 border-l border-rose-500/25">
+                      {aiInsights.risks.map((risk, idx) => (
+                        <li key={idx} className="text-[10px] text-muted-foreground leading-snug font-medium">
+                          {risk}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="text-[9px] font-bold uppercase tracking-widest text-emerald-500 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Strategic Actions
+                    </h4>
+                    <ul className="space-y-1.5 pl-3 border-l border-emerald-500/25">
+                      {aiInsights.recommendations.map((rec, idx) => (
+                        <li key={idx} className="text-[10px] text-muted-foreground leading-snug font-medium">
+                          {rec}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ── Filter bar ── */}
         <div className="flex flex-wrap items-center gap-1.5 w-full min-w-0 p-2 rounded border border-border/50 bg-muted/10">

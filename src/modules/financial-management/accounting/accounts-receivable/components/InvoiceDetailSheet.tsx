@@ -9,14 +9,15 @@ import {
     SheetTitle,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { 
     FileText, Calendar, CreditCard, Tag, 
     User, Briefcase, Building2, Layers, Loader2, AlertCircle,
-    Receipt, RotateCcw
+    Receipt, RotateCcw, Sparkles, Copy, Check
 } from "lucide-react";
-import { formatPeso, formatDate } from "../utils";
+import { formatPeso, formatDate, getInvoiceRiskScore, generateCollectionTemplate } from "../utils";
 import type { Invoice } from "../types";
 
 interface InvoiceDetailSheetProps {
@@ -150,6 +151,25 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<InvoiceDetailsPayload | null>(null);
+    const [tone, setTone] = useState<'polite' | 'standard' | 'urgent'>('standard');
+    const [channel, setChannel] = useState<'email' | 'sms'>('email');
+    const [copied, setCopied] = useState(false);
+
+    const riskInfo = useMemo(() => {
+        if (!invoice) return null;
+        return getInvoiceRiskScore(invoice);
+    }, [invoice]);
+
+    const generatedTemplate = useMemo(() => {
+        if (!invoice) return "";
+        return generateCollectionTemplate(invoice, tone, channel);
+    }, [invoice, tone, channel]);
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(generatedTemplate);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
 
     useEffect(() => {
         if (!open || !invoice?.id) {
@@ -190,7 +210,7 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
         data.items.forEach((item) => {
             const brand = item.product_id?.product_brand?.brand_name || "Unknown Brand";
             const category = item.product_id?.product_category?.category_name || "Unknown Category";
-            const key = `${brand} — ${category}`;
+            const key = `${category} — ${brand}`;
             if (!groups[key]) groups[key] = [];
             groups[key].push(item);
         });
@@ -359,9 +379,9 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
                             </div>
                         </div>
 
-                        {/* 3. TABS FOR ITEMS, PAYMENTS, MEMOS & RETURNS */}
+                        {/* 3. TABS FOR ITEMS, PAYMENTS, MEMOS, RETURNS & AI ASSISTANT */}
                         <Tabs defaultValue="items" className="w-full flex-1 flex flex-col min-h-0">
-                            <TabsList className="grid w-full grid-cols-4 h-9 p-0.5 bg-muted rounded-lg shrink-0">
+                            <TabsList className="grid w-full grid-cols-5 h-9 p-0.5 bg-muted rounded-lg shrink-0">
                                 <TabsTrigger value="items" className="text-[10px] font-bold uppercase py-1 px-1">
                                     <Tag className="w-3 h-3 mr-1 hidden sm:inline-block" /> Items ({data?.items?.length || 0})
                                 </TabsTrigger>
@@ -373,6 +393,9 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
                                 </TabsTrigger>
                                 <TabsTrigger value="returns" className="text-[10px] font-bold uppercase py-1 px-1">
                                     <RotateCcw className="w-3 h-3 mr-1 hidden sm:inline-block" /> Returns ({data?.returns?.length || 0})
+                                </TabsTrigger>
+                                <TabsTrigger value="ai" className="text-[10px] font-bold uppercase py-1 px-1 text-purple-600 dark:text-purple-400">
+                                    <Sparkles className="w-3 h-3 mr-1 text-purple-500 animate-pulse hidden sm:inline-block" /> AI Assist
                                 </TabsTrigger>
                             </TabsList>
 
@@ -578,6 +601,113 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
                                         )}
                                     </TableBody>
                                 </Table>
+                            </TabsContent>
+
+                            {/* AI Assist tab */}
+                            <TabsContent value="ai" className="flex-1 overflow-auto mt-3 border rounded-xl bg-card p-4 space-y-4">
+                                {riskInfo && (
+                                    <div className="space-y-3">
+                                        {/* Risk Assessment Box */}
+                                        <div className={`p-3 rounded-lg border ${
+                                            riskInfo.level === 'High' 
+                                                ? 'bg-rose-500/5 border-rose-500/20 text-rose-800 dark:text-rose-200' 
+                                                : riskInfo.level === 'Medium'
+                                                    ? 'bg-amber-500/5 border-amber-500/20 text-amber-800 dark:text-amber-200'
+                                                    : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-800 dark:text-emerald-200'
+                                        }`}>
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <span className="text-[10px] font-black uppercase tracking-wider">AI Risk Assessment</span>
+                                                <Badge className={`text-[10px] font-black uppercase ${
+                                                    riskInfo.level === 'High' 
+                                                        ? 'bg-rose-500 text-white' 
+                                                        : riskInfo.level === 'Medium'
+                                                            ? 'bg-amber-500 text-black'
+                                                            : 'bg-emerald-500 text-white'
+                                                }`}>
+                                                    {riskInfo.level} Risk ({riskInfo.score}%)
+                                                </Badge>
+                                            </div>
+                                            <p className="text-[11px] leading-relaxed font-medium">
+                                                {riskInfo.reason}
+                                            </p>
+                                        </div>
+
+                                        {/* Action Plan & Reminder Generator */}
+                                        <div className="space-y-3">
+                                            <div className="border-t border-border/40 pt-3 space-y-2">
+                                                <span className="text-[10px] font-black uppercase tracking-wider text-primary">Collection Assistant</span>
+                                                <div className="flex items-center gap-2">
+                                                    {/* Tone Select */}
+                                                    <div className="flex-1 space-y-1">
+                                                        <span className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">Tone</span>
+                                                        <div className="flex rounded-lg border border-border overflow-hidden h-7 bg-muted/40">
+                                                            {(['polite', 'standard', 'urgent'] as const).map((t) => (
+                                                                <button
+                                                                    key={t}
+                                                                    type="button"
+                                                                    onClick={() => setTone(t)}
+                                                                    className={`flex-1 text-[9px] font-bold uppercase transition-all ${
+                                                                        tone === t 
+                                                                            ? 'bg-primary text-primary-foreground font-black' 
+                                                                            : 'hover:bg-muted text-muted-foreground'
+                                                                    }`}
+                                                                >
+                                                                    {t}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Channel Select */}
+                                                    <div className="flex-1 space-y-1">
+                                                        <span className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">Channel</span>
+                                                        <div className="flex rounded-lg border border-border overflow-hidden h-7 bg-muted/40">
+                                                            {(['email', 'sms'] as const).map((c) => (
+                                                                <button
+                                                                    key={c}
+                                                                    type="button"
+                                                                    onClick={() => setChannel(c)}
+                                                                    className={`flex-1 text-[9px] font-bold uppercase transition-all ${
+                                                                        channel === c 
+                                                                            ? 'bg-primary text-primary-foreground font-black' 
+                                                                            : 'hover:bg-muted text-muted-foreground'
+                                                                    }`}
+                                                                >
+                                                                    {c}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Generated Output */}
+                                            <div className="space-y-1.5 relative group">
+                                                <span className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">Generated Draft</span>
+                                                <div className="rounded-lg border border-purple-500/20 bg-purple-500/[0.02] dark:bg-purple-500/[0.01] p-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap select-all max-h-[180px] overflow-y-auto">
+                                                    {generatedTemplate}
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={handleCopy}
+                                                    className="absolute top-7 right-2.5 h-6 px-2 text-[9px] font-bold uppercase bg-background shadow-sm border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10"
+                                                >
+                                                    {copied ? (
+                                                        <>
+                                                            <Check className="w-3 h-3 mr-1 text-emerald-500" /> Copied
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Copy className="w-3 h-3 mr-1" /> Copy Draft
+                                                        </>
+                                                    )}
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </TabsContent>
                         </Tabs>
 

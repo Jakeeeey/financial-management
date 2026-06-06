@@ -32,6 +32,14 @@ interface SalesInvoiceHeader {
   } | null;
 }
 
+interface ProductRow {
+  product_id: number;
+  product_name?: string | null;
+  description?: string | null;
+  product_brand?: number | null;
+  product_category?: number | null;
+}
+
 interface SalesInvoiceDetail {
   detail_id: number;
   order_id: string;
@@ -43,14 +51,13 @@ interface SalesInvoiceDetail {
   total_amount: number;
   unit?: number | null;
   discount_type?: number | null;
-  // product_brand and product_category come back as plain integers (FK IDs)
   product_id?: {
     product_id: number;
     product_name?: string;
     description?: string | null;
     product_brand?: number | null;
     product_category?: number | null;
-  } | null;
+  } | number | null;
 }
 
 interface BrandMaster {
@@ -219,25 +226,41 @@ export async function GET(request: NextRequest) {
       branch_id: rawHeader.branch_id ? { branch_name: rawHeader.branch_id.branch_name } : undefined,
     };
 
-    // 2. Fetch sales_invoice_details (product_id.* returns product with flat FK ids for brand/category)
+    // 2. Fetch sales_invoice_details
     const detailsUrl = `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_eq]=${invoiceId}&fields=detail_id,order_id,serial_no,unit_price,quantity,discount_amount,gross_amount,total_amount,unit,discount_type,product_id.*&limit=-1`;
     const detailsRes = await directusFetch<{ data: SalesInvoiceDetail[] }>(detailsUrl);
     const rawDetails = detailsRes.data || [];
 
-    // 3–6. Fetch related tables in parallel
+    // Extract product IDs and fetch product details in a separate lookup
+    const productIds = Array.from(
+      new Set(
+        rawDetails
+          .map((d) => (d.product_id && typeof d.product_id === 'object' ? d.product_id.product_id : d.product_id))
+          .filter((id): id is number => typeof id === 'number')
+      )
+    );
+
+    const productsRes = productIds.length > 0
+      ? await directusFetch<{ data: ProductRow[] }>(
+          `${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(',')}&fields=product_id,product_name,description,product_brand,product_category&limit=-1`
+        ).catch(() => ({ data: [] }))
+      : { data: [] };
+    const productsList = productsRes.data || [];
+    const productsMap = new Map<number, ProductRow>(productsList.map((p) => [p.product_id, p]));
+
+    // Collect unique brand/category IDs from the fetched products for batch lookup
+    const brandIds    = Array.from(new Set(productsList.map((p) => p.product_brand).filter((v): v is number => typeof v === 'number')));
+    const categoryIds = Array.from(new Set(productsList.map((p) => p.product_category).filter((v): v is number => typeof v === 'number')));
+
+    const brandUrl    = brandIds.length    > 0 ? `${DIRECTUS_URL}/items/brand?filter[brand_id][_in]=${brandIds.join(',')}&fields=brand_id,brand_name&limit=-1`    : null;
+    const categoryUrl = categoryIds.length > 0 ? `${DIRECTUS_URL}/items/categories?filter[category_id][_in]=${categoryIds.join(',')}&fields=category_id,category_name&limit=-1` : null;
+
     const paymentsUrl   = `${DIRECTUS_URL}/items/sales_invoice_payments?filter[invoice_id][_eq]=${invoiceId}&fields=*,coa_id.gl_code,coa_id.account_title,bank_id.bank_name&limit=-1`;
     const memosUrl      = `${DIRECTUS_URL}/items/customer_memo_invoices?filter[invoice_id][_eq]=${invoiceId}&fields=*,memo_id.*&limit=-1`;
     const returnsUrl    = `${DIRECTUS_URL}/items/sales_invoice_sales_return?filter[invoice_no][_eq]=${invoiceId}&fields=*,return_no.*&limit=-1`;
     const unfulfilledUrl= `${DIRECTUS_URL}/items/unfulfilled_sales_transaction?filter[sales_invoice_id][_eq]=${invoiceId}&fields=*&limit=-1`;
     const unitsUrl      = `${DIRECTUS_URL}/items/units?limit=-1`;
     const discountTypesUrl = `${DIRECTUS_URL}/items/discount_type?limit=-1`;
-
-    // Collect unique brand/category IDs from the fetched details for batch lookup
-    const brandIds    = [...new Set(rawDetails.map(d => d.product_id?.product_brand).filter((v): v is number => typeof v === 'number'))];
-    const categoryIds = [...new Set(rawDetails.map(d => d.product_id?.product_category).filter((v): v is number => typeof v === 'number'))];
-
-    const brandUrl    = brandIds.length    > 0 ? `${DIRECTUS_URL}/items/brand?filter[brand_id][_in]=${brandIds.join(',')}&fields=brand_id,brand_name&limit=-1`    : null;
-    const categoryUrl = categoryIds.length > 0 ? `${DIRECTUS_URL}/items/categories?filter[category_id][_in]=${categoryIds.join(',')}&fields=category_id,category_name&limit=-1` : null;
 
     const [paymentsRes, memosRes, returnsRes, unfulfilledRes, unitsRes, discountTypesRes, brandsRes, categoriesRes] = await Promise.all([
       directusFetch<{ data: SalesInvoicePayment[]   }>(paymentsUrl).catch(() => ({ data: [] })),
@@ -278,9 +301,11 @@ export async function GET(request: NextRequest) {
       const unitDetailsRaw         = item.unit         ? unitsMap.get(Number(item.unit))         : null;
       const discountTypeDetailsRaw = item.discount_type ? discountTypesMap.get(Number(item.discount_type)) : null;
 
-      const prod = item.product_id;
-      const brandName    = prod?.product_brand    != null ? (brandMap.get(Number(prod.product_brand))    || undefined) : undefined;
-      const categoryName = prod?.product_category != null ? (categoryMap.get(Number(prod.product_category)) || undefined) : undefined;
+      const prodId = item.product_id && typeof item.product_id === 'object' ? item.product_id.product_id : Number(item.product_id);
+      const prodDetails = productsMap.get(prodId);
+
+      const brandName    = prodDetails?.product_brand    != null ? (brandMap.get(Number(prodDetails.product_brand))    || undefined) : undefined;
+      const categoryName = prodDetails?.product_category != null ? (categoryMap.get(Number(prodDetails.product_category)) || undefined) : undefined;
 
       return {
         detail_id:       item.detail_id,
@@ -291,10 +316,10 @@ export async function GET(request: NextRequest) {
         discount_amount: item.discount_amount != null ? Number(item.discount_amount) : undefined,
         gross_amount:    item.gross_amount    != null ? Number(item.gross_amount)    : undefined,
         total_amount:    Number(item.total_amount || 0),
-        product_id: prod ? {
-          product_id:   prod.product_id,
-          product_name: prod.product_name  || undefined,
-          description:  prod.description   || undefined,
+        product_id: prodId ? {
+          product_id:   prodId,
+          product_name: prodDetails?.product_name  || undefined,
+          description:  prodDetails?.description   || undefined,
           product_brand:    brandName    ? { brand_name:    brandName    } : undefined,
           product_category: categoryName ? { category_name: categoryName } : undefined,
         } : undefined,

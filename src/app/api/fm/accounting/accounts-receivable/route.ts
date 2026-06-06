@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
 export const runtime = 'nodejs';
@@ -62,8 +62,28 @@ async function fetchAll<T>(url: string): Promise<T[]> {
   return json.data || [];
 }
 
+async function fetchAllChunked<T>(
+  baseUrl: string,
+  idField: string,
+  ids: (number | string)[],
+  chunkSize = 300
+): Promise<T[]> {
+  if (ids.length === 0) return [];
+  const separator = baseUrl.includes('?') ? '&' : '?';
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    chunks.push(ids.slice(i, i + chunkSize));
+  }
+  const results = await Promise.all(
+    chunks.map(chunk =>
+      fetchAll<T>(`${baseUrl}${separator}filter[${idField}][_in]=${chunk.join(',')}`)
+    )
+  );
+  return results.flat();
+}
+
 // ── Route handler ──────────────────────────────────────────────────────────
-export async function GET(_request: NextRequest) {
+export async function GET() {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
 
@@ -90,9 +110,24 @@ export async function GET(_request: NextRequest) {
       `&filter[_or][0][isPosted][_null]=true` +
       `&filter[_or][1][isPosted][_eq]=false`;
 
-    // ── Parallel fetch: invoices + all lookup/aggregation tables ──────────
+    const invoices = await fetchAll<SalesInvoiceRow>(
+      `${DIRECTUS_URL}/items/sales_invoice?limit=-1&fields=${invoiceFields}&${invoiceFilter}`
+    );
+
+    if (invoices.length === 0) {
+      return NextResponse.json({ rows: [], operationData: [] });
+    }
+
+    const invoiceIds = invoices.map((inv) => inv.invoice_id);
+    const customerCodes = Array.from(
+      new Set(invoices.map((inv) => inv.customer_code).filter((c): c is string => !!c))
+    );
+    const salesmanIds = Array.from(
+      new Set(invoices.map((inv) => inv.salesman_id).filter((s): s is number => typeof s === 'number'))
+    );
+
+    // ── Parallel fetch: all lookup/aggregation tables filtered to specific IDs ──
     const [
-      invoices,
       payments,
       returns_,
       memos,
@@ -102,26 +137,35 @@ export async function GET(_request: NextRequest) {
       divisions,
       operations,
     ] = await Promise.all([
-      fetchAll<SalesInvoiceRow>(
-        `${DIRECTUS_URL}/items/sales_invoice?limit=-1&fields=${invoiceFields}&${invoiceFilter}`
+      fetchAllChunked<PaymentRow>(
+        `${DIRECTUS_URL}/items/sales_invoice_payments?limit=-1&fields=invoice_id,paid_amount`,
+        'invoice_id',
+        invoiceIds
       ),
-      fetchAll<PaymentRow>(
-        `${DIRECTUS_URL}/items/sales_invoice_payments?limit=-1&fields=invoice_id,paid_amount`
+      fetchAllChunked<ReturnRow>(
+        `${DIRECTUS_URL}/items/sales_invoice_sales_return?limit=-1&fields=invoice_no,amount`,
+        'invoice_no',
+        invoiceIds
       ),
-      fetchAll<ReturnRow>(
-        `${DIRECTUS_URL}/items/sales_invoice_sales_return?limit=-1&fields=invoice_no,amount`
+      fetchAllChunked<MemoRow>(
+        `${DIRECTUS_URL}/items/customer_memo_invoices?limit=-1&fields=invoice_id,amount,memo_id.type,memo_id.status`,
+        'invoice_id',
+        invoiceIds
       ),
-      fetchAll<MemoRow>(
-        `${DIRECTUS_URL}/items/customer_memo_invoices?limit=-1&fields=invoice_id,amount,memo_id.type,memo_id.status`
+      fetchAllChunked<UnfulfilledRow>(
+        `${DIRECTUS_URL}/items/unfulfilled_sales_transaction?limit=-1&fields=sales_invoice_id,variance_amount`,
+        'sales_invoice_id',
+        invoiceIds
       ),
-      fetchAll<UnfulfilledRow>(
-        `${DIRECTUS_URL}/items/unfulfilled_sales_transaction?limit=-1&fields=sales_invoice_id,variance_amount`
+      fetchAllChunked<CustomerRow>(
+        `${DIRECTUS_URL}/items/customer?limit=-1&fields=customer_code,customer_name`,
+        'customer_code',
+        customerCodes
       ),
-      fetchAll<CustomerRow>(
-        `${DIRECTUS_URL}/items/customer?limit=-1&fields=customer_code,customer_name`
-      ),
-      fetchAll<SalesmanRow>(
-        `${DIRECTUS_URL}/items/salesman?limit=-1&fields=id,salesman_name,division_id`
+      fetchAllChunked<SalesmanRow>(
+        `${DIRECTUS_URL}/items/salesman?limit=-1&fields=id,salesman_name,division_id`,
+        'id',
+        salesmanIds
       ),
       fetchAll<DivisionRow>(
         `${DIRECTUS_URL}/items/division?limit=-1&fields=division_id,division_name`
