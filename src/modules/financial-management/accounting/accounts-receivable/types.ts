@@ -18,6 +18,13 @@ export interface RawInvoiceRow {
   salesman?: string;
   division?: string;
   isPosted?: number;
+  grossAmount?: number;
+  discountAmount?: number;
+  returnAmount?: number;
+  unfulfilledAmount?: number;
+  appliedCreditMemos?: number;
+  appliedDebitMemos?: number;
+  salesType?: number | null;       // FK → operation.id
   // Fallback aliases
   id?: string;
   invoice_number?: string;
@@ -44,6 +51,14 @@ export interface Invoice {
   salesman: string;
   division: string;
   status: 'Paid' | 'Overdue' | 'Due';
+  grossAmount: number;
+  discountAmount: number;
+  returnAmount: number;
+  unfulfilledAmount: number;
+  appliedCreditMemos: number;
+  appliedDebitMemos: number;
+  isPosted: boolean;
+  salesType: number | null;          // FK → operation.id
 }
 
 export interface AgingBucket {
@@ -66,4 +81,17 @@ export interface ARMetrics {
   totalOutstanding: number;
   overdueInvoices: Invoice[];
   avgOverdue: number;
+}
+
+export interface OperationBreakdown {
+  id: number | null;
+  name: string;
+  code: string | null;
+  totalOutstanding: number;
+  count: number;
+}
+
+export interface ARApiResponse {
+  rows: RawInvoiceRow[];
+  operationData: OperationBreakdown[];
 }
