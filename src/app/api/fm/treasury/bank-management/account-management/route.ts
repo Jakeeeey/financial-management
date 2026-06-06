@@ -14,6 +14,7 @@ import {
   jsonError,
   parseMoney,
   sanitizeAccountNumber,
+  sanitizeMobileNumber,
 } from "./_utils";
 
 export const runtime = "nodejs";
@@ -22,6 +23,8 @@ export const dynamic = "force-dynamic";
 type BankAccountRow = {
   bank_id?: unknown;
   bank_name?: unknown;
+  account_type?: unknown;
+  account_name?: unknown;
   account_number?: unknown;
   bank_description?: unknown;
   branch?: unknown;
@@ -34,6 +37,7 @@ type BankAccountRow = {
   mobile_no?: unknown;
   contact_person?: unknown;
   is_active?: unknown;
+  created_at?: unknown;
 };
 
 type BankNameRow = {
@@ -44,17 +48,19 @@ type BankNameRow = {
 
 type NormalizedPayload = {
   bank_name: string;
+  account_type: string;
+  account_name: string;
   account_number: string;
-  bank_description: string | null;
+  bank_description: string;
   branch: string;
-  ifsc_code: string | null;
+  ifsc_code: string;
   opening_balance?: number;
-  province: string | null;
-  city: string | null;
-  baranggay: string | null;
-  email: string | null;
-  mobile_no: string | null;
-  contact_person: string | null;
+  province: string;
+  city: string;
+  baranggay: string;
+  email: string;
+  mobile_no: string;
+  contact_person: string;
   is_active?: number;
   created_by?: number;
 };
@@ -70,6 +76,8 @@ type AccountQueryConfig = {
 const fullAccountFields = [
   "bank_id",
   "bank_name",
+  "account_type",
+  "account_name",
   "account_number",
   "bank_description",
   "branch",
@@ -82,16 +90,20 @@ const fullAccountFields = [
   "mobile_no",
   "contact_person",
   "is_active",
+  "created_at",
 ];
 
 const baseAccountFields = [
   "bank_id",
   "bank_name",
+  "account_type",
+  "account_name",
   "account_number",
   "branch",
   "ifsc_code",
   "opening_balance",
   "is_active",
+  "created_at",
 ];
 
 const minimalAccountFields = [
@@ -103,18 +115,27 @@ const minimalAccountFields = [
 
 const createOptionalFields = [
   "created_by",
-  "bank_description",
-  "ifsc_code",
-  "province",
-  "city",
-  "baranggay",
-  "email",
-  "mobile_no",
-  "contact_person",
   "is_active",
 ] as const;
 
 const bankIdNewestSort = "-created_at,-bank_id";
+const accountTypeOptions = new Set(["Savings", "Checking", "Current", "Other"]);
+const accountFieldMap = {
+  bank_name: "bankName",
+  account_type: "accountType",
+  account_name: "accountName",
+  account_number: "accountNumber",
+  bank_description: "bankDescription",
+  branch: "branch",
+  ifsc_code: "ifscCode",
+  opening_balance: "openingBalance",
+  province: "province",
+  city: "city",
+  baranggay: "baranggay",
+  email: "email",
+  mobile_no: "mobileNo",
+  contact_person: "contactPerson",
+} as const;
 
 function normalizePage(value: unknown) {
   const parsed = Number(value);
@@ -127,15 +148,12 @@ function normalizePageSize(value: unknown) {
   return Math.min(100, Math.floor(parsed));
 }
 
-function nullableString(value: unknown) {
-  const text = asString(value);
-  return text ? text : null;
-}
-
 function normalizeAccount(row: BankAccountRow) {
   return {
     bankId: asNumber(row.bank_id) ?? 0,
     bankName: asString(row.bank_name),
+    accountType: asString(row.account_type),
+    accountName: asString(row.account_name),
     accountNumber: asString(row.account_number),
     bankDescription: asString(row.bank_description),
     branch: asString(row.branch),
@@ -148,6 +166,7 @@ function normalizeAccount(row: BankAccountRow) {
     mobileNo: asString(row.mobile_no),
     contactPerson: asString(row.contact_person),
     isActive: row.is_active === undefined ? true : asBoolean(row.is_active),
+    createdAt: asString(row.created_at),
   };
 }
 
@@ -185,6 +204,11 @@ function buildAccountParams(
   );
   const search = asString(searchParams.get("q") ?? searchParams.get("search"));
   const status = asString(searchParams.get("status"));
+  const bankName = asString(searchParams.get("bank_name"));
+  const accountType = asString(searchParams.get("account_type"));
+  const accountName = asString(searchParams.get("account_name"));
+  const createdFrom = asString(searchParams.get("created_from"));
+  const createdTo = asString(searchParams.get("created_to"));
   const params = new URLSearchParams();
   const offset = (page - 1) * pageSize;
   let filterIndex = 0;
@@ -216,15 +240,59 @@ function buildAccountParams(
       `filter[_and][${filterIndex}][_or][2][branch][_contains]`,
       search,
     );
+    params.set(
+      `filter[_and][${filterIndex}][_or][3][account_name][_contains]`,
+      search,
+    );
     if (config.includeContactSearch) {
       params.set(
-        `filter[_and][${filterIndex}][_or][3][contact_person][_contains]`,
+        `filter[_and][${filterIndex}][_or][4][contact_person][_contains]`,
+        search,
+      );
+      params.set(
+        `filter[_and][${filterIndex}][_or][5][email][_contains]`,
         search,
       );
     }
+    filterIndex += 1;
   }
 
-  return { page, pageSize, search, status, params };
+  if (bankName) {
+    params.set(`filter[_and][${filterIndex}][bank_name][_eq]`, bankName);
+    filterIndex += 1;
+  }
+
+  if (accountType) {
+    params.set(`filter[_and][${filterIndex}][account_type][_eq]`, accountType);
+    filterIndex += 1;
+  }
+
+  if (accountName) {
+    params.set(`filter[_and][${filterIndex}][account_name][_contains]`, accountName);
+    filterIndex += 1;
+  }
+
+  if (createdFrom) {
+    params.set(`filter[_and][${filterIndex}][created_at][_gte]`, `${createdFrom}T00:00:00`);
+    filterIndex += 1;
+  }
+
+  if (createdTo) {
+    params.set(`filter[_and][${filterIndex}][created_at][_lte]`, `${createdTo}T23:59:59`);
+  }
+
+  return {
+    page,
+    pageSize,
+    search,
+    status,
+    bankName,
+    accountType,
+    accountName,
+    createdFrom,
+    createdTo,
+    params,
+  };
 }
 
 function bankNameParams(includeActiveFilter: boolean) {
@@ -306,30 +374,45 @@ function normalizeCreatePayload(
   );
   const payload: NormalizedPayload = {
     bank_name: asString(body.bankName ?? body.bank_name),
+    account_type: asString(body.accountType ?? body.account_type),
+    account_name: asString(body.accountName ?? body.account_name),
     account_number: sanitizeAccountNumber(
       body.accountNumber ?? body.account_number,
     ),
-    bank_description: nullableString(
-      body.bankDescription ?? body.bank_description,
-    ),
+    bank_description: asString(body.bankDescription ?? body.bank_description),
     branch: asString(body.branch),
-    ifsc_code: nullableString(body.ifscCode ?? body.ifsc_code),
+    ifsc_code: asString(body.ifscCode ?? body.ifsc_code),
     opening_balance: openingBalance ?? 0,
-    province: nullableString(body.province),
-    city: nullableString(body.city),
-    baranggay: nullableString(body.baranggay),
-    email: nullableString(body.email),
-    mobile_no: nullableString(body.mobileNo ?? body.mobile_no),
-    contact_person: nullableString(body.contactPerson ?? body.contact_person),
+    province: asString(body.province),
+    city: asString(body.city),
+    baranggay: asString(body.baranggay),
+    email: asString(body.email),
+    mobile_no: sanitizeMobileNumber(body.mobileNo ?? body.mobile_no),
+    contact_person: asString(body.contactPerson ?? body.contact_person),
     is_active: 1,
   };
 
   if (userId) payload.created_by = userId;
   if (!payload.bank_name) throw new Error("Bank name is required");
+  if (!payload.account_type) throw new Error("Account type is required");
+  if (!accountTypeOptions.has(payload.account_type))
+    throw new Error("Select a valid account type");
+  if (!payload.account_name)
+    throw new Error("Registered business name / account name is required");
   if (!payload.account_number) throw new Error("Account number is required");
+  if (!payload.bank_description) throw new Error("Bank description is required");
   if (!payload.branch) throw new Error("Branch is required");
+  if (!payload.ifsc_code) throw new Error("IFSC / routing code is required");
   if (openingBalance === null)
     throw new Error("Opening balance must be a valid amount");
+  if (!payload.province) throw new Error("Province is required");
+  if (!payload.city) throw new Error("City / municipality is required");
+  if (!payload.baranggay) throw new Error("Barangay is required");
+  if (!payload.email) throw new Error("Email is required");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email))
+    throw new Error("Email must be valid");
+  if (!payload.mobile_no) throw new Error("Mobile No. is required");
+  if (!payload.contact_person) throw new Error("Contact person is required");
   assertBankName(payload.bank_name, bankNames);
   return payload;
 }
@@ -449,10 +532,15 @@ export async function GET(request: NextRequest) {
         totalPages,
         search: query.search,
         status: query.status || "all",
+        bankName: query.bankName,
+        accountType: query.accountType,
+        accountName: query.accountName,
+        createdFrom: query.createdFrom,
+        createdTo: query.createdTo,
       },
     });
   } catch (error) {
-    return jsonError(error);
+    return jsonError(error, "Unable to load bank accounts", accountFieldMap);
   }
 }
 
@@ -472,6 +560,6 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
-    return jsonError(error);
+    return jsonError(error, "Unable to create bank account", accountFieldMap);
   }
 }

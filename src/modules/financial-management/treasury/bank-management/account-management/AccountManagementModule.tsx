@@ -51,16 +51,21 @@ import { toast } from "sonner";
 import { useAccountManagement } from "./hooks/useAccountManagement";
 import { accountManagementApi } from "./providers/accountManagementApi";
 import type {
+  AccountManagementFieldErrors,
   AccountManagementFormValues,
+  AccountManagementQuery,
   AccountStatusFilter,
   BankAccount,
   PsgcOption,
 } from "./types";
 
 const PAGE_SIZE = 10;
+const ACCOUNT_TYPE_OPTIONS = ["Savings", "Checking", "Current", "Other"];
 
 const emptyForm: AccountManagementFormValues = {
   bankName: "",
+  accountType: "",
+  accountName: "",
   accountNumber: "",
   bankDescription: "",
   branch: "",
@@ -88,6 +93,10 @@ type TextFieldProps = {
   disabled?: boolean;
   required?: boolean;
   type?: string;
+  error?: string;
+  inputMode?: "numeric" | "text" | "email" | "decimal";
+  maxLength?: number;
+  pattern?: string;
   onChange: (id: keyof AccountManagementFormValues, value: string) => void;
 };
 
@@ -126,6 +135,22 @@ type PsgcLoadingState = {
 
 function sanitizeAccountNumber(value: string) {
   return value.replace(/[^A-Za-z0-9-]/g, "").replace(/-+/g, "-");
+}
+
+function sanitizeMobileNumber(value: string) {
+  return value.replace(/\D/g, "").slice(0, 20);
+}
+
+function hasFieldErrors(errors: AccountManagementFieldErrors) {
+  return Object.values(errors).some(Boolean);
+}
+
+function RequiredMark() {
+  return <span className="text-destructive">*</span>;
+}
+
+function FieldError({ message }: { message?: string }) {
+  return message ? <p className="text-sm text-destructive">{message}</p> : null;
 }
 
 function normalizeBankNameInput(value: string) {
@@ -183,9 +208,22 @@ function formatMoney(value: number) {
   }).format(value || 0);
 }
 
+function formatDate(value: string) {
+  if (!value) return "N/A";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  }).format(date);
+}
+
 function accountToForm(account: BankAccount): AccountManagementFormValues {
   return {
     bankName: account.bankName,
+    accountType: account.accountType,
+    accountName: account.accountName,
     accountNumber: account.accountNumber,
     bankDescription: account.bankDescription,
     branch: account.branch,
@@ -201,18 +239,34 @@ function accountToForm(account: BankAccount): AccountManagementFormValues {
 }
 
 function validateForm(values: AccountManagementFormValues, mode: FormMode) {
+  const errors: AccountManagementFieldErrors = {};
   const accountNumber = sanitizeAccountNumber(values.accountNumber);
-  if (!values.bankName.trim()) return "Bank name is required";
-  if (!accountNumber) return "Account number is required";
-  if (!values.branch.trim()) return "Branch is required";
+  const mobileNo = sanitizeMobileNumber(values.mobileNo);
+
+  if (!values.bankName.trim()) errors.bankName = "This field is required";
+  if (!values.accountType.trim()) errors.accountType = "This field is required";
+  if (!values.accountName.trim()) errors.accountName = "This field is required";
+  if (!accountNumber) errors.accountNumber = "This field is required";
+  if (!values.bankDescription.trim()) errors.bankDescription = "This field is required";
+  if (!values.branch.trim()) errors.branch = "This field is required";
+  if (!values.ifscCode.trim()) errors.ifscCode = "This field is required";
   if (mode === "create") {
-    if (!values.openingBalance.trim()) return "Opening balance is required";
-    if (!Number.isFinite(Number(values.openingBalance))) return "Opening balance must be a valid amount";
+    if (!values.openingBalance.trim()) errors.openingBalance = "This field is required";
+    else if (!Number.isFinite(Number(values.openingBalance))) {
+      errors.openingBalance = "Opening balance must be a valid amount";
+    }
   }
-  if (values.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) {
-    return "Email must be valid";
+  if (!values.province.trim()) errors.province = "This field is required";
+  if (!values.city.trim()) errors.city = "This field is required";
+  if (!values.baranggay.trim()) errors.baranggay = "This field is required";
+  if (!values.email.trim()) errors.email = "This field is required";
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) {
+    errors.email = "Email must be valid";
   }
-  return null;
+  if (!mobileNo) errors.mobileNo = "This field is required";
+  if (!values.contactPerson.trim()) errors.contactPerson = "This field is required";
+
+  return errors;
 }
 
 function TextField({
@@ -222,19 +276,30 @@ function TextField({
   disabled,
   required,
   type = "text",
+  error,
+  inputMode,
+  maxLength,
+  pattern,
   onChange,
 }: TextFieldProps) {
   return (
-    <div className="grid gap-1.5">
-      <Label htmlFor={id}>{label}{required ? " *" : ""}</Label>
+    <div className="grid gap-1.5" data-invalid={Boolean(error) || undefined}>
+      <Label htmlFor={id}>
+        {label} {required ? <RequiredMark /> : null}
+      </Label>
       <Input
         id={id}
         value={value}
         type={type}
         disabled={disabled}
         required={required}
+        aria-invalid={Boolean(error)}
+        inputMode={inputMode}
+        maxLength={maxLength}
+        pattern={pattern}
         onChange={(event) => onChange(id, event.target.value)}
       />
+      <FieldError message={error} />
     </div>
   );
 }
@@ -436,12 +501,18 @@ export default function AccountManagementModule() {
   const { data, loading, saving, error, loadAccounts, createAccount, updateAccount } = useAccountManagement();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [bankFilter, setBankFilter] = useState("");
+  const [accountTypeFilter, setAccountTypeFilter] = useState("");
+  const [accountNameFilter, setAccountNameFilter] = useState("");
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
   const [status, setStatus] = useState<AccountStatusFilter>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formMode, setFormMode] = useState<FormMode>("create");
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [formValues, setFormValues] = useState<AccountManagementFormValues>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<AccountManagementFieldErrors>({});
   const [bankNameError, setBankNameError] = useState<string | null>(null);
   const [bankNameSaving, setBankNameSaving] = useState(false);
   const [pendingBankName, setPendingBankName] = useState<string | null>(null);
@@ -491,6 +562,29 @@ export default function AccountManagementModule() {
   const pendingBankNameHasSimilar = pendingBankNameMatches.some(
     (match) => match.kind === "similar",
   );
+  const accountQuery = useMemo<AccountManagementQuery>(
+    () => ({
+      page,
+      pageSize: PAGE_SIZE,
+      search,
+      status,
+      bankName: bankFilter,
+      accountType: accountTypeFilter,
+      accountName: accountNameFilter,
+      createdFrom,
+      createdTo,
+    }),
+    [
+      accountNameFilter,
+      accountTypeFilter,
+      bankFilter,
+      createdFrom,
+      createdTo,
+      page,
+      search,
+      status,
+    ],
+  );
 
   const loadPsgcOptions = useCallback(async (
     kind: "provinces" | "cities" | "barangays",
@@ -522,11 +616,11 @@ export default function AccountManagementModule() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadAccounts({ page, pageSize: PAGE_SIZE, search, status });
+      void loadAccounts(accountQuery);
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [loadAccounts, page, search, status]);
+  }, [accountQuery, loadAccounts]);
 
   useEffect(() => {
     if (!dialogOpen) return;
@@ -552,10 +646,19 @@ export default function AccountManagementModule() {
   }, [cityOptions, formValues.city, locationCodes.cityCode]);
 
   function updateFormValue(id: keyof AccountManagementFormValues, value: string) {
+    const nextValue =
+      id === "accountNumber"
+        ? sanitizeAccountNumber(value)
+        : id === "mobileNo"
+          ? sanitizeMobileNumber(value)
+          : value;
+
     setFormValues((current) => ({
       ...current,
-      [id]: id === "accountNumber" ? sanitizeAccountNumber(value) : value,
+      [id]: nextValue,
     }));
+    setFormErrors((current) => ({ ...current, [id]: undefined }));
+    setFormError(null);
   }
 
   function openCreateDialog() {
@@ -563,6 +666,7 @@ export default function AccountManagementModule() {
     setEditingAccount(null);
     setFormValues(emptyForm);
     setFormError(null);
+    setFormErrors({});
     setBankNameError(null);
     setPendingBankName(null);
     setPendingBankNameMatches([]);
@@ -576,6 +680,7 @@ export default function AccountManagementModule() {
     setEditingAccount(account);
     setFormValues(accountToForm(account));
     setFormError(null);
+    setFormErrors({});
     setBankNameError(null);
     setPendingBankName(null);
     setPendingBankNameMatches([]);
@@ -596,6 +701,12 @@ export default function AccountManagementModule() {
       city: "",
       baranggay: "",
     }));
+    setFormErrors((current) => ({
+      ...current,
+      province: undefined,
+      city: undefined,
+      baranggay: undefined,
+    }));
     void loadPsgcOptions("cities", { provinceCode: option.code });
     void loadPsgcOptions("barangays", { provinceCode: option.code });
   }
@@ -613,6 +724,12 @@ export default function AccountManagementModule() {
       province: province?.name || "",
       city: option.name,
       baranggay: "",
+    }));
+    setFormErrors((current) => ({
+      ...current,
+      province: undefined,
+      city: undefined,
+      baranggay: undefined,
     }));
     if (option.provinceCode) {
       void loadPsgcOptions("cities", { provinceCode: option.provinceCode });
@@ -635,6 +752,12 @@ export default function AccountManagementModule() {
       city: city?.name || current.city,
       baranggay: option.name,
     }));
+    setFormErrors((current) => ({
+      ...current,
+      province: undefined,
+      city: undefined,
+      baranggay: undefined,
+    }));
   }
 
   function loadBarangaysForCurrentLocation() {
@@ -654,7 +777,7 @@ export default function AccountManagementModule() {
   }
 
   async function reloadCurrentPage() {
-    await loadAccounts({ page, pageSize: PAGE_SIZE, search, status });
+    await loadAccounts(accountQuery);
   }
 
   function requestBankNameCreate(bankNameInput: string) {
@@ -702,22 +825,28 @@ export default function AccountManagementModule() {
   async function submitForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const validationError = validateForm(formValues, formMode);
-    if (validationError) {
-      setFormError(validationError);
+    if (hasFieldErrors(validationError)) {
+      setFormErrors(validationError);
+      setFormError("Please review the highlighted fields.");
       return;
     }
 
     const normalizedValues = {
       ...formValues,
       accountNumber: sanitizeAccountNumber(formValues.accountNumber),
+      mobileNo: sanitizeMobileNumber(formValues.mobileNo),
     };
     const saved = formMode === "create"
       ? await createAccount(normalizedValues)
       : editingAccount
         ? await updateAccount(editingAccount.bankId, normalizedValues)
-        : false;
+        : { ok: false, message: "No account selected", fieldErrors: undefined };
 
-    if (!saved) return;
+    if (!saved.ok) {
+      setFormError(saved.message);
+      setFormErrors(saved.fieldErrors ?? {});
+      return;
+    }
 
     setDialogOpen(false);
     if (formMode === "create") setPage(1);
@@ -726,6 +855,11 @@ export default function AccountManagementModule() {
       pageSize: PAGE_SIZE,
       search,
       status,
+      bankName: bankFilter,
+      accountType: accountTypeFilter,
+      accountName: accountNameFilter,
+      createdFrom,
+      createdTo,
     });
   }
 
@@ -753,7 +887,7 @@ export default function AccountManagementModule() {
       <Card className="rounded-md">
         <CardHeader className="gap-3 border-b">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div className="grid w-full gap-3 md:grid-cols-[minmax(0,1fr)_220px] lg:max-w-3xl">
+            <div className="grid w-full gap-3 md:grid-cols-2 xl:grid-cols-6">
               <div className="grid gap-1.5">
                 <Label htmlFor="account-search">Search</Label>
                 <div className="relative">
@@ -766,10 +900,48 @@ export default function AccountManagementModule() {
                       setSearch(event.target.value);
                       setPage(1);
                     }}
-                    placeholder="Bank, account number, branch, or contact"
+                    placeholder="Bank, account, branch, or contact"
                     className="pl-8"
                   />
                 </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Bank</Label>
+                <SearchableSelect
+                  value={bankFilter}
+                  disabled={saving}
+                  onValueChange={(value) => {
+                    setBankFilter(value || "");
+                    setPage(1);
+                  }}
+                  options={[
+                    { value: "", label: "All banks" },
+                    ...data.bankNames.map((bank) => ({
+                      value: bank.bankName,
+                      label: bank.bankName,
+                    })),
+                  ]}
+                  placeholder="All banks"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Account Type</Label>
+                <SearchableSelect
+                  value={accountTypeFilter}
+                  disabled={saving}
+                  onValueChange={(value) => {
+                    setAccountTypeFilter(value || "");
+                    setPage(1);
+                  }}
+                  options={[
+                    { value: "", label: "All types" },
+                    ...ACCOUNT_TYPE_OPTIONS.map((accountType) => ({
+                      value: accountType,
+                      label: accountType,
+                    })),
+                  ]}
+                  placeholder="All types"
+                />
               </div>
               <div className="grid gap-1.5">
                 <Label>Status</Label>
@@ -788,6 +960,45 @@ export default function AccountManagementModule() {
                   placeholder="All accounts"
                 />
               </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="account-created-from">Created From</Label>
+                <Input
+                  id="account-created-from"
+                  type="date"
+                  value={createdFrom}
+                  disabled={saving}
+                  onChange={(event) => {
+                    setCreatedFrom(event.target.value);
+                    setPage(1);
+                  }}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="account-created-to">Created To</Label>
+                <Input
+                  id="account-created-to"
+                  type="date"
+                  value={createdTo}
+                  disabled={saving}
+                  onChange={(event) => {
+                    setCreatedTo(event.target.value);
+                    setPage(1);
+                  }}
+                />
+              </div>
+              <div className="grid gap-1.5 md:col-span-2 xl:col-span-2">
+                <Label htmlFor="account-name-filter">Registered Business Name / Account Name</Label>
+                <Input
+                  id="account-name-filter"
+                  value={accountNameFilter}
+                  disabled={saving}
+                  onChange={(event) => {
+                    setAccountNameFilter(event.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Search registered business or account name"
+                />
+              </div>
             </div>
             <div className="flex gap-2">
               <Button
@@ -796,6 +1007,11 @@ export default function AccountManagementModule() {
                 disabled={saving || loading}
                 onClick={() => {
                   setSearch("");
+                  setBankFilter("");
+                  setAccountTypeFilter("");
+                  setAccountNameFilter("");
+                  setCreatedFrom("");
+                  setCreatedTo("");
                   setStatus("all");
                   setPage(1);
                 }}
@@ -818,74 +1034,92 @@ export default function AccountManagementModule() {
           {error ? (
             <div className="border-b px-4 py-3 text-sm text-destructive">{error}</div>
           ) : null}
-          <div className="overflow-x-auto">
-            <Table className="min-w-245 table-fixed">
+          <div className="w-full overflow-hidden [&_[data-slot=table-container]]:!overflow-hidden">
+            <Table className="w-full table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[18%]">Bank</TableHead>
-                  <TableHead className="w-[15%]">Account Number</TableHead>
-                  <TableHead className="w-[16%]">Branch</TableHead>
-                  <TableHead className="w-[13%]">Routing</TableHead>
-                  <TableHead className="w-[13%] text-right">Opening Balance</TableHead>
-                  <TableHead className="w-[15%]">Contact</TableHead>
-                  <TableHead className="w-[5%] text-center">Active</TableHead>
-                  <TableHead className="sticky right-0 z-10 w-[5%] bg-card text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.45)]">
-                    Action
+                  <TableHead className="w-[14%]">Bank</TableHead>
+                  <TableHead className="w-[16%]">Registered Account</TableHead>
+                  <TableHead className="w-[10%]">Account No.</TableHead>
+                  <TableHead className="w-[14%]">Branch</TableHead>
+                  <TableHead className="w-[8%]">Routing</TableHead>
+                  <TableHead className="w-[10%] text-right">Balance</TableHead>
+                  <TableHead className="w-[18%]">Contact</TableHead>
+                  <TableHead className="w-10 px-1 text-center">Active</TableHead>
+                  <TableHead className="w-10 px-1 text-right">
+                    <span className="sr-only">Action</span>
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
                       Loading bank accounts...
                     </TableCell>
                   </TableRow>
                 ) : data.accounts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
                       No bank accounts found.
                     </TableCell>
                   </TableRow>
                 ) : data.accounts.map((account) => (
                   <TableRow key={account.bankId}>
-                    <TableCell className="min-w-0 whitespace-normal">
+                    <TableCell className="min-w-0 overflow-hidden align-top">
                       <div className="min-w-0">
-                        <div className="wrap-break-word font-medium">{account.bankName || "N/A"}</div>
-                        <div className="mt-1 wrap-break-word text-xs text-muted-foreground">
+                        <div className="truncate font-medium" title={account.bankName || "N/A"}>{account.bankName || "N/A"}</div>
+                        <div className="mt-1 line-clamp-2 text-xs text-muted-foreground" title={account.bankDescription || "No description"}>
                           {account.bankDescription || "No description"}
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="wrap-break-word font-mono text-sm">{account.accountNumber || "N/A"}</TableCell>
-                    <TableCell className="whitespace-normal wrap-break-word">
-                      <div>{account.branch || "N/A"}</div>
+                    <TableCell className="min-w-0 overflow-hidden align-top">
+                      <div className="line-clamp-2" title={account.accountName || "N/A"}>{account.accountName || "N/A"}</div>
                       <div className="mt-1 text-xs text-muted-foreground">
+                        {account.accountType || "No account type"}
+                      </div>
+                    </TableCell>
+                    <TableCell className="min-w-0 overflow-hidden align-top font-mono text-sm">
+                      <span className="block truncate" title={account.accountNumber || "N/A"}>{account.accountNumber || "N/A"}</span>
+                    </TableCell>
+                    <TableCell className="min-w-0 overflow-hidden align-top">
+                      <div className="truncate" title={account.branch || "N/A"}>{account.branch || "N/A"}</div>
+                      <div className="mt-1 line-clamp-2 text-xs text-muted-foreground" title={[account.city, account.province].filter(Boolean).join(", ") || "No location"}>
                         {[account.city, account.province].filter(Boolean).join(", ") || "No location"}
                       </div>
                     </TableCell>
-                    <TableCell className="wrap-break-word">{account.ifscCode || "N/A"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatMoney(account.openingBalance)}</TableCell>
-                    <TableCell className="whitespace-normal wrap-break-word">
-                      <div>{account.contactPerson || "N/A"}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{account.mobileNo || account.email || "No contact"}</div>
+                    <TableCell className="min-w-0 overflow-hidden align-top">
+                      <span className="block truncate" title={account.ifscCode || "N/A"}>{account.ifscCode || "N/A"}</span>
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="min-w-0 overflow-hidden align-top text-right tabular-nums">
+                      <span className="block truncate" title={formatMoney(account.openingBalance)}>
+                        {formatMoney(account.openingBalance)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="min-w-0 overflow-hidden align-top">
+                      <div className="truncate" title={account.contactPerson || "N/A"}>{account.contactPerson || "N/A"}</div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground" title={account.mobileNo || "No mobile"}>{account.mobileNo || "No mobile"}</div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground" title={account.email || "No email"}>{account.email || "No email"}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{formatDate(account.createdAt)}</div>
+                    </TableCell>
+                    <TableCell className="px-1 align-top text-center">
                       <Switch
                         checked={account.isActive}
                         disabled={saving}
+                        size="sm"
                         onCheckedChange={async (checked) => {
                           const saved = await updateAccount(account.bankId, { isActive: checked });
-                          if (saved) await reloadCurrentPage();
+                          if (saved.ok) await reloadCurrentPage();
                         }}
                         aria-label={`Toggle ${account.bankName} active status`}
                       />
                     </TableCell>
-                    <TableCell className="sticky right-0 z-10 bg-card text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.45)]">
+                    <TableCell className="px-1 align-top text-right">
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon"
+                        size="icon-sm"
                         disabled={saving}
                         onClick={() => openEditDialog(account)}
                         aria-label={`Edit ${account.bankName} account`}
@@ -964,8 +1198,10 @@ export default function AccountManagementModule() {
               <section className="grid gap-4">
                 <h2 className="text-sm font-semibold">Account Details</h2>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <div className="grid min-w-0 gap-1.5">
-                    <Label>Bank Name *</Label>
+                  <div className="grid min-w-0 gap-1.5" data-invalid={Boolean(bankNameError || formErrors.bankName) || undefined}>
+                    <Label>
+                      Bank Name <RequiredMark />
+                    </Label>
                     <BankNameSelect
                       bankNames={data.bankNames}
                       value={formValues.bankName}
@@ -973,20 +1209,45 @@ export default function AccountManagementModule() {
                       creating={bankNameSaving}
                       onValueChange={(value) => {
                         setBankNameError(null);
+                        setFormErrors((current) => ({ ...current, bankName: undefined }));
                         updateFormValue("bankName", value);
                       }}
                       onCreateBankName={requestBankNameCreate}
                     />
-                    {bankNameError ? (
-                      <p className="text-sm text-destructive">{bankNameError}</p>
-                    ) : null}
+                    <FieldError message={bankNameError || formErrors.bankName} />
                   </div>
+                  <div className="grid min-w-0 gap-1.5" data-invalid={Boolean(formErrors.accountType) || undefined}>
+                    <Label>
+                      Account Type <RequiredMark />
+                    </Label>
+                    <SearchableSelect
+                      value={formValues.accountType}
+                      disabled={saving}
+                      onValueChange={(value) => updateFormValue("accountType", value)}
+                      options={ACCOUNT_TYPE_OPTIONS.map((accountType) => ({
+                        value: accountType,
+                        label: accountType,
+                      }))}
+                      placeholder="Select account type"
+                    />
+                    <FieldError message={formErrors.accountType} />
+                  </div>
+                  <TextField
+                    id="accountName"
+                    label="Registered Business Name / Account Name"
+                    value={formValues.accountName}
+                    disabled={saving}
+                    required
+                    error={formErrors.accountName}
+                    onChange={updateFormValue}
+                  />
                   <TextField
                     id="accountNumber"
                     label="Account Number"
                     value={formValues.accountNumber}
                     disabled={saving}
                     required
+                    error={formErrors.accountNumber}
                     onChange={updateFormValue}
                   />
                   <TextField
@@ -996,6 +1257,7 @@ export default function AccountManagementModule() {
                     disabled={saving || formMode === "edit"}
                     required={formMode === "create"}
                     type="number"
+                    error={formErrors.openingBalance}
                     onChange={updateFormValue}
                   />
                   <TextField
@@ -1003,16 +1265,22 @@ export default function AccountManagementModule() {
                     label="IFSC / Routing Code"
                     value={formValues.ifscCode}
                     disabled={saving}
+                    required
+                    error={formErrors.ifscCode}
                     onChange={updateFormValue}
                   />
-                  <div className="grid gap-1.5 md:col-span-2">
-                    <Label htmlFor="bankDescription">Bank Description</Label>
+                  <div className="grid gap-1.5 md:col-span-2" data-invalid={Boolean(formErrors.bankDescription) || undefined}>
+                    <Label htmlFor="bankDescription">
+                      Bank Description <RequiredMark />
+                    </Label>
                     <Textarea
                       id="bankDescription"
                       value={formValues.bankDescription}
                       disabled={saving}
+                      aria-invalid={Boolean(formErrors.bankDescription)}
                       onChange={(event) => updateFormValue("bankDescription", event.target.value)}
                     />
+                    <FieldError message={formErrors.bankDescription} />
                   </div>
                 </div>
               </section>
@@ -1020,9 +1288,19 @@ export default function AccountManagementModule() {
               <section className="grid gap-4">
                 <h2 className="text-sm font-semibold">Branch Location</h2>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <TextField id="branch" label="Branch Name" value={formValues.branch} disabled={saving} required onChange={updateFormValue} />
-                  <div className="grid min-w-0 gap-1.5">
-                    <Label>Province</Label>
+                  <TextField
+                    id="branch"
+                    label="Branch Name"
+                    value={formValues.branch}
+                    disabled={saving}
+                    required
+                    error={formErrors.branch}
+                    onChange={updateFormValue}
+                  />
+                  <div className="grid min-w-0 gap-1.5" data-invalid={Boolean(formErrors.province) || undefined}>
+                    <Label>
+                      Province <RequiredMark />
+                    </Label>
                     <PsgcSelect
                       options={displayedProvinceOptions}
                       value={formValues.province}
@@ -1033,9 +1311,12 @@ export default function AccountManagementModule() {
                       emptyText="No provinces found."
                       onSelect={selectProvince}
                     />
+                    <FieldError message={formErrors.province} />
                   </div>
-                  <div className="grid min-w-0 gap-1.5">
-                    <Label>City / Municipality</Label>
+                  <div className="grid min-w-0 gap-1.5" data-invalid={Boolean(formErrors.city) || undefined}>
+                    <Label>
+                      City / Municipality <RequiredMark />
+                    </Label>
                     <PsgcSelect
                       options={displayedCityOptions}
                       value={formValues.city}
@@ -1046,9 +1327,12 @@ export default function AccountManagementModule() {
                       emptyText="No cities or municipalities found."
                       onSelect={selectCity}
                     />
+                    <FieldError message={formErrors.city} />
                   </div>
-                  <div className="grid min-w-0 gap-1.5">
-                    <Label>Barangay</Label>
+                  <div className="grid min-w-0 gap-1.5" data-invalid={Boolean(formErrors.baranggay) || undefined}>
+                    <Label>
+                      Barangay <RequiredMark />
+                    </Label>
                     <PsgcSelect
                       options={barangayOptions}
                       value={formValues.baranggay}
@@ -1060,6 +1344,7 @@ export default function AccountManagementModule() {
                       onOpen={loadBarangaysForCurrentLocation}
                       onSelect={selectBarangay}
                     />
+                    <FieldError message={formErrors.baranggay} />
                   </div>
                 </div>
               </section>
@@ -1067,9 +1352,38 @@ export default function AccountManagementModule() {
               <section className="grid gap-4">
                 <h2 className="text-sm font-semibold">Contact Info</h2>
                 <div className="grid gap-4 md:grid-cols-3">
-                  <TextField id="contactPerson" label="Contact Person" value={formValues.contactPerson} disabled={saving} onChange={updateFormValue} />
-                  <TextField id="email" label="Email" value={formValues.email} disabled={saving} type="email" onChange={updateFormValue} />
-                  <TextField id="mobileNo" label="Mobile No." value={formValues.mobileNo} disabled={saving} onChange={updateFormValue} />
+                  <TextField
+                    id="contactPerson"
+                    label="Contact Person"
+                    value={formValues.contactPerson}
+                    disabled={saving}
+                    required
+                    error={formErrors.contactPerson}
+                    onChange={updateFormValue}
+                  />
+                  <TextField
+                    id="email"
+                    label="Email"
+                    value={formValues.email}
+                    disabled={saving}
+                    required
+                    type="email"
+                    inputMode="email"
+                    error={formErrors.email}
+                    onChange={updateFormValue}
+                  />
+                  <TextField
+                    id="mobileNo"
+                    label="Mobile No."
+                    value={formValues.mobileNo}
+                    disabled={saving}
+                    required
+                    inputMode="numeric"
+                    maxLength={20}
+                    pattern="[0-9]*"
+                    error={formErrors.mobileNo}
+                    onChange={updateFormValue}
+                  />
                 </div>
               </section>
             </div>

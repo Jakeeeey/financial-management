@@ -19,10 +19,85 @@ export class DirectusRequestError extends Error {
   }
 }
 
-export function jsonError(error: unknown, fallback = "Internal Server Error") {
+type FieldNameMap = Record<string, string>;
+
+function snakeToCamel(value: string) {
+  return value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+}
+
+function directusMessages(body: string) {
+  try {
+    const parsed = JSON.parse(body) as {
+      errors?: Array<{ message?: unknown; extensions?: Record<string, unknown> }>;
+    };
+    return (parsed.errors ?? [])
+      .map((item) =>
+        [
+          typeof item.message === "string" ? item.message : "",
+          typeof item.extensions?.reason === "string" ? item.extensions.reason : "",
+          typeof item.extensions?.field === "string" ? item.extensions.field : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+      )
+      .filter(Boolean);
+  } catch {
+    return body ? [body] : [];
+  }
+}
+
+function humanizeFieldName(value: string) {
+  return value
+    .replace(/_/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function directusFieldErrors(
+  error: DirectusRequestError,
+  fieldMap: FieldNameMap = {},
+) {
+  const messages = directusMessages(error.body);
+  const fieldErrors: Record<string, string> = {};
+  const knownFields = Object.keys(fieldMap);
+
+  for (const fieldName of knownFields) {
+    const lowerField = fieldName.toLowerCase();
+    const matchingMessage = messages.find((message) =>
+      message.toLowerCase().includes(lowerField),
+    );
+
+    if (!matchingMessage) continue;
+
+    const formField = fieldMap[fieldName] || snakeToCamel(fieldName);
+    fieldErrors[formField] =
+      matchingMessage.toLowerCase().includes("required") ||
+      matchingMessage.toLowerCase().includes("null") ||
+      matchingMessage.toLowerCase().includes("default")
+        ? "This field is required"
+        : `${humanizeFieldName(formField)} needs attention`;
+  }
+
+  return fieldErrors;
+}
+
+export function jsonError(
+  error: unknown,
+  fallback = "Internal Server Error",
+  fieldMap: FieldNameMap = {},
+) {
   if (error instanceof DirectusRequestError) {
+    const fieldErrors = directusFieldErrors(error, fieldMap);
+    const hasFieldErrors = Object.keys(fieldErrors).length > 0;
+
     return NextResponse.json(
-      { error: error.message, details: error.body },
+      {
+        error: hasFieldErrors
+          ? "Please review the highlighted fields"
+          : error.message,
+        details: error.body,
+        ...(hasFieldErrors ? { fieldErrors } : {}),
+      },
       { status: error.status || 500 },
     );
   }
@@ -88,6 +163,10 @@ export function asBoolean(value: unknown): boolean {
 
 export function sanitizeAccountNumber(value: unknown) {
   return asString(value).replace(/[^A-Za-z0-9-]/g, "").replace(/-+/g, "-");
+}
+
+export function sanitizeMobileNumber(value: unknown) {
+  return asString(value).replace(/\D/g, "").slice(0, 20);
 }
 
 export function parseMoney(value: unknown) {

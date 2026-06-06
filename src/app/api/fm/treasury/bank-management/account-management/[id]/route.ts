@@ -10,6 +10,7 @@ import {
   isFieldAccessError,
   jsonError,
   sanitizeAccountNumber,
+  sanitizeMobileNumber,
 } from "../_utils";
 
 export const runtime = "nodejs";
@@ -18,6 +19,8 @@ export const dynamic = "force-dynamic";
 type BankAccountRow = {
   bank_id?: unknown;
   bank_name?: unknown;
+  account_type?: unknown;
+  account_name?: unknown;
   account_number?: unknown;
   bank_description?: unknown;
   branch?: unknown;
@@ -30,6 +33,7 @@ type BankAccountRow = {
   mobile_no?: unknown;
   contact_person?: unknown;
   is_active?: unknown;
+  created_at?: unknown;
 };
 
 type BankNameRow = {
@@ -38,26 +42,31 @@ type BankNameRow = {
   is_active?: unknown;
 };
 
-const updateOptionalFields = [
-  "bank_description",
-  "ifsc_code",
-  "province",
-  "city",
-  "baranggay",
-  "email",
-  "mobile_no",
-  "contact_person",
-] as const;
-
-function nullableString(value: unknown) {
-  const text = asString(value);
-  return text ? text : null;
-}
+const updateOptionalFields = [] as const;
+const accountTypeOptions = new Set(["Savings", "Checking", "Current", "Other"]);
+const accountFieldMap = {
+  bank_name: "bankName",
+  account_type: "accountType",
+  account_name: "accountName",
+  account_number: "accountNumber",
+  bank_description: "bankDescription",
+  branch: "branch",
+  ifsc_code: "ifscCode",
+  opening_balance: "openingBalance",
+  province: "province",
+  city: "city",
+  baranggay: "baranggay",
+  email: "email",
+  mobile_no: "mobileNo",
+  contact_person: "contactPerson",
+} as const;
 
 function normalizeAccount(row: BankAccountRow) {
   return {
     bankId: asNumber(row.bank_id) ?? 0,
     bankName: asString(row.bank_name),
+    accountType: asString(row.account_type),
+    accountName: asString(row.account_name),
     accountNumber: asString(row.account_number),
     bankDescription: asString(row.bank_description),
     branch: asString(row.branch),
@@ -70,6 +79,7 @@ function normalizeAccount(row: BankAccountRow) {
     mobileNo: asString(row.mobile_no),
     contactPerson: asString(row.contact_person),
     isActive: row.is_active === undefined ? true : asBoolean(row.is_active),
+    createdAt: asString(row.created_at),
   };
 }
 
@@ -143,6 +153,21 @@ async function buildUpdatePayload(body: Record<string, unknown>) {
     payload.account_number = accountNumber;
   }
 
+  if ("accountType" in body || "account_type" in body) {
+    const accountType = asString(body.accountType ?? body.account_type);
+    if (!accountType) throw new Error("Account type is required");
+    if (!accountTypeOptions.has(accountType))
+      throw new Error("Select a valid account type");
+    payload.account_type = accountType;
+  }
+
+  if ("accountName" in body || "account_name" in body) {
+    const accountName = asString(body.accountName ?? body.account_name);
+    if (!accountName)
+      throw new Error("Registered business name / account name is required");
+    payload.account_name = accountName;
+  }
+
   if ("branch" in body) {
     const branch = asString(body.branch);
     if (!branch) throw new Error("Branch is required");
@@ -150,25 +175,52 @@ async function buildUpdatePayload(body: Record<string, unknown>) {
   }
 
   if ("bankDescription" in body || "bank_description" in body) {
-    payload.bank_description = nullableString(
+    const bankDescription = asString(
       body.bankDescription ?? body.bank_description,
     );
+    if (!bankDescription) throw new Error("Bank description is required");
+    payload.bank_description = bankDescription;
   }
 
   if ("ifscCode" in body || "ifsc_code" in body) {
-    payload.ifsc_code = nullableString(body.ifscCode ?? body.ifsc_code);
+    const ifscCode = asString(body.ifscCode ?? body.ifsc_code);
+    if (!ifscCode) throw new Error("IFSC / routing code is required");
+    payload.ifsc_code = ifscCode;
   }
 
-  if ("province" in body) payload.province = nullableString(body.province);
-  if ("city" in body) payload.city = nullableString(body.city);
-  if ("baranggay" in body) payload.baranggay = nullableString(body.baranggay);
-  if ("email" in body) payload.email = nullableString(body.email);
-  if ("mobileNo" in body || "mobile_no" in body)
-    payload.mobile_no = nullableString(body.mobileNo ?? body.mobile_no);
+  if ("province" in body) {
+    const province = asString(body.province);
+    if (!province) throw new Error("Province is required");
+    payload.province = province;
+  }
+  if ("city" in body) {
+    const city = asString(body.city);
+    if (!city) throw new Error("City / municipality is required");
+    payload.city = city;
+  }
+  if ("baranggay" in body) {
+    const baranggay = asString(body.baranggay);
+    if (!baranggay) throw new Error("Barangay is required");
+    payload.baranggay = baranggay;
+  }
+  if ("email" in body) {
+    const email = asString(body.email);
+    if (!email) throw new Error("Email is required");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      throw new Error("Email must be valid");
+    payload.email = email;
+  }
+  if ("mobileNo" in body || "mobile_no" in body) {
+    const mobileNo = sanitizeMobileNumber(body.mobileNo ?? body.mobile_no);
+    if (!mobileNo) throw new Error("Mobile No. is required");
+    payload.mobile_no = mobileNo;
+  }
   if ("contactPerson" in body || "contact_person" in body) {
-    payload.contact_person = nullableString(
+    const contactPerson = asString(
       body.contactPerson ?? body.contact_person,
     );
+    if (!contactPerson) throw new Error("Contact person is required");
+    payload.contact_person = contactPerson;
   }
   if ("isActive" in body || "is_active" in body)
     payload.is_active = asBoolean(body.isActive ?? body.is_active) ? 1 : 0;
@@ -238,6 +290,6 @@ export async function PATCH(
 
     return NextResponse.json({ account: normalizeAccount(res.data ?? {}) });
   } catch (error) {
-    return jsonError(error);
+    return jsonError(error, "Unable to update bank account", accountFieldMap);
   }
 }

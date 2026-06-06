@@ -1,8 +1,9 @@
 // src/modules/financial-management/treasury/bank-management/account-management/providers/accountManagementApi.ts
 import type {
   AccountManagementData,
+  AccountManagementFieldErrors,
   AccountManagementFormValues,
-  AccountStatusFilter,
+  AccountManagementQuery,
   BankAccount,
   BankNameOption,
   PsgcOption,
@@ -10,35 +11,49 @@ import type {
 
 const BASE = "/api/fm/treasury/bank-management/account-management";
 
+export class AccountManagementApiError extends Error {
+  fieldErrors?: AccountManagementFieldErrors;
+
+  constructor(message: string, fieldErrors?: AccountManagementFieldErrors) {
+    super(message);
+    this.name = "AccountManagementApiError";
+    this.fieldErrors = fieldErrors;
+  }
+}
+
 async function parseResponse<T>(res: Response, fallback: string): Promise<T> {
   const json = await res.json().catch(() => null);
 
   if (!res.ok) {
+    const fieldErrors =
+      json && typeof json === "object" && "fieldErrors" in json
+        ? ((json as { fieldErrors?: AccountManagementFieldErrors }).fieldErrors)
+        : undefined;
     const message =
       json && typeof json === "object" && "error" in json
         ? String((json as { error?: unknown }).error ?? fallback)
         : json && typeof json === "object" && "message" in json
           ? String((json as { message?: unknown }).message ?? fallback)
           : fallback;
-    throw new Error(message);
+    throw new AccountManagementApiError(message, fieldErrors);
   }
 
   return json as T;
 }
 
 export const accountManagementApi = {
-  async getAccounts(query?: {
-    page?: number;
-    pageSize?: number;
-    search?: string;
-    status?: AccountStatusFilter;
-  }): Promise<AccountManagementData> {
+  async getAccounts(query?: AccountManagementQuery): Promise<AccountManagementData> {
     const params = new URLSearchParams();
     if (query?.page) params.set("page", String(query.page));
     if (query?.pageSize) params.set("page_size", String(query.pageSize));
     if (query?.search) params.set("q", query.search);
     if (query?.status && query.status !== "all")
       params.set("status", query.status);
+    if (query?.bankName) params.set("bank_name", query.bankName);
+    if (query?.accountType) params.set("account_type", query.accountType);
+    if (query?.accountName) params.set("account_name", query.accountName);
+    if (query?.createdFrom) params.set("created_from", query.createdFrom);
+    if (query?.createdTo) params.set("created_to", query.createdTo);
 
     const url = params.size > 0 ? `${BASE}?${params.toString()}` : BASE;
     const res = await fetch(url, { cache: "no-store" });

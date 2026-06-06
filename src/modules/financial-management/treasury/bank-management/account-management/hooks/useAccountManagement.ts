@@ -1,11 +1,15 @@
 // src/modules/financial-management/treasury/bank-management/account-management/hooks/useAccountManagement.ts
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
-import { accountManagementApi } from "../providers/accountManagementApi";
+import {
+  AccountManagementApiError,
+  accountManagementApi,
+} from "../providers/accountManagementApi";
 import type {
   AccountManagementData,
   AccountManagementFormValues,
-  AccountStatusFilter,
+  AccountManagementQuery,
+  AccountManagementSaveResult,
 } from "../types";
 
 const emptyData: AccountManagementData = {
@@ -18,6 +22,11 @@ const emptyData: AccountManagementData = {
     totalPages: 1,
     search: "",
     status: "all",
+    bankName: "",
+    accountType: "",
+    accountName: "",
+    createdFrom: "",
+    createdTo: "",
   },
 };
 
@@ -29,12 +38,7 @@ export function useAccountManagement() {
   const loadSeqRef = useRef(0);
 
   const loadAccounts = useCallback(
-    async (query?: {
-      page?: number;
-      pageSize?: number;
-      search?: string;
-      status?: AccountStatusFilter;
-    }) => {
+    async (query?: AccountManagementQuery) => {
       const seq = ++loadSeqRef.current;
 
       try {
@@ -57,17 +61,26 @@ export function useAccountManagement() {
   );
 
   const createAccount = useCallback(
-    async (payload: AccountManagementFormValues) => {
+    async (
+      payload: AccountManagementFormValues,
+    ): Promise<AccountManagementSaveResult> => {
       try {
         setSaving(true);
         await accountManagementApi.createAccount(payload);
         toast.success("Bank account created");
-        return true;
+        return { ok: true };
       } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to create bank account",
-        );
-        return false;
+        const message =
+          err instanceof Error ? err.message : "Failed to create bank account";
+        toast.error(message);
+        return {
+          ok: false,
+          message,
+          fieldErrors:
+            err instanceof AccountManagementApiError
+              ? err.fieldErrors
+              : undefined,
+        };
       } finally {
         setSaving(false);
       }
@@ -79,17 +92,24 @@ export function useAccountManagement() {
     async (
       bankId: number,
       payload: Partial<AccountManagementFormValues> & { isActive?: boolean },
-    ) => {
+    ): Promise<AccountManagementSaveResult> => {
       try {
         setSaving(true);
         await accountManagementApi.updateAccount(bankId, payload);
         toast.success("Bank account updated");
-        return true;
+        return { ok: true };
       } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Failed to update bank account",
-        );
-        return false;
+        const message =
+          err instanceof Error ? err.message : "Failed to update bank account";
+        toast.error(message);
+        return {
+          ok: false,
+          message,
+          fieldErrors:
+            err instanceof AccountManagementApiError
+              ? err.fieldErrors
+              : undefined,
+        };
       } finally {
         setSaving(false);
       }
