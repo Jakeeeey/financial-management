@@ -21,6 +21,12 @@ export interface SalesInvoiceType {
   isOfficial?: number;
 }
 
+export interface DiscountType {
+  id: number;
+  discount_type: string;
+  total_percent: number;
+}
+
 export interface SalesInvoice {
   invoice_id?: number;
   order_id: string;
@@ -35,6 +41,7 @@ export interface SalesInvoice {
   gross_amount: number;
   discount_amount: number;
   net_amount: number;
+  vat_amount?: number | null;
   created_by?: number;
   created_date?: string;
   invoice_type: number;
