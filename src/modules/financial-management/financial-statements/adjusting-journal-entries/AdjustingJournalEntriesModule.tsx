@@ -3,20 +3,14 @@
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowDownUp,
-  Check,
   ChevronLeft,
   ChevronRight,
-  ChevronsUpDown,
-  Eye,
   Loader2,
-  Pencil,
   Plus,
   RefreshCw,
   Save,
   Search,
   Send,
-  Trash2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -34,14 +28,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -50,35 +36,26 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { AdjustingEntriesFilters } from "./components/AdjustingEntriesFilters";
+import { AdjustingEntriesSummaryCards } from "./components/AdjustingEntriesSummaryCards";
+import { AdjustingEntriesTable } from "./components/AdjustingEntriesTable";
+import { AdjustingEntryDetailsGrid } from "./components/AdjustingEntryDetailsGrid";
+import { AdjustingEntrySourcePanel } from "./components/AdjustingEntrySourcePanel";
+import { AjeSearchableSelect } from "./components/AjeSearchableSelect";
+import { balancedTolerance, formatDate, money, statusBadgeClass } from "./components/formatters";
+import type {
+  DetailFormRow,
+  EntryAction,
+  EntryForm,
+  PendingAction,
+  SortDirection,
+  SortKey,
+  SourceReferencePayload,
+} from "./components/types";
 import type {
   AdjustingEntry,
   AdjustingEntryDetail,
@@ -99,39 +76,8 @@ import {
   fetchDivisionOptions,
 } from "./services/adjusting-journal-entries.api";
 
-type DetailFormRow = {
-  localId: string;
-  id: number | null;
-  coaId: string;
-  debit: string;
-  credit: string;
-};
-
-type EntryForm = {
-  transactionDate: string;
-  divisionId: string;
-  departmentId: string;
-  description: string;
-  details: DetailFormRow[];
-};
-
-type SourceReferencePayload = Pick<
-  AdjustingEntryPayload,
-  "sourceJeNo" | "sourceJeGroupCounter" | "sourceModule" | "sourceTransactionRef" | "sourceTransactionDate"
->;
-
-type EntryAction = "post" | "delete";
-type SortKey = "id" | "jeNo" | "transactionDate" | "status";
-type SortDirection = "asc" | "desc";
-type PendingAction = {
-  entry: AdjustingEntry;
-  action: EntryAction;
-  combinedVariance?: number;
-};
-
 const pageSizes = [10, 20, 50];
 const statusOptions = ["All", "Draft", "Posted", "Voided"];
-const balancedTolerance = 0.005;
 const emptySummary: AdjustingEntrySummary = {
   draft: 0,
   posted: 0,
@@ -224,30 +170,6 @@ function parseMoney(value: string) {
   return Math.round(parsed * 100) / 100;
 }
 
-function money(value: number | null | undefined) {
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value ?? 0);
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-  return new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  }).format(date);
-}
-
-function statusBadgeClass(status: string) {
-  if (status === "Posted") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
-  if (status === "Voided") return "border-zinc-500/30 bg-zinc-500/10 text-zinc-700";
-  return "border-amber-500/30 bg-amber-500/10 text-amber-700";
-}
-
 function actionLabel(action: EntryAction) {
   if (action === "post") return "Post";
   return "Delete";
@@ -304,152 +226,6 @@ function validateForm(form: EntryForm) {
   }
 
   return null;
-}
-
-type AjeSearchableSelectProps = {
-  options: LookupOption[];
-  value?: string;
-  onValueChange: (value: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-  className?: string;
-};
-
-function AjeSearchableSelect({
-  options,
-  value,
-  onValueChange,
-  placeholder = "Select option",
-  disabled = false,
-  className,
-}: AjeSearchableSelectProps) {
-  const [open, setOpen] = React.useState(false);
-  const selectedLabel = React.useMemo(
-    () => options.find((option) => option.value === value)?.label,
-    [options, value],
-  );
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
-          disabled={disabled}
-        >
-          <span className="truncate">{selectedLabel || placeholder}</span>
-          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command>
-          <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
-          <CommandList
-            className="max-h-72 overscroll-contain"
-            onWheel={(event) => event.stopPropagation()}
-            onTouchMove={(event) => event.stopPropagation()}
-          >
-            <CommandEmpty>No results found.</CommandEmpty>
-            <CommandGroup>
-              {options.map((option) => (
-                <CommandItem
-                  key={option.value}
-                  value={option.label}
-                  onSelect={() => {
-                    onValueChange(option.value);
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 size-4",
-                      value === option.value ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                  {option.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-type TooltipIconButtonProps = {
-  label: string;
-  tooltip: string;
-  disabled?: boolean;
-  className?: string;
-  children: React.ReactNode;
-  onClick: () => void;
-};
-
-function TooltipIconButton({
-  label,
-  tooltip,
-  disabled = false,
-  className,
-  children,
-  onClick,
-}: TooltipIconButtonProps) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={label}
-            className={cn("size-8", className)}
-            onClick={onClick}
-            disabled={disabled}
-          >
-            {children}
-          </Button>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-type SortableHeadProps = {
-  column: SortKey;
-  activeColumn: SortKey;
-  direction: SortDirection;
-  className?: string;
-  children: React.ReactNode;
-  onSort: (column: SortKey) => void;
-};
-
-function SortableHead({
-  column,
-  activeColumn,
-  direction,
-  className,
-  children,
-  onSort,
-}: SortableHeadProps) {
-  const isActive = activeColumn === column;
-  return (
-    <TableHead className={className}>
-      <Button
-        type="button"
-        variant="ghost"
-        className="-ml-2 h-8 w-full justify-start overflow-hidden px-1 text-[11px] font-medium xl:text-xs"
-        onClick={() => onSort(column)}
-      >
-        <span className="truncate">{children}</span>
-        <ArrowDownUp className={cn("ml-1 size-3", isActive ? "opacity-100" : "opacity-35")} />
-        {isActive && <span className="sr-only">sorted {direction}</span>}
-      </Button>
-    </TableHead>
-  );
 }
 
 export function AdjustingJournalEntriesModule() {
@@ -1176,297 +952,65 @@ export function AdjustingJournalEntriesModule() {
       </div>
 
       <div className="flex flex-col gap-4 p-6">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-md border bg-background px-3 py-2 shadow-sm">
-            <div className="text-xs font-medium uppercase text-muted-foreground">Draft</div>
-            <div className="mt-1 text-2xl font-semibold">{pageSummary.draft}</div>
-          </div>
-          <div className="rounded-md border bg-background px-3 py-2 shadow-sm">
-            <div className="text-xs font-medium uppercase text-muted-foreground">Posted</div>
-            <div className="mt-1 text-2xl font-semibold text-emerald-700">{pageSummary.posted}</div>
-          </div>
-          <div className="rounded-md border bg-background px-3 py-2 shadow-sm">
-            <div className="text-xs font-medium uppercase text-muted-foreground">Voided</div>
-            <div className="mt-1 text-2xl font-semibold text-zinc-700">{pageSummary.voided}</div>
-          </div>
-          <div className="rounded-md border bg-background px-3 py-2 shadow-sm">
-            <div className="text-xs font-medium uppercase text-muted-foreground">Imbalanced Drafts</div>
-            <div className={cn("mt-1 text-2xl font-semibold", pageSummary.imbalanced > 0 && "text-destructive")}>
-              {pageSummary.imbalanced}
-            </div>
-          </div>
-        </div>
+        <AdjustingEntriesSummaryCards summary={pageSummary} />
 
-        <div className="grid gap-3 rounded-md border bg-background p-3 shadow-sm lg:grid-cols-12">
-          <div className="space-y-1.5 lg:col-span-4">
-            <Label htmlFor="aje-search-filter" className="text-xs font-medium text-muted-foreground">Search</Label>
-            <div className="relative min-w-0">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="aje-search-filter"
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  setPage(0);
-                }}
-                placeholder="JE no, description, or creator"
-                className="pl-9"
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5 lg:col-span-2">
-            <Label htmlFor="aje-start-date-filter" className="text-xs font-medium text-muted-foreground">Start Date</Label>
-            <Input
-              id="aje-start-date-filter"
-              type="date"
-              value={startDate}
-              onChange={(event) => {
-                setStartDate(event.target.value);
-                setPage(0);
-              }}
-              aria-label="Start date"
-            />
-          </div>
-          <div className="space-y-1.5 lg:col-span-2">
-            <Label htmlFor="aje-end-date-filter" className="text-xs font-medium text-muted-foreground">End Date</Label>
-            <Input
-              id="aje-end-date-filter"
-              type="date"
-              value={endDate}
-              onChange={(event) => {
-                setEndDate(event.target.value);
-                setPage(0);
-              }}
-              aria-label="End date"
-            />
-          </div>
-          <div className="space-y-1.5 lg:col-span-2">
-            <Label className="text-xs font-medium text-muted-foreground">Status</Label>
-            <Select
-              value={status}
-              onValueChange={(value) => {
-                setStatus(value);
-                setPage(0);
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {statusOptions.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5 lg:col-span-2">
-            <Label className="text-xs font-medium text-muted-foreground">Rows Per Page</Label>
-            <Select
-              value={String(pageSize)}
-              onValueChange={(value) => {
-                setPageSize(Number(value));
-                setPage(0);
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Rows" />
-              </SelectTrigger>
-              <SelectContent>
-                {pageSizes.map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size} rows
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5 lg:col-span-3">
-            <Label className="text-xs font-medium text-muted-foreground">Division</Label>
-            <AjeSearchableSelect
-              options={filterDivisionOptions}
-              value={filterDivisionId}
-              onValueChange={(value) => {
-                setFilterDivisionId(value);
-                setFilterDepartmentId("all");
-                setPage(0);
-              }}
-              placeholder="All divisions"
-            />
-          </div>
-          <div className="space-y-1.5 lg:col-span-3">
-            <Label className="text-xs font-medium text-muted-foreground">Department</Label>
-            <AjeSearchableSelect
-              options={filterDepartmentOptions}
-              value={filterDepartmentId}
-              onValueChange={(value) => {
-                setFilterDepartmentId(value);
-                setPage(0);
-              }}
-              placeholder="All departments"
-            />
-          </div>
-          <div className="flex items-end lg:col-span-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={clearFilters}
-              disabled={!hasActiveFilters}
-            >
-              <X className="mr-2 size-4" />
-              Clear Filters
-            </Button>
-          </div>
-        </div>
+        <AdjustingEntriesFilters
+          search={search}
+          startDate={startDate}
+          endDate={endDate}
+          status={status}
+          pageSize={pageSize}
+          filterDivisionId={filterDivisionId}
+          filterDepartmentId={filterDepartmentId}
+          statusOptions={statusOptions}
+          pageSizes={pageSizes}
+          filterDivisionOptions={filterDivisionOptions}
+          filterDepartmentOptions={filterDepartmentOptions}
+          hasActiveFilters={hasActiveFilters}
+          onSearchChange={(value) => {
+            setSearch(value);
+            setPage(0);
+          }}
+          onStartDateChange={(value) => {
+            setStartDate(value);
+            setPage(0);
+          }}
+          onEndDateChange={(value) => {
+            setEndDate(value);
+            setPage(0);
+          }}
+          onStatusChange={(value) => {
+            setStatus(value);
+            setPage(0);
+          }}
+          onPageSizeChange={(value) => {
+            setPageSize(value);
+            setPage(0);
+          }}
+          onDivisionChange={(value) => {
+            setFilterDivisionId(value);
+            setFilterDepartmentId("all");
+            setPage(0);
+          }}
+          onDepartmentChange={(value) => {
+            setFilterDepartmentId(value);
+            setPage(0);
+          }}
+          onClearFilters={clearFilters}
+        />
 
-        <div className="rounded-md border bg-background shadow-sm">
-          <div className="w-full overflow-hidden">
-            <Table className="table-fixed text-xs xl:text-sm">
-              <TableHeader className="sticky top-0 z-10 bg-background">
-                <TableRow>
-                  <SortableHead
-                    column="jeNo"
-                    activeColumn={sortKey}
-                    direction={sortDirection}
-                    className="w-[9%]"
-                    onSort={toggleSort}
-                  >
-                    JE No.
-                  </SortableHead>
-                  <SortableHead
-                    column="transactionDate"
-                    activeColumn={sortKey}
-                    direction={sortDirection}
-                    className="w-[10%]"
-                    onSort={toggleSort}
-                  >
-                    Date
-                  </SortableHead>
-                  <TableHead className="w-[22%]">Description</TableHead>
-                  <SortableHead
-                    column="status"
-                    activeColumn={sortKey}
-                    direction={sortDirection}
-                    className="w-[9%]"
-                    onSort={toggleSort}
-                  >
-                    Status
-                  </SortableHead>
-                  <TableHead className="w-[13%]">Cost Center</TableHead>
-                  <TableHead className="w-[9%] text-right">Debit</TableHead>
-                  <TableHead className="w-[9%] text-right">Credit</TableHead>
-                  <TableHead className="w-[9%] text-right">Variance</TableHead>
-                  <TableHead className="w-[10%] text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className="h-40 text-center text-muted-foreground">
-                      <Loader2 className="mx-auto mb-2 size-5 animate-spin" />
-                      Loading entries
-                    </TableCell>
-                  </TableRow>
-                ) : entries.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className="h-40 text-center text-muted-foreground">
-                      <div className="flex flex-col items-center gap-3">
-                        <span>No adjusting entries found</span>
-                        <Button type="button" size="sm" onClick={openCreate}>
-                          <Plus className="mr-2 size-4" />
-                          New Adjusting Entry
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  entries.map((entry) => {
-                    const actionBusy = actionId === entry.id;
-                    const entryVariance = entryCombinedVariance[entry.id] ?? entry.combinedVariance ?? entry.variance;
-                    const canPost = entry.status === "Draft";
-                    const postTooltip = canPost
-                      ? "Post to ledger"
-                      : entry.status !== "Draft"
-                        ? "Only draft entries can be posted"
-                        : "Post unavailable";
-                    return (
-                      <TableRow key={entry.id}>
-                        <TableCell className="whitespace-normal wrap-break-word font-mono text-xs font-medium">
-                          {entry.jeNo || `AJE-${entry.id}`}
-                        </TableCell>
-                        <TableCell className="whitespace-normal text-xs">{formatDate(entry.transactionDate)}</TableCell>
-                        <TableCell className="min-w-0 whitespace-normal">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="line-clamp-2 min-w-0 font-medium">{entry.description}</div>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-sm text-left">{entry.description}</TooltipContent>
-                          </Tooltip>
-                          <div className="truncate text-xs text-muted-foreground">{entry.creatorName || "Unknown creator"}</div>
-                        </TableCell>
-                        <TableCell className="whitespace-normal">
-                          <Badge variant="outline" className={statusBadgeClass(entry.status)}>
-                            {entry.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="min-w-0 whitespace-normal">
-                          <div className="truncate text-sm">{entry.divisionName || "-"}</div>
-                          <div className="truncate text-xs text-muted-foreground">{entry.departmentName || "-"}</div>
-                        </TableCell>
-                        <TableCell className="break-all text-right font-mono text-[11px] xl:text-xs">{money(entry.totalDebit)}</TableCell>
-                        <TableCell className="break-all text-right font-mono text-[11px] xl:text-xs">{money(entry.totalCredit)}</TableCell>
-                        <TableCell className={cn("break-all text-right font-mono text-[11px] xl:text-xs", Math.abs(entryVariance) >= 0.005 && "text-destructive")}>
-                          {money(entryVariance)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap justify-end gap-0.5">
-                            <TooltipIconButton
-                              label={`View ${entry.jeNo || "adjusting entry"}`}
-                              tooltip="View entry"
-                              className="size-7"
-                              onClick={() => openEntry(entry, true)}
-                            >
-                              <Eye className="size-3.5" />
-                            </TooltipIconButton>
-                            <TooltipIconButton
-                              label={`Edit ${entry.jeNo || "adjusting entry"}`}
-                              tooltip={entry.status === "Draft" ? "Edit draft" : "Posted and voided entries are read-only"}
-                              className="size-7"
-                              onClick={() => openEntry(entry, false)}
-                              disabled={entry.status !== "Draft"}
-                            >
-                              <Pencil className="size-3.5" />
-                            </TooltipIconButton>
-                            <TooltipIconButton
-                              label={`Post ${entry.jeNo || "adjusting entry"}`}
-                              tooltip={postTooltip}
-                              className="size-7"
-                              onClick={() => requestAction(entry, "post")}
-                              disabled={!canPost || actionBusy}
-                            >
-                              {actionBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                            </TooltipIconButton>
-                            <TooltipIconButton
-                              label={`Delete ${entry.jeNo || "adjusting entry"}`}
-                              tooltip={entry.status === "Draft" ? "Delete draft" : "Only drafts can be deleted"}
-                              className="size-7 text-destructive hover:text-destructive"
-                              onClick={() => requestAction(entry, "delete")}
-                              disabled={entry.status !== "Draft" || actionBusy}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </TooltipIconButton>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
+        <AdjustingEntriesTable
+          entries={entries}
+          isLoading={isLoading}
+          actionId={actionId}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          entryCombinedVariance={entryCombinedVariance}
+          onSort={toggleSort}
+          onCreate={openCreate}
+          onOpenEntry={openEntry}
+          onRequestAction={requestAction}
+        />
 
         <div className="flex flex-col gap-3 rounded-md border bg-background px-3 py-2 text-sm shadow-sm md:flex-row md:items-center md:justify-between">
           <div className="text-muted-foreground">
@@ -1538,19 +1082,23 @@ export function AdjustingJournalEntriesModule() {
               </div>
               {!editingEntry && !readOnly && (
                 <div className="space-y-2 md:col-span-4">
-                  <Label htmlFor="sourceJeNo">Source Journal Entry <span className="text-muted-foreground">(Optional)</span></Label>
+                  <Label htmlFor="sourceJeNo">
+                    Source Journal Entry <span className="text-muted-foreground">(Optional)</span>
+                  </Label>
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <div className="relative flex-1">
+                    <div className="relative min-w-0 flex-1">
                       <Input
                         id="sourceJeNo"
                         value={sourceSearchValue}
                         onChange={(event) => {
                           const nextValue = event.target.value;
                           setSourceSearchValue(nextValue);
+                          setPendingSourceJeNo(nextValue);
                           setSourceSuggestionsOpen(nextValue.trim().length >= 2);
                           if (sourceJournalEntry && nextValue.trim() !== sourceJournalEntry.jeNo) {
                             setSourceJournalEntry(null);
-                            setPendingSourceJeNo("");
+                            setPostedAdjustmentHistory(null);
+                            setPostedAdjustmentHistoryError("");
                           }
                         }}
                         onFocus={() => {
@@ -1612,12 +1160,7 @@ export function AdjustingJournalEntriesModule() {
                       Search
                     </Button>
                     {linkedSourceJeNo && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={clearSourceJournalEntry}
-                        disabled={sourceLoading}
-                      >
+                      <Button type="button" variant="ghost" onClick={clearSourceJournalEntry} disabled={sourceLoading}>
                         <X className="mr-2 size-4" />
                         Clear
                       </Button>
@@ -1625,6 +1168,7 @@ export function AdjustingJournalEntriesModule() {
                   </div>
                 </div>
               )}
+
               <div className="space-y-2 md:col-span-4">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
@@ -1632,199 +1176,40 @@ export function AdjustingJournalEntriesModule() {
                   value={form.description}
                   onChange={(event) => updateForm("description", event.target.value)}
                   disabled={readOnly}
-                  rows={3}
-                  className="bg-background selection:bg-primary selection:text-primary-foreground"
+                  placeholder="Business justification for the adjustment"
+                  className="min-h-24 resize-y px-3"
                 />
               </div>
             </div>
 
             {linkedSourceJeNo && (
-              <div className="mt-5 rounded-md border bg-muted/20">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-                  <div className="font-medium">Source Journal Entry</div>
-                  <Badge variant="outline">{linkedSourceJeNo}</Badge>
-                </div>
-                <div className="grid gap-3 px-3 py-3 text-sm md:grid-cols-4">
-                  <div>
-                    <div className="text-xs font-medium uppercase text-muted-foreground">Source Module</div>
-                    <div className="mt-1 font-medium">{activeSourceReference?.sourceModule || sourceJournalEntry?.sourceModule || "-"}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium uppercase text-muted-foreground">Transaction Ref</div>
-                    <div className="mt-1 font-medium">{activeSourceReference?.sourceTransactionRef || sourceJournalEntry?.transactionRef || "-"}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium uppercase text-muted-foreground">Source Date</div>
-                    <div className="mt-1 font-medium">{formatDate(activeSourceReference?.sourceTransactionDate || sourceJournalEntry?.transactionDate)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium uppercase text-muted-foreground">Source Status</div>
-                    <div className="mt-1 font-medium">{sourceJournalEntry?.status || "Linked"}</div>
-                  </div>
-                </div>
-                {sourceLoading ? (
-                  <div className="flex items-center gap-2 border-t px-3 py-3 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
-                    Loading source journal entry
-                  </div>
-                ) : sourceJournalEntry?.details?.length ? (
-                  <div className="overflow-x-auto border-t">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-24 text-xs">Account No.</TableHead>
-                          <TableHead className="text-xs">Account Title</TableHead>
-                          <TableHead className="w-32 text-right text-xs">Debit</TableHead>
-                          <TableHead className="w-32 text-right text-xs">Credit</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sourceJournalEntry.details.map((line, index) => (
-                          <TableRow key={`${line.coaId ?? "coa"}-${index}`}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">{line.accountNumber || "-"}</TableCell>
-                            <TableCell className="text-xs font-medium">{line.accountTitle || "-"}</TableCell>
-                            <TableCell className="text-right font-mono text-xs">{line.debit > 0 ? money(line.debit) : ""}</TableCell>
-                            <TableCell className="text-right font-mono text-xs">{line.credit > 0 ? money(line.credit) : ""}</TableCell>
-                          </TableRow>
-                        ))}
-                        <TableRow className="bg-muted/40">
-                          <TableCell colSpan={2} className="text-xs font-semibold">Source Total</TableCell>
-                          <TableCell className="text-right font-mono text-xs font-semibold">{money(sourceTotals.totalDebit)}</TableCell>
-                          <TableCell className="text-right font-mono text-xs font-semibold">{money(sourceTotals.totalCredit)}</TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                    <div className="flex items-center justify-between border-t bg-background px-3 py-2 text-xs">
-                      <span className="text-muted-foreground">Source Variance</span>
-                      <span className={cn("font-mono font-semibold", Math.abs(sourceTotals.variance) >= balancedTolerance && "text-destructive")}>
-                        {money(sourceTotals.variance)}
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+              <AdjustingEntrySourcePanel
+                linkedSourceJeNo={linkedSourceJeNo}
+                activeSourceReference={activeSourceReference}
+                sourceJournalEntry={sourceJournalEntry}
+                sourceTotals={sourceTotals}
+                sourceLoading={sourceLoading}
+                postedAdjustmentHistory={postedAdjustmentHistory}
+                postedAdjustmentHistoryLoading={postedAdjustmentHistoryLoading}
+                postedAdjustmentHistoryError={postedAdjustmentHistoryError}
+                onRetryPostedAdjustments={() => linkedSourceJeNo && void loadSourceJournalEntry(linkedSourceJeNo, editingEntry?.id ?? null)}
+              />
             )}
 
-            <div className="mt-5 rounded-md border">
-              <div className="flex items-center justify-between border-b px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="font-medium">Details</div>
-                  <Badge
-                    variant="outline"
-                    className={isBalanced ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700" : "border-destructive/30 bg-destructive/10 text-destructive"}
-                  >
-                    {isBalanced ? "Balanced" : "Imbalanced"}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  {!readOnly && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setForm((current) => ({ ...current, details: [...current.details, makeRow()] }))}
-                    >
-                      <Plus className="mr-2 size-4" />
-                      Add Row
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-90">Chart of Account</TableHead>
-                      <TableHead className="w-42.5 text-right">Debit</TableHead>
-                      <TableHead className="w-42.5 text-right">Credit</TableHead>
-                      <TableHead className="w-16 text-right"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {form.details.map((row, index) => {
-                      const rowError = lineErrors[index];
-                      const showRowError = !readOnly && Boolean(rowError) && !isBlankDetailRow(row);
-                      return (
-                        <TableRow key={row.localId}>
-                          <TableCell>
-                            <AjeSearchableSelect
-                              options={coaOptions}
-                              value={row.coaId}
-                              onValueChange={(value) => updateRow(row.localId, "coaId", value)}
-                              placeholder="Select account"
-                              disabled={readOnly}
-                            />
-                            {showRowError && (
-                              <div className="mt-1 text-xs text-destructive">{rowError}</div>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={row.debit}
-                              onChange={(event) => updateRow(row.localId, "debit", event.target.value)}
-                              className="text-right font-mono"
-                              disabled={readOnly || parseMoney(row.credit) > 0}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={row.credit}
-                              onChange={(event) => updateRow(row.localId, "credit", event.target.value)}
-                              className="text-right font-mono"
-                              disabled={readOnly || parseMoney(row.debit) > 0}
-                            />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {!readOnly && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 text-muted-foreground"
-                                onClick={() => removeRow(row.localId)}
-                                disabled={form.details.length <= 1}
-                              >
-                                <X className="size-4" />
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="sticky bottom-0 z-10 grid gap-3 border-t bg-background/95 px-3 py-3 text-sm shadow-[0_-8px_16px_rgba(15,23,42,0.06)] backdrop-blur md:grid-cols-3">
-                <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
-                  <span className="text-muted-foreground">Total Debits</span>
-                  <span className="font-mono font-semibold">{money(displayTotals.totalDebit)}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
-                  <span className="text-muted-foreground">Total Credits</span>
-                  <span className="font-mono font-semibold">{money(displayTotals.totalCredit)}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
-                  <span className="flex items-center gap-2 text-muted-foreground">
-                    Variance
-                    <Badge
-                      variant="outline"
-                      className={isBalanced ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700" : "border-destructive/30 bg-destructive/10 text-destructive"}
-                    >
-                      {isBalanced ? "Balanced" : "Variance"}
-                    </Badge>
-                  </span>
-                  <span className={cn("font-mono font-semibold", Math.abs(displayTotals.variance) >= balancedTolerance && "text-destructive")}>
-                    {money(displayTotals.variance)}
-                  </span>
-                </div>
-              </div>
-            </div>
+            <AdjustingEntryDetailsGrid
+              rows={form.details}
+              coaOptions={coaOptions}
+              readOnly={readOnly}
+              isBalanced={isBalanced}
+              displayTotals={displayTotals}
+              lineErrors={lineErrors}
+              onAddRow={() => setForm((current) => ({ ...current, details: [...current.details, makeRow()] }))}
+              onUpdateRow={updateRow}
+              onRemoveRow={removeRow}
+              isBlankDetailRow={isBlankDetailRow}
+              parseMoney={parseMoney}
+            />
           </div>
-
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Close
