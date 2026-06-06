@@ -29,7 +29,7 @@ export async function fetchSalesmen(): Promise<Salesman[]> {
 
 export async function fetchCustomers(): Promise<Customer[]> {
   const res = await fetch(
-    `${DIRECTUS_URL}/items/customer?limit=-1&sort=customer_name&filter[isActive][_eq]=1&fields=id,customer_code,customer_name,payment_term`,
+    `${DIRECTUS_URL}/items/customer?limit=-1&sort=customer_name&filter[isActive][_eq]=1&fields=id,customer_code,customer_name,payment_term.id,payment_term.payment_days`,
     {
       headers: getHeaders(),
       cache: "no-store",
@@ -37,7 +37,24 @@ export async function fetchCustomers(): Promise<Customer[]> {
   );
   if (!res.ok) throw new Error(`Failed to fetch customers: ${res.statusText}`);
   const json = await res.json();
-  return json.data || [];
+  interface RawCustomer {
+    id: number;
+    customer_code: string;
+    customer_name: string;
+    payment_term?: { id: number; payment_days: number } | number | null;
+  }
+
+  const rawCustomers: RawCustomer[] = json.data || [];
+  return rawCustomers.map((cust: RawCustomer) => {
+    const termObj = cust.payment_term;
+    const paymentDays = termObj && typeof termObj === "object"
+      ? (termObj.payment_days || 0)
+      : 0;
+    return {
+      ...cust,
+      payment_term: paymentDays
+    };
+  });
 }
 
 export async function fetchInvoiceTypes(): Promise<SalesInvoiceType[]> {

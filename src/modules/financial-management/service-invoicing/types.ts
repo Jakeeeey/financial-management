@@ -34,7 +34,10 @@ export interface Salesman {
   id: number;
   salesman_code: string;
   salesman_name: string;
-  operation?: number;
+  operation?: {
+    id: number;
+    operation_name: string;
+  } | number;
   price_type?: string;
 }
 
@@ -42,7 +45,11 @@ export interface Customer {
   id: number;
   customer_code: string;
   customer_name: string;
-  payment_term?: number;
+  payment_term?: {
+    id: number;
+    payment_name: string;
+    payment_days: number;
+  } | null;
 }
 
 export interface SalesInvoiceType {
