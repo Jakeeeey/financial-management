@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getJournalEntries } from "@/modules/financial-management/financial-statements/journal-entry/services/journal-entry.service";
+import { getGroupedJournalEntries, getJournalEntries } from "@/modules/financial-management/financial-statements/journal-entry/services/journal-entry.service";
 import { 
   filterJournalEntries, 
-  groupJournalEntries, 
-  sortJournalEntryGroups, 
-  calculateAnalytics 
 } from "@/modules/financial-management/financial-statements/journal-entry/services/journal-entry.helpers";
 import { FilterState, PresetRange } from "@/modules/financial-management/financial-statements/journal-entry/types";
 
@@ -17,9 +14,6 @@ import { FilterState, PresetRange } from "@/modules/financial-management/financi
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   
-  // Pagination parameters
-  const page = parseInt(searchParams.get("page") || "0");
-  const pageSize = parseInt(searchParams.get("pageSize") || "10");
   const mode = searchParams.get("mode") || "grouped";
   
   // Extract the optional accountNumber for Drill Down views
@@ -52,18 +46,27 @@ export async function GET(request: NextRequest) {
 
 
   try {
+    if (mode !== "flat") {
+      const groupedResponse = await getGroupedJournalEntries(searchParams, token);
+      return NextResponse.json(groupedResponse);
+    }
+
     // 1. Fetch raw flat data from the external master database
     const entries = await getJournalEntries(filters.startDate, filters.endDate, token, accountNumber);
     
     // 2. Apply filtering (Search, Status, Division, etc.)
     const filteredEntries = filterJournalEntries(entries, filters);
+
+    // 3. Exclude adjusting journal entries from the main JE list
+    const isAJE = (e: typeof filteredEntries[number]) => e.jeNo?.startsWith("AJE-");
+    const regularEntries = filteredEntries.filter((e) => !isAJE(e));
     
     // Optimization: if in flat mode, bypass expensive grouping and analytics
     if (mode === "flat") {
         let totalDebit = 0;
         let totalCredit = 0;
         
-        filteredEntries.forEach(e => {
+        regularEntries.forEach(e => {
             totalDebit += e.debit;
             totalCredit += e.credit;
         });
@@ -73,44 +76,14 @@ export async function GET(request: NextRequest) {
                 totalDebit,
                 totalCredit,
                 netBalance: Number((totalDebit - totalCredit).toFixed(2)),
-                count: filteredEntries.length,
+                count: regularEntries.length,
                 currentPage: 0,
-                pageSize: filteredEntries.length,
+                pageSize: regularEntries.length,
                 totalPages: 1
             },
-            data: filteredEntries
+            data: regularEntries
         });
     }
-    
-    // 3. Group flat entries into transaction blocks (groups)
-    const groups = groupJournalEntries(filteredEntries);
-    
-    // 4. Calculate Analytics on the ENTIRE filtered range (consistent with dashboard totals)
-    const analytics = calculateAnalytics(filteredEntries, groups);
-    
-    // 5. Apply user requested sorting
-    const sortedGroups = sortJournalEntryGroups(groups, filters);
-    
-    // 6. Paginate the grouped results
-    const totalGroups = sortedGroups.length;
-    const totalPages = Math.ceil(totalGroups / pageSize);
-    const startIdx = page * pageSize;
-    const paginatedGroups = sortedGroups.slice(startIdx, startIdx + pageSize);
-    
-    // 7. Extract unique source modules for the client filters
-    const uniqueSourceModules = Array.from(new Set(entries.map(e => e.sourceModule).filter(Boolean))).sort();
-    
-    return NextResponse.json({
-      metadata: {
-        totalGroups,
-        totalPages,
-        currentPage: page,
-        pageSize,
-        uniqueSourceModules
-      },
-      analytics,
-      data: paginatedGroups
-    });
   } catch (error: unknown) {
     console.error("API Route Error (Journal Entry):", error);
     return NextResponse.json(
