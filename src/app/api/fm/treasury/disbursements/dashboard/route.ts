@@ -104,13 +104,19 @@ export async function GET(req: NextRequest) {
             return { data: [] };
         });
 
+        const coasPromise = fetch(`${DIRECTUS_URL}/items/chart_of_accounts?limit=-1&fields=coa_id,account_title`, {
+            headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+            cache: "no-store",
+        }).then(res => res.json()).catch(err => {
+            console.warn("Failed to fetch chart of accounts list for dashboard:", err);
+            return { data: [] };
+        });
+
         const filterAnd: Record<string, unknown>[] = [];
         if (startDate) filterAnd.push({ transaction_date: { _gte: startDate } });
         if (endDate) filterAnd.push({ transaction_date: { _lte: endDate } });
         if (status && status !== "ALL") {
             filterAnd.push({ status: { _eq: status } });
-        } else {
-            filterAnd.push({ status: { _in: ["Released", "Posted"] } });
         }
         if (payeeId) filterAnd.push({ payee: { _eq: Number(payeeId) } });
         if (transactionType && transactionType !== "ALL") {
@@ -229,6 +235,18 @@ export async function GET(req: NextRequest) {
             }
         });
 
+        const coasJson = (await coasPromise) as { data?: { coa_id?: number; account_title?: string }[] } | null | undefined;
+        const coaMap = new Map<number, string>();
+        if (coasJson && Array.isArray(coasJson.data)) {
+            coasJson.data.forEach((c) => {
+                const id = Number(c.coa_id);
+                const title = String(c.account_title);
+                if (id && title) {
+                    coaMap.set(id, title);
+                }
+            });
+        }
+
         // 2. Perform aggregates in-memory
         let totalDisbursed = 0;
         let totalPaid = 0;
@@ -275,9 +293,12 @@ export async function GET(req: NextRequest) {
                 const pCoaId = p.coa_id && typeof p.coa_id === "object" && "coa_id" in p.coa_id
                     ? p.coa_id.coa_id
                     : (typeof p.coa_id === "number" ? p.coa_id : null);
-                const title = p.coa_id && typeof p.coa_id === "object" && "account_title" in p.coa_id
-                    ? p.coa_id.account_title
-                    : "N/A";
+                let title = "N/A";
+                if (p.coa_id && typeof p.coa_id === "object" && "account_title" in p.coa_id) {
+                    title = String(p.coa_id.account_title);
+                } else if (pCoaId) {
+                    title = coaMap.get(Number(pCoaId)) || `Account #${pCoaId}`;
+                }
                 if (pCoaId) {
                     const idNum = Number(pCoaId);
                     const currentCoa = paymentCoaMap.get(idNum) || { title: String(title), amount: 0 };
@@ -291,9 +312,12 @@ export async function GET(req: NextRequest) {
                 const pCoaId = p.coa_id && typeof p.coa_id === "object" && "coa_id" in p.coa_id
                     ? p.coa_id.coa_id
                     : (typeof p.coa_id === "number" ? p.coa_id : null);
-                const title = p.coa_id && typeof p.coa_id === "object" && "account_title" in p.coa_id
-                    ? p.coa_id.account_title
-                    : "N/A";
+                let title = "N/A";
+                if (p.coa_id && typeof p.coa_id === "object" && "account_title" in p.coa_id) {
+                    title = String(p.coa_id.account_title);
+                } else if (pCoaId) {
+                    title = coaMap.get(Number(pCoaId)) || `Account #${pCoaId}`;
+                }
                 if (pCoaId) {
                     const idNum = Number(pCoaId);
                     const currentCoa = payableCoaMap.get(idNum) || { title: String(title), amount: 0 };
