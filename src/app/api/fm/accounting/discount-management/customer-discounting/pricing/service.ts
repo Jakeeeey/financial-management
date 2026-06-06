@@ -37,6 +37,7 @@ type CustomerRow = {
 
 type ProductRow = {
   product_id?: unknown;
+  parent_id?: unknown;
   product_code?: unknown;
   barcode?: unknown;
   product_name?: unknown;
@@ -211,6 +212,7 @@ async function fetchProduct(productId: number) {
     "fields",
     [
       "product_id",
+      "parent_id",
       "product_code",
       "barcode",
       "product_name",
@@ -361,14 +363,16 @@ export async function resolveCustomerDiscountPrice(input: CustomerDiscountPriceI
   if (!customerCode) throw new CustomerDiscountPricingError("customerCode is required");
   if (!input.productId) throw new CustomerDiscountPricingError("productId is required");
 
-  const [customer, productRow, productRule] = await Promise.all([
+  const [customer, productRow] = await Promise.all([
     fetchCustomer(customerCode),
     fetchProduct(input.productId),
-    fetchProductRule(customerCode, input.productId),
   ]);
 
+  const productId = asNumber(productRow.product_id) ?? input.productId;
+  const parentProductId = relationId(productRow.parent_id, "product_id") ?? productId;
+  const productRule = await fetchProductRule(customerCode, parentProductId);
   const product = {
-    productId: asNumber(productRow.product_id) ?? input.productId,
+    productId,
     productCode: asString(productRow.product_code),
     barcode: asString(productRow.barcode),
     productName: asString(productRow.product_name),
@@ -393,7 +397,7 @@ export async function resolveCustomerDiscountPrice(input: CustomerDiscountPriceI
     if (resolved) return resolved;
   }
 
-  const supplierIds = initialSupplierId ? [initialSupplierId] : await fetchProductSupplierIds(product.productId);
+  const supplierIds = initialSupplierId ? [initialSupplierId] : await fetchProductSupplierIds(parentProductId);
   const supplierCategoryRule = await fetchSupplierCategoryRule(customerCode, supplierIds, product.categoryId);
   const supplierCategoryDiscount = discountLabel(supplierCategoryRule?.discount_type);
 
