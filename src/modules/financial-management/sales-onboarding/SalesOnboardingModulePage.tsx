@@ -253,6 +253,7 @@ export default function SalesOnboardingModulePage() {
   const selectedSalesmanId = useWatch({ control, name: "salesman_id", defaultValue: "" });
   const selectedCustomerCode = useWatch({ control, name: "customer_code", defaultValue: "" });
   const selectedInvoiceType = useWatch({ control, name: "invoice_type", defaultValue: "" });
+  const invoiceDate = useWatch({ control, name: "invoice_date", defaultValue: "" });
 
   // Reactive calculation: net = gross - discount
   const calculatedNet = useMemo(() => {
@@ -260,6 +261,21 @@ export default function SalesOnboardingModulePage() {
     const d = Number(discount) || 0;
     return Math.max(0, g - d);
   }, [gross, discount]);
+
+  // Calculate default due date when customer or invoiceDate changes
+  useEffect(() => {
+    if (!selectedCustomerCode) return;
+    const cust = customers.find(c => String(c.customer_code) === String(selectedCustomerCode));
+    if (!cust) return;
+    const terms = cust.payment_term || 0;
+    if (terms > 0 && invoiceDate) {
+      const baseDate = new Date(invoiceDate);
+      baseDate.setDate(baseDate.getDate() + terms);
+      setValue("due_date", baseDate.toISOString().split("T")[0]);
+    } else {
+      setValue("due_date", invoiceDate);
+    }
+  }, [selectedCustomerCode, invoiceDate, customers, setValue]);
 
   // Find the selected salesman's code
   const selectedSalesmanCode = useMemo(() => {
@@ -319,7 +335,7 @@ export default function SalesOnboardingModulePage() {
     return customers.map((c) => ({
       value: c.customer_code,
       label: c.customer_name,
-      sublabel: `Code: ${c.customer_code}`,
+      sublabel: `Code: ${c.customer_code} | Payment Term: ${c.payment_term || "N/A"} days`,
     }));
   }, [customers]);
 

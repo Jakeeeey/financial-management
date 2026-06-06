@@ -22,7 +22,8 @@ import {
   AlertCircle,
   ArrowRight,
   Sparkles,
-  FolderSync
+  FolderSync,
+  X
 } from "lucide-react";
 import {
   ChildInvoice,
@@ -169,8 +170,22 @@ function KeyboardNavSelect({ options, value, onChange, placeholder, error, label
             isOpen ? "ring-2 ring-indigo-600/20 border-indigo-500" : "border-border/60 hover:bg-muted/10"
           } ${error ? "border-red-500" : ""}`}
         />
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
-          <ChevronDown size={14} className="text-muted-foreground shrink-0" />
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+          {value !== "" && value !== undefined && value !== null && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange("");
+                setInputValue("");
+                setIsOpen(false);
+              }}
+              className="text-muted-foreground hover:text-foreground hover:bg-muted/80 p-0.5 rounded-full transition-colors cursor-pointer"
+            >
+              <X size={13} />
+            </button>
+          )}
+          <ChevronDown size={14} className="text-muted-foreground shrink-0 pointer-events-none" />
         </div>
       </div>
 
@@ -381,7 +396,7 @@ export default function ServiceInvoicingModulePage() {
     if (!selectedCustomer) return;
     const cust = customers.find(c => String(c.customer_code) === String(selectedCustomer));
     if (!cust) return;
-    const terms = cust.payment_term || 0;
+    const terms = cust.payment_term && typeof cust.payment_term === "object" ? (cust.payment_term.payment_days || 0) : 0;
     if (terms > 0 && invoiceDate) {
       const baseDate = new Date(invoiceDate);
       baseDate.setDate(baseDate.getDate() + terms);
@@ -428,24 +443,39 @@ export default function ServiceInvoicingModulePage() {
     return salesmen.filter(s => allowedSalesmanIds.has(Number(s.id)));
   }, [salesmen, allowedSalesmanIds]);
 
+  const prevCustomerRef = useRef(selectedCustomer);
+  const prevSalesmanRef = useRef(selectedSalesman);
+
   // Auto-select salesman if customer has exactly one salesman linked
   useEffect(() => {
-    if (selectedCustomer && !selectedSalesman && allowedSalesmanIds && allowedSalesmanIds.size === 1) {
-      const singleSalesmanId = Array.from(allowedSalesmanIds)[0];
-      setSelectedSalesman(singleSalesmanId);
-      toast.info("Salesman auto-selected based on customer assignment.");
+    if (selectedCustomer !== prevCustomerRef.current) {
+      prevCustomerRef.current = selectedCustomer;
+      if (selectedCustomer && !selectedSalesman && allowedSalesmanIds && allowedSalesmanIds.size === 1) {
+        const singleSalesmanId = Array.from(allowedSalesmanIds)[0];
+        setSelectedSalesman(singleSalesmanId);
+        toast.info("Salesman auto-selected based on customer assignment.");
+      }
+    } else {
+      // Sync ref if value changed by user
+      prevCustomerRef.current = selectedCustomer;
     }
   }, [selectedCustomer, selectedSalesman, allowedSalesmanIds]);
 
   // Auto-select customer if salesman has exactly one customer linked
   useEffect(() => {
-    if (selectedSalesman && !selectedCustomer && allowedCustomerIds && allowedCustomerIds.size === 1) {
-      const singleCustomerId = Array.from(allowedCustomerIds)[0];
-      const cust = customers.find(c => Number(c.id) === singleCustomerId);
-      if (cust) {
-        setSelectedCustomer(cust.customer_code);
-        toast.info("Customer auto-selected based on salesman assignment.");
+    if (selectedSalesman !== prevSalesmanRef.current) {
+      prevSalesmanRef.current = selectedSalesman;
+      if (selectedSalesman && !selectedCustomer && allowedCustomerIds && allowedCustomerIds.size === 1) {
+        const singleCustomerId = Array.from(allowedCustomerIds)[0];
+        const cust = customers.find(c => Number(c.id) === singleCustomerId);
+        if (cust) {
+          setSelectedCustomer(cust.customer_code);
+          toast.info("Customer auto-selected based on salesman assignment.");
+        }
       }
+    } else {
+      // Sync ref if value changed by user
+      prevSalesmanRef.current = selectedSalesman;
     }
   }, [selectedSalesman, selectedCustomer, allowedCustomerIds, customers]);
 
@@ -454,16 +484,21 @@ export default function ServiceInvoicingModulePage() {
     return filteredSalesmen.map(s => ({
       value: s.id,
       label: s.salesman_name,
-      sublabel: `Code: ${s.salesman_code} | Operation: ${s.operation || "N/A"}`
+      sublabel: `Code: ${s.salesman_code} | Operation: ${s.operation && typeof s.operation === "object" ? s.operation.operation_name : (s.operation || "N/A")}`
     }));
   }, [filteredSalesmen]);
 
   const customerOptions = useMemo(() => {
-    return filteredCustomers.map(c => ({
-      value: c.customer_code,
-      label: c.customer_name,
-      sublabel: `Code: ${c.customer_code} | Payment Term: ${c.payment_term || "N/A"} days`
-    }));
+    return filteredCustomers.map(c => {
+      const termName = c.payment_term && typeof c.payment_term === "object"
+        ? c.payment_term.payment_name
+        : "N/A";
+      return {
+        value: c.customer_code,
+        label: c.customer_name,
+        sublabel: `Code: ${c.customer_code} | Payment Term: ${termName}`
+      };
+    });
   }, [filteredCustomers]);
 
   const invoiceTypeOptions = useMemo(() => {
@@ -603,9 +638,13 @@ export default function ServiceInvoicingModulePage() {
         gross_amount: Number(grossAmount) || 0,
         discount_amount: Number(discountAmount) || 0,
         net_amount: calculatedNet,
-        sales_type: salesmanObj && typeof salesmanObj.operation === "number" ? salesmanObj.operation : 0,
+        sales_type: salesmanObj && salesmanObj.operation
+          ? (typeof salesmanObj.operation === "object" ? salesmanObj.operation.id : Number(salesmanObj.operation))
+          : 0,
         price_type: salesmanObj && salesmanObj.price_type ? salesmanObj.price_type : "",
-        payment_terms: customerObj && typeof customerObj.payment_term === "number" ? customerObj.payment_term : 0,
+        payment_terms: customerObj && customerObj.payment_term && typeof customerObj.payment_term === "object"
+          ? (customerObj.payment_term.payment_days || 0)
+          : 0,
         remarks: remarks.trim() || null,
         mappings: selectedList.map(item => ({
           child_invoice_id: item.invoiceId,
