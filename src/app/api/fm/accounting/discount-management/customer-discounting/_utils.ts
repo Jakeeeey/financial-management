@@ -166,6 +166,9 @@ export function activeCustomerParams() {
       "customer_code",
       "customer_name",
       "store_name",
+      "store_type",
+      "store_type.id",
+      "store_type.store_type",
       "isActive",
       "discount_type",
       "discount_type.id",
@@ -174,6 +177,17 @@ export function activeCustomerParams() {
     ].join(","),
   );
   params.set("filter[isActive][_eq]", "1");
+  return params;
+}
+
+/**
+ * Builds the store type lookup query used by customer discounting filters.
+ */
+export function storeTypeParams() {
+  const params = new URLSearchParams();
+  params.set("limit", "-1");
+  params.set("sort", "store_type");
+  params.set("fields", "id,store_type");
   return params;
 }
 
@@ -211,4 +225,29 @@ export function categoryParams() {
   params.set("sort", "category_name");
   params.set("fields", "category_id,category_name");
   return params;
+}
+
+/**
+ * Adds the parent-product filter used when child/UOM variants should inherit rules.
+ */
+export function addParentProductFilter(params: URLSearchParams, index: number) {
+  params.set(`filter[_and][${index}][_or][0][parent_id][_null]`, "true");
+  params.set(`filter[_and][${index}][_or][1][parent_id][_eq]`, "0");
+}
+
+/**
+ * Adds the parent-product filter through a product relation.
+ */
+export function addRelatedParentProductFilter(params: URLSearchParams, index: number) {
+  params.set(`filter[_and][${index}][_or][0][product_id][parent_id][_null]`, "true");
+  params.set(`filter[_and][${index}][_or][1][product_id][parent_id][_eq]`, "0");
+}
+
+/**
+ * Reads a relation display field from a Directus object relation.
+ */
+export function relationName(value: unknown, fieldName: string) {
+  return value && typeof value === "object"
+    ? asString((value as Record<string, unknown>)[fieldName])
+    : "";
 }
