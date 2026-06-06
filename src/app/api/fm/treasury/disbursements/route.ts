@@ -330,25 +330,37 @@ export async function getLineItems(disbursementIds: number[]) {
     };
 }
 
-function normalizePayable(row: PayableRow) {
+function normalizePayable(row: PayableRow, coaMap?: Map<number, string>) {
+    const rawCoaId = relationId(row.coa_id, "coa_id");
+    let accountTitle = relationLabel(row.coa_id, "account_title");
+    if (!accountTitle && rawCoaId && coaMap) {
+        accountTitle = coaMap.get(rawCoaId) || `Account #${rawCoaId}`;
+    }
+
     return {
         id: asNumber(row.id),
         divisionId: relationId(row.division_id, "division_id"),
         divisionName: relationLabel(row.division_id, "division_name"),
         referenceNo: asString(row.reference_no),
         date: asString(row.date),
-        coaId: relationId(row.coa_id, "coa_id"),
-        accountTitle: relationLabel(row.coa_id, "account_title"),
+        coaId: rawCoaId,
+        accountTitle,
         amount: asNumber(row.amount) ?? 0,
         remarks: asString(row.remarks),
     };
 }
 
-function normalizePayment(row: PaymentRow) {
+function normalizePayment(row: PaymentRow, coaMap?: Map<number, string>) {
+    const rawCoaId = relationId(row.coa_id, "coa_id");
+    let accountTitle = relationLabel(row.coa_id, "account_title");
+    if (!accountTitle && rawCoaId && coaMap) {
+        accountTitle = coaMap.get(rawCoaId) || `Account #${rawCoaId}`;
+    }
+
     return {
         id: asNumber(row.id),
-        coaId: relationId(row.coa_id, "coa_id"),
-        accountTitle: relationLabel(row.coa_id, "account_title"),
+        coaId: rawCoaId,
+        accountTitle,
         bankId: asNumber(row.bank_id),
         checkNo: asString(row.check_no),
         date: asString(row.date),
@@ -362,10 +374,11 @@ export function normalizeDisbursement(
     payablesMap: Map<number, PayableRow[]>,
     paymentsMap: Map<number, PaymentRow[]>,
     userMap?: Map<string, string>,
+    coaMap?: Map<number, string>,
 ) {
     const id = asNumber(row.id) ?? 0;
-    const payables = (payablesMap.get(id) ?? []).map(normalizePayable);
-    const payments = (paymentsMap.get(id) ?? []).map(normalizePayment);
+    const payables = (payablesMap.get(id) ?? []).map((p) => normalizePayable(p, coaMap));
+    const payments = (paymentsMap.get(id) ?? []).map((p) => normalizePayment(p, coaMap));
     const totalDebit = roundMoney(payables.reduce((sum, line) => sum + line.amount, 0));
     const totalCredit = roundMoney(payments.reduce((sum, line) => sum + line.amount, 0));
 
@@ -409,6 +422,25 @@ export function normalizeDisbursement(
         payables,
         payments,
     };
+}
+
+export async function getCoaMap() {
+    const map = new Map<number, string>();
+    try {
+        const coaRes = await directusFetch<DirectusList<{ coa_id?: number; account_title?: string }>>("/items/chart_of_accounts?limit=-1&fields=coa_id,account_title");
+        if (coaRes.data && Array.isArray(coaRes.data)) {
+            coaRes.data.forEach((c) => {
+                const id = Number(c.coa_id);
+                const title = String(c.account_title);
+                if (id && title) {
+                    map.set(id, title);
+                }
+            });
+        }
+    } catch (e) {
+        console.warn("Failed to fetch COAs map:", e);
+    }
+    return map;
 }
 
 export async function getUserMap(token: string) {
@@ -611,9 +643,10 @@ export async function GET(request: NextRequest) {
         const lineItems = await getLineItems(ids);
         const totalElements = asNumber(disbursementsRes.meta?.filter_count) ?? rows.length;
         const userMap = await getUserMap(token);
+        const coaMap = await getCoaMap();
 
         return NextResponse.json({
-            content: rows.map((row) => normalizeDisbursement(row, lineItems.payables, lineItems.payments, userMap)),
+            content: rows.map((row) => normalizeDisbursement(row, lineItems.payables, lineItems.payments, userMap, coaMap)),
             totalElements,
             totalPages: Math.ceil(totalElements / query.size),
             number: query.page,
@@ -734,9 +767,10 @@ export async function POST(request: NextRequest) {
         // 7. Return the full normalized record
         const lineItems = await getLineItems([createdId]);
         const userMap = await getUserMap(token);
+        const coaMap = await getCoaMap();
 
         return NextResponse.json(
-            normalizeDisbursement(createdDisbursement, lineItems.payables, lineItems.payments, userMap)
+            normalizeDisbursement(createdDisbursement, lineItems.payables, lineItems.payments, userMap, coaMap)
         );
 
     } catch (err: unknown) {
