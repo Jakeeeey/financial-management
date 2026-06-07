@@ -389,7 +389,6 @@ export function usePricingMatrix(args: {
             const results = await Promise.all(promises);
 
             let totalCreated = 0;
-            let totalSkippedPending = 0;
             let totalSkippedDuplicates = 0;
 
             // Result of pcrItems (always results[0] if present)
@@ -400,7 +399,6 @@ export function usePricingMatrix(args: {
                     skipped_duplicates?: number;
                 };
                 totalCreated += res.created ?? 0;
-                totalSkippedPending += res.skipped_existing_pending ?? 0;
                 totalSkippedDuplicates += res.skipped_duplicates ?? 0;
             }
 
@@ -413,7 +411,6 @@ export function usePricingMatrix(args: {
                     skipped_duplicates?: number;
                 };
                 totalCreated += res.created ?? 0;
-                totalSkippedPending += res.skipped_existing_pending ?? 0;
                 totalSkippedDuplicates += res.skipped_duplicates ?? 0;
             }
 
@@ -421,24 +418,10 @@ export function usePricingMatrix(args: {
             setDirtyErrors(new Map());
             await refresh();
 
-            // All items were blocked by existing pending requests
-            if (totalCreated === 0 && totalSkippedPending > 0) {
-                toast.warning(
-                    `${totalSkippedPending} item(s) already have a PENDING request and were skipped. ` +
-                    `Please approve or reject the existing request(s) in Price Change Requests before re-submitting.`,
-                    { duration: 8000 }
-                );
-                return;
-            }
-
-            // Some created, some skipped
-            if (totalCreated > 0 && totalSkippedPending > 0) {
-                toast.success(
-                    `${totalCreated} request(s) submitted. ` +
-                    `${totalSkippedPending} skipped (already pending — resolve them in Price Change Requests first).`,
-                    { duration: 6000 }
-                );
-                return;
+            if (totalCreated > 0) {
+                toast.success(`${totalCreated} price change request(s) submitted successfully.`);
+            } else {
+                toast.success(`Request submitted.`);
             }
 
             // All skipped as duplicates (same batch)
