@@ -58,10 +58,6 @@ type DirectusListPCRResponse = {
     meta?: DirectusMeta;
 };
 
-type DirectusDupResponse = {
-    data: Array<{ request_id?: number | string | null }>;
-};
-
 type DirectusSupplierProductRow = {
     product_id?: number | string | { product_id?: number | string | null } | null;
 };
@@ -335,23 +331,6 @@ export async function POST(req: NextRequest) {
         }
         if (!Number.isFinite(proposed_price)) {
             return NextResponse.json({ error: "proposed_price is required" }, { status: 400 });
-        }
-
-        const dupParams = new URLSearchParams();
-        dupParams.set("limit", "1");
-        dupParams.set("fields", "request_id");
-        dupParams.set("filter[_and][0][product_id][_eq]", String(product_id));
-        dupParams.set("filter[_and][1][price_type_id][_eq]", String(price_type_id));
-        dupParams.set("filter[_and][2][status][_eq]", "PENDING");
-
-        const dupUrl = `${mustBase()}/items/${PCR}?${dupParams.toString()}`;
-        const dup = await fetchDirectus<DirectusDupResponse>(dupUrl, { headers: directusHeaders() });
-
-        if ((dup.data ?? []).length > 0) {
-            return NextResponse.json(
-                { error: "A PENDING request already exists for this product and price type." },
-                { status: 400 },
-            );
         }
 
         const createUrl = `${mustBase()}/items/${PCR}`;
