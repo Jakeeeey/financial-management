@@ -20,9 +20,7 @@ type DirectusWrappedError = {
     body: string;
 };
 
-type DirectusDuplicateRow = {
-    request_id?: number | string | null;
-};
+
 
 type DirectusBulkCreateRow = {
     request_id?: number | string | null;

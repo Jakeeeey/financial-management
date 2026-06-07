@@ -44,9 +44,7 @@ type DirectusListCCRResponse = {
     meta?: DirectusMeta;
 };
 
-type DirectusDupResponse = {
-    data: Array<{ request_id?: number | string | null }>;
-};
+
 
 type DirectusSupplierProductRow = {
     product_id?: number | string | { product_id?: number | string | null } | null;
