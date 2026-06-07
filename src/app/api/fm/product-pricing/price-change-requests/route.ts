@@ -216,12 +216,19 @@ export async function GET(req: NextRequest) {
         const date_to = norm(searchParams.get("date_to"));
 
         const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-        const page_size = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
-        const offset = (page - 1) * page_size;
-
+        const rawLimit = searchParams.get("limit");
+        
         const params = new URLSearchParams();
-        params.set("limit", String(page_size));
-        params.set("offset", String(offset));
+        if (rawLimit === "-1") {
+            params.set("limit", "-1");
+            params.set("offset", "0");
+        } else {
+            const page_size = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
+            const offset = (page - 1) * page_size;
+            params.set("limit", String(page_size));
+            params.set("offset", String(offset));
+        }
+
         params.set("meta", "total_count");
         params.set("sort", "-requested_at");
 
@@ -246,6 +253,7 @@ export async function GET(req: NextRequest) {
                 "product_id.unit_of_measurement.unit_id",
                 "product_id.unit_of_measurement.unit_name",
                 "product_id.unit_of_measurement.unit_shortcut",
+                "product_id.cost_per_unit",
                 "price_type_id.price_type_id",
                 "price_type_id.price_type_name",
             ].join(","),

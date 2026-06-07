@@ -169,25 +169,9 @@ export async function POST(req: NextRequest) {
         }
 
         const toCreate: BulkRequestItem[] = [];
-        let skipped_existing_pending = 0;
+        const skipped_existing_pending = 0;
 
         for (const item of items) {
-            const dupParams = new URLSearchParams();
-            dupParams.set("limit", "1");
-            dupParams.set("fields", "request_id");
-            dupParams.set("filter[_and][0][product_id][_eq]", String(item.product_id));
-            dupParams.set("filter[_and][1][status][_eq]", "PENDING");
-
-            const dupUrl = `${mustBase()}/items/${CCR}?${dupParams.toString()}`;
-            const dup = await fetchDirectus<{ data: DirectusDuplicateRow[] }>(dupUrl, {
-                headers: directusHeaders(),
-            });
-
-            if ((dup.data ?? []).length > 0) {
-                skipped_existing_pending += 1;
-                continue;
-            }
-
             toCreate.push(item);
         }
 
