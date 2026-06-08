@@ -1,6 +1,6 @@
 "use client";
 
-import React, {useState, useEffect} from "react";
+import React, {useState, useEffect, useMemo, useCallback} from "react";
 import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription} from "@/components/ui/sheet";
 import {
     Dialog,
@@ -34,6 +34,7 @@ import {toast} from "sonner";
 import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
 import type { Payee } from "@/modules/financial-management/payee-registration/types/payee.schema";
 import { StickyTableWrapper } from "./StickyTableWrapper";
+import { formatCurrency } from "../utils/disbursement-utils";
 
 export interface ExtendedDisbursement extends Disbursement {
     payeeId?: number;
@@ -181,9 +182,10 @@ export function DisbursementCreateSheet({
     const [previewDocNo, setPreviewDocNo] = useState("");
     const [loadingDocNo, setLoadingDocNo] = useState(false);
 
-    const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
-    const totalPayments = payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
-    const paymentDifference = totalAmount - totalPayments;
+    const totalAmount = useMemo(() => payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payables]);
+    const totalPayments = useMemo(() => payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payments]);
+    const paymentDifference = useMemo(() => totalAmount - totalPayments, [totalAmount, totalPayments]);
+
     const isNonTradeVoucher = transactionTypeId === 2;
     const payeeSupplierType = isNonTradeVoucher ? "NON-TRADE" : "TRADE";
     const payeeSupplierTypeLabel = isNonTradeVoucher ? "Non-Trade" : "Trade";
@@ -295,23 +297,23 @@ export function DisbursementCreateSheet({
         }
     }, [open, editData, departmentId, departments]);
 
-    const handleAddPayable = () => setPayables([...payables, {referenceNo: "", date: today, amount: 0, remarks: ""}]);
+    const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: today, amount: 0, remarks: ""}]), [today]);
 
     // Pre-fill payment amount with the outstanding balance; auto-select COA if only one payment option exists
-    const handleAddPayment = () => {
+    const handleAddPayment = useCallback(() => {
         const remaining = Number((totalAmount - totalPayments).toFixed(2));
         const paymentCoas = coas.filter(isPaymentCOA);
         const autoCoaId = paymentCoas.length === 1 ? paymentCoas[0].coaId : undefined;
-        setPayments([...payments, {
+        setPayments((prev) => [...prev, {
             checkNo: "",
             date: today,
             amount: remaining > 0 ? remaining : 0,
             remarks: "",
             coaId: autoCoaId,
         }]);
-    };
+    }, [totalAmount, totalPayments, coas, today]);
 
-    const handlePayeeCreated = async (createdPayee?: Payee) => {
+    const handlePayeeCreated = useCallback(async (createdPayee?: Payee) => {
         try {
             const refreshed = await disbursementProvider.getSuppliers(payeeSupplierType);
             const nextSuppliers = Array.isArray(refreshed) ? refreshed : [];
@@ -712,19 +714,19 @@ export function DisbursementCreateSheet({
                                     <div className="space-y-1">
                                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Total Payables</span>
                                         <div className="text-sm font-black text-foreground">
-                                            ₱ {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {formatCurrency(totalAmount)}
                                         </div>
                                     </div>
                                     <div className="space-y-1">
                                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Total Payments</span>
                                         <div className="text-sm font-black text-foreground">
-                                            ₱ {totalPayments.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {formatCurrency(totalPayments)}
                                         </div>
                                     </div>
                                     <div className="space-y-1">
                                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Difference / Balance</span>
                                         <div className={cn("text-sm font-black", paymentDifference === 0 ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500")}>
-                                            ₱ {paymentDifference.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {formatCurrency(paymentDifference)}
                                             {paymentDifference === 0 && (
                                                 <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200/50">Balanced</span>
                                             )}
