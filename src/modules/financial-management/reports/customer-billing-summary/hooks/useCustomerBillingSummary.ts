@@ -153,6 +153,7 @@ export function useCustomerBillingSummary() {
       if (!res.ok) throw new Error(`Server returned error: ${res.statusText}`);
       
       const data = await res.json();
+      console.log("Fetched salesReturns:", data.salesReturns); // Temporary log for inspection
       setDetails(data);
       toast.success("Billing & history summary loaded", { id: toastId });
     } catch (err: unknown) {
