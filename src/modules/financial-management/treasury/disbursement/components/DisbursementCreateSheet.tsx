@@ -338,7 +338,7 @@ export function DisbursementCreateSheet({
         }
     };
 
-    const handleOpenPoModal = async (supplierIdOverride?: number) => {
+    const handleOpenPoModal = useCallback(async (supplierIdOverride?: number) => {
         const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
         if (!sid) return toast.error("Please select a Payee first.");
         setLoadingPos(true);
@@ -355,25 +355,24 @@ export function DisbursementCreateSheet({
         } finally {
             setLoadingPos(false);
         }
-    };
+    }, [payeeId]);
 
     // Auto-open PO modal when a Trade payee is selected (no extra click needed)
-    const handlePayeeSelect = (val: number) => {
+    const handlePayeeSelect = useCallback((val: number) => {
         setPayeeId(val);
         if (!isNonTradeVoucher && val) {
             handleOpenPoModal(val);
         }
-    };
+    }, [isNonTradeVoucher, handleOpenPoModal]);
 
-    const handleImportPos = () => {
-        const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
+    const calculateTaxedPayables = useCallback((selectedPos: UnpaidPoDto[], currentTaxTypes: Record<string, "VAT" | "NON_VAT">, date: string): PayableLine[] => {
         const newPayables: PayableLine[] = [];
         const VAT_RATE = 0.12;
         const EWT_RATE = 0.01;
 
-        selected.forEach(po => {
+        selectedPos.forEach(po => {
             const baseRef = `${po.poNo} / ${po.receiptNo}`;
-            const taxType = taxTypes[po.uniqueKey] || "VAT";
+            const taxType = currentTaxTypes[po.uniqueKey] || "VAT";
 
             if (taxType === "VAT") {
                 const netAmount = po.amountDue / (1 + VAT_RATE);
@@ -381,21 +380,21 @@ export function DisbursementCreateSheet({
                 const ewtAmount = netAmount * EWT_RATE;
                 newPayables.push({
                     referenceNo: baseRef,
-                    date: today,
+                    date: date,
                     amount: Number(netAmount.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal Net of VAT`
                 });
                 newPayables.push({
                     referenceNo: baseRef,
-                    date: today,
+                    date: date,
                     amount: Number(vatAmount.toFixed(2)),
                     coaId: 9,
                     remarks: `Input VAT (12%)`
                 });
                 newPayables.push({
                     referenceNo: baseRef,
-                    date: today,
+                    date: date,
                     amount: -Number(ewtAmount.toFixed(2)),
                     coaId: 38,
                     remarks: `EWT Deduction (1%)`
@@ -403,18 +402,24 @@ export function DisbursementCreateSheet({
             } else {
                 newPayables.push({
                     referenceNo: baseRef,
-                    date: today,
+                    date: date,
                     amount: Number(po.amountDue.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal (Non-VAT)`
                 });
             }
         });
+        return newPayables;
+    }, []);
 
-        setPayables([...payables, ...newPayables]);
+    const handleImportPos = useCallback(() => {
+        const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
+        const newPayables = calculateTaxedPayables(selected, taxTypes, today);
+
+        setPayables((prev) => [...prev, ...newPayables]);
         setIsPoModalOpen(false);
         toast.success(`Imported ${selected.length} record(s) successfully`);
-    };
+    }, [unpaidPos, selectedPoIds, taxTypes, today, calculateTaxedPayables]);
 
     const handleOpenMemoModal = async () => {
         if (!payeeId) return toast.error("Please select a Payee first.");
