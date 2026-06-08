@@ -5,7 +5,7 @@ import type {
   Invoice,
   AgingBucket,
   NamedAmount,
-  NamedValue,
+  SalesmanARData,
   ARMetrics,
   RawInvoiceRow,
   OperationBreakdown,
@@ -17,7 +17,7 @@ interface UseARResult {
   error: string | null;
   invoices: Invoice[];
   agingData: AgingBucket[];
-  salesmanData: NamedValue[];
+  salesmanData: SalesmanARData[];
   customerData: NamedAmount[];
   metrics: ARMetrics;
   operationData: OperationBreakdown[];
@@ -33,12 +33,14 @@ export function useAccountsReceivable(): UseARResult {
     { range: '61-90 Days', amount: 0 },
     { range: '90+ Days',   amount: 0 },
   ]);
-  const [salesmanData, setSalesmanData] = useState<NamedValue[]>([]);
+  const [salesmanData, setSalesmanData] = useState<SalesmanARData[]>([]);
   const [customerData, setCustomerData] = useState<NamedAmount[]>([]);
   const [operationData, setOperationData] = useState<OperationBreakdown[]>([]);
   const [metrics, setMetrics]           = useState<ARMetrics>({
     totalReceivable: 0,
     totalOutstanding: 0,
+    totalUnposted: 0,
+    realOutstanding: 0,
     overdueInvoices: [],
     avgOverdue: 0,
   });
@@ -64,10 +66,21 @@ export function useAccountsReceivable(): UseARResult {
         const opData = Array.isArray(result) ? [] : (result.operationData ?? []);
 
         const { invoices, agingData, salesmanMap, customerMap } = transformInvoices(rows);
+        
+        const totalUnpostedPool = (result as unknown as { totalUnpostedPool?: number }).totalUnpostedPool || 0;
+        const salesmanUnposted = (result as unknown as { salesmanUnposted?: Record<string, number> }).salesmanUnposted || {};
+
         const metrics      = deriveMetrics(invoices);
+        metrics.totalUnposted = totalUnpostedPool;
+        metrics.realOutstanding = Math.max(0, metrics.totalOutstanding - totalUnpostedPool);
+
         const customerData = mapToSortedArray(customerMap, 10);
         const salesmanData = Object.entries(salesmanMap)
-          .map(([name, value]) => ({ name, value }))
+          .map(([name, value]) => ({ 
+            name, 
+            value,
+            unposted: Number(salesmanUnposted[name] || 0)
+          }))
           .sort((a, b) => b.value - a.value)
           .slice(0, 6);
 

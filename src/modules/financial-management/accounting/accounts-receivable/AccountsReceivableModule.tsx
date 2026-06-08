@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AlertCircle, Clock, PhilippinePeso, X, Download, TrendingDown, FileSpreadsheet, Sparkles } from 'lucide-react';
+import { AlertCircle, Clock, PhilippinePeso, X, Download, FileSpreadsheet, Sparkles, Receipt, Search } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -57,6 +57,8 @@ export default function AccountsReceivableModule() {
   const [branch, setBranch]     = useState('');
   const [salesman, setSalesman] = useState('');
   const [division, setDivision] = useState('');
+  const [operation, setOperation] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showAIInsights, setShowAIInsights] = useState(false);
 
   // ── Filter option lists ────────────────────────────────────────────────────
@@ -76,9 +78,14 @@ export default function AccountsReceivableModule() {
       () => Array.from(new Set(invoices.map((inv) => inv.division).filter((d) => d && d !== '—'))).sort(),
       [invoices]
   );
+  const operationOptions = useMemo(
+      () => operationData.map((op) => ({ value: String(op.id), label: op.name })),
+      [operationData]
+  );
 
   // ── Filtered invoices ──────────────────────────────────────────────────────
   const filteredInvoices = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     return invoices.filter((inv) => {
       const invDate = inv.invoiceDate ? inv.invoiceDate.split(' ')[0] : '';
       if (dateFrom && invDate && invDate < dateFrom) return false;
@@ -87,11 +94,17 @@ export default function AccountsReceivableModule() {
       if (branch   && inv.branch   !== branch)   return false;
       if (salesman && inv.salesman !== salesman)  return false;
       if (division && inv.division !== division)  return false;
+      if (operation && String(inv.salesType) !== String(operation)) return false;
+      if (q) {
+        const matchesInvoice = inv.invoiceNo.toLowerCase().includes(q);
+        const matchesCustomer = inv.customer.toLowerCase().includes(q);
+        if (!matchesInvoice && !matchesCustomer) return false;
+      }
       return true;
     });
-  }, [invoices, dateFrom, dateTo, customer, branch, salesman, division]);
+  }, [invoices, dateFrom, dateTo, customer, branch, salesman, division, operation, searchQuery]);
 
-  const isFiltered = !!(dateFrom || dateTo || customer || branch || salesman || division);
+  const isFiltered = !!(dateFrom || dateTo || customer || branch || salesman || division || operation || searchQuery);
 
   // ── Derived display data ───────────────────────────────────────────────────
   const filteredSalesmanMap = useMemo(() => {
@@ -110,7 +123,14 @@ export default function AccountsReceivableModule() {
   const displaySalesmanData = useMemo(() => {
     if (!isFiltered) return salesmanData;
     return Object.entries(filteredSalesmanMap)
-        .map(([name, value]) => ({ name, value }))
+        .map(([name, value]) => {
+          const original = salesmanData.find(s => s.name === name);
+          return {
+            name,
+            value,
+            unposted: original?.unposted ?? 0
+          };
+        })
         .sort((a, b) => b.value - a.value)
         .slice(0, 6);
   }, [filteredSalesmanMap, isFiltered, salesmanData]);
@@ -149,10 +169,10 @@ export default function AccountsReceivableModule() {
         .sort((a, b) => b.totalOutstanding - a.totalOutstanding);
   }, [isFiltered, filteredInvoices, operationData]);
 
-  const { totalReceivable, totalOutstanding, overdueInvoices, avgOverdue } = filteredMetrics;
+  const { totalReceivable, totalOutstanding, totalUnposted, realOutstanding, overdueInvoices, avgOverdue } = filteredMetrics;
 
   const clearFilters = () => {
-    setDateFrom(''); setDateTo(''); setCustomer(''); setBranch(''); setSalesman(''); setDivision(''); setPage(1);
+    setDateFrom(''); setDateTo(''); setCustomer(''); setBranch(''); setSalesman(''); setDivision(''); setOperation(''); setSearchQuery(''); setPage(1);
   };
 
   // ── PDF export ─────────────────────────────────────────────────────────────
@@ -320,7 +340,6 @@ export default function AccountsReceivableModule() {
       </div>
   );
 
-  const overdueTotal = overdueInvoices.reduce((s, i) => s + i.outstanding, 0);
 
   return (
       <div className="p-3 md:p-4 bg-background text-foreground min-h-screen space-y-3 w-full box-border overflow-hidden">
@@ -441,6 +460,60 @@ export default function AccountsReceivableModule() {
         <div className="flex flex-wrap items-center gap-1.5 w-full min-w-0 p-2 rounded border border-border/50 bg-muted/10">
           <span className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/60 mr-0.5">Filter</span>
 
+          <div className="relative w-[180px] h-7">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+              placeholder="Search Customer / Invoice..."
+              className="h-7 pl-8 text-[10px] focus-visible:ring-1 bg-background border-border/60"
+            />
+          </div>
+
+          <Select
+              value=""
+              onValueChange={(val) => {
+                  const today = new Date();
+                  let fromDate = '';
+                  let toDate = '';
+                  if (val === 'today') {
+                      fromDate = today.toISOString().split('T')[0];
+                      toDate = fromDate;
+                  } else if (val === 'yesterday') {
+                      const yest = new Date();
+                      yest.setDate(today.getDate() - 1);
+                      fromDate = yest.toISOString().split('T')[0];
+                      toDate = fromDate;
+                  } else if (val === 'thisWeek') {
+                      const first = today.getDate() - today.getDay();
+                      fromDate = new Date(today.setDate(first)).toISOString().split('T')[0];
+                      toDate = new Date().toISOString().split('T')[0];
+                  } else if (val === 'thisMonth') {
+                      fromDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+                      toDate = new Date().toISOString().split('T')[0];
+                  } else if (val === 'last30') {
+                      const prior = new Date();
+                      prior.setDate(today.getDate() - 30);
+                      fromDate = prior.toISOString().split('T')[0];
+                      toDate = new Date().toISOString().split('T')[0];
+                  }
+                  setDateFrom(fromDate);
+                  setDateTo(toDate);
+                  setPage(1);
+              }}
+          >
+            <SelectTrigger className="h-7 w-[95px] text-[10px] bg-background border border-border/60">
+              <SelectValue placeholder="Quick Range" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today" className="text-[10px]">Today</SelectItem>
+              <SelectItem value="yesterday" className="text-[10px]">Yesterday</SelectItem>
+              <SelectItem value="thisWeek" className="text-[10px]">This Week</SelectItem>
+              <SelectItem value="thisMonth" className="text-[10px]">This Month</SelectItem>
+              <SelectItem value="last30" className="text-[10px]">Last 30 Days</SelectItem>
+            </SelectContent>
+          </Select>
+
           <div className="flex items-center gap-1 rounded border border-border/60 bg-background px-2 h-7">
             <span className="text-[9px] text-muted-foreground shrink-0">From</span>
             <Input
@@ -472,20 +545,16 @@ export default function AccountsReceivableModule() {
               ]}
           />
 
-          <Select
-              value={branch || '__all__'}
-              onValueChange={(val) => { setBranch(val === '__all__' ? '' : val); setPage(1); }}
-          >
-            <SelectTrigger className="h-7 w-[130px] text-[10px]">
-              <SelectValue placeholder="All Branches" />
-            </SelectTrigger>
-            <SelectContent className="max-h-60">
-              <SelectItem value="__all__" className="text-[10px] text-muted-foreground">All Branches</SelectItem>
-              {branchOptions.map((name) => (
-                  <SelectItem key={name} value={name} className="text-[10px]">{name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+              value={branch}
+              onValueChange={(val) => { setBranch(val); setPage(1); }}
+              placeholder="All Branches"
+              className="h-7 w-[130px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
+              options={[
+                { value: '', label: 'All Branches' },
+                ...branchOptions.map((name) => ({ value: name, label: name })),
+              ]}
+          />
 
           <SearchableSelect
               value={salesman}
@@ -509,6 +578,17 @@ export default function AccountsReceivableModule() {
               ]}
           />
 
+          <SearchableSelect
+              value={operation}
+              onValueChange={(val) => { setOperation(val); setPage(1); }}
+              placeholder="All Operations"
+              className="h-7 w-[150px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
+              options={[
+                { value: '', label: 'All Operations' },
+                ...operationOptions,
+              ]}
+          />
+
           {isFiltered && (
               <Button variant="ghost" size="sm" onClick={clearFilters}
                       className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground gap-1">
@@ -518,7 +598,7 @@ export default function AccountsReceivableModule() {
         </div>
 
         {/* ── Stats row ── */}
-        <div className="grid gap-2 grid-cols-2 md:grid-cols-4 w-full">
+        <div className="grid gap-2 grid-cols-2 md:grid-cols-5 w-full">
           <Stat
               label="Total Receivable"
               value={formatPeso(totalReceivable)}
@@ -526,17 +606,23 @@ export default function AccountsReceivableModule() {
               icon={<PhilippinePeso className="h-3 w-3" />}
           />
           <Stat
-              label="Outstanding"
+              label="Outstanding (Ledger)"
               value={formatPeso(totalOutstanding)}
               sub={`${((totalOutstanding / (totalReceivable || 1)) * 100).toFixed(1)}% of receivable`}
               icon={<AlertCircle className="h-3 w-3" />}
           />
           <Stat
-              label="Overdue Amount"
-              value={formatPeso(overdueTotal)}
-              sub={`${overdueInvoices.length} overdue invoices`}
-              icon={<TrendingDown className="h-3 w-3" />}
-              accent={overdueTotal > 0}
+              label="Unposted Collections"
+              value={formatPeso(totalUnposted)}
+              sub="In settlement queue"
+              icon={<Receipt className="h-3 w-3 text-purple-500" />}
+              accent={totalUnposted > 0}
+          />
+          <Stat
+              label="Real AR Exposure"
+              value={formatPeso(realOutstanding)}
+              sub="Net outstanding balance"
+              icon={<AlertCircle className="h-3 w-3 text-emerald-500" />}
           />
           <Stat
               label="Avg Days Overdue"
