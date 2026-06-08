@@ -152,9 +152,40 @@ export function useCustomerBillingSummary() {
       const res = await fetch(`/api/fm/reports/customer-billing-summary?id=${id}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`Server returned error: ${res.statusText}`);
       
-      const data = await res.json();
-      console.log("Fetched salesReturns:", data.salesReturns); // Temporary log for inspection
-      setDetails(data);
+      const rawData = await res.json();
+
+      // Explicitly parse numeric fields from API response
+      const processedData = {
+        ...rawData,
+        salesInvoices: rawData.salesInvoices.map((inv: any) => ({
+          ...inv,
+          gross_amount: parseFloat(inv.gross_amount || 0),
+          discount_amount: parseFloat(inv.discount_amount || 0),
+          net_amount: parseFloat(inv.net_amount || 0),
+          total_amount: parseFloat(inv.total_amount || 0),
+        })),
+        salesReturns: rawData.salesReturns.map((ret: any) => ({
+          ...ret,
+          total_amount: parseFloat(ret.total_amount || 0),
+          discount_amount: parseFloat(ret.discount_amount || 0),
+          gross_amount: parseFloat(ret.gross_amount || 0),
+        })),
+        customerMemos: rawData.customerMemos.map((memo: any) => ({
+          ...memo,
+          amount: parseFloat(memo.amount || 0),
+          applied_amount: parseFloat(memo.applied_amount || 0),
+        })),
+        unfulfilledSales: rawData.unfulfilledSales.map((unf: any) => ({
+          ...unf,
+          variance_amount: parseFloat(unf.variance_amount || 0),
+        })),
+        payments: rawData.payments.map((pay: any) => ({
+          ...pay,
+          paid_amount: parseFloat(pay.paid_amount || 0),
+        })),
+      };
+
+      setDetails(processedData);
       toast.success("Billing & history summary loaded", { id: toastId });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
