@@ -32,6 +32,8 @@ export const bankLedgerApi = {
     if (query?.endDate) params.set("end_date", query.endDate);
     if (query?.page) params.set("page", String(query.page));
     if (query?.pageSize) params.set("page_size", String(query.pageSize));
+    if (query?.search) params.set("q", query.search);
+    if (query?.transactionType) params.set("transaction_type", query.transactionType);
 
     const url = params.size > 0 ? `${BASE}?${params.toString()}` : BASE;
     const res = await fetch(url, { cache: "no-store" });

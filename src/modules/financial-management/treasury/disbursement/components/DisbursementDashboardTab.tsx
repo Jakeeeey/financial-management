@@ -3,12 +3,12 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart as RechartsPieChart, Pie, Cell
+    PieChart as RechartsPieChart, Pie, Cell, AreaChart, Area
 } from "recharts";
 import {
     Search, Loader2, CreditCard, FileText,
     Building2, Wallet, CalendarDays, PieChart, SlidersHorizontal,
-    Paperclip, ExternalLink, Download
+    Paperclip, ExternalLink, Download, TrendingUp, FileSpreadsheet
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +24,9 @@ import { VoucherSummary } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { StickyTableWrapper } from "./StickyTableWrapper";
 import { generateReportPDF } from "../utils/reportPdfGenerator";
+import { generateReportExcel } from "../utils/reportExcelGenerator";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { AiInsightsPanel } from "./AiInsightsPanel";
 
 const PIE_COLORS = [
     "hsl(var(--primary))",
@@ -173,16 +175,20 @@ export function DisbursementDashboardTab() {
 
     const reportSummary = useMemo(() => {
         const summary: Record<string, { count: number; total: number }> = {
+            "Draft": { count: 0, total: 0 },
+            "Submitted": { count: 0, total: 0 },
+            "Approved": { count: 0, total: 0 },
             "Released": { count: 0, total: 0 },
             "Posted": { count: 0, total: 0 }
         };
 
         (data?.vouchers || []).forEach(v => {
-            const status = v.status || "";
-            if (status === "Released" || status === "Posted") {
-                summary[status].count += 1;
-                summary[status].total += v.totalAmount || 0;
+            const status = v.status || "Draft";
+            if (!summary[status]) {
+                summary[status] = { count: 0, total: 0 };
             }
+            summary[status].count += 1;
+            summary[status].total += v.totalAmount || 0;
         });
 
         return Object.entries(summary).map(([status, stats]) => ({
@@ -215,6 +221,18 @@ export function DisbursementDashboardTab() {
     const topDivisionExpenses = useMemo(() => {
         return (data?.divisionExpenses || []).slice(0, 10);
     }, [data?.divisionExpenses]);
+
+    const cashFlowTimeline = useMemo(() => {
+        const dateMap = new Map<string, number>();
+        (data?.vouchers || []).forEach(v => {
+            const dateStr = v.transactionDate || "No Date";
+            dateMap.set(dateStr, (dateMap.get(dateStr) || 0) + (v.paidAmount || 0));
+        });
+
+        return Array.from(dateMap.entries())
+            .map(([date, amount]) => ({ date, amount }))
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }, [data?.vouchers]);
 
     // 🚀 FIX: Smart text truncator for the Y-Axis
     const truncateText = (text: string, maxLength: number = 22) => {
@@ -304,6 +322,15 @@ export function DisbursementDashboardTab() {
                                 <Download className="w-4 h-4" />
                             </Button>
                             <Button
+                                variant="outline"
+                                onClick={() => generateReportExcel(data, filters)}
+                                disabled={!data || isLoading}
+                                className="h-10 px-3 rounded-xl border-border/50 shrink-0 hover:bg-muted text-muted-foreground hover:text-foreground"
+                                title="Export Report to Excel"
+                            >
+                                <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-500" />
+                            </Button>
+                            <Button
                                 variant={showAdvanced ? "secondary" : "outline"}
                                 onClick={() => setShowAdvanced(!showAdvanced)}
                                 className={cn(
@@ -338,7 +365,10 @@ export function DisbursementDashboardTab() {
                             <Select value={filters.status} onValueChange={(val) => setFilters({ ...filters, status: val })}>
                                 <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="ALL" className="text-xs font-bold uppercase text-primary">Valid Outflows</SelectItem>
+                                    <SelectItem value="ALL" className="text-xs font-bold uppercase text-primary">All Statuses (Pipeline)</SelectItem>
+                                    <SelectItem value="Draft" className="text-xs font-bold uppercase">Draft Only</SelectItem>
+                                    <SelectItem value="Submitted" className="text-xs font-bold uppercase">Submitted Only</SelectItem>
+                                    <SelectItem value="Approved" className="text-xs font-bold uppercase">Approved Only</SelectItem>
                                     <SelectItem value="Released" className="text-xs font-bold uppercase">Released Only</SelectItem>
                                     <SelectItem value="Posted" className="text-xs font-bold uppercase">Posted Only</SelectItem>
                                 </SelectContent>
@@ -413,17 +443,43 @@ export function DisbursementDashboardTab() {
             </Card>
 
             {/* 2. KPI METRIC CARDS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <Card className="shadow-sm border-none bg-gradient-to-br from-indigo-500/10 to-indigo-500/5 rounded-2xl relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-xs font-black uppercase text-indigo-700/70 dark:text-indigo-400/70 flex items-center justify-between">
+                            Total Liabilities Incurred <CreditCard className="w-4 h-4 text-indigo-500" />
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-black text-indigo-700 dark:text-indigo-400">{formatMoney(data?.totalDisbursed || 0)}</div>
+                        <p className="text-[10px] uppercase font-bold text-indigo-700/50 dark:text-indigo-400/50 mt-1 tracking-widest">Gross Vouchered Commitments</p>
+                    </CardContent>
+                </Card>
+
                 <Card className="shadow-sm border-none bg-gradient-to-br from-blue-500/10 to-blue-500/5 rounded-2xl relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
                     <CardHeader className="pb-2">
                         <CardTitle className="text-xs font-black uppercase text-blue-700/70 dark:text-blue-400/70 flex items-center justify-between">
-                            Total Cash Outflow <CreditCard className="w-4 h-4 text-blue-500" />
+                            Total Cash Outflow (Paid) <Wallet className="w-4 h-4 text-blue-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-black text-blue-700 dark:text-blue-400">{formatMoney(data?.totalPaid || 0)}</div>
+                        <div className="text-2xl font-black text-blue-700 dark:text-blue-400">{formatMoney(data?.totalPaid || 0)}</div>
                         <p className="text-[10px] uppercase font-bold text-blue-700/50 dark:text-blue-400/50 mt-1 tracking-widest">Released & Posted Payments</p>
+                    </CardContent>
+                </Card>
+
+                <Card className="shadow-sm border-none bg-gradient-to-br from-amber-500/10 to-amber-500/5 rounded-2xl relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-xs font-black uppercase text-amber-700/70 dark:text-amber-400/70 flex items-center justify-between">
+                            Outstanding Backlog <FileText className="w-4 h-4 text-amber-500" />
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-black text-amber-700 dark:text-amber-400">{formatMoney(data?.totalUnpaidPayables || 0)}</div>
+                        <p className="text-[10px] uppercase font-bold text-amber-700/50 dark:text-amber-400/50 mt-1 tracking-widest">Unpaid Vouchers in Pipeline</p>
                     </CardContent>
                 </Card>
 
@@ -431,30 +487,22 @@ export function DisbursementDashboardTab() {
                     <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
                     <CardHeader className="pb-2">
                         <CardTitle className="text-xs font-black uppercase text-emerald-700/70 dark:text-emerald-400/70 flex items-center justify-between">
-                            Outflow Transactions <FileText className="w-4 h-4 text-emerald-500" />
+                            Treasury Payout Rate <TrendingUp className="w-4 h-4 text-emerald-500" />
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-black text-emerald-700 dark:text-emerald-400">{data?.vouchers?.length || 0}</div>
-                        <p className="text-[10px] uppercase font-bold text-emerald-700/50 dark:text-emerald-400/50 mt-1 tracking-widest">Volume of Outflow Vouchers</p>
-                    </CardContent>
-                </Card>
-
-                <Card className="shadow-sm border-none bg-gradient-to-br from-purple-500/10 to-purple-500/5 rounded-2xl relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-purple-500" />
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-black uppercase text-purple-700/70 dark:text-purple-400/70 flex items-center justify-between">
-                            Average Outflow Size <Wallet className="w-4 h-4 text-purple-500" />
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-3xl font-black text-purple-700 dark:text-purple-400">
-                            {formatMoney(data && data.vouchers?.length ? data.totalPaid / data.vouchers.length : 0)}
+                        <div className="text-2xl font-black text-emerald-700 dark:text-emerald-400">
+                            {data && data.totalDisbursed > 0 
+                                ? `${((data.totalPaid / data.totalDisbursed) * 100).toFixed(1)}%` 
+                                : "0.0%"}
                         </div>
-                        <p className="text-[10px] uppercase font-bold text-purple-700/50 dark:text-purple-400/50 mt-1 tracking-widest">Average Value per Outflow</p>
+                        <p className="text-[10px] uppercase font-bold text-emerald-700/50 dark:text-emerald-400/50 mt-1 tracking-widest">Release Rate of Liabilities</p>
                     </CardContent>
                 </Card>
             </div>
+
+            {/* AI Treasury Co-Pilot Insights */}
+            <AiInsightsPanel data={data} isLoading={isLoading} />
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
@@ -479,6 +527,9 @@ export function DisbursementDashboardTab() {
                                     </TabsTrigger>
                                     <TabsTrigger value="division" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[9px] tracking-wider truncate">
                                         Divisions & Depts
+                                    </TabsTrigger>
+                                    <TabsTrigger value="timeline" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[9px] tracking-wider truncate">
+                                        Cash Timeline
                                     </TabsTrigger>
                                 </TabsList>
 
@@ -586,6 +637,40 @@ export function DisbursementDashboardTab() {
                                         </>
                                     ) : (
                                         <div className="h-48 flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No Division Data Available</div>
+                                    )}
+                                </TabsContent>
+
+                                {/* CHART D: CASH FLOW TIMELINE */}
+                                <TabsContent value="timeline" className="flex-1 p-4 m-0">
+                                    {cashFlowTimeline.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height={240}>
+                                            <AreaChart data={cashFlowTimeline} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
+                                                <defs>
+                                                    <linearGradient id="colorPaid" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.4}/>
+                                                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.01}/>
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--muted))" />
+                                                <XAxis dataKey="date" className="text-[9px] font-bold" tickFormatter={(val) => {
+                                                    try {
+                                                        const date = new Date(val);
+                                                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                                    } catch {
+                                                        return val;
+                                                    }
+                                                }} />
+                                                <YAxis className="text-[9px] font-bold" tickFormatter={(val) => `₱${val/1000}k`} />
+                                                <Tooltip
+                                                    formatter={(value: number) => [formatMoney(value), "Outflow"]}
+                                                    labelFormatter={(label) => <span className="font-black uppercase text-xs">Date: {label}</span>}
+                                                    contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}
+                                                />
+                                                <Area type="monotone" dataKey="amount" stroke="hsl(var(--primary))" strokeWidth={2.5} fillOpacity={1} fill="url(#colorPaid)" />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="h-48 flex flex-col items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest">No Timeline Data Available</div>
                                     )}
                                 </TabsContent>
                             </Tabs>
