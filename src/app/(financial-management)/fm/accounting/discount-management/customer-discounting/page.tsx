@@ -99,6 +99,14 @@ function parsePage(value: string | string[] | undefined) {
 }
 
 /**
+ * Normalizes optional relation-id query parameters.
+ */
+function parseOptionalId(value: string | string[] | undefined) {
+  const parsed = Number(firstSearchParam(value));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
+}
+
+/**
  * Restricts the persisted view query parameter to the supported module layouts.
  */
 function parseViewMode(value: string | string[] | undefined): ViewMode | undefined {
@@ -116,8 +124,9 @@ export default async function Page({ searchParams }: PageProps) {
   const headerUser = buildHeaderUserFromToken(token);
   const page = parsePage(resolvedSearchParams?.page);
   const search = firstSearchParam(resolvedSearchParams?.q)?.trim() ?? "";
+  const storeTypeId = parseOptionalId(resolvedSearchParams?.storeTypeId ?? resolvedSearchParams?.store_type_id);
   const viewMode = parseViewMode(resolvedSearchParams?.view);
-  const moduleData = await getCustomerDiscountingModuleData({ page, pageSize: PAGE_SIZE, search });
+  const moduleData = await getCustomerDiscountingModuleData({ page, pageSize: PAGE_SIZE, search, storeTypeId });
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -158,7 +167,7 @@ export default async function Page({ searchParams }: PageProps) {
 
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         <CustomerDiscountingModule
-          key={`${moduleData.pagination.page}:${moduleData.pagination.search}`}
+          key={`${moduleData.pagination.page}:${moduleData.pagination.search}:${moduleData.pagination.storeTypeId ?? "all"}`}
           userId={headerUser.id}
           initialModuleData={moduleData}
           initialViewMode={viewMode}
