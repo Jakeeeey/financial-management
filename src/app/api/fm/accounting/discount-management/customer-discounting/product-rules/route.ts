@@ -15,8 +15,27 @@ type RuleRow = {
   id?: unknown;
 };
 
+type ProductRow = {
+  product_id?: unknown;
+  parent_id?: unknown;
+};
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * Product-specific customer rules are stored on the parent product so child/UOM variants inherit them.
+ */
+async function parentProductId(productId: number) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "product_id,parent_id");
+  params.set("filter[product_id][_eq]", String(productId));
+
+  const res = await directusFetch<DirectusList<ProductRow>>(`/items/products?${params.toString()}`);
+  const row = res.data?.[0];
+  return asNumber(row?.parent_id) ?? asNumber(row?.product_id) ?? productId;
+}
 
 /**
  * Finds an existing active product-specific rule before insert/update.
@@ -64,7 +83,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Select a discount type or enter a unit price" }, { status: 400 });
     }
 
-    const existingId = await findExistingRule(customerCode, productId);
+    const normalizedProductId = await parentProductId(productId);
+    const existingId = await findExistingRule(customerCode, normalizedProductId);
     if (existingId) {
       const updatePayload: Record<string, unknown> = {
         discount_type: discountTypeId,
@@ -82,7 +102,7 @@ export async function POST(request: NextRequest) {
 
     const payload: Record<string, unknown> = {
       customer_code: customerCode,
-      product_id: productId,
+      product_id: normalizedProductId,
       discount_type: discountTypeId,
     };
     if (unitPrice !== null) payload.unit_price = unitPrice;

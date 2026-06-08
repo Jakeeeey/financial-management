@@ -295,8 +295,8 @@ function buildOpeningEntry(bank: LedgerBank): LedgerEntry | null {
     referenceId: bank.bankId,
     referenceNo: `Bank #${bank.bankId}`,
     description: "Opening balance",
-    debitAmount: 0,
-    creditAmount: roundMoney(bank.openingBalance),
+    debitAmount: roundMoney(bank.openingBalance),
+    creditAmount: 0,
     runningBalance: 0,
     sortOrder: 0,
   };
@@ -304,7 +304,7 @@ function buildOpeningEntry(bank: LedgerBank): LedgerEntry | null {
 
 function buildDepositEntry(row: BankDepositRow, bankId: number): LedgerEntry {
   const referenceId = asNumber(row.id) ?? 0;
-  const creditAmount = roundMoney(
+  const amount = roundMoney(
     (asNumber(row.total_cash) ?? 0) + (asNumber(row.total_checks) ?? 0),
   );
 
@@ -317,8 +317,8 @@ function buildDepositEntry(row: BankDepositRow, bankId: number): LedgerEntry {
     referenceId,
     referenceNo: asString(row.deposit_no) || `Deposit #${referenceId}`,
     description: "Bank deposit",
-    debitAmount: 0,
-    creditAmount,
+    debitAmount: amount,
+    creditAmount: 0,
     runningBalance: 0,
     sortOrder: 1,
   };
@@ -349,8 +349,8 @@ function buildTransferEntries(
       referenceId,
       referenceNo,
       description: `Transfer to ${destination?.bankName || `Bank #${destinationBankId}`}`,
-      debitAmount: roundMoney(amount + transferFee),
-      creditAmount: 0,
+      debitAmount: 0,
+      creditAmount: roundMoney(amount + transferFee),
       runningBalance: 0,
       sortOrder: 2,
     });
@@ -367,8 +367,8 @@ function buildTransferEntries(
       referenceId,
       referenceNo,
       description: `Transfer from ${source?.bankName || `Bank #${sourceBankId}`}`,
-      debitAmount: 0,
-      creditAmount: roundMoney(amount),
+      debitAmount: roundMoney(amount),
+      creditAmount: 0,
       runningBalance: 0,
       sortOrder: 3,
     });
@@ -394,8 +394,8 @@ function buildDisbursementEntry(
     referenceId,
     referenceNo: checkNo || `Payment #${referenceId}`,
     description: remarks || "Disbursement payment",
-    debitAmount: roundMoney(asNumber(row.amount) ?? 0),
-    creditAmount: 0,
+    debitAmount: 0,
+    creditAmount: roundMoney(asNumber(row.amount) ?? 0),
     runningBalance: 0,
     sortOrder: 4,
   };
@@ -462,7 +462,7 @@ async function buildLedgerEntries(
 
   for (const entry of chronologicalEntries) {
     runningBalance = roundMoney(
-      runningBalance + entry.creditAmount - entry.debitAmount,
+      runningBalance + entry.debitAmount - entry.creditAmount,
     );
     entry.runningBalance = runningBalance;
   }
@@ -492,6 +492,8 @@ export async function GET(request: NextRequest) {
     );
     const startDate = asString(searchParams.get("start_date"));
     const endDate = asString(searchParams.get("end_date"));
+    const search = asString(searchParams.get("q"));
+    const transactionType = asString(searchParams.get("transaction_type"));
 
     if (!isValidDate(startDate) || !isValidDate(endDate)) {
       return NextResponse.json(
@@ -534,9 +536,25 @@ export async function GET(request: NextRequest) {
       ledgerEntries.length > 0
         ? ledgerEntries[ledgerEntries.length - 1].runningBalance
         : 0;
-    const filteredEntries = ledgerEntries.filter((entry) =>
+    let filteredEntries = ledgerEntries.filter((entry) =>
       isWithinRange(entry, startDate, endDate),
     );
+
+    if (search) {
+      const q = search.toLowerCase();
+      filteredEntries = filteredEntries.filter(
+        (entry) =>
+          entry.referenceNo.toLowerCase().includes(q) ||
+          entry.description.toLowerCase().includes(q),
+      );
+    }
+
+    if (transactionType) {
+      filteredEntries = filteredEntries.filter(
+        (entry) => entry.transactionType === transactionType,
+      );
+    }
+
     const sortedEntries = [...filteredEntries].sort(compareEntriesDesc);
     const total = sortedEntries.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));

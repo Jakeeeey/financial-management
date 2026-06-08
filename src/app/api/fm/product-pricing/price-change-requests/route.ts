@@ -58,10 +58,6 @@ type DirectusListPCRResponse = {
     meta?: DirectusMeta;
 };
 
-type DirectusDupResponse = {
-    data: Array<{ request_id?: number | string | null }>;
-};
-
 type DirectusSupplierProductRow = {
     product_id?: number | string | { product_id?: number | string | null } | null;
 };
@@ -220,12 +216,19 @@ export async function GET(req: NextRequest) {
         const date_to = norm(searchParams.get("date_to"));
 
         const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-        const page_size = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
-        const offset = (page - 1) * page_size;
-
+        const rawLimit = searchParams.get("limit");
+        
         const params = new URLSearchParams();
-        params.set("limit", String(page_size));
-        params.set("offset", String(offset));
+        if (rawLimit === "-1") {
+            params.set("limit", "-1");
+            params.set("offset", "0");
+        } else {
+            const page_size = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
+            const offset = (page - 1) * page_size;
+            params.set("limit", String(page_size));
+            params.set("offset", String(offset));
+        }
+
         params.set("meta", "total_count");
         params.set("sort", "-requested_at");
 
@@ -250,6 +253,7 @@ export async function GET(req: NextRequest) {
                 "product_id.unit_of_measurement.unit_id",
                 "product_id.unit_of_measurement.unit_name",
                 "product_id.unit_of_measurement.unit_shortcut",
+                "product_id.cost_per_unit",
                 "price_type_id.price_type_id",
                 "price_type_id.price_type_name",
             ].join(","),
@@ -335,23 +339,6 @@ export async function POST(req: NextRequest) {
         }
         if (!Number.isFinite(proposed_price)) {
             return NextResponse.json({ error: "proposed_price is required" }, { status: 400 });
-        }
-
-        const dupParams = new URLSearchParams();
-        dupParams.set("limit", "1");
-        dupParams.set("fields", "request_id");
-        dupParams.set("filter[_and][0][product_id][_eq]", String(product_id));
-        dupParams.set("filter[_and][1][price_type_id][_eq]", String(price_type_id));
-        dupParams.set("filter[_and][2][status][_eq]", "PENDING");
-
-        const dupUrl = `${mustBase()}/items/${PCR}?${dupParams.toString()}`;
-        const dup = await fetchDirectus<DirectusDupResponse>(dupUrl, { headers: directusHeaders() });
-
-        if ((dup.data ?? []).length > 0) {
-            return NextResponse.json(
-                { error: "A PENDING request already exists for this product and price type." },
-                { status: 400 },
-            );
         }
 
         const createUrl = `${mustBase()}/items/${PCR}`;

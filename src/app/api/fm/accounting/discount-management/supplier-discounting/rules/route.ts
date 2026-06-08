@@ -164,7 +164,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "supplier_id is required" }, { status: 400 });
     }
 
-    const existing = await directusFetch<DirectusItem<RuleRow>>(`/items/product_per_supplier/${id}?fields=id,supplier_id`);
+    const existing = await directusFetch<DirectusItem<RuleRow>>(`/items/product_per_supplier/${id}?fields=id,supplier_id,product_id`);
     if (!existing.data) {
       return NextResponse.json({ error: "Rule not found" }, { status: 404 });
     }
@@ -174,12 +174,51 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Rule does not belong to this supplier" }, { status: 403 });
     }
 
+    const parentProductId = relationId(existing.data.product_id, "product_id");
+    let cascadedChildCount = 0;
+
+    // Cascade to child UOMs: find all child products and clear their discount records
+    if (parentProductId) {
+      const childParams = new URLSearchParams();
+      childParams.set("limit", "-1");
+      childParams.set("fields", "product_id");
+      childParams.set("filter[parent_id][_eq]", String(parentProductId));
+      childParams.set("filter[isActive][_eq]", "1");
+
+      type ChildRow = { product_id?: unknown };
+      const childRes = await directusFetch<DirectusList<ChildRow>>(`/items/products?${childParams.toString()}`);
+      const childIds = (childRes.data ?? [])
+        .map((row) => asNumber(row.product_id))
+        .filter((pid): pid is number => pid != null);
+
+      if (childIds.length > 0) {
+        const ruleParams = new URLSearchParams();
+        ruleParams.set("limit", "-1");
+        ruleParams.set("fields", "id,product_id");
+        ruleParams.set("filter[_and][0][supplier_id][_eq]", String(supplierId));
+        ruleParams.set("filter[_and][1][product_id][_in]", childIds.join(","));
+
+        const childRulesRes = await directusFetch<DirectusList<RuleRow>>(`/items/product_per_supplier?${ruleParams.toString()}`);
+
+        for (const childRule of childRulesRes.data ?? []) {
+          const childRuleId = asNumber(childRule.id);
+          if (childRuleId) {
+            await directusFetch<DirectusItem<RuleRow>>(`/items/product_per_supplier/${childRuleId}`, {
+              method: "PATCH",
+              body: JSON.stringify({ discount_type: null }),
+            });
+            cascadedChildCount += 1;
+          }
+        }
+      }
+    }
+
     await directusFetch<DirectusItem<RuleRow>>(`/items/product_per_supplier/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ discount_type: null }),
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, cascadedChildCount });
   } catch (error) {
     return jsonError(error);
   }
