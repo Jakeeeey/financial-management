@@ -336,7 +336,7 @@ export function DisbursementCreateSheet({
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "Payee created, but the payee list could not be refreshed.");
         }
-    };
+    }, [payeeSupplierType, payeeSupplierTypeLabel, setPayeeId, setSuppliers]);
 
     const handleOpenPoModal = useCallback(async (supplierIdOverride?: number) => {
         const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
