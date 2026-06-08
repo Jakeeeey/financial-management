@@ -1,4 +1,3 @@
-import { type Disbursement } from "../types";
 
 export function formatCurrency(amount: number): string {
     return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);

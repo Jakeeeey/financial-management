@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { 
     FileText, Calendar, CreditCard, Tag, 
     User, Briefcase, Building2, Layers, Loader2, AlertCircle,
-    Receipt, RotateCcw, Sparkles, Copy, Check
+    Receipt, RotateCcw, Sparkles, Copy, Check, Wallet
 } from "lucide-react";
 import { formatPeso, formatDate, getInvoiceRiskScore, generateCollectionTemplate } from "../utils";
 import type { Invoice } from "../types";
@@ -264,6 +264,23 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
                             Invoice Details
                         </SheetTitle>
                         <div className="flex gap-2">
+                            {invoice && invoice.outstanding > 0 && (
+                                <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="h-7 text-[10px] font-bold uppercase tracking-wider border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 gap-1.5"
+                                    onClick={() => {
+                                        const query = new URLSearchParams();
+                                        query.set("invoiceNo", invoice.invoiceNo);
+                                        query.set("salesman", invoice.salesman);
+                                        query.set("customer", invoice.customer);
+                                        window.location.href = `/fm/treasury/collection-posting/settlement?${query.toString()}`;
+                                    }}
+                                >
+                                    <Wallet className="h-3 w-3" />
+                                    Proceed to Settle
+                                </Button>
+                            )}
                             {invoice && statusStyle && (
                                 <Badge 
                                     className="px-2.5 py-0.5 text-xs font-semibold"

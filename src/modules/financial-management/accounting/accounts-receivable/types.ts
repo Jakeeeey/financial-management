@@ -24,6 +24,7 @@ export interface RawInvoiceRow {
   unfulfilledAmount?: number;
   appliedCreditMemos?: number;
   appliedDebitMemos?: number;
+  unpostedCollectionAmount?: number;
   salesType?: number | null;       // FK → operation.id
   // Fallback aliases
   id?: string;
@@ -57,6 +58,7 @@ export interface Invoice {
   unfulfilledAmount: number;
   appliedCreditMemos: number;
   appliedDebitMemos: number;
+  unpostedCollectionAmount: number;
   isPosted: boolean;
   salesType: number | null;          // FK → operation.id
 }
@@ -76,9 +78,17 @@ export interface NamedValue {
   value: number;
 }
 
+export interface SalesmanARData {
+  name: string;
+  value: number;
+  unposted?: number;
+}
+
 export interface ARMetrics {
   totalReceivable: number;
   totalOutstanding: number;
+  totalUnposted: number;
+  realOutstanding: number;
   overdueInvoices: Invoice[];
   avgOverdue: number;
 }

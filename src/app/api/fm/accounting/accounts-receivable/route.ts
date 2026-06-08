@@ -32,6 +32,12 @@ interface CustomerRow   { customer_code: string; customer_name: string; }
 interface SalesmanRow   { id: number; salesman_name: string; division_id: number | null; }
 interface DivisionRow   { division_id: number; division_name: string; }
 interface OperationRow  { id: number; operation_name: string; operation_code: string | null; }
+interface CollectionRow {
+  id: number;
+  salesman_id: number | null;
+  totalAmount: number | null;
+}
+interface CollectionInvoiceRow { collection_id: number; invoice_id: number; amount: number; }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 /** Reads a MySQL BIT(1) field that Directus sends as { type:'Buffer', data:[0|1] } or boolean or null */
@@ -126,6 +132,12 @@ export async function GET() {
       new Set(invoices.map((inv) => inv.salesman_id).filter((s): s is number => typeof s === 'number'))
     );
 
+    // Fetch unposted collection pouch IDs (where isPosted = 0/false or NULL)
+    const unpostedCollections = await fetchAll<CollectionRow>(
+      `${DIRECTUS_URL}/items/collection?limit=-1&fields=id,salesman_id,totalAmount&filter[isPosted][_neq]=true&filter[isCancelled][_neq]=true`
+    ).catch(() => []);
+    const unpostedPouchIds = unpostedCollections.map(c => c.id);
+
     // ── Parallel fetch: all lookup/aggregation tables filtered to specific IDs ──
     const [
       payments,
@@ -136,6 +148,7 @@ export async function GET() {
       salesmen,
       divisions,
       operations,
+      unpostedInvoiceAllocs,
     ] = await Promise.all([
       fetchAllChunked<PaymentRow>(
         `${DIRECTUS_URL}/items/sales_invoice_payments?limit=-1&fields=invoice_id,paid_amount`,
@@ -173,6 +186,11 @@ export async function GET() {
       fetchAll<OperationRow>(
         `${DIRECTUS_URL}/items/operation?limit=-1&fields=id,operation_name,operation_code`
       ),
+      fetchAllChunked<CollectionInvoiceRow>(
+        `${DIRECTUS_URL}/items/collection_invoices?limit=-1&fields=collection_id,invoice_id,amount`,
+        'collection_id',
+        unpostedPouchIds
+      ).catch(() => []),
     ]);
 
     // ── Lookup maps ───────────────────────────────────────────────────────
@@ -222,6 +240,11 @@ export async function GET() {
       );
     }
 
+    const unpostedAgg = new Map<number, number>();
+    for (const alloc of unpostedInvoiceAllocs) {
+      unpostedAgg.set(alloc.invoice_id, (unpostedAgg.get(alloc.invoice_id) || 0) + (Number(alloc.amount) || 0));
+    }
+
     // ── Build AR rows ─────────────────────────────────────────────────────
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -257,6 +280,7 @@ export async function GET() {
         }
       }
 
+      const unpostedCollectionAmount = unpostedAgg.get(inv.invoice_id) || 0;
       const sm = inv.salesman_id ? salesmanMap.get(inv.salesman_id) : null;
 
       rows.push({
@@ -276,6 +300,7 @@ export async function GET() {
         appliedDebitMemos:  debitMemos,
         totalPaid,
         outstandingBalance,
+        unpostedCollectionAmount,
         daysOverdue,          // negative = future, 0 = today, positive = overdue
         branch:   inv.branch_id?.branch_name || 'Unknown',
         salesman: sm?.name     || 'Unknown',
@@ -308,7 +333,25 @@ export async function GET() {
       .map(([id, v]) => ({ id: id === '__unknown__' ? null : id, ...v }))
       .sort((a, b) => b.totalOutstanding - a.totalOutstanding);
 
-    return NextResponse.json({ rows, operationData });
+    // Calculate option B: Total Unposted Collections Pool
+    const totalUnpostedPool = unpostedCollections.reduce((sum, c) => sum + (Number(c.totalAmount) || 0), 0);
+
+    // Group unposted collections by salesman name
+    const salesmanUnpostedRecord: Record<string, number> = {};
+    for (const c of unpostedCollections) {
+      if (c.salesman_id) {
+        const sm = salesmanMap.get(c.salesman_id);
+        const name = sm?.name || `Salesman #${c.salesman_id}`;
+        salesmanUnpostedRecord[name] = (salesmanUnpostedRecord[name] || 0) + (Number(c.totalAmount) || 0);
+      }
+    }
+
+    return NextResponse.json({ 
+      rows, 
+      operationData, 
+      totalUnpostedPool, 
+      salesmanUnposted: salesmanUnpostedRecord 
+    });
   } catch (err: unknown) {
     console.error('[AR API Error]:', err);
     return NextResponse.json(
