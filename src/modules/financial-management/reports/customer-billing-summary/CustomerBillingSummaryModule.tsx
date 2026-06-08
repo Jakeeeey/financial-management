@@ -1703,7 +1703,9 @@ export default function CustomerBillingSummaryModule() {
                                 <TableHead className="py-1">Date</TableHead>
                                 <TableHead className="py-1">Invoice Ref</TableHead>
                                 <TableHead className="py-1">Sales Agent</TableHead>
-                                <TableHead className="py-1 text-right">Return Amount</TableHead>
+                                <TableHead className="py-1 text-right">Gross Amount</TableHead>
+                                <TableHead className="py-1 text-right">Discounts</TableHead>
+                                <TableHead className="py-1 text-right">Net Amount</TableHead>
                                 <TableHead className="py-1 pr-2">Remarks</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -1714,8 +1716,10 @@ export default function CustomerBillingSummaryModule() {
                                   <TableCell className="py-1.5">{formatDate(ret.return_date)}</TableCell>
                                   <TableCell className="py-1.5 font-semibold text-zinc-850">{ret.invoice_no || "—"}</TableCell>
                                   <TableCell className="py-1.5">{ret.salesman_id?.salesman_name || "—"}</TableCell>
+                                  <TableCell className="py-1.5 text-right">{ret.gross_amount ? formatCurrency(ret.gross_amount) : "—"}</TableCell>
+                                  <TableCell className="py-1.5 text-right text-rose-500">{ret.discount_amount ? `-${formatCurrency(ret.discount_amount)}` : "—"}</TableCell>
                                   <TableCell className="py-1.5 text-right font-bold text-rose-600">
-                                    {ret.amount ? formatCurrency(ret.amount) : "—"}
+                                    {ret.total_amount ? formatCurrency(ret.total_amount) : "—"}
                                   </TableCell>
                                   <TableCell className="py-1.5 text-muted-foreground italic truncate max-w-[120px] pr-2" title={ret.remarks || ""}>
                                     {ret.remarks || "—"}
