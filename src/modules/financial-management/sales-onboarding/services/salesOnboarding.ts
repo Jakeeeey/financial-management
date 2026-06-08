@@ -16,7 +16,7 @@ function getHeaders() {
 
 export async function fetchSalesmen(): Promise<Salesman[]> {
   const res = await fetch(
-    `${DIRECTUS_URL}/items/salesman?limit=-1&sort=salesman_name&filter[isActive][_eq]=1&fields=id,salesman_code,salesman_name,operation,price_type`,
+    `${DIRECTUS_URL}/items/salesman?limit=-1&sort=salesman_name&filter[isActive][_eq]=1&fields=id,salesman_code,salesman_name,operation.id,operation.operation_name,price_type`,
     {
       headers: getHeaders(),
       cache: "no-store",
