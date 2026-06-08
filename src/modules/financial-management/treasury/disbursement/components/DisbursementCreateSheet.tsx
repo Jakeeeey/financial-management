@@ -459,6 +459,11 @@ export function DisbursementCreateSheet({
         if (!departmentId) return toast.error("Department is required.");
         if (totalAmount <= 0) return toast.error("Voucher total must be greater than 0.");
 
+        const invalidPaymentCoa = payments.some(p => p.coaId == null);
+        if (invalidPaymentCoa) {
+            return toast.error("All payment lines must have a valid GL Account (COA) selected.");
+        }
+
         const payload: DisbursementPayload = {
             docNo: editData ? editData.docNo : undefined,
             transactionTypeId: Number(transactionTypeId),
