@@ -571,6 +571,38 @@ export default function CustomerBillingSummaryModule() {
     });
     currentY = (doc as any).lastAutoTable.finalY + 5;
 
+    // --- SALES RETURNS LEDGER ---
+    if (details.salesReturns.length > 0) {
+        currentY += 5;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(defaultTextColor);
+        doc.text("SALES RETURNS LEDGER", margin, currentY);
+        currentY += 3;
+
+        autoTable(doc, {
+            startY: currentY,
+            head: [["Return No", "Date", "Invoice Ref", "Gross Amount", "Discount", "Net Amount", "Remarks"]],
+            body: details.salesReturns.map((ret) => [
+                ret.return_no || "—",
+                formatDate(ret.return_date),
+                ret.invoice_no || "—",
+                formatCurrency(ret.gross_amount || 0),
+                formatCurrency(ret.discount_amount || 0),
+                formatCurrency(ret.total_amount || 0),
+                ret.remarks || "—",
+            ]),
+            styles: { fontSize: 7, cellPadding: 1.5, lineColor: "#E4E4E7", lineWidth: 0.1 },
+            headStyles: { fillColor: tableHeaderBg, textColor: tableHeaderTextColor, fontStyle: "bold", fontSize: 7, cellPadding: 2 },
+            alternateRowStyles: { fillColor: "#FAFAFA" },
+            margin: { left: margin, right: margin },
+            didDrawPage: (data) => {
+                addHeader(data.pageNumber, doc.internal.pages.length - 1);
+            }
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 5;
+    }
+
     // --- CUSTOMER CREDIT & DEBIT MEMOS ---
     currentY += 5;
     doc.setFont("helvetica", "bold");
