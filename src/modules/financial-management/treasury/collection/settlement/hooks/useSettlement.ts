@@ -404,13 +404,18 @@ export function useSettlement(pouchId: string | number) {
 
     const addToCart = (invoice: Partial<UnpaidInvoice>) => {
         const safeId = invoice.id || (invoice as unknown as { invoiceId: number }).invoiceId;
-        if (safeId && !cartInvoices.some(inv => inv.id === safeId)) {
-            setCartInvoices(prev => [...prev, {
+        if (!safeId) return;
+
+        setCartInvoices(prev => {
+            if (prev.some(inv => Number(inv.id) === Number(safeId))) {
+                return prev;
+            }
+            return [...prev, {
                 ...invoice,
                 originalAmount: invoice.originalAmount || 0,
                 id: safeId
-            } as UnpaidInvoice]);
-        }
+            } as UnpaidInvoice];
+        });
     };
 
     const removeFromCart = async (invoiceId: number) => {
@@ -443,20 +448,27 @@ export function useSettlement(pouchId: string | number) {
         setIsLoadingRoute(true);
         try {
             const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/dispatch-plan-invoices?planId=${planId}`);
-            const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === (inv.id || (inv as unknown as { invoiceId: number }).invoiceId)));
-
-            if (cleanResults.length > 0) {
-                setCartInvoices(prev => [
-                    ...prev,
-                    ...cleanResults.map(inv => ({
-                        ...inv,
-                        originalAmount: inv.originalAmount || 0,
-                        id: inv.id || (inv as unknown as { invoiceId: number }).invoiceId
-                    }))
-                ]);
-            } else {
+            if (!data || data.length === 0) {
                 toast.info("No additional pending invoices found for this specific Dispatch Plan.");
+                return;
             }
+
+            setCartInvoices(prev => {
+                const newInvoices = data.filter(inv => {
+                    const safeId = inv.id || (inv as unknown as { invoiceId: number }).invoiceId;
+                    return !prev.some(cartInv => Number(cartInv.id) === Number(safeId));
+                }).map(inv => ({
+                    ...inv,
+                    originalAmount: inv.originalAmount || 0,
+                    id: inv.id || (inv as unknown as { invoiceId: number }).invoiceId
+                }));
+
+                if (newInvoices.length === 0) {
+                    toast.info("No additional pending invoices found for this specific Dispatch Plan.");
+                    return prev;
+                }
+                return [...prev, ...newInvoices];
+            });
         } catch (err) {
             console.error("Failed to load dispatch plan invoices", err);
             toast.error("Failed to fetch dispatch data.");
@@ -470,16 +482,27 @@ export function useSettlement(pouchId: string | number) {
         setIsLoadingRoute(true);
         try {
             const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/route-invoices?salesmanId=${salesmanId}&date=${collectionDate}`);
-            const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === (inv.id || (inv as unknown as { invoiceId: number }).invoiceId)));
-            if (cleanResults.length > 0) {
-                setCartInvoices(prev => [...prev, ...cleanResults.map(inv => ({
+            if (!data || data.length === 0) {
+                toast.info("No additional pending invoices found for this route on or before " + collectionDate);
+                return;
+            }
+
+            setCartInvoices(prev => {
+                const newInvoices = data.filter(inv => {
+                    const safeId = inv.id || (inv as unknown as { invoiceId: number }).invoiceId;
+                    return !prev.some(cartInv => Number(cartInv.id) === Number(safeId));
+                }).map(inv => ({
                     ...inv,
                     originalAmount: inv.originalAmount || 0,
                     id: inv.id || (inv as unknown as { invoiceId: number }).invoiceId
-                }))]);
-            } else {
-                toast.info("No additional pending invoices found for this route on or before " + collectionDate);
-            }
+                }));
+
+                if (newInvoices.length === 0) {
+                    toast.info("No additional pending invoices found for this route on or before " + collectionDate);
+                    return prev;
+                }
+                return [...prev, ...newInvoices];
+            });
         } catch (err) {
             console.error("Failed to load route invoices", err);
         } finally {
@@ -635,10 +658,10 @@ export function useSettlement(pouchId: string | number) {
     };
 
     return {
-        isLoading, wallet, credits, cartInvoices, allocations, salesmanName, salesmanId, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted,
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
         deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
-        collectedByName, isLoadingCredits
+        collectedByName, isLoadingCredits, collectionDate
     };
 }

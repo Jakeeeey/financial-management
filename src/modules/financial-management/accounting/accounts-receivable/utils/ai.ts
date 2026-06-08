@@ -13,6 +13,8 @@ export function generateAIInsights(invoices: Invoice[], metrics: ARMetrics): AII
   const overdueCount = metrics.overdueInvoices.length;
   const overdueTotal = metrics.overdueInvoices.reduce((s, i) => s + i.outstanding, 0);
   const outstandingTotal = metrics.totalOutstanding;
+  const unpostedTotal = metrics.totalUnposted || 0;
+  const realOutstanding = metrics.realOutstanding || Math.max(0, outstandingTotal - unpostedTotal);
 
   // Find top outstanding customer
   const customerMap: Record<string, number> = {};
@@ -35,11 +37,15 @@ export function generateAIInsights(invoices: Invoice[], metrics: ARMetrics): AII
 
   let summary = `Currently, the Accounts Receivable outstanding balance stands at ₱${outstandingTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}. `;
   if (riskRatio > 40) {
-    summary += `A critical concern is that ${riskRatio.toFixed(1)}% of your receivables (₱${overdueTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}) are overdue, indicating significant payment collection risks.`;
+    summary += `A critical concern is that ${riskRatio.toFixed(1)}% of your receivables (₱${overdueTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}) are overdue, indicating significant payment collection risks. `;
   } else if (riskRatio > 15) {
-    summary += `Approximately ${riskRatio.toFixed(1)}% of receivables are overdue. Collection metrics are moderate but require active follow-ups.`;
+    summary += `Approximately ${riskRatio.toFixed(1)}% of receivables are overdue. Collection metrics are moderate but require active follow-ups. `;
   } else {
-    summary += `Receivables are in healthy status with only ${riskRatio.toFixed(1)}% overdue. Active collection processes are working effectively.`;
+    summary += `Receivables are in healthy status with only ${riskRatio.toFixed(1)}% overdue. Active collection processes are working effectively. `;
+  }
+
+  if (unpostedTotal > 0) {
+    summary += `Additionally, there is ₱${unpostedTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })} sitting in unposted collection pouches. Once fully cleared and committed to the ledger, your net AR exposure will decrease to ₱${realOutstanding.toLocaleString('en-PH', { minimumFractionDigits: 2 })}.`;
   }
 
   const risks: string[] = [];
@@ -52,12 +58,18 @@ export function generateAIInsights(invoices: Invoice[], metrics: ARMetrics): AII
   if (metrics.avgOverdue > 45) {
     risks.push(`Slow turnover: Average days overdue is ${metrics.avgOverdue} days, significantly higher than standard 30-day terms.`);
   }
+  if (unpostedTotal > 0.05 * outstandingTotal) {
+    risks.push(`Liquidation Bottleneck: ₱${unpostedTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })} in cash/checks remains unposted, delaying ledger reconciliation and cash flow recognition.`);
+  }
 
   if (risks.length === 0) {
     risks.push("No major exposure or concentration risk detected in the current portfolio.");
   }
 
   const recommendations: string[] = [];
+  if (unpostedTotal > 0) {
+    recommendations.push(`Clear the ₱${unpostedTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })} unposted backlog. Direct the AR team to utilize the Settlement "Smart Match" tool to auto-allocate payment references and post the outstanding pouches.`);
+  }
   if (overdueTotal > 0) {
     recommendations.push(`Initiate structured follow-up for the ${overdueCount} accounts currently in overdue status.`);
   }

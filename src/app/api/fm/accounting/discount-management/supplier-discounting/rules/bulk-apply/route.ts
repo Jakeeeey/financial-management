@@ -20,6 +20,7 @@ type RuleRow = {
 type ProductRow = {
   product_id?: unknown;
   product_name?: unknown;
+  parent_id?: unknown;
 };
 
 type ExistingLink = {
@@ -110,6 +111,50 @@ async function validateParentProducts(productIds: number[]) {
   const res = await directusFetch<DirectusList<ProductRow>>(`/items/products?${params.toString()}`);
   const validIds = new Set((res.data ?? []).map((row) => asNumber(row.product_id)).filter(Boolean));
   return productIds.filter((productId) => !validIds.has(productId));
+}
+
+async function fetchChildProductIds(parentIds: number[]) {
+  if (parentIds.length === 0) return new Map<number, number[]>();
+
+  const params = new URLSearchParams();
+  params.set("limit", "-1");
+  params.set("fields", "product_id,parent_id");
+  params.set("filter[_and][0][parent_id][_in]", parentIds.join(","));
+  params.set("filter[_and][1][isActive][_eq]", "1");
+
+  const res = await directusFetch<DirectusList<ProductRow>>(`/items/products?${params.toString()}`);
+  const childrenByParent = new Map<number, number[]>();
+
+  for (const row of res.data ?? []) {
+    const childId = asNumber(row.product_id);
+    const parentId = relationId(row.parent_id, "product_id");
+    if (childId && parentId) {
+      const existing = childrenByParent.get(parentId) ?? [];
+      existing.push(childId);
+      childrenByParent.set(parentId, existing);
+    }
+  }
+
+  return childrenByParent;
+}
+
+async function findExistingChildRules(supplierId: number, childIds: number[]) {
+  if (childIds.length === 0) return new Map<number, number>();
+
+  const params = new URLSearchParams();
+  params.set("limit", "-1");
+  params.set("fields", "id,product_id");
+  params.set("filter[_and][0][supplier_id][_eq]", String(supplierId));
+  params.set("filter[_and][1][product_id][_in]", childIds.join(","));
+
+  const res = await directusFetch<DirectusList<RuleRow>>(`/items/product_per_supplier?${params.toString()}`);
+  const map = new Map<number, number>();
+  for (const row of res.data ?? []) {
+    const productId = relationId(row.product_id, "product_id");
+    const id = asNumber(row.id);
+    if (productId && id) map.set(productId, id);
+  }
+  return map;
 }
 
 async function createItems(
@@ -213,9 +258,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const productIds = Array.from(new Set([...newLinks, ...existing.map((link) => link.productId)]));
-    const names = await productNameMap(productIds);
-    const invalidProductIds = await validateParentProducts(productIds);
+    const parentProductIds = Array.from(new Set([...newLinks, ...existing.map((link) => link.productId)]));
+    const names = await productNameMap(parentProductIds);
+    const invalidProductIds = await validateParentProducts(parentProductIds);
 
     if (invalidProductIds.length > 0) {
       return NextResponse.json(
@@ -227,20 +272,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { valid: validLinks, rejected: rejectedLinks } = await verifyExistingLinks(supplierId, existing);
+    // Cascade to child UOMs: fetch all child products of the selected parents
+    const childrenByParent = await fetchChildProductIds(parentProductIds);
+    const allChildIds = Array.from(childrenByParent.values()).flat();
+
+    // Merge child product names into the existing names map
+    const childNames = await productNameMap(allChildIds);
+    for (const [childId, childName] of childNames) {
+      names.set(childId, childName);
+    }
+
+    // Check which children already have product_per_supplier records for this supplier
+    const existingChildRules = await findExistingChildRules(supplierId, allChildIds);
+    const childNewLinks: number[] = [];
+    const childExistingLinks: ExistingLink[] = [];
+
+    for (const childId of allChildIds) {
+      const ruleId = existingChildRules.get(childId);
+      if (ruleId) {
+        childExistingLinks.push({ id: ruleId, productId: childId });
+      } else {
+        childNewLinks.push(childId);
+      }
+    }
+
+    const { valid: validLinks, rejected: rejectedLinks } = await verifyExistingLinks(supplierId, [
+      ...existing,
+      ...childExistingLinks,
+    ]);
     const rejectedFailures = rejectedLinks.map((link) => ({
       productId: link.productId,
       productName: names.get(link.productId) ?? `Product #${link.productId}`,
       reason: "Rule does not belong to this supplier",
     }));
 
-    const created = await createItems(supplierId, discountTypeId, newLinks, names);
-    const updated = await updateItems(discountTypeId, validLinks, names);
+    const created = await createItems(supplierId, discountTypeId, [...newLinks, ...childNewLinks], names);
+    const updated = await updateItems(discountTypeId, [...validLinks], names);
 
     return NextResponse.json({
       created: created.count,
       updated: updated.count,
       failed: [...rejectedFailures, ...created.failed, ...updated.failed],
+      childCount: allChildIds.length,
     });
   } catch (error) {
     return jsonError(error);

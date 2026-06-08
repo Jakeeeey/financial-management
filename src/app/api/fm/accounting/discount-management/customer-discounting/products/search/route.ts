@@ -1,6 +1,6 @@
 // src/app/api/fm/accounting/discount-management/customer-discounting/products/search/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { asNumber, asString, directusFetch, DirectusList, jsonError } from "../../_utils";
+import { addParentProductFilter, asNumber, asString, directusFetch, DirectusList, jsonError } from "../../_utils";
 import { CustomerDiscountPricingError, parsePriceTier, resolveCustomerDiscountPrice } from "../../pricing/service";
 
 type ProductRow = {
@@ -8,6 +8,7 @@ type ProductRow = {
   product_code?: unknown;
   barcode?: unknown;
   product_name?: unknown;
+  parent_id?: unknown;
   product_category?: unknown;
   unit_of_measurement?: unknown;
   price_per_unit?: unknown;
@@ -82,9 +83,9 @@ export async function GET(request: NextRequest) {
     if (!q) return NextResponse.json({ data: [] });
 
     const params = new URLSearchParams();
+    let filterIndex = 0;
     params.set("limit", "30");
     params.set("sort", "product_name");
-    params.set("search", q);
     params.set(
       "fields",
       [
@@ -92,6 +93,7 @@ export async function GET(request: NextRequest) {
         "product_code",
         "barcode",
         "product_name",
+        "parent_id",
         "product_category",
         "product_category.category_id",
         "product_category.category_name",
@@ -107,7 +109,13 @@ export async function GET(request: NextRequest) {
         "priceE",
       ].join(","),
     );
-    params.set("filter[isActive][_eq]", "1");
+    addParentProductFilter(params, filterIndex);
+    filterIndex += 1;
+    params.set(`filter[_and][${filterIndex}][isActive][_eq]`, "1");
+    filterIndex += 1;
+    params.set(`filter[_and][${filterIndex}][_or][0][product_name][_contains]`, q);
+    params.set(`filter[_and][${filterIndex}][_or][1][product_code][_contains]`, q);
+    params.set(`filter[_and][${filterIndex}][_or][2][barcode][_contains]`, q);
 
     const res = await directusFetch<DirectusList<ProductRow>>(`/items/products?${params.toString()}`);
     const products = (res.data ?? [])

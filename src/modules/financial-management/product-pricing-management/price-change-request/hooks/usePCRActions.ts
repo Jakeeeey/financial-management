@@ -107,5 +107,46 @@ export function usePCRActions(onDone?: () => void, requestType: "price" | "cost"
         [onDone, apiAction],
     );
 
-    return { acting, approve, approveMany, cancel, reject };
+    const rejectMany = React.useCallback(
+        async (requestIds: number[], reject_reason: string): Promise<ApproveManyResult> => {
+            const uniqueIds = Array.from(new Set(requestIds)).filter((id) => Number.isFinite(id));
+
+            if (uniqueIds.length === 0) {
+                return { successIds: [], failedIds: [] };
+            }
+
+            setActing(true);
+
+            const successIds: number[] = [];
+            const failedIds: number[] = [];
+
+            try {
+                for (const request_id of uniqueIds) {
+                    try {
+                        await apiAction({ action: "reject", request_id, reject_reason });
+                        successIds.push(request_id);
+                    } catch {
+                        failedIds.push(request_id);
+                    }
+                }
+
+                if (successIds.length > 0 && failedIds.length === 0) {
+                    toast.success(`${successIds.length} request(s) rejected.`);
+                } else if (successIds.length > 0 && failedIds.length > 0) {
+                    toast.warning(`${successIds.length} rejected, ${failedIds.length} failed.`);
+                } else {
+                    toast.error("Failed to reject selected requests.");
+                }
+
+                onDone?.();
+
+                return { successIds, failedIds };
+            } finally {
+                setActing(false);
+            }
+        },
+        [onDone, apiAction],
+    );
+
+    return { acting, approve, approveMany, cancel, reject, rejectMany };
 }

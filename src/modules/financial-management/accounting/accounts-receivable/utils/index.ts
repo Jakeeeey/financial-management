@@ -98,6 +98,7 @@ export function transformInvoices(data: RawInvoiceRow[]): {
       unfulfilledAmount:  Number(row.unfulfilledAmount  ?? 0),
       appliedCreditMemos: Number(row.appliedCreditMemos ?? 0),
       appliedDebitMemos:  Number(row.appliedDebitMemos  ?? 0),
+      unpostedCollectionAmount: Number(row.unpostedCollectionAmount ?? 0),
       isPosted:           parseBit(row.isPosted),
       salesType:          row.salesType != null ? Number(row.salesType) : null,
     };
@@ -127,6 +128,8 @@ export function deriveAgingData(invoices: Invoice[]): AgingBucket[] {
 export function deriveMetrics(invoices: Invoice[]): ARMetrics {
   const totalReceivable  = invoices.reduce((sum, inv) => sum + inv.netReceivable, 0);
   const totalOutstanding = invoices.reduce((sum, inv) => sum + inv.outstanding,   0);
+  const totalUnposted    = invoices.reduce((sum, inv) => sum + (inv.unpostedCollectionAmount || 0), 0);
+  const realOutstanding  = Math.max(0, totalOutstanding - totalUnposted);
 
   // Include due-today (overdue === 0) in overdue set
   const overdueInvoices = invoices.filter(
@@ -139,7 +142,7 @@ export function deriveMetrics(invoices: Invoice[]): ARMetrics {
         )
       : 0;
 
-  return { totalReceivable, totalOutstanding, overdueInvoices, avgOverdue };
+  return { totalReceivable, totalOutstanding, totalUnposted, realOutstanding, overdueInvoices, avgOverdue };
 }
 
 export function mapToSortedArray(map: Record<string, number>, limit = 8): NamedAmount[] {
