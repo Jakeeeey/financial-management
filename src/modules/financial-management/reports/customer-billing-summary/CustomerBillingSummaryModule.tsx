@@ -157,7 +157,7 @@ export default function CustomerBillingSummaryModule() {
         : (inv.net_amount || inv.total_amount || 0);
       return sum + net;
     }, 0);
-    const totalReturns = details.salesReturns.reduce((sum, ret) => sum + (ret.amount || 0), 0);
+    const totalReturns = details.salesReturns.reduce((sum, ret) => sum + (ret.total_amount || 0), 0);
     const totalMemos = details.customerMemos.reduce((sum, m) => {
       const amt = m.amount || 0;
       if (m.type === 1) {
@@ -193,7 +193,7 @@ export default function CustomerBillingSummaryModule() {
         : (inv.net_amount || inv.total_amount || 0);
       return sum + net;
     }, 0);
-    const totalReturns = salesReturns.reduce((sum, ret) => sum + (ret.amount || 0), 0);
+    const totalReturns = salesReturns.reduce((sum, ret) => sum + (ret.total_amount || 0), 0);
     const totalMemos = customerMemos.reduce((sum, m) => {
       const amt = m.amount || 0;
       if (m.type === 1) {
@@ -350,7 +350,8 @@ export default function CustomerBillingSummaryModule() {
       (ret) =>
         ret.return_no?.toLowerCase().includes(returnSearch.toLowerCase()) ||
         ret.invoice_no?.toLowerCase().includes(returnSearch.toLowerCase()) ||
-        ret.remarks?.toLowerCase().includes(returnSearch.toLowerCase())
+        ret.remarks?.toLowerCase().includes(returnSearch.toLowerCase()) ||
+        String(ret.total_amount || "").includes(returnSearch)
     );
   }, [details, returnSearch]);
 
@@ -1634,7 +1635,7 @@ export default function CustomerBillingSummaryModule() {
                           Sales Returns ({filteredReturns.length})
                         </CardTitle>
                         <span className="text-[10px] text-rose-500 font-mono hidden sm:inline">
-                          • Total: {formatCurrency(filteredReturns.reduce((s, r) => s + (r.amount || 0), 0))}
+                          • Net Total: {formatCurrency(filteredReturns.reduce((s, r) => s + (r.total_amount || 0), 0))}
                         </span>
                       </div>
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
