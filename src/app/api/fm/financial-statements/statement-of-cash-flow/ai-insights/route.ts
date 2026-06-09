@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 
     if (aiProvider && process.env.AI_API_KEY) {
       try {
-        const aiInsights = await callExternalAI(body, aiProvider);
+        const aiInsights = await callExternalAI(body);
         return NextResponse.json({ success: true, data: aiInsights });
       } catch (aiError) {
         console.error("External AI analysis failed, falling back to rules engine:", aiError);
@@ -224,8 +224,7 @@ function generateRulesBasedInsights(data: AIAnalysisRequest): AIInsight {
  * Currently supports OpenAI-compatible APIs.
  */
 async function callExternalAI(
-  data: AIAnalysisRequest,
-  _provider: string
+  data: AIAnalysisRequest
 ): Promise<AIInsight> {
   const apiKey = process.env.AI_API_KEY;
   const apiUrl = process.env.AI_API_URL || "https://api.openai.com/v1/chat/completions";
