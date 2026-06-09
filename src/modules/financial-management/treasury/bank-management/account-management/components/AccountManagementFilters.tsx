@@ -55,7 +55,7 @@ export function AccountManagementFilters({
 }: AccountManagementFiltersProps) {
   return (
     <CardHeader className="gap-3 border-b">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="grid gap-3">
         <div className="grid w-full gap-3 md:grid-cols-2 xl:grid-cols-6">
           <div className="grid gap-1.5">
             <Label htmlFor="account-search">Search</Label>
@@ -148,7 +148,7 @@ export function AccountManagementFilters({
             />
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           <Button
             type="button"
             variant="outline"
