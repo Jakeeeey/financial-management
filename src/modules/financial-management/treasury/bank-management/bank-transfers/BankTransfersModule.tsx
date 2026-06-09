@@ -14,6 +14,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -23,6 +30,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectContent,
@@ -43,17 +51,19 @@ import {
   ArrowLeftRight,
   Check,
   Clock3,
+  Eye,
+  FileText,
   Loader2,
   Plus,
-  Printer,
   RefreshCw,
   Search,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { BankTransferDialog } from "./components/BankTransferDialog";
+import { BankTransferFilterSelect } from "./components/BankTransferFilterSelect";
 import { useBankTransfers } from "./hooks/useBankTransfers";
-import { printBankTransferCheck } from "./utils/printBankTransferCheck";
+import { bankTransfersApi } from "./providers/bankTransfersApi";
 import type {
   BankTransfer,
   BankTransferFormValues,
@@ -73,6 +83,12 @@ type PendingStatusChange = {
   transfer: BankTransfer;
   status: TransferStatus;
 } | null;
+
+type TransferDetailDialogProps = {
+  transfer: BankTransfer | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-PH", {
@@ -128,6 +144,78 @@ function isPrintableCheckTransfer(transfer: BankTransfer) {
   );
 }
 
+function detailText(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return "N/A";
+  const text = String(value).trim();
+  return text || "N/A";
+}
+
+function DetailItem({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("grid gap-1 rounded-md border bg-muted/20 p-3", className)}>
+      <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>
+      <div className="min-w-0 break-words text-sm font-medium">{value}</div>
+    </div>
+  );
+}
+
+function BankTransferDetailsDialog({
+  transfer,
+  open,
+  onOpenChange,
+}: TransferDetailDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Bank Transfer Details</DialogTitle>
+          <DialogDescription>
+            View the selected bank transfer summary.
+          </DialogDescription>
+        </DialogHeader>
+
+        {transfer ? (
+          <div className="grid gap-4">
+            <div className="flex flex-col gap-2 rounded-md border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="break-all text-base font-semibold">{transfer.transferNo}</div>
+                <div className="text-sm text-muted-foreground">
+                  Ref: {detailText(transfer.referenceNumber)}
+                </div>
+              </div>
+              <Badge variant={statusBadgeVariant(transfer.status)}>{transfer.status}</Badge>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <DetailItem label="Transfer Date" value={formatDate(transfer.transferDate)} />
+              <DetailItem label="Payment Method" value={detailText(transfer.transactionTypeName)} />
+              <DetailItem label="Source Bank" value={detailText(transfer.sourceBankLabel)} />
+              <DetailItem label="Destination Bank" value={detailText(transfer.destinationBankLabel)} />
+              <DetailItem label="Amount" value={formatMoney(transfer.amount)} />
+              <DetailItem label="Transfer Fee" value={formatMoney(transfer.transferFee)} />
+              <DetailItem label="Total Outflow" value={formatMoney(transfer.totalOutflow)} />
+              <DetailItem label="Prepared Date" value={formatDate(transfer.datePrepared)} />
+              <DetailItem
+                label="Remarks"
+                value={detailText(transfer.remarks)}
+                className="sm:col-span-2"
+              />
+            </div>
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function BankTransfersModule() {
   const {
     data,
@@ -148,8 +236,39 @@ export default function BankTransfersModule() {
   const [endDate, setEndDate] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<PendingStatusChange>(null);
+  const [viewingTransfer, setViewingTransfer] = useState<BankTransfer | null>(null);
 
   const totalPages = Math.max(1, data.pagination.totalPages);
+  const paymentMethodOptions = useMemo(
+    () => [
+      { value: "ALL", label: "All methods" },
+      ...data.paymentMethods.map((method) => ({
+        value: String(method.methodId),
+        label: method.methodName,
+      })),
+    ],
+    [data.paymentMethods],
+  );
+  const sourceBankOptions = useMemo(
+    () => [
+      { value: "ALL", label: "All source banks" },
+      ...data.banks.map((bank) => ({
+        value: String(bank.bankId),
+        label: bank.label || bank.bankName,
+      })),
+    ],
+    [data.banks],
+  );
+  const destinationBankOptions = useMemo(
+    () => [
+      { value: "ALL", label: "All destination banks" },
+      ...data.banks.map((bank) => ({
+        value: String(bank.bankId),
+        label: bank.label || bank.bankName,
+      })),
+    ],
+    [data.banks],
+  );
   const preparedCount = useMemo(
     () => data.transfers.filter((transfer) => transfer.status === "PREPARED").length,
     [data.transfers],
@@ -218,7 +337,7 @@ export default function BankTransfersModule() {
     if (!saved) return false;
 
     setPage(1);
-    await reloadCurrentPage(1);
+    void reloadCurrentPage(1);
     return true;
   }
 
@@ -233,6 +352,22 @@ export default function BankTransfersModule() {
 
     setPendingStatus(null);
     await reloadCurrentPage();
+  }
+
+  function previewCheckPdf(transfer: BankTransfer) {
+    window.open(
+      bankTransfersApi.getCheckPdfUrl(transfer.transferId),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
+  function previewCheckCalibrationPdf() {
+    window.open(
+      bankTransfersApi.getCheckCalibrationPdfUrl(),
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   return (
@@ -300,96 +435,79 @@ export default function BankTransfersModule() {
               </div>
               <div className="grid gap-1.5">
                 <Label>Payment Method</Label>
-                <Select
+                <SearchableSelect
+                  options={paymentMethodOptions}
                   value={paymentMethodId}
                   onValueChange={(value) => {
                     setPaymentMethodId(value);
                     setPage(1);
                   }}
-                >
-                  <SelectTrigger className="w-full min-w-[220px]">
-                    <SelectValue placeholder="All payment methods" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All methods</SelectItem>
-                    {data.paymentMethods.map((method) => (
-                      <SelectItem key={method.methodId} value={String(method.methodId)}>
-                        {method.methodName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="All payment methods"
+                  className="min-w-0"
+                />
               </div>
               <div className="grid gap-1.5">
                 <Label>Source Bank</Label>
-                <Select
+                <BankTransferFilterSelect
+                  options={sourceBankOptions}
                   value={sourceBankId}
                   onValueChange={(value) => {
                     setSourceBankId(value);
                     setPage(1);
                   }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="All source banks" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All source banks</SelectItem>
-                    {data.banks.map((bank) => (
-                      <SelectItem key={bank.bankId} value={String(bank.bankId)}>
-                        {bank.bankName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="All source banks"
+                  className="min-w-0"
+                />
               </div>
               <div className="grid gap-1.5">
                 <Label>Destination Bank</Label>
-                <Select
+                <BankTransferFilterSelect
+                  options={destinationBankOptions}
                   value={destinationBankId}
                   onValueChange={(value) => {
                     setDestinationBankId(value);
                     setPage(1);
                   }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="All destination banks" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All destination banks</SelectItem>
-                    {data.banks.map((bank) => (
-                      <SelectItem key={bank.bankId} value={String(bank.bankId)}>
-                        {bank.bankName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="startDate">Start Date</Label>
-                <Input
-                  id="startDate"
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => {
-                    setStartDate(event.target.value);
-                    setPage(1);
-                  }}
+                  placeholder="All destination banks"
+                  className="min-w-0"
                 />
               </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="endDate">End Date</Label>
-                <Input
-                  id="endDate"
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => {
-                    setEndDate(event.target.value);
-                    setPage(1);
-                  }}
-                />
+              <div className="grid gap-3 md:col-span-2 sm:grid-cols-2">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="startDate">Start Date</Label>
+                  <Input
+                    id="startDate"
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => {
+                      setStartDate(event.target.value);
+                      setPage(1);
+                    }}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="endDate">End Date</Label>
+                  <Input
+                    id="endDate"
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => {
+                      setEndDate(event.target.value);
+                      setPage(1);
+                    }}
+                  />
+                </div>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={previewCheckCalibrationPdf}
+              >
+                <FileText />
+                Print Calibration Check
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -445,7 +563,11 @@ export default function BankTransfersModule() {
                     const showPrintCheck = isPrintableCheckTransfer(transfer);
 
                     return (
-                      <TableRow key={transfer.transferId}>
+                      <TableRow
+                        key={transfer.transferId}
+                        className="cursor-pointer hover:bg-muted/40"
+                        onClick={() => setViewingTransfer(transfer)}
+                      >
                         <TableCell className="min-w-0 whitespace-normal align-top">
                           <p className="break-all font-medium">{transfer.transferNo}</p>
                           <p className="mt-1 break-all text-xs text-muted-foreground">
@@ -488,12 +610,28 @@ export default function BankTransfersModule() {
                                 size="sm"
                                 variant="outline"
                                 disabled={saving}
-                                onClick={() => printBankTransferCheck(transfer)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  previewCheckPdf(transfer);
+                                }}
                               >
-                                <Printer />
+                                <FileText />
                                 Print Check
                               </Button>
                             ) : null}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={saving}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setViewingTransfer(transfer);
+                              }}
+                            >
+                              <Eye />
+                              View Details
+                            </Button>
                             {actions.map((action) => (
                               <Button
                                 key={action.status}
@@ -501,14 +639,14 @@ export default function BankTransfersModule() {
                                 size="sm"
                                 variant={action.status === "CANCELLED" ? "outline" : "default"}
                                 disabled={saving}
-                                onClick={() => setPendingStatus({ transfer, status: action.status })}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setPendingStatus({ transfer, status: action.status });
+                                }}
                               >
                                 {action.label}
                               </Button>
                             ))}
-                            {actions.length === 0 && !showPrintCheck ? (
-                              <span className="text-sm text-muted-foreground">No actions</span>
-                            ) : null}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -535,7 +673,19 @@ export default function BankTransfersModule() {
                 const showPrintCheck = isPrintableCheckTransfer(transfer);
 
                 return (
-                  <div key={transfer.transferId} className="grid gap-3 rounded-md border p-4">
+                  <div
+                    key={transfer.transferId}
+                    role="button"
+                    tabIndex={0}
+                    className="grid cursor-pointer gap-3 rounded-md border p-4"
+                    onClick={() => setViewingTransfer(transfer)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setViewingTransfer(transfer);
+                      }
+                    }}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-medium">{transfer.transferNo}</p>
@@ -593,12 +743,28 @@ export default function BankTransfersModule() {
                             size="sm"
                             variant="outline"
                             disabled={saving}
-                            onClick={() => printBankTransferCheck(transfer)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              previewCheckPdf(transfer);
+                            }}
                           >
-                            <Printer />
+                            <FileText />
                             Print Check
                           </Button>
                         ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={saving}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setViewingTransfer(transfer);
+                          }}
+                        >
+                          <Eye />
+                          View Details
+                        </Button>
                         {actions.map((action) => (
                           <Button
                             key={action.status}
@@ -606,7 +772,10 @@ export default function BankTransfersModule() {
                             size="sm"
                             variant={action.status === "CANCELLED" ? "outline" : "default"}
                             disabled={saving}
-                            onClick={() => setPendingStatus({ transfer, status: action.status })}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setPendingStatus({ transfer, status: action.status });
+                            }}
                           >
                             {action.label}
                           </Button>
@@ -663,6 +832,14 @@ export default function BankTransfersModule() {
         saving={saving}
         onOpenChange={setDialogOpen}
         onSubmit={handleCreateTransfer}
+      />
+
+      <BankTransferDetailsDialog
+        open={Boolean(viewingTransfer)}
+        transfer={viewingTransfer}
+        onOpenChange={(open) => {
+          if (!open) setViewingTransfer(null);
+        }}
       />
 
       <AlertDialog
