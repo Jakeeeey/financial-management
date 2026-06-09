@@ -6,9 +6,8 @@ export const dynamic = "force-dynamic";
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const PCR = "price_change_requests";
-const PRODUCTS = "products";
-const PRICE_TYPES = "price_types";
-const PPT = "product_per_price_type";
+const DEPRECATED_PRICE_APPROVAL_MESSAGE =
+    "Item-level price approval is deprecated. Use price change batches instead.";
 
 type JwtPayload = {
     sub?: string | number | null;
@@ -23,20 +22,8 @@ type DirectusWrappedError = {
 
 type PcrRow = {
     request_id?: number | string | null;
-    product_id?: number | string | null;
-    price_type_id?: number | string | null;
-    proposed_price?: number | string | null;
     status?: string | null;
     requested_by?: number | string | null;
-};
-
-type PriceTypeRow = {
-    price_type_id?: number | string | null;
-    price_type_name?: string | null;
-};
-
-type ProductPerPriceTypeRow = {
-    id?: number | string | null;
 };
 
 type PatchedPcrResponse = {
@@ -45,10 +32,6 @@ type PatchedPcrResponse = {
 
 type DirectusSingleResponse<T> = {
     data: T;
-};
-
-type DirectusListResponse<T> = {
-    data: T[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -113,19 +96,9 @@ function decodeUserIdFromJwtCookie(req: NextRequest, cookieName = "vos_access_to
     }
 }
 
-function mapPriceTypeToProductsField(priceTypeName: string) {
-    const t = String(priceTypeName ?? "").trim().toUpperCase();
-    if (t === "A") return "priceA";
-    if (t === "B") return "priceB";
-    if (t === "C") return "priceC";
-    if (t === "D") return "priceD";
-    if (t === "E") return "priceE";
-    return null;
-}
-
 async function getPcr(request_id: number): Promise<PcrRow | null> {
     const params = new URLSearchParams();
-    params.set("fields", "request_id,product_id,price_type_id,proposed_price,status,requested_by");
+    params.set("fields", "request_id,status,requested_by");
 
     const url = `${mustBase()}/items/${PCR}/${request_id}?${params.toString()}`;
     const json = await fetchDirectus<DirectusSingleResponse<PcrRow>>(url, {
@@ -133,84 +106,6 @@ async function getPcr(request_id: number): Promise<PcrRow | null> {
     });
 
     return json.data ?? null;
-}
-
-async function getPriceTypeName(price_type_id: number): Promise<string> {
-    const params = new URLSearchParams();
-    params.set("fields", "price_type_id,price_type_name");
-
-    const url = `${mustBase()}/items/${PRICE_TYPES}/${price_type_id}?${params.toString()}`;
-    const json = await fetchDirectus<DirectusSingleResponse<PriceTypeRow>>(url, {
-        headers: directusHeaders(),
-    });
-
-    return String(json.data?.price_type_name ?? "");
-}
-
-async function upsertProductPerPriceType(args: {
-    product_id: number;
-    price_type_id: number;
-    proposed_price: number;
-    userId: number;
-}) {
-    const { product_id, price_type_id, proposed_price, userId } = args;
-
-    const find = new URLSearchParams();
-    find.set("limit", "1");
-    find.set("fields", "id");
-    find.set("filter[_and][0][product_id][_eq]", String(product_id));
-    find.set("filter[_and][1][price_type_id][_eq]", String(price_type_id));
-
-    const findUrl = `${mustBase()}/items/${PPT}?${find.toString()}`;
-    const found = await fetchDirectus<DirectusListResponse<ProductPerPriceTypeRow>>(findUrl, {
-        headers: directusHeaders(),
-    });
-
-    const existingId = Number(found.data?.[0]?.id);
-
-    if (Number.isFinite(existingId) && existingId > 0) {
-        const patchUrl = `${mustBase()}/items/${PPT}/${existingId}`;
-        await fetchDirectus<unknown>(patchUrl, {
-            method: "PATCH",
-            headers: directusHeaders(),
-            body: JSON.stringify({
-                price: proposed_price,
-                updated_by: userId,
-            }),
-        });
-        return;
-    }
-
-    const createUrl = `${mustBase()}/items/${PPT}`;
-    await fetchDirectus<unknown>(createUrl, {
-        method: "POST",
-        headers: directusHeaders(),
-        body: JSON.stringify({
-            product_id,
-            price_type_id,
-            price: proposed_price,
-            created_by: userId,
-            updated_by: userId,
-            status: "published",
-        }),
-    });
-}
-
-async function patchProductPriceField(args: {
-    product_id: number;
-    field: string;
-    proposed_price: number;
-}) {
-    const { product_id, field, proposed_price } = args;
-
-    const url = `${mustBase()}/items/${PRODUCTS}/${product_id}`;
-    await fetchDirectus<unknown>(url, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({
-            [field]: proposed_price,
-        }),
-    });
 }
 
 function unwrapErrorMessage(error: unknown): string {
@@ -243,15 +138,12 @@ function parseWrappedError(message: string): DirectusWrappedError | null {
 
 export async function POST(req: NextRequest) {
     try {
-        mustBase();
-
         const userId = decodeUserIdFromJwtCookie(req);
         if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
         const body = (await req.json()) as Partial<{
             action: "approve" | "reject" | "cancel";
             request_id: number;
-            reject_reason?: string;
         }>;
 
         const action = body.action;
@@ -261,8 +153,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "action is required" }, { status: 400 });
         }
 
+        if (action !== "approve" && action !== "reject" && action !== "cancel") {
+            return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
+        }
+
         if (!Number.isFinite(request_id) || request_id <= 0) {
             return NextResponse.json({ error: "request_id is required" }, { status: 400 });
+        }
+
+        if (action === "approve" || action === "reject") {
+            return NextResponse.json({ error: DEPRECATED_PRICE_APPROVAL_MESSAGE }, { status: 410 });
         }
 
         const pcr = await getPcr(request_id);
@@ -275,81 +175,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Only PENDING requests can be actioned." }, { status: 400 });
         }
 
-        if (action === "cancel") {
-            const requested_by = Number(pcr.requested_by);
-            if (requested_by !== userId) {
-                return NextResponse.json({ error: "You can only cancel your own request." }, { status: 403 });
-            }
-
-            const url = `${mustBase()}/items/${PCR}/${request_id}`;
-            const updated = await fetchDirectus<PatchedPcrResponse>(url, {
-                method: "PATCH",
-                headers: directusHeaders(),
-                body: JSON.stringify({ status: "CANCELLED" }),
-            });
-
-            return NextResponse.json({ data: updated.data });
+        const requested_by = Number(pcr.requested_by);
+        if (requested_by !== userId) {
+            return NextResponse.json({ error: "You can only cancel your own request." }, { status: 403 });
         }
-
-        if (action === "reject") {
-            const reject_reason = String(body.reject_reason ?? "").trim();
-            if (!reject_reason) {
-                return NextResponse.json({ error: "reject_reason is required" }, { status: 400 });
-            }
-
-            const url = `${mustBase()}/items/${PCR}/${request_id}`;
-            const updated = await fetchDirectus<PatchedPcrResponse>(url, {
-                method: "PATCH",
-                headers: directusHeaders(),
-                body: JSON.stringify({
-                    status: "REJECTED",
-                    rejected_by: userId,
-                    rejected_at: new Date().toISOString(),
-                    reject_reason,
-                }),
-            });
-
-            return NextResponse.json({ data: updated.data });
-        }
-
-        const product_id = Number(pcr.product_id);
-        const price_type_id = Number(pcr.price_type_id);
-        const proposed_price = Number(pcr.proposed_price);
-
-        if (!Number.isFinite(product_id) || product_id <= 0) {
-            return NextResponse.json({ error: "Invalid product_id on request." }, { status: 400 });
-        }
-
-        if (!Number.isFinite(price_type_id) || price_type_id <= 0) {
-            return NextResponse.json({ error: "Invalid price_type_id on request." }, { status: 400 });
-        }
-
-        if (!Number.isFinite(proposed_price)) {
-            return NextResponse.json({ error: "Invalid proposed_price on request." }, { status: 400 });
-        }
-
-        const priceTypeName = await getPriceTypeName(price_type_id);
-        const productField = mapPriceTypeToProductsField(priceTypeName);
-
-        if (!productField) {
-            return NextResponse.json(
-                { error: `Unsupported price type name "${priceTypeName}". Expected A–E.` },
-                { status: 400 },
-            );
-        }
-
-        await upsertProductPerPriceType({ product_id, price_type_id, proposed_price, userId });
-        await patchProductPriceField({ product_id, field: productField, proposed_price });
 
         const url = `${mustBase()}/items/${PCR}/${request_id}`;
         const updated = await fetchDirectus<PatchedPcrResponse>(url, {
             method: "PATCH",
             headers: directusHeaders(),
-            body: JSON.stringify({
-                status: "APPROVED",
-                approved_by: userId,
-                approved_at: new Date().toISOString(),
-            }),
+            body: JSON.stringify({ status: "CANCELLED" }),
         });
 
         return NextResponse.json({ data: updated.data });

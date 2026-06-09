@@ -10,19 +10,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return fallback;
 }
 
-export function usePCRActions(onDone?: () => void, requestType: "price" | "cost" = "price") {
+export function usePCRActions(onDone?: () => void) {
     const [acting, setActing] = React.useState(false);
-
-    const apiAction = React.useMemo(
-        () => (requestType === "cost" ? api.actionCostRequest : api.actionRequest),
-        [requestType],
-    );
 
     const approve = React.useCallback(
         async (request_id: number) => {
             setActing(true);
             try {
-                await apiAction({ action: "approve", request_id });
+                await api.actionCostRequest({ action: "approve", request_id });
                 toast.success("Approved and applied.");
                 onDone?.();
             } catch (error: unknown) {
@@ -31,7 +26,7 @@ export function usePCRActions(onDone?: () => void, requestType: "price" | "cost"
                 setActing(false);
             }
         },
-        [onDone, apiAction],
+        [onDone],
     );
 
     const approveMany = React.useCallback(
@@ -50,7 +45,7 @@ export function usePCRActions(onDone?: () => void, requestType: "price" | "cost"
             try {
                 for (const request_id of uniqueIds) {
                     try {
-                        await apiAction({ action: "approve", request_id });
+                        await api.actionCostRequest({ action: "approve", request_id });
                         successIds.push(request_id);
                     } catch {
                         failedIds.push(request_id);
@@ -72,14 +67,14 @@ export function usePCRActions(onDone?: () => void, requestType: "price" | "cost"
                 setActing(false);
             }
         },
-        [onDone, apiAction],
+        [onDone],
     );
 
     const cancel = React.useCallback(
         async (request_id: number) => {
             setActing(true);
             try {
-                await apiAction({ action: "cancel", request_id });
+                await api.actionCostRequest({ action: "cancel", request_id });
                 toast.success("Cancelled.");
                 onDone?.();
             } catch (error: unknown) {
@@ -88,14 +83,14 @@ export function usePCRActions(onDone?: () => void, requestType: "price" | "cost"
                 setActing(false);
             }
         },
-        [onDone, apiAction],
+        [onDone],
     );
 
     const reject = React.useCallback(
         async (request_id: number, reject_reason: string) => {
             setActing(true);
             try {
-                await apiAction({ action: "reject", request_id, reject_reason });
+                await api.actionCostRequest({ action: "reject", request_id, reject_reason });
                 toast.success("Rejected.");
                 onDone?.();
             } catch (error: unknown) {
@@ -104,7 +99,7 @@ export function usePCRActions(onDone?: () => void, requestType: "price" | "cost"
                 setActing(false);
             }
         },
-        [onDone, apiAction],
+        [onDone],
     );
 
     const rejectMany = React.useCallback(
@@ -123,7 +118,7 @@ export function usePCRActions(onDone?: () => void, requestType: "price" | "cost"
             try {
                 for (const request_id of uniqueIds) {
                     try {
-                        await apiAction({ action: "reject", request_id, reject_reason });
+                        await api.actionCostRequest({ action: "reject", request_id, reject_reason });
                         successIds.push(request_id);
                     } catch {
                         failedIds.push(request_id);
@@ -145,8 +140,8 @@ export function usePCRActions(onDone?: () => void, requestType: "price" | "cost"
                 setActing(false);
             }
         },
-        [onDone, apiAction],
+        [onDone],
     );
 
     return { acting, approve, approveMany, cancel, reject, rejectMany };
-}
+}

@@ -4,9 +4,10 @@ import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Loader2, CheckCheck, X } from "lucide-react";
+import { AlertCircle, Loader2, CheckCheck, X, Plus } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
+import { CreatePriceChangeBatchDialog } from "./components/CreatePriceChangeBatchDialog";
 import { PriceChangeBatchDetailDialog } from "./components/PriceChangeBatchDetailDialog";
 import { PriceChangeBatchesTable } from "./components/PriceChangeBatchesTable";
 import { RequestFiltersBar } from "./components/RequestFiltersBar";
@@ -71,6 +72,7 @@ function PriceBatchManager({ suppliers }: { suppliers: SupplierOption[] }) {
     const batches = usePriceChangeBatches({ status: "PENDING", page_size: 50, page: 1 });
     const statusTab = batches.query.status || "PENDING";
 
+    const [creatingBatch, setCreatingBatch] = React.useState(false);
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
     const [viewingId, setViewingId] = React.useState<number | null>(null);
     const [confirmingApproveId, setConfirmingApproveId] = React.useState<number | null>(null);
@@ -94,16 +96,21 @@ function PriceBatchManager({ suppliers }: { suppliers: SupplierOption[] }) {
 
     return (
         <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <Tabs value={statusTab as string} onValueChange={(v) => {
                     batches.setQuery((q) => ({ ...q, status: v as PCRStatus, page: 1 }));
-                }} className="w-full">
+                }} className="w-full sm:w-auto">
                     <TabsList>
                         <TabsTrigger value="PENDING">Pending</TabsTrigger>
                         <TabsTrigger value="APPROVED">Approved</TabsTrigger>
                         <TabsTrigger value="REJECTED">Rejected</TabsTrigger>
                     </TabsList>
                 </Tabs>
+
+                <Button type="button" onClick={() => setCreatingBatch(true)} className="w-full sm:w-auto">
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Batch
+                </Button>
             </div>
 
             <div className="space-y-3">
@@ -163,6 +170,13 @@ function PriceBatchManager({ suppliers }: { suppliers: SupplierOption[] }) {
                 }}
                 onApprove={(id) => setConfirmingApproveId(id)}
                 onReject={(id) => setRejectingId(id)}
+            />
+
+            <CreatePriceChangeBatchDialog
+                open={creatingBatch}
+                onOpenChange={setCreatingBatch}
+                suppliers={suppliers}
+                onCreated={batches.refresh}
             />
 
             <RejectDialog
@@ -238,7 +252,7 @@ function ItemRequestManager({ type, suppliers }: { type: "cost", suppliers: Supp
 
     const actions = usePCRActions(() => {
         inbox.refresh();
-    }, type);
+    });
 
     const pendingInboxIds = React.useMemo(
         () =>

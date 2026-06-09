@@ -60,7 +60,7 @@ function RequestMonitoringManager({ type, suppliers }: { type: "price" | "cost";
 
     const actions = usePCRActions(() => {
         mine.refresh();
-    }, type);
+    });
 
     return (
         <div className="space-y-3">
@@ -167,8 +167,8 @@ function RequestMonitoringManager({ type, suppliers }: { type: "price" | "cost";
                     rows={mine.rows}
                     mode="mine"
                     requestType={type}
-                    acting={actions.acting}
-                    onCancel={(id) => actions.cancel(id)}
+                    acting={type === "cost" ? actions.acting : false}
+                    onCancel={type === "cost" ? (id) => actions.cancel(id) : undefined}
                     meta={{ total_count: mine.total }}
                     page={Number(mine.query.page ?? 1)}
                     pageSize={Number(mine.query.page_size ?? 50)}

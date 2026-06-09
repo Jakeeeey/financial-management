@@ -7,6 +7,8 @@ const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const PCR = "price_change_requests";
 const PRODUCT_PER_SUPPLIER = "product_per_supplier";
+const DEPRECATED_PRICE_REQUEST_MESSAGE =
+    "Item-level price change requests are deprecated. Use price change batches instead.";
 
 type DirectusMeta = {
     total_count?: number;
@@ -42,15 +44,6 @@ type DirectusPCRRow = {
     status?: string | null;
     requested_by?: number | string | null;
     requested_at?: string | null;
-    approved_by?: number | string | null;
-    approved_at?: string | null;
-    rejected_by?: number | string | null;
-    rejected_at?: string | null;
-    reject_reason?: string | null;
-};
-
-type DirectusCreatePCRResponse = {
-    data: DirectusPCRRow;
 };
 
 type DirectusListPCRResponse = {
@@ -145,12 +138,6 @@ function unwrapErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function nowManila(): string {
-    return new Date()
-        .toLocaleString("sv-SE", { timeZone: "Asia/Manila" })
-        .replace(" ", "T");
-}
-
 function parseWrappedError(message: string): DirectusWrappedError | null {
     try {
         const parsed: unknown = JSON.parse(message);
@@ -242,11 +229,6 @@ export async function GET(req: NextRequest) {
                 "status",
                 "requested_by",
                 "requested_at",
-                "approved_by",
-                "approved_at",
-                "rejected_by",
-                "rejected_at",
-                "reject_reason",
                 "product_id.product_id",
                 "product_id.product_code",
                 "product_id.product_name",
@@ -317,45 +299,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
     try {
-        mustBase();
         const userId = decodeUserIdFromJwtCookie(req);
         if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-        const body = (await req.json()) as Partial<{
-            product_id: number;
-            price_type_id: number;
-            proposed_price: number;
-        }>;
-
-        const product_id = Number(body.product_id);
-        const price_type_id = Number(body.price_type_id);
-        const proposed_price = Number(body.proposed_price);
-
-        if (!Number.isFinite(product_id) || product_id <= 0) {
-            return NextResponse.json({ error: "product_id is required" }, { status: 400 });
-        }
-        if (!Number.isFinite(price_type_id) || price_type_id <= 0) {
-            return NextResponse.json({ error: "price_type_id is required" }, { status: 400 });
-        }
-        if (!Number.isFinite(proposed_price)) {
-            return NextResponse.json({ error: "proposed_price is required" }, { status: 400 });
-        }
-
-        const createUrl = `${mustBase()}/items/${PCR}`;
-        const created = await fetchDirectus<DirectusCreatePCRResponse>(createUrl, {
-            method: "POST",
-            headers: directusHeaders(),
-            body: JSON.stringify({
-                product_id,
-                price_type_id,
-                proposed_price,
-                status: "PENDING",
-                requested_by: userId,
-                requested_at: nowManila(),
-            }),
-        });
-
-        return NextResponse.json({ data: created.data }, { status: 201 });
+        return NextResponse.json({ error: DEPRECATED_PRICE_REQUEST_MESSAGE }, { status: 410 });
     } catch (error: unknown) {
         const message = unwrapErrorMessage(error);
         const wrapped = parseWrappedError(message);

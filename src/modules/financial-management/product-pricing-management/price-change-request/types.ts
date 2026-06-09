@@ -34,13 +34,6 @@ export type PriceChangeRequestRow = {
 
     requested_by: number;
     requested_at: string;
-
-    approved_by?: number | null;
-    approved_at?: string | null;
-
-    rejected_by?: number | null;
-    rejected_at?: string | null;
-    reject_reason?: string | null;
 };
 
 export type PriceChangeBatchStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
@@ -114,12 +107,6 @@ export type ListQuery = {
     date_to?: string | "";
     page?: number;
     page_size?: number;
-};
-
-export type CreatePCRPayload = {
-    product_id: number;
-    price_type_id: number;
-    proposed_price: number;
 };
 
 export type CreatePriceChangeBatchPayload = {

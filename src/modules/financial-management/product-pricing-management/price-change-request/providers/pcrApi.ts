@@ -1,7 +1,6 @@
 import type {
     ActionPayload,
     CreatePriceChangeBatchPayload,
-    CreatePCRPayload,
     CreateCCRPayload,
     ListQuery,
     PriceChangeBatchDetail,
@@ -80,22 +79,6 @@ export async function listRequests(query: ListQuery) {
     );
 }
 
-export async function createRequest(payload: CreatePCRPayload) {
-    return http<{ data: PriceChangeRequestRow }>(`/api/fm/product-pricing/price-change-requests`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-}
-
-export async function actionRequest(payload: ActionPayload) {
-    return http<{ data: PriceChangeRequestRow }>(`/api/fm/product-pricing/price-change-requests/actions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-}
-
 export async function listCostRequests(query: ListQuery) {
     const sp = new URLSearchParams();
     if (query.status) sp.set("status", query.status);
@@ -145,6 +128,20 @@ export type SupplierOption = {
     isActive?: number | boolean | null;
 };
 
+export type PriceTypeOption = {
+    price_type_id: number;
+    price_type_name?: string | null;
+    sort?: number | null;
+};
+
+export type ProductsMeta = {
+    page?: number;
+    pageSize?: number;
+    total?: number;
+    totalPages?: number;
+    totalVariants?: number;
+};
+
 export type LookupsResponse = {
     categories: CategoryOption[];
     brands: BrandOption[];
@@ -181,6 +178,10 @@ export async function getLookups(params?: {
 export type ProductSearchRow = {
     product_id: number;
     product_name: string;
+    parent_id?: number | null;
+    product_code?: string | null;
+    barcode?: string | null;
+    __group_id?: number | null;
     unit_of_measurement?: number | null;
     price_per_unit?: number | null;
     priceA?: number | null;
@@ -189,6 +190,42 @@ export type ProductSearchRow = {
     priceD?: number | null;
     priceE?: number | null;
 };
+
+function mapProductSearchRow(item: unknown): ProductSearchRow | null {
+    if (!isRecord(item)) return null;
+
+    const productId = Number(item.product_id ?? 0);
+    if (!Number.isFinite(productId) || productId <= 0) return null;
+
+    return {
+        product_id: productId,
+        product_name: toStringSafe(item.product_name, "-"),
+        parent_id: toNullableNumber(item.parent_id),
+        product_code: toStringSafe(item.product_code) || null,
+        barcode: toStringSafe(item.barcode) || null,
+        __group_id: toNullableNumber(item.__group_id),
+        unit_of_measurement: toNullableNumber(item.unit_of_measurement),
+        price_per_unit: toNullableNumber(item.price_per_unit),
+        priceA: toNullableNumber(item.priceA),
+        priceB: toNullableNumber(item.priceB),
+        priceC: toNullableNumber(item.priceC),
+        priceD: toNullableNumber(item.priceD),
+        priceE: toNullableNumber(item.priceE),
+    };
+}
+
+export async function getPriceTypes() {
+    const res = await http<{ data: PriceTypeOption[] }>("/api/fm/product-pricing/price-types");
+    return {
+        data: (res.data ?? [])
+            .map((item) => ({
+                price_type_id: Number(item.price_type_id),
+                price_type_name: item.price_type_name ?? "",
+                sort: toNullableNumber(item.sort),
+            }))
+            .filter((item) => Number.isFinite(item.price_type_id) && item.price_type_id > 0),
+    };
+}
 
 export async function searchProducts(params: {
     q: string;
@@ -252,6 +289,34 @@ export async function searchProducts(params: {
             };
         })
         .filter((row): row is ProductSearchRow => row !== null);
+}
+
+export async function getProductsPage(params: {
+    q?: string;
+    supplier_ids?: string;
+    supplier_scope?: "ALL" | "LINKED_ONLY";
+    active_only?: "0" | "1";
+    page?: string;
+    page_size?: string;
+}) {
+    const sp = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+        if (value === undefined || value === null) continue;
+        const text = String(value).trim();
+        if (!text) continue;
+        sp.set(key, text);
+    }
+
+    const res = await http<{ data: unknown[]; meta?: ProductsMeta }>(
+        `/api/fm/product-pricing/products?${sp.toString()}`,
+    );
+
+    return {
+        data: (res.data ?? [])
+            .map(mapProductSearchRow)
+            .filter((row): row is ProductSearchRow => row !== null),
+        meta: res.meta ?? null,
+    };
 }
 
 export async function listPriceChangeBatches(query: ListQuery) {

@@ -135,21 +135,6 @@ export async function upsertPrices(lines: UpsertLine[]) {
     });
 }
 
-export async function createPriceChangeRequests(items: {
-    product_id: number;
-    price_type_id: number;
-    proposed_price: number;
-}[]) {
-    return http<{
-        created: number;
-        skipped_duplicates?: number;
-        skipped_existing_pending?: number;
-    }>(`/api/fm/product-pricing/price-change-requests/bulk`, {
-        method: "POST",
-        body: JSON.stringify({ items }),
-    });
-}
-
 export async function createPriceChangeBatch(
     batch: SavePriceChangeBatchInput,
     lines: PriceChangeBatchLineInput[],
