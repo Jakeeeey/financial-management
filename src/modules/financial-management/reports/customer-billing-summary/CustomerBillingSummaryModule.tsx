@@ -157,7 +157,7 @@ export default function CustomerBillingSummaryModule() {
         : (inv.net_amount || inv.total_amount || 0);
       return sum + net;
     }, 0);
-    const totalReturns = details.salesReturns.reduce((sum, ret) => sum + (ret.amount || 0), 0);
+    const totalReturns = details.salesReturns.reduce((sum, ret) => sum + (ret.total_amount || 0), 0);
     const totalMemos = details.customerMemos.reduce((sum, m) => {
       const amt = m.amount || 0;
       if (m.type === 1) {
@@ -193,7 +193,7 @@ export default function CustomerBillingSummaryModule() {
         : (inv.net_amount || inv.total_amount || 0);
       return sum + net;
     }, 0);
-    const totalReturns = salesReturns.reduce((sum, ret) => sum + (ret.amount || 0), 0);
+    const totalReturns = salesReturns.reduce((sum, ret) => sum + (ret.total_amount || 0), 0);
     const totalMemos = customerMemos.reduce((sum, m) => {
       const amt = m.amount || 0;
       if (m.type === 1) {
@@ -350,7 +350,8 @@ export default function CustomerBillingSummaryModule() {
       (ret) =>
         ret.return_no?.toLowerCase().includes(returnSearch.toLowerCase()) ||
         ret.invoice_no?.toLowerCase().includes(returnSearch.toLowerCase()) ||
-        ret.remarks?.toLowerCase().includes(returnSearch.toLowerCase())
+        ret.remarks?.toLowerCase().includes(returnSearch.toLowerCase()) ||
+        String(ret.total_amount || "").includes(returnSearch)
     );
   }, [details, returnSearch]);
 
@@ -569,6 +570,38 @@ export default function CustomerBillingSummaryModule() {
       }
     });
     currentY = (doc as any).lastAutoTable.finalY + 5;
+
+    // --- SALES RETURNS LEDGER ---
+    if (details.salesReturns.length > 0) {
+        currentY += 5;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(defaultTextColor);
+        doc.text("SALES RETURNS LEDGER", margin, currentY);
+        currentY += 3;
+
+        autoTable(doc, {
+            startY: currentY,
+            head: [["Return No", "Date", "Invoice Ref", "Gross Amount", "Discount", "Net Amount", "Remarks"]],
+            body: details.salesReturns.map((ret) => [
+                ret.return_no || "—",
+                formatDate(ret.return_date),
+                ret.invoice_no || "—",
+                formatCurrency(ret.gross_amount || 0),
+                formatCurrency(ret.discount_amount || 0),
+                formatCurrency(ret.total_amount || 0),
+                ret.remarks || "—",
+            ]),
+            styles: { fontSize: 7, cellPadding: 1.5, lineColor: "#E4E4E7", lineWidth: 0.1 },
+            headStyles: { fillColor: tableHeaderBg, textColor: tableHeaderTextColor, fontStyle: "bold", fontSize: 7, cellPadding: 2 },
+            alternateRowStyles: { fillColor: "#FAFAFA" },
+            margin: { left: margin, right: margin },
+            didDrawPage: (data) => {
+                addHeader(data.pageNumber, doc.internal.pages.length - 1);
+            }
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 5;
+    }
 
     // --- CUSTOMER CREDIT & DEBIT MEMOS ---
     currentY += 5;
@@ -1634,7 +1667,7 @@ export default function CustomerBillingSummaryModule() {
                           Sales Returns ({filteredReturns.length})
                         </CardTitle>
                         <span className="text-[10px] text-rose-500 font-mono hidden sm:inline">
-                          • Total: {formatCurrency(filteredReturns.reduce((s, r) => s + (r.amount || 0), 0))}
+                          • Net Total: {formatCurrency(filteredReturns.reduce((s, r) => s + (r.total_amount || 0), 0))}
                         </span>
                       </div>
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -1670,7 +1703,9 @@ export default function CustomerBillingSummaryModule() {
                                 <TableHead className="py-1">Date</TableHead>
                                 <TableHead className="py-1">Invoice Ref</TableHead>
                                 <TableHead className="py-1">Sales Agent</TableHead>
-                                <TableHead className="py-1 text-right">Return Amount</TableHead>
+                                <TableHead className="py-1 text-right">Gross Amount</TableHead>
+                                <TableHead className="py-1 text-right">Discounts</TableHead>
+                                <TableHead className="py-1 text-right">Net Amount</TableHead>
                                 <TableHead className="py-1 pr-2">Remarks</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -1681,8 +1716,10 @@ export default function CustomerBillingSummaryModule() {
                                   <TableCell className="py-1.5">{formatDate(ret.return_date)}</TableCell>
                                   <TableCell className="py-1.5 font-semibold text-zinc-850">{ret.invoice_no || "—"}</TableCell>
                                   <TableCell className="py-1.5">{ret.salesman_id?.salesman_name || "—"}</TableCell>
+                                  <TableCell className="py-1.5 text-right">{ret.gross_amount ? formatCurrency(ret.gross_amount) : "—"}</TableCell>
+                                  <TableCell className="py-1.5 text-right text-rose-500">{ret.discount_amount ? `-${formatCurrency(ret.discount_amount)}` : "—"}</TableCell>
                                   <TableCell className="py-1.5 text-right font-bold text-rose-600">
-                                    {ret.amount ? formatCurrency(ret.amount) : "—"}
+                                    {ret.total_amount ? formatCurrency(ret.total_amount) : "—"}
                                   </TableCell>
                                   <TableCell className="py-1.5 text-muted-foreground italic truncate max-w-[120px] pr-2" title={ret.remarks || ""}>
                                     {ret.remarks || "—"}

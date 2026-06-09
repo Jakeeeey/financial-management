@@ -146,7 +146,9 @@ export interface SalesReturn {
   return_no: string;
   return_date?: string | null;
   invoice_no?: string | null;
-  amount?: number | null;
+  total_amount?: number | null;
+  discount_amount?: number | null;
+  gross_amount?: number | null;
   remarks?: string | null;
   salesman_id?: {
     salesman_name?: string;
