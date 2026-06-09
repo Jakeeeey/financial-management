@@ -2,6 +2,8 @@
 export type BankAccount = {
   bankId: number;
   bankName: string;
+  accountType: string;
+  accountName: string;
   accountNumber: string;
   bankDescription: string;
   branch: string;
@@ -14,11 +16,18 @@ export type BankAccount = {
   mobileNo: string;
   contactPerson: string;
   isActive: boolean;
+  createdAt: string;
 };
 
 export type BankNameOption = {
   id: number;
   bankName: string;
+  isActive?: boolean;
+};
+
+export type AccountTypeOption = {
+  id: number;
+  accountType: string;
   isActive?: boolean;
 };
 
@@ -36,16 +45,24 @@ export type AccountManagementPagination = {
   totalPages: number;
   search: string;
   status: string;
+  bankName: string;
+  accountType: string;
+  accountName: string;
+  createdFrom: string;
+  createdTo: string;
 };
 
 export type AccountManagementData = {
   accounts: BankAccount[];
   bankNames: BankNameOption[];
+  accountTypes: AccountTypeOption[];
   pagination: AccountManagementPagination;
 };
 
 export type AccountManagementFormValues = {
   bankName: string;
+  accountType: string;
+  accountName: string;
   accountNumber: string;
   bankDescription: string;
   branch: string;
@@ -60,3 +77,29 @@ export type AccountManagementFormValues = {
 };
 
 export type AccountStatusFilter = "all" | "active" | "inactive";
+
+export type AccountManagementFormMode = "create" | "edit";
+
+export type AccountManagementQuery = {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: AccountStatusFilter;
+  bankName?: string;
+  accountType?: string;
+  accountName?: string;
+  createdFrom?: string;
+  createdTo?: string;
+};
+
+export type AccountManagementFieldErrors = Partial<
+  Record<keyof AccountManagementFormValues, string>
+>;
+
+export type AccountManagementSaveResult =
+  | { ok: true }
+  | {
+      ok: false;
+      message: string;
+      fieldErrors?: AccountManagementFieldErrors;
+    };
