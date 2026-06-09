@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { FileText, Building2, Wallet, Lock } from "lucide-react";
 import { StickyTableWrapper } from "./StickyTableWrapper";
+import { formatCurrency, getStatusColor } from "../utils/disbursement-utils";
 
 interface DisbursementTableProps {
     data: Disbursement[];
@@ -16,20 +17,6 @@ interface DisbursementTableProps {
 }
 
 export function DisbursementTable({ data, loading, onView }: DisbursementTableProps) {
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount);
-    };
-
-    const getStatusColor = (status: string) => {
-        switch (status.toUpperCase()) {
-            case "DRAFT": return "bg-muted text-muted-foreground border-border";
-            case "SUBMITTED": return "bg-blue-100/50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800";
-            case "APPROVED": return "bg-emerald-100/50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800";
-            case "RELEASED": return "bg-purple-100/50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800";
-            case "POSTED": return "bg-primary text-primary-foreground border-primary";
-            default: return "bg-muted text-muted-foreground border-border";
-        }
-    };
 
     return (
         <StickyTableWrapper className="rounded-md border border-border bg-card shadow-sm overflow-auto max-h-[65vh]">

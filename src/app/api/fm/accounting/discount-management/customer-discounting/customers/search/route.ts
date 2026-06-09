@@ -1,12 +1,22 @@
 // src/app/api/fm/accounting/discount-management/customer-discounting/customers/search/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { asNumber, asString, directusFetch, discountLabel, DirectusList, jsonError } from "../../_utils";
+import {
+  asNumber,
+  asString,
+  directusFetch,
+  discountLabel,
+  DirectusList,
+  jsonError,
+  relationId,
+  relationName,
+} from "../../_utils";
 
 type CustomerRow = {
   id?: unknown;
   customer_code?: unknown;
   customer_name?: unknown;
   store_name?: unknown;
+  store_type?: unknown;
   discount_type?: unknown;
 };
 
@@ -33,6 +43,9 @@ export async function GET(request: NextRequest) {
         "customer_code",
         "customer_name",
         "store_name",
+        "store_type",
+        "store_type.id",
+        "store_type.store_type",
         "isActive",
         "discount_type",
         "discount_type.id",
@@ -52,6 +65,8 @@ export async function GET(request: NextRequest) {
         customerCode: asString(row.customer_code),
         customerName: asString(row.customer_name),
         storeName: asString(row.store_name),
+        storeTypeId: relationId(row.store_type),
+        storeTypeName: relationName(row.store_type, "store_type"),
         globalDiscount: discountLabel(row.discount_type),
       }))
       .filter((row) => row.id > 0 && row.customerCode && row.customerName);

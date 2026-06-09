@@ -217,6 +217,7 @@ function ItemRequestManager({ type, suppliers }: { type: "cost", suppliers: Supp
     const statusTab = inbox.query.status || "PENDING";
 
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
+    const [rejectingBulk, setRejectingBulk] = React.useState<boolean>(false);
     const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
     const [confirmingApprove, setConfirmingApprove] = React.useState<{
         type: 'single' | 'batch';
@@ -316,6 +317,16 @@ function ItemRequestManager({ type, suppliers }: { type: "cost", suppliers: Supp
         [clearSelection, rawSetInboxQuery],
     );
 
+    const handleRejectSelected = React.useCallback(async (reason: string) => {
+        if (selectedIds.length === 0) return;
+
+        const result = await actions.rejectMany(selectedIds, reason);
+
+        if (result.successIds.length > 0) {
+            setSelectedIds((prev) => prev.filter((id) => !result.successIds.includes(id)));
+        }
+    }, [actions, selectedIds]);
+
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
@@ -372,6 +383,15 @@ function ItemRequestManager({ type, suppliers }: { type: "cost", suppliers: Supp
                             </Button>
 
                             <Button
+                                variant="destructive"
+                                onClick={() => setRejectingBulk(true)}
+                                disabled={actions.acting || selectedIds.length === 0}
+                            >
+                                <X className="mr-2 h-4 w-4" />
+                                Reject Selected
+                            </Button>
+
+                            <Button
                                 onClick={handleApproveSelected}
                                 disabled={actions.acting || selectedIds.length === 0}
                             >
@@ -417,14 +437,23 @@ function ItemRequestManager({ type, suppliers }: { type: "cost", suppliers: Supp
             </div>
 
             <RejectDialog
-                open={rejectingId != null}
-                onOpenChange={(v) => !v && setRejectingId(null)}
+                open={rejectingId != null || rejectingBulk}
+                onOpenChange={(v) => {
+                    if (!v) {
+                        setRejectingId(null);
+                        setRejectingBulk(false);
+                    }
+                }}
                 loading={actions.acting}
-                title="Reject Request"
-                onConfirm={(reason) => {
-                    if (!rejectingId) return;
-                    actions.reject(rejectingId, reason);
-                    setRejectingId(null);
+                title={rejectingBulk ? "Reject Selected Requests" : "Reject Request"}
+                onConfirm={async (reason) => {
+                    if (rejectingId != null) {
+                        await actions.reject(rejectingId, reason);
+                        setRejectingId(null);
+                    } else if (rejectingBulk) {
+                        await handleRejectSelected(reason);
+                        setRejectingBulk(false);
+                    }
                 }}
             >
                 {rejectingRequest && (

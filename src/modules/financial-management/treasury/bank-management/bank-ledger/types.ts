@@ -56,4 +56,6 @@ export type BankLedgerQuery = {
   endDate?: string;
   page?: number;
   pageSize?: number;
+  search?: string;
+  transactionType?: LedgerEntryType | "";
 };

@@ -17,6 +17,7 @@ import { format } from "date-fns";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { cn } from "@/lib/utils";
 import { StickyTableWrapper } from "./StickyTableWrapper";
+import { getCookie, decodeToken, formatCurrency, VOUCHER_STEPS } from "../utils/disbursement-utils";
 
 interface DisbursementViewSheetProps {
     disbursement: Disbursement | null;
@@ -25,34 +26,6 @@ interface DisbursementViewSheetProps {
     onUpdateStatus: (id: number, status: string) => Promise<boolean>;
     onEdit?: (d: Disbursement) => void;
     loading: boolean;
-}
-
-const VOUCHER_STEPS = ["Draft", "Submitted", "Approved", "Released", "Posted"];
-
-function getCookie(name: string) {
-    if (typeof window === "undefined") return "";
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop()?.split(';').shift() || "";
-    return "";
-}
-
-function decodeToken(token: string) {
-    if (!token) return null;
-    try {
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(
-            window.atob(base64)
-                .split('')
-                .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-                .join('')
-        );
-        return JSON.parse(jsonPayload);
-    } catch (e) {
-        console.error("Failed to decode token", e);
-        return null;
-    }
 }
 
 function AttachmentPreview({ docUrl }: { docUrl: string }) {
@@ -148,8 +121,6 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
     const tokenPayload = decodeToken(token);
     const currentUserId = tokenPayload?.sub;
     const isApprover = disbursement.approverId != null && currentUserId != null && String(disbursement.approverId) === String(currentUserId);
-
-    const formatCurrency = (amount: number) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
 
     const handleAction = async (status: string) => {
         const success = await onUpdateStatus(disbursement.id, status);

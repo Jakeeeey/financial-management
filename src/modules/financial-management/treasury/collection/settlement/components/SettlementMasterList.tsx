@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 import { useSettlementQueue } from "../hooks/useSettlementQueue";
 import SettlementCommandCenter from "./SettlementCommandCenter";
+import { useSearchParams } from "next/navigation";
 
 const parseSpecificDate = (val: string | number[] | undefined | null): Date | null => {
     if (!val) return null;
@@ -27,6 +28,10 @@ const parseSpecificDate = (val: string | number[] | undefined | null): Date | nu
 };
 
 export default function SettlementMasterList() {
+    const searchParams = useSearchParams();
+    const qInvoiceNo = searchParams.get("invoiceNo");
+    const qSalesman = searchParams.get("salesman");
+
     const [searchTerm, setSearchTerm] = useState("");
     const [debounceSearch, setDebounceSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
@@ -47,6 +52,33 @@ export default function SettlementMasterList() {
         debounceSearch, statusFilter, collectorFilter, page, size, sortField, sortDirection
     );
 
+    const handleOpenSettlement = (id: number) => {
+        setSelectedPouchId(id);
+        setIsCommandCenterOpen(true);
+    };
+
+    // Auto-apply filters when redirected from AR
+    React.useEffect(() => {
+        if (qSalesman) {
+            setSearchTerm(qSalesman);
+            setDebounceSearch(qSalesman);
+        }
+    }, [qSalesman]);
+
+    // Auto-open matching pending/in-progress pouch if it matches salesman
+    React.useEffect(() => {
+        if (!isLoading && qSalesman && data?.content && data.content.length > 0 && !isCommandCenterOpen && selectedPouchId === null) {
+            const match = data.content.find(col => 
+                (col.status === "Pending" || col.status === "In Progress") &&
+                (col.salesmanName?.toLowerCase().includes(qSalesman.toLowerCase()) || 
+                 col.collectedByName?.toLowerCase().includes(qSalesman.toLowerCase()))
+            );
+            if (match) {
+                handleOpenSettlement(match.id);
+            }
+        }
+    }, [isLoading, qSalesman, data, isCommandCenterOpen, selectedPouchId]);
+
     // Trigger debounced search
     React.useEffect(() => {
         const timeout = setTimeout(() => { setDebounceSearch(searchTerm); setPage(1); }, 400);
@@ -57,11 +89,6 @@ export default function SettlementMasterList() {
         if (sortField === field) setSortDirection(sortDirection === "asc" ? "desc" : "asc");
         else { setSortField(field); setSortDirection("desc"); }
         setPage(1);
-    };
-
-    const handleOpenSettlement = (id: number) => {
-        setSelectedPouchId(id);
-        setIsCommandCenterOpen(true);
     };
 
     return (
@@ -232,11 +259,12 @@ export default function SettlementMasterList() {
                     // No fetchQueue() here!
                 }}
             >
-                <DialogContent className="!p-0 !rounded-xl !border !border-border !bg-background !flex !flex-col !shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] !overflow-hidden transition-all duration-300" style={{ width: '95vw', maxWidth: '1400px', height: '92vh', maxHeight: '900px' }} showCloseButton={false}>
+                <DialogContent className="!p-0 !rounded-xl !border !border-border !bg-background !flex !flex-col !shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] !overflow-hidden transition-all duration-300" style={{ width: '98vw', maxWidth: '1800px', height: '96vh', maxHeight: '98vh' }} showCloseButton={false}>
                     <DialogTitle className="sr-only">Settlement Command Center</DialogTitle>
                     {selectedPouchId && (
                         <SettlementCommandCenter
                             id={selectedPouchId}
+                            autoAddInvoiceNo={qInvoiceNo || undefined}
                             onClose={(hasSaved) => {
                                 setIsCommandCenterOpen(false);
                                 // 🚀 Only refresh the queue if a save successfully occurred!

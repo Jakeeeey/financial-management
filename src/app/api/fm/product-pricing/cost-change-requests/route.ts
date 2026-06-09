@@ -44,9 +44,7 @@ type DirectusListCCRResponse = {
     meta?: DirectusMeta;
 };
 
-type DirectusDupResponse = {
-    data: Array<{ request_id?: number | string | null }>;
-};
+
 
 type DirectusSupplierProductRow = {
     product_id?: number | string | { product_id?: number | string | null } | null;
@@ -207,12 +205,17 @@ export async function GET(req: NextRequest) {
         const limit = norm(searchParams.get("limit"));
         const useAllRows = limit === "-1";
         const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-        const page_size = useAllRows ? -1 : Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
-        const offset = useAllRows ? 0 : (page - 1) * page_size;
 
         const params = new URLSearchParams();
-        params.set("limit", String(page_size));
-        if (!useAllRows) params.set("offset", String(offset));
+        if (useAllRows) {
+            params.set("limit", "-1");
+            params.set("offset", "0");
+        } else {
+            const page_size = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
+            const offset = (page - 1) * page_size;
+            params.set("limit", String(page_size));
+            params.set("offset", String(offset));
+        }
         params.set("meta", "total_count");
         params.set("sort", "-requested_at");
 
@@ -318,21 +321,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "proposed_cost is required" }, { status: 400 });
         }
 
-        const dupParams = new URLSearchParams();
-        dupParams.set("limit", "1");
-        dupParams.set("fields", "request_id");
-        dupParams.set("filter[_and][0][product_id][_eq]", String(product_id));
-        dupParams.set("filter[_and][1][status][_eq]", "PENDING");
-
-        const dupUrl = `${mustBase()}/items/${CCR}?${dupParams.toString()}`;
-        const dup = await fetchDirectus<DirectusDupResponse>(dupUrl, { headers: directusHeaders() });
-
-        if ((dup.data ?? []).length > 0) {
-            return NextResponse.json(
-                { error: "A PENDING request already exists for this product." },
-                { status: 400 },
-            );
-        }
+        // Removed duplicate pending request check to allow creating new ones
 
         const createUrl = `${mustBase()}/items/${CCR}`;
         const created = await fetchDirectus<DirectusCreateCCRResponse>(createUrl, {

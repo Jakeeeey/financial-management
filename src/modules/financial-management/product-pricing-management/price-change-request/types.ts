@@ -16,6 +16,13 @@ export type ProductRef = {
     product_code?: string;
     product_name?: string;
     unit_of_measurement?: UomRef | number | string | null;
+    list_price?: number | string | null;
+    priceA?: number | string | null;
+    priceB?: number | string | null;
+    priceC?: number | string | null;
+    priceD?: number | string | null;
+    priceE?: number | string | null;
+    cost_per_unit?: number | string | null;
 };
 
 export type PriceChangeRequestRow = {
