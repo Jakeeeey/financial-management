@@ -25,6 +25,12 @@ export type BankNameOption = {
   isActive?: boolean;
 };
 
+export type AccountTypeOption = {
+  id: number;
+  accountType: string;
+  isActive?: boolean;
+};
+
 export type PsgcOption = {
   code: string;
   name: string;
@@ -49,6 +55,7 @@ export type AccountManagementPagination = {
 export type AccountManagementData = {
   accounts: BankAccount[];
   bankNames: BankNameOption[];
+  accountTypes: AccountTypeOption[];
   pagination: AccountManagementPagination;
 };
 
@@ -70,6 +77,8 @@ export type AccountManagementFormValues = {
 };
 
 export type AccountStatusFilter = "all" | "active" | "inactive";
+
+export type AccountManagementFormMode = "create" | "edit";
 
 export type AccountManagementQuery = {
   page?: number;

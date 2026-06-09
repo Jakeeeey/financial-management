@@ -7,10 +7,12 @@ import {
   directusFetch,
   DirectusItem,
   DirectusList,
+  isDirectusAccessError,
   isFieldAccessError,
   jsonError,
   sanitizeAccountNumber,
   sanitizeMobileNumber,
+  ValidationError,
 } from "../_utils";
 
 export const runtime = "nodejs";
@@ -42,8 +44,14 @@ type BankNameRow = {
   is_active?: unknown;
 };
 
+type AccountTypeRow = {
+  id?: unknown;
+  account_type?: unknown;
+  is_active?: unknown;
+};
+
 const updateOptionalFields = [] as const;
-const accountTypeOptions = new Set(["Savings", "Checking", "Current", "Other"]);
+const defaultAccountTypes = ["Savings", "Checking", "Current", "Other"];
 const accountFieldMap = {
   bank_name: "bankName",
   account_type: "accountType",
@@ -90,6 +98,14 @@ function normalizeBankName(row: BankNameRow) {
   };
 }
 
+function normalizeAccountType(row: AccountTypeRow) {
+  return {
+    id: asNumber(row.id) ?? 0,
+    accountType: asString(row.account_type),
+    isActive: row.is_active === undefined ? true : asBoolean(row.is_active),
+  };
+}
+
 function bankNameParams(includeActiveFilter: boolean) {
   const params = new URLSearchParams();
   params.set("limit", "-1");
@@ -100,6 +116,42 @@ function bankNameParams(includeActiveFilter: boolean) {
   );
   if (includeActiveFilter) params.set("filter[is_active][_eq]", "1");
   return params;
+}
+
+function accountTypeParams(includeActiveFilter: boolean) {
+  const params = new URLSearchParams();
+  params.set("limit", "-1");
+  params.set("sort", "account_type");
+  params.set(
+    "fields",
+    includeActiveFilter ? "id,account_type,is_active" : "id,account_type",
+  );
+  if (includeActiveFilter) params.set("filter[is_active][_eq]", "1");
+  return params;
+}
+
+function defaultAccountTypeRows() {
+  return defaultAccountTypes.map((accountType, index) => ({
+    id: index + 1,
+    accountType,
+    isActive: true,
+  }));
+}
+
+function uniqueAccountTypes(rows: ReturnType<typeof normalizeAccountType>[]) {
+  const uniqueByName = new Map<string, ReturnType<typeof normalizeAccountType>>();
+
+  for (const row of rows) {
+    const normalizedName = row.accountType.trim();
+    if (!normalizedName) continue;
+
+    const key = normalizedName.toLowerCase();
+    if (!uniqueByName.has(key)) {
+      uniqueByName.set(key, { ...row, accountType: normalizedName });
+    }
+  }
+
+  return Array.from(uniqueByName.values());
 }
 
 async function getBankNames() {
@@ -122,6 +174,36 @@ async function getBankNames() {
   }
 }
 
+async function getAccountTypes() {
+  try {
+    const res = await directusFetch<DirectusList<AccountTypeRow>>(
+      `/items/bank_account_types?${accountTypeParams(true).toString()}`,
+    );
+    return uniqueAccountTypes([
+      ...defaultAccountTypeRows(),
+      ...(res.data ?? []).map(normalizeAccountType).filter((type) => type.accountType),
+    ]);
+  } catch (error) {
+    if (!isFieldAccessError(error, "is_active")) {
+      if (isDirectusAccessError(error)) return defaultAccountTypeRows();
+      throw error;
+    }
+
+    try {
+      const res = await directusFetch<DirectusList<AccountTypeRow>>(
+        `/items/bank_account_types?${accountTypeParams(false).toString()}`,
+      );
+      return uniqueAccountTypes([
+        ...defaultAccountTypeRows(),
+        ...(res.data ?? []).map(normalizeAccountType),
+      ]);
+    } catch (fallbackError) {
+      if (isDirectusAccessError(fallbackError)) return defaultAccountTypeRows();
+      throw fallbackError;
+    }
+  }
+}
+
 function assertBankName(
   bankName: string,
   bankNames: Array<{ bankName: string }>,
@@ -131,99 +213,120 @@ function assertBankName(
       (bank) => bank.bankName.toLowerCase() === bankName.toLowerCase(),
     )
   ) {
-    throw new Error("Select a valid bank name from the bank names list");
+    throw new ValidationError("Please review the highlighted fields", {
+      bankName: "Select a valid bank name from the bank names list",
+    });
   }
+}
+
+function isValidAccountType(
+  accountType: string,
+  accountTypes: Array<{ accountType: string }>,
+) {
+  return accountTypes.some(
+    (type) => type.accountType.toLowerCase() === accountType.toLowerCase(),
+  );
 }
 
 async function buildUpdatePayload(body: Record<string, unknown>) {
   const payload: Record<string, unknown> = {};
+  const fieldErrors: Record<string, string> = {};
+  const accountTypes = await getAccountTypes();
 
   if ("bankName" in body || "bank_name" in body) {
     const bankName = asString(body.bankName ?? body.bank_name);
-    if (!bankName) throw new Error("Bank name is required");
-    assertBankName(bankName, await getBankNames());
-    payload.bank_name = bankName;
+    if (!bankName) {
+      fieldErrors.bankName = "This field is required";
+    } else {
+      assertBankName(bankName, await getBankNames());
+      payload.bank_name = bankName;
+    }
   }
 
   if ("accountNumber" in body || "account_number" in body) {
     const accountNumber = sanitizeAccountNumber(
       body.accountNumber ?? body.account_number,
     );
-    if (!accountNumber) throw new Error("Account number is required");
-    payload.account_number = accountNumber;
+    if (!accountNumber) fieldErrors.accountNumber = "This field is required";
+    else payload.account_number = accountNumber;
   }
 
   if ("accountType" in body || "account_type" in body) {
     const accountType = asString(body.accountType ?? body.account_type);
-    if (!accountType) throw new Error("Account type is required");
-    if (!accountTypeOptions.has(accountType))
-      throw new Error("Select a valid account type");
-    payload.account_type = accountType;
+    if (!accountType) fieldErrors.accountType = "This field is required";
+    else if (!isValidAccountType(accountType, accountTypes))
+      fieldErrors.accountType = "Select a valid account type";
+    else payload.account_type = accountType;
   }
 
   if ("accountName" in body || "account_name" in body) {
     const accountName = asString(body.accountName ?? body.account_name);
     if (!accountName)
-      throw new Error("Registered business name / account name is required");
-    payload.account_name = accountName;
+      fieldErrors.accountName = "This field is required";
+    else payload.account_name = accountName;
   }
 
   if ("branch" in body) {
     const branch = asString(body.branch);
-    if (!branch) throw new Error("Branch is required");
-    payload.branch = branch;
+    if (!branch) fieldErrors.branch = "This field is required";
+    else payload.branch = branch;
   }
 
   if ("bankDescription" in body || "bank_description" in body) {
     const bankDescription = asString(
       body.bankDescription ?? body.bank_description,
     );
-    if (!bankDescription) throw new Error("Bank description is required");
-    payload.bank_description = bankDescription;
+    if (!bankDescription)
+      fieldErrors.bankDescription = "This field is required";
+    else payload.bank_description = bankDescription;
   }
 
   if ("ifscCode" in body || "ifsc_code" in body) {
     const ifscCode = asString(body.ifscCode ?? body.ifsc_code);
-    if (!ifscCode) throw new Error("IFSC / routing code is required");
-    payload.ifsc_code = ifscCode;
+    if (!ifscCode) fieldErrors.ifscCode = "This field is required";
+    else payload.ifsc_code = ifscCode;
   }
 
   if ("province" in body) {
     const province = asString(body.province);
-    if (!province) throw new Error("Province is required");
-    payload.province = province;
+    if (!province) fieldErrors.province = "This field is required";
+    else payload.province = province;
   }
   if ("city" in body) {
     const city = asString(body.city);
-    if (!city) throw new Error("City / municipality is required");
-    payload.city = city;
+    if (!city) fieldErrors.city = "This field is required";
+    else payload.city = city;
   }
   if ("baranggay" in body) {
     const baranggay = asString(body.baranggay);
-    if (!baranggay) throw new Error("Barangay is required");
-    payload.baranggay = baranggay;
+    if (!baranggay) fieldErrors.baranggay = "This field is required";
+    else payload.baranggay = baranggay;
   }
   if ("email" in body) {
     const email = asString(body.email);
-    if (!email) throw new Error("Email is required");
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      throw new Error("Email must be valid");
-    payload.email = email;
+    if (!email) fieldErrors.email = "This field is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      fieldErrors.email = "Email must be valid";
+    else payload.email = email;
   }
   if ("mobileNo" in body || "mobile_no" in body) {
     const mobileNo = sanitizeMobileNumber(body.mobileNo ?? body.mobile_no);
-    if (!mobileNo) throw new Error("Mobile No. is required");
-    payload.mobile_no = mobileNo;
+    if (!mobileNo) fieldErrors.mobileNo = "This field is required";
+    else payload.mobile_no = mobileNo;
   }
   if ("contactPerson" in body || "contact_person" in body) {
     const contactPerson = asString(
       body.contactPerson ?? body.contact_person,
     );
-    if (!contactPerson) throw new Error("Contact person is required");
-    payload.contact_person = contactPerson;
+    if (!contactPerson) fieldErrors.contactPerson = "This field is required";
+    else payload.contact_person = contactPerson;
   }
   if ("isActive" in body || "is_active" in body)
     payload.is_active = asBoolean(body.isActive ?? body.is_active) ? 1 : 0;
+
+  if (Object.keys(fieldErrors).length > 0) {
+    throw new ValidationError("Please review the highlighted fields", fieldErrors);
+  }
 
   if (Object.keys(payload).length === 0)
     throw new Error("No account changes were provided");

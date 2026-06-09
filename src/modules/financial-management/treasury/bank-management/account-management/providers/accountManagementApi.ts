@@ -4,6 +4,7 @@ import type {
   AccountManagementFieldErrors,
   AccountManagementFormValues,
   AccountManagementQuery,
+  AccountTypeOption,
   BankAccount,
   BankNameOption,
   PsgcOption,
@@ -108,6 +109,22 @@ export const accountManagementApi = {
       "Failed to add bank name",
     );
     return json.bankName;
+  },
+
+  async createAccountType(
+    accountType: string,
+    allowDuplicate = false,
+  ): Promise<AccountTypeOption> {
+    const res = await fetch(`${BASE}/account-types`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountType, allowDuplicate }),
+    });
+    const json = await parseResponse<{ accountType: AccountTypeOption }>(
+      res,
+      "Failed to add account type",
+    );
+    return json.accountType;
   },
 
   async getPsgcOptions(query: {

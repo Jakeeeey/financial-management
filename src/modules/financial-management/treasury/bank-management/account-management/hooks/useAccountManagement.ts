@@ -15,6 +15,7 @@ import type {
 const emptyData: AccountManagementData = {
   accounts: [],
   bankNames: [],
+  accountTypes: [],
   pagination: {
     page: 1,
     pageSize: 10,

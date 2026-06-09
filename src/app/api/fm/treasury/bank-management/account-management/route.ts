@@ -15,6 +15,7 @@ import {
   parseMoney,
   sanitizeAccountNumber,
   sanitizeMobileNumber,
+  ValidationError,
 } from "./_utils";
 
 export const runtime = "nodejs";
@@ -43,6 +44,12 @@ type BankAccountRow = {
 type BankNameRow = {
   id?: unknown;
   bank_name?: unknown;
+  is_active?: unknown;
+};
+
+type AccountTypeRow = {
+  id?: unknown;
+  account_type?: unknown;
   is_active?: unknown;
 };
 
@@ -119,7 +126,7 @@ const createOptionalFields = [
 ] as const;
 
 const bankIdNewestSort = "-created_at,-bank_id";
-const accountTypeOptions = new Set(["Savings", "Checking", "Current", "Other"]);
+const defaultAccountTypes = ["Savings", "Checking", "Current", "Other"];
 const accountFieldMap = {
   bank_name: "bankName",
   account_type: "accountType",
@@ -178,6 +185,14 @@ function normalizeBankName(row: BankNameRow) {
   };
 }
 
+function normalizeAccountType(row: AccountTypeRow) {
+  return {
+    id: asNumber(row.id) ?? 0,
+    accountType: asString(row.account_type),
+    isActive: row.is_active === undefined ? true : asBoolean(row.is_active),
+  };
+}
+
 function uniqueBankNames(rows: ReturnType<typeof normalizeBankName>[]) {
   const uniqueByName = new Map<string, ReturnType<typeof normalizeBankName>>();
 
@@ -192,6 +207,30 @@ function uniqueBankNames(rows: ReturnType<typeof normalizeBankName>[]) {
   }
 
   return Array.from(uniqueByName.values());
+}
+
+function uniqueAccountTypes(rows: ReturnType<typeof normalizeAccountType>[]) {
+  const uniqueByName = new Map<string, ReturnType<typeof normalizeAccountType>>();
+
+  for (const row of rows) {
+    const normalizedName = row.accountType.trim();
+    if (!normalizedName) continue;
+
+    const key = normalizedName.toLowerCase();
+    if (!uniqueByName.has(key)) {
+      uniqueByName.set(key, { ...row, accountType: normalizedName });
+    }
+  }
+
+  return Array.from(uniqueByName.values());
+}
+
+function defaultAccountTypeRows() {
+  return defaultAccountTypes.map((accountType, index) => ({
+    id: index + 1,
+    accountType,
+    isActive: true,
+  }));
 }
 
 function buildAccountParams(
@@ -315,6 +354,18 @@ function bankNameOnlyParams() {
   return params;
 }
 
+function accountTypeParams(includeActiveFilter: boolean) {
+  const params = new URLSearchParams();
+  params.set("limit", "-1");
+  params.set("sort", "account_type");
+  params.set(
+    "fields",
+    includeActiveFilter ? "id,account_type,is_active" : "id,account_type",
+  );
+  if (includeActiveFilter) params.set("filter[is_active][_eq]", "1");
+  return params;
+}
+
 async function getBankNames() {
   try {
     const res = await directusFetch<DirectusList<BankNameRow>>(
@@ -342,11 +393,50 @@ async function getBankNames() {
   }
 }
 
+async function getAccountTypes() {
+  try {
+    const res = await directusFetch<DirectusList<AccountTypeRow>>(
+      `/items/bank_account_types?${accountTypeParams(true).toString()}`,
+    );
+    return uniqueAccountTypes([
+      ...defaultAccountTypeRows(),
+      ...(res.data ?? []).map(normalizeAccountType).filter((type) => type.accountType),
+    ]);
+  } catch (error) {
+    if (!isFieldAccessError(error, "is_active")) {
+      if (isDirectusAccessError(error)) return defaultAccountTypeRows();
+      throw error;
+    }
+
+    try {
+      const res = await directusFetch<DirectusList<AccountTypeRow>>(
+        `/items/bank_account_types?${accountTypeParams(false).toString()}`,
+      );
+      return uniqueAccountTypes([
+        ...defaultAccountTypeRows(),
+        ...(res.data ?? []).map(normalizeAccountType),
+      ]);
+    } catch (fallbackError) {
+      if (isDirectusAccessError(fallbackError)) return defaultAccountTypeRows();
+      throw fallbackError;
+    }
+  }
+}
+
 async function getOptionalBankNames() {
   try {
     return await getBankNames();
   } catch (error) {
     if (isDirectusAccessError(error)) return [];
+    throw error;
+  }
+}
+
+async function getOptionalAccountTypes() {
+  try {
+    return await getAccountTypes();
+  } catch (error) {
+    if (isDirectusAccessError(error)) return defaultAccountTypeRows();
     throw error;
   }
 }
@@ -360,18 +450,31 @@ function assertBankName(
       (bank) => bank.bankName.toLowerCase() === bankName.toLowerCase(),
     )
   ) {
-    throw new Error("Select a valid bank name from the bank names list");
+    throw new ValidationError("Please review the highlighted fields", {
+      bankName: "Select a valid bank name from the bank names list",
+    });
   }
+}
+
+function isValidAccountType(
+  accountType: string,
+  accountTypes: Array<{ accountType: string }>,
+) {
+  return accountTypes.some(
+    (type) => type.accountType.toLowerCase() === accountType.toLowerCase(),
+  );
 }
 
 function normalizeCreatePayload(
   body: Record<string, unknown>,
   bankNames: Array<{ bankName: string }>,
+  accountTypes: Array<{ accountType: string }>,
   userId: number | null,
 ) {
   const openingBalance = parseMoney(
     body.openingBalance ?? body.opening_balance,
   );
+  const fieldErrors: Record<string, string> = {};
   const payload: NormalizedPayload = {
     bank_name: asString(body.bankName ?? body.bank_name),
     account_type: asString(body.accountType ?? body.account_type),
@@ -393,26 +496,31 @@ function normalizeCreatePayload(
   };
 
   if (userId) payload.created_by = userId;
-  if (!payload.bank_name) throw new Error("Bank name is required");
-  if (!payload.account_type) throw new Error("Account type is required");
-  if (!accountTypeOptions.has(payload.account_type))
-    throw new Error("Select a valid account type");
+  if (!payload.bank_name) fieldErrors.bankName = "This field is required";
+  if (!payload.account_type) fieldErrors.accountType = "This field is required";
+  else if (!isValidAccountType(payload.account_type, accountTypes))
+    fieldErrors.accountType = "Select a valid account type";
   if (!payload.account_name)
-    throw new Error("Registered business name / account name is required");
-  if (!payload.account_number) throw new Error("Account number is required");
-  if (!payload.bank_description) throw new Error("Bank description is required");
-  if (!payload.branch) throw new Error("Branch is required");
-  if (!payload.ifsc_code) throw new Error("IFSC / routing code is required");
+    fieldErrors.accountName = "This field is required";
+  if (!payload.account_number) fieldErrors.accountNumber = "This field is required";
+  if (!payload.bank_description)
+    fieldErrors.bankDescription = "This field is required";
+  if (!payload.branch) fieldErrors.branch = "This field is required";
+  if (!payload.ifsc_code) fieldErrors.ifscCode = "This field is required";
   if (openingBalance === null)
-    throw new Error("Opening balance must be a valid amount");
-  if (!payload.province) throw new Error("Province is required");
-  if (!payload.city) throw new Error("City / municipality is required");
-  if (!payload.baranggay) throw new Error("Barangay is required");
-  if (!payload.email) throw new Error("Email is required");
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email))
-    throw new Error("Email must be valid");
-  if (!payload.mobile_no) throw new Error("Mobile No. is required");
-  if (!payload.contact_person) throw new Error("Contact person is required");
+    fieldErrors.openingBalance = "Opening balance must be a valid amount";
+  if (!payload.province) fieldErrors.province = "This field is required";
+  if (!payload.city) fieldErrors.city = "This field is required";
+  if (!payload.baranggay) fieldErrors.baranggay = "This field is required";
+  if (!payload.email) fieldErrors.email = "This field is required";
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email))
+    fieldErrors.email = "Email must be valid";
+  if (!payload.mobile_no) fieldErrors.mobileNo = "This field is required";
+  if (!payload.contact_person)
+    fieldErrors.contactPerson = "This field is required";
+  if (Object.keys(fieldErrors).length > 0) {
+    throw new ValidationError("Please review the highlighted fields", fieldErrors);
+  }
   assertBankName(payload.bank_name, bankNames);
   return payload;
 }
@@ -517,6 +625,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const { res: accountsRes, query } = await fetchAccounts(searchParams);
     const bankNames = await getOptionalBankNames();
+    const accountTypes = await getOptionalAccountTypes();
     const total = asNumber(accountsRes.meta?.filter_count) ?? 0;
     const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
 
@@ -525,6 +634,7 @@ export async function GET(request: NextRequest) {
         .map(normalizeAccount)
         .filter((account) => account.bankId > 0),
       bankNames,
+      accountTypes,
       pagination: {
         page: Math.min(query.page, totalPages),
         pageSize: query.pageSize,
@@ -553,7 +663,8 @@ export async function POST(request: NextRequest) {
     const cookieStore = await cookies();
     const userId = getTokenUserId(cookieStore.get("vos_access_token")?.value);
     const bankNames = await getBankNames();
-    const payload = normalizeCreatePayload(body, bankNames, userId);
+    const accountTypes = await getAccountTypes();
+    const payload = normalizeCreatePayload(body, bankNames, accountTypes, userId);
     const res = await createBankAccount(payload);
     return NextResponse.json(
       { account: normalizeAccount(res.data ?? {}) },

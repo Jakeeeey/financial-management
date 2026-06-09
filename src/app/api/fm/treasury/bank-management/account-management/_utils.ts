@@ -19,30 +19,34 @@ export class DirectusRequestError extends Error {
   }
 }
 
+export class ValidationError extends Error {
+  status: number;
+  fieldErrors: Record<string, string>;
+
+  constructor(message: string, fieldErrors: Record<string, string>) {
+    super(message);
+    this.name = "ValidationError";
+    this.status = 400;
+    this.fieldErrors = fieldErrors;
+  }
+}
+
 type FieldNameMap = Record<string, string>;
+type DirectusErrorItem = {
+  message?: unknown;
+  extensions?: Record<string, unknown>;
+};
 
 function snakeToCamel(value: string) {
   return value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 }
 
-function directusMessages(body: string) {
+function directusErrors(body: string): DirectusErrorItem[] {
   try {
-    const parsed = JSON.parse(body) as {
-      errors?: Array<{ message?: unknown; extensions?: Record<string, unknown> }>;
-    };
-    return (parsed.errors ?? [])
-      .map((item) =>
-        [
-          typeof item.message === "string" ? item.message : "",
-          typeof item.extensions?.reason === "string" ? item.extensions.reason : "",
-          typeof item.extensions?.field === "string" ? item.extensions.field : "",
-        ]
-          .filter(Boolean)
-          .join(" "),
-      )
-      .filter(Boolean);
+    const parsed = JSON.parse(body) as { errors?: DirectusErrorItem[] };
+    return parsed.errors ?? [];
   } catch {
-    return body ? [body] : [];
+    return body ? [{ message: body }] : [];
   }
 }
 
@@ -53,27 +57,67 @@ function humanizeFieldName(value: string) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function directusFieldNames(item: DirectusErrorItem) {
+  const extensions = item.extensions ?? {};
+  const candidates = [
+    extensions.field,
+    extensions.invalid,
+    extensions.path,
+    extensions.collection,
+  ];
+  const fields = new Set<string>();
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") fields.add(candidate);
+    if (Array.isArray(candidate)) {
+      for (const value of candidate) {
+        if (typeof value === "string") fields.add(value);
+      }
+    }
+  }
+
+  return Array.from(fields);
+}
+
 export function directusFieldErrors(
   error: DirectusRequestError,
   fieldMap: FieldNameMap = {},
 ) {
-  const messages = directusMessages(error.body);
+  const errors = directusErrors(error.body);
   const fieldErrors: Record<string, string> = {};
   const knownFields = Object.keys(fieldMap);
 
   for (const fieldName of knownFields) {
     const lowerField = fieldName.toLowerCase();
-    const matchingMessage = messages.find((message) =>
-      message.toLowerCase().includes(lowerField),
+    const matchingError = errors.find((item) =>
+      [
+        typeof item.message === "string" ? item.message : "",
+        typeof item.extensions?.reason === "string" ? item.extensions.reason : "",
+        ...directusFieldNames(item),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(lowerField),
     );
 
-    if (!matchingMessage) continue;
+    if (!matchingError) continue;
 
     const formField = fieldMap[fieldName] || snakeToCamel(fieldName);
+    const matchingMessage = [
+      typeof matchingError.message === "string" ? matchingError.message : "",
+      typeof matchingError.extensions?.reason === "string"
+        ? matchingError.extensions.reason
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const lowerMessage = matchingMessage.toLowerCase();
+
     fieldErrors[formField] =
-      matchingMessage.toLowerCase().includes("required") ||
-      matchingMessage.toLowerCase().includes("null") ||
-      matchingMessage.toLowerCase().includes("default")
+      lowerMessage.includes("required") ||
+      lowerMessage.includes("null") ||
+      lowerMessage.includes("default") ||
+      lowerMessage.includes("not nullable")
         ? "This field is required"
         : `${humanizeFieldName(formField)} needs attention`;
   }
@@ -86,6 +130,16 @@ export function jsonError(
   fallback = "Internal Server Error",
   fieldMap: FieldNameMap = {},
 ) {
+  if (error instanceof ValidationError) {
+    return NextResponse.json(
+      {
+        error: error.message,
+        fieldErrors: error.fieldErrors,
+      },
+      { status: error.status },
+    );
+  }
+
   if (error instanceof DirectusRequestError) {
     const fieldErrors = directusFieldErrors(error, fieldMap);
     const hasFieldErrors = Object.keys(fieldErrors).length > 0;
