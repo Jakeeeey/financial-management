@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
       page: asNumber(searchParams.get("page")) ?? 1,
       pageSize: asNumber(searchParams.get("page_size") ?? searchParams.get("pageSize")) ?? 10,
       search: asString(searchParams.get("q") ?? searchParams.get("search")),
+      storeTypeId: asNumber(searchParams.get("store_type_id") ?? searchParams.get("storeTypeId")),
     });
 
     return NextResponse.json(data);

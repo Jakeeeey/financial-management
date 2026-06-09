@@ -1,6 +1,6 @@
 "use client";
 
-import React, {useState, useEffect} from "react";
+import React, {useState, useEffect, useMemo, useCallback} from "react";
 import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription} from "@/components/ui/sheet";
 import {
     Dialog,
@@ -34,6 +34,7 @@ import {toast} from "sonner";
 import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
 import type { Payee } from "@/modules/financial-management/payee-registration/types/payee.schema";
 import { StickyTableWrapper } from "./StickyTableWrapper";
+import { formatCurrency } from "../utils/disbursement-utils";
 
 export interface ExtendedDisbursement extends Disbursement {
     payeeId?: number;
@@ -181,9 +182,10 @@ export function DisbursementCreateSheet({
     const [previewDocNo, setPreviewDocNo] = useState("");
     const [loadingDocNo, setLoadingDocNo] = useState(false);
 
-    const totalAmount = payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
-    const totalPayments = payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
-    const paymentDifference = totalAmount - totalPayments;
+    const totalAmount = useMemo(() => payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payables]);
+    const totalPayments = useMemo(() => payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payments]);
+    const paymentDifference = useMemo(() => totalAmount - totalPayments, [totalAmount, totalPayments]);
+
     const isNonTradeVoucher = transactionTypeId === 2;
     const payeeSupplierType = isNonTradeVoucher ? "NON-TRADE" : "TRADE";
     const payeeSupplierTypeLabel = isNonTradeVoucher ? "Non-Trade" : "Trade";
@@ -295,23 +297,23 @@ export function DisbursementCreateSheet({
         }
     }, [open, editData, departmentId, departments]);
 
-    const handleAddPayable = () => setPayables([...payables, {referenceNo: "", date: today, amount: 0, remarks: ""}]);
+    const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: today, amount: 0, remarks: ""}]), [today]);
 
     // Pre-fill payment amount with the outstanding balance; auto-select COA if only one payment option exists
-    const handleAddPayment = () => {
+    const handleAddPayment = useCallback(() => {
         const remaining = Number((totalAmount - totalPayments).toFixed(2));
         const paymentCoas = coas.filter(isPaymentCOA);
         const autoCoaId = paymentCoas.length === 1 ? paymentCoas[0].coaId : undefined;
-        setPayments([...payments, {
+        setPayments((prev) => [...prev, {
             checkNo: "",
             date: today,
             amount: remaining > 0 ? remaining : 0,
             remarks: "",
             coaId: autoCoaId,
         }]);
-    };
+    }, [totalAmount, totalPayments, coas, today]);
 
-    const handlePayeeCreated = async (createdPayee?: Payee) => {
+    const handlePayeeCreated = useCallback(async (createdPayee?: Payee) => {
         try {
             const refreshed = await disbursementProvider.getSuppliers(payeeSupplierType);
             const nextSuppliers = Array.isArray(refreshed) ? refreshed : [];
@@ -334,9 +336,9 @@ export function DisbursementCreateSheet({
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "Payee created, but the payee list could not be refreshed.");
         }
-    };
+    }, [payeeSupplierType, payeeSupplierTypeLabel, setPayeeId, setSuppliers]);
 
-    const handleOpenPoModal = async (supplierIdOverride?: number) => {
+    const handleOpenPoModal = useCallback(async (supplierIdOverride?: number) => {
         const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
         if (!sid) return toast.error("Please select a Payee first.");
         setLoadingPos(true);
@@ -353,25 +355,24 @@ export function DisbursementCreateSheet({
         } finally {
             setLoadingPos(false);
         }
-    };
+    }, [payeeId]);
 
     // Auto-open PO modal when a Trade payee is selected (no extra click needed)
-    const handlePayeeSelect = (val: number) => {
+    const handlePayeeSelect = useCallback((val: number) => {
         setPayeeId(val);
         if (!isNonTradeVoucher && val) {
             handleOpenPoModal(val);
         }
-    };
+    }, [isNonTradeVoucher, handleOpenPoModal]);
 
-    const handleImportPos = () => {
-        const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
+    const calculateTaxedPayables = useCallback((selectedPos: UnpaidPoDto[], currentTaxTypes: Record<string, "VAT" | "NON_VAT">, date: string): PayableLine[] => {
         const newPayables: PayableLine[] = [];
         const VAT_RATE = 0.12;
         const EWT_RATE = 0.01;
 
-        selected.forEach(po => {
+        selectedPos.forEach(po => {
             const baseRef = `${po.poNo} / ${po.receiptNo}`;
-            const taxType = taxTypes[po.uniqueKey] || "VAT";
+            const taxType = currentTaxTypes[po.uniqueKey] || "VAT";
 
             if (taxType === "VAT") {
                 const netAmount = po.amountDue / (1 + VAT_RATE);
@@ -379,21 +380,21 @@ export function DisbursementCreateSheet({
                 const ewtAmount = netAmount * EWT_RATE;
                 newPayables.push({
                     referenceNo: baseRef,
-                    date: today,
+                    date: date,
                     amount: Number(netAmount.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal Net of VAT`
                 });
                 newPayables.push({
                     referenceNo: baseRef,
-                    date: today,
+                    date: date,
                     amount: Number(vatAmount.toFixed(2)),
                     coaId: 9,
                     remarks: `Input VAT (12%)`
                 });
                 newPayables.push({
                     referenceNo: baseRef,
-                    date: today,
+                    date: date,
                     amount: -Number(ewtAmount.toFixed(2)),
                     coaId: 38,
                     remarks: `EWT Deduction (1%)`
@@ -401,18 +402,24 @@ export function DisbursementCreateSheet({
             } else {
                 newPayables.push({
                     referenceNo: baseRef,
-                    date: today,
+                    date: date,
                     amount: Number(po.amountDue.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal (Non-VAT)`
                 });
             }
         });
+        return newPayables;
+    }, []);
 
-        setPayables([...payables, ...newPayables]);
+    const handleImportPos = useCallback(() => {
+        const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
+        const newPayables = calculateTaxedPayables(selected, taxTypes, today);
+
+        setPayables((prev) => [...prev, ...newPayables]);
         setIsPoModalOpen(false);
         toast.success(`Imported ${selected.length} record(s) successfully`);
-    };
+    }, [unpaidPos, selectedPoIds, taxTypes, today, calculateTaxedPayables]);
 
     const handleOpenMemoModal = async () => {
         if (!payeeId) return toast.error("Please select a Payee first.");
@@ -451,6 +458,11 @@ export function DisbursementCreateSheet({
         if (!divisionId) return toast.error("Division is required.");
         if (!departmentId) return toast.error("Department is required.");
         if (totalAmount <= 0) return toast.error("Voucher total must be greater than 0.");
+
+        const invalidPaymentCoa = payments.some(p => p.coaId == null);
+        if (invalidPaymentCoa) {
+            return toast.error("All payment lines must have a valid GL Account (COA) selected.");
+        }
 
         const payload: DisbursementPayload = {
             docNo: editData ? editData.docNo : undefined,
@@ -712,19 +724,19 @@ export function DisbursementCreateSheet({
                                     <div className="space-y-1">
                                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Total Payables</span>
                                         <div className="text-sm font-black text-foreground">
-                                            ₱ {totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {formatCurrency(totalAmount)}
                                         </div>
                                     </div>
                                     <div className="space-y-1">
                                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Total Payments</span>
                                         <div className="text-sm font-black text-foreground">
-                                            ₱ {totalPayments.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {formatCurrency(totalPayments)}
                                         </div>
                                     </div>
                                     <div className="space-y-1">
                                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Difference / Balance</span>
                                         <div className={cn("text-sm font-black", paymentDifference === 0 ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500")}>
-                                            ₱ {paymentDifference.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {formatCurrency(paymentDifference)}
                                             {paymentDifference === 0 && (
                                                 <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200/50">Balanced</span>
                                             )}

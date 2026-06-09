@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useCustomerBillingSummary } from "./hooks/useCustomerBillingSummary";
@@ -104,10 +104,9 @@ export default function CustomerBillingSummaryModule() {
     classifications,
   } = useCustomerBillingSummary();
 
-
   const renderSortIcon = (key: string) => {
     if (sortBy !== key) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-zinc-400/70" />;
-    return sortOrder === "asc" 
+    return sortOrder === "asc"
       ? <ArrowUp className="ml-1 h-3.5 w-3.5 text-zinc-900 dark:text-zinc-100 font-bold" />
       : <ArrowDown className="ml-1 h-3.5 w-3.5 text-zinc-900 dark:text-zinc-100 font-bold" />;
   };
@@ -158,7 +157,7 @@ export default function CustomerBillingSummaryModule() {
         : (inv.net_amount || inv.total_amount || 0);
       return sum + net;
     }, 0);
-    const totalReturns = details.salesReturns.reduce((sum, ret) => sum + (ret.amount || 0), 0);
+    const totalReturns = details.salesReturns.reduce((sum, ret) => sum + (ret.total_amount || 0), 0);
     const totalMemos = details.customerMemos.reduce((sum, m) => {
       const amt = m.amount || 0;
       if (m.type === 1) {
@@ -194,7 +193,7 @@ export default function CustomerBillingSummaryModule() {
         : (inv.net_amount || inv.total_amount || 0);
       return sum + net;
     }, 0);
-    const totalReturns = salesReturns.reduce((sum, ret) => sum + (ret.amount || 0), 0);
+    const totalReturns = salesReturns.reduce((sum, ret) => sum + (ret.total_amount || 0), 0);
     const totalMemos = customerMemos.reduce((sum, m) => {
       const amt = m.amount || 0;
       if (m.type === 1) {
@@ -351,7 +350,8 @@ export default function CustomerBillingSummaryModule() {
       (ret) =>
         ret.return_no?.toLowerCase().includes(returnSearch.toLowerCase()) ||
         ret.invoice_no?.toLowerCase().includes(returnSearch.toLowerCase()) ||
-        ret.remarks?.toLowerCase().includes(returnSearch.toLowerCase())
+        ret.remarks?.toLowerCase().includes(returnSearch.toLowerCase()) ||
+        String(ret.total_amount || "").includes(returnSearch)
     );
   }, [details, returnSearch]);
 
@@ -383,77 +383,104 @@ export default function CustomerBillingSummaryModule() {
     );
   }, [details, paymentSearch]);
 
-  const handleExportPDF = () => {
+  const handleExportPDF = useCallback(() => {
     if (!details) return;
-    const doc = new jsPDF({ orientation: "landscape" });
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const headerBgColor = "#18181B"; // Zinc-900
+    const headerTextColor = "#FFFFFF";
+    const primaryColor = "#4F46E5"; // Indigo-600
+    const secondaryTextColor = "#A1A1AA"; // Zinc-400
+    const defaultTextColor = "#18181B"; // Zinc-900
+    const tableHeaderBg = "#3F3F46"; // Zinc-700
+    const tableHeaderTextColor = "#FFFFFF";
 
-    // Title Block
-    doc.setFillColor(24, 24, 27);
-    doc.rect(0, 0, pageW, 30, "F");
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.setTextColor(255, 255, 255);
-    doc.text("Customer Billing & Configuration Report", 14, 18);
-
+    // Set default text styles
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(180, 180, 180);
-    doc.text(
-      `Generated on: ${new Date().toLocaleDateString("en-PH")}   |   Customer: ${details.customer.customer_name}`,
-      14,
-      25
-    );
+    doc.setTextColor(defaultTextColor);
 
-    // Profile details section
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(24, 24, 27);
-    doc.text("CUSTOMER PROFILE", 14, 40);
+    // Function to add header to each page
+    const addHeader = (pageNumber: number, totalPages: number) => {
+      doc.setFillColor(headerBgColor);
+      doc.rect(0, 0, pageW, 25, "F");
 
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Customer Name: ${details.customer.customer_name || "—"}`, 14, 46);
-    doc.text(`Customer Code: ${details.customer.customer_code || "—"}`, 14, 51);
-    doc.text(`Store Name: ${details.customer.store_name || "—"}`, 14, 56);
-    doc.text(`Store Signage: ${details.customer.store_signage || "—"}`, 14, 61);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(headerTextColor);
+      doc.text("Customer Billing & Configuration Report", margin, 10);
 
-    doc.text(`Contact: ${details.customer.contact_number || "—"}`, pageW / 3, 46);
-    doc.text(`Email: ${details.customer.customer_email || "—"}`, pageW / 3, 51);
-    doc.text(`TIN: ${details.customer.customer_tin || "—"}`, pageW / 3, 56);
-    doc.text(
-      `Address: ${
-        [details.customer.brgy, details.customer.city, details.customer.province]
-          .filter(Boolean)
-          .join(", ") || "—"
-      }`,
-      pageW / 3,
-      61
-    );
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(secondaryTextColor);
+      doc.text(
+        `Generated: ${new Date().toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })} | Customer: ${details.customer.customer_name || "N/A"} (${details.customer.customer_code || "N/A"})`,
+        margin,
+        15
+      );
 
-    doc.text(`VAT Registered: ${details.customer.isVAT ? "Yes" : "No"}`, (pageW * 2) / 3, 46);
-    doc.text(`EWT Exempt: ${details.customer.isEWT ? "Yes" : "No"}`, (pageW * 2) / 3, 51);
-    
-    const termName = details.customer.payment_term_detail?.payment_name || "No Terms";
-    const termDays = details.customer.payment_term_detail?.payment_days != null ? ` (${details.customer.payment_term_detail.payment_days} Days)` : "";
-    doc.text(`Payment Terms: ${termName}${termDays}`, (pageW * 2) / 3, 56);
+      // Page Number
+      doc.setTextColor(secondaryTextColor);
+      doc.text(`Page ${pageNumber} of ${totalPages}`, pageW - margin, 15, { align: "right" });
+    };
 
-    const globalPct = details.customer.discount_type?.total_percent;
-    const pctStr = globalPct != null ? `${Number(globalPct).toFixed(2)}%` : "0.00%";
-    doc.text(
-      `Default Discount: ${details.customer.discount_type?.discount_type || "None"} (${pctStr})`,
-      (pageW * 2) / 3,
-      61
-    );
+    // Main Content Generation
+    let currentY = 0; // Tracks the current Y position for content
 
-    // Bank Accounts table
+    // Initial Header
+    addHeader(1, 0); // Will update totalPages later
+    currentY = 30; // Start content below the header
+
+    // --- CUSTOMER PROFILE SECTION ---
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text("BANK ACCOUNTS", 14, 72);
+    doc.setTextColor(defaultTextColor);
+    doc.text("CUSTOMER PROFILE", margin, currentY);
+    currentY += 5;
+
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+
+    const customerDetails = [
+      `Name: ${details.customer.customer_name || "—"}`,
+      `Code: ${details.customer.customer_code || "—"}`,
+      `Store Name: ${details.customer.store_name || "—"}`,
+      `Signage: ${details.customer.store_signage || "—"}`,
+      `Contact: ${details.customer.contact_number || "—"}`,
+      `Email: ${details.customer.customer_email || "—"}`,
+      `TIN: ${details.customer.customer_tin || "—"}`,
+      `Address: ${[details.customer.brgy, details.customer.city, details.customer.province].filter(Boolean).join(", ") || "—"}`,
+      `VAT Registered: ${details.customer.isVAT ? "Yes" : "No"}`,
+      `EWT Exempt: ${details.customer.isEWT ? "Yes" : "No"}`,
+      `Payment Terms: ${details.customer.payment_term_detail?.payment_name || "No Terms"} (${details.customer.payment_term_detail?.payment_days ?? 0} Days)`,
+      `Default Discount: ${details.customer.discount_type?.discount_type || "None"} (${details.customer.discount_type?.total_percent != null ? `${Number(details.customer.discount_type.total_percent).toFixed(2)}%` : "0.00%"})`,
+    ];
+
+    let xOffset = margin;
+    let detailY = currentY + 3;
+    customerDetails.forEach((detail, index) => {
+      doc.text(detail, xOffset, detailY);
+      if ((index + 1) % 4 === 0) { // Arrange in 3 columns for better readability
+        xOffset = margin;
+        detailY += 4;
+      } else {
+        xOffset += (pageW - 2 * margin) / 3; // Approx 1/3 of page width
+      }
+    });
+    currentY = detailY + 5;
+
+    // --- BANK ACCOUNTS TABLE ---
+    currentY += 5;
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(defaultTextColor);
+    doc.text("REGISTERED BANK ACCOUNTS", margin, currentY);
+    currentY += 3;
 
     autoTable(doc, {
-      startY: 75,
+      startY: currentY,
       head: [["Bank Name", "Account Name", "Account Number", "Account Type", "Branch", "Primary"]],
       body: details.bankAccounts.map((b) => [
         b.bank_name || "—",
@@ -463,25 +490,31 @@ export default function CustomerBillingSummaryModule() {
         b.branch_of_account || "—",
         b.is_primary ? "Yes" : "No",
       ]),
-      headStyles: { fillColor: [50, 50, 50], fontSize: 8, textColor: 255 },
-      bodyStyles: { fontSize: 8 },
-      margin: { left: 14, right: 14 },
+      styles: { fontSize: 7, cellPadding: 1.5, lineColor: "#E4E4E7", lineWidth: 0.1 }, // Zinc-200
+      headStyles: { fillColor: tableHeaderBg, textColor: tableHeaderTextColor, fontStyle: "bold", fontSize: 7, cellPadding: 2 },
+      alternateRowStyles: { fillColor: "#FAFAFA" }, // Zinc-50
+      margin: { left: margin, right: margin },
+      didDrawPage: (data) => {
+        addHeader(data.pageNumber, doc.internal.pages.length - 1); // Pass total pages for correct numbering
+      }
     });
+    currentY = (doc as any).lastAutoTable.finalY + 5;
 
-    const finalY1 = (doc as any).lastAutoTable.finalY || 75;
-
-    // Supplier Discount overrides
+    // --- DISCOUNT OVERRIDES & PRODUCT PRICING TABLE ---
+    currentY += 5;
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text("DISCOUNT OVERRIDES & PRODUCT PRICING", 14, finalY1 + 10);
+    doc.setTextColor(defaultTextColor);
+    doc.text("DISCOUNT OVERRIDES & PRODUCT PRICING", margin, currentY);
+    currentY += 3;
 
     autoTable(doc, {
-      startY: finalY1 + 13,
-      head: [["Type", "Target (Supplier/Category/Product)", "Override Detail", "Total Value"]],
+      startY: currentY,
+      head: [["Type", "Target (Supplier/Category/Product)", "Override Detail", "Value"]],
       body: [
         ...details.supplierCategoryDiscounts.map((d) => [
           "Supplier Override",
-          d.supplier_id?.supplier_name + (d.category_id?.category_name ? ` / ${d.category_id.category_name}` : " (All Categories)"),
+          (d.supplier_id?.supplier_name || "—") + (d.category_id?.category_name ? ` / ${d.category_id.category_name}` : " (All Categories)"),
           d.discount_type?.discount_type || "—",
           d.discount_type?.total_percent != null ? `${Number(d.discount_type.total_percent).toFixed(2)}%` : "—",
         ]),
@@ -490,186 +523,220 @@ export default function CustomerBillingSummaryModule() {
           p.product_id?.product_name || "—",
           p.discount_type?.discount_type || "Custom Price Only",
           p.unit_price != null
-            ? `Price: PHP ${p.unit_price.toFixed(2)}`
+            ? formatCurrency(p.unit_price)
             : (p.discount_type?.total_percent != null ? `${Number(p.discount_type.total_percent).toFixed(2)}%` : "—"),
         ]),
       ],
-      headStyles: { fillColor: [50, 50, 50], fontSize: 8, textColor: 255 },
-      bodyStyles: { fontSize: 8 },
-      margin: { left: 14, right: 14 },
+      styles: { fontSize: 7, cellPadding: 1.5, lineColor: "#E4E4E7", lineWidth: 0.1 },
+      headStyles: { fillColor: tableHeaderBg, textColor: tableHeaderTextColor, fontStyle: "bold", fontSize: 7, cellPadding: 2 },
+      alternateRowStyles: { fillColor: "#FAFAFA" },
+      margin: { left: margin, right: margin },
+      didDrawPage: (data) => {
+        addHeader(data.pageNumber, doc.internal.pages.length - 1);
+      }
     });
+    currentY = (doc as any).lastAutoTable.finalY + 5;
 
     // Add page for transactions
     doc.addPage();
+    currentY = 30; // Reset Y for new page content
 
-    doc.setFillColor(24, 24, 27);
-    doc.rect(0, 0, pageW, 30, "F");
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(255, 255, 255);
-    doc.text("CUSTOMER HISTORY & STATEMENTS", 14, 18);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(180, 180, 180);
-    doc.text(
-      `Customer: ${details.customer.customer_name} (${details.customer.customer_code})`,
-      14,
-      25
-    );
-
-    doc.setTextColor(24, 24, 27);
+    // --- SALES INVOICES RECORD ---
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.text("SALES INVOICES RECORD", 14, 40);
+    doc.setTextColor(defaultTextColor);
+    doc.text("SALES INVOICES RECORD", margin, currentY);
+    currentY += 3;
 
     autoTable(doc, {
-      startY: 44,
+      startY: currentY,
       head: [["Invoice No", "Date", "Due Date", "Salesman", "Gross Amount", "Discounts", "Net Amount", "Status"]],
       body: details.salesInvoices.map((inv) => [
         inv.invoice_no || "—",
-        inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString("en-PH") : "—",
-        inv.due_date ? new Date(inv.due_date).toLocaleDateString("en-PH") : "—",
+        formatDate(inv.invoice_date),
+        formatDate(inv.due_date),
         inv.salesman_id?.salesman_name || "—",
-        inv.gross_amount?.toFixed(2) || "0.00",
-        inv.discount_amount?.toFixed(2) || "0.00",
-        inv.net_amount?.toFixed(2) || inv.total_amount?.toFixed(2) || "0.00",
+        formatCurrency(inv.gross_amount || 0),
+        formatCurrency(inv.discount_amount || 0),
+        formatCurrency(inv.net_amount || inv.total_amount || 0),
         inv.transaction_status || "—",
       ]),
-      headStyles: { fillColor: [24, 24, 27], fontSize: 8, textColor: 255 },
-      bodyStyles: { fontSize: 8 },
-      alternateRowStyles: { fillColor: [245, 245, 245] },
-      margin: { left: 14, right: 14 },
+      styles: { fontSize: 7, cellPadding: 1.5, lineColor: "#E4E4E7", lineWidth: 0.1 },
+      headStyles: { fillColor: tableHeaderBg, textColor: tableHeaderTextColor, fontStyle: "bold", fontSize: 7, cellPadding: 2 },
+      alternateRowStyles: { fillColor: "#FAFAFA" },
+      margin: { left: margin, right: margin },
+      didDrawPage: (data) => {
+        addHeader(data.pageNumber, doc.internal.pages.length - 1);
+      }
     });
+    currentY = (doc as any).lastAutoTable.finalY + 5;
 
-    const finalY3 = (doc as any).lastAutoTable.finalY || 44;
+    // --- SALES RETURNS LEDGER ---
+    if (details.salesReturns.length > 0) {
+        currentY += 5;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(defaultTextColor);
+        doc.text("SALES RETURNS LEDGER", margin, currentY);
+        currentY += 3;
 
+        autoTable(doc, {
+            startY: currentY,
+            head: [["Return No", "Date", "Invoice Ref", "Gross Amount", "Discount", "Net Amount", "Remarks"]],
+            body: details.salesReturns.map((ret) => [
+                ret.return_no || "—",
+                formatDate(ret.return_date),
+                ret.invoice_no || "—",
+                formatCurrency(ret.gross_amount || 0),
+                formatCurrency(ret.discount_amount || 0),
+                formatCurrency(ret.total_amount || 0),
+                ret.remarks || "—",
+            ]),
+            styles: { fontSize: 7, cellPadding: 1.5, lineColor: "#E4E4E7", lineWidth: 0.1 },
+            headStyles: { fillColor: tableHeaderBg, textColor: tableHeaderTextColor, fontStyle: "bold", fontSize: 7, cellPadding: 2 },
+            alternateRowStyles: { fillColor: "#FAFAFA" },
+            margin: { left: margin, right: margin },
+            didDrawPage: (data) => {
+                addHeader(data.pageNumber, doc.internal.pages.length - 1);
+            }
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 5;
+    }
+
+    // --- CUSTOMER CREDIT & DEBIT MEMOS ---
+    currentY += 5;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.text("CUSTOMER CREDIT & DEBIT MEMOS", 14, finalY3 + 10);
+    doc.setTextColor(defaultTextColor);
+    doc.text("CUSTOMER CREDIT & DEBIT MEMOS", margin, currentY);
+    currentY += 3;
 
     autoTable(doc, {
-      startY: finalY3 + 14,
-      head: [["Memo Number", "Date Created", "Type", "Supplier Target", "GL Account Title", "Amount", "Status"]],
+      startY: currentY,
+      head: [["Memo Number", "Date Created", "Type", "Supplier Target", "GL Account", "Amount", "Status"]],
       body: details.customerMemos.map((m) => [
         m.memo_number || "—",
-        m.created_at ? new Date(m.created_at).toLocaleDateString("en-PH") : "—",
+        formatDate(m.created_at),
         m.type === 1 ? "Debit Memo" : "Credit Memo",
         m.supplier_id?.supplier_name || "—",
         m.chart_of_account?.account_title || "—",
-        m.amount?.toFixed(2) || "0.00",
+        formatCurrency(m.amount || 0),
         m.status || "—",
       ]),
-      headStyles: { fillColor: [24, 24, 27], fontSize: 8, textColor: 255 },
-      bodyStyles: { fontSize: 8 },
-      alternateRowStyles: { fillColor: [245, 245, 245] },
-      margin: { left: 14, right: 14 },
+      styles: { fontSize: 7, cellPadding: 1.5, lineColor: "#E4E4E7", lineWidth: 0.1 },
+      headStyles: { fillColor: tableHeaderBg, textColor: tableHeaderTextColor, fontStyle: "bold", fontSize: 7, cellPadding: 2 },
+      alternateRowStyles: { fillColor: "#FAFAFA" },
+      margin: { left: margin, right: margin },
+      didDrawPage: (data) => {
+        addHeader(data.pageNumber, doc.internal.pages.length - 1);
+      }
     });
+    currentY = (doc as any).lastAutoTable.finalY + 5;
 
-    // Add payments history table if present
+    // --- PAYMENTS RECEIVED HISTORY ---
     if (details.payments.length > 0) {
       doc.addPage();
-      
-      doc.setFillColor(24, 24, 27);
-      doc.rect(0, 0, pageW, 30, "F");
+      currentY = 30; // Reset Y for new page content
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(255, 255, 255);
-      doc.text("CUSTOMER PAYMENT TRANSACTIONS RECORD", 14, 18);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(180, 180, 180);
-      doc.text(
-        `Customer: ${details.customer.customer_name} (${details.customer.customer_code})`,
-        14,
-        25
-      );
-
-      doc.setTextColor(24, 24, 27);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
-      doc.text("PAYMENTS RECEIVED HISTORY", 14, 40);
+      doc.setTextColor(defaultTextColor);
+      doc.text("PAYMENTS RECEIVED HISTORY", margin, currentY);
+      currentY += 3;
 
       autoTable(doc, {
-        startY: 44,
+        startY: currentY,
         head: [["Collection Receipt", "Date Paid", "Invoice Ref", "Reference No.", "Amount Paid"]],
         body: details.payments.map((p) => [
           p.collection_id?.collection_receipt_no || "—",
-          p.date_paid ? new Date(p.date_paid).toLocaleDateString("en-PH") : "—",
+          formatDate(p.date_paid),
           p.invoice_id?.invoice_no || "—",
           p.reference_no || "—",
-          p.paid_amount?.toFixed(2) || "0.00",
+          formatCurrency(p.paid_amount || 0),
         ]),
-        headStyles: { fillColor: [24, 24, 27], fontSize: 8, textColor: 255 },
-        bodyStyles: { fontSize: 8 },
-        alternateRowStyles: { fillColor: [245, 245, 245] },
-        margin: { left: 14, right: 14 },
+        styles: { fontSize: 7, cellPadding: 1.5, lineColor: "#E4E4E7", lineWidth: 0.1 },
+        headStyles: { fillColor: tableHeaderBg, textColor: tableHeaderTextColor, fontStyle: "bold", fontSize: 7, cellPadding: 2 },
+        alternateRowStyles: { fillColor: "#FAFAFA" },
+        margin: { left: margin, right: margin },
+        didDrawPage: (data) => {
+          addHeader(data.pageNumber, doc.internal.pages.length - 1);
+        }
       });
+      currentY = (doc as any).lastAutoTable.finalY + 5;
     }
-    // Add AI Payment analysis block if present
+
+    // --- AI CREDIT & PAYMENT RELIABILITY ANALYSIS ---
     if (aiAnalysis) {
       doc.addPage();
-      
-      doc.setFillColor(24, 24, 27);
-      doc.rect(0, 0, pageW, 30, "F");
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(255, 255, 255);
-      doc.text("AI CREDIT & PAYMENT RELIABILITY ANALYSIS", 14, 18);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(180, 180, 180);
-      doc.text(
-        `Customer: ${details.customer.customer_name} (${details.customer.customer_code})`,
-        14,
-        25
-      );
-
-      doc.setTextColor(24, 24, 27);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text("PREDICTIVE ANALYSIS METRICS", 14, 40);
-
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Reliability Score: ${aiAnalysis.score}/100`, 14, 48);
-      doc.text(`Rating Grade: ${aiAnalysis.grade} (${aiAnalysis.status})`, 14, 53);
-      doc.text(`Risk Evaluation: ${aiAnalysis.riskLevel} Risk`, 14, 58);
-      doc.text(`On-Time Payment Rate: ${aiAnalysis.onTimeRate}%`, 14, 63);
-      doc.text(`Average Payment Delay: ${aiAnalysis.averageDelay} days`, 14, 68);
+      currentY = 30; // Reset Y for new page content
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
-      doc.text("KEY HISTORICAL FINDINGS", 14, 78);
+      doc.setTextColor(primaryColor); // Use a distinct color for AI section header
+      doc.text("AI CREDIT & PAYMENT RELIABILITY ANALYSIS", margin, currentY);
+      currentY += 5;
+
+      // Metrics
+      doc.setFontSize(9);
+      doc.setTextColor(defaultTextColor);
+      doc.text(`Reliability Score: ${aiAnalysis.score}/100`, margin, currentY);
+      doc.text(`Rating Grade: ${aiAnalysis.grade} (${aiAnalysis.status})`, margin + (pageW / 4), currentY);
+      doc.text(`Risk Evaluation: ${aiAnalysis.riskLevel} Risk`, margin + (pageW / 2), currentY);
+      currentY += 5;
+      doc.text(`On-Time Payment Rate: ${aiAnalysis.onTimeRate}%`, margin, currentY);
+      doc.text(`Average Payment Delay: ${aiAnalysis.averageDelay} days`, margin + (pageW / 4), currentY);
+      currentY += 10;
+
+      // Key Historical Findings
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(defaultTextColor);
+      doc.text("KEY HISTORICAL FINDINGS", margin, currentY);
+      currentY += 4;
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      let currY = 84;
+      doc.setFontSize(8);
       aiAnalysis.findings.forEach((finding) => {
-        doc.text(`* ${finding}`, 14, currY);
-        currY += 6;
+        if (currentY + 4 > pageH - margin) { // Check for page overflow
+          doc.addPage();
+          addHeader(doc.internal.pages.length, 0);
+          currentY = 30; // Reset Y for new page content
+        }
+        doc.text(`• ${finding}`, margin, currentY);
+        currentY += 4;
       });
+      currentY += 5;
 
+      // Credit Action Plan & Recommendations
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text("CREDIT ACTION PLAN & RECOMMENDATIONS", 14, currY + 6);
+      doc.setFontSize(10);
+      doc.setTextColor(defaultTextColor);
+      doc.text("CREDIT ACTION PLAN & RECOMMENDATIONS", margin, currentY);
+      currentY += 4;
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      currY += 12;
+      doc.setFontSize(8);
       aiAnalysis.recommendations.forEach((rec) => {
-        doc.text(`* ${rec}`, 14, currY);
-        currY += 6;
+        if (currentY + 4 > pageH - margin) { // Check for page overflow
+          doc.addPage();
+          addHeader(doc.internal.pages.length, 0);
+          currentY = 30; // Reset Y for new page content
+        }
+        doc.text(`• ${rec}`, margin, currentY);
+        currentY += 4;
       });
     }
 
+    // Update total pages for all headers
+    const totalPages = doc.internal.pages.length -1; // -1 because the first element is a dummy
+    for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        addHeader(i, totalPages);
+    }
+    doc.setPage(1); // Reset to the first page for viewing
+
     doc.save(`customer-history-report-${details.customer.customer_code}.pdf`);
-  };
+  }, [details, aiAnalysis]);
 
 
 
@@ -1600,7 +1667,7 @@ export default function CustomerBillingSummaryModule() {
                           Sales Returns ({filteredReturns.length})
                         </CardTitle>
                         <span className="text-[10px] text-rose-500 font-mono hidden sm:inline">
-                          • Total: {formatCurrency(filteredReturns.reduce((s, r) => s + (r.amount || 0), 0))}
+                          • Net Total: {formatCurrency(filteredReturns.reduce((s, r) => s + (r.total_amount || 0), 0))}
                         </span>
                       </div>
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -1636,7 +1703,9 @@ export default function CustomerBillingSummaryModule() {
                                 <TableHead className="py-1">Date</TableHead>
                                 <TableHead className="py-1">Invoice Ref</TableHead>
                                 <TableHead className="py-1">Sales Agent</TableHead>
-                                <TableHead className="py-1 text-right">Return Amount</TableHead>
+                                <TableHead className="py-1 text-right">Gross Amount</TableHead>
+                                <TableHead className="py-1 text-right">Discounts</TableHead>
+                                <TableHead className="py-1 text-right">Net Amount</TableHead>
                                 <TableHead className="py-1 pr-2">Remarks</TableHead>
                               </TableRow>
                             </TableHeader>
@@ -1647,8 +1716,10 @@ export default function CustomerBillingSummaryModule() {
                                   <TableCell className="py-1.5">{formatDate(ret.return_date)}</TableCell>
                                   <TableCell className="py-1.5 font-semibold text-zinc-850">{ret.invoice_no || "—"}</TableCell>
                                   <TableCell className="py-1.5">{ret.salesman_id?.salesman_name || "—"}</TableCell>
+                                  <TableCell className="py-1.5 text-right">{ret.gross_amount ? formatCurrency(ret.gross_amount) : "—"}</TableCell>
+                                  <TableCell className="py-1.5 text-right text-rose-500">{ret.discount_amount ? `-${formatCurrency(ret.discount_amount)}` : "—"}</TableCell>
                                   <TableCell className="py-1.5 text-right font-bold text-rose-600">
-                                    {ret.amount ? formatCurrency(ret.amount) : "—"}
+                                    {ret.total_amount ? formatCurrency(ret.total_amount) : "—"}
                                   </TableCell>
                                   <TableCell className="py-1.5 text-muted-foreground italic truncate max-w-[120px] pr-2" title={ret.remarks || ""}>
                                     {ret.remarks || "—"}

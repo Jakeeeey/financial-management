@@ -1,10 +1,15 @@
 // src/modules/financial-management/sales-onboarding/types.ts
 
+export interface Operation {
+  id: number;
+  operation_name: string;
+}
+
 export interface Salesman {
   id: number;
   salesman_code: string;
   salesman_name: string;
-  operation?: number;
+  operation?: number | Operation | null;
   price_type?: string;
 }
 
@@ -45,7 +50,7 @@ export interface SalesInvoice {
   created_by?: number;
   created_date?: string;
   invoice_type: number;
-  
+
   // Relations and fields mapped from salesman & customer
   sales_type?: number | null;
   payment_terms?: number | null;

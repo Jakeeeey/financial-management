@@ -3,11 +3,13 @@ import type { CustomerDiscountingModuleData } from "@/modules/financial-manageme
 import {
   asNumber,
   asString,
-  categoryParams,
   directusFetch,
   discountLabel,
   discountTypeParams,
   DirectusList,
+  relationId,
+  relationName,
+  storeTypeParams,
   tradeSupplierParams,
 } from "./_utils";
 
@@ -16,7 +18,13 @@ type CustomerRow = {
   customer_code?: unknown;
   customer_name?: unknown;
   store_name?: unknown;
+  store_type?: unknown;
   discount_type?: unknown;
+};
+
+type StoreTypeRow = {
+  id?: unknown;
+  store_type?: unknown;
 };
 
 type DiscountTypeRow = {
@@ -31,15 +39,11 @@ type SupplierRow = {
   supplier_shortcut?: unknown;
 };
 
-type CategoryRow = {
-  category_id?: unknown;
-  category_name?: unknown;
-};
-
 type ModuleDataQuery = {
   page?: number;
   pageSize?: number;
   search?: string;
+  storeTypeId?: number | null;
 };
 
 const defaultPageSize = 10;
@@ -69,6 +73,7 @@ function customerParams(query: Required<ModuleDataQuery>) {
   const params = new URLSearchParams();
   const offset = (query.page - 1) * query.pageSize;
   const search = query.search.trim();
+  let filterIndex = 0;
 
   params.set("limit", String(query.pageSize));
   params.set("offset", String(offset));
@@ -81,6 +86,9 @@ function customerParams(query: Required<ModuleDataQuery>) {
       "customer_code",
       "customer_name",
       "store_name",
+      "store_type",
+      "store_type.id",
+      "store_type.store_type",
       "isActive",
       "discount_type",
       "discount_type.id",
@@ -89,15 +97,20 @@ function customerParams(query: Required<ModuleDataQuery>) {
     ].join(","),
   );
 
-  if (!search) {
-    params.set("filter[isActive][_eq]", "1");
-    return params;
+  params.set(`filter[_and][${filterIndex}][isActive][_eq]`, "1");
+  filterIndex += 1;
+
+  if (query.storeTypeId) {
+    params.set(`filter[_and][${filterIndex}][store_type][_eq]`, String(query.storeTypeId));
+    filterIndex += 1;
   }
 
-  params.set("filter[_and][0][isActive][_eq]", "1");
-  params.set("filter[_and][1][_or][0][customer_name][_contains]", search);
-  params.set("filter[_and][1][_or][1][customer_code][_contains]", search);
-  params.set("filter[_and][1][_or][2][store_name][_contains]", search);
+  if (search) {
+    params.set(`filter[_and][${filterIndex}][_or][0][customer_name][_contains]`, search);
+    params.set(`filter[_and][${filterIndex}][_or][1][customer_code][_contains]`, search);
+    params.set(`filter[_and][${filterIndex}][_or][2][store_name][_contains]`, search);
+  }
+
   return params;
 }
 
@@ -109,13 +122,14 @@ export async function getCustomerDiscountingModuleData(query: ModuleDataQuery = 
     page: normalizePage(query.page),
     pageSize: normalizePageSize(query.pageSize),
     search: asString(query.search),
+    storeTypeId: query.storeTypeId ?? null,
   };
 
-  const [customersRes, discountTypesRes, suppliersRes, categoriesRes] = await Promise.all([
+  const [customersRes, discountTypesRes, storeTypesRes, suppliersRes] = await Promise.all([
     directusFetch<DirectusList<CustomerRow>>(`/items/customer?${customerParams(normalizedQuery).toString()}`),
     directusFetch<DirectusList<DiscountTypeRow>>(`/items/discount_type?${discountTypeParams().toString()}`),
+    directusFetch<DirectusList<StoreTypeRow>>(`/items/store_type?${storeTypeParams().toString()}`),
     directusFetch<DirectusList<SupplierRow>>(`/items/suppliers?${tradeSupplierParams().toString()}`),
-    directusFetch<DirectusList<CategoryRow>>(`/items/categories?${categoryParams().toString()}`),
   ]);
 
   const total = asNumber(customersRes.meta?.filter_count) ?? 0;
@@ -131,6 +145,8 @@ export async function getCustomerDiscountingModuleData(query: ModuleDataQuery = 
       customerCode: asString(row.customer_code),
       customerName: asString(row.customer_name),
       storeName: asString(row.store_name),
+      storeTypeId: relationId(row.store_type),
+      storeTypeName: relationName(row.store_type, "store_type"),
       globalDiscount: discountLabel(row.discount_type),
     }))
     .filter((row) => row.id > 0 && row.customerCode && row.customerName);
@@ -143,6 +159,13 @@ export async function getCustomerDiscountingModuleData(query: ModuleDataQuery = 
     }))
     .filter((row) => row.id > 0 && row.discountType);
 
+  const storeTypes = (storeTypesRes.data ?? [])
+    .map((row) => ({
+      id: asNumber(row.id) ?? 0,
+      storeType: asString(row.store_type),
+    }))
+    .filter((row) => row.id > 0 && row.storeType);
+
   const suppliers = (suppliersRes.data ?? [])
     .map((row) => ({
       id: asNumber(row.id) ?? 0,
@@ -151,24 +174,18 @@ export async function getCustomerDiscountingModuleData(query: ModuleDataQuery = 
     }))
     .filter((row) => row.id > 0 && row.supplierName);
 
-  const categories = (categoriesRes.data ?? [])
-    .map((row) => ({
-      categoryId: asNumber(row.category_id) ?? 0,
-      categoryName: asString(row.category_name),
-    }))
-    .filter((row) => row.categoryId > 0 && row.categoryName);
-
   return {
     customers,
     discountTypes,
+    storeTypes,
     suppliers,
-    categories,
     pagination: {
       page: normalizedQuery.page,
       pageSize: normalizedQuery.pageSize,
       total,
       totalPages,
       search: normalizedQuery.search,
+      storeTypeId: normalizedQuery.storeTypeId,
     },
   };
 }

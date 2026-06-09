@@ -151,6 +151,10 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     try {
       setSaving(true);
       await customerDiscountingApi.deleteSupplierCategoryRule(id, userId);
+      setRules((current) => ({
+        ...current,
+        supplierCategoryRules: current.supplierCategoryRules.filter((rule) => rule.id !== id),
+      }));
       toast.success("Supplier/category discount removed");
       await loadRules(selectedCustomer.customerCode);
     } catch (err) {
@@ -168,6 +172,10 @@ export function useCustomerDiscounting(userId: number | null, initialModuleData:
     try {
       setSaving(true);
       await customerDiscountingApi.deleteProductRule(id, userId);
+      setRules((current) => ({
+        ...current,
+        productRules: current.productRules.filter((rule) => rule.id !== id),
+      }));
       toast.success("Product discount removed");
       await loadRules(selectedCustomer.customerCode);
     } catch (err) {

@@ -1,12 +1,12 @@
 // components/SalesmanChart.tsx
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChartEmptyState } from './ChartEmptyState';
 import { formatPeso } from '../utils';
-import type { NamedValue } from '../types';
+import type { SalesmanARData } from '../types';
 
 interface SalesmanChartProps {
-  data: NamedValue[];
+  data: SalesmanARData[];
   isFiltered?: boolean;
 }
 
@@ -26,7 +26,7 @@ export function SalesmanChart({ data, isFiltered = false }: SalesmanChartProps) 
         ) : (
           <>
             <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={data} margin={{ top: 0, right: 8, left: 16, bottom: 50 }} barCategoryGap="25%">
+              <BarChart data={data} margin={{ top: 0, right: 8, left: 16, bottom: 50 }} barCategoryGap="15%">
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(128,128,128,0.1)" />
                 <XAxis
                   dataKey="name"
@@ -49,30 +49,35 @@ export function SalesmanChart({ data, isFiltered = false }: SalesmanChartProps) 
                     return (
                       <div className="bg-popover border border-border rounded-lg shadow-lg px-3 py-2 text-xs">
                         <p className="font-bold text-foreground mb-1">{label}</p>
-                        <p className="text-violet-500 font-semibold">{formatPeso(payload[0].value as number)}</p>
+                        <div className="space-y-1">
+                          <p className="text-violet-500 dark:text-violet-400 font-semibold flex justify-between gap-4">
+                            <span>Outstanding:</span>
+                            <span>{formatPeso(payload[0]?.value as number)}</span>
+                          </p>
+                          {payload[1] && (
+                            <p className="text-orange-500 dark:text-orange-400 font-semibold flex justify-between gap-4">
+                              <span>Unposted Collections:</span>
+                              <span>{formatPeso(payload[1]?.value as number)}</span>
+                            </p>
+                          )}
+                        </div>
                       </div>
                     );
                   }}
                 />
-                <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={40}>
-                  {data.map((_, i) => (
-                    <Cell key={i} fill={`hsl(${258 - i * 15}, 65%, ${58 + i * 3}%)`} />
-                  ))}
-                </Bar>
+                <Bar dataKey="value" name="Outstanding" fill="#8b5cf6" radius={[3, 3, 0, 0]} maxBarSize={25} />
+                <Bar dataKey="unposted" name="Unposted Collections" fill="#f97316" radius={[3, 3, 0, 0]} maxBarSize={25} />
               </BarChart>
             </ResponsiveContainer>
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 pl-1">
-              {data.map((s, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <span
-                    className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                    style={{ backgroundColor: `hsl(${258 - i * 15}, 65%, ${58 + i * 3}%)` }}
-                  />
-                  <span className="text-[10px] text-muted-foreground truncate max-w-[100px]" title={s.name}>
-                    {s.name.length > 12 ? s.name.slice(0, 12) + '…' : s.name}
-                  </span>
-                </div>
-              ))}
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 pl-1 border-t border-border/40 pt-2">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0 bg-[#8b5cf6]" />
+                <span className="text-[10px] text-muted-foreground font-semibold">Outstanding (Ledger)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0 bg-[#f97316]" />
+                <span className="text-[10px] text-muted-foreground font-semibold">Unposted Collections</span>
+              </div>
             </div>
           </>
         )}

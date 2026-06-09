@@ -34,6 +34,32 @@ export interface CustomerBillingSummaryDetails {
   payments: SalesInvoicePayment[];
 }
 
+interface RawSalesInvoice extends Omit<SalesInvoice, "gross_amount" | "discount_amount" | "net_amount" | "total_amount"> {
+  gross_amount?: string | number | null;
+  discount_amount?: string | number | null;
+  net_amount?: string | number | null;
+  total_amount?: string | number | null;
+}
+
+interface RawSalesReturn extends Omit<SalesReturn, "total_amount" | "discount_amount" | "gross_amount"> {
+  total_amount?: string | number | null;
+  discount_amount?: string | number | null;
+  gross_amount?: string | number | null;
+}
+
+interface RawCustomerMemo extends Omit<CustomerMemo, "amount" | "applied_amount"> {
+  amount?: string | number | null;
+  applied_amount?: string | number | null;
+}
+
+interface RawUnfulfilledSalesTransaction extends Omit<UnfulfilledSalesTransaction, "variance_amount"> {
+  variance_amount?: string | number | null;
+}
+
+interface RawSalesInvoicePayment extends Omit<SalesInvoicePayment, "paid_amount"> {
+  paid_amount?: string | number | null;
+}
+
 export function useCustomerBillingSummary() {
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -152,8 +178,40 @@ export function useCustomerBillingSummary() {
       const res = await fetch(`/api/fm/reports/customer-billing-summary?id=${id}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`Server returned error: ${res.statusText}`);
       
-      const data = await res.json();
-      setDetails(data);
+      const rawData = await res.json();
+
+      // Explicitly parse numeric fields from API response
+      const processedData = {
+        ...rawData,
+        salesInvoices: (rawData.salesInvoices || []).map((inv: RawSalesInvoice) => ({
+          ...inv,
+          gross_amount: parseFloat(String(inv.gross_amount || 0)),
+          discount_amount: parseFloat(String(inv.discount_amount || 0)),
+          net_amount: parseFloat(String(inv.net_amount || 0)),
+          total_amount: parseFloat(String(inv.total_amount || 0)),
+        })),
+        salesReturns: (rawData.salesReturns || []).map((ret: RawSalesReturn) => ({
+          ...ret,
+          total_amount: parseFloat(ret.total_amount ? String(ret.total_amount) : "0"),
+          discount_amount: parseFloat(ret.discount_amount ? String(ret.discount_amount) : "0"),
+          gross_amount: parseFloat(ret.gross_amount ? String(ret.gross_amount) : "0"),
+        })),
+        customerMemos: (rawData.customerMemos || []).map((memo: RawCustomerMemo) => ({
+          ...memo,
+          amount: parseFloat(memo.amount ? String(memo.amount) : "0"),
+          applied_amount: parseFloat(memo.applied_amount ? String(memo.applied_amount) : "0"),
+        })),
+        unfulfilledSales: (rawData.unfulfilledSales || []).map((unf: RawUnfulfilledSalesTransaction) => ({
+          ...unf,
+          variance_amount: parseFloat(unf.variance_amount ? String(unf.variance_amount) : "0"),
+        })),
+        payments: (rawData.payments || []).map((pay: RawSalesInvoicePayment) => ({
+          ...pay,
+          paid_amount: parseFloat(pay.paid_amount ? String(pay.paid_amount) : "0"),
+        })),
+      };
+
+      setDetails(processedData);
       toast.success("Billing & history summary loaded", { id: toastId });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

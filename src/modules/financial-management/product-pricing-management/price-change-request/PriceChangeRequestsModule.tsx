@@ -60,6 +60,7 @@ function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers
     const statusTab = inbox.query.status || "PENDING";
 
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
+    const [rejectingBulk, setRejectingBulk] = React.useState<boolean>(false);
     const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
 
     const actions = usePCRActions(() => {
@@ -118,6 +119,16 @@ function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers
         if (selectedIds.length === 0) return;
 
         const result = await actions.approveMany(selectedIds);
+
+        if (result.successIds.length > 0) {
+            setSelectedIds((prev) => prev.filter((id) => !result.successIds.includes(id)));
+        }
+    }, [actions, selectedIds]);
+
+    const handleRejectSelected = React.useCallback(async (reason: string) => {
+        if (selectedIds.length === 0) return;
+
+        const result = await actions.rejectMany(selectedIds, reason);
 
         if (result.successIds.length > 0) {
             setSelectedIds((prev) => prev.filter((id) => !result.successIds.includes(id)));
@@ -241,6 +252,15 @@ function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers
                             </Button>
 
                             <Button
+                                variant="destructive"
+                                onClick={() => setRejectingBulk(true)}
+                                disabled={actions.acting || selectedIds.length === 0}
+                            >
+                                <X className="mr-2 h-4 w-4" />
+                                Reject Selected
+                            </Button>
+
+                            <Button
                                 onClick={handleApproveSelected}
                                 disabled={actions.acting || selectedIds.length === 0}
                             >
@@ -286,13 +306,22 @@ function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers
             </div>
 
             <RejectDialog
-                open={rejectingId != null}
-                onOpenChange={(v) => !v && setRejectingId(null)}
+                open={rejectingId != null || rejectingBulk}
+                onOpenChange={(v) => {
+                    if (!v) {
+                        setRejectingId(null);
+                        setRejectingBulk(false);
+                    }
+                }}
                 loading={actions.acting}
-                onConfirm={(reason) => {
-                    if (!rejectingId) return;
-                    actions.reject(rejectingId, reason);
-                    setRejectingId(null);
+                onConfirm={async (reason) => {
+                    if (rejectingId != null) {
+                        await actions.reject(rejectingId, reason);
+                        setRejectingId(null);
+                    } else if (rejectingBulk) {
+                        await handleRejectSelected(reason);
+                        setRejectingBulk(false);
+                    }
                 }}
             />
         </div>
