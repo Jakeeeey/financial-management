@@ -61,6 +61,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { BankTransferDialog } from "./components/BankTransferDialog";
+import { BankTransferFilterSelect } from "./components/BankTransferFilterSelect";
 import { useBankTransfers } from "./hooks/useBankTransfers";
 import { bankTransfersApi } from "./providers/bankTransfersApi";
 import type {
@@ -447,7 +448,7 @@ export default function BankTransfersModule() {
               </div>
               <div className="grid gap-1.5">
                 <Label>Source Bank</Label>
-                <SearchableSelect
+                <BankTransferFilterSelect
                   options={sourceBankOptions}
                   value={sourceBankId}
                   onValueChange={(value) => {
@@ -460,7 +461,7 @@ export default function BankTransfersModule() {
               </div>
               <div className="grid gap-1.5">
                 <Label>Destination Bank</Label>
-                <SearchableSelect
+                <BankTransferFilterSelect
                   options={destinationBankOptions}
                   value={destinationBankId}
                   onValueChange={(value) => {
