@@ -426,6 +426,7 @@ export function usePricingMatrix(args: {
 
             let totalCreated = 0;
             let totalSkippedDuplicates = 0;
+            let totalSkippedExistingPending = 0;
 
             // Result of pcrItems (always results[0] if present)
             if (pcrItems.length > 0) {
@@ -436,6 +437,7 @@ export function usePricingMatrix(args: {
                 };
                 totalCreated += res.created ?? 0;
                 totalSkippedDuplicates += res.skipped_duplicates ?? 0;
+                totalSkippedExistingPending += res.skipped_existing_pending ?? 0;
             }
 
             // Result of costPcrItems — index shifts if pcrItems also ran
@@ -448,6 +450,7 @@ export function usePricingMatrix(args: {
                 };
                 totalCreated += res.created ?? 0;
                 totalSkippedDuplicates += res.skipped_duplicates ?? 0;
+                totalSkippedExistingPending += res.skipped_existing_pending ?? 0;
             }
 
             setDirty(new Map());
@@ -455,18 +458,33 @@ export function usePricingMatrix(args: {
             await refresh();
 
             if (totalCreated > 0) {
-                toast.success(`${totalCreated} price change request(s) submitted successfully.`);
-            } else {
-                toast.success(`Request submitted.`);
-            }
+                const skippedMessages: string[] = [];
+                if (totalSkippedExistingPending > 0) {
+                    skippedMessages.push(`${totalSkippedExistingPending} already pending`);
+                }
+                if (totalSkippedDuplicates > 0) {
+                    skippedMessages.push(`${totalSkippedDuplicates} duplicate(s) skipped`);
+                }
 
-            // All skipped as duplicates (same batch)
-            if (totalCreated === 0 && totalSkippedDuplicates > 0) {
-                toast.message("No new changes — all entries were duplicates in the same batch.");
+                toast.success(
+                    `${totalCreated} price change request(s) submitted successfully.${
+                        skippedMessages.length ? ` ${skippedMessages.join(", ")}.` : ""
+                    }`,
+                );
                 return;
             }
 
-            toast.success(`${totalCreated} price change request(s) submitted successfully.`);
+            if (totalSkippedExistingPending > 0) {
+                toast.message("No new price requests were created because these items already have pending requests.");
+                return;
+            }
+
+            if (totalSkippedDuplicates > 0) {
+                toast.message("No new changes - all entries were duplicates.");
+                return;
+            }
+
+            toast.message("No new price requests were created.");
         } catch (error: unknown) {
             // Try to extract a human-readable Directus error body from the thrown message
             let displayMessage = "Failed to save changes";
