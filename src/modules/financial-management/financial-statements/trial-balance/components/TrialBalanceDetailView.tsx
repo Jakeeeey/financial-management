@@ -1,6 +1,6 @@
 "use client";
 
-import { DataTable } from "@/components/ui/new-data-table";
+import { DataTable } from "./local-data-table";
 import { ColumnDef } from "@tanstack/react-table";
 import { TrialBalanceItem } from "../types/trial-balance.schema";
 import { Badge } from "@/components/ui/badge";

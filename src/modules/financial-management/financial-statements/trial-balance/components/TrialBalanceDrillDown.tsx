@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { TrialBalanceItem, TrialBalanceDrillDownItem } from "../types/trial-balance.schema";
 import { Label } from "@/components/ui/label";
-import { DataTable } from "@/components/ui/new-data-table";
+import { DataTable } from "./local-data-table";
 import { ColumnDef } from "@tanstack/react-table";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
@@ -274,24 +274,26 @@ export function TrialBalanceDrillDown({
   return (
     <div className="flex flex-col h-full bg-background animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="flex flex-col gap-4 border-b pb-4 mb-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h2 className="text-xl font-bold truncate">
-                {account.glCode} - {account.accountTitle}
-              </h2>
-              <Badge variant="outline" className="shrink-0">
-                {account.accountCategory} • {account.accountType}
-              </Badge>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={onBack} className="shrink-0">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <h2 className="text-xl font-bold truncate">
+                  {account.glCode} - {account.accountTitle}
+                </h2>
+                <Badge variant="outline" className="shrink-0">
+                  {account.accountCategory} • {account.accountType}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Detailed transaction analysis • {account.balanceType} balance
+              </p>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Detailed transaction analysis • {account.balanceType} balance
-            </p>
           </div>
-          <div className="flex items-center gap-4 text-right">
+          <div className="flex flex-wrap items-center gap-4 text-left md:text-right md:justify-end">
             <div>
               <p className="text-[10px] text-muted-foreground uppercase font-bold">Debit Total</p>
               <p className="font-mono font-bold">{formatAmount(account.totalDebit)}</p>
@@ -308,8 +310,8 @@ export function TrialBalanceDrillDown({
         </div>
       </div>
 
-      <div className="flex flex-1 gap-6 min-h-0">
-        <div className="w-64 shrink-0 flex flex-col gap-6">
+      <div className="flex flex-col lg:flex-row flex-1 gap-6 min-h-0">
+        <div className="w-full lg:w-64 shrink-0 flex flex-col gap-6">
           <div className="space-y-4 pr-2">
             <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Workspace Filters</h3>
 
