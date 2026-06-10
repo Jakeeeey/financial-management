@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { parseApprovalSearchQuery } from "../_approvalSearch";
+import { toInclusiveDateToEnd } from "../_dateFilters";
+import {
+    appendBatchSupplierFilter,
+    getSupplierProductIds,
+    resolveBatchSupplierFilter,
+} from "../_supplierFilters";
 import {
     BatchHeaderRow,
     DETAILS,
@@ -18,7 +25,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CCR = "cost_change_requests";
-const PRODUCT_PER_SUPPLIER = "product_per_supplier";
 
 type DirectusList<T> = { data?: T[]; meta?: { total_count?: number } | null };
 
@@ -33,12 +39,10 @@ type DirectusCCRRow = {
               product_name?: string | null;
           }
         | null;
+    current_cost?: number | string | null;
+    proposed_cost?: number | string | null;
     status?: string | null;
     requested_at?: string | null;
-};
-
-type DirectusSupplierProductRow = {
-    product_id?: number | string | { product_id?: number | string | null } | null;
 };
 
 type UnifiedApprovalRow = {
@@ -52,6 +56,16 @@ type UnifiedApprovalRow = {
     line_count?: number;
     batch_id?: number;
     request_id?: number;
+    current_cost?: number | null;
+    proposed_cost?: number | null;
+};
+
+type ApprovalFilters = {
+    status: string;
+    supplierId: string;
+    q: string;
+    dateFrom: string;
+    dateTo: string;
 };
 
 function norm(value: string | null) {
@@ -87,10 +101,71 @@ function productCodeOf(value: unknown): string {
     return String(value.product_code ?? "").trim();
 }
 
+function toMoney(value: unknown): number | null {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+
 function parseRequestedAt(value: string | null | undefined): number {
     if (!value) return 0;
     const time = new Date(value).getTime();
     return Number.isFinite(time) ? time : 0;
+}
+
+async function appendBatchFilters(params: URLSearchParams, filters: ApprovalFilters) {
+    let andIdx = 0;
+    const addAnd = (suffix: string, value: string) => {
+        params.set(`filter[_and][${andIdx}]${suffix}`, value);
+        andIdx += 1;
+    };
+
+    if (filters.status) addAnd("[status][_eq]", filters.status);
+    if (filters.supplierId) {
+        const { headerIdsFromProducts } = await resolveBatchSupplierFilter(filters.supplierId);
+        andIdx = appendBatchSupplierFilter(params, andIdx, filters.supplierId, headerIdsFromProducts);
+    }
+    if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
+    if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
+    if (filters.q) {
+        const parsed = parseApprovalSearchQuery(filters.q);
+        const headerId = parsed.batchHeaderId ?? parsed.numericId;
+
+        if (headerId != null) {
+            addAnd("[header_id][_eq]", String(headerId));
+        } else if (parsed.textContains) {
+            addAnd("[_or][0][reference_no][_contains]", parsed.textContains);
+            params.set(`filter[_and][${andIdx - 1}][_or][1][remarks][_contains]`, parsed.textContains);
+        }
+    }
+}
+
+function appendCostFilters(params: URLSearchParams, filters: ApprovalFilters, supplierProductIds?: number[]) {
+    let andIdx = 0;
+    const addAnd = (suffix: string, value: string) => {
+        params.set(`filter[_and][${andIdx}]${suffix}`, value);
+        andIdx += 1;
+    };
+
+    if (filters.status) addAnd("[status][_eq]", filters.status);
+    if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
+    if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
+
+    if (supplierProductIds && supplierProductIds.length > 0) {
+        addAnd("[product_id][_in]", supplierProductIds.join(","));
+    }
+
+    if (filters.q) {
+        const parsed = parseApprovalSearchQuery(filters.q);
+        const requestId = parsed.costRequestId ?? parsed.numericId;
+
+        if (requestId != null) {
+            addAnd("[request_id][_eq]", String(requestId));
+        } else if (parsed.textContains) {
+            addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
+            params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+        }
+    }
 }
 
 async function countLines(headerId: number) {
@@ -105,39 +180,13 @@ async function countLines(headerId: number) {
     return Number(json.meta?.total_count ?? 0);
 }
 
-async function getSupplierProductIds(supplierId: string): Promise<number[]> {
-    const sp = new URLSearchParams();
-    sp.set("limit", "-1");
-    sp.set("fields", "product_id,product_id.product_id");
-    sp.set("filter[supplier_id][_eq]", supplierId);
-
-    const url = `${mustBase()}/items/${PRODUCT_PER_SUPPLIER}?${sp.toString()}`;
-    const res = await fetchDirectus<{ data?: DirectusSupplierProductRow[] }>(url, { headers: directusHeaders() });
-
-    const ids: number[] = [];
-    for (const row of res.data ?? []) {
-        let n: number | null = null;
-        if (typeof row.product_id === "number") {
-            n = row.product_id;
-        } else if (isRecord(row.product_id) && typeof row.product_id.product_id === "number") {
-            n = row.product_id.product_id;
-        }
-        if (n !== null && Number.isFinite(n) && n > 0) {
-            ids.push(n);
-        }
-    }
-    return Array.from(new Set(ids));
-}
-
-async function fetchAllBatches(filters: {
-    status: string;
-    supplierId: string;
-    q: string;
-    dateFrom: string;
-    dateTo: string;
-}): Promise<UnifiedApprovalRow[]> {
+async function fetchBatchesPage(
+    filters: ApprovalFilters,
+    limit: number,
+): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
     const params = new URLSearchParams();
-    params.set("limit", "-1");
+    params.set("limit", String(Math.max(1, limit)));
+    params.set("meta", "total_count");
     params.set("sort", "-requested_at");
     params.set(
         "fields",
@@ -154,71 +203,60 @@ async function fetchAllBatches(filters: {
         ].join(","),
     );
 
-    let andIdx = 0;
-    const addAnd = (suffix: string, value: string) => {
-        params.set(`filter[_and][${andIdx}]${suffix}`, value);
-        andIdx += 1;
-    };
-
-    if (filters.status) addAnd("[status][_eq]", filters.status);
-    if (filters.supplierId) addAnd("[supplier_id][_eq]", filters.supplierId);
-    if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
-    if (filters.dateTo) addAnd("[requested_at][_lte]", filters.dateTo);
-    if (filters.q) {
-        addAnd("[_or][0][reference_no][_contains]", filters.q);
-        params.set(`filter[_and][${andIdx - 1}][_or][1][remarks][_contains]`, filters.q);
-        if (Number.isFinite(Number(filters.q))) {
-            params.set(`filter[_and][${andIdx - 1}][_or][2][header_id][_eq]`, filters.q);
-        }
-    }
+    await appendBatchFilters(params, filters);
 
     const url = `${mustBase()}/items/${HEADERS}?${params.toString()}`;
     const json = await fetchDirectus<DirectusList<BatchHeaderRow>>(url, { headers: directusHeaders() });
 
-    const rows = await Promise.all(
-        (json.data ?? []).map(async (row) => {
-            const headerId = normalizeHeaderId(row);
-            const lineCount = headerId ? await countLines(headerId) : 0;
-            const supplierName = supplierNameOf(row.supplier_id);
-            const remarks = String(row.remarks ?? "").trim();
+    const rows: UnifiedApprovalRow[] = [];
 
-            return {
-                row_key: `batch:${headerId}`,
-                kind: "price_batch" as const,
-                record_label: `PCB-${headerId}`,
-                title: supplierName || (supplierIdOf(row.supplier_id) ? `Supplier #${supplierIdOf(row.supplier_id)}` : "Price batch"),
-                subtitle: remarks || String(row.reference_no ?? "").trim() || undefined,
-                status: String(row.status ?? "PENDING"),
-                requested_at: row.requested_at ?? null,
-                line_count: lineCount,
-                batch_id: headerId,
-            };
-        }),
-    );
+    for (const row of json.data ?? []) {
+        const headerId = normalizeHeaderId(row);
+        if (!headerId || headerId <= 0) continue;
 
-    return rows.filter((row) => row.batch_id && row.batch_id > 0);
+        const supplierName = supplierNameOf(row.supplier_id);
+        const remarks = String(row.remarks ?? "").trim();
+
+        rows.push({
+            row_key: `batch:${headerId}`,
+            kind: "price_batch",
+            record_label: `PCB-${headerId}`,
+            title:
+                supplierName ||
+                (supplierIdOf(row.supplier_id) ? `Supplier #${supplierIdOf(row.supplier_id)}` : "Price batch"),
+            subtitle: remarks || String(row.reference_no ?? "").trim() || undefined,
+            status: String(row.status ?? "PENDING"),
+            requested_at: row.requested_at ?? null,
+            batch_id: headerId,
+        });
+    }
+
+    return {
+        rows,
+        total: Number(json.meta?.total_count ?? rows.length),
+    };
 }
 
-async function fetchAllCostRequests(filters: {
-    status: string;
-    supplierId: string;
-    q: string;
-    dateFrom: string;
-    dateTo: string;
-}): Promise<UnifiedApprovalRow[]> {
-    if (filters.supplierId) {
-        const supplierProductIds = await getSupplierProductIds(filters.supplierId);
-        if (supplierProductIds.length === 0) return [];
+async function fetchCostRequestsPage(
+    filters: ApprovalFilters,
+    limit: number,
+    supplierProductIds?: number[],
+): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
+    if (filters.supplierId && (!supplierProductIds || supplierProductIds.length === 0)) {
+        return { rows: [], total: 0 };
     }
 
     const params = new URLSearchParams();
-    params.set("limit", "-1");
+    params.set("limit", String(Math.max(1, limit)));
+    params.set("meta", "total_count");
     params.set("sort", "-requested_at");
     params.set(
         "fields",
         [
             "request_id",
             "product_id",
+            "current_cost",
+            "proposed_cost",
             "status",
             "requested_at",
             "product_id.product_id",
@@ -227,26 +265,7 @@ async function fetchAllCostRequests(filters: {
         ].join(","),
     );
 
-    let andIdx = 0;
-    const addAnd = (suffix: string, value: string) => {
-        params.set(`filter[_and][${andIdx}]${suffix}`, value);
-        andIdx += 1;
-    };
-
-    if (filters.status) addAnd("[status][_eq]", filters.status);
-    if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
-    if (filters.dateTo) addAnd("[requested_at][_lte]", filters.dateTo);
-
-    if (filters.supplierId) {
-        const supplierProductIds = await getSupplierProductIds(filters.supplierId);
-        addAnd("[product_id][_in]", supplierProductIds.join(","));
-    }
-
-    if (filters.q) {
-        addAnd("[_or][0][product_id][product_name][_contains]", filters.q);
-        params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, filters.q);
-        params.set(`filter[_and][${andIdx - 1}][_or][2][request_id][_eq]`, filters.q);
-    }
+    appendCostFilters(params, filters, supplierProductIds);
 
     const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
     const json = await fetchDirectus<DirectusList<DirectusCCRRow>>(url, { headers: directusHeaders() });
@@ -269,10 +288,24 @@ async function fetchAllCostRequests(filters: {
             status: String(row.status ?? "PENDING"),
             requested_at: row.requested_at ?? null,
             request_id: requestId,
+            current_cost: toMoney(row.current_cost),
+            proposed_cost: toMoney(row.proposed_cost),
         });
     }
 
-    return rows;
+    return {
+        rows,
+        total: Number(json.meta?.total_count ?? rows.length),
+    };
+}
+
+async function attachBatchLineCounts(rows: UnifiedApprovalRow[]) {
+    await Promise.all(
+        rows.map(async (row) => {
+            if (row.kind !== "price_batch" || !row.batch_id) return;
+            row.line_count = await countLines(row.batch_id);
+        }),
+    );
 }
 
 export async function GET(req: NextRequest) {
@@ -290,20 +323,25 @@ export async function GET(req: NextRequest) {
         const page = Math.max(1, Number(searchParams.get("page") ?? 1));
         const pageSize = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
 
-        const filters = { status, supplierId, q, dateFrom, dateTo };
+        const filters: ApprovalFilters = { status, supplierId, q, dateFrom, dateTo };
+        const offset = (page - 1) * pageSize;
+        const fetchLimit = offset + pageSize;
 
-        const [batchRows, costRows] = await Promise.all([
-            fetchAllBatches(filters),
-            fetchAllCostRequests(filters),
+        const supplierProductIds = supplierId ? await getSupplierProductIds(supplierId) : undefined;
+
+        const [batchPage, costPage] = await Promise.all([
+            fetchBatchesPage(filters, fetchLimit),
+            fetchCostRequestsPage(filters, fetchLimit, supplierProductIds),
         ]);
 
-        const merged = [...batchRows, ...costRows].sort(
+        const merged = [...batchPage.rows, ...costPage.rows].sort(
             (a, b) => parseRequestedAt(b.requested_at) - parseRequestedAt(a.requested_at),
         );
 
-        const totalCount = merged.length;
-        const start = (page - 1) * pageSize;
-        const data = merged.slice(start, start + pageSize);
+        const data = merged.slice(offset, offset + pageSize);
+        await attachBatchLineCounts(data);
+
+        const totalCount = batchPage.total + costPage.total;
 
         return NextResponse.json({
             data,

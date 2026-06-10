@@ -1,4 +1,9 @@
-import type { PriceChangeRequestRow, CostChangeRequestRow } from "../types";
+import type {
+    CostChangeRequestRow,
+    ListCostSelectionSnapshot,
+    PriceChangeRequestRow,
+    UnifiedApprovalRow,
+} from "../types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
@@ -30,6 +35,58 @@ export function uomLabel(r: PriceChangeRequestRow | CostChangeRequestRow): strin
     const name = typeof uom.unit_name === "string" ? uom.unit_name.trim() : "";
 
     return shortcut || name || "—";
+}
+
+export function costRequestToUnifiedRow(row: CostChangeRequestRow): UnifiedApprovalRow {
+    const requestId = Number(row.request_id);
+    const product = isRecord(row.product_id) ? row.product_id : null;
+    const productCode =
+        product && typeof product.product_code === "string"
+            ? product.product_code
+            : product?.product_code != null
+              ? String(product.product_code)
+              : undefined;
+    const productName =
+        product && typeof product.product_name === "string"
+            ? product.product_name
+            : product?.product_name != null
+              ? String(product.product_name)
+              : undefined;
+
+    return {
+        row_key: `cost:${requestId}`,
+        kind: "list_price",
+        record_label: `CCR-${requestId}`,
+        title: productName || productLabel(row),
+        subtitle: productCode || undefined,
+        status: row.status,
+        requested_at: row.requested_at,
+        request_id: requestId,
+        current_cost: row.current_cost ?? null,
+        proposed_cost: row.proposed_cost,
+    };
+}
+
+export function snapshotFromCostRow(row: CostChangeRequestRow): ListCostSelectionSnapshot {
+    const requestId = Number(row.request_id);
+    return {
+        request_id: requestId,
+        record_label: `CCR-${requestId}`,
+        product_label: productLabel(row),
+        current_cost: row.current_cost ?? null,
+        proposed_cost: Number(row.proposed_cost),
+    };
+}
+
+export function snapshotFromUnifiedRow(row: UnifiedApprovalRow): ListCostSelectionSnapshot {
+    const requestId = Number(row.request_id);
+    return {
+        request_id: requestId,
+        record_label: row.record_label || `CCR-${requestId}`,
+        product_label: row.title,
+        current_cost: row.current_cost ?? null,
+        proposed_cost: Number(row.proposed_cost ?? 0),
+    };
 }
 
 export function priceTypeLabel(r: PriceChangeRequestRow) {

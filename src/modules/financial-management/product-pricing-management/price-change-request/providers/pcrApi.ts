@@ -192,6 +192,12 @@ export type ProductSearchRow = {
     priceE?: number | null;
 };
 
+export type TierPriceRow = {
+    product_id: number;
+    price_type_id: number;
+    price: number | null;
+};
+
 function mapProductSearchRow(item: unknown): ProductSearchRow | null {
     if (!isRecord(item)) return null;
 
@@ -318,6 +324,36 @@ export async function getProductsPage(params: {
             .filter((row): row is ProductSearchRow => row !== null),
         meta: res.meta ?? null,
     };
+}
+
+export async function getPricesForProducts(productIds: number[]) {
+    if (productIds.length === 0) {
+        return { data: [] as TierPriceRow[] };
+    }
+
+    const sp = new URLSearchParams({ product_ids: productIds.join(",") });
+    const res = await http<{ data: unknown[] }>(`/api/fm/product-pricing/prices?${sp.toString()}`);
+
+    const data = (res.data ?? [])
+        .map((item): TierPriceRow | null => {
+            if (!isRecord(item)) return null;
+
+            const productId = Number(item.product_id);
+            const priceTypeId = Number(item.price_type_id);
+            if (!Number.isFinite(productId) || productId <= 0) return null;
+            if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) return null;
+
+            const price = toNullableNumber(item.price);
+
+            return {
+                product_id: productId,
+                price_type_id: priceTypeId,
+                price,
+            };
+        })
+        .filter((row): row is TierPriceRow => row !== null);
+
+    return { data };
 }
 
 export async function listPriceChangeBatches(query: ListQuery) {

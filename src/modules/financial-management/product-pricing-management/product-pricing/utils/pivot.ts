@@ -1,41 +1,62 @@
-// src/modules/supply-chain-management/product-pricing-management/product-pricing/utils/pivot.ts
-import type { PriceRow, PriceType, ProductTierKey } from "../types";
-import { TIERS } from "./constants";
+import type { PriceRow, PriceType } from "../types";
 
-export function buildTierIdMap(priceTypes: PriceType[]) {
-    const map = new Map<ProductTierKey, number>();
-    for (const t of priceTypes) {
-        const name = (t.price_type_name ?? "").trim().toUpperCase();
-        if (TIERS.includes(name as ProductTierKey)) {
-            map.set(name as ProductTierKey, t.price_type_id);
-        }
+export const LIST_TIER_KEY = "LIST";
+
+export function sortPriceTypes(priceTypes: PriceType[]): PriceType[] {
+    return [...priceTypes].sort((a, b) => {
+        const aSort = Number(a.sort ?? Number.MAX_SAFE_INTEGER);
+        const bSort = Number(b.sort ?? Number.MAX_SAFE_INTEGER);
+        return aSort - bSort || String(a.price_type_name ?? "").localeCompare(String(b.price_type_name ?? ""));
+    });
+}
+
+export function priceTierKey(priceTypeId: number): string {
+    return String(priceTypeId);
+}
+
+export function isListTierKey(tier: string): boolean {
+    return tier === LIST_TIER_KEY;
+}
+
+export function buildMatrixTierKeys(priceTypes: PriceType[]): string[] {
+    const sorted = sortPriceTypes(priceTypes);
+    return [LIST_TIER_KEY, ...sorted.map((pt) => priceTierKey(pt.price_type_id))];
+}
+
+export function emptyPivot(priceTypes: PriceType[]): Record<string, number | null> {
+    const out: Record<string, number | null> = { [LIST_TIER_KEY]: null };
+    for (const pt of priceTypes) {
+        out[priceTierKey(pt.price_type_id)] = null;
     }
-    return map;
+    return out;
 }
 
 export function pivotPrices(
     priceTypes: PriceType[],
     rows: PriceRow[],
-): Map<number, Record<ProductTierKey, number | null>> {
-    const tierIdToKey = new Map<number, ProductTierKey>();
-    for (const t of priceTypes) {
-        const name = (t.price_type_name ?? "").trim().toUpperCase();
-        if (TIERS.includes(name as ProductTierKey)) {
-            tierIdToKey.set(t.price_type_id, name as ProductTierKey);
-        }
-    }
-
-    const out = new Map<number, Record<ProductTierKey, number | null>>();
+): Map<number, Record<string, number | null>> {
+    const validIds = new Set(priceTypes.map((pt) => pt.price_type_id));
+    const out = new Map<number, Record<string, number | null>>();
 
     for (const r of rows) {
-        const key = tierIdToKey.get(r.price_type_id);
-        if (!key) continue;
+        if (!validIds.has(r.price_type_id)) continue;
 
+        const tierKey = priceTierKey(r.price_type_id);
         if (!out.has(r.product_id)) {
-            out.set(r.product_id, { A: null, B: null, C: null, D: null, E: null, LIST: null });
+            out.set(r.product_id, emptyPivot(priceTypes));
         }
-        out.get(r.product_id)![key] = r.price;
+        out.get(r.product_id)![tierKey] = r.price;
     }
 
     return out;
+}
+
+export function tierLabelForTierKey(tier: string, priceTypes: PriceType[]): string {
+    if (isListTierKey(tier)) return "List Cost";
+
+    const priceTypeId = Number(tier);
+    if (!Number.isFinite(priceTypeId)) return tier;
+
+    const match = priceTypes.find((pt) => pt.price_type_id === priceTypeId);
+    return match?.price_type_name ?? tier;
 }

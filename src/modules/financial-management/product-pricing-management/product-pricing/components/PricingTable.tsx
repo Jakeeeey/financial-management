@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LayoutGrid, Table2 } from "lucide-react";
 
 import PriceCell from "./PriceCell";
+import { isListTierKey, sortPriceTypes, tierLabelForTierKey } from "../utils/pivot";
 
 const PTable = React.forwardRef<
     HTMLTableElement,
@@ -160,20 +161,13 @@ const TIER_STYLES = [
     { head: "bg-fuchsia-50 text-fuchsia-800 dark:bg-fuchsia-950 dark:text-fuchsia-200", cell: "bg-fuchsia-50/30 hover:bg-fuchsia-100/50 dark:bg-fuchsia-950/20", border: "border-fuchsia-100 dark:border-fuchsia-900" },
 ] as const;
 
-function tierStyle(tierIndex: number) {
-    return TIER_STYLES[tierIndex] ?? TIER_STYLES[0];
+function tierStyleFor(tier: ProductTierKey, tiers: ProductTierKey[]) {
+    const index = tiers.indexOf(tier);
+    return TIER_STYLES[index >= 0 ? index % TIER_STYLES.length : 0];
 }
 
-function isTierName(value: string): value is ProductTierKey {
-    return ["A", "B", "C", "D", "E", "LIST"].includes(value);
-}
-
-function sortPriceTypes(priceTypes: PriceType[]): PriceType[] {
-    return [...priceTypes].sort((a, b) => {
-        const aSort = Number(a.sort ?? Number.MAX_SAFE_INTEGER);
-        const bSort = Number(b.sort ?? Number.MAX_SAFE_INTEGER);
-        return aSort - bSort || String(a.price_type_name ?? "").localeCompare(String(b.price_type_name ?? ""));
-    });
+function tierHeaderLabel(tier: ProductTierKey, priceTypes: PriceType[]) {
+    return tierLabelForTierKey(tier, priceTypes);
 }
 
 function toNum(v: unknown, fallback: number) {
@@ -281,12 +275,11 @@ function CardPriceCell(props: {
     matrix: PricingMatrixLike;
     row: MatrixRow;
     tier: ProductTierKey;
-    tierIndex: number;
     unit: Unit | null;
 }) {
-    const { matrix, row, tier, tierIndex, unit } = props;
-    const st = tierStyle(tierIndex);
-    const tierText = tier === "LIST" ? "List" : `Price ${tier}`;
+    const { matrix, row, tier, unit } = props;
+    const st = tierStyleFor(tier, matrix.TIERS);
+    const tierText = tierHeaderLabel(tier, matrix.priceTypes);
     const unitText = unit ? unitLabel(unit) : "UOM";
     const uomId = unit ? Number(unit.unit_id) : 0;
     const variant = unit ? row.variantsByUnitId?.[String(uomId)] : undefined;
@@ -317,7 +310,7 @@ function CardPriceCell(props: {
     const err = toErrorString(matrix.getError(variantProductId, tier));
 
     return (
-        <div className={cn("rounded-md border bg-background p-2", st.border)}>
+        <div className={cn("min-w-0 rounded-md border bg-background p-2", st.border)}>
             <div className="mb-1 truncate text-[11px] font-semibold text-foreground/75">{tierText} / {unitText}</div>
             <PriceCell
                 value={val}
@@ -363,8 +356,8 @@ function PricingCards(props: {
                             <ProductMetaPills row={row} display={display} />
                         </div>
 
-                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                            {tiers.flatMap((tier, tierIndex) => {
+                        <div className="mt-3 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
+                            {tiers.flatMap((tier) => {
                                 if (usedUnits.length > 0) {
                                     return usedUnits.map((unit) => (
                                         <CardPriceCell
@@ -372,7 +365,6 @@ function PricingCards(props: {
                                             matrix={matrix}
                                             row={row}
                                             tier={tier}
-                                            tierIndex={tierIndex}
                                             unit={unit}
                                         />
                                     ));
@@ -384,7 +376,6 @@ function PricingCards(props: {
                                         matrix={matrix}
                                         row={row}
                                         tier={tier}
-                                        tierIndex={tierIndex}
                                         unit={null}
                                     />,
                                 ];
@@ -401,7 +392,7 @@ export default function PricingTable({ matrix }: Props) {
     const usedUnits: Unit[] = Array.isArray(matrix.usedUnits) ? matrix.usedUnits : [];
     const uomCount = Math.max(1, usedUnits.length);
 
-    const tiers = React.useMemo(() => {
+    const tiers = React.useMemo((): ProductTierKey[] => {
         if (matrix.filters.price_view === "ALL") {
             return [...matrix.TIERS];
         }
@@ -416,13 +407,10 @@ export default function PricingTable({ matrix }: Props) {
             sortedPriceTypes.find((pt) => selectedIds.includes(pt.price_type_id)) ??
             sortedPriceTypes[0] ??
             null;
-        const selectedName = String(selectedPriceType?.price_type_name ?? "");
+        const focusedTier = selectedPriceType ? String(selectedPriceType.price_type_id) : "";
+        if (!focusedTier) return ["LIST"] as ProductTierKey[];
 
-        if (isTierName(selectedName) && selectedName !== "LIST" && matrix.TIERS.includes(selectedName)) {
-            return [selectedName];
-        }
-
-        return matrix.TIERS.filter((tier) => tier !== "LIST").slice(0, 1);
+        return [focusedTier, "LIST"] as ProductTierKey[];
     }, [matrix.TIERS, matrix.filters.price_view, matrix.filters.price_type_ids, matrix.priceTypes]);
 
     const rows: MatrixRow[] = Array.isArray(matrix.rows) ? matrix.rows : [];
@@ -580,16 +568,26 @@ export default function PricingTable({ matrix }: Props) {
     );
 
     const priceCols = tiers.length * uomCount;
+    const focusedPriceTiers = tiers.filter((tier) => !isListTierKey(tier));
+    const showsListCost = tiers.some(isListTierKey);
     const priceViewLabel =
         matrix.filters.price_view === "ALL"
             ? "All Prices"
-            : tiers[0] === "LIST"
-                ? "List Price"
-                : `Price ${tiers[0] ?? ""}`;
+            : matrix.filters.price_view === "LIST"
+                ? "List Cost"
+                : showsListCost && focusedPriceTiers.length > 0
+                    ? `${tierLabelForTierKey(focusedPriceTiers[0], matrix.priceTypes)} + List Cost`
+                    : isListTierKey(tiers[0] ?? "")
+                        ? "List Cost"
+                        : tierLabelForTierKey(tiers[0] ?? "", matrix.priceTypes);
     const priceViewHelp =
         matrix.filters.price_view === "ALL"
             ? "Showing every price type. Use the horizontal bar if more columns are available."
-            : `Focused editing for ${priceViewLabel}. Switch to All Prices only when you need the full matrix.`;
+            : matrix.filters.price_view === "LIST"
+                ? "Focused editing for list cost. Switch to All Prices when you need the full matrix."
+                : showsListCost && focusedPriceTiers.length > 0
+                    ? `Edit ${tierLabelForTierKey(focusedPriceTiers[0], matrix.priceTypes)} with list cost visible alongside. Switch to All Prices only when you need every tier.`
+                    : `Focused editing for ${priceViewLabel}. Switch to All Prices only when you need the full matrix.`;
 
     return (
         <div className="relative z-0 flex min-h-0 min-w-0 flex-col rounded-2xl border bg-background shadow-sm">
@@ -755,7 +753,7 @@ export default function PricingTable({ matrix }: Props) {
                                         <PTableHeader>
                                             <PTableRow style={{ height: HEAD_ROW_H }}>
                                                 {tiers.map((t, ti) => {
-                                                    const st = tierStyle(ti);
+                                                    const st = tierStyleFor(t, tiers);
                                                     return (
                                                         <PTableHead
                                                             key={`htier-${String(t)}`}
@@ -769,7 +767,7 @@ export default function PricingTable({ matrix }: Props) {
                                                             colSpan={uomCount}
                                                         >
                                                             <div style={{ height: HEAD_ROW_H }} className="flex items-center justify-center">
-                                                                {t === "LIST" ? "List Price" : t}
+                                                                {tierHeaderLabel(t, matrix.priceTypes)}
                                                             </div>
                                                         </PTableHead>
                                                     );
@@ -778,7 +776,7 @@ export default function PricingTable({ matrix }: Props) {
 
                                             <PTableRow style={{ height: SUBHEAD_ROW_H }}>
                                                 {tiers.map((t, ti) => {
-                                                    const st = tierStyle(ti);
+                                                    const st = tierStyleFor(t, tiers);
 
                                                     if (!usedUnits.length) {
                                                         return (
@@ -850,7 +848,7 @@ export default function PricingTable({ matrix }: Props) {
                                                         onMouseLeave={() => setHoverKey(null)}
                                                     >
                                                         {tiers.map((tier, ti) => {
-                                                            const st = tierStyle(ti);
+                                                            const st = tierStyleFor(tier, tiers);
 
                                                             if (!usedUnits.length) {
                                                                 return (

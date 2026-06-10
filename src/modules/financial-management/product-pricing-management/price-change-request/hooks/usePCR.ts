@@ -10,15 +10,73 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return fallback;
 }
 
-export function usePCRList(initial?: Partial<ListQuery> & { requestType?: "price" | "cost" }) {
-    const requestType = initial?.requestType ?? "price";
+type UsePCRListOptions = {
+    requestType?: "price" | "cost";
+};
 
-    const [query, setQuery] = React.useState<ListQuery>({
-        status: "ALL",
-        page: 1,
-        page_size: 50,
-        ...initial,
+type UsePCRListInitial = Partial<ListQuery> & UsePCRListOptions;
+
+function isInitialArg(
+    value: ListQuery | UsePCRListInitial,
+    setQuery?: React.Dispatch<React.SetStateAction<ListQuery>>,
+): value is UsePCRListInitial {
+    return setQuery == null;
+}
+
+export function usePCRList(
+    query: ListQuery,
+    setQuery: React.Dispatch<React.SetStateAction<ListQuery>>,
+    options?: UsePCRListOptions,
+): {
+    query: ListQuery;
+    setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
+    rows: (PriceChangeRequestRow | CostChangeRequestRow)[];
+    total: number;
+    loading: boolean;
+    refresh: () => Promise<void>;
+};
+
+export function usePCRList(initial: UsePCRListInitial): {
+    query: ListQuery;
+    setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
+    rows: (PriceChangeRequestRow | CostChangeRequestRow)[];
+    total: number;
+    loading: boolean;
+    refresh: () => Promise<void>;
+};
+
+export function usePCRList(
+    queryOrInitial: ListQuery | UsePCRListInitial,
+    setQuery?: React.Dispatch<React.SetStateAction<ListQuery>>,
+    options?: UsePCRListOptions,
+) {
+    const isControlled = setQuery != null;
+    const requestType =
+        options?.requestType ??
+        (isInitialArg(queryOrInitial, setQuery) ? queryOrInitial.requestType : undefined) ??
+        "price";
+
+    const [internalQuery, setInternalQuery] = React.useState<ListQuery>(() => {
+        if (isControlled) {
+            return {
+                status: "ALL",
+                page: 1,
+                page_size: 50,
+            };
+        }
+
+        const initial = queryOrInitial as UsePCRListInitial;
+        const { requestType: _requestType, ...rest } = initial;
+        return {
+            status: "ALL",
+            page: 1,
+            page_size: 50,
+            ...rest,
+        };
     });
+
+    const query = isControlled ? (queryOrInitial as ListQuery) : internalQuery;
+    const effectiveSetQuery = isControlled ? setQuery : setInternalQuery;
 
     const [rows, setRows] = React.useState<(PriceChangeRequestRow | CostChangeRequestRow)[]>([]);
     const [total, setTotal] = React.useState<number>(0);
@@ -47,7 +105,7 @@ export function usePCRList(initial?: Partial<ListQuery> & { requestType?: "price
 
     return {
         query,
-        setQuery,
+        setQuery: effectiveSetQuery,
         rows,
         total,
         loading,

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -11,13 +11,13 @@ import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 import * as api from "../providers/pcrApi";
 import type { CreatePriceChangeBatchPayload } from "../types";
+import { buildTierPriceMap, lookupTierPrice } from "../utils/tierPriceLookup";
 import { BatchPriceGrid } from "./BatchPriceGrid";
 import { useEditableGridNavigation } from "./useEditableGridNavigation";
-
-type ProductPriceField = "price_per_unit" | "priceA" | "priceB" | "priceC" | "priceD" | "priceE";
 
 type FieldErrors = Partial<Record<"supplier_id" | "remarks" | "lines", string>>;
 
@@ -59,35 +59,6 @@ function sortPriceTypes(priceTypes: api.PriceTypeOption[]) {
     });
 }
 
-function pickCurrentPriceField(priceTypeName?: string | null): ProductPriceField {
-    const value = safeStr(priceTypeName).toLowerCase();
-
-    if (/\bprice\s*a\b/.test(value) || /\btier\s*a\b/.test(value) || value === "a" || value.endsWith(" a")) {
-        return "priceA";
-    }
-    if (/\bprice\s*b\b/.test(value) || /\btier\s*b\b/.test(value) || value === "b" || value.endsWith(" b")) {
-        return "priceB";
-    }
-    if (/\bprice\s*c\b/.test(value) || /\btier\s*c\b/.test(value) || value === "c" || value.endsWith(" c")) {
-        return "priceC";
-    }
-    if (/\bprice\s*d\b/.test(value) || /\btier\s*d\b/.test(value) || value === "d" || value.endsWith(" d")) {
-        return "priceD";
-    }
-    if (/\bprice\s*e\b/.test(value) || /\btier\s*e\b/.test(value) || value === "e" || value.endsWith(" e")) {
-        return "priceE";
-    }
-
-    return "price_per_unit";
-}
-
-function currentPriceFor(product: api.ProductSearchRow, priceType: api.PriceTypeOption) {
-    const field = pickCurrentPriceField(priceType.price_type_name);
-    const value = product[field];
-    const numericValue = Number(value);
-    return Number.isFinite(numericValue) ? numericValue : null;
-}
-
 function cellKey(productId: number, priceTypeId: number) {
     return `${productId}:${priceTypeId}`;
 }
@@ -122,28 +93,7 @@ function summarizeCreated(result: {
     return details.length ? ` ${details.join(", ")}.` : "";
 }
 
-async function fetchAllSupplierProducts(supplierId: string) {
-    const pageSize = 200;
-    const rows: api.ProductSearchRow[] = [];
-    let page = 1;
-    let totalPages = 1;
-
-    do {
-        const result = await api.getProductsPage({
-            supplier_ids: supplierId,
-            supplier_scope: "LINKED_ONLY",
-            active_only: "1",
-            page: String(page),
-            page_size: String(pageSize),
-        });
-
-        rows.push(...result.data);
-        totalPages = Math.max(1, Number(result.meta?.totalPages ?? 1));
-        page += 1;
-    } while (page <= totalPages);
-
-    return rows;
-}
+const DEFAULT_CATALOG_PAGE_SIZE = 50;
 
 export function CreatePriceChangeBatchDialog({
     open,
@@ -159,11 +109,32 @@ export function CreatePriceChangeBatchDialog({
 
     const [priceTypes, setPriceTypes] = React.useState<api.PriceTypeOption[]>([]);
     const [products, setProducts] = React.useState<api.ProductSearchRow[]>([]);
+    const [productCatalog, setProductCatalog] = React.useState<Map<number, api.ProductSearchRow>>(new Map());
+    const [tierPriceMap, setTierPriceMap] = React.useState<Map<string, number | null>>(new Map());
     const [draftPrices, setDraftPrices] = React.useState<Map<string, string>>(new Map());
+    const [catalogPage, setCatalogPage] = React.useState(1);
+    const [catalogPageSize, setCatalogPageSize] = React.useState(DEFAULT_CATALOG_PAGE_SIZE);
+    const [catalogTotal, setCatalogTotal] = React.useState(0);
+    const [catalogTotalPages, setCatalogTotalPages] = React.useState(0);
+    const [catalogQuery, setCatalogQuery] = React.useState("");
+    const [localCatalogQ, setLocalCatalogQ] = React.useState("");
     const [loadingPriceTypes, setLoadingPriceTypes] = React.useState(false);
     const [loadingProducts, setLoadingProducts] = React.useState(false);
     const [loadError, setLoadError] = React.useState<string | null>(null);
     const [saving, setSaving] = React.useState(false);
+
+    const resetCatalogState = React.useCallback(() => {
+        setProducts([]);
+        setProductCatalog(new Map());
+        setTierPriceMap(new Map());
+        setDraftPrices(new Map());
+        setCatalogPage(1);
+        setCatalogPageSize(DEFAULT_CATALOG_PAGE_SIZE);
+        setCatalogTotal(0);
+        setCatalogTotalPages(0);
+        setCatalogQuery("");
+        setLocalCatalogQ("");
+    }, []);
 
     React.useEffect(() => {
         if (!open) {
@@ -172,12 +143,11 @@ export function CreatePriceChangeBatchDialog({
             setRemarks("");
             setErrors({});
             setApplyParentPriceToChildren(false);
-            setProducts([]);
-            setDraftPrices(new Map());
+            resetCatalogState();
             setLoadError(null);
             setSaving(false);
         }
-    }, [open]);
+    }, [open, resetCatalogState]);
 
     React.useEffect(() => {
         if (!open) return;
@@ -205,21 +175,44 @@ export function CreatePriceChangeBatchDialog({
     }, [open]);
 
     React.useEffect(() => {
-        if (!open) return;
-
-        setProducts([]);
-        setDraftPrices(new Map());
-        setLoadError(null);
-
-        if (!supplierId) return;
+        if (!open || !supplierId) return;
 
         let alive = true;
         setLoadingProducts(true);
+        setLoadError(null);
 
-        fetchAllSupplierProducts(supplierId)
-            .then((rows) => {
+        api.getProductsPage({
+            supplier_ids: supplierId,
+            supplier_scope: "LINKED_ONLY",
+            active_only: "1",
+            page: String(catalogPage),
+            page_size: String(catalogPageSize),
+            q: catalogQuery || undefined,
+        })
+            .then(async (result) => {
                 if (!alive) return;
-                setProducts(rows);
+
+                const productIds = result.data.map((row) => row.product_id);
+                const priceResult = await api.getPricesForProducts(productIds);
+                if (!alive) return;
+
+                setProducts(result.data);
+                setCatalogTotal(Number(result.meta?.total ?? result.data.length));
+                setCatalogTotalPages(Math.max(0, Number(result.meta?.totalPages ?? 0)));
+                setProductCatalog((prev) => {
+                    const next = new Map(prev);
+                    for (const row of result.data) {
+                        next.set(row.product_id, row);
+                    }
+                    return next;
+                });
+                setTierPriceMap((prev) => {
+                    const next = new Map(prev);
+                    for (const [key, value] of buildTierPriceMap(priceResult.data)) {
+                        next.set(key, value);
+                    }
+                    return next;
+                });
             })
             .catch((error: unknown) => {
                 if (!alive) return;
@@ -233,7 +226,28 @@ export function CreatePriceChangeBatchDialog({
         return () => {
             alive = false;
         };
-    }, [open, supplierId]);
+    }, [open, supplierId, catalogPage, catalogPageSize, catalogQuery]);
+
+    const handleSupplierChange = React.useCallback(
+        (value: string) => {
+            setSupplierId(value);
+            setErrors((prev) => ({ ...prev, supplier_id: undefined }));
+            resetCatalogState();
+        },
+        [resetCatalogState],
+    );
+
+    const applyCatalogSearch = React.useCallback(() => {
+        setCatalogQuery(localCatalogQ.trim());
+        setCatalogPage(1);
+    }, [localCatalogQ]);
+
+    const catalogStartIndex =
+        catalogTotal > 0 && products.length > 0 ? (catalogPage - 1) * catalogPageSize + 1 : 0;
+    const catalogEndIndex =
+        catalogTotal > 0 && products.length > 0 ? catalogStartIndex + products.length - 1 : 0;
+    const canCatalogPrev = catalogPage > 1;
+    const canCatalogNext = catalogTotalPages > 0 ? catalogPage < catalogTotalPages : false;
 
     const supplierOptions = React.useMemo(
         () =>
@@ -244,17 +258,17 @@ export function CreatePriceChangeBatchDialog({
         [suppliers],
     );
 
-    const productsById = React.useMemo(() => {
-        const map = new Map<number, api.ProductSearchRow>();
-        for (const product of products) map.set(product.product_id, product);
-        return map;
-    }, [products]);
-
     const priceTypesById = React.useMemo(() => {
         const map = new Map<number, api.PriceTypeOption>();
         for (const priceType of priceTypes) map.set(priceType.price_type_id, priceType);
         return map;
     }, [priceTypes]);
+
+    const currentPriceFor = React.useCallback(
+        (product: api.ProductSearchRow, priceType: api.PriceTypeOption) =>
+            lookupTierPrice(tierPriceMap, product.product_id, priceType.price_type_id),
+        [tierPriceMap],
+    );
 
     const validation = React.useMemo(() => {
         let validCount = 0;
@@ -304,7 +318,7 @@ export function CreatePriceChangeBatchDialog({
             const [productIdText, priceTypeIdText] = key.split(":");
             const productId = Number(productIdText);
             const priceTypeId = Number(priceTypeIdText);
-            const product = productsById.get(productId);
+            const product = productCatalog.get(productId);
             const priceType = priceTypesById.get(priceTypeId);
             const parsed = parsePriceInput(raw);
 
@@ -319,14 +333,16 @@ export function CreatePriceChangeBatchDialog({
         }
 
         return lines;
-    }, [draftPrices, priceTypesById, productsById]);
+    }, [currentPriceFor, draftPrices, priceTypesById, productCatalog]);
 
     const gridNav = useEditableGridNavigation({
         rowCount: products.length,
         colCount: priceTypes.length,
         disabled: saving,
         onPasteSkipped: (count) => {
-            toast.warning(`${count} pasted cell(s) skipped (invalid price).`);
+            toast.warning(
+                `${count} pasted cell(s) skipped. Only non-negative numbers are accepted.`,
+            );
         },
     });
 
@@ -411,10 +427,7 @@ export function CreatePriceChangeBatchDialog({
                             <SearchableSelect
                                 options={supplierOptions}
                                 value={supplierId}
-                                onValueChange={(value) => {
-                                    setSupplierId(value);
-                                    setErrors((prev) => ({ ...prev, supplier_id: undefined }));
-                                }}
+                                onValueChange={handleSupplierChange}
                                 placeholder="Select supplier"
                                 disabled={suppliers.length === 0 || saving}
                             />
@@ -474,9 +487,42 @@ export function CreatePriceChangeBatchDialog({
                             </div>
                             <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
                                 <div>{validation.validCount} edited price cell(s)</div>
-                                <div>Tab/Enter to move · Paste from Excel</div>
+                                <div>
+                                    Tab/Enter to move · Paste from Excel · Edits kept across pages · Invalid
+                                    values (text or negatives) are skipped
+                                </div>
                             </div>
                         </div>
+
+                        {supplierId ? (
+                            <div className="flex flex-col gap-2 border-b px-3 py-2 sm:flex-row sm:items-center">
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <Search className="size-4 shrink-0 text-muted-foreground" />
+                                    <Input
+                                        value={localCatalogQ}
+                                        onChange={(event) => setLocalCatalogQ(event.target.value)}
+                                        onKeyDown={(event) => {
+                                            if (event.key === "Enter") {
+                                                event.preventDefault();
+                                                applyCatalogSearch();
+                                            }
+                                        }}
+                                        placeholder="Search product name or code"
+                                        className="h-9"
+                                        disabled={saving || loadingProducts}
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={applyCatalogSearch}
+                                        disabled={saving || loadingProducts}
+                                    >
+                                        Search
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : null}
 
                         {loadError ? (
                             <div className="px-3 py-3 text-sm text-destructive">{loadError}</div>
@@ -495,24 +541,85 @@ export function CreatePriceChangeBatchDialog({
                             </div>
                         ) : products.length === 0 ? (
                             <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                                No linked products found for this supplier.
+                                {catalogQuery
+                                    ? "No products match your search."
+                                    : "No linked products found for this supplier."}
                             </div>
                         ) : (
-                            <BatchPriceGrid
-                                products={products}
-                                priceTypes={priceTypes}
-                                draftPrices={draftPrices}
-                                saving={saving}
-                                gridNav={gridNav}
-                                cellKey={cellKey}
-                                formatMoney={formatMoney}
-                                priceTypeLabel={priceTypeLabel}
-                                currentPriceFor={currentPriceFor}
-                                parsePriceInput={parsePriceInput}
-                                groupIdFor={groupIdFor}
-                                isChildVariant={isChildVariant}
-                                onDraftPriceChange={setDraftPrice}
-                            />
+                            <>
+                                <BatchPriceGrid
+                                    products={products}
+                                    priceTypes={priceTypes}
+                                    draftPrices={draftPrices}
+                                    saving={saving}
+                                    gridNav={gridNav}
+                                    cellKey={cellKey}
+                                    formatMoney={formatMoney}
+                                    priceTypeLabel={priceTypeLabel}
+                                    currentPriceFor={currentPriceFor}
+                                    parsePriceInput={parsePriceInput}
+                                    groupIdFor={groupIdFor}
+                                    isChildVariant={isChildVariant}
+                                    onDraftPriceChange={setDraftPrice}
+                                />
+                                <div className="flex flex-col gap-3 border-t px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="text-sm text-muted-foreground">
+                                        Showing{" "}
+                                        <span className="font-medium text-foreground">{catalogStartIndex}</span> -{" "}
+                                        <span className="font-medium text-foreground">{catalogEndIndex}</span>
+                                        {catalogTotal > 0 ? (
+                                            <>
+                                                {" "}
+                                                of <span className="font-medium text-foreground">{catalogTotal}</span>{" "}
+                                                products
+                                            </>
+                                        ) : (
+                                            " products"
+                                        )}
+                                    </div>
+                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                        <select
+                                            className={cn("h-9 rounded-md border bg-background px-2 text-sm")}
+                                            value={String(catalogPageSize)}
+                                            onChange={(event) => {
+                                                setCatalogPageSize(Number(event.target.value));
+                                                setCatalogPage(1);
+                                            }}
+                                            disabled={saving || loadingProducts}
+                                        >
+                                            {[25, 50, 100].map((size) => (
+                                                <option key={size} value={String(size)}>
+                                                    {size} / page
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={!canCatalogPrev || saving || loadingProducts}
+                                            onClick={() => setCatalogPage((page) => Math.max(1, page - 1))}
+                                        >
+                                            Prev
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={!canCatalogNext || saving || loadingProducts}
+                                            onClick={() =>
+                                                setCatalogPage((page) =>
+                                                    catalogTotalPages > 0
+                                                        ? Math.min(catalogTotalPages, page + 1)
+                                                        : page + 1,
+                                                )
+                                            }
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            </>
                         )}
                     </div>
 

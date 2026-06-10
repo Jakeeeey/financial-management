@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Loader2 } from "lucide-react";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
-import type { DirtyPreviewLine, Supplier } from "../types";
+import type { DirtyPreviewLine, SaveAllResult, Supplier } from "../types";
 import { formatPHP } from "../utils/format";
 
 type FieldErrors = Partial<Record<"supplier_id" | "remarks", string>>;
@@ -35,11 +36,18 @@ type Props = {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     suppliers: Supplier[];
+    batchSupplierOptions?: Supplier[];
     defaultSupplierId: number | null;
+    requiresExplicitBatchSupplier?: boolean;
     priceLineCount: number;
     costLineCount: number;
+    offPageDirtyCount?: number;
     previewLines: DirtyPreviewLine[];
-    onSubmit: (payload: { supplier_id: number; reference_no?: string; remarks: string }) => Promise<void>;
+    onSubmit: (payload: {
+        supplier_id: number;
+        reference_no?: string;
+        remarks: string;
+    }) => Promise<SaveAllResult>;
 };
 
 function supplierLabel(supplier: Supplier) {
@@ -52,9 +60,12 @@ export function PriceChangeBatchDialog({
     open,
     onOpenChange,
     suppliers,
+    batchSupplierOptions,
     defaultSupplierId,
+    requiresExplicitBatchSupplier = false,
     priceLineCount,
     costLineCount,
+    offPageDirtyCount = 0,
     previewLines,
     onSubmit,
 }: Props) {
@@ -65,6 +76,7 @@ export function PriceChangeBatchDialog({
     const [submitting, setSubmitting] = React.useState(false);
 
     const requiresBatchFields = priceLineCount > 0;
+    const supplierOptions = batchSupplierOptions ?? suppliers;
 
     React.useEffect(() => {
         if (!open) return;
@@ -93,12 +105,14 @@ export function PriceChangeBatchDialog({
 
         setSubmitting(true);
         try {
-            await onSubmit({
+            const result = await onSubmit({
                 supplier_id: parsedSupplierId,
                 reference_no: referenceNo.trim() || undefined,
                 remarks: trimmedRemarks,
             });
-            onOpenChange(false);
+            if (result.success) {
+                onOpenChange(false);
+            }
         } finally {
             setSubmitting(false);
         }
@@ -129,6 +143,15 @@ export function PriceChangeBatchDialog({
                             <div className="mt-1 text-lg font-semibold">{costLineCount}</div>
                         </div>
                     </div>
+
+                    {offPageDirtyCount > 0 ? (
+                        <Alert>
+                            <AlertDescription>
+                                This save includes {offPageDirtyCount} edit
+                                {offPageDirtyCount === 1 ? "" : "s"} from other pages not visible in the grid.
+                            </AlertDescription>
+                        </Alert>
+                    ) : null}
 
                     <div className="rounded-md border">
                         <div className="border-b bg-muted/30 px-3 py-2 text-sm font-medium">
@@ -183,6 +206,15 @@ export function PriceChangeBatchDialog({
                         </div>
                     </div>
 
+                    {requiresExplicitBatchSupplier ? (
+                        <Alert>
+                            <AlertDescription>
+                                Multiple suppliers are filtered. Select which supplier this batch is for before
+                                submitting.
+                            </AlertDescription>
+                        </Alert>
+                    ) : null}
+
                     <div className="flex flex-col gap-1.5">
                         <Label>
                             Supplier
@@ -194,9 +226,13 @@ export function PriceChangeBatchDialog({
                                 setSupplierId(value);
                                 setErrors((prev) => ({ ...prev, supplier_id: undefined }));
                             }}
-                            placeholder="Select supplier"
+                            placeholder={
+                                requiresExplicitBatchSupplier
+                                    ? "Select supplier for this batch"
+                                    : "Select supplier"
+                            }
                             disabled={submitting}
-                            options={suppliers.map((supplier) => ({
+                            options={supplierOptions.map((supplier) => ({
                                 value: String(supplier.id),
                                 label: supplierLabel(supplier),
                             }))}

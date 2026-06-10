@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+
+import { parseApprovalSearchQuery } from "../_approvalSearch";
+import { toInclusiveDateToEnd } from "../_dateFilters";
+import { appendBatchSupplierFilter, resolveBatchSupplierFilter } from "../_supplierFilters";
 import {
     BatchDetailRow,
     BatchHeaderRow,
@@ -168,14 +172,21 @@ export async function GET(req: NextRequest) {
         };
 
         if (status) addAnd("[status][_eq]", status);
-        if (supplierId) addAnd("[supplier_id][_eq]", supplierId);
+        if (supplierId) {
+            const { headerIdsFromProducts } = await resolveBatchSupplierFilter(supplierId);
+            andIdx = appendBatchSupplierFilter(params, andIdx, supplierId, headerIdsFromProducts);
+        }
         if (dateFrom) addAnd("[requested_at][_gte]", dateFrom);
-        if (dateTo) addAnd("[requested_at][_lte]", dateTo);
+        if (dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(dateTo));
         if (q) {
-            addAnd("[_or][0][reference_no][_contains]", q);
-            params.set(`filter[_and][${andIdx - 1}][_or][1][remarks][_contains]`, q);
-            if (Number.isFinite(Number(q))) {
-                params.set(`filter[_and][${andIdx - 1}][_or][2][header_id][_eq]`, q);
+            const parsed = parseApprovalSearchQuery(q);
+            const headerId = parsed.batchHeaderId ?? parsed.numericId;
+
+            if (headerId != null) {
+                addAnd("[header_id][_eq]", String(headerId));
+            } else if (parsed.textContains) {
+                addAnd("[_or][0][reference_no][_contains]", parsed.textContains);
+                params.set(`filter[_and][${andIdx - 1}][_or][1][remarks][_contains]`, parsed.textContains);
             }
         }
 

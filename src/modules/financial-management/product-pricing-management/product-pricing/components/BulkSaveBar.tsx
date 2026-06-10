@@ -8,8 +8,27 @@ import { Card } from "@/components/ui/card";
 import { Printer, RotateCcw, RefreshCw, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+function saveHelperText(priceDirtyCount: number, costDirtyCount: number): string {
+    const hasPrice = priceDirtyCount > 0;
+    const hasCost = costDirtyCount > 0;
+
+    if (hasPrice && hasCost) {
+        return "Save will create a price change batch and submit list cost requests.";
+    }
+    if (hasPrice) {
+        return "Save will create a price change batch request.";
+    }
+    if (hasCost) {
+        return "Save will submit list cost change requests.";
+    }
+    return "Save your pending changes.";
+}
+
 type Props = {
     dirtyCount: number;
+    priceDirtyCount: number;
+    costDirtyCount: number;
+    offPageDirtyCount?: number;
     loading: boolean;
 
     onSave: () => void;
@@ -22,9 +41,20 @@ type Props = {
 };
 
 export default function BulkSaveBar(props: Props) {
-    const { dirtyCount, loading, onSave, onDiscard, onRefresh, onPrint } = props;
+    const {
+        dirtyCount,
+        priceDirtyCount,
+        costDirtyCount,
+        offPageDirtyCount = 0,
+        loading,
+        onSave,
+        onDiscard,
+        onRefresh,
+        onPrint,
+    } = props;
 
     const hasDirty = dirtyCount > 0;
+    const hasOffPageDirty = offPageDirtyCount > 0;
 
     return (
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
@@ -60,7 +90,16 @@ export default function BulkSaveBar(props: Props) {
                         {dirtyCount} unsaved change{dirtyCount === 1 ? "" : "s"}
                     </Badge>
                     {hasDirty ? (
-                        <span className="text-xs text-muted-foreground">Save will create a batch request.</span>
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-xs text-muted-foreground">
+                                {saveHelperText(priceDirtyCount, costDirtyCount)}
+                            </span>
+                            {hasOffPageDirty ? (
+                                <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                                    Includes {offPageDirtyCount} change{offPageDirtyCount === 1 ? "" : "s"} on other pages.
+                                </span>
+                            ) : null}
+                        </div>
                     ) : null}
                     {loading ? <span className="text-sm text-muted-foreground">Loading…</span> : null}
                 </div>

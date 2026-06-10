@@ -15,22 +15,78 @@ import { PriceChangeBatchDetailDialog } from "./components/PriceChangeBatchDetai
 import { PriceChangeBatchesTable } from "./components/PriceChangeBatchesTable";
 import { RequestFiltersBar } from "./components/RequestFiltersBar";
 import RequestsTable from "./components/RequestsTable";
+import { ListPriceRequestDetailDialog } from "./components/ListPriceRequestDetailDialog";
 import { RejectDialog } from "./components/RejectDialog";
 import { ApproveDialog } from "./components/ApproveDialog";
+import { BulkListCostActionResultDialog } from "./components/BulkListCostActionResultDialog";
+import { BulkListCostApprovePreview } from "./components/BulkListCostApprovePreview";
+import { pcrApproveButtonClass, pcrRejectButtonClass } from "./utils/pcrStatusStyles";
+import { applyBulkActionResult, type BulkActionOutcome } from "./utils/applyBulkActionResult";
 
+import { useListCostBulkSelection } from "./hooks/useListCostBulkSelection";
 import { usePriceChangeBatches } from "./hooks/usePriceChangeBatches";
 import { usePCRList } from "./hooks/usePCR";
 import { usePCRActions } from "./hooks/usePCRActions";
+import { toast } from "sonner";
+
 import { getLookups, SupplierOption } from "./providers/pcrApi";
-import type { ApprovalTypeFilter, ListQuery, PCRStatusFilter } from "./types";
+import { costRequestToUnifiedRow, snapshotFromCostRow } from "./utils/labels";
+import type {
+    ApprovalTypeFilter,
+    CostChangeRequestRow,
+    ListQuery,
+    PCRStatusFilter,
+    PriceChangeRequestRow,
+} from "./types";
+
+type SupplierLookupProps = {
+    suppliers: SupplierOption[];
+    suppliersLoading: boolean;
+    suppliersError: string | null;
+};
+
+const DEFAULT_SHARED_QUERY: ListQuery = {
+    status: "ALL",
+    page: 1,
+    page_size: 50,
+};
 
 export function PriceChangeRequestsModule() {
     const [suppliers, setSuppliers] = React.useState<SupplierOption[]>([]);
+    const [suppliersLoading, setSuppliersLoading] = React.useState(true);
+    const [suppliersError, setSuppliersError] = React.useState<string | null>(null);
     const [typeTab, setTypeTab] = React.useState<ApprovalTypeFilter>("all");
+    const [sharedQuery, setSharedQuery] = React.useState<ListQuery>(DEFAULT_SHARED_QUERY);
+
+    const loadSuppliers = React.useCallback(async () => {
+        setSuppliersLoading(true);
+        try {
+            const res = await getLookups();
+            setSuppliers(res.suppliers);
+            setSuppliersError(null);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : "Failed to load suppliers";
+            setSuppliers([]);
+            setSuppliersError(message);
+            toast.error(message);
+        } finally {
+            setSuppliersLoading(false);
+        }
+    }, []);
 
     React.useEffect(() => {
-        getLookups().then(res => setSuppliers(res.suppliers)).catch(() => {});
-    }, []);
+        void loadSuppliers();
+    }, [loadSuppliers]);
+
+    React.useEffect(() => {
+        setSharedQuery((q) => ({ ...q, page: 1 }));
+    }, [typeTab]);
+
+    const supplierLookupProps: SupplierLookupProps = {
+        suppliers,
+        suppliersLoading,
+        suppliersError,
+    };
 
     return (
         <div className="space-y-3">
@@ -45,6 +101,28 @@ export function PriceChangeRequestsModule() {
                 </CardHeader>
 
                 <CardContent className="space-y-4">
+                    {suppliersError ? (
+                        <Alert variant="destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertTitle>Suppliers could not be loaded</AlertTitle>
+                            <AlertDescription className="space-y-3">
+                                <p>{suppliersError}</p>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => void loadSuppliers()}
+                                    disabled={suppliersLoading}
+                                >
+                                    {suppliersLoading ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : null}
+                                    Retry
+                                </Button>
+                            </AlertDescription>
+                        </Alert>
+                    ) : null}
+
                     <Tabs
                         value={typeTab}
                         onValueChange={(value) => setTypeTab(value as ApprovalTypeFilter)}
@@ -52,15 +130,27 @@ export function PriceChangeRequestsModule() {
                         <PcrTypeTabList />
 
                         <TabsContent value="all">
-                            <UnifiedApprovalsManager suppliers={suppliers} />
+                            <UnifiedApprovalsManager
+                                {...supplierLookupProps}
+                                query={sharedQuery}
+                                setQuery={setSharedQuery}
+                            />
                         </TabsContent>
 
                         <TabsContent value="price">
-                            <PriceBatchManager suppliers={suppliers} />
+                            <PriceBatchManager
+                                {...supplierLookupProps}
+                                query={sharedQuery}
+                                setQuery={setSharedQuery}
+                            />
                         </TabsContent>
 
                         <TabsContent value="cost">
-                            <ItemRequestManager suppliers={suppliers} />
+                            <ItemRequestManager
+                                {...supplierLookupProps}
+                                query={sharedQuery}
+                                setQuery={setSharedQuery}
+                            />
                         </TabsContent>
                     </Tabs>
                 </CardContent>
@@ -69,8 +159,19 @@ export function PriceChangeRequestsModule() {
     );
 }
 
-function PriceBatchManager({ suppliers }: { suppliers: SupplierOption[] }) {
-    const batches = usePriceChangeBatches({ status: "ALL", page_size: 50, page: 1 });
+type ManagerQueryProps = {
+    query: ListQuery;
+    setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
+};
+
+function PriceBatchManager({
+    suppliers,
+    suppliersLoading,
+    suppliersError,
+    query,
+    setQuery,
+}: SupplierLookupProps & ManagerQueryProps) {
+    const batches = usePriceChangeBatches(query, setQuery);
     const statusTab: PCRStatusFilter = batches.query.status || "ALL";
 
     const [creatingBatch, setCreatingBatch] = React.useState(false);
@@ -116,12 +217,15 @@ function PriceBatchManager({ suppliers }: { suppliers: SupplierOption[] }) {
                     query={batches.query}
                     setQuery={batches.setQuery}
                     suppliers={suppliers}
+                    suppliersLoading={suppliersLoading}
+                    suppliersError={suppliersError}
                     loading={batches.loading}
                     total={batches.total}
                     totalLabel="batches"
                     searchLabel="Search batches"
-                    searchPlaceholder="Batch number, reference, or remarks"
-                    searchHelper="Find a price change batch by document number, reference, or remarks."
+                    searchPlaceholder="PCB-123, reference, or remarks"
+                    searchHelper="Find a batch by PCB- number, reference, or remarks."
+                    filterContext="price"
                     onRefresh={batches.refresh}
                 />
 
@@ -223,18 +327,52 @@ function PriceBatchManager({ suppliers }: { suppliers: SupplierOption[] }) {
     );
 }
 
-function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
-    const inbox = usePCRList({ status: "ALL", page_size: 50, page: 1, requestType: "cost" });
+function ItemRequestManager({
+    suppliers,
+    suppliersLoading,
+    suppliersError,
+    query,
+    setQuery,
+}: SupplierLookupProps & ManagerQueryProps) {
+    const inbox = usePCRList(query, setQuery, { requestType: "cost" });
 
     const statusTab: PCRStatusFilter = inbox.query.status || "ALL";
 
+    const [viewingRequestId, setViewingRequestId] = React.useState<number | null>(null);
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
     const [rejectingBulk, setRejectingBulk] = React.useState<boolean>(false);
-    const [selectedIds, setSelectedIds] = React.useState<number[]>([]);
     const [confirmingApprove, setConfirmingApprove] = React.useState<{
         type: 'single' | 'batch';
         id?: number;
     } | null>(null);
+    const [bulkActionOutcome, setBulkActionOutcome] = React.useState<BulkActionOutcome | null>(null);
+
+    const {
+        selectedIds,
+        selectedSnapshots,
+        offPageSelectedCount,
+        toggleSelect: toggleSelectRaw,
+        toggleSelectAllPage,
+        clearSelection,
+        removeSelectionIds,
+    } = useListCostBulkSelection({
+        rows: inbox.rows,
+        isSelectable: (row) => row.status === "PENDING",
+        toSnapshot: (row) => snapshotFromCostRow(row as CostChangeRequestRow),
+    });
+
+    const toggleSelect = React.useCallback(
+        (id: number, checked: boolean, row?: CostChangeRequestRow | PriceChangeRequestRow) => {
+            toggleSelectRaw(id, checked, row && "proposed_cost" in row ? row : undefined);
+        },
+        [toggleSelectRaw],
+    );
+
+    const viewingRequest = React.useMemo(() => {
+        if (viewingRequestId == null) return null;
+        const row = inbox.rows.find((r) => Number(r.request_id) === viewingRequestId);
+        return row ? costRequestToUnifiedRow(row as CostChangeRequestRow) : null;
+    }, [inbox.rows, viewingRequestId]);
 
     const confirmingRequest = React.useMemo(
         () => confirmingApprove?.type === 'single'
@@ -252,54 +390,6 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
         inbox.refresh();
     });
 
-    const pendingInboxIds = React.useMemo(
-        () =>
-            inbox.rows
-                .filter((row) => row.status === "PENDING")
-                .map((row) => Number(row.request_id))
-                .filter((id) => Number.isFinite(id)),
-        [inbox.rows],
-    );
-
-    React.useEffect(() => {
-        setSelectedIds((prev) => prev.filter((id) => pendingInboxIds.includes(id)));
-    }, [pendingInboxIds]);
-
-    const toggleSelect = React.useCallback((id: number, checked: boolean) => {
-        setSelectedIds((prev) => {
-            if (checked) {
-                if (prev.includes(id)) return prev;
-                return [...prev, id];
-            }
-            return prev.filter((value) => value !== id);
-        });
-    }, []);
-
-    const toggleSelectAllPage = React.useCallback(
-        (checked: boolean) => {
-            setSelectedIds((prev) => {
-                const current = new Set(prev);
-
-                if (checked) {
-                    for (const id of pendingInboxIds) {
-                        current.add(id);
-                    }
-                } else {
-                    for (const id of pendingInboxIds) {
-                        current.delete(id);
-                    }
-                }
-
-                return Array.from(current);
-            });
-        },
-        [pendingInboxIds],
-    );
-
-    const clearSelection = React.useCallback(() => {
-        setSelectedIds([]);
-    }, []);
-
     const handleApproveSelected = React.useCallback(() => {
         if (selectedIds.length === 0) return;
         setConfirmingApprove({ type: 'batch' });
@@ -312,13 +402,11 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
             await actions.approve(confirmingApprove.id);
         } else if (confirmingApprove.type === 'batch' && selectedIds.length > 0) {
             const result = await actions.approveMany(selectedIds);
-            if (result.successIds.length > 0) {
-                setSelectedIds((prev) => prev.filter((id) => !result.successIds.includes(id)));
-            }
+            applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
         }
 
         setConfirmingApprove(null);
-    }, [confirmingApprove, actions, selectedIds]);
+    }, [confirmingApprove, actions, selectedIds, selectedSnapshots, removeSelectionIds]);
 
     const rawSetInboxQuery = inbox.setQuery;
     const setInboxQuery = React.useCallback<React.Dispatch<React.SetStateAction<ListQuery>>>(
@@ -333,11 +421,8 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
         if (selectedIds.length === 0) return;
 
         const result = await actions.rejectMany(selectedIds, reason);
-
-        if (result.successIds.length > 0) {
-            setSelectedIds((prev) => prev.filter((id) => !result.successIds.includes(id)));
-        }
-    }, [actions, selectedIds]);
+        applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
+    }, [actions, selectedIds, selectedSnapshots, removeSelectionIds]);
 
     return (
         <div className="space-y-3">
@@ -357,12 +442,15 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                     query={inbox.query}
                     setQuery={setInboxQuery}
                     suppliers={suppliers}
+                    suppliersLoading={suppliersLoading}
+                    suppliersError={suppliersError}
                     loading={inbox.loading}
                     total={inbox.total}
                     totalLabel="requests"
                     searchLabel="Search requests"
-                    searchPlaceholder="Request number or product"
-                    searchHelper="Find list price requests by request number or product."
+                    searchPlaceholder="CCR-123 or product"
+                    searchHelper="Find list price requests by CCR- number or product."
+                    filterContext="cost"
                     onRefresh={() => {
                         clearSelection();
                         inbox.refresh();
@@ -374,9 +462,26 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                     <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="text-sm text-muted-foreground">
                             {selectedIds.length > 0 ? (
-                                <>
-                                    <span className="font-medium text-foreground">{selectedIds.length}</span> request(s) selected
-                                </>
+                                <div className="flex flex-col gap-0.5">
+                                    <span>
+                                        <span className="font-medium text-foreground">{selectedIds.length}</span>{" "}
+                                        request(s) selected
+                                    </span>
+                                    {offPageSelectedCount > 0 ? (
+                                        <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                                            Includes {offPageSelectedCount} on other pages.
+                                        </span>
+                                    ) : null}
+                                    {bulkActionOutcome && bulkActionOutcome.result.failedIds.length > 0 ? (
+                                        <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                                            {bulkActionOutcome.result.failedIds.length} request(s) could not be
+                                            processed. Failed rows remain selected.
+                                        </span>
+                                    ) : null}
+                                    <span className="text-xs text-muted-foreground">
+                                        Select-all applies to pending rows on this page only.
+                                    </span>
+                                </div>
                             ) : (
                                 "Select pending requests to approve them in one save."
                             )}
@@ -385,7 +490,10 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                         <div className="flex flex-wrap items-center gap-2">
                             <Button
                                 variant="outline"
-                                onClick={clearSelection}
+                                onClick={() => {
+                                    clearSelection();
+                                    setBulkActionOutcome(null);
+                                }}
                                 disabled={actions.acting || selectedIds.length === 0}
                             >
                                 <X className="mr-2 h-4 w-4" />
@@ -393,7 +501,8 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                             </Button>
 
                             <Button
-                                variant="destructive"
+                                variant="outline"
+                                className={pcrRejectButtonClass}
                                 onClick={() => setRejectingBulk(true)}
                                 disabled={actions.acting || selectedIds.length === 0}
                             >
@@ -402,6 +511,7 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                             </Button>
 
                             <Button
+                                className={pcrApproveButtonClass}
                                 onClick={handleApproveSelected}
                                 disabled={actions.acting || selectedIds.length === 0}
                             >
@@ -421,6 +531,7 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                     mode={statusTab === "PENDING" || statusTab === "ALL" ? "approver" : "all"}
                     requestType="cost"
                     acting={actions.acting}
+                    onReview={(id) => setViewingRequestId(id)}
                     onApprove={(id) => setConfirmingApprove({ type: 'single', id })}
                     onReject={(id) => setRejectingId(id)}
                     meta={{ total_count: inbox.total }}
@@ -446,6 +557,23 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                 />
             </div>
 
+            <ListPriceRequestDetailDialog
+                row={viewingRequest}
+                open={viewingRequestId != null}
+                acting={actions.acting}
+                onOpenChange={(open) => {
+                    if (!open) setViewingRequestId(null);
+                }}
+                onApprove={(id) => {
+                    setViewingRequestId(null);
+                    setConfirmingApprove({ type: "single", id });
+                }}
+                onReject={(id) => {
+                    setViewingRequestId(null);
+                    setRejectingId(id);
+                }}
+            />
+
             <RejectDialog
                 open={rejectingId != null || rejectingBulk}
                 onOpenChange={(v) => {
@@ -455,6 +583,7 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                     }
                 }}
                 loading={actions.acting}
+                contentClassName={rejectingBulk ? "sm:max-w-2xl" : undefined}
                 title={rejectingBulk ? "Reject Selected Requests" : "Reject Request"}
                 onConfirm={async (reason) => {
                     if (rejectingId != null) {
@@ -466,7 +595,20 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                     }
                 }}
             >
-                {rejectingRequest && (
+                {rejectingBulk ? (
+                    <div className="mb-2 space-y-2">
+                        {offPageSelectedCount > 0 ? (
+                            <Alert>
+                                <AlertDescription>
+                                    This action includes {offPageSelectedCount} selected request(s) from other pages
+                                    not visible in the table.
+                                </AlertDescription>
+                            </Alert>
+                        ) : null}
+                        <BulkListCostApprovePreview items={selectedSnapshots} />
+                    </div>
+                ) : null}
+                {rejectingRequest && !rejectingBulk ? (
                     <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-1 mb-2">
                         <div className="font-semibold">Request #{rejectingRequest.request_id}</div>
                         {'current_cost' in rejectingRequest && rejectingRequest.current_cost != null && (
@@ -480,7 +622,7 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                             </div>
                         )}
                     </div>
-                )}
+                ) : null}
             </RejectDialog>
 
             <ApproveDialog
@@ -488,17 +630,33 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                 onOpenChange={() => setConfirmingApprove(null)}
                 loading={actions.acting}
                 onConfirm={() => void handleConfirmApprove()}
+                contentClassName={
+                    confirmingApprove?.type === "batch" ? "sm:max-w-2xl" : undefined
+                }
                 title={
                     confirmingApprove?.type === 'batch'
-                        ? "Confirm Batch Approval"
+                        ? "Approve Selected List Cost Requests"
                         : "Confirm Approval"
                 }
                 description={
                     confirmingApprove?.type === 'batch'
-                        ? `Are you sure you want to approve ${selectedIds.length} selected request(s)?`
+                        ? `You are about to approve ${selectedSnapshots.length} list cost request(s).`
                         : "Are you sure you want to approve this request?"
                 }
             >
+                {confirmingApprove?.type === "batch" ? (
+                    <div className="space-y-2">
+                        {offPageSelectedCount > 0 ? (
+                            <Alert>
+                                <AlertDescription>
+                                    This action includes {offPageSelectedCount} selected request(s) from other pages
+                                    not visible in the table.
+                                </AlertDescription>
+                            </Alert>
+                        ) : null}
+                        <BulkListCostApprovePreview items={selectedSnapshots} />
+                    </div>
+                ) : null}
                 {confirmingRequest && (
                     <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-1">
                         <div className="font-semibold">Request #{confirmingRequest.request_id}</div>
@@ -515,6 +673,15 @@ function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
                     </div>
                 )}
             </ApproveDialog>
+
+            <BulkListCostActionResultDialog
+                open={bulkActionOutcome != null}
+                onOpenChange={(open) => {
+                    if (!open) setBulkActionOutcome(null);
+                }}
+                result={bulkActionOutcome?.result ?? null}
+                snapshots={bulkActionOutcome?.snapshots ?? []}
+            />
         </div>
     );
 }

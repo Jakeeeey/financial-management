@@ -2,7 +2,8 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-import type { MatrixRow, ProductTierKey, Unit, PriceType } from "../types";
+import type { MatrixRow, Unit, PriceType } from "../types";
+import { buildMatrixTierKeys, isListTierKey, tierLabelForTierKey } from "./pivot";
 
 type Options = {
     paper?: "a4" | "legal" | "a3";
@@ -38,23 +39,18 @@ function money(v: unknown): string {
     });
 }
 
-const TIERS: ProductTierKey[] = ["A", "B", "C", "D", "E"];
+const TIER_PALETTE: Array<{ fill: [number, number, number]; text: [number, number, number] }> = [
+    { fill: [248, 250, 252], text: [30, 41, 59] },
+    { fill: [240, 249, 255], text: [3, 105, 161] },
+    { fill: [236, 253, 245], text: [4, 120, 87] },
+    { fill: [245, 243, 255], text: [109, 40, 217] },
+    { fill: [255, 251, 235], text: [180, 83, 9] },
+    { fill: [255, 241, 242], text: [190, 18, 60] },
+];
 
-const groupColors: Record<string, [number, number, number]> = {
-    A: [240, 249, 255], // sky-50
-    B: [236, 253, 245], // emerald-50
-    C: [245, 243, 255], // violet-50
-    D: [255, 251, 235], // amber-50
-    E: [255, 241, 242], // rose-50
-};
-
-const groupTextColors: Record<string, [number, number, number]> = {
-    A: [3, 105, 161],  // sky-700
-    B: [4, 120, 87],   // emerald-700
-    C: [109, 40, 217], // violet-700
-    D: [180, 83, 9],   // amber-800
-    E: [190, 18, 60],  // rose-700
-};
+function tierPalette(index: number) {
+    return TIER_PALETTE[index % TIER_PALETTE.length];
+}
 
 export function generatePricingMatrixPdf(
     rows: MatrixRow[],
@@ -75,20 +71,23 @@ export function generatePricingMatrixPdf(
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     const uomCount = Math.max(usedUnits.length, 1);
+    const priceTypesList = opts.priceTypes ?? [];
+    const tiers = buildMatrixTierKeys(priceTypesList);
 
     // --- Header Construction (3 Levels) ---
     const headRow1: PdfCell[] = [
         { content: "Product Details", colSpan: includeBarcode ? 5 : 4, styles: { halign: "center", fontStyle: "bold" } },
     ];
 
-    for (const tier of TIERS) {
+    for (const [tierIndex, tier] of tiers.entries()) {
+        const palette = tierPalette(tierIndex);
         headRow1.push({
-            content: `PRICE TYPE ${tier}`,
+            content: tierLabelForTierKey(tier, priceTypesList),
             colSpan: uomCount,
             styles: { 
                 halign: "center", 
-                fillColor: groupColors[tier],
-                textColor: groupTextColors[tier],
+                fillColor: palette.fill,
+                textColor: palette.text,
                 fontStyle: "bold"
             },
         });
@@ -104,22 +103,27 @@ export function generatePricingMatrixPdf(
 
     if (!includeBarcode) headRow2.splice(1, 1);
 
-    for (const tier of TIERS) {
+    for (const [tierIndex, tier] of tiers.entries()) {
+        const palette = tierPalette(tierIndex);
         headRow2.push({
-            content: `Tier ${tier}`,
+            content: tierLabelForTierKey(tier, priceTypesList),
             colSpan: uomCount,
             styles: { 
                 halign: "center",
-                fillColor: groupColors[tier],
-                textColor: groupTextColors[tier]
+                fillColor: palette.fill,
+                textColor: palette.text
             },
         });
     }
 
     const headRow3: PdfCell[] = [];
-    for (const tier of TIERS) {
+    for (const [tierIndex, tier] of tiers.entries()) {
+        const palette = tierPalette(tierIndex);
         if (usedUnits.length === 0) {
-            headRow3.push({ content: "Price", styles: { halign: "center", fillColor: groupColors[tier] } });
+            headRow3.push({
+                content: isListTierKey(tier) ? "Cost" : "Price",
+                styles: { halign: "center", fillColor: palette.fill },
+            });
         } else {
             for (const unit of usedUnits) {
                 headRow3.push({
@@ -127,7 +131,7 @@ export function generatePricingMatrixPdf(
                     styles: { 
                         halign: "center", 
                         fontSize: 7,
-                        fillColor: groupColors[tier]
+                        fillColor: palette.fill
                     },
                 });
             }
@@ -145,7 +149,7 @@ export function generatePricingMatrixPdf(
         cells.push(row.category_name || "—");
         cells.push(row.brand_name || "—");
 
-        for (const tier of TIERS) {
+        for (const tier of tiers) {
             if (usedUnits.length === 0) {
                 cells.push(""); 
             } else {
@@ -194,9 +198,9 @@ export function generatePricingMatrixPdf(
         didParseCell: (data) => {
             if (data.section === "body" && data.column.index >= (includeBarcode ? 5 : 4)) {
                 const tierIdx = Math.floor((data.column.index - (includeBarcode ? 5 : 4)) / uomCount);
-                const tier = TIERS[tierIdx];
+                const tier = tiers[tierIdx];
                 if (tier) {
-                    data.cell.styles.fillColor = groupColors[tier];
+                    data.cell.styles.fillColor = tierPalette(tierIdx).fill;
                     data.cell.styles.halign = "right";
                 }
             }

@@ -15,6 +15,8 @@ export type UnifiedApprovalRow = {
     line_count?: number;
     batch_id?: number;
     request_id?: number;
+    current_cost?: number | null;
+    proposed_cost?: number | null;
 };
 
 export type ApprovalTypeFilter = "all" | "price" | "cost";
@@ -151,7 +153,25 @@ export type ActionPayload =
     | { action: "cancel"; request_id: number }
     | { action: "reject"; request_id: number; reject_reason: string };
 
-export type ApproveManyResult = {
+export type BulkActionFailure = {
+    request_id: number;
+    message: string;
+};
+
+export type BulkActionResult = {
+    action: "approve" | "reject";
     successIds: number[];
     failedIds: number[];
+    failures: BulkActionFailure[];
+};
+
+/** @deprecated Use BulkActionResult */
+export type ApproveManyResult = Pick<BulkActionResult, "successIds" | "failedIds">;
+
+export type ListCostSelectionSnapshot = {
+    request_id: number;
+    record_label: string;
+    product_label: string;
+    current_cost: number | null;
+    proposed_cost: number;
 };

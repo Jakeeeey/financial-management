@@ -16,7 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { ListMeta, PriceChangeBatchHeader } from "../types";
-import { pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 function numberText(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
@@ -80,7 +80,7 @@ export function PriceChangeBatchesTable({
                         <TableHead className="w-[90px] text-right">Lines</TableHead>
                         <TableHead className="w-[120px]">Status</TableHead>
                         <TableHead className="w-[180px]">Requested At</TableHead>
-                        <TableHead className="w-[260px] text-right">Actions</TableHead>
+                        <TableHead className="min-w-[280px] text-right">Actions</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -122,17 +122,18 @@ export function PriceChangeBatchesTable({
                                     </TableCell>
                                     <TableCell>{safeDate(row.requested_at)}</TableCell>
                                     <TableCell className="text-right">
-                                        <div className="inline-flex flex-wrap justify-end gap-2">
+                                        <div className="inline-flex flex-nowrap items-center justify-end gap-2">
                                             <Button size="sm" variant="outline" onClick={() => onOpen(headerId)}>
                                                 <Eye className="mr-2 size-4" />
                                                 Review
                                             </Button>
-                                            <Button size="sm" onClick={() => onApprove(headerId)} disabled={acting || !isPending}>
+                                            <Button size="sm" className={pcrApproveButtonClass} onClick={() => onApprove(headerId)} disabled={acting || !isPending}>
                                                 Approve
                                             </Button>
                                             <Button
                                                 size="sm"
-                                                variant="destructive"
+                                                variant="outline"
+                                                className={pcrRejectButtonClass}
                                                 onClick={() => onReject(headerId)}
                                                 disabled={acting || !isPending}
                                             >

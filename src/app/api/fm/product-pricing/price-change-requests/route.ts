@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { parseApprovalSearchQuery } from "../_approvalSearch";
+import { toInclusiveDateToEnd } from "../_dateFilters";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -252,7 +255,7 @@ export async function GET(req: NextRequest) {
         if (price_type_id) addAnd("[price_type_id][_eq]", price_type_id);
         if (requested_by) addAnd("[requested_by][_eq]", requested_by);
         if (date_from) addAnd("[requested_at][_gte]", date_from);
-        if (date_to) addAnd("[requested_at][_lte]", date_to);
+        if (date_to) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(date_to));
 
         if (supplier_id) {
             const supplierProductIds = await getSupplierProductIds(supplier_id);
@@ -263,9 +266,15 @@ export async function GET(req: NextRequest) {
         }
 
         if (q) {
-            addAnd("[_or][0][product_id][product_name][_contains]", q);
-            params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, q);
-            params.set(`filter[_and][${andIdx - 1}][_or][2][request_id][_eq]`, q);
+            const parsed = parseApprovalSearchQuery(q);
+            const requestId = parsed.priceRequestId ?? parsed.numericId;
+
+            if (requestId != null) {
+                addAnd("[request_id][_eq]", String(requestId));
+            } else if (parsed.textContains) {
+                addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
+                params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+            }
         }
 
         const url = `${mustBase()}/items/${PCR}?${params.toString()}`;

@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 
 import type { PriceChangeBatchDetail, PriceChangeBatchLine } from "../types";
 import { getPriceChangeBatch } from "../providers/pcrApi";
-import { pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
     batchId: number | null;
@@ -61,11 +61,33 @@ function diffClass(line: PriceChangeBatchLine) {
     return "text-muted-foreground";
 }
 
-function total(lines: PriceChangeBatchLine[], field: "current_price" | "proposed_price") {
-    return lines.reduce((sum, line) => {
-        const value = Number(line[field]);
-        return Number.isFinite(value) ? sum + value : sum;
-    }, 0);
+function buildLineSummary(lines: PriceChangeBatchLine[]) {
+    const productIds = new Set<number>();
+    const priceTypeIds = new Set<number>();
+    let increaseCount = 0;
+    let decreaseCount = 0;
+
+    for (const line of lines) {
+        if (Number.isFinite(line.product_id)) {
+            productIds.add(Number(line.product_id));
+        }
+        if (Number.isFinite(line.price_type_id)) {
+            priceTypeIds.add(Number(line.price_type_id));
+        }
+        const delta = Number(line.delta ?? 0);
+        if (Number.isFinite(delta)) {
+            if (delta > 0) increaseCount += 1;
+            if (delta < 0) decreaseCount += 1;
+        }
+    }
+
+    return {
+        lineCount: lines.length,
+        productCount: productIds.size,
+        priceTypeCount: priceTypeIds.size,
+        increaseCount,
+        decreaseCount,
+    };
 }
 
 export function PriceChangeBatchDetailDialog({
@@ -109,8 +131,7 @@ export function PriceChangeBatchDetailDialog({
 
     const lines = detail?.details ?? [];
     const isPending = detail?.status === "PENDING";
-    const currentTotal = total(lines, "current_price");
-    const proposedTotal = total(lines, "proposed_price");
+    const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
     const headerId = detail?.header_id ?? batchId ?? 0;
 
     return (
@@ -202,16 +223,22 @@ export function PriceChangeBatchDetailDialog({
                                     ) : (
                                         <TableRow>
                                             <TableCell colSpan={2} className="font-medium">
-                                                Total
+                                                Summary
                                             </TableCell>
-                                            <TableCell className="text-right font-medium">{money(currentTotal)}</TableCell>
-                                            <TableCell className="text-right font-medium">{money(proposedTotal)}</TableCell>
-                                            <TableCell className="text-right font-medium">{money(proposedTotal - currentTotal)}</TableCell>
-                                            <TableCell />
+                                            <TableCell colSpan={4} className="text-sm text-muted-foreground">
+                                                {lineSummary.lineCount} line(s) · {lineSummary.productCount} product(s) ·{" "}
+                                                {lineSummary.priceTypeCount} price type(s)
+                                                {lineSummary.increaseCount > 0 || lineSummary.decreaseCount > 0
+                                                    ? ` · ${lineSummary.increaseCount} increase(s), ${lineSummary.decreaseCount} decrease(s)`
+                                                    : null}
+                                            </TableCell>
                                         </TableRow>
                                     )}
                                 </TableBody>
                             </Table>
+                            <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+                                Amounts are not totaled across products and price types.
+                            </p>
                         </div>
                     </div>
                 ) : (
@@ -225,13 +252,15 @@ export function PriceChangeBatchDetailDialog({
                     {isPending && headerId ? (
                         <>
                             <Button
-                                variant="destructive"
+                                variant="outline"
+                                className={pcrRejectButtonClass}
                                 onClick={() => onReject(headerId)}
                                 disabled={acting}
                             >
                                 Reject Batch
                             </Button>
                             <Button
+                                className={pcrApproveButtonClass}
                                 onClick={() => onApprove(headerId)}
                                 disabled={acting}
                             >

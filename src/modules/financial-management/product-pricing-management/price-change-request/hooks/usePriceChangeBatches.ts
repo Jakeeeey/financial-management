@@ -11,14 +11,10 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return fallback;
 }
 
-export function usePriceChangeBatches(initial?: Partial<ListQuery>) {
-    const [query, setQuery] = React.useState<ListQuery>({
-        status: "ALL",
-        page: 1,
-        page_size: 50,
-        ...initial,
-    });
-
+export function usePriceChangeBatches(
+    query: ListQuery,
+    setQuery: React.Dispatch<React.SetStateAction<ListQuery>>,
+) {
     const [rows, setRows] = React.useState<PriceChangeBatchHeader[]>([]);
     const [total, setTotal] = React.useState(0);
     const [loading, setLoading] = React.useState(false);
@@ -37,7 +33,6 @@ export function usePriceChangeBatches(initial?: Partial<ListQuery>) {
             setRows([]);
             setTotal(0);
             setError(message);
-            toast.error(message);
         } finally {
             setLoading(false);
         }

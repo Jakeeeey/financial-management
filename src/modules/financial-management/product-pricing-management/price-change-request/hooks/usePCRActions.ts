@@ -2,12 +2,16 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import type { ApproveManyResult } from "../types";
+import type { BulkActionResult } from "../types";
 import * as api from "../providers/pcrApi";
 
 function getErrorMessage(error: unknown, fallback: string): string {
     if (error instanceof Error && error.message) return error.message;
     return fallback;
+}
+
+function emptyBulkResult(action: BulkActionResult["action"]): BulkActionResult {
+    return { action, successIds: [], failedIds: [], failures: [] };
 }
 
 export function usePCRActions(onDone?: () => void) {
@@ -30,39 +34,46 @@ export function usePCRActions(onDone?: () => void) {
     );
 
     const approveMany = React.useCallback(
-        async (requestIds: number[]): Promise<ApproveManyResult> => {
+        async (requestIds: number[]): Promise<BulkActionResult> => {
             const uniqueIds = Array.from(new Set(requestIds)).filter((id) => Number.isFinite(id));
 
             if (uniqueIds.length === 0) {
-                return { successIds: [], failedIds: [] };
+                return emptyBulkResult("approve");
             }
 
             setActing(true);
 
             const successIds: number[] = [];
             const failedIds: number[] = [];
+            const failures: BulkActionResult["failures"] = [];
 
             try {
                 for (const request_id of uniqueIds) {
                     try {
                         await api.actionCostRequest({ action: "approve", request_id });
                         successIds.push(request_id);
-                    } catch {
+                    } catch (error: unknown) {
                         failedIds.push(request_id);
+                        failures.push({
+                            request_id,
+                            message: getErrorMessage(error, "Request failed"),
+                        });
                     }
                 }
 
                 if (successIds.length > 0 && failedIds.length === 0) {
                     toast.success(`${successIds.length} request(s) approved and applied.`);
-                } else if (successIds.length > 0 && failedIds.length > 0) {
-                    toast.warning(`${successIds.length} approved, ${failedIds.length} failed.`);
-                } else {
-                    toast.error("Failed to approve selected requests.");
+                } else if (failedIds.length > 0) {
+                    const successPart =
+                        successIds.length > 0 ? `${successIds.length} approved, ` : "";
+                    toast.warning(`${successPart}${failedIds.length} failed — see details`);
                 }
 
-                onDone?.();
+                if (successIds.length > 0) {
+                    onDone?.();
+                }
 
-                return { successIds, failedIds };
+                return { action: "approve", successIds, failedIds, failures };
             } finally {
                 setActing(false);
             }
@@ -103,39 +114,46 @@ export function usePCRActions(onDone?: () => void) {
     );
 
     const rejectMany = React.useCallback(
-        async (requestIds: number[], reject_reason: string): Promise<ApproveManyResult> => {
+        async (requestIds: number[], reject_reason: string): Promise<BulkActionResult> => {
             const uniqueIds = Array.from(new Set(requestIds)).filter((id) => Number.isFinite(id));
 
             if (uniqueIds.length === 0) {
-                return { successIds: [], failedIds: [] };
+                return emptyBulkResult("reject");
             }
 
             setActing(true);
 
             const successIds: number[] = [];
             const failedIds: number[] = [];
+            const failures: BulkActionResult["failures"] = [];
 
             try {
                 for (const request_id of uniqueIds) {
                     try {
                         await api.actionCostRequest({ action: "reject", request_id, reject_reason });
                         successIds.push(request_id);
-                    } catch {
+                    } catch (error: unknown) {
                         failedIds.push(request_id);
+                        failures.push({
+                            request_id,
+                            message: getErrorMessage(error, "Request failed"),
+                        });
                     }
                 }
 
                 if (successIds.length > 0 && failedIds.length === 0) {
                     toast.success(`${successIds.length} request(s) rejected.`);
-                } else if (successIds.length > 0 && failedIds.length > 0) {
-                    toast.warning(`${successIds.length} rejected, ${failedIds.length} failed.`);
-                } else {
-                    toast.error("Failed to reject selected requests.");
+                } else if (failedIds.length > 0) {
+                    const successPart =
+                        successIds.length > 0 ? `${successIds.length} rejected, ` : "";
+                    toast.warning(`${successPart}${failedIds.length} failed — see details`);
                 }
 
-                onDone?.();
+                if (successIds.length > 0) {
+                    onDone?.();
+                }
 
-                return { successIds, failedIds };
+                return { action: "reject", successIds, failedIds, failures };
             } finally {
                 setActing(false);
             }

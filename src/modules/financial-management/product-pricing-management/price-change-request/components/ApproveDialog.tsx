@@ -5,6 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
+import { pcrApproveButtonClass } from "../utils/pcrStatusStyles";
+
 export function ApproveDialog(props: {
     open: boolean;
     onOpenChange: (v: boolean) => void;
@@ -12,11 +14,12 @@ export function ApproveDialog(props: {
     loading?: boolean;
     title?: string;
     description?: string;
+    contentClassName?: string;
     children?: React.ReactNode;
 }) {
     return (
         <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className={props.contentClassName ?? "sm:max-w-md"}>
                 <DialogHeader>
                     <DialogTitle>{props.title || "Confirm Approval"}</DialogTitle>
                 </DialogHeader>
@@ -31,7 +34,7 @@ export function ApproveDialog(props: {
                     <Button variant="outline" onClick={() => props.onOpenChange(false)} disabled={props.loading}>
                         Cancel
                     </Button>
-                    <Button onClick={props.onConfirm} disabled={props.loading}>
+                    <Button className={pcrApproveButtonClass} onClick={props.onConfirm} disabled={props.loading}>
                         {props.loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                         Approve
                     </Button>

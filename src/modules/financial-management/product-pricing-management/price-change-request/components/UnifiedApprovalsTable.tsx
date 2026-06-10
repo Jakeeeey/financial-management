@@ -17,7 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { ListMeta, UnifiedApprovalRow } from "../types";
-import { pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 function safeDate(value: string | null | undefined) {
     if (!value) return "-";
@@ -44,9 +44,10 @@ type Props = {
     onOpenBatch: (headerId: number) => void;
     onApproveBatch: (headerId: number) => void;
     onRejectBatch: (headerId: number) => void;
+    onOpenCost?: (requestId: number) => void;
     onApproveCost: (requestId: number) => void;
     onRejectCost: (requestId: number) => void;
-    onToggleCostSelect?: (requestId: number, checked: boolean) => void;
+    onToggleCostSelect?: (requestId: number, checked: boolean, row?: UnifiedApprovalRow) => void;
     onToggleSelectAllPendingCost?: (checked: boolean) => void;
     showCostSelection?: boolean;
 };
@@ -64,6 +65,7 @@ export function UnifiedApprovalsTable({
     onOpenBatch,
     onApproveBatch,
     onRejectBatch,
+    onOpenCost,
     onApproveCost,
     onRejectCost,
     onToggleCostSelect,
@@ -116,7 +118,7 @@ export function UnifiedApprovalsTable({
                         <TableHead>Summary</TableHead>
                         <TableHead className="w-[120px]">Status</TableHead>
                         <TableHead className="w-[180px]">Requested At</TableHead>
-                        <TableHead className="w-[260px] text-right">Actions</TableHead>
+                        <TableHead className="min-w-[280px] text-right">Actions</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -151,7 +153,7 @@ export function UnifiedApprovalsTable({
                                                         className="h-[18px] w-[18px]"
                                                         checked={isCostSelected}
                                                         onCheckedChange={(checked) =>
-                                                            onToggleCostSelect?.(requestId, checked === true)
+                                                            onToggleCostSelect?.(requestId, checked === true, row)
                                                         }
                                                         aria-label={`Select ${row.record_label}`}
                                                         disabled={acting || !isPending}
@@ -186,7 +188,7 @@ export function UnifiedApprovalsTable({
                                     </TableCell>
                                     <TableCell>{safeDate(row.requested_at)}</TableCell>
                                     <TableCell className="text-right">
-                                        <div className="inline-flex flex-wrap justify-end gap-2">
+                                        <div className="inline-flex flex-nowrap items-center justify-end gap-2">
                                             {isBatch && batchId ? (
                                                 <>
                                                     <Button
@@ -199,6 +201,7 @@ export function UnifiedApprovalsTable({
                                                     </Button>
                                                     <Button
                                                         size="sm"
+                                                        className={pcrApproveButtonClass}
                                                         onClick={() => onApproveBatch(batchId)}
                                                         disabled={acting || !isPending}
                                                     >
@@ -206,7 +209,8 @@ export function UnifiedApprovalsTable({
                                                     </Button>
                                                     <Button
                                                         size="sm"
-                                                        variant="destructive"
+                                                        variant="outline"
+                                                        className={pcrRejectButtonClass}
                                                         onClick={() => onRejectBatch(batchId)}
                                                         disabled={acting || !isPending}
                                                     >
@@ -217,6 +221,15 @@ export function UnifiedApprovalsTable({
                                                 <>
                                                     <Button
                                                         size="sm"
+                                                        variant="outline"
+                                                        onClick={() => onOpenCost?.(requestId)}
+                                                    >
+                                                        <Eye className="mr-2 size-4" />
+                                                        Review
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        className={pcrApproveButtonClass}
                                                         onClick={() => onApproveCost(requestId)}
                                                         disabled={acting || !isPending}
                                                     >
@@ -224,7 +237,8 @@ export function UnifiedApprovalsTable({
                                                     </Button>
                                                     <Button
                                                         size="sm"
-                                                        variant="destructive"
+                                                        variant="outline"
+                                                        className={pcrRejectButtonClass}
                                                         onClick={() => onRejectCost(requestId)}
                                                         disabled={acting || !isPending}
                                                     >

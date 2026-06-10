@@ -19,19 +19,45 @@ import type { ListQuery } from "../types";
 import type { SupplierOption } from "../providers/pcrApi";
 import { pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
+type FilterContext = "all" | "price" | "cost";
+
 type Props = {
     query: ListQuery;
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
     suppliers: SupplierOption[];
+    suppliersLoading?: boolean;
+    suppliersError?: string | null;
     loading: boolean;
     total: number;
     totalLabel: string;
     searchLabel: string;
     searchPlaceholder: string;
     searchHelper: string;
+    filterContext?: FilterContext;
     onRefresh: () => void;
     onReset?: () => void;
 };
+
+function supplierFilterHelperText(
+    filterContext: FilterContext,
+    hasSupplier: boolean,
+): string {
+    if (!hasSupplier) {
+        if (filterContext === "all") return "All suppliers included.";
+        if (filterContext === "price") {
+            return "All suppliers included. Batches match by header supplier or linked products.";
+        }
+        return "All suppliers included. List-cost requests match by product linkage.";
+    }
+
+    if (filterContext === "all") {
+        return "Batches and list-cost requests for this supplier (by header or product linkage).";
+    }
+    if (filterContext === "price") {
+        return "Batches for this supplier (by header or linked products).";
+    }
+    return "List-cost requests for products linked to this supplier.";
+}
 
 function safeStr(value: unknown): string {
     const text = String(value ?? "").trim();
@@ -66,15 +92,25 @@ export function RequestFiltersBar(props: Props) {
         query,
         setQuery,
         suppliers,
+        suppliersLoading = false,
+        suppliersError = null,
         loading,
         total,
         totalLabel,
         searchLabel,
         searchPlaceholder,
         searchHelper,
+        filterContext = "all",
         onRefresh,
         onReset,
     } = props;
+
+    const supplierFilterDisabled = suppliersLoading || Boolean(suppliersError);
+    const supplierHelper = suppliersError
+        ? "Supplier filter is unavailable until suppliers reload successfully."
+        : suppliersLoading
+          ? "Loading suppliers..."
+          : supplierFilterHelperText(filterContext, Boolean(query.supplier_id));
 
     const [localQ, setLocalQ] = React.useState(query.q ?? "");
 
@@ -142,7 +178,6 @@ export function RequestFiltersBar(props: Props) {
         setLocalQ("");
         setQuery((prev) => ({
             ...prev,
-            status: "ALL",
             q: "",
             supplier_id: "",
             date_from: "",
@@ -154,7 +189,7 @@ export function RequestFiltersBar(props: Props) {
 
     const q = safeStr(query.q);
     const hasDateRange = Boolean(query.date_from || query.date_to);
-    const hasFilters = Boolean(q || query.supplier_id || hasDateRange || (query.status && query.status !== "ALL"));
+    const hasFilters = Boolean(q || query.supplier_id || hasDateRange);
 
     const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
 
@@ -284,13 +319,14 @@ export function RequestFiltersBar(props: Props) {
                         </InputGroup>
                     </FilterField>
 
-                    <FilterField label="Supplier" helper={query.supplier_id ? "Showing requests for one supplier." : "All suppliers included."}>
+                    <FilterField label="Supplier" helper={supplierHelper}>
                         <SearchableSelect
                             className="h-10 w-full justify-between bg-background shadow-none"
-                            placeholder="All suppliers"
+                            placeholder={suppliersLoading ? "Loading suppliers..." : "All suppliers"}
                             value={String(query.supplier_id ?? "")}
                             onValueChange={setSupplier}
                             options={supplierOptions}
+                            disabled={supplierFilterDisabled}
                         />
                     </FilterField>
 

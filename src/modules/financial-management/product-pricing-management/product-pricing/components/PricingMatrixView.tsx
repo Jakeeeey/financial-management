@@ -4,6 +4,16 @@
 import * as React from "react";
 import { toast } from "sonner";
 
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -16,7 +26,7 @@ import PricingTable from "./PricingTable";
 import BulkSaveBar from "./BulkSaveBar";
 import { PriceChangeBatchDialog } from "./PriceChangeBatchDialog";
 
-import { pivotPrices } from "../utils/pivot";
+import { emptyPivot, pivotPrices } from "../utils/pivot";
 import * as api from "../providers/pricingApi";
 import PrintPricingDialog from "./PrintPricingDialog";
 
@@ -333,7 +343,22 @@ export default function PricingMatrixView() {
     const supplierScope: SupplierScope = matrix.filters.supplier_scope;
     const supplierFilterActive =
         selectedSupplierIds.length > 0 && supplierScope === "LINKED_ONLY";
-    const defaultBatchSupplierId = selectedSupplierIds.length === 1 ? Number(selectedSupplierIds[0]) : null;
+    const batchSupplierOptions = React.useMemo(() => {
+        if (!supplierFilterActive || selectedSupplierIds.length === 0) {
+            return lookups.suppliers;
+        }
+        const allowed = new Set(selectedSupplierIds.map(Number));
+        return lookups.suppliers.filter((supplier) => allowed.has(supplier.id));
+    }, [supplierFilterActive, selectedSupplierIds, lookups.suppliers]);
+
+    const requiresExplicitBatchSupplier =
+        supplierFilterActive && selectedSupplierIds.length > 1;
+
+    const defaultBatchSupplierId = React.useMemo(() => {
+        if (!supplierFilterActive || selectedSupplierIds.length !== 1) return null;
+        const id = Number(selectedSupplierIds[0]);
+        return Number.isFinite(id) && id > 0 ? id : null;
+    }, [supplierFilterActive, selectedSupplierIds]);
 
     const currentRows = React.useMemo<MatrixRow[]>(
         () => (Array.isArray(matrix.rows) ? matrix.rows : []),
@@ -442,6 +467,7 @@ export default function PricingMatrixView() {
 
     const [printOpen, setPrintOpen] = React.useState(false);
     const [batchDialogOpen, setBatchDialogOpen] = React.useState(false);
+    const [unsavedAction, setUnsavedAction] = React.useState<"refresh" | "discard" | null>(null);
     const [printFiltersText, setPrintFiltersText] = React.useState("");
     const [printGeneratedAt, setPrintGeneratedAt] = React.useState("");
     const [isPrinting, setIsPrinting] = React.useState(false);
@@ -503,7 +529,7 @@ export default function PricingMatrixView() {
             }
 
             const assembled: MatrixRow[] = [];
-            const EMPTY_PIVOT = { A: null, B: null, C: null, D: null, E: null, LIST: null };
+            const emptyPivotForPrint = emptyPivot(pt.priceTypes);
 
             for (const [groupId, variants] of groups.entries()) {
                 const display = variants.find(v => v.product_id === groupId) || variants[0];
@@ -514,7 +540,10 @@ export default function PricingMatrixView() {
                     if (uomId) {
                         variantsByUnitId[uomId] = {
                             product: v,
-                            tiers: { ...(priceMap.get(v.product_id) ?? EMPTY_PIVOT) }
+                            tiers: {
+                                ...(priceMap.get(v.product_id) ?? emptyPivotForPrint),
+                                LIST: toNullableNumber(v.cost_per_unit),
+                            },
                         };
                     }
                 }
@@ -562,6 +591,18 @@ export default function PricingMatrixView() {
 
     const isInitialLoad = (lookups.loading || pt.loading) && currentRows.length === 0;
 
+    React.useEffect(() => {
+        if (matrix.dirtyCount === 0) return;
+
+        const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = "";
+        };
+
+        window.addEventListener("beforeunload", onBeforeUnload);
+        return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    }, [matrix.dirtyCount]);
+
     const handleSave = React.useCallback(() => {
         if (matrix.priceDirtyCount > 0) {
             setBatchDialogOpen(true);
@@ -570,6 +611,35 @@ export default function PricingMatrixView() {
 
         void matrix.saveAll();
     }, [matrix]);
+
+    const requestRefresh = React.useCallback(() => {
+        if (matrix.dirtyCount > 0) {
+            setUnsavedAction("refresh");
+            return;
+        }
+        void matrix.refresh();
+    }, [matrix]);
+
+    const requestDiscard = React.useCallback(() => {
+        if (matrix.dirtyCount > 0) {
+            setUnsavedAction("discard");
+            return;
+        }
+        matrix.discardAll();
+    }, [matrix]);
+
+    const confirmUnsavedAction = React.useCallback(() => {
+        const action = unsavedAction;
+        setUnsavedAction(null);
+        if (action === "refresh") {
+            matrix.discardAll();
+            void matrix.refresh();
+            return;
+        }
+        if (action === "discard") {
+            matrix.discardAll();
+        }
+    }, [matrix, unsavedAction]);
 
     if (isInitialLoad) {
         return (
@@ -603,9 +673,12 @@ export default function PricingMatrixView() {
                 <div className="shrink-0">
                     <BulkSaveBar
                         dirtyCount={matrix.dirtyCount}
+                        priceDirtyCount={matrix.priceDirtyCount}
+                        costDirtyCount={matrix.costDirtyCount}
+                        offPageDirtyCount={matrix.offPageDirtyCount}
                         onSave={handleSave}
-                        onDiscard={matrix.discardAll}
-                        onRefresh={matrix.refresh}
+                        onDiscard={requestDiscard}
+                        onRefresh={requestRefresh}
                         onPrint={openPrint}
                         loading={Boolean(matrix.loading) || isPrinting}
                     />
@@ -631,14 +704,47 @@ export default function PricingMatrixView() {
                     open={batchDialogOpen}
                     onOpenChange={setBatchDialogOpen}
                     suppliers={lookups.suppliers}
+                    batchSupplierOptions={batchSupplierOptions}
                     defaultSupplierId={defaultBatchSupplierId}
+                    requiresExplicitBatchSupplier={requiresExplicitBatchSupplier}
                     priceLineCount={matrix.priceDirtyCount}
                     costLineCount={matrix.costDirtyCount}
+                    offPageDirtyCount={matrix.offPageDirtyCount}
                     previewLines={matrix.dirtyPreviewLines}
-                    onSubmit={async (payload) => {
-                        await matrix.saveAll(payload);
-                    }}
+                    onSubmit={(payload) => matrix.saveAll(payload)}
                 />
+
+                <AlertDialog
+                    open={unsavedAction != null}
+                    onOpenChange={(open) => {
+                        if (!open) setUnsavedAction(null);
+                    }}
+                >
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                {unsavedAction === "refresh"
+                                    ? `You have ${matrix.dirtyCount} unsaved change(s). Refreshing will reload the grid and discard those edits.${
+                                          matrix.offPageDirtyCount > 0
+                                              ? ` ${matrix.offPageDirtyCount} of those are on other pages.`
+                                              : ""
+                                      }`
+                                    : `You have ${matrix.dirtyCount} unsaved change(s). This action cannot be undone.${
+                                          matrix.offPageDirtyCount > 0
+                                              ? ` ${matrix.offPageDirtyCount} of those are on other pages.`
+                                              : ""
+                                      }`}
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+                            <AlertDialogAction variant="destructive" onClick={confirmUnsavedAction}>
+                                {unsavedAction === "refresh" ? "Refresh anyway" : "Discard changes"}
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
             </div>
         </div>
     );

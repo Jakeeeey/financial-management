@@ -45,7 +45,8 @@ export type ProductRow = {
     cost_per_unit: number | null;
 };
 
-export type ProductTierKey = "A" | "B" | "C" | "D" | "E" | "LIST";
+/** `"LIST"` or a numeric `price_type_id` string */
+export type ProductTierKey = string;
 export type PriceViewMode = "FOCUSED" | "LIST" | "ALL";
 
 export type PriceRow = {
@@ -64,7 +65,7 @@ export type PriceRow = {
  */
 export type VariantCell = {
     product: ProductRow;
-    tiers: Record<ProductTierKey, number | null>;
+    tiers: Record<string, number | null>;
 };
 
 /**
@@ -130,6 +131,27 @@ export type SavePriceChangeBatchInput = {
     supplier_id: number;
     reference_no?: string;
     remarks: string;
+};
+
+export type SaveAllResult =
+    | { success: true; created: number }
+    | {
+          success: false;
+          reason:
+              | "validation"
+              | "no_changes"
+              | "no_valid_lines"
+              | "missing_batch_fields"
+              | "api_error"
+              | "nothing_created"
+              | "partial_failure";
+          created?: number;
+      };
+
+export type DirtyCellMeta = {
+    product_name: string;
+    product_code: string | null;
+    current_value: number | null;
 };
 
 export type DirtyPreviewLine = {

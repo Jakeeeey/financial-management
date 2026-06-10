@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { parseApprovalSearchQuery } from "../_approvalSearch";
+import { toInclusiveDateToEnd } from "../_dateFilters";
+import { getSupplierProductIds } from "../_supplierFilters";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const CCR = "cost_change_requests";
-const PRODUCT_PER_SUPPLIER = "product_per_supplier";
 
 type DirectusMeta = {
     total_count?: number;
@@ -45,10 +48,6 @@ type DirectusListCCRResponse = {
 };
 
 
-
-type DirectusSupplierProductRow = {
-    product_id?: number | string | { product_id?: number | string | null } | null;
-};
 
 type JwtPayload = {
     sub?: string | number | null;
@@ -162,30 +161,6 @@ function parseWrappedError(message: string): DirectusWrappedError | null {
     }
 }
 
-async function getSupplierProductIds(supplierId: string): Promise<number[]> {
-    const sp = new URLSearchParams();
-    sp.set("limit", "-1");
-    sp.set("fields", "product_id,product_id.product_id");
-    sp.set("filter[supplier_id][_eq]", supplierId);
-
-    const url = `${mustBase()}/items/${PRODUCT_PER_SUPPLIER}?${sp.toString()}`;
-    const res = await fetchDirectus<{ data?: DirectusSupplierProductRow[] }>(url, { headers: directusHeaders() });
-
-    const ids: number[] = [];
-    for (const row of res.data ?? []) {
-        let n: number | null = null;
-        if (typeof row.product_id === "number") {
-            n = row.product_id;
-        } else if (isRecord(row.product_id) && typeof row.product_id.product_id === "number") {
-            n = row.product_id.product_id;
-        }
-        if (n !== null && Number.isFinite(n) && n > 0) {
-            ids.push(n);
-        }
-    }
-    return Array.from(new Set(ids));
-}
-
 export async function GET(req: NextRequest) {
     try {
         mustBase();
@@ -253,7 +228,7 @@ export async function GET(req: NextRequest) {
         if (product_id) addAnd("[product_id][_eq]", product_id);
         if (requested_by) addAnd("[requested_by][_eq]", requested_by);
         if (date_from) addAnd("[requested_at][_gte]", date_from);
-        if (date_to) addAnd("[requested_at][_lte]", date_to);
+        if (date_to) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(date_to));
 
         if (supplier_id) {
             const supplierProductIds = await getSupplierProductIds(supplier_id);
@@ -264,9 +239,15 @@ export async function GET(req: NextRequest) {
         }
 
         if (q) {
-            addAnd("[_or][0][product_id][product_name][_contains]", q);
-            params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, q);
-            params.set(`filter[_and][${andIdx - 1}][_or][2][request_id][_eq]`, q);
+            const parsed = parseApprovalSearchQuery(q);
+            const requestId = parsed.costRequestId ?? parsed.numericId;
+
+            if (requestId != null) {
+                addAnd("[request_id][_eq]", String(requestId));
+            } else if (parsed.textContains) {
+                addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
+                params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+            }
         }
 
         const url = `${mustBase()}/items/${CCR}?${params.toString()}`;

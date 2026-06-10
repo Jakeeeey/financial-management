@@ -4,11 +4,13 @@ import * as React from "react";
 import type { ListMeta, PriceChangeRequestRow, CostChangeRequestRow } from "../types";
 import { productLabel, priceTypeLabel, uomLabel } from "../utils/labels";
 
+import { Eye } from "lucide-react";
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 function fmt(v: number | string | null | undefined) {
     const n = Number(v);
@@ -47,6 +49,7 @@ type Props = {
     acting?: boolean;
     onApprove?: (id: number) => void;
     onReject?: (id: number) => void;
+    onReview?: (id: number) => void;
     onCancel?: (id: number) => void;
 
     meta?: ListMeta | null;
@@ -58,7 +61,11 @@ type Props = {
     footerItemLabel?: string;
 
     selectedIds?: number[];
-    onToggleSelect?: (id: number, checked: boolean) => void;
+    onToggleSelect?: (
+        id: number,
+        checked: boolean,
+        row?: PriceChangeRequestRow | CostChangeRequestRow,
+    ) => void;
     onToggleSelectAllPage?: (checked: boolean) => void;
 };
 
@@ -126,7 +133,7 @@ export default function RequestsTable(props: Props) {
                         <TableHead className="w-[140px] text-right">Proposed</TableHead>
                         <TableHead className="w-[140px]">Status</TableHead>
                         <TableHead className="w-[170px]">Requested At</TableHead>
-                        {props.mode === "approver" && <TableHead className="w-[220px] text-right">Actions</TableHead>}
+                        {props.mode === "approver" && <TableHead className="min-w-[280px] text-right">Actions</TableHead>}
                     </TableRow>
                 </TableHeader>
 
@@ -148,7 +155,9 @@ export default function RequestsTable(props: Props) {
                                         <Checkbox
                                             className="h-[18px] w-[18px]"
                                             checked={isSelected}
-                                            onCheckedChange={(checked) => props.onToggleSelect?.(id, checked === true)}
+                                            onCheckedChange={(checked) =>
+                                                props.onToggleSelect?.(id, checked === true, r)
+                                            }
                                             aria-label={`Select request PCR-${id}`}
                                             disabled={props.acting || !isPending}
                                         />
@@ -199,13 +208,25 @@ export default function RequestsTable(props: Props) {
 
                                 {props.mode === "approver" && (
                                     <TableCell className="text-right">
-                                        <div className="inline-flex gap-2">
-                                            <Button size="sm" onClick={() => props.onApprove?.(id)} disabled={props.acting || !isPending}>
+                                        <div className="inline-flex flex-nowrap items-center justify-end gap-2">
+                                            {props.onReview ? (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => props.onReview?.(id)}
+                                                    disabled={props.acting}
+                                                >
+                                                    <Eye className="mr-2 size-4" />
+                                                    Review
+                                                </Button>
+                                            ) : null}
+                                            <Button size="sm" className={pcrApproveButtonClass} onClick={() => props.onApprove?.(id)} disabled={props.acting || !isPending}>
                                                 Approve
                                             </Button>
                                             <Button
                                                 size="sm"
-                                                variant="destructive"
+                                                variant="outline"
+                                                className={pcrRejectButtonClass}
                                                 onClick={() => props.onReject?.(id)}
                                                 disabled={props.acting || !isPending}
                                             >
