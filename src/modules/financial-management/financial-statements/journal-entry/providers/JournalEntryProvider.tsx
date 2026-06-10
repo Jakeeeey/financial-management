@@ -14,6 +14,8 @@ interface JournalEntryContextType {
   filters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   uniqueSourceModules: string[];
+  divisions: string[];
+  departments: string[];
   isLoading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -49,6 +51,8 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
   const [error, setError] = React.useState<string | null>(null);
   const [currentPage, setCurrentPage] = React.useState(0);
   const [pageSize, setPageSize] = React.useState(10);
+  const [divisions, setDivisions] = React.useState<string[]>(["All Divisions"]);
+  const [departments, setDepartments] = React.useState<string[]>(["All Departments"]);
   const [filters, setFilters] = React.useState<FilterState>(() => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -173,6 +177,24 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     fetchData();
   }, [fetchData]);
 
+  React.useEffect(() => {
+    fetch("/api/fm/setup/divisions")
+      .then((res) => res.json())
+      .then((data) => {
+        const names = Array.isArray(data) ? data.map((d: any) => d.divisionName || d.name).filter(Boolean) : [];
+        setDivisions(["All Divisions", ...names]);
+      })
+      .catch((err) => console.error("Error loading divisions:", err));
+
+    fetch("/api/fm/setup/departments")
+      .then((res) => res.json())
+      .then((data) => {
+        const names = Array.isArray(data) ? data.map((d: any) => d.departmentName || d.name).filter(Boolean) : [];
+        setDepartments(["All Departments", ...names]);
+      })
+      .catch((err) => console.error("Error loading departments:", err));
+  }, []);
+
   // Reset page to 0 when filters change (except for pagination handled keys)
   // We handle this carefully to avoid infinite loops
   const prevFiltersRef = React.useRef(filters);
@@ -228,6 +250,8 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     filters,
     setFilters,
     uniqueSourceModules,
+    divisions,
+    departments,
     isLoading,
     error,
     refresh: fetchData,
@@ -243,7 +267,9 @@ export function JournalEntryProvider({ children }: { children: React.ReactNode }
     analytics, 
     filters, 
     uniqueSourceModules, 
-    isLoading, 
+    divisions,
+    departments,
+    isLoading,
     error, 
     fetchData, 
     currentPage, 

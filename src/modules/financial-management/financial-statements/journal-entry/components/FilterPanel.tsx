@@ -28,15 +28,18 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FilterState, PresetRange } from "../types";
+import { Combobox } from "./Combobox";
 
 interface FilterPanelProps {
   filters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   uniqueSourceModules: string[];
+  divisions: string[];
+  departments: string[];
   onReset: () => void;
 }
 
-export default function FilterPanel({ filters, setFilters, uniqueSourceModules, onReset }: FilterPanelProps) {
+export default function FilterPanel({ filters, setFilters, uniqueSourceModules, divisions, departments, onReset }: FilterPanelProps) {
   const [localFilters, setLocalFilters] = React.useState<FilterState>(filters);
 
   React.useEffect(() => {
@@ -270,28 +273,38 @@ export default function FilterPanel({ filters, setFilters, uniqueSourceModules, 
 
       {/* Selects Grid */}
       {[
-        { label: "Branch", key: "branch", items: ["All Branches"] },
-        { label: "Division", key: "division", items: ["All Divisions"] },
-        { label: "Department", key: "department", items: ["All Departments"] },
-        { label: "Entry Type", key: "entryType", items: ["All Entry Types", "Sales", "Purchase", "Adjustment", "Accrual"] },
-        { label: "Source Module", key: "sourceModule", items: uniqueSourceModules.length > 0 ? uniqueSourceModules : ["All Source Modules"] },
-        { label: "Entry Status", key: "status", items: ["All Statuses", "Posted", "For Review", "Approved", "Draft"] },
+        { label: "Branch", key: "branch", items: ["All Branches"], isCombobox: false },
+        { label: "Division", key: "division", items: divisions, isCombobox: true },
+        { label: "Department", key: "department", items: departments, isCombobox: true },
+        { label: "Entry Type", key: "entryType", items: ["All Entry Types", "Sales", "Purchase", "Adjustment", "Accrual"], isCombobox: false },
+        { label: "Source Module", key: "sourceModule", items: uniqueSourceModules.length > 0 ? uniqueSourceModules : ["All Source Modules"], isCombobox: true },
+        { label: "Entry Status", key: "status", items: ["All Statuses", "Posted", "For Review", "Approved", "Draft"], isCombobox: false },
       ].map((item) => (
         <div key={item.key} className="space-y-2">
           <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{item.label}</Label>
-          <Select
-            value={(localFilters as unknown as Record<string, string | boolean | number>)[item.key] as string}
-            onValueChange={(v) => updateFilter(item.key as keyof FilterState, v)}
-          >
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {item.items.map((opt) => (
-                <SelectItem key={opt} value={opt} className="text-sm">{opt}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {item.isCombobox ? (
+            <Combobox
+              options={item.items.map((opt) => ({ value: opt, label: opt }))}
+              value={(localFilters as any)[item.key]}
+              onValueChange={(v) => updateFilter(item.key as keyof FilterState, v || item.items[0])}
+              placeholder={`Select ${item.label}...`}
+              className="h-9 text-sm justify-between w-full"
+            />
+          ) : (
+            <Select
+              value={(localFilters as unknown as Record<string, string | boolean | number>)[item.key] as string}
+              onValueChange={(v) => updateFilter(item.key as keyof FilterState, v)}
+            >
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {item.items.map((opt) => (
+                  <SelectItem key={opt} value={opt} className="text-sm">{opt}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       ))}
 

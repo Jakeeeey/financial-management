@@ -40,6 +40,8 @@ function JournalEntryDashboard() {
     filters, 
     setFilters, 
     uniqueSourceModules,
+    divisions,
+    departments,
     isLoading, 
     error, 
     refresh,
@@ -102,7 +104,7 @@ function JournalEntryDashboard() {
   };
 
   if (error) {
-    return <ErrorPage message={error} onRefresh={refresh} />;
+    return <ErrorPage message={error} onRefresh={resetFilters} />;
   }
 
   return (
@@ -136,6 +138,8 @@ function JournalEntryDashboard() {
             filters={filters} 
             setFilters={setFilters} 
             uniqueSourceModules={uniqueSourceModules}
+            divisions={divisions}
+            departments={departments}
             onReset={resetFilters} 
         />
 

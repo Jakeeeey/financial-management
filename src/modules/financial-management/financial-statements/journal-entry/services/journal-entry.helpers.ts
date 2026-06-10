@@ -250,8 +250,8 @@ export function filterJournalEntries(entries: JournalEntry[], filters: FilterSta
     }
     
     if (filters.accountNumber && e.accountNumber !== filters.accountNumber) return false;
-    if (filters.division !== "All Divisions" && e.division !== filters.division) return false;
-    if (filters.department !== "All Departments" && e.department !== filters.department) return false;
+    if (filters.division !== "All Divisions" && e.divisionName !== filters.division && e.division !== filters.division) return false;
+    if (filters.department !== "All Departments" && e.departmentName !== filters.department && e.department !== filters.department) return false;
     if (filters.status !== "All Statuses" && e.status !== filters.status) return false;
     if (filters.sourceModule !== "All Source Modules" && e.sourceModule !== filters.sourceModule) return false;
     if (filters.showPostedOnly && e.status !== "Posted") return false;
