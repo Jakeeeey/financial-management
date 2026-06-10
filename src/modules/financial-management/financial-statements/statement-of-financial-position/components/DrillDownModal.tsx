@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DataTable } from "@/components/ui/new-data-table";
+import { DataTable } from "./local-data-table";
 import { ColumnDef } from "@tanstack/react-table";
 import { FinancialAccount } from "../types";
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
@@ -64,6 +64,25 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
         return `₱${absoluteValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
 
+    const safeGet = {
+        debit: (row: DrillDownEntry, accountType?: string) => {
+            if (row.debit !== undefined) return row.debit;
+            const isAsset = accountType?.toLowerCase().includes("asset");
+            if (isAsset) {
+                return row.amount > 0 ? row.amount : 0;
+            }
+            return row.amount < 0 ? Math.abs(row.amount) : 0;
+        },
+        credit: (row: DrillDownEntry, accountType?: string) => {
+            if (row.credit !== undefined) return row.credit;
+            const isAsset = accountType?.toLowerCase().includes("asset");
+            if (isAsset) {
+                return row.amount < 0 ? Math.abs(row.amount) : 0;
+            }
+            return row.amount > 0 ? row.amount : 0;
+        }
+    };
+
     const columns: ColumnDef<DrillDownEntry>[] = [
         {
             accessorKey: "source",
@@ -94,13 +113,28 @@ export function DrillDownModal({ account, isOpen, onOpenChange }: Props) {
             cell: ({ row }) => <span className="font-medium text-foreground/80">{row.original.description}</span>
         },
         {
-            accessorKey: "amount",
-            header: () => <div className="text-right">Amount</div>,
-            cell: ({ row }) => (
-                <div className="text-right font-bold">
-                    {formatCurrency(row.original.amount)}
-                </div>
-            )
+            accessorKey: "debit",
+            header: () => <div className="text-right">Debit</div>,
+            cell: ({ row }) => {
+                const val = safeGet.debit(row.original, account?.type);
+                return (
+                    <div className="text-right font-bold tabular-nums">
+                        {val > 0 ? formatCurrency(val) : "—"}
+                    </div>
+                );
+            }
+        },
+        {
+            accessorKey: "credit",
+            header: () => <div className="text-right">Credit</div>,
+            cell: ({ row }) => {
+                const val = safeGet.credit(row.original, account?.type);
+                return (
+                    <div className="text-right font-bold tabular-nums">
+                        {val > 0 ? formatCurrency(val) : "—"}
+                    </div>
+                );
+            }
         }
     ];
 

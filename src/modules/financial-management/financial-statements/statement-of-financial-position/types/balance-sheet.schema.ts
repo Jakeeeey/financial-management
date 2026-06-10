@@ -35,6 +35,8 @@ export const DrillDownEntrySchema = z.object({
   date: z.string(),
   description: z.string(),
   amount: z.number(),
+  debit: z.number().optional(),
+  credit: z.number().optional(),
 });
 
 // ─── Inferred TypeScript types ───
