@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 
 import type { PriceChangeBatchDetail, PriceChangeBatchLine } from "../types";
 import { getPriceChangeBatch } from "../providers/pcrApi";
+import { pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
     batchId: number | null;
@@ -51,12 +52,6 @@ function safeDate(value: string | null | undefined) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString();
-}
-
-function statusVariant(status: string): "default" | "secondary" | "outline" {
-    if (status === "PENDING") return "default";
-    if (status === "APPROVED") return "secondary";
-    return "outline";
 }
 
 function diffClass(line: PriceChangeBatchLine) {
@@ -143,7 +138,9 @@ export function PriceChangeBatchDetailDialog({
                             <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Status</div>
                                 <div className="mt-1">
-                                    <Badge variant={statusVariant(detail.status)}>{detail.status}</Badge>
+                                    <Badge variant="outline" className={pcrStatusBadgeClass(detail.status)}>
+                                        {detail.status}
+                                    </Badge>
                                 </div>
                             </div>
                             <div>

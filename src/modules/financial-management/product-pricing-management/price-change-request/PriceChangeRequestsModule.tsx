@@ -2,12 +2,15 @@
 
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Loader2, CheckCheck, X, Plus } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 import { CreatePriceChangeBatchDialog } from "./components/CreatePriceChangeBatchDialog";
+import { PcrStatusTabs } from "./components/PcrStatusTabs";
+import { PcrTypeTabList } from "./components/PcrTypeTabs";
+import { UnifiedApprovalsManager } from "./components/UnifiedApprovalsManager";
 import { PriceChangeBatchDetailDialog } from "./components/PriceChangeBatchDetailDialog";
 import { PriceChangeBatchesTable } from "./components/PriceChangeBatchesTable";
 import { RequestFiltersBar } from "./components/RequestFiltersBar";
@@ -19,10 +22,12 @@ import { usePriceChangeBatches } from "./hooks/usePriceChangeBatches";
 import { usePCRList } from "./hooks/usePCR";
 import { usePCRActions } from "./hooks/usePCRActions";
 import { getLookups, SupplierOption } from "./providers/pcrApi";
-import type { ListQuery, PCRStatus } from "./types";
+import type { ApprovalTypeFilter, ListQuery, PCRStatusFilter } from "./types";
 
 export function PriceChangeRequestsModule() {
     const [suppliers, setSuppliers] = React.useState<SupplierOption[]>([]);
+    const [typeTab, setTypeTab] = React.useState<ApprovalTypeFilter>("all");
+
     React.useEffect(() => {
         getLookups().then(res => setSuppliers(res.suppliers)).catch(() => {});
     }, []);
@@ -40,18 +45,22 @@ export function PriceChangeRequestsModule() {
                 </CardHeader>
 
                 <CardContent className="space-y-4">
-                    <Tabs defaultValue="price">
-                        <TabsList className="mb-2">
-                            <TabsTrigger value="price">Price Type</TabsTrigger>
-                            <TabsTrigger value="cost">List Price</TabsTrigger>
-                        </TabsList>
+                    <Tabs
+                        value={typeTab}
+                        onValueChange={(value) => setTypeTab(value as ApprovalTypeFilter)}
+                    >
+                        <PcrTypeTabList />
+
+                        <TabsContent value="all">
+                            <UnifiedApprovalsManager suppliers={suppliers} />
+                        </TabsContent>
 
                         <TabsContent value="price">
-                            <RequestManager type="price" suppliers={suppliers} />
+                            <PriceBatchManager suppliers={suppliers} />
                         </TabsContent>
 
                         <TabsContent value="cost">
-                            <RequestManager type="cost" suppliers={suppliers} />
+                            <ItemRequestManager suppliers={suppliers} />
                         </TabsContent>
                     </Tabs>
                 </CardContent>
@@ -60,17 +69,9 @@ export function PriceChangeRequestsModule() {
     );
 }
 
-function RequestManager({ type, suppliers }: { type: "price" | "cost", suppliers: SupplierOption[] }) {
-    if (type === "price") {
-        return <PriceBatchManager suppliers={suppliers} />;
-    }
-
-    return <ItemRequestManager type={type} suppliers={suppliers} />;
-}
-
 function PriceBatchManager({ suppliers }: { suppliers: SupplierOption[] }) {
-    const batches = usePriceChangeBatches({ status: "PENDING", page_size: 50, page: 1 });
-    const statusTab = batches.query.status || "PENDING";
+    const batches = usePriceChangeBatches({ status: "ALL", page_size: 50, page: 1 });
+    const statusTab: PCRStatusFilter = batches.query.status || "ALL";
 
     const [creatingBatch, setCreatingBatch] = React.useState(false);
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
@@ -97,15 +98,12 @@ function PriceBatchManager({ suppliers }: { suppliers: SupplierOption[] }) {
     return (
         <div className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <Tabs value={statusTab as string} onValueChange={(v) => {
-                    batches.setQuery((q) => ({ ...q, status: v as PCRStatus, page: 1 }));
-                }} className="w-full sm:w-auto">
-                    <TabsList>
-                        <TabsTrigger value="PENDING">Pending</TabsTrigger>
-                        <TabsTrigger value="APPROVED">Approved</TabsTrigger>
-                        <TabsTrigger value="REJECTED">Rejected</TabsTrigger>
-                    </TabsList>
-                </Tabs>
+                <PcrStatusTabs
+                    value={statusTab as string}
+                    onValueChange={(status) => {
+                        batches.setQuery((q) => ({ ...q, status, page: 1 }));
+                    }}
+                />
 
                 <Button type="button" onClick={() => setCreatingBatch(true)} className="w-full sm:w-auto">
                     <Plus className="mr-2 h-4 w-4" />
@@ -225,10 +223,10 @@ function PriceBatchManager({ suppliers }: { suppliers: SupplierOption[] }) {
     );
 }
 
-function ItemRequestManager({ type, suppliers }: { type: "cost", suppliers: SupplierOption[] }) {
-    const inbox = usePCRList({ status: "PENDING", page_size: 50, page: 1, requestType: type });
+function ItemRequestManager({ suppliers }: { suppliers: SupplierOption[] }) {
+    const inbox = usePCRList({ status: "ALL", page_size: 50, page: 1, requestType: "cost" });
 
-    const statusTab = inbox.query.status || "PENDING";
+    const statusTab: PCRStatusFilter = inbox.query.status || "ALL";
 
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
     const [rejectingBulk, setRejectingBulk] = React.useState<boolean>(false);
@@ -344,16 +342,14 @@ function ItemRequestManager({ type, suppliers }: { type: "cost", suppliers: Supp
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
-                <Tabs value={statusTab as string} onValueChange={(v) => {
-                    clearSelection();
-                    inbox.setQuery((q) => ({ ...q, status: v as PCRStatus, page: 1 }));
-                }} className="w-full">
-                    <TabsList>
-                        <TabsTrigger value="PENDING">Pending</TabsTrigger>
-                        <TabsTrigger value="APPROVED">Approved</TabsTrigger>
-                        <TabsTrigger value="REJECTED">Rejected</TabsTrigger>
-                    </TabsList>
-                </Tabs>
+                <PcrStatusTabs
+                    value={statusTab as string}
+                    onValueChange={(status) => {
+                        clearSelection();
+                        inbox.setQuery((q) => ({ ...q, status, page: 1 }));
+                    }}
+                    className="w-full"
+                />
             </div>
 
             <div className="space-y-3">
@@ -374,7 +370,7 @@ function ItemRequestManager({ type, suppliers }: { type: "cost", suppliers: Supp
                     onReset={clearSelection}
                 />
 
-                {statusTab === "PENDING" && (
+                {(statusTab === "PENDING" || statusTab === "ALL") && (
                     <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="text-sm text-muted-foreground">
                             {selectedIds.length > 0 ? (
@@ -422,8 +418,8 @@ function ItemRequestManager({ type, suppliers }: { type: "cost", suppliers: Supp
 
                 <RequestsTable
                     rows={inbox.rows}
-                    mode={statusTab === "PENDING" ? "approver" : "all"}
-                    requestType={type}
+                    mode={statusTab === "PENDING" || statusTab === "ALL" ? "approver" : "all"}
+                    requestType="cost"
                     acting={actions.acting}
                     onApprove={(id) => setConfirmingApprove({ type: 'single', id })}
                     onReject={(id) => setRejectingId(id)}

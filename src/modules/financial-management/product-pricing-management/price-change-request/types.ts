@@ -1,5 +1,24 @@
 export type PCRStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 
+export type PCRStatusFilter = PCRStatus | "ALL";
+
+export type ApprovalKind = "price_batch" | "list_price";
+
+export type UnifiedApprovalRow = {
+    row_key: string;
+    kind: ApprovalKind;
+    record_label: string;
+    title: string;
+    subtitle?: string;
+    status: PCRStatus;
+    requested_at: string | null;
+    line_count?: number;
+    batch_id?: number;
+    request_id?: number;
+};
+
+export type ApprovalTypeFilter = "all" | "price" | "cost";
+
 export type PriceTypeRef = {
     price_type_id: number;
     price_type_name?: string;
@@ -97,7 +116,7 @@ export type ListMeta = {
 };
 
 export type ListQuery = {
-    status?: PCRStatus | "";
+    status?: PCRStatusFilter;
     q?: string;
     product_id?: number | "";
     supplier_id?: number | "";

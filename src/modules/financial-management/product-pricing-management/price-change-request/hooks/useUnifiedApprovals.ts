@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import type { ListQuery, PriceChangeBatchHeader } from "../types";
+import type { ListQuery, UnifiedApprovalRow } from "../types";
 import * as api from "../providers/pcrApi";
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -11,7 +11,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return fallback;
 }
 
-export function usePriceChangeBatches(initial?: Partial<ListQuery>) {
+export function useUnifiedApprovals(initial?: Partial<ListQuery>) {
     const [query, setQuery] = React.useState<ListQuery>({
         status: "ALL",
         page: 1,
@@ -19,7 +19,7 @@ export function usePriceChangeBatches(initial?: Partial<ListQuery>) {
         ...initial,
     });
 
-    const [rows, setRows] = React.useState<PriceChangeBatchHeader[]>([]);
+    const [rows, setRows] = React.useState<UnifiedApprovalRow[]>([]);
     const [total, setTotal] = React.useState(0);
     const [loading, setLoading] = React.useState(false);
     const [acting, setActing] = React.useState(false);
@@ -28,12 +28,12 @@ export function usePriceChangeBatches(initial?: Partial<ListQuery>) {
     const refresh = React.useCallback(async () => {
         setLoading(true);
         try {
-            const res = await api.listPriceChangeBatches(query);
+            const res = await api.listUnifiedApprovals(query);
             setRows(res.data ?? []);
             setTotal(Number(res.meta?.total_count ?? (res.data?.length ?? 0)));
             setError(null);
         } catch (error: unknown) {
-            const message = getErrorMessage(error, "Failed to load price change batches");
+            const message = getErrorMessage(error, "Failed to load approvals");
             setRows([]);
             setTotal(0);
             setError(message);
@@ -47,7 +47,7 @@ export function usePriceChangeBatches(initial?: Partial<ListQuery>) {
         void refresh();
     }, [refresh]);
 
-    const approve = React.useCallback(async (headerId: number) => {
+    const approveBatch = React.useCallback(async (headerId: number) => {
         setActing(true);
         try {
             const result = await api.approvePriceChangeBatch(headerId);
@@ -60,7 +60,7 @@ export function usePriceChangeBatches(initial?: Partial<ListQuery>) {
         }
     }, [refresh]);
 
-    const reject = React.useCallback(async (headerId: number, reason: string) => {
+    const rejectBatch = React.useCallback(async (headerId: number, reason: string) => {
         setActing(true);
         try {
             await api.rejectPriceChangeBatch(headerId, reason);
@@ -82,7 +82,7 @@ export function usePriceChangeBatches(initial?: Partial<ListQuery>) {
         acting,
         error,
         refresh,
-        approve,
-        reject,
+        approveBatch,
+        rejectBatch,
     };
 }

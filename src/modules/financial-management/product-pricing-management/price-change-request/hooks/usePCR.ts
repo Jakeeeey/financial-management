@@ -14,7 +14,7 @@ export function usePCRList(initial?: Partial<ListQuery> & { requestType?: "price
     const requestType = initial?.requestType ?? "price";
 
     const [query, setQuery] = React.useState<ListQuery>({
-        status: "PENDING",
+        status: "ALL",
         page: 1,
         page_size: 50,
         ...initial,

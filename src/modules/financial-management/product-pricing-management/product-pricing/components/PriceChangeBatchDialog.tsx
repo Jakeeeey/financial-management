@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Loader2 } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -15,9 +16,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
-import type { Supplier } from "../types";
+import type { DirtyPreviewLine, Supplier } from "../types";
+import { formatPHP } from "../utils/format";
+
+type FieldErrors = Partial<Record<"supplier_id" | "remarks", string>>;
 
 type Props = {
     open: boolean;
@@ -26,6 +38,7 @@ type Props = {
     defaultSupplierId: number | null;
     priceLineCount: number;
     costLineCount: number;
+    previewLines: DirtyPreviewLine[];
     onSubmit: (payload: { supplier_id: number; reference_no?: string; remarks: string }) => Promise<void>;
 };
 
@@ -42,31 +55,48 @@ export function PriceChangeBatchDialog({
     defaultSupplierId,
     priceLineCount,
     costLineCount,
+    previewLines,
     onSubmit,
 }: Props) {
     const [supplierId, setSupplierId] = React.useState(defaultSupplierId ? String(defaultSupplierId) : "");
     const [referenceNo, setReferenceNo] = React.useState("");
     const [remarks, setRemarks] = React.useState("");
+    const [errors, setErrors] = React.useState<FieldErrors>({});
     const [submitting, setSubmitting] = React.useState(false);
+
+    const requiresBatchFields = priceLineCount > 0;
 
     React.useEffect(() => {
         if (!open) return;
         setSupplierId(defaultSupplierId ? String(defaultSupplierId) : "");
         setReferenceNo("");
         setRemarks("");
+        setErrors({});
     }, [defaultSupplierId, open]);
 
     async function submit() {
+        const nextErrors: FieldErrors = {};
         const parsedSupplierId = Number(supplierId);
-        if (!Number.isFinite(parsedSupplierId) || parsedSupplierId <= 0) return;
-        if (!remarks.trim()) return;
+        const trimmedRemarks = remarks.trim();
+
+        if (requiresBatchFields) {
+            if (!Number.isFinite(parsedSupplierId) || parsedSupplierId <= 0) {
+                nextErrors.supplier_id = "Supplier is required.";
+            }
+            if (!trimmedRemarks) {
+                nextErrors.remarks = "Remarks is required.";
+            }
+        }
+
+        setErrors(nextErrors);
+        if (Object.keys(nextErrors).length > 0) return;
 
         setSubmitting(true);
         try {
             await onSubmit({
                 supplier_id: parsedSupplierId,
                 reference_no: referenceNo.trim() || undefined,
-                remarks: remarks.trim(),
+                remarks: trimmedRemarks,
             });
             onOpenChange(false);
         } finally {
@@ -74,11 +104,13 @@ export function PriceChangeBatchDialog({
         }
     }
 
-    const canSubmit = Number(supplierId) > 0 && remarks.trim().length > 0 && !submitting;
+    const canSubmit =
+        !submitting &&
+        (!requiresBatchFields || (Number(supplierId) > 0 && remarks.trim().length > 0));
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-xl">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
                 <DialogHeader>
                     <DialogTitle>New Price Change Batch</DialogTitle>
                     <DialogDescription>
@@ -98,17 +130,80 @@ export function PriceChangeBatchDialog({
                         </div>
                     </div>
 
+                    <div className="rounded-md border">
+                        <div className="border-b bg-muted/30 px-3 py-2 text-sm font-medium">
+                            Records to be updated
+                        </div>
+                        <div className="max-h-[40vh] overflow-auto">
+                            <Table>
+                                <TableHeader className="sticky top-0 z-10 bg-background">
+                                    <TableRow>
+                                        <TableHead>Product</TableHead>
+                                        <TableHead className="w-[110px]">Type</TableHead>
+                                        <TableHead className="w-[80px]">Kind</TableHead>
+                                        <TableHead className="w-[130px] text-right">Current</TableHead>
+                                        <TableHead className="w-[130px] text-right">Proposed</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {previewLines.length === 0 ? (
+                                        <TableRow>
+                                            <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                                                No valid changes to preview.
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : (
+                                        previewLines.map((line) => (
+                                            <TableRow key={`${line.product_id}-${line.kind}-${line.tier_label}`}>
+                                                <TableCell className="max-w-[280px]">
+                                                    <div className="truncate font-medium">{line.product_name}</div>
+                                                    {line.product_code ? (
+                                                        <div className="truncate text-xs text-muted-foreground">
+                                                            {line.product_code}
+                                                        </div>
+                                                    ) : null}
+                                                </TableCell>
+                                                <TableCell>{line.tier_label}</TableCell>
+                                                <TableCell>
+                                                    <Badge variant={line.kind === "price" ? "default" : "secondary"}>
+                                                        {line.kind === "price" ? "Price" : "List Cost"}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    {formatPHP(line.current_value)}
+                                                </TableCell>
+                                                <TableCell className="text-right font-medium">
+                                                    {formatPHP(line.proposed_value)}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </div>
+
                     <div className="flex flex-col gap-1.5">
-                        <Label>Supplier</Label>
+                        <Label>
+                            Supplier
+                            {requiresBatchFields ? <span className="text-destructive"> *</span> : null}
+                        </Label>
                         <SearchableSelect
                             value={supplierId}
-                            onValueChange={setSupplierId}
+                            onValueChange={(value) => {
+                                setSupplierId(value);
+                                setErrors((prev) => ({ ...prev, supplier_id: undefined }));
+                            }}
                             placeholder="Select supplier"
+                            disabled={submitting}
                             options={suppliers.map((supplier) => ({
                                 value: String(supplier.id),
                                 label: supplierLabel(supplier),
                             }))}
                         />
+                        {errors.supplier_id ? (
+                            <p className="text-xs text-destructive">{errors.supplier_id}</p>
+                        ) : null}
                     </div>
 
                     <div className="flex flex-col gap-1.5">
@@ -118,18 +213,30 @@ export function PriceChangeBatchDialog({
                             value={referenceNo}
                             onChange={(event) => setReferenceNo(event.target.value)}
                             placeholder="Optional supplier quote or memo reference"
+                            disabled={submitting}
                         />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="price-change-remarks">Remarks</Label>
+                        <Label htmlFor="price-change-remarks">
+                            Remarks
+                            {requiresBatchFields ? <span className="text-destructive"> *</span> : null}
+                        </Label>
                         <Textarea
                             id="price-change-remarks"
                             value={remarks}
-                            onChange={(event) => setRemarks(event.target.value)}
+                            onChange={(event) => {
+                                setRemarks(event.target.value);
+                                setErrors((prev) => ({ ...prev, remarks: undefined }));
+                            }}
                             placeholder="Explain why this batch should be approved"
                             className="min-h-24 resize-y"
+                            aria-invalid={Boolean(errors.remarks)}
+                            disabled={submitting}
                         />
+                        {errors.remarks ? (
+                            <p className="text-xs text-destructive">{errors.remarks}</p>
+                        ) : null}
                     </div>
                 </div>
 

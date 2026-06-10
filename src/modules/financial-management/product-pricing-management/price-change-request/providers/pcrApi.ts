@@ -8,7 +8,9 @@ import type {
     PriceChangeRequestRow,
     CostChangeRequestRow,
     ListMeta,
+    UnifiedApprovalRow,
 } from "../types";
+import { apiStatusParam } from "../utils/pcrQuery";
 
 /** Existing consolidated lookups route */
 const LOOKUPS_ENDPOINT = "/api/fm/product-pricing/lookups";
@@ -61,18 +63,23 @@ async function http<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
     return text ? (JSON.parse(text) as T) : ({} as T);
 }
 
-export async function listRequests(query: ListQuery) {
-    const sp = new URLSearchParams();
-    if (query.status) sp.set("status", query.status);
+function appendListQuery(sp: URLSearchParams, query: ListQuery) {
+    const status = apiStatusParam(query.status);
+    if (status) sp.set("status", status);
     if (query.q) sp.set("q", query.q);
-    if (query.product_id) sp.set("product_id", String(query.product_id));
     if (query.supplier_id) sp.set("supplier_id", String(query.supplier_id));
-    if (query.price_type_id) sp.set("price_type_id", String(query.price_type_id));
-    if (query.requested_by) sp.set("requested_by", String(query.requested_by));
     if (query.date_from) sp.set("date_from", query.date_from);
     if (query.date_to) sp.set("date_to", query.date_to);
     sp.set("page", String(query.page ?? 1));
     sp.set("page_size", String(query.page_size ?? 50));
+}
+
+export async function listRequests(query: ListQuery) {
+    const sp = new URLSearchParams();
+    appendListQuery(sp, query);
+    if (query.product_id) sp.set("product_id", String(query.product_id));
+    if (query.price_type_id) sp.set("price_type_id", String(query.price_type_id));
+    if (query.requested_by) sp.set("requested_by", String(query.requested_by));
 
     return http<{ data: PriceChangeRequestRow[]; meta: ListMeta | null }>(
         `/api/fm/product-pricing/price-change-requests?${sp.toString()}`,
@@ -81,15 +88,9 @@ export async function listRequests(query: ListQuery) {
 
 export async function listCostRequests(query: ListQuery) {
     const sp = new URLSearchParams();
-    if (query.status) sp.set("status", query.status);
-    if (query.q) sp.set("q", query.q);
+    appendListQuery(sp, query);
     if (query.product_id) sp.set("product_id", String(query.product_id));
-    if (query.supplier_id) sp.set("supplier_id", String(query.supplier_id));
     if (query.requested_by) sp.set("requested_by", String(query.requested_by));
-    if (query.date_from) sp.set("date_from", query.date_from);
-    if (query.date_to) sp.set("date_to", query.date_to);
-    sp.set("page", String(query.page ?? 1));
-    sp.set("page_size", String(query.page_size ?? 50));
 
     return http<{ data: CostChangeRequestRow[]; meta: ListMeta | null }>(
         `/api/fm/product-pricing/cost-change-requests?${sp.toString()}`,
@@ -321,16 +322,19 @@ export async function getProductsPage(params: {
 
 export async function listPriceChangeBatches(query: ListQuery) {
     const sp = new URLSearchParams();
-    if (query.status) sp.set("status", query.status);
-    if (query.q) sp.set("q", query.q);
-    if (query.supplier_id) sp.set("supplier_id", String(query.supplier_id));
-    if (query.date_from) sp.set("date_from", query.date_from);
-    if (query.date_to) sp.set("date_to", query.date_to);
-    sp.set("page", String(query.page ?? 1));
-    sp.set("page_size", String(query.page_size ?? 50));
+    appendListQuery(sp, query);
 
     return http<{ data: PriceChangeBatchHeader[]; meta: ListMeta | null }>(
         `/api/fm/product-pricing/price-change-batches?${sp.toString()}`,
+    );
+}
+
+export async function listUnifiedApprovals(query: ListQuery) {
+    const sp = new URLSearchParams();
+    appendListQuery(sp, query);
+
+    return http<{ data: UnifiedApprovalRow[]; meta: ListMeta | null }>(
+        `/api/fm/product-pricing/price-change-approvals?${sp.toString()}`,
     );
 }
 

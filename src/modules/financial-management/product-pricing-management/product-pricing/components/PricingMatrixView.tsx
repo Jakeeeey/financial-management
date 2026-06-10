@@ -634,6 +634,7 @@ export default function PricingMatrixView() {
                     defaultSupplierId={defaultBatchSupplierId}
                     priceLineCount={matrix.priceDirtyCount}
                     costLineCount={matrix.costDirtyCount}
+                    previewLines={matrix.dirtyPreviewLines}
                     onSubmit={async (payload) => {
                         await matrix.saveAll(payload);
                     }}

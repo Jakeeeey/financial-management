@@ -428,7 +428,11 @@ export async function applyApprovedBatch(headerId: number, userId: number) {
             await fetchDirectus(`${mustBase()}/items/${PRODUCTS}/${line.productId}`, {
                 method: "PATCH",
                 headers: directusHeaders(),
-                body: JSON.stringify(productPatch),
+                body: JSON.stringify({
+                    ...productPatch,
+                    last_updated: nowManila(),
+                    updated_by: userId,
+                }),
             });
         }
     }

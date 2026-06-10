@@ -13,8 +13,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CalendarDays, RefreshCw, RotateCcw, Search, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+
 import type { ListQuery } from "../types";
 import type { SupplierOption } from "../providers/pcrApi";
+import { pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
     query: ListQuery;
@@ -139,7 +142,7 @@ export function RequestFiltersBar(props: Props) {
         setLocalQ("");
         setQuery((prev) => ({
             ...prev,
-            status: "PENDING",
+            status: "ALL",
             q: "",
             supplier_id: "",
             date_from: "",
@@ -151,7 +154,7 @@ export function RequestFiltersBar(props: Props) {
 
     const q = safeStr(query.q);
     const hasDateRange = Boolean(query.date_from || query.date_to);
-    const hasFilters = Boolean(q || query.supplier_id || hasDateRange || query.status !== "PENDING");
+    const hasFilters = Boolean(q || query.supplier_id || hasDateRange || (query.status && query.status !== "ALL"));
 
     const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
 
@@ -188,14 +191,14 @@ export function RequestFiltersBar(props: Props) {
         });
     }
 
-    if (query.status && query.status !== "PENDING") {
+    if (query.status && query.status !== "ALL") {
         chips.push({
             key: "status",
             label: `Status: ${query.status}`,
             onRemove: () => {
                 setQuery((prev) => ({
                     ...prev,
-                    status: "PENDING",
+                    status: "ALL",
                     page: 1,
                 }));
             },
@@ -325,8 +328,13 @@ export function RequestFiltersBar(props: Props) {
                             {chips.map((chip) => (
                                 <Badge
                                     key={chip.key}
-                                    variant="secondary"
-                                    className="flex max-w-full items-center gap-1 rounded-full px-3 py-1 text-xs"
+                                    variant={chip.key === "status" ? "outline" : "secondary"}
+                                    className={cn(
+                                        "flex max-w-full items-center gap-1 rounded-full px-3 py-1 text-xs",
+                                        chip.key === "status" && query.status
+                                            ? pcrStatusBadgeClass(query.status)
+                                            : null,
+                                    )}
                                 >
                                     <span className="max-w-[520px] truncate">{chip.label}</span>
                                     <button

@@ -16,16 +16,11 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { ListMeta, PriceChangeBatchHeader } from "../types";
+import { pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 function numberText(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
     return Number(value).toLocaleString("en-PH");
-}
-
-function statusVariant(status: string): "default" | "secondary" | "outline" {
-    if (status === "PENDING") return "default";
-    if (status === "APPROVED") return "secondary";
-    return "outline";
 }
 
 function safeDate(value: string | null | undefined) {
@@ -121,7 +116,9 @@ export function PriceChangeBatchesTable({
                                     </TableCell>
                                     <TableCell className="text-right">{numberText(row.line_count ?? 0)}</TableCell>
                                     <TableCell>
-                                        <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
+                                        <Badge variant="outline" className={pcrStatusBadgeClass(row.status)}>
+                                            {row.status}
+                                        </Badge>
                                     </TableCell>
                                     <TableCell>{safeDate(row.requested_at)}</TableCell>
                                     <TableCell className="text-right">

@@ -56,7 +56,7 @@ export function PriceChangeMonitoringModule() {
 }
 
 function RequestMonitoringManager({ type, suppliers }: { type: "price" | "cost"; suppliers: SupplierOption[] }) {
-    const mine = usePCRList({ status: "", page_size: 50, page: 1, requestType: type });
+    const mine = usePCRList({ status: "ALL", page_size: 50, page: 1, requestType: type });
 
     const actions = usePCRActions(() => {
         mine.refresh();

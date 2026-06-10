@@ -132,6 +132,16 @@ export type SavePriceChangeBatchInput = {
     remarks: string;
 };
 
+export type DirtyPreviewLine = {
+    product_id: number;
+    product_name: string;
+    product_code: string | null;
+    tier_label: string;
+    kind: "price" | "cost";
+    current_value: number | null;
+    proposed_value: number;
+};
+
 export type CostChangeRequest = {
     id: number;
     product_id: number | { product_id: number };

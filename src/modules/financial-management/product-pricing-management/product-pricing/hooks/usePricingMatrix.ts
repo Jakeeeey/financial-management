@@ -13,6 +13,7 @@ import type {
     PriceType,
     PriceChangeBatchLineInput,
     SavePriceChangeBatchInput,
+    DirtyPreviewLine,
 } from "../types";
 import * as api from "../providers/pricingApi";
 import { TIERS } from "../utils/constants";
@@ -345,6 +346,62 @@ export function usePricingMatrix(args: {
         return null;
     }, [rows]);
 
+    const dirtyPreviewLines = useMemo((): DirtyPreviewLine[] => {
+        const lines: DirtyPreviewLine[] = [];
+
+        for (const [k, price] of dirty.entries()) {
+            const [pidStr, tier] = k.split(":") as [string, ProductTierKey];
+            const productId = Number(pidStr);
+            const product = findProductInRows(rows, productId);
+            const product_name = product?.product_name ?? `Product #${productId}`;
+            const product_code = product?.product_code ?? null;
+
+            if (tier === "LIST") {
+                const proposed = Number(price);
+                if (!Number.isFinite(proposed)) continue;
+
+                let current_cost: number | null = null;
+                if (product) {
+                    current_cost = toNumberOrNull(product.cost_per_unit);
+                }
+
+                lines.push({
+                    product_id: productId,
+                    product_name,
+                    product_code,
+                    tier_label: "List Cost",
+                    kind: "cost",
+                    current_value: current_cost,
+                    proposed_value: proposed,
+                });
+                continue;
+            }
+
+            const priceTypeId = tierIdMap.get(tier);
+            if (!priceTypeId) continue;
+
+            const proposed = Number(price);
+            if (!Number.isFinite(proposed)) continue;
+
+            lines.push({
+                product_id: productId,
+                product_name,
+                product_code,
+                tier_label: tierLabelFor(tier, priceTypes),
+                kind: "price",
+                current_value: findCurrentPrice(productId, tier),
+                proposed_value: proposed,
+            });
+        }
+
+        return lines.sort((a, b) => {
+            const nameCompare = a.product_name.localeCompare(b.product_name);
+            if (nameCompare !== 0) return nameCompare;
+            if (a.kind !== b.kind) return a.kind === "price" ? -1 : 1;
+            return a.tier_label.localeCompare(b.tier_label);
+        });
+    }, [dirty, findCurrentPrice, priceTypes, rows, tierIdMap]);
+
     const saveAll = useCallback(async (batch?: SavePriceChangeBatchInput) => {
         if (dirtyErrors.size > 0) {
             toast.error("Please fix validation errors before submitting.");
@@ -553,6 +610,7 @@ export function usePricingMatrix(args: {
         dirtyCount: dirty.size,
         priceDirtyCount: dirtyCounts.price,
         costDirtyCount: dirtyCounts.cost,
+        dirtyPreviewLines,
         saveAll,
         discardAll,
 
@@ -577,10 +635,31 @@ export function usePricingMatrix(args: {
         getError,
         dirty,
         dirtyCounts,
+        dirtyPreviewLines,
         saveAll,
         discardAll,
         refresh,
     ]);
+}
+
+function findProductInRows(rows: MatrixRow[], productId: number): ProductRow | null {
+    for (const row of rows) {
+        for (const variant of Object.values(row.variantsByUnitId)) {
+            if (toNumberOrNull(variant.product.product_id) === productId) {
+                return variant.product;
+            }
+        }
+    }
+    return null;
+}
+
+function tierLabelFor(tier: ProductTierKey, priceTypes: PriceType[]): string {
+    if (tier === "LIST") return "List Cost";
+
+    const match = priceTypes.find(
+        (priceType) => String(priceType.price_type_name ?? "").trim().toUpperCase() === tier,
+    );
+    return match?.price_type_name ?? tier;
 }
 
 function unitLabel(u: Unit) {

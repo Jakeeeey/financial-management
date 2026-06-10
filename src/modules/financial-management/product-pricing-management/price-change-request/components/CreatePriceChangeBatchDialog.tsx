@@ -10,19 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 
 import * as api from "../providers/pcrApi";
 import type { CreatePriceChangeBatchPayload } from "../types";
+import { BatchPriceGrid } from "./BatchPriceGrid";
+import { useEditableGridNavigation } from "./useEditableGridNavigation";
 
 type ProductPriceField = "price_per_unit" | "priceA" | "priceB" | "priceC" | "priceD" | "priceE";
 
@@ -328,6 +321,15 @@ export function CreatePriceChangeBatchDialog({
         return lines;
     }, [draftPrices, priceTypesById, productsById]);
 
+    const gridNav = useEditableGridNavigation({
+        rowCount: products.length,
+        colCount: priceTypes.length,
+        disabled: saving,
+        onPasteSkipped: (count) => {
+            toast.warning(`${count} pasted cell(s) skipped (invalid price).`);
+        },
+    });
+
     const canSubmit =
         !saving &&
         !loadingPriceTypes &&
@@ -470,8 +472,9 @@ export function CreatePriceChangeBatchDialog({
                                     </Label>
                                 </div>
                             </div>
-                            <div className="text-xs text-muted-foreground">
-                                {validation.validCount} edited price cell(s)
+                            <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
+                                <div>{validation.validCount} edited price cell(s)</div>
+                                <div>Tab/Enter to move · Paste from Excel</div>
                             </div>
                         </div>
 
@@ -495,94 +498,21 @@ export function CreatePriceChangeBatchDialog({
                                 No linked products found for this supplier.
                             </div>
                         ) : (
-                            <div className="max-h-[46vh] overflow-auto">
-                                <Table>
-                                    <TableHeader className="sticky top-0 z-10 bg-background">
-                                        <TableRow>
-                                            <TableHead className="min-w-[270px]">Product</TableHead>
-                                            <TableHead className="min-w-[140px]">Code / Barcode</TableHead>
-                                            <TableHead className="min-w-[90px]">Group</TableHead>
-                                            {priceTypes.map((priceType) => (
-                                                <TableHead
-                                                    key={priceType.price_type_id}
-                                                    className="min-w-[150px] text-right"
-                                                >
-                                                    {priceTypeLabel(priceType)}
-                                                </TableHead>
-                                            ))}
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {products.map((product) => {
-                                            const groupId = groupIdFor(product);
-                                            return (
-                                                <TableRow key={product.product_id}>
-                                                    <TableCell className="max-w-[320px] whitespace-normal">
-                                                        <div className="font-medium">{product.product_name}</div>
-                                                        <div className="text-xs text-muted-foreground">
-                                                            Product #{product.product_id}
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <div>{product.product_code || "-"}</div>
-                                                        <div className="text-xs text-muted-foreground">
-                                                            {product.barcode || "-"}
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <span
-                                                            className={cn(
-                                                                "rounded-md border px-2 py-1 text-xs",
-                                                                isChildVariant(product)
-                                                                    ? "bg-muted text-muted-foreground"
-                                                                    : "bg-background text-foreground",
-                                                            )}
-                                                        >
-                                                            {isChildVariant(product) ? `Child ${groupId}` : "Parent"}
-                                                        </span>
-                                                    </TableCell>
-                                                    {priceTypes.map((priceType) => {
-                                                        const key = cellKey(product.product_id, priceType.price_type_id);
-                                                        const rawValue = draftPrices.get(key) ?? "";
-                                                        const parsed = parsePriceInput(rawValue);
-                                                        const hasError = rawValue.trim() && parsed.error;
-
-                                                        return (
-                                                            <TableCell key={key} className="text-right">
-                                                                <div className="flex min-w-[130px] flex-col gap-1">
-                                                                    <div className="text-[11px] text-muted-foreground">
-                                                                        Current {formatMoney(currentPriceFor(product, priceType))}
-                                                                    </div>
-                                                                    <Input
-                                                                        inputMode="decimal"
-                                                                        value={rawValue}
-                                                                        onChange={(event) =>
-                                                                            setDraftPrice(
-                                                                                product,
-                                                                                priceType.price_type_id,
-                                                                                event.target.value,
-                                                                            )
-                                                                        }
-                                                                        placeholder="Proposed"
-                                                                        aria-invalid={Boolean(hasError)}
-                                                                        disabled={saving}
-                                                                        className="h-8 text-right text-sm"
-                                                                    />
-                                                                    {hasError ? (
-                                                                        <div className="text-[11px] text-destructive">
-                                                                            {parsed.error}
-                                                                        </div>
-                                                                    ) : null}
-                                                                </div>
-                                                            </TableCell>
-                                                        );
-                                                    })}
-                                                </TableRow>
-                                            );
-                                        })}
-                                    </TableBody>
-                                </Table>
-                            </div>
+                            <BatchPriceGrid
+                                products={products}
+                                priceTypes={priceTypes}
+                                draftPrices={draftPrices}
+                                saving={saving}
+                                gridNav={gridNav}
+                                cellKey={cellKey}
+                                formatMoney={formatMoney}
+                                priceTypeLabel={priceTypeLabel}
+                                currentPriceFor={currentPriceFor}
+                                parsePriceInput={parsePriceInput}
+                                groupIdFor={groupIdFor}
+                                isChildVariant={isChildVariant}
+                                onDraftPriceChange={setDraftPrice}
+                            />
                         )}
                     </div>
 

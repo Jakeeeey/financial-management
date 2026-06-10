@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 function fmt(v: number | string | null | undefined) {
     const n = Number(v);
@@ -190,7 +191,7 @@ export default function RequestsTable(props: Props) {
                                     </div>
                                 </TableCell>
                                 <TableCell>
-                                    <Badge variant={r.status === "PENDING" ? "default" : r.status === "APPROVED" ? "secondary" : "outline"}>
+                                    <Badge variant="outline" className={pcrStatusBadgeClass(r.status)}>
                                         {r.status}
                                     </Badge>
                                 </TableCell>
