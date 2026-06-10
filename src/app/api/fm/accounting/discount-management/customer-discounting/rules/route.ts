@@ -27,6 +27,7 @@ type ProductRuleRow = {
   product_id?: unknown;
   discount_type?: unknown;
   unit_price?: unknown;
+  deleted_at?: unknown;
 };
 
 export const runtime = "nodejs";
@@ -127,6 +128,26 @@ function productUnitShortcut(value: unknown) {
 }
 
 /**
+ * Fetches supplier/category rules while tolerating Directus environments without deleted_at access.
+ */
+async function fetchSupplierCategoryRules(params: URLSearchParams) {
+  try {
+    return await directusFetch<DirectusList<SupplierCategoryRuleRow>>(
+      `/items/supplier_category_discount_per_customer?${params.toString()}`,
+    );
+  } catch (error) {
+    if (!isDeletedAtAccessError(error)) throw error;
+
+    const paramsWithoutSoftDelete = new URLSearchParams(params);
+    paramsWithoutSoftDelete.delete("filter[deleted_at][_null]");
+
+    return directusFetch<DirectusList<SupplierCategoryRuleRow>>(
+      `/items/supplier_category_discount_per_customer?${paramsWithoutSoftDelete.toString()}`,
+    );
+  }
+}
+
+/**
  * Fetches product rules while tolerating Directus environments without deleted_at access.
  */
 async function fetchProductRules(params: URLSearchParams) {
@@ -212,9 +233,7 @@ export async function GET(request: NextRequest) {
     addRelatedParentProductFilter(productParams, 1);
 
     const [supplierRulesRes, productRulesRes] = await Promise.all([
-      directusFetch<DirectusList<SupplierCategoryRuleRow>>(
-        `/items/supplier_category_discount_per_customer?${supplierParams.toString()}`,
-      ),
+      fetchSupplierCategoryRules(supplierParams),
       fetchProductRules(productParams),
     ]);
 
