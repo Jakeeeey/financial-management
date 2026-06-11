@@ -126,9 +126,13 @@ export function PriceChangeBatchDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
                 <DialogHeader>
-                    <DialogTitle>New Price Change Batch</DialogTitle>
+                    <DialogTitle>
+                        {requiresBatchFields ? "New Price Change Batch" : "Review changes before saving"}
+                    </DialogTitle>
                     <DialogDescription>
-                        Group the pending price edits into one document for approval.
+                        {requiresBatchFields
+                            ? "Group the pending price edits into one document for approval."
+                            : "Confirm the list cost changes below before submitting for approval."}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -214,74 +218,78 @@ export function PriceChangeBatchDialog({
                         </div>
                     </div>
 
-                    {requiresExplicitBatchSupplier ? (
-                        <Alert>
-                            <AlertDescription>
-                                Multiple suppliers are filtered. Select which supplier this batch is for before
-                                submitting.
-                            </AlertDescription>
-                        </Alert>
+                    {requiresBatchFields ? (
+                        <>
+                            {requiresExplicitBatchSupplier ? (
+                                <Alert>
+                                    <AlertDescription>
+                                        Multiple suppliers are filtered. Select which supplier this batch is for
+                                        before submitting.
+                                    </AlertDescription>
+                                </Alert>
+                            ) : null}
+
+                            <div className="flex flex-col gap-1.5">
+                                <Label>
+                                    Supplier
+                                    <span className="text-destructive"> *</span>
+                                </Label>
+                                <SearchableSelect
+                                    value={supplierId}
+                                    onValueChange={(value) => {
+                                        setSupplierId(value);
+                                        setErrors((prev) => ({ ...prev, supplier_id: undefined }));
+                                    }}
+                                    placeholder={
+                                        requiresExplicitBatchSupplier
+                                            ? "Select supplier for this batch"
+                                            : "Select supplier"
+                                    }
+                                    disabled={submitting}
+                                    options={supplierOptions.map((supplier) => ({
+                                        value: String(supplier.id),
+                                        label: supplierLabel(supplier),
+                                    }))}
+                                />
+                                {errors.supplier_id ? (
+                                    <p className="text-xs text-destructive">{errors.supplier_id}</p>
+                                ) : null}
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                                <Label htmlFor="price-change-reference">Reference No.</Label>
+                                <Input
+                                    id="price-change-reference"
+                                    value={referenceNo}
+                                    onChange={(event) => setReferenceNo(event.target.value)}
+                                    placeholder="Optional supplier quote or memo reference"
+                                    disabled={submitting}
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                                <Label htmlFor="price-change-remarks">
+                                    Remarks
+                                    <span className="text-destructive"> *</span>
+                                </Label>
+                                <Textarea
+                                    id="price-change-remarks"
+                                    value={remarks}
+                                    onChange={(event) => {
+                                        setRemarks(event.target.value);
+                                        setErrors((prev) => ({ ...prev, remarks: undefined }));
+                                    }}
+                                    placeholder="Explain why this batch should be approved"
+                                    className="min-h-24 resize-y"
+                                    aria-invalid={Boolean(errors.remarks)}
+                                    disabled={submitting}
+                                />
+                                {errors.remarks ? (
+                                    <p className="text-xs text-destructive">{errors.remarks}</p>
+                                ) : null}
+                            </div>
+                        </>
                     ) : null}
-
-                    <div className="flex flex-col gap-1.5">
-                        <Label>
-                            Supplier
-                            {requiresBatchFields ? <span className="text-destructive"> *</span> : null}
-                        </Label>
-                        <SearchableSelect
-                            value={supplierId}
-                            onValueChange={(value) => {
-                                setSupplierId(value);
-                                setErrors((prev) => ({ ...prev, supplier_id: undefined }));
-                            }}
-                            placeholder={
-                                requiresExplicitBatchSupplier
-                                    ? "Select supplier for this batch"
-                                    : "Select supplier"
-                            }
-                            disabled={submitting}
-                            options={supplierOptions.map((supplier) => ({
-                                value: String(supplier.id),
-                                label: supplierLabel(supplier),
-                            }))}
-                        />
-                        {errors.supplier_id ? (
-                            <p className="text-xs text-destructive">{errors.supplier_id}</p>
-                        ) : null}
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="price-change-reference">Reference No.</Label>
-                        <Input
-                            id="price-change-reference"
-                            value={referenceNo}
-                            onChange={(event) => setReferenceNo(event.target.value)}
-                            placeholder="Optional supplier quote or memo reference"
-                            disabled={submitting}
-                        />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="price-change-remarks">
-                            Remarks
-                            {requiresBatchFields ? <span className="text-destructive"> *</span> : null}
-                        </Label>
-                        <Textarea
-                            id="price-change-remarks"
-                            value={remarks}
-                            onChange={(event) => {
-                                setRemarks(event.target.value);
-                                setErrors((prev) => ({ ...prev, remarks: undefined }));
-                            }}
-                            placeholder="Explain why this batch should be approved"
-                            className="min-h-24 resize-y"
-                            aria-invalid={Boolean(errors.remarks)}
-                            disabled={submitting}
-                        />
-                        {errors.remarks ? (
-                            <p className="text-xs text-destructive">{errors.remarks}</p>
-                        ) : null}
-                    </div>
                 </div>
 
                 <DialogFooter>
@@ -290,7 +298,7 @@ export function PriceChangeBatchDialog({
                     </Button>
                     <Button onClick={() => void submit()} disabled={!canSubmit}>
                         {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-                        Submit Batch
+                        {requiresBatchFields ? "Submit Batch" : "Confirm save"}
                     </Button>
                 </DialogFooter>
             </DialogContent>

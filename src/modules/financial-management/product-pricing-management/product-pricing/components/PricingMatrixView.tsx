@@ -622,13 +622,10 @@ export default function PricingMatrixView() {
     }, [matrix.dirtyCount]);
 
     const handleSave = React.useCallback(() => {
-        if (matrix.priceDirtyCount > 0) {
+        if (matrix.dirtyCount > 0) {
             setBatchDialogOpen(true);
-            return;
         }
-
-        void matrix.saveAll();
-    }, [matrix]);
+    }, [matrix.dirtyCount]);
 
     const requestRefresh = React.useCallback(() => {
         if (matrix.dirtyCount > 0) {
