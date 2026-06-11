@@ -105,12 +105,7 @@ export async function GET(request: NextRequest) {
   // 2. Extract query parameter
   const { searchParams } = new URL(request.url);
   const rawQuery = searchParams.get("query");
-
-  if (!rawQuery || rawQuery.trim().length === 0) {
-    return NextResponse.json({ message: "Missing search query" }, { status: 400 });
-  }
-
-  const searchTerm = rawQuery.trim();
+  const searchTerm = rawQuery ? rawQuery.trim() : "";
 
   // 3. Fetch a small candidate set of unpaid (and unposted) invoices.
   //
@@ -140,17 +135,32 @@ export async function GET(request: NextRequest) {
   ].join(",");
 
   const CANDIDATE_LIMIT = 200;
-  const candidateFilter =
-    `filter[payment_status][_neq]=Paid` +
-    `&filter[_or][0][isPosted][_null]=true` +
-    `&filter[_or][1][isPosted][_eq]=false` +
-    `&limit=${CANDIDATE_LIMIT}` +
-    `&fields=${invoiceFields}` +
-    `&sort=-invoice_id`;
-
   const lowerQuery = searchTerm.toLowerCase();
 
   try {
+    let candidateFilter =
+      `filter[_and][0][payment_status][_neq]=Paid` +
+      `&filter[_and][1][_or][0][isPosted][_null]=true` +
+      `&filter[_and][1][_or][1][isPosted][_eq]=false`;
+
+    if (searchTerm) {
+      // Pre-fetch matching customers to check their codes
+      const matchingCustomers = await fetchAll<DirectusCustomer>(
+        `/items/customer?filter[customer_name][_contains]=${encodeURIComponent(searchTerm)}&fields=customer_code`
+      ).catch(() => [] as DirectusCustomer[]);
+      const matchingCustomerCodes = matchingCustomers.map(c => c.customer_code).filter(Boolean);
+
+      let searchOr = `&filter[_and][2][_or][0][invoice_no][_contains]=${encodeURIComponent(searchTerm)}`;
+      searchOr += `&filter[_and][2][_or][1][customer_code][_contains]=${encodeURIComponent(searchTerm)}`;
+      
+      matchingCustomerCodes.forEach((code, idx) => {
+        searchOr += `&filter[_and][2][_or][${idx + 2}][customer_code][_eq]=${encodeURIComponent(code)}`;
+      });
+      candidateFilter += searchOr;
+    }
+
+    candidateFilter += `&limit=${CANDIDATE_LIMIT}&fields=${invoiceFields}&sort=-invoice_id`;
+
     const candidates = await fetchAll<DirectusSalesInvoice>(
       `/items/sales_invoice?${candidateFilter}`
     ).catch(() => [] as DirectusSalesInvoice[]);
@@ -297,9 +307,11 @@ export async function GET(request: NextRequest) {
         // Double-check: skip any posted invoices that leaked through
         if (parseBit(row.inv.isPosted)) return false;
         // JPA filter: (invoiceNo LIKE %q% OR customer.customerName LIKE %q%)
-        const matchesInvoice  = (row.inv.invoice_no || "").toLowerCase().includes(lowerQuery);
-        const matchesCustomer = (row.customerName || "").toLowerCase().includes(lowerQuery);
-        if (!matchesInvoice && !matchesCustomer) return false;
+        if (lowerQuery) {
+          const matchesInvoice  = (row.inv.invoice_no || "").toLowerCase().includes(lowerQuery);
+          const matchesCustomer = (row.customerName || "").toLowerCase().includes(lowerQuery);
+          if (!matchesInvoice && !matchesCustomer) return false;
+        }
         // JPA filter: remainingBalance > 0.01
         if (row.remainingBalance <= 0.01) return false;
         return true;
