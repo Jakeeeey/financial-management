@@ -449,7 +449,7 @@ function ItemRequestManager({
                     totalLabel="requests"
                     searchLabel="Search requests"
                     searchPlaceholder="CCR-123 or product"
-                    searchHelper="Find list price requests by CCR- number or product."
+                    searchHelper="Find list cost requests by CCR- number or product."
                     filterContext="cost"
                     onRefresh={() => {
                         clearSelection();
@@ -457,6 +457,14 @@ function ItemRequestManager({
                     }}
                     onReset={clearSelection}
                 />
+
+                {inbox.error ? (
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>List cost requests could not be loaded</AlertTitle>
+                        <AlertDescription>{inbox.error}</AlertDescription>
+                    </Alert>
+                ) : null}
 
                 {(statusTab === "PENDING" || statusTab === "ALL") && (
                     <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">

@@ -107,7 +107,7 @@ export function UnifiedApprovalsTable({
                                         onCheckedChange={(checked) =>
                                             onToggleSelectAllPendingCost?.(checked === true)
                                         }
-                                        aria-label="Select all pending list price requests on this page"
+                                        aria-label="Select all pending list cost requests on this page"
                                         disabled={acting || pendingCostIdsOnPage.length === 0}
                                     />
                                 </div>
@@ -164,7 +164,7 @@ export function UnifiedApprovalsTable({
                                     ) : null}
                                     <TableCell>
                                         <Badge variant={isBatch ? "default" : "secondary"}>
-                                            {isBatch ? "Price Batch" : "List Price"}
+                                            {isBatch ? "Price Batch" : "List Cost"}
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="font-medium">{row.record_label}</TableCell>

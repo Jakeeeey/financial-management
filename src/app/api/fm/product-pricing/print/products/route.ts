@@ -1,13 +1,18 @@
 // src/app/api/product-pricing/print/products/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+    chunkArray,
+    fetchAllPages,
+    getSupplierProductIdsForSuppliers,
+} from "../../_directusPaging";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const PRODUCTS = "products";
-const PRODUCT_PER_SUPPLIER = "product_per_supplier";
 const SUPPLIERS = "suppliers";
 
 type JwtPayload = {
@@ -42,10 +47,6 @@ type SupplierRow = {
     id?: number | string | null;
     supplier_name?: string | null;
     supplier_shortcut?: string | null;
-};
-
-type ProductPerSupplierRow = {
-    product_id?: number | string | { product_id?: number | string | null } | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -122,12 +123,6 @@ function uniqNums(arr: number[]) {
     return Array.from(new Set(arr.filter((n) => Number.isFinite(n) && n > 0)));
 }
 
-function chunk<T>(arr: T[], size: number) {
-    const out: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-    return out;
-}
-
 function pickId(v: unknown): number | null {
     if (v === null || v === undefined) return null;
 
@@ -195,48 +190,6 @@ async function resolveSupplierId(input: string): Promise<string> {
     const id = pickId(first?.id);
     if (!id) return "";
     return String(id);
-}
-
-async function fetchSupplierProductIds(supplierIdRaw: string) {
-    const supplierId = await resolveSupplierId(supplierIdRaw);
-    if (!supplierId) return [];
-
-    const sp = new URLSearchParams();
-    sp.set("limit", "-1");
-    sp.set("fields", "product_id,product_id.product_id");
-    sp.set("filter[supplier_id][_eq]", supplierId);
-
-    const url = `${DIRECTUS_URL}/items/${PRODUCT_PER_SUPPLIER}?${sp.toString()}`;
-    const { ok, status, text } = await fetchDirectusRaw(url);
-
-    if (!ok) {
-        throw new Error(
-            JSON.stringify({
-                message: "Directus request failed (product_per_supplier)",
-                status,
-                url,
-                body: text,
-            }),
-        );
-    }
-
-    const json = JSON.parse(text) as { data?: ProductPerSupplierRow[] };
-
-    const ids = (json.data ?? [])
-        .map((row) => {
-            const direct = pickId(row.product_id);
-            if (direct) return direct;
-
-            const nested =
-                isRecord(row.product_id) && "product_id" in row.product_id
-                    ? pickId(row.product_id.product_id)
-                    : null;
-
-            return nested ?? null;
-        })
-        .filter((n): n is number => n !== null && Number.isFinite(n) && n > 0);
-
-    return uniqNums(ids);
 }
 
 function applyCommonFilters(args: {
@@ -352,83 +305,44 @@ export async function GET(req: NextRequest) {
             "priceE",
         ].join(",");
 
+        const fetchProductRows = async (productIdsIn?: number[]): Promise<ProductRow[]> => {
+            const rows = await fetchAllPages<ProductRow>(PRODUCTS, () => {
+                const params = new URLSearchParams();
+                params.set("fields", fields);
+                params.set("sort", "product_name");
+                applyCommonFilters({
+                    params,
+                    q,
+                    categoryIds,
+                    brandIds,
+                    unitIds,
+                    activeOnly,
+                    missingTier,
+                    productIdsIn,
+                });
+                return params;
+            });
+            return rows.map(normalizeProductRow);
+        };
+
         let matchedProducts: ProductRow[] = [];
 
         if (supplierScope !== "LINKED_ONLY" || supplierIdsRaw.length === 0) {
-            const params = new URLSearchParams();
-            params.set("limit", "-1");
-            params.set("fields", fields);
-            params.set("sort", "product_name");
-
-            applyCommonFilters({ params, q, categoryIds, brandIds, unitIds, activeOnly, missingTier });
-
-            const directusUrl = `${DIRECTUS_URL}/items/${PRODUCTS}?${params.toString()}`;
-            const { ok, status, text } = await fetchDirectusRaw(directusUrl);
-
-            if (!ok) {
-                return NextResponse.json(
-                    {
-                        error: "Directus request failed",
-                        directus_status: status,
-                        directus_url: directusUrl,
-                        directus_body: text,
-                    },
-                    { status: 500 },
-                );
-            }
-
-            const json = JSON.parse(text) as { data?: ProductRow[] };
-            matchedProducts = (json.data ?? []).map(normalizeProductRow);
+            matchedProducts = await fetchProductRows();
         } else {
-            const allSupplierProductIds: number[] = [];
+            const resolvedSupplierIds: string[] = [];
             for (const supplierRaw of supplierIdsRaw) {
-                const ids = await fetchSupplierProductIds(supplierRaw);
-                allSupplierProductIds.push(...ids);
+                const supplierId = await resolveSupplierId(supplierRaw);
+                if (supplierId) resolvedSupplierIds.push(supplierId);
             }
 
-            const supplierProductIds = uniqNums(allSupplierProductIds);
+            const supplierProductIds = uniqNums(await getSupplierProductIdsForSuppliers(resolvedSupplierIds));
             if (supplierProductIds.length === 0) {
                 return NextResponse.json({ data: [] });
             }
 
-            const idsChunks = chunk(supplierProductIds, 200);
-
-            const arrays = await Promise.all(
-                idsChunks.map(async (ids) => {
-                    const params = new URLSearchParams();
-                    params.set("limit", "-1");
-                    params.set("fields", fields);
-                    params.set("sort", "product_name");
-
-                    applyCommonFilters({
-                        params,
-                        q,
-                        categoryIds,
-                        brandIds,
-                        unitIds,
-                        activeOnly,
-                        missingTier,
-                        productIdsIn: ids,
-                    });
-
-                    const directusUrl = `${DIRECTUS_URL}/items/${PRODUCTS}?${params.toString()}`;
-                    const { ok, status, text } = await fetchDirectusRaw(directusUrl);
-
-                    if (!ok) {
-                        throw new Error(
-                            JSON.stringify({
-                                message: "Directus request failed (products chunk)",
-                                status,
-                                url: directusUrl,
-                                body: text,
-                            }),
-                        );
-                    }
-
-                    const json = JSON.parse(text) as { data?: ProductRow[] };
-                    return (json.data ?? []).map(normalizeProductRow);
-                }),
-            );
+            const idsChunks = chunkArray(supplierProductIds, 200);
+            const arrays = await Promise.all(idsChunks.map((ids) => fetchProductRows(ids)));
 
             const byId = new Map<number, ProductRow>();
             for (const arr of arrays) {
@@ -447,40 +361,31 @@ export async function GET(req: NextRequest) {
             const matchedGroupIds = uniqNums(matchedProducts.map(groupKey));
 
             if (matchedGroupIds.length > 0) {
-                const groupChunks = chunk(matchedGroupIds, 150);
+                const groupChunks = chunkArray(matchedGroupIds, 150);
                 const allGroupVariantsArrays = await Promise.all(
                     groupChunks.map(async (ids) => {
-                        const params = new URLSearchParams();
-                        params.set("limit", "-1");
-                        params.set("fields", fields);
+                        const rows = await fetchAllPages<ProductRow>(PRODUCTS, () => {
+                            const params = new URLSearchParams();
+                            params.set("fields", fields);
 
-                        let andIdx = 0;
-                        const addAnd = (suffix: string, value: string) => {
-                            params.set(`filter[_and][${andIdx}]${suffix}`, value);
-                            andIdx += 1;
-                        };
+                            let andIdx = 0;
+                            const addAnd = (suffix: string, value: string) => {
+                                params.set(`filter[_and][${andIdx}]${suffix}`, value);
+                                andIdx += 1;
+                            };
 
-                        if (activeOnly) {
-                            addAnd("[isActive][_eq]", "1");
-                        }
+                            if (activeOnly) {
+                                addAnd("[isActive][_eq]", "1");
+                            }
 
-                        addAnd("[_or][0][product_id][_in]", ids.join(","));
-                        params.set(`filter[_and][${andIdx - 1}][_or][1][parent_id][_in]`, ids.join(","));
-
-                        const url = `${DIRECTUS_URL}/items/${PRODUCTS}?${params.toString()}`;
-                        const { ok, status, text } = await fetchDirectusRaw(url);
-                        if (!ok) {
-                            throw new Error(
-                                JSON.stringify({
-                                    message: "Directus request failed (print products group variants fetch)",
-                                    status,
-                                    url,
-                                    body: text,
-                                }),
+                            addAnd("[_or][0][product_id][_in]", ids.join(","));
+                            params.set(
+                                `filter[_and][${andIdx - 1}][_or][1][parent_id][_in]`,
+                                ids.join(","),
                             );
-                        }
-                        const json = JSON.parse(text) as { data?: ProductRow[] };
-                        return (json.data ?? []).map(normalizeProductRow);
+                            return params;
+                        });
+                        return rows.map(normalizeProductRow);
                     }),
                 );
 

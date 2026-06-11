@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, Calendar as CalendarIcon } from "lucide-react";
+import { AlertCircle, Loader2, RefreshCw, Calendar as CalendarIcon } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // Note: Ensure these components are available or correctly path-referenced
 // We will need to update the import paths since we moved the file
@@ -38,7 +39,7 @@ export function PriceChangeMonitoringModule() {
                     <Tabs defaultValue="price">
                         <TabsList className="mb-2">
                             <TabsTrigger value="price">Price Type</TabsTrigger>
-                            <TabsTrigger value="cost">List Price</TabsTrigger>
+                            <TabsTrigger value="cost">List Cost</TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="price">
@@ -162,6 +163,18 @@ function RequestMonitoringManager({ type, suppliers }: { type: "price" | "cost";
 
                     <div className="text-sm text-muted-foreground ml-auto">Total: {mine.total.toLocaleString()}</div>
                 </div>
+
+                {mine.error ? (
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>
+                            {type === "cost"
+                                ? "List cost requests could not be loaded"
+                                : "Price change requests could not be loaded"}
+                        </AlertTitle>
+                        <AlertDescription>{mine.error}</AlertDescription>
+                    </Alert>
+                ) : null}
 
                 <RequestsTable
                     rows={mine.rows}

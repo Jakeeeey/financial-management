@@ -210,7 +210,7 @@ export function UnifiedApprovalsManager({
                                     </span>
                                 </div>
                             ) : (
-                                "Select pending list price requests to approve or reject in bulk. Price batches use row actions."
+                                "Select pending list cost requests to approve or reject in bulk. Price batches use row actions."
                             )}
                         </div>
 
@@ -407,7 +407,7 @@ export function UnifiedApprovalsManager({
                 description={
                     confirmingCostApprove?.type === "batch"
                         ? `You are about to approve ${selectedCostSnapshots.length} list cost request(s).`
-                        : "Are you sure you want to approve this list price request?"
+                        : "Are you sure you want to approve this list cost request?"
                 }
             >
                 {confirmingCostApprove?.type === "batch" ? (

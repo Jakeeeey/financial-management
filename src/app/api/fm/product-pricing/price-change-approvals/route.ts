@@ -4,7 +4,8 @@ import { parseApprovalSearchQuery } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
 import {
     appendBatchSupplierFilter,
-    getSupplierProductIds,
+    appendProductIdInFilter,
+    getSupplierScopedProductIds,
     resolveBatchSupplierFilter,
 } from "../_supplierFilters";
 import {
@@ -152,7 +153,7 @@ function appendCostFilters(params: URLSearchParams, filters: ApprovalFilters, su
     if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
 
     if (supplierProductIds && supplierProductIds.length > 0) {
-        addAnd("[product_id][_in]", supplierProductIds.join(","));
+        andIdx = appendProductIdInFilter(params, andIdx, supplierProductIds);
     }
 
     if (filters.q) {
@@ -327,7 +328,7 @@ export async function GET(req: NextRequest) {
         const offset = (page - 1) * pageSize;
         const fetchLimit = offset + pageSize;
 
-        const supplierProductIds = supplierId ? await getSupplierProductIds(supplierId) : undefined;
+        const supplierProductIds = supplierId ? await getSupplierScopedProductIds(supplierId) : undefined;
 
         const [batchPage, costPage] = await Promise.all([
             fetchBatchesPage(filters, fetchLimit),

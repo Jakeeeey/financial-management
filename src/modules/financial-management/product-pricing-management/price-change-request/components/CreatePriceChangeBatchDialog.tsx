@@ -16,6 +16,12 @@ import { cn } from "@/lib/utils";
 import * as api from "../providers/pcrApi";
 import type { CreatePriceChangeBatchPayload } from "../types";
 import { buildTierPriceMap, lookupTierPrice } from "../utils/tierPriceLookup";
+import {
+    buildVariantGroupIndex,
+    childVariantIdsForGroup,
+    groupIdFor,
+    isChildVariant,
+} from "../utils/variantPropagation";
 import { BatchPriceGrid } from "./BatchPriceGrid";
 import { useEditableGridNavigation } from "./useEditableGridNavigation";
 
@@ -74,14 +80,6 @@ function parsePriceInput(value: string) {
     return { value: parsed, error: null };
 }
 
-function groupIdFor(product: api.ProductSearchRow) {
-    return product.__group_id ?? product.parent_id ?? product.product_id;
-}
-
-function isChildVariant(product: api.ProductSearchRow) {
-    return Boolean(product.parent_id && Number(product.parent_id) !== Number(product.product_id));
-}
-
 function summarizeCreated(result: {
     created: number;
     skipped_duplicates?: number;
@@ -115,22 +113,32 @@ export function CreatePriceChangeBatchDialog({
     const [catalogPage, setCatalogPage] = React.useState(1);
     const [catalogPageSize, setCatalogPageSize] = React.useState(DEFAULT_CATALOG_PAGE_SIZE);
     const [catalogTotal, setCatalogTotal] = React.useState(0);
+    const [catalogTotalVariants, setCatalogTotalVariants] = React.useState(0);
     const [catalogTotalPages, setCatalogTotalPages] = React.useState(0);
     const [catalogQuery, setCatalogQuery] = React.useState("");
     const [localCatalogQ, setLocalCatalogQ] = React.useState("");
+    const [variantGroupIndex, setVariantGroupIndex] = React.useState<Map<number, number[]>>(new Map());
     const [loadingPriceTypes, setLoadingPriceTypes] = React.useState(false);
     const [loadingProducts, setLoadingProducts] = React.useState(false);
+    const [loadingVariantIndex, setLoadingVariantIndex] = React.useState(false);
     const [loadError, setLoadError] = React.useState<string | null>(null);
     const [saving, setSaving] = React.useState(false);
+
+    const productCatalogRef = React.useRef(productCatalog);
+    const tierPriceMapRef = React.useRef(tierPriceMap);
+    productCatalogRef.current = productCatalog;
+    tierPriceMapRef.current = tierPriceMap;
 
     const resetCatalogState = React.useCallback(() => {
         setProducts([]);
         setProductCatalog(new Map());
         setTierPriceMap(new Map());
         setDraftPrices(new Map());
+        setVariantGroupIndex(new Map());
         setCatalogPage(1);
         setCatalogPageSize(DEFAULT_CATALOG_PAGE_SIZE);
         setCatalogTotal(0);
+        setCatalogTotalVariants(0);
         setCatalogTotalPages(0);
         setCatalogQuery("");
         setLocalCatalogQ("");
@@ -198,6 +206,7 @@ export function CreatePriceChangeBatchDialog({
 
                 setProducts(result.data);
                 setCatalogTotal(Number(result.meta?.total ?? result.data.length));
+                setCatalogTotalVariants(Number(result.meta?.totalVariants ?? result.data.length));
                 setCatalogTotalPages(Math.max(0, Number(result.meta?.totalPages ?? 0)));
                 setProductCatalog((prev) => {
                     const next = new Map(prev);
@@ -227,6 +236,66 @@ export function CreatePriceChangeBatchDialog({
             alive = false;
         };
     }, [open, supplierId, catalogPage, catalogPageSize, catalogQuery]);
+
+    React.useEffect(() => {
+        if (!open || !supplierId) {
+            setVariantGroupIndex(new Map());
+            return;
+        }
+
+        let alive = true;
+        setLoadingVariantIndex(true);
+
+        api.getVariantGroups({
+            supplier_ids: supplierId,
+            supplier_scope: "LINKED_ONLY",
+            active_only: "1",
+        })
+            .then((result) => {
+                if (!alive) return;
+                setVariantGroupIndex(buildVariantGroupIndex(result.groups));
+            })
+            .catch((error: unknown) => {
+                if (!alive) return;
+                setVariantGroupIndex(new Map());
+                setLoadError(error instanceof Error ? error.message : "Failed to load product variant groups");
+            })
+            .finally(() => {
+                if (alive) setLoadingVariantIndex(false);
+            });
+
+        return () => {
+            alive = false;
+        };
+    }, [open, supplierId]);
+
+    const ensureCatalogHydrated = React.useCallback(async (productIds: number[]) => {
+        const missing = productIds.filter((id) => !productCatalogRef.current.has(id));
+        if (missing.length === 0) return;
+
+        const [rows, priceResult] = await Promise.all([
+            api.getProductsByIds(missing),
+            api.getPricesForProducts(missing),
+        ]);
+
+        setProductCatalog((prev) => {
+            const next = new Map(prev);
+            for (const row of rows) {
+                next.set(row.product_id, row);
+                productCatalogRef.current.set(row.product_id, row);
+            }
+            return next;
+        });
+
+        setTierPriceMap((prev) => {
+            const next = new Map(prev);
+            for (const [key, value] of buildTierPriceMap(priceResult.data)) {
+                next.set(key, value);
+                tierPriceMapRef.current.set(key, value);
+            }
+            return next;
+        });
+    }, []);
 
     const handleSupplierChange = React.useCallback(
         (value: string) => {
@@ -266,8 +335,32 @@ export function CreatePriceChangeBatchDialog({
 
     const currentPriceFor = React.useCallback(
         (product: api.ProductSearchRow, priceType: api.PriceTypeOption) =>
-            lookupTierPrice(tierPriceMap, product.product_id, priceType.price_type_id),
-        [tierPriceMap],
+            lookupTierPrice(tierPriceMapRef.current, product.product_id, priceType.price_type_id),
+        [],
+    );
+
+    const collectChildIdsForPropagation = React.useCallback(
+        (drafts: Map<string, string>) => {
+            const childIds = new Set<number>();
+
+            for (const [key] of drafts) {
+                const [productIdText, priceTypeIdText] = key.split(":");
+                const productId = Number(productIdText);
+                const priceTypeId = Number(priceTypeIdText);
+                if (!Number.isFinite(productId) || !Number.isFinite(priceTypeId)) continue;
+
+                const product = productCatalogRef.current.get(productId);
+                if (!product || isChildVariant(product)) continue;
+
+                const groupId = Number(groupIdFor(product));
+                for (const childId of childVariantIdsForGroup(variantGroupIndex, groupId, productId)) {
+                    childIds.add(childId);
+                }
+            }
+
+            return Array.from(childIds);
+        },
+        [variantGroupIndex],
     );
 
     const validation = React.useMemo(() => {
@@ -285,17 +378,20 @@ export function CreatePriceChangeBatchDialog({
 
     const setDraftPrice = React.useCallback(
         (product: api.ProductSearchRow, priceTypeId: number, value: string) => {
+            let hydrateIds: number[] = [];
+
             setDraftPrices((prev) => {
                 const next = new Map(prev);
                 const keysToUpdate = [cellKey(product.product_id, priceTypeId)];
 
                 if (applyParentPriceToChildren && !isChildVariant(product)) {
                     const groupId = Number(groupIdFor(product));
-                    for (const candidate of products) {
-                        if (candidate.product_id === product.product_id || !isChildVariant(candidate)) continue;
-                        if (Number(groupIdFor(candidate)) === groupId) {
-                            keysToUpdate.push(cellKey(candidate.product_id, priceTypeId));
-                        }
+                    for (const childId of childVariantIdsForGroup(
+                        variantGroupIndex,
+                        groupId,
+                        product.product_id,
+                    )) {
+                        keysToUpdate.push(cellKey(childId, priceTypeId));
                     }
                 }
 
@@ -304,36 +400,122 @@ export function CreatePriceChangeBatchDialog({
                     else next.delete(key);
                 }
 
+                if (applyParentPriceToChildren && !isChildVariant(product) && value.trim()) {
+                    hydrateIds = childVariantIdsForGroup(
+                        variantGroupIndex,
+                        Number(groupIdFor(product)),
+                        product.product_id,
+                    );
+                }
+
                 return next;
             });
+
+            if (hydrateIds.length > 0) {
+                void ensureCatalogHydrated(hydrateIds);
+            }
+
             setErrors((prev) => ({ ...prev, lines: undefined }));
         },
-        [applyParentPriceToChildren, products],
+        [applyParentPriceToChildren, ensureCatalogHydrated, variantGroupIndex],
     );
 
     const buildLines = React.useCallback((): CreatePriceChangeBatchPayload["lines"] => {
         const lines: CreatePriceChangeBatchPayload["lines"] = [];
+        const coveredKeys = new Set<string>();
+        const catalog = productCatalogRef.current;
 
-        for (const [key, raw] of draftPrices) {
-            const [productIdText, priceTypeIdText] = key.split(":");
-            const productId = Number(productIdText);
-            const priceTypeId = Number(priceTypeIdText);
-            const product = productCatalog.get(productId);
+        const addLine = (productId: number, priceTypeId: number, raw: string) => {
+            const key = cellKey(productId, priceTypeId);
+            if (coveredKeys.has(key)) return;
+
+            const product = catalog.get(productId);
             const priceType = priceTypesById.get(priceTypeId);
             const parsed = parsePriceInput(raw);
 
-            if (!product || !priceType || parsed.value === null || parsed.error) continue;
+            if (!product || !priceType || parsed.value === null || parsed.error) return;
 
+            coveredKeys.add(key);
             lines.push({
                 product_id: product.product_id,
                 price_type_id: priceType.price_type_id,
                 current_price: currentPriceFor(product, priceType),
                 proposed_price: parsed.value,
             });
+        };
+
+        for (const [key, raw] of draftPrices) {
+            const [productIdText, priceTypeIdText] = key.split(":");
+            addLine(Number(productIdText), Number(priceTypeIdText), raw);
+        }
+
+        if (applyParentPriceToChildren) {
+            for (const [key, raw] of draftPrices) {
+                const [productIdText, priceTypeIdText] = key.split(":");
+                const productId = Number(productIdText);
+                const priceTypeId = Number(priceTypeIdText);
+                const product = catalog.get(productId);
+
+                if (!product || isChildVariant(product)) continue;
+
+                const groupId = Number(groupIdFor(product));
+                for (const childId of childVariantIdsForGroup(variantGroupIndex, groupId, productId)) {
+                    const childKey = cellKey(childId, priceTypeId);
+                    if (draftPrices.has(childKey)) continue;
+                    addLine(childId, priceTypeId, raw);
+                }
+            }
         }
 
         return lines;
-    }, [currentPriceFor, draftPrices, priceTypesById, productCatalog]);
+    }, [applyParentPriceToChildren, currentPriceFor, draftPrices, priceTypesById, variantGroupIndex]);
+
+    React.useEffect(() => {
+        if (!applyParentPriceToChildren || variantGroupIndex.size === 0 || draftPrices.size === 0) {
+            return;
+        }
+
+        let hydrateIds: number[] = [];
+
+        setDraftPrices((prev) => {
+            const next = new Map(prev);
+            let changed = false;
+
+            for (const [key, raw] of prev) {
+                const [productIdText, priceTypeIdText] = key.split(":");
+                const productId = Number(productIdText);
+                const priceTypeId = Number(priceTypeIdText);
+                const product = productCatalogRef.current.get(productId);
+
+                if (!product || isChildVariant(product)) continue;
+
+                const groupId = Number(groupIdFor(product));
+                for (const childId of childVariantIdsForGroup(variantGroupIndex, groupId, productId)) {
+                    const childKey = cellKey(childId, priceTypeId);
+                    if (!next.has(childKey)) {
+                        next.set(childKey, raw);
+                        changed = true;
+                    }
+                }
+            }
+
+            if (changed) {
+                hydrateIds = collectChildIdsForPropagation(next);
+            }
+
+            return changed ? next : prev;
+        });
+
+        if (hydrateIds.length > 0) {
+            void ensureCatalogHydrated(hydrateIds);
+        }
+    }, [
+        applyParentPriceToChildren,
+        collectChildIdsForPropagation,
+        draftPrices.size,
+        ensureCatalogHydrated,
+        variantGroupIndex,
+    ]);
 
     const gridNav = useEditableGridNavigation({
         rowCount: products.length,
@@ -346,10 +528,11 @@ export function CreatePriceChangeBatchDialog({
         },
     });
 
+    const catalogLoading = loadingPriceTypes || loadingProducts || loadingVariantIndex;
+
     const canSubmit =
         !saving &&
-        !loadingPriceTypes &&
-        !loadingProducts &&
+        !catalogLoading &&
         Boolean(supplierId) &&
         Boolean(remarks.trim()) &&
         validation.validCount > 0 &&
@@ -371,16 +554,20 @@ export function CreatePriceChangeBatchDialog({
             nextErrors.lines = "Fix invalid proposed prices before submitting.";
         }
 
-        const lines = buildLines();
-        if (lines.length === 0) {
-            nextErrors.lines = "Enter at least one proposed price.";
-        }
-
         setErrors(nextErrors);
         if (Object.keys(nextErrors).length > 0) return;
 
         setSaving(true);
         try {
+            if (applyParentPriceToChildren) {
+                await ensureCatalogHydrated(collectChildIdsForPropagation(draftPrices));
+            }
+
+            const lines = buildLines();
+            if (lines.length === 0) {
+                setErrors({ lines: "Enter at least one proposed price." });
+                return;
+            }
             const result = await api.createPriceChangeBatch({
                 supplier_id: selectedSupplierId,
                 reference_no: trimmedReferenceNo || undefined,
@@ -402,7 +589,11 @@ export function CreatePriceChangeBatchDialog({
             setSaving(false);
         }
     }, [
+        applyParentPriceToChildren,
         buildLines,
+        collectChildIdsForPropagation,
+        draftPrices,
+        ensureCatalogHydrated,
         onCreated,
         onOpenChange,
         referenceNo,
@@ -484,6 +675,12 @@ export function CreatePriceChangeBatchDialog({
                                         Apply parent prices to child variants
                                     </Label>
                                 </div>
+                                {applyParentPriceToChildren ? (
+                                    <p className="text-[11px] leading-snug text-muted-foreground">
+                                        Applies to all unit variants in each product group, including variants on
+                                        other catalog pages.
+                                    </p>
+                                ) : null}
                             </div>
                             <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
                                 <div>{validation.validCount} edited price cell(s)</div>
@@ -530,7 +727,7 @@ export function CreatePriceChangeBatchDialog({
                             <div className="px-3 py-8 text-center text-sm text-muted-foreground">
                                 Select a supplier to load linked products.
                             </div>
-                        ) : loadingPriceTypes || loadingProducts ? (
+                        ) : catalogLoading ? (
                             <div className="flex items-center justify-center gap-2 px-3 py-8 text-sm text-muted-foreground">
                                 <Loader2 className="h-4 w-4 animate-spin" />
                                 Loading catalog
@@ -571,10 +768,20 @@ export function CreatePriceChangeBatchDialog({
                                             <>
                                                 {" "}
                                                 of <span className="font-medium text-foreground">{catalogTotal}</span>{" "}
-                                                products
+                                                product groups
+                                                {catalogTotalVariants > 0 ? (
+                                                    <>
+                                                        {" "}
+                                                        (
+                                                        <span className="font-medium text-foreground">
+                                                            {catalogTotalVariants}
+                                                        </span>{" "}
+                                                        variants)
+                                                    </>
+                                                ) : null}
                                             </>
                                         ) : (
-                                            " products"
+                                            " product groups"
                                         )}
                                     </div>
                                     <div className="flex flex-wrap items-center justify-end gap-2">

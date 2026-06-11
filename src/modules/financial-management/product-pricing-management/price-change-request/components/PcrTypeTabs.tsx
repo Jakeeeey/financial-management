@@ -7,7 +7,7 @@ import type { ApprovalTypeFilter } from "../types";
 const TYPE_TABS: Array<{ value: ApprovalTypeFilter; label: string }> = [
     { value: "all", label: "All" },
     { value: "price", label: "Price Type" },
-    { value: "cost", label: "List Price" },
+    { value: "cost", label: "List Cost" },
 ];
 
 export function PcrTypeTabList() {

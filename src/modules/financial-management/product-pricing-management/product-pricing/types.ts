@@ -144,8 +144,8 @@ export type SaveAllResult =
               | "missing_batch_fields"
               | "api_error"
               | "nothing_created"
-              | "partial_failure";
-          created?: number;
+              | "mixed_preflight_failed"
+              | "mixed_save_rolled_back";
       };
 
 export type DirtyCellMeta = {

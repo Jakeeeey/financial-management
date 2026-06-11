@@ -45,18 +45,18 @@ function supplierFilterHelperText(
     if (!hasSupplier) {
         if (filterContext === "all") return "All suppliers included.";
         if (filterContext === "price") {
-            return "All suppliers included. Batches match by header supplier or linked products.";
+            return "All suppliers included. Batches match by header supplier or product-linked batch lines.";
         }
-        return "All suppliers included. List-cost requests match by product linkage.";
+        return "All suppliers included. List-cost requests match supplier-linked products (incl. variants).";
     }
 
     if (filterContext === "all") {
-        return "Batches and list-cost requests for this supplier (by header or product linkage).";
+        return "Batches: header supplier or lines for supplier-linked products (incl. variants). List-cost: linked products only.";
     }
     if (filterContext === "price") {
-        return "Batches for this supplier (by header or linked products).";
+        return "Batches for this supplier by header or product-linked batch lines (incl. variants).";
     }
-    return "List-cost requests for products linked to this supplier.";
+    return "List-cost requests for supplier-linked products, including unit variants.";
 }
 
 function safeStr(value: unknown): string {
@@ -182,6 +182,7 @@ export function RequestFiltersBar(props: Props) {
             supplier_id: "",
             date_from: "",
             date_to: "",
+            status: "ALL",
             page: 1,
         }));
         onReset?.();
@@ -189,7 +190,8 @@ export function RequestFiltersBar(props: Props) {
 
     const q = safeStr(query.q);
     const hasDateRange = Boolean(query.date_from || query.date_to);
-    const hasFilters = Boolean(q || query.supplier_id || hasDateRange);
+    const hasStatusFilter = Boolean(query.status && query.status !== "ALL");
+    const hasFilters = Boolean(q || query.supplier_id || hasDateRange || hasStatusFilter);
 
     const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
 
@@ -247,7 +249,7 @@ export function RequestFiltersBar(props: Props) {
                     <div className="min-w-0">
                         <h2 className="text-sm font-semibold text-foreground">Request filters</h2>
                         <p className="text-xs text-muted-foreground">
-                            Search, narrow by supplier, or review requests within a specific date range.
+                            Search, narrow by supplier or date range, and filter by status. Reset clears all of these.
                         </p>
                     </div>
 

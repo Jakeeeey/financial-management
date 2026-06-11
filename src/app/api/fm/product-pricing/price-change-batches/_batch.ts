@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+    type LegacyPriceTypeRow,
+    resolveLegacyProductsPatch,
+} from "../_legacyProductPriceSync";
 
 export const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -66,6 +70,7 @@ export type BatchDetailRow = {
 type PriceTypeRow = {
     price_type_id?: number | string | null;
     price_type_name?: string | null;
+    sort?: number | string | null;
 };
 
 type ExistingPriceRow = {
@@ -95,6 +100,39 @@ export function directusHeaders() {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers.Authorization = `Bearer ${token}`;
     return headers;
+}
+
+const BATCH_PAGE_SIZE = 500;
+const IN_CHUNK_SIZE = 200;
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+}
+
+async function fetchAllPagesLocal<T>(
+    collection: string,
+    buildParams: () => URLSearchParams,
+): Promise<T[]> {
+    const all: T[] = [];
+    let offset = 0;
+
+    while (true) {
+        const params = buildParams();
+        params.set("limit", String(BATCH_PAGE_SIZE));
+        params.set("offset", String(offset));
+
+        const url = `${mustBase()}/items/${collection}?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<T>>(url, { headers: directusHeaders() });
+        const rows = json.data ?? [];
+        all.push(...rows);
+
+        if (rows.length < BATCH_PAGE_SIZE) break;
+        offset += BATCH_PAGE_SIZE;
+    }
+
+    return all;
 }
 
 export async function fetchDirectus<T>(url: string, init?: RequestInit): Promise<T> {
@@ -238,23 +276,201 @@ export function directusErrorResponse(error: unknown) {
     return NextResponse.json({ error: "Unexpected error", details: message }, { status: 500 });
 }
 
-export function mapPriceTypeToProductsPatch(priceTypeName: string, price: number) {
-    const normalized = String(priceTypeName ?? "")
-        .trim()
-        .toUpperCase()
-        .replace(/[_-]+/g, " ");
+export type BatchCreateLineInput = {
+    product_id: number;
+    price_type_id: number;
+    current_price?: number | null;
+    proposed_price: number;
+};
 
-    if (normalized === "A" || normalized === "PRICE A" || normalized === "TIER A") {
-        return { priceA: price, price_per_unit: price };
+export type NormalizedBatchCreateLine = {
+    product_id: number;
+    price_type_id: number;
+    current_price: number | null;
+    proposed_price: number;
+};
+
+export type BatchCreatePlan = {
+    linesToCreate: NormalizedBatchCreateLine[];
+    skippedDuplicates: number;
+    skippedExistingPending: number;
+};
+
+function batchLineKey(productId: number, priceTypeId: number) {
+    return `${productId}:${priceTypeId}`;
+}
+
+function supplierIdOf(value: unknown): number | null {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value === "string") {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : null;
     }
-    if (normalized === "B" || normalized === "PRICE B" || normalized === "TIER B") return { priceB: price };
-    if (normalized === "C" || normalized === "PRICE C" || normalized === "TIER C") return { priceC: price };
-    if (normalized === "D" || normalized === "PRICE D" || normalized === "TIER D") return { priceD: price };
-    if (normalized === "E" || normalized === "PRICE E" || normalized === "TIER E") return { priceE: price };
-    if (normalized === "LIST" || normalized === "LIST PRICE" || normalized === "PRICE PER UNIT") {
-        return { price_per_unit: price };
-    }
+    if (isRecord(value)) return pickId(value.id);
     return null;
+}
+
+function supplierNameOf(value: unknown): string {
+    if (!isRecord(value)) return "";
+    const shortcut = String(value.supplier_shortcut ?? "").trim();
+    const name = String(value.supplier_name ?? "").trim();
+    return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
+}
+
+export function mapBatchHeaderResponse(row: BatchHeaderRow, lineCount = 0) {
+    const headerId = normalizeHeaderId(row);
+    const supplierId = supplierIdOf(row.supplier_id);
+    return {
+        id: headerId,
+        header_id: headerId,
+        supplier_id: supplierId,
+        supplier_name: supplierNameOf(row.supplier_id),
+        reference_no: row.reference_no ?? "",
+        remarks: row.remarks ?? "",
+        status: row.status ?? "PENDING",
+        requested_by: row.requested_by ?? null,
+        requested_at: row.requested_at ?? null,
+        approved_by: row.approved_by ?? null,
+        approved_at: row.approved_at ?? null,
+        rejected_by: row.rejected_by ?? null,
+        rejected_at: row.rejected_at ?? null,
+        reject_reason: row.reject_reason ?? null,
+        line_count: lineCount,
+    };
+}
+
+export async function getExistingPendingBatchKeys(lines: NormalizedBatchCreateLine[]) {
+    const productIds = Array.from(new Set(lines.map((line) => line.product_id)));
+    const priceTypeIds = Array.from(new Set(lines.map((line) => line.price_type_id)));
+
+    if (!productIds.length || !priceTypeIds.length) return new Set<string>();
+
+    const keys = new Set<string>();
+    const productChunks = chunkArray(productIds, IN_CHUNK_SIZE);
+
+    for (const productChunk of productChunks) {
+        const rows = await fetchAllPagesLocal<BatchDetailRow>(DETAILS, () => {
+            const params = new URLSearchParams();
+            params.set("fields", "request_id,product_id,price_type_id");
+            params.set("filter[_and][0][status][_eq]", "PENDING");
+            params.set("filter[_and][1][product_id][_in]", productChunk.join(","));
+            params.set("filter[_and][2][price_type_id][_in]", priceTypeIds.join(","));
+            return params;
+        });
+
+        for (const row of rows) {
+            const productId = normalizeProductId(row);
+            const priceTypeId = normalizePriceTypeId(row);
+            if (productId > 0 && priceTypeId > 0) {
+                keys.add(batchLineKey(productId, priceTypeId));
+            }
+        }
+    }
+
+    return keys;
+}
+
+export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]): Promise<BatchCreatePlan> {
+    const seen = new Set<string>();
+    const normalizedLines: NormalizedBatchCreateLine[] = [];
+    let skippedDuplicates = 0;
+
+    for (const line of rawLines) {
+        const productId = Number(line.product_id);
+        const priceTypeId = Number(line.price_type_id);
+        const currentPrice =
+            line.current_price === null || line.current_price === undefined ? null : Number(line.current_price);
+        const proposedPrice = Number(line.proposed_price);
+
+        if (!Number.isFinite(productId) || productId <= 0) continue;
+        if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) continue;
+        if (!Number.isFinite(proposedPrice) || proposedPrice < 0) continue;
+
+        const key = batchLineKey(productId, priceTypeId);
+        if (seen.has(key)) {
+            skippedDuplicates += 1;
+            continue;
+        }
+        seen.add(key);
+
+        normalizedLines.push({
+            product_id: productId,
+            price_type_id: priceTypeId,
+            current_price: Number.isFinite(currentPrice) ? currentPrice : null,
+            proposed_price: proposedPrice,
+        });
+    }
+
+    const existingPendingKeys = await getExistingPendingBatchKeys(normalizedLines);
+    const linesToCreate = normalizedLines.filter(
+        (line) => !existingPendingKeys.has(batchLineKey(line.product_id, line.price_type_id)),
+    );
+    const skippedExistingPending = normalizedLines.length - linesToCreate.length;
+
+    return {
+        linesToCreate,
+        skippedDuplicates,
+        skippedExistingPending,
+    };
+}
+
+export async function createPendingPriceBatch(args: {
+    userId: number;
+    supplierId: number;
+    referenceNo: string;
+    remarks: string;
+    linesToCreate: NormalizedBatchCreateLine[];
+}) {
+    const { userId, supplierId, referenceNo, remarks, linesToCreate } = args;
+
+    if (linesToCreate.length === 0) {
+        throw new Error("linesToCreate must be non-empty");
+    }
+
+    const headerPayload = {
+        supplier_id: supplierId,
+        reference_no: referenceNo || null,
+        remarks,
+        status: "PENDING",
+        requested_by: userId,
+        requested_at: nowManila(),
+    };
+
+    const header = await fetchDirectus<DirectusSingle<BatchHeaderRow>>(`${mustBase()}/items/${HEADERS}`, {
+        method: "POST",
+        headers: directusHeaders(),
+        body: JSON.stringify(headerPayload),
+    });
+
+    const headerId = header.data ? normalizeHeaderId(header.data) : 0;
+    if (!headerId) {
+        throw new Error("Batch header was created without an id");
+    }
+
+    const detailPayload = linesToCreate.map((line) => ({
+        header_id: headerId,
+        product_id: line.product_id,
+        price_type_id: line.price_type_id,
+        current_price: line.current_price,
+        proposed_price: line.proposed_price,
+        status: "PENDING",
+        requested_by: userId,
+        requested_at: nowManila(),
+    }));
+
+    const details = await fetchDirectus<DirectusList<BatchDetailRow>>(`${mustBase()}/items/${DETAILS}`, {
+        method: "POST",
+        headers: directusHeaders(),
+        body: JSON.stringify(detailPayload),
+    });
+
+    const created = details.data?.length ?? detailPayload.length;
+
+    return {
+        headerId,
+        created,
+        headerRow: header.data ?? { header_id: headerId },
+    };
 }
 
 export async function getHeader(headerId: number) {
@@ -286,78 +502,114 @@ export async function getHeader(headerId: number) {
 }
 
 export async function getDetails(headerId: number) {
-    const params = new URLSearchParams();
-    params.set("limit", "-1");
-    params.set(
-        "fields",
-        [
-            "request_id",
-            "header_id",
-            "product_id",
-            "product_id.product_id",
-            "product_id.product_code",
-            "product_id.product_name",
-            "product_id.barcode",
-            "price_type_id",
-            "price_type_id.price_type_id",
-            "price_type_id.price_type_name",
-            "current_price",
-            "proposed_price",
-            "status",
-            "requested_by",
-            "requested_at",
-        ].join(","),
-    );
-    params.set("filter[header_id][_eq]", String(headerId));
-    params.set("sort", "request_id");
+    const detailFields = [
+        "request_id",
+        "header_id",
+        "product_id",
+        "product_id.product_id",
+        "product_id.product_code",
+        "product_id.product_name",
+        "product_id.barcode",
+        "price_type_id",
+        "price_type_id.price_type_id",
+        "price_type_id.price_type_name",
+        "current_price",
+        "proposed_price",
+        "status",
+        "requested_by",
+        "requested_at",
+    ].join(",");
 
-    const url = `${mustBase()}/items/${DETAILS}?${params.toString()}`;
-    const json = await fetchDirectus<DirectusList<BatchDetailRow>>(url, { headers: directusHeaders() });
-    return json.data ?? [];
+    return fetchAllPagesLocal<BatchDetailRow>(DETAILS, () => {
+        const params = new URLSearchParams();
+        params.set("fields", detailFields);
+        params.set("filter[header_id][_eq]", String(headerId));
+        params.set("sort", "request_id");
+        return params;
+    });
 }
 
-async function getPriceTypeNames(priceTypeIds: number[]) {
-    const ids = Array.from(new Set(priceTypeIds.filter((id) => Number.isFinite(id) && id > 0)));
-    if (!ids.length) return new Map<number, string>();
+export async function cancelPendingBatch(headerId: number, userId: number, reason: string) {
+    const header = await getHeader(headerId);
+    if (!header) return;
 
-    const params = new URLSearchParams();
-    params.set("limit", "-1");
-    params.set("fields", "price_type_id,price_type_name");
-    params.set("filter[price_type_id][_in]", ids.join(","));
+    const status = String(header.status ?? "");
+    if (status !== "PENDING") return;
 
-    const url = `${mustBase()}/items/${PRICE_TYPES}?${params.toString()}`;
-    const json = await fetchDirectus<DirectusList<PriceTypeRow>>(url, { headers: directusHeaders() });
+    await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
+        method: "PATCH",
+        headers: directusHeaders(),
+        body: JSON.stringify({
+            status: "CANCELLED",
+            reject_reason: reason,
+            rejected_by: userId,
+            rejected_at: nowManila(),
+        }),
+    });
 
-    const map = new Map<number, string>();
-    for (const row of json.data ?? []) {
+    const details = await getDetails(headerId);
+    await Promise.all(
+        details
+            .map((line) => pickId(line.request_id))
+            .filter((lineId): lineId is number => Boolean(lineId))
+            .map((lineId) =>
+                fetchDirectus(`${mustBase()}/items/${DETAILS}/${lineId}`, {
+                    method: "PATCH",
+                    headers: directusHeaders(),
+                    body: JSON.stringify({ status: "CANCELLED" }),
+                }),
+            ),
+    );
+}
+
+async function loadPriceTypeCatalog(): Promise<LegacyPriceTypeRow[]> {
+    const rows = await fetchAllPagesLocal<PriceTypeRow>(PRICE_TYPES, () => {
+        const params = new URLSearchParams();
+        params.set("fields", "price_type_id,price_type_name,sort");
+        params.set("sort", "sort,price_type_id");
+        return params;
+    });
+
+    const catalog: LegacyPriceTypeRow[] = [];
+    for (const row of rows) {
         const id = Number(row.price_type_id);
         const name = String(row.price_type_name ?? "").trim();
-        if (Number.isFinite(id) && id > 0 && name) map.set(id, name);
+        if (Number.isFinite(id) && id > 0 && name) {
+            catalog.push({
+                price_type_id: id,
+                price_type_name: name,
+                sort: row.sort,
+            });
+        }
     }
-    return map;
+    return catalog;
 }
 
 async function fetchExistingPrices(productIds: number[], priceTypeIds: number[]) {
     if (!productIds.length || !priceTypeIds.length) return new Map<string, number>();
 
-    const params = new URLSearchParams();
-    params.set("limit", "-1");
-    params.set("fields", "id,product_id,price_type_id");
-    params.set("filter[product_id][_in]", productIds.join(","));
-    params.set("filter[price_type_id][_in]", priceTypeIds.join(","));
-
-    const url = `${mustBase()}/items/${PRICES}?${params.toString()}`;
-    const json = await fetchDirectus<DirectusList<ExistingPriceRow>>(url, { headers: directusHeaders() });
-
     const map = new Map<string, number>();
-    for (const row of json.data ?? []) {
-        const productId = Number(row.product_id);
-        const priceTypeId = Number(row.price_type_id);
-        const id = Number(row.id);
-        if (Number.isFinite(productId) && Number.isFinite(priceTypeId) && Number.isFinite(id) && id > 0) {
-            map.set(`${productId}:${priceTypeId}`, id);
+    const productChunks = chunkArray(productIds, IN_CHUNK_SIZE);
+
+    for (const productChunk of productChunks) {
+        const rows = await fetchAllPagesLocal<ExistingPriceRow>(PRICES, () => {
+            const params = new URLSearchParams();
+            params.set("fields", "id,product_id,price_type_id");
+            params.set("filter[product_id][_in]", productChunk.join(","));
+            params.set("filter[price_type_id][_in]", priceTypeIds.join(","));
+            return params;
+        });
+
+        for (const row of rows) {
+            const productId = Number(row.product_id);
+            const priceTypeId = Number(row.price_type_id);
+            const id = Number(row.id);
+            if (Number.isFinite(productId) && Number.isFinite(priceTypeId) && Number.isFinite(id) && id > 0) {
+                map.set(`${productId}:${priceTypeId}`, id);
+            }
         }
     }
+
     return map;
 }
 
@@ -392,9 +644,9 @@ export async function applyApprovedBatch(headerId: number, userId: number) {
 
     const productIds = Array.from(new Set(normalizedDetails.map((line) => line.productId)));
     const priceTypeIds = Array.from(new Set(normalizedDetails.map((line) => line.priceTypeId)));
-    const [existingPrices, priceTypeNames] = await Promise.all([
+    const [existingPrices, priceTypeCatalog] = await Promise.all([
         fetchExistingPrices(productIds, priceTypeIds),
-        getPriceTypeNames(priceTypeIds),
+        loadPriceTypeCatalog(),
     ]);
 
     for (const line of normalizedDetails) {
@@ -423,7 +675,14 @@ export async function applyApprovedBatch(headerId: number, userId: number) {
             });
         }
 
-        const productPatch = mapPriceTypeToProductsPatch(priceTypeNames.get(line.priceTypeId) ?? "", line.proposedPrice);
+        const priceTypeName =
+            priceTypeCatalog.find((row) => row.price_type_id === line.priceTypeId)?.price_type_name ?? "";
+        const productPatch = resolveLegacyProductsPatch({
+            priceTypeId: line.priceTypeId,
+            priceTypeName,
+            price: line.proposedPrice,
+            catalog: priceTypeCatalog,
+        });
         if (productPatch) {
             await fetchDirectus(`${mustBase()}/items/${PRODUCTS}/${line.productId}`, {
                 method: "PATCH",

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { toast } from "sonner";
 import type { ListQuery, PriceChangeRequestRow, CostChangeRequestRow } from "../types";
 import * as api from "../providers/pcrApi";
 
@@ -16,6 +15,16 @@ type UsePCRListOptions = {
 
 type UsePCRListInitial = Partial<ListQuery> & UsePCRListOptions;
 
+type UsePCRListResult = {
+    query: ListQuery;
+    setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
+    rows: (PriceChangeRequestRow | CostChangeRequestRow)[];
+    total: number;
+    loading: boolean;
+    error: string | null;
+    refresh: () => Promise<void>;
+};
+
 function isInitialArg(
     value: ListQuery | UsePCRListInitial,
     setQuery?: React.Dispatch<React.SetStateAction<ListQuery>>,
@@ -27,29 +36,15 @@ export function usePCRList(
     query: ListQuery,
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>,
     options?: UsePCRListOptions,
-): {
-    query: ListQuery;
-    setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
-    rows: (PriceChangeRequestRow | CostChangeRequestRow)[];
-    total: number;
-    loading: boolean;
-    refresh: () => Promise<void>;
-};
+): UsePCRListResult;
 
-export function usePCRList(initial: UsePCRListInitial): {
-    query: ListQuery;
-    setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
-    rows: (PriceChangeRequestRow | CostChangeRequestRow)[];
-    total: number;
-    loading: boolean;
-    refresh: () => Promise<void>;
-};
+export function usePCRList(initial: UsePCRListInitial): UsePCRListResult;
 
 export function usePCRList(
     queryOrInitial: ListQuery | UsePCRListInitial,
     setQuery?: React.Dispatch<React.SetStateAction<ListQuery>>,
     options?: UsePCRListOptions,
-) {
+): UsePCRListResult {
     const isControlled = setQuery != null;
     const requestType =
         options?.requestType ??
@@ -81,6 +76,10 @@ export function usePCRList(
     const [rows, setRows] = React.useState<(PriceChangeRequestRow | CostChangeRequestRow)[]>([]);
     const [total, setTotal] = React.useState<number>(0);
     const [loading, setLoading] = React.useState(false);
+    const [error, setError] = React.useState<string | null>(null);
+
+    const loadErrorFallback =
+        requestType === "cost" ? "Failed to load list cost requests" : "Failed to load price change requests";
 
     const refresh = React.useCallback(async () => {
         setLoading(true);
@@ -92,12 +91,16 @@ export function usePCRList(
 
             setRows(res.data ?? []);
             setTotal(Number(res.meta?.total_count ?? (res.data?.length ?? 0)));
+            setError(null);
         } catch (error: unknown) {
-            toast.error(getErrorMessage(error, "Failed to load requests"));
+            const message = getErrorMessage(error, loadErrorFallback);
+            setRows([]);
+            setTotal(0);
+            setError(message);
         } finally {
             setLoading(false);
         }
-    }, [query, requestType]);
+    }, [loadErrorFallback, query, requestType]);
 
     React.useEffect(() => {
         void refresh();
@@ -109,6 +112,7 @@ export function usePCRList(
         rows,
         total,
         loading,
+        error,
         refresh,
     };
 }

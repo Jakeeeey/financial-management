@@ -12,6 +12,7 @@ type Options = {
     compact?: boolean;
     includeBarcode?: boolean;
     priceTypes?: PriceType[];
+    tiers?: string[];
     units?: Unit[];
     usedUnitIds?: Set<number>;
 };
@@ -72,7 +73,7 @@ export function generatePricingMatrixPdf(
 
     const uomCount = Math.max(usedUnits.length, 1);
     const priceTypesList = opts.priceTypes ?? [];
-    const tiers = buildMatrixTierKeys(priceTypesList);
+    const tiers = opts.tiers?.length ? opts.tiers : buildMatrixTierKeys(priceTypesList);
 
     // --- Header Construction (3 Levels) ---
     const headRow1: PdfCell[] = [

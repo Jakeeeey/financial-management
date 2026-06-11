@@ -1,6 +1,13 @@
 // src/app/api/product-pricing/lookups/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+    chunkArray,
+    fetchAllPages,
+    getChildProductIdsForParents,
+    getSupplierProductIdsForSuppliers,
+} from "../_directusPaging";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -12,7 +19,6 @@ const BRAND = "brand";
 const UNITS = "units";
 const SUPPLIERS = "suppliers";
 
-const PRODUCT_PER_SUPPLIER = "product_per_supplier";
 const PRODUCTS = "products";
 
 type DirectusCategory = {
@@ -44,10 +50,6 @@ type DirectusProductLookupRow = {
     product_category?: DirectusCategory | null;
     product_brand?: DirectusBrand | null;
     unit_of_measurement?: DirectusUnit | null;
-};
-
-type ProductPerSupplierRow = {
-    product_id?: number | string | null;
 };
 
 type JwtPayload = {
@@ -94,26 +96,6 @@ function decodeUserIdFromJwtCookie(req: NextRequest, cookieName = "vos_access_to
     }
 }
 
-function uniqById<T extends Record<string, unknown>, K extends keyof T>(rows: T[], idKey: K) {
-    const map = new Map<string, T>();
-
-    for (const row of rows) {
-        const id = row[idKey];
-        if (id === undefined || id === null) continue;
-
-        const key = String(id);
-        if (!map.has(key)) map.set(key, row);
-    }
-
-    return Array.from(map.values());
-}
-
-function chunk<T>(arr: T[], size: number) {
-    const out: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-    return out;
-}
-
 function safeCsvIds(v: string | null) {
     const s = String(v ?? "").trim();
     if (!s) return [];
@@ -153,62 +135,46 @@ async function collectSetsFromProducts(args: {
         "unit_of_measurement.order",
     ].join(",");
 
-    const applyFilters = (sp: URLSearchParams) => {
-        sp.set("limit", "-1");
-        sp.set("fields", fields);
+    const buildParams = (batch?: number[]) => {
+        const params = new URLSearchParams();
+        params.set("fields", fields);
 
         if (categoryId > 0) {
-            sp.set("filter[product_category][category_id][_eq]", String(categoryId));
+            params.set("filter[product_category][category_id][_eq]", String(categoryId));
         }
         if (brandId > 0) {
-            sp.set("filter[product_brand][brand_id][_eq]", String(brandId));
+            params.set("filter[product_brand][brand_id][_eq]", String(brandId));
+        }
+        if (batch && batch.length > 0) {
+            params.set("filter[product_id][_in]", batch.join(","));
+        }
+
+        return params;
+    };
+
+    const absorbProducts = (prods: DirectusProductLookupRow[]) => {
+        for (const p of prods) {
+            const c = p.product_category;
+            const b = p.product_brand;
+            const u = p.unit_of_measurement;
+
+            if (c?.category_id != null) catSet.add(String(c.category_id));
+            if (b?.brand_id != null) brandSet.add(String(b.brand_id));
+            if (u?.unit_id != null) unitSet.add(String(u.unit_id));
         }
     };
 
     if (Array.isArray(productIds) && productIds.length > 0) {
-        const batches = chunk(productIds, 300);
-
-        for (const batch of batches) {
-            const sp = new URLSearchParams();
-            applyFilters(sp);
-            sp.set("filter[product_id][_in]", batch.join(","));
-
-            const prodJson = await fetchDirectus<{ data: DirectusProductLookupRow[] }>(
-                `${DIRECTUS_URL}/items/${PRODUCTS}?${sp.toString()}`,
-            );
-            const prods = Array.isArray(prodJson.data) ? prodJson.data : [];
-
-            for (const p of prods) {
-                const c = p.product_category;
-                const b = p.product_brand;
-                const u = p.unit_of_measurement;
-
-                if (c?.category_id != null) catSet.add(String(c.category_id));
-                if (b?.brand_id != null) brandSet.add(String(b.brand_id));
-                if (u?.unit_id != null) unitSet.add(String(u.unit_id));
-            }
+        for (const batch of chunkArray(productIds, 300)) {
+            const prods = await fetchAllPages<DirectusProductLookupRow>(PRODUCTS, () => buildParams(batch));
+            absorbProducts(prods);
         }
 
         return { catSet, brandSet, unitSet };
     }
 
-    const sp = new URLSearchParams();
-    applyFilters(sp);
-
-    const prodJson = await fetchDirectus<{ data: DirectusProductLookupRow[] }>(
-        `${DIRECTUS_URL}/items/${PRODUCTS}?${sp.toString()}`,
-    );
-    const prods = Array.isArray(prodJson.data) ? prodJson.data : [];
-
-    for (const p of prods) {
-        const c = p.product_category;
-        const b = p.product_brand;
-        const u = p.unit_of_measurement;
-
-        if (c?.category_id != null) catSet.add(String(c.category_id));
-        if (b?.brand_id != null) brandSet.add(String(b.brand_id));
-        if (u?.unit_id != null) unitSet.add(String(u.unit_id));
-    }
+    const prods = await fetchAllPages<DirectusProductLookupRow>(PRODUCTS, () => buildParams());
+    absorbProducts(prods);
 
     return { catSet, brandSet, unitSet };
 }
@@ -229,62 +195,45 @@ export async function GET(req: NextRequest) {
         const categoryId = safeInt(searchParams.get("category_id"));
         const brandId = safeInt(searchParams.get("brand_id"));
 
-        const catParams = new URLSearchParams();
-        catParams.set("limit", "-1");
-        catParams.set("fields", "category_id,category_name");
-        catParams.set("sort", "category_name");
-
-        const brandParams = new URLSearchParams();
-        brandParams.set("limit", "-1");
-        brandParams.set("fields", "brand_id,brand_name");
-        brandParams.set("sort", "brand_name");
-
-        const unitParams = new URLSearchParams();
-        unitParams.set("limit", "-1");
-        unitParams.set("fields", "unit_id,unit_name,unit_shortcut,order");
-        unitParams.set("sort", "order,unit_name");
-
-        const supplierParams = new URLSearchParams();
-        supplierParams.set("limit", "-1");
-        supplierParams.set("fields", "id,supplier_name,supplier_shortcut,isActive");
-        supplierParams.set("sort", "supplier_name");
-        supplierParams.set("filter[isActive][_eq]", "1");
-        supplierParams.set("filter[supplier_type][_eq]", "TRADE");
-
-        const [catJson, brandJson, unitJson, supplierJson] = await Promise.all([
-            fetchDirectus<{ data: DirectusCategory[] }>(`${DIRECTUS_URL}/items/${CATEGORIES}?${catParams.toString()}`),
-            fetchDirectus<{ data: DirectusBrand[] }>(`${DIRECTUS_URL}/items/${BRAND}?${brandParams.toString()}`),
-            fetchDirectus<{ data: DirectusUnit[] }>(`${DIRECTUS_URL}/items/${UNITS}?${unitParams.toString()}`),
-            fetchDirectus<{ data: DirectusSupplier[] }>(`${DIRECTUS_URL}/items/${SUPPLIERS}?${supplierParams.toString()}`),
+        const [categoriesInitial, brandsInitial, unitsInitial, suppliers] = await Promise.all([
+            fetchAllPages<DirectusCategory>(CATEGORIES, () => {
+                const params = new URLSearchParams();
+                params.set("fields", "category_id,category_name");
+                params.set("sort", "category_name");
+                return params;
+            }),
+            fetchAllPages<DirectusBrand>(BRAND, () => {
+                const params = new URLSearchParams();
+                params.set("fields", "brand_id,brand_name");
+                params.set("sort", "brand_name");
+                return params;
+            }),
+            fetchAllPages<DirectusUnit>(UNITS, () => {
+                const params = new URLSearchParams();
+                params.set("fields", "unit_id,unit_name,unit_shortcut,order");
+                params.set("sort", "order,unit_name");
+                return params;
+            }),
+            fetchAllPages<DirectusSupplier>(SUPPLIERS, () => {
+                const params = new URLSearchParams();
+                params.set("fields", "id,supplier_name,supplier_shortcut,isActive");
+                params.set("sort", "supplier_name");
+                params.set("filter[isActive][_eq]", "1");
+                params.set("filter[supplier_type][_eq]", "TRADE");
+                return params;
+            }),
         ]);
 
-        let categories: DirectusCategory[] = Array.isArray(catJson.data) ? catJson.data : [];
-        let brands: DirectusBrand[] = Array.isArray(brandJson.data) ? brandJson.data : [];
-        let units: DirectusUnit[] = Array.isArray(unitJson.data) ? unitJson.data : [];
-        const suppliers: DirectusSupplier[] = Array.isArray(supplierJson.data) ? supplierJson.data : [];
+        let categories: DirectusCategory[] = categoriesInitial;
+        let brands: DirectusBrand[] = brandsInitial;
+        let units: DirectusUnit[] = unitsInitial;
 
         const shouldScopeBySupplier = supplierIds.length > 0 && supplierScope !== "ALL";
 
         let universeProductIds: number[] | null = null;
 
         if (shouldScopeBySupplier) {
-            const ppsParams = new URLSearchParams();
-            ppsParams.set("limit", "-1");
-            ppsParams.set("fields", "product_id");
-            ppsParams.set("filter[supplier_id][_in]", supplierIds.join(","));
-
-            const ppsJson = await fetchDirectus<{ data: ProductPerSupplierRow[] }>(
-                `${DIRECTUS_URL}/items/${PRODUCT_PER_SUPPLIER}?${ppsParams.toString()}`,
-            );
-
-            const directIds = uniqById(
-                (Array.isArray(ppsJson.data) ? ppsJson.data : [])
-                    .map((row) => ({ product_id: row.product_id }))
-                    .filter((row) => row.product_id != null),
-                "product_id",
-            )
-                .map((row) => Number(row.product_id))
-                .filter((n) => Number.isFinite(n));
+            const directIds = await getSupplierProductIdsForSuppliers(supplierIds);
 
             if (directIds.length === 0) {
                 return NextResponse.json({
@@ -292,14 +241,7 @@ export async function GET(req: NextRequest) {
                 });
             }
 
-            // Also fetch child products (variants) whose parent_id is in the direct supplier product IDs
-            const childrenJson = await fetchDirectus<{ data: { product_id: number }[] }>(
-                `${DIRECTUS_URL}/items/${PRODUCTS}?limit=-1&fields=product_id&filter[parent_id][_in]=${directIds.join(",")}`
-            );
-            const childIds = (childrenJson.data ?? [])
-                .map((r) => Number(r.product_id))
-                .filter((n) => Number.isFinite(n) && n > 0);
-
+            const childIds = await getChildProductIdsForParents(directIds);
             universeProductIds = Array.from(new Set([...directIds, ...childIds]));
         }
 

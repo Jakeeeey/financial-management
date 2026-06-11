@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { parseApprovalSearchQuery } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
-import { getSupplierProductIds } from "../_supplierFilters";
+import { appendProductIdInFilter, getSupplierScopedProductIds } from "../_supplierFilters";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const CCR = "cost_change_requests";
+const PRODUCT_IDS_CHUNK_SIZE = 200;
 
 type DirectusMeta = {
     total_count?: number;
@@ -138,6 +139,45 @@ function nowManila(): string {
         .replace(" ", "T");
 }
 
+function chunk<T>(arr: T[], size: number): T[][] {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+}
+
+function parseProductIdsParam(raw: string | null): number[] | null {
+    if (raw === null) return null;
+    const ids = raw
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0);
+    return ids;
+}
+
+async function fetchCcrByProductIds(
+    productIds: number[],
+    status: string,
+): Promise<DirectusCCRRow[]> {
+    const fields = ["product_id", "proposed_cost", "product_id.product_id"].join(",");
+
+    const batches = chunk(productIds, PRODUCT_IDS_CHUNK_SIZE);
+    const results = await Promise.all(
+        batches.map(async (batch) => {
+            const params = new URLSearchParams();
+            params.set("limit", "500");
+            params.set("fields", fields);
+            params.set("filter[product_id][_in]", batch.join(","));
+            if (status) params.set("filter[status][_eq]", status);
+
+            const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
+            const json = await fetchDirectus<DirectusListCCRResponse>(url, { headers: directusHeaders() });
+            return json.data ?? [];
+        }),
+    );
+
+    return results.flat();
+}
+
 function parseWrappedError(message: string): DirectusWrappedError | null {
     try {
         const parsed: unknown = JSON.parse(message);
@@ -176,6 +216,16 @@ export async function GET(req: NextRequest) {
         const supplier_id = norm(searchParams.get("supplier_id"));
         const date_from = norm(searchParams.get("date_from"));
         const date_to = norm(searchParams.get("date_to"));
+        const productIds = parseProductIdsParam(searchParams.get("product_ids"));
+
+        if (productIds !== null) {
+            if (productIds.length === 0) {
+                return NextResponse.json({ data: [] });
+            }
+
+            const data = await fetchCcrByProductIds(productIds, status);
+            return NextResponse.json({ data });
+        }
 
         const limit = norm(searchParams.get("limit"));
         const useAllRows = limit === "-1";
@@ -231,11 +281,11 @@ export async function GET(req: NextRequest) {
         if (date_to) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(date_to));
 
         if (supplier_id) {
-            const supplierProductIds = await getSupplierProductIds(supplier_id);
+            const supplierProductIds = await getSupplierScopedProductIds(supplier_id);
             if (supplierProductIds.length === 0) {
                 return NextResponse.json({ data: [], meta: { total_count: 0 } });
             }
-            addAnd("[product_id][_in]", supplierProductIds.join(","));
+            andIdx = appendProductIdInFilter(params, andIdx, supplierProductIds);
         }
 
         if (q) {

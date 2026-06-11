@@ -144,6 +144,14 @@ export function PriceChangeBatchDialog({
                         </div>
                     </div>
 
+                    {priceLineCount > 0 && costLineCount > 0 ? (
+                        <Alert>
+                            <AlertDescription>
+                                Price and list cost are submitted together; both must be valid to save.
+                            </AlertDescription>
+                        </Alert>
+                    ) : null}
+
                     {offPageDirtyCount > 0 ? (
                         <Alert>
                             <AlertDescription>

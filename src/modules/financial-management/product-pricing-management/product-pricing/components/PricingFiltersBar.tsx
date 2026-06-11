@@ -553,7 +553,7 @@ export default function PricingFiltersBar(props: Props) {
     } else if (filters.price_view === "LIST") {
         chips.push({
             key: "price_view_list",
-            label: "Price view: List price",
+            label: "Price view: List Cost",
             onRemove: () =>
                 setFilters((prev) => ({
                     ...prev,
@@ -692,7 +692,7 @@ export default function PricingFiltersBar(props: Props) {
                                         {priceTypeText(pt)}
                                     </SelectItem>
                                 ))}
-                                <SelectItem value="LIST">List Price</SelectItem>
+                                <SelectItem value="LIST">List Cost</SelectItem>
                                 <SelectItem value="ALL">All Prices</SelectItem>
                             </SelectContent>
                         </Select>

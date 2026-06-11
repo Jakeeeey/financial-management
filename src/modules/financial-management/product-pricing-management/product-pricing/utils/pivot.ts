@@ -1,4 +1,4 @@
-import type { PriceRow, PriceType } from "../types";
+import type { PriceRow, PriceType, PriceViewMode, ProductTierKey } from "../types";
 
 export const LIST_TIER_KEY = "LIST";
 
@@ -21,6 +21,51 @@ export function isListTierKey(tier: string): boolean {
 export function buildMatrixTierKeys(priceTypes: PriceType[]): string[] {
     const sorted = sortPriceTypes(priceTypes);
     return [LIST_TIER_KEY, ...sorted.map((pt) => priceTierKey(pt.price_type_id))];
+}
+
+export function resolveVisibleTierKeys(args: {
+    priceView: PriceViewMode;
+    priceTypeIds: number[];
+    priceTypes: PriceType[];
+    allTierKeys?: ProductTierKey[];
+}): ProductTierKey[] {
+    const { priceView, priceTypeIds, priceTypes, allTierKeys } = args;
+
+    if (priceView === "ALL") {
+        return allTierKeys ?? buildMatrixTierKeys(priceTypes);
+    }
+
+    if (priceView === "LIST") {
+        return [LIST_TIER_KEY];
+    }
+
+    const sorted = sortPriceTypes(priceTypes);
+    const selectedPriceType =
+        sorted.find((pt) => priceTypeIds.includes(pt.price_type_id)) ?? sorted[0] ?? null;
+    const focusedTier = selectedPriceType ? priceTierKey(selectedPriceType.price_type_id) : "";
+    if (!focusedTier) return [LIST_TIER_KEY];
+
+    return [focusedTier, LIST_TIER_KEY];
+}
+
+export function priceViewFilterLabel(args: {
+    priceView: PriceViewMode;
+    priceTypeIds: number[];
+    priceTypes: PriceType[];
+}): string {
+    const { priceView, priceTypeIds, priceTypes } = args;
+
+    if (priceView === "ALL") return "All";
+    if (priceView === "LIST") return "List Cost";
+
+    const sorted = sortPriceTypes(priceTypes);
+    const selectedPriceType =
+        sorted.find((pt) => priceTypeIds.includes(pt.price_type_id)) ?? sorted[0] ?? null;
+    const tierName = selectedPriceType
+        ? tierLabelForTierKey(priceTierKey(selectedPriceType.price_type_id), priceTypes)
+        : "Focused";
+
+    return `${tierName} + List Cost`;
 }
 
 export function emptyPivot(priceTypes: PriceType[]): Record<string, number | null> {

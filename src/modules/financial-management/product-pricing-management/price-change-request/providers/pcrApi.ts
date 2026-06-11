@@ -298,6 +298,70 @@ export async function searchProducts(params: {
         .filter((row): row is ProductSearchRow => row !== null);
 }
 
+export type VariantGroupIndexRow = {
+    group_id: number;
+    variant_product_ids: number[];
+};
+
+const PRODUCT_IDS_CHUNK_SIZE = 200;
+
+export async function getVariantGroups(params: {
+    supplier_ids: string;
+    supplier_scope?: "ALL" | "LINKED_ONLY";
+    active_only?: "0" | "1";
+}) {
+    const sp = new URLSearchParams();
+    sp.set("supplier_ids", params.supplier_ids);
+    if (params.supplier_scope) sp.set("supplier_scope", params.supplier_scope);
+    if (params.active_only) sp.set("active_only", params.active_only);
+
+    const res = await http<{
+        groups: VariantGroupIndexRow[];
+        meta?: { total_groups?: number; total_variants?: number };
+    }>(`/api/fm/product-pricing/products/variant-groups?${sp.toString()}`);
+
+    return {
+        groups: res.groups ?? [],
+        meta: res.meta ?? null,
+    };
+}
+
+export async function getProductsByIds(
+    productIds: number[],
+    active_only: "0" | "1" = "1",
+): Promise<ProductSearchRow[]> {
+    if (productIds.length === 0) return [];
+
+    const chunks: number[][] = [];
+    for (let i = 0; i < productIds.length; i += PRODUCT_IDS_CHUNK_SIZE) {
+        chunks.push(productIds.slice(i, i + PRODUCT_IDS_CHUNK_SIZE));
+    }
+
+    const results = await Promise.all(
+        chunks.map(async (chunk) => {
+            const sp = new URLSearchParams({
+                product_ids: chunk.join(","),
+                active_only,
+            });
+            const res = await http<{ data: unknown[] }>(
+                `/api/fm/product-pricing/products?${sp.toString()}`,
+            );
+            return (res.data ?? [])
+                .map(mapProductSearchRow)
+                .filter((row): row is ProductSearchRow => row !== null);
+        }),
+    );
+
+    const byId = new Map<number, ProductSearchRow>();
+    for (const rows of results) {
+        for (const row of rows) {
+            byId.set(row.product_id, row);
+        }
+    }
+
+    return Array.from(byId.values());
+}
+
 export async function getProductsPage(params: {
     q?: string;
     supplier_ids?: string;

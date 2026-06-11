@@ -37,6 +37,7 @@ type Props = {
     unitName: (id: number | null | undefined) => string;
     units?: Unit[];
     priceTypes?: PriceType[];
+    tiers?: string[];
     usedUnitIds?: Set<number>;
 };
 
@@ -57,10 +58,11 @@ export default function PrintPricingDialog(props: Props) {
             compact,
             includeBarcode,
             priceTypes: props.priceTypes,
+            tiers: props.tiers,
             units: props.units,
             usedUnitIds: props.usedUnitIds,
         });
-    }, [rows, paper, orientation, fontSize, compact, includeBarcode, props.priceTypes, props.units, props.usedUnitIds]);
+    }, [rows, paper, orientation, fontSize, compact, includeBarcode, props.priceTypes, props.tiers, props.units, props.usedUnitIds]);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>

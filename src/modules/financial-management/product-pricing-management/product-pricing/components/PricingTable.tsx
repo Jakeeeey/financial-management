@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LayoutGrid, Table2 } from "lucide-react";
 
 import PriceCell from "./PriceCell";
-import { isListTierKey, sortPriceTypes, tierLabelForTierKey } from "../utils/pivot";
+import { isListTierKey, resolveVisibleTierKeys, sortPriceTypes, tierLabelForTierKey } from "../utils/pivot";
 
 const PTable = React.forwardRef<
     HTMLTableElement,
@@ -392,26 +392,16 @@ export default function PricingTable({ matrix }: Props) {
     const usedUnits: Unit[] = Array.isArray(matrix.usedUnits) ? matrix.usedUnits : [];
     const uomCount = Math.max(1, usedUnits.length);
 
-    const tiers = React.useMemo((): ProductTierKey[] => {
-        if (matrix.filters.price_view === "ALL") {
-            return [...matrix.TIERS];
-        }
-
-        if (matrix.filters.price_view === "LIST") {
-            return ["LIST"] as ProductTierKey[];
-        }
-
-        const selectedIds = matrix.filters.price_type_ids;
-        const sortedPriceTypes = sortPriceTypes(matrix.priceTypes);
-        const selectedPriceType =
-            sortedPriceTypes.find((pt) => selectedIds.includes(pt.price_type_id)) ??
-            sortedPriceTypes[0] ??
-            null;
-        const focusedTier = selectedPriceType ? String(selectedPriceType.price_type_id) : "";
-        if (!focusedTier) return ["LIST"] as ProductTierKey[];
-
-        return [focusedTier, "LIST"] as ProductTierKey[];
-    }, [matrix.TIERS, matrix.filters.price_view, matrix.filters.price_type_ids, matrix.priceTypes]);
+    const tiers = React.useMemo(
+        (): ProductTierKey[] =>
+            resolveVisibleTierKeys({
+                priceView: matrix.filters.price_view,
+                priceTypeIds: matrix.filters.price_type_ids,
+                priceTypes: matrix.priceTypes,
+                allTierKeys: matrix.TIERS,
+            }),
+        [matrix.TIERS, matrix.filters.price_view, matrix.filters.price_type_ids, matrix.priceTypes],
+    );
 
     const rows: MatrixRow[] = Array.isArray(matrix.rows) ? matrix.rows : [];
     const meta: MatrixMeta = matrix.meta ?? {};

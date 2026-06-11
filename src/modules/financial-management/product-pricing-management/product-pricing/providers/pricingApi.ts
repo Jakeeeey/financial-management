@@ -179,10 +179,58 @@ export async function createCostChangeRequests(
     });
 }
 
-export async function getPendingPriceRequests() {
-    return http<{ data: PriceChangeRequest[] }>("/api/fm/product-pricing/price-change-requests?status=PENDING&limit=-1");
+export type MixedSavePreflightSide = {
+    would_create: number;
+    skipped_duplicates?: number;
+    skipped_existing_pending?: number;
+};
+
+export type MixedSaveResponse = {
+    created: number;
+    price: {
+        created: number;
+        skipped_duplicates?: number;
+        skipped_existing_pending?: number;
+        header_id?: number;
+    };
+    cost: {
+        created: number;
+        skipped_duplicates?: number;
+        skipped_existing_pending?: number;
+    };
+};
+
+export async function saveMixedPricingChanges(payload: {
+    batch: SavePriceChangeBatchInput;
+    price_lines: PriceChangeBatchLineInput[];
+    cost_items: {
+        product_id: number;
+        proposed_cost: number;
+        current_cost?: number | null;
+    }[];
+}) {
+    return http<MixedSaveResponse>(`/api/fm/product-pricing/mixed-save`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+    });
 }
 
-export async function getPendingCostRequests() {
-    return http<{ data: CostChangeRequest[] }>("/api/fm/product-pricing/cost-change-requests?status=PENDING&limit=-1");
+export async function getPendingPriceRequests(productIds: number[]) {
+    if (productIds.length === 0) return { data: [] as PriceChangeRequest[] };
+
+    const sp = new URLSearchParams({
+        status: "PENDING",
+        product_ids: productIds.join(","),
+    });
+    return http<{ data: PriceChangeRequest[] }>(`/api/fm/product-pricing/price-change-requests?${sp.toString()}`);
+}
+
+export async function getPendingCostRequests(productIds: number[]) {
+    if (productIds.length === 0) return { data: [] as CostChangeRequest[] };
+
+    const sp = new URLSearchParams({
+        status: "PENDING",
+        product_ids: productIds.join(","),
+    });
+    return http<{ data: CostChangeRequest[] }>(`/api/fm/product-pricing/cost-change-requests?${sp.toString()}`);
 }

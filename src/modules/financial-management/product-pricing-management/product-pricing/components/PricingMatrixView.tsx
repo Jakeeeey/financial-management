@@ -26,7 +26,7 @@ import PricingTable from "./PricingTable";
 import BulkSaveBar from "./BulkSaveBar";
 import { PriceChangeBatchDialog } from "./PriceChangeBatchDialog";
 
-import { emptyPivot, pivotPrices } from "../utils/pivot";
+import { emptyPivot, pivotPrices, priceViewFilterLabel, resolveVisibleTierKeys } from "../utils/pivot";
 import * as api from "../providers/pricingApi";
 import PrintPricingDialog from "./PrintPricingDialog";
 
@@ -123,8 +123,9 @@ function buildFiltersText(args: {
     brandsById: Map<number, string>;
     unitsById: Map<number, string>;
     suppliersById: Map<number, string>;
+    priceTypes: import("../types").PriceType[];
 }): string {
-    const { filters, categoriesById, brandsById, unitsById, suppliersById } = args;
+    const { filters, categoriesById, brandsById, unitsById, suppliersById, priceTypes } = args;
 
     const parts: string[] = [];
 
@@ -167,6 +168,14 @@ function buildFiltersText(args: {
 
     if (filters.active_only) parts.push("Active Only");
     if (filters.missing_tier) parts.push("Missing Tier");
+
+    parts.push(
+        `Price view: ${priceViewFilterLabel({
+            priceView: filters.price_view,
+            priceTypeIds: filters.price_type_ids,
+            priceTypes,
+        })}`,
+    );
 
     return parts.join(" • ");
 }
@@ -472,6 +481,7 @@ export default function PricingMatrixView() {
     const [printGeneratedAt, setPrintGeneratedAt] = React.useState("");
     const [isPrinting, setIsPrinting] = React.useState(false);
     const [printMatrixRows, setPrintMatrixRows] = React.useState<MatrixRow[]>([]);
+    const [printTiers, setPrintTiers] = React.useState<string[]>([]);
     const [printUsedUnitIds, setPrintUsedUnitIds] = React.useState<Set<number>>(new Set());
 
     const openPrint = React.useCallback(async () => {
@@ -567,6 +577,13 @@ export default function PricingMatrixView() {
                 brandsById: lookupMaps.brandsById,
                 unitsById: lookupMaps.unitsById,
                 suppliersById: lookupMaps.suppliersById,
+                priceTypes: pt.priceTypes,
+            });
+
+            const visibleTiers = resolveVisibleTierKeys({
+                priceView: filters.price_view,
+                priceTypeIds: filters.price_type_ids,
+                priceTypes: pt.priceTypes,
             });
 
             const now = new Date();
@@ -574,6 +591,7 @@ export default function PricingMatrixView() {
             setPrintGeneratedAt(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
             setPrintFiltersText(resolvedFiltersText);
             setPrintMatrixRows(assembled);
+            setPrintTiers(visibleTiers);
             setPrintUsedUnitIds(usedUnitIds);
             setPrintOpen(true);
         } catch (error: unknown) {
@@ -697,6 +715,7 @@ export default function PricingMatrixView() {
                     unitName={(id) => (id ? lookupMaps.unitsById.get(Number(id)) ?? "" : "")}
                     units={lookups.units}
                     priceTypes={pt.priceTypes}
+                    tiers={printTiers}
                     usedUnitIds={printUsedUnitIds}
                 />
 

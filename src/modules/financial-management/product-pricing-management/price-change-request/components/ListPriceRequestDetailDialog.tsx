@@ -16,7 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { UnifiedApprovalRow } from "../types";
-import { pcrApproveButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
     row: UnifiedApprovalRow | null;
@@ -76,7 +76,7 @@ export function ListPriceRequestDetailDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>{row?.record_label ?? "List Price Request"}</DialogTitle>
+                    <DialogTitle>{row?.record_label ?? "List Cost Request"}</DialogTitle>
                     <DialogDescription>Review the current and proposed list cost before approving.</DialogDescription>
                 </DialogHeader>
 
@@ -139,7 +139,8 @@ export function ListPriceRequestDetailDialog({
                     {isPending && requestId ? (
                         <>
                             <Button
-                                variant="destructive"
+                                variant="outline"
+                                className={pcrRejectButtonClass}
                                 onClick={() => onReject(requestId)}
                                 disabled={acting}
                             >
