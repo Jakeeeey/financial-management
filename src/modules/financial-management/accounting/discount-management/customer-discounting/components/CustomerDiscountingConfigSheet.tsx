@@ -96,7 +96,6 @@ type PendingConfirmation =
       productName: string;
       discountTypeId: number | null;
       discountName: string;
-      unitPrice: number | null;
     }
   | {
       type: "delete-supplier-category";
@@ -135,16 +134,6 @@ function productPickerLabel(product: CustomerDiscountingProduct) {
  */
 function productRuleLabel(rule: ProductRule) {
   return rule.productName || (rule.productId ? `Product #${rule.productId}` : "N/A");
-}
-
-/**
- * Parses optional unit price overrides from the product rule form.
- */
-function parseMoney(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /**
@@ -193,7 +182,6 @@ export function CustomerDiscountingConfigSheet({
   const [productLoading, setProductLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<CustomerDiscountingProduct | null>(null);
   const [productDiscountId, setProductDiscountId] = useState("");
-  const [unitPrice, setUnitPrice] = useState("");
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
 
   const discountOptions = useMemo(
@@ -295,7 +283,6 @@ export function CustomerDiscountingConfigSheet({
     setProductOptions([]);
     setSelectedProduct(null);
     setProductDiscountId("");
-    setUnitPrice("");
   };
 
   const confirmGlobalDiscount = () => {
@@ -327,20 +314,19 @@ export function CustomerDiscountingConfigSheet({
   };
 
   const confirmProductRule = () => {
-    if (!selectedProduct) return;
+    if (!selectedProduct || !productDiscountId) return;
 
     setPendingConfirmation({
       type: "product",
       mode: matchingProductRule ? "update" : "add",
       productId: selectedProduct.productId,
-      discountTypeId: productDiscountId ? Number(productDiscountId) : null,
-      discountName: productDiscountId ? optionLabel(discountOptions, productDiscountId, "Selected discount") : "No discount",
+      discountTypeId: Number(productDiscountId),
+      discountName: optionLabel(discountOptions, productDiscountId, "Selected discount"),
       productName: productPickerLabel(selectedProduct),
-      unitPrice: parseMoney(unitPrice),
     });
   };
 
-  const canSaveProduct = !!selectedProduct && (!!productDiscountId || unitPrice.trim().length > 0);
+  const canSaveProduct = !!selectedProduct && !!productDiscountId;
 
   const confirmationCopy = (() => {
     if (!pendingConfirmation) {
@@ -365,9 +351,7 @@ export function CustomerDiscountingConfigSheet({
       case "product":
         return {
           title: `${pendingConfirmation.mode === "update" ? "Update" : "Add"} product discount?`,
-          description: `${pendingConfirmation.productName} will use ${pendingConfirmation.discountName}${
-            pendingConfirmation.unitPrice === null ? "" : ` with unit price ${pendingConfirmation.unitPrice.toFixed(2)}`
-          }.`,
+          description: `${pendingConfirmation.productName} will use ${pendingConfirmation.discountName}.`,
           action: pendingConfirmation.mode === "update" ? "Update" : "Add",
           destructive: false,
         };
@@ -412,10 +396,11 @@ export function CustomerDiscountingConfigSheet({
     }
 
     if (confirmation.type === "product") {
+      const existingRule = productRules.find((rule) => rule.productId === confirmation.productId);
       const success = await onAddProductRule({
         productId: confirmation.productId,
         discountTypeId: confirmation.discountTypeId,
-        unitPrice: confirmation.unitPrice,
+        unitPrice: existingRule?.unitPrice ?? null,
       });
       if (success) resetProductForm();
       setPendingConfirmation(null);
@@ -551,7 +536,7 @@ export function CustomerDiscountingConfigSheet({
 
             <TabsContent value="product" className="space-y-4 pt-4">
               <div className="rounded-md border p-4">
-                <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_160px_auto] md:items-end">
+                <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_auto] md:items-end">
                   <div className="relative space-y-2">
                     <Label>Product</Label>
                     <div className="relative">
@@ -608,16 +593,7 @@ export function CustomerDiscountingConfigSheet({
                       value={productDiscountId}
                       onValueChange={setProductDiscountId}
                       options={discountOptions.filter((item) => item.value !== noneValue)}
-                      placeholder="Optional discount"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Optional Unit Price Override</Label>
-                    <Input
-                      value={unitPrice}
-                      onChange={(event) => setUnitPrice(event.target.value)}
-                      placeholder="Optional"
-                      inputMode="decimal"
+                      placeholder="Select discount"
                     />
                   </div>
                   <Button disabled={saving || !canSaveProduct} onClick={confirmProductRule}>
