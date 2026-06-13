@@ -36,6 +36,7 @@ type Props = {
     query: ListQuery;
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
     onUnauthorized?: () => void;
+    active?: boolean;
 };
 
 export function ListCostRequestManager({
@@ -45,8 +46,9 @@ export function ListCostRequestManager({
     query,
     setQuery,
     onUnauthorized,
+    active = true,
 }: Props) {
-    const inbox = usePCRList(query, setQuery, { requestType: "cost" });
+    const inbox = usePCRList(query, setQuery, { requestType: "cost", enabled: active });
 
     const statusTab: PCRStatusFilter = inbox.query.status || "ALL";
 
@@ -135,8 +137,6 @@ export function ListCostRequestManager({
         if (inbox.unauthorized) onUnauthorized?.();
     }, [inbox.unauthorized, onUnauthorized]);
 
-    if (inbox.unauthorized) return null;
-
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
@@ -175,7 +175,21 @@ export function ListCostRequestManager({
                     <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertTitle>List cost requests could not be loaded</AlertTitle>
-                        <AlertDescription>{inbox.error}</AlertDescription>
+                        <AlertDescription className="space-y-3">
+                            <p>{inbox.error}</p>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void inbox.refresh()}
+                                disabled={inbox.loading}
+                            >
+                                {inbox.loading ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Retry
+                            </Button>
+                        </AlertDescription>
                     </Alert>
                 ) : null}
 

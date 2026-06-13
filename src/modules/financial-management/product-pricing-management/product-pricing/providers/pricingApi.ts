@@ -2,6 +2,7 @@
 import type {
     Brand,
     Category,
+    MatrixRow,
     PriceRow,
     PriceType,
     ProductRow,
@@ -95,7 +96,7 @@ export async function getProducts(params: {
     );
 }
 
-export async function getPrintProducts(params: {
+export type PrintFilterParams = {
     q?: string;
     category_id?: string;
     category_ids?: string;
@@ -108,7 +109,22 @@ export async function getPrintProducts(params: {
     supplier_scope?: "ALL" | "LINKED_ONLY";
     active_only?: "0" | "1";
     missing_tier?: "0" | "1";
-}) {
+};
+
+export type PrintMatrixMetaResponse = {
+    meta: {
+        totalGroups: number;
+        totalVariants: number;
+    };
+    groupIds: number[];
+};
+
+export type PrintMatrixPageResponse = {
+    data: MatrixRow[];
+    usedUnitIds: number[];
+};
+
+function buildPrintSearchParams(params: PrintFilterParams): URLSearchParams {
     const sp = new URLSearchParams();
 
     for (const [k, v] of Object.entries(params)) {
@@ -118,14 +134,61 @@ export async function getPrintProducts(params: {
         sp.set(k, s);
     }
 
+    return sp;
+}
+
+export async function getPrintProducts(params: PrintFilterParams) {
+    const sp = buildPrintSearchParams(params);
+
     return http<{ data: ProductRow[] }>(
         `/api/fm/product-pricing/print/products?${sp.toString()}`,
     );
 }
 
+export async function getPrintMatrixMeta(params: PrintFilterParams, init?: RequestInit) {
+    const sp = buildPrintSearchParams(params);
+    sp.set("step", "meta");
+
+    return http<PrintMatrixMetaResponse>(
+        `/api/fm/product-pricing/print/matrix?${sp.toString()}`,
+        init,
+    );
+}
+
+export async function getPrintMatrixPage(
+    params: PrintFilterParams & { group_ids: string },
+    init?: RequestInit,
+) {
+    const sp = buildPrintSearchParams(params);
+    sp.set("step", "page");
+    sp.set("group_ids", params.group_ids);
+
+    return http<PrintMatrixPageResponse>(
+        `/api/fm/product-pricing/print/matrix?${sp.toString()}`,
+        init,
+    );
+}
+
 export async function getPricesForProducts(productIds: number[]) {
-    const sp = new URLSearchParams({ product_ids: productIds.join(",") });
-    return http<{ data: PriceRow[] }>(`/api/fm/product-pricing/prices?${sp.toString()}`);
+    if (productIds.length === 0) {
+        return { data: [] as PriceRow[] };
+    }
+
+    const CHUNK_SIZE = 200;
+    const chunks: number[][] = [];
+    for (let i = 0; i < productIds.length; i += CHUNK_SIZE) {
+        chunks.push(productIds.slice(i, i + CHUNK_SIZE));
+    }
+
+    const results = await Promise.all(
+        chunks.map(async (chunk) => {
+            const sp = new URLSearchParams({ product_ids: chunk.join(",") });
+            return http<{ data: PriceRow[] }>(`/api/fm/product-pricing/prices?${sp.toString()}`);
+        }),
+    );
+
+    const data = results.flatMap((res) => res.data ?? []);
+    return { data };
 }
 
 export async function upsertPrices(lines: UpsertLine[]) {

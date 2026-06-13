@@ -14,13 +14,13 @@ import RequestsTable from "../price-change-request/components/RequestsTable";
 
 import { usePCRList } from "../price-change-request/hooks/usePCR";
 import { usePCRActions } from "../price-change-request/hooks/usePCRActions";
-import { getLookups, SupplierOption } from "../price-change-request/providers/pcrApi";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { getSuppliers, SupplierOption } from "../price-change-request/providers/pcrApi";
+import { PriceControlSearchableSelect } from "../shared/PriceControlSearchableSelect";
 
 export function PriceChangeMonitoringModule() {
     const [suppliers, setSuppliers] = React.useState<SupplierOption[]>([]);
     React.useEffect(() => {
-        getLookups().then(res => setSuppliers(res.suppliers)).catch(() => {});
+        getSuppliers().then(res => setSuppliers(res.suppliers)).catch(() => {});
     }, []);
 
     return (
@@ -117,14 +117,14 @@ function RequestMonitoringManager({ type, suppliers }: { type: "price" | "cost";
                         <option value="REJECTED">Rejected</option>
                     </select>
 
-                    <SearchableSelect
+                    <PriceControlSearchableSelect
                         className="w-full sm:max-w-[200px]"
                         placeholder="All Suppliers"
-                        value={String(mine.query.supplier_id ?? "")}
+                        value={String(mine.query.supplier_ids?.[0] ?? "")}
                         onValueChange={(val) =>
                             mine.setQuery((q) => ({
                                 ...q,
-                                supplier_id: val ? Number(val) : "",
+                                supplier_ids: val ? [Number(val)] : [],
                                 page: 1,
                             }))
                         }

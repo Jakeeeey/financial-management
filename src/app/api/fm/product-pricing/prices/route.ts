@@ -1,29 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { fetchDirectusPricesByProductIds } from "../_fetchProductPrices";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
-const PRICES = "product_per_price_type";
 
 type JwtPayload = {
     sub?: string | number | null;
 };
 
-type ProductPriceRow = {
-    id?: number | string | null;
-    product_id?: number | string | null;
-    price_type_id?: number | string | null;
-    price?: number | string | null;
-    status?: string | null;
-    updated_at?: string | null;
-};
-
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
-}
-
-async function fetchDirectus<T>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, { cache: "no-store", ...init });
-    if (!res.ok) throw new Error(await res.text());
-    return (await res.json()) as T;
 }
 
 function decodeUserIdFromJwtCookie(req: NextRequest, cookieName = "vos_access_token") {
@@ -72,15 +61,17 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ data: [] });
         }
 
-        const params = new URLSearchParams();
-        params.set("limit", "-1");
-        params.set("fields", "id,product_id,price_type_id,price,status,updated_at");
-        params.set("filter[product_id][_in]", ids.join(","));
+        const numericIds = ids
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id) && id > 0);
 
-        const url = `${DIRECTUS_URL}/items/${PRICES}?${params.toString()}`;
-        const json = await fetchDirectus<{ data: ProductPriceRow[] }>(url);
+        if (!numericIds.length) {
+            return NextResponse.json({ data: [] });
+        }
 
-        return NextResponse.json({ data: json.data ?? [] });
+        const allRows = await fetchDirectusPricesByProductIds(numericIds);
+
+        return NextResponse.json({ data: allRows });
     } catch (error: unknown) {
         return NextResponse.json(
             {

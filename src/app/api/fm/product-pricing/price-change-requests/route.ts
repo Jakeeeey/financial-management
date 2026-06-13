@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { parseApprovalSearchQuery } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
-import { appendProductIdInFilter, getSupplierScopedProductIds } from "../_supplierFilters";
+import { appendProductIdInFilter, getSupplierScopedProductIdsForSuppliers, resolveSupplierIds } from "../_supplierFilters";
 import { enrichPcrRows } from "../_pcrHeaderMeta";
 
 export const runtime = "nodejs";
@@ -232,7 +232,7 @@ export async function GET(req: NextRequest) {
         const product_id = norm(searchParams.get("product_id"));
         const price_type_id = norm(searchParams.get("price_type_id"));
         const requested_by = norm(searchParams.get("requested_by"));
-        const supplier_id = norm(searchParams.get("supplier_id"));
+        const supplier_ids = resolveSupplierIds(searchParams);
         const date_from = norm(searchParams.get("date_from"));
         const date_to = norm(searchParams.get("date_to"));
         const productIds = parseProductIdsParam(searchParams.get("product_ids"));
@@ -304,8 +304,8 @@ export async function GET(req: NextRequest) {
         if (date_from) addAnd("[requested_at][_gte]", date_from);
         if (date_to) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(date_to));
 
-        if (supplier_id) {
-            const supplierProductIds = await getSupplierScopedProductIds(supplier_id);
+        if (supplier_ids.length > 0) {
+            const supplierProductIds = await getSupplierScopedProductIdsForSuppliers(supplier_ids);
             if (supplierProductIds.length === 0) {
                 return NextResponse.json({ data: [], meta: { total_count: 0 } });
             }

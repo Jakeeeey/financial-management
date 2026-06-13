@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -16,6 +16,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -29,50 +30,25 @@ import BulkSaveBar from "./BulkSaveBar";
 import { PriceChangeBatchDialog } from "./PriceChangeBatchDialog";
 import { SessionExpiredPanel } from "../../shared/SessionExpiredPanel";
 
-import { buildMatrixTierKeys, emptyPivot, pivotPrices, priceViewFilterLabel } from "../utils/pivot";
+import { buildMatrixTierKeys, priceViewFilterLabel } from "../utils/pivot";
 import * as api from "../providers/pricingApi";
+import type { PrintFilterParams } from "../providers/pricingApi";
 import PrintPricingDialog from "./PrintPricingDialog";
+import PrintPrepareDialog from "./PrintPrepareDialog";
 
 import type {
     Brand,
     Category,
     MatrixRow,
-    PriceRow,
     PricingFilters,
-    ProductRow,
     Supplier,
     Unit,
-    VariantCell,
 } from "../types";
 
 type SupplierScope = "ALL" | "LINKED_ONLY";
 
-type PrintProductsParams = {
-    q?: string;
-    category_ids?: string;
-    brand_ids?: string;
-    unit_ids?: string;
-    supplier_ids?: string;
-    supplier_scope: SupplierScope;
-    active_only: "0" | "1";
-    missing_tier: "0" | "1";
-};
-
-const EMPTY_FILTERS: PricingFilters = {
-    q: "",
-    category_ids: [],
-    brand_ids: [],
-    unit_ids: [],
-    supplier_ids: [],
-    supplier_scope: "ALL",
-    active_only: true,
-    missing_tier: false,
-    price_view: "ALL",
-    price_type_ids: [],
-    show_list_price: false,
-};
-
 const PRINT_CONFIRM_PRODUCT_THRESHOLD = 1000;
+const PRINT_GROUP_CHUNK_SIZE = 50;
 
 function safeStr(v: unknown): string {
     const s = String(v ?? "").trim();
@@ -211,78 +187,35 @@ function sameNumberArray(a: number[], b: number[]): boolean {
     return true;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
-}
-
-function toNullableNumber(value: unknown): number | null {
-    if (value === null || value === undefined || value === "") return null;
-    if (typeof value === "object" && value !== null) {
-        const record = value as Record<string, unknown>;
-        const val = record.product_id ?? record.id ?? record.value;
-        const n = Number(val);
-        return Number.isFinite(n) && n > 0 ? n : null;
-    }
-    const n = Number(value);
-    return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-function toNumberOrZero(value: unknown): number {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : 0;
-}
-
-function toStringOrEmpty(value: unknown): string {
-    return safeStr(value);
-}
-
-function normalizePrintRow(value: unknown): ProductRow | null {
-    if (!isRecord(value)) return null;
-
-    const productId = toNullableNumber(value.product_id);
-    if (productId === null) return null;
-
-    const productName = toStringOrEmpty(value.product_name);
-    if (!productName) return null;
-
+function buildPrintFilterParams(filters: PricingFilters): PrintFilterParams {
     return {
-        product_id: productId,
-        parent_id: toNullableNumber(value.parent_id),
-
-        product_code: toStringOrEmpty(value.product_code) || null,
-        barcode: toStringOrEmpty(value.barcode) || null,
-        product_name: productName,
-        isActive: toNumberOrZero(value.isActive),
-
-        product_category: toNullableNumber(value.product_category),
-        product_brand: toNullableNumber(value.product_brand),
-        unit_of_measurement: toNullableNumber(value.unit_of_measurement),
-
-        price_per_unit: toNumberOrZero(value.price_per_unit),
-        priceA: toNumberOrZero(value.priceA),
-        priceB: toNumberOrZero(value.priceB),
-        priceC: toNumberOrZero(value.priceC),
-        priceD: toNumberOrZero(value.priceD),
-        priceE: toNumberOrZero(value.priceE),
-        cost_per_unit: toNullableNumber(value.cost_per_unit),
+        q: safeStr(filters.q) || undefined,
+        category_ids: filters.category_ids.length ? filters.category_ids.join(",") : undefined,
+        brand_ids: filters.brand_ids.length ? filters.brand_ids.join(",") : undefined,
+        unit_ids: filters.unit_ids.length ? filters.unit_ids.join(",") : undefined,
+        supplier_ids: filters.supplier_ids.length ? filters.supplier_ids.join(",") : undefined,
+        supplier_scope: filters.supplier_scope,
+        active_only: toBool01(filters.active_only, "1"),
+        missing_tier: toBool01(filters.missing_tier, "0"),
     };
 }
 
-function extractPrintRows(value: unknown): ProductRow[] {
-    if (!isRecord(value)) return [];
-    const rawData = value.data;
-    if (!Array.isArray(rawData)) return [];
-
-    const rows: ProductRow[] = [];
-
-    for (const item of rawData) {
-        const normalized = normalizePrintRow(item);
-        if (normalized) {
-            rows.push(normalized);
-        }
-    }
-
-    return rows;
+function enrichPrintMatrixRows(
+    rows: MatrixRow[],
+    lookupMaps: {
+        categoriesById: Map<number, string>;
+        brandsById: Map<number, string>;
+    },
+): MatrixRow[] {
+    return rows.map((row) => ({
+        ...row,
+        category_name: row.display.product_category
+            ? lookupMaps.categoriesById.get(Number(row.display.product_category)) ?? null
+            : null,
+        brand_name: row.display.product_brand
+            ? lookupMaps.brandsById.get(Number(row.display.product_brand)) ?? null
+            : null,
+    }));
 }
 
 function buildLookupMaps(args: {
@@ -321,9 +254,14 @@ function buildLookupMaps(args: {
 export default function PricingMatrixView() {
     const pt = usePriceTypes();
 
-    const [lookupFilters, setLookupFilters] = React.useState<PricingFilters>(EMPTY_FILTERS);
+    const [lookupFilterInput, setLookupFilterInput] = React.useState<Partial<PricingFilters>>({
+        supplier_scope: "ALL",
+        supplier_ids: [],
+        category_ids: [],
+        brand_ids: [],
+    });
 
-    const lookups = useLookups(lookupFilters);
+    const lookups = useLookups(lookupFilterInput);
 
     const lookupMaps = React.useMemo(
         () =>
@@ -336,7 +274,7 @@ export default function PricingMatrixView() {
         [lookups.categories, lookups.brands, lookups.units, lookups.suppliers],
     );
 
-    const matrix = usePricingMatrix({
+    const { matrix, dirtySummary } = usePricingMatrix({
         categoriesById: lookupMaps.categoriesById,
         brandsById: lookupMaps.brandsById,
         unitsById: lookupMaps.unitsById,
@@ -346,8 +284,18 @@ export default function PricingMatrixView() {
     });
 
     React.useEffect(() => {
-        setLookupFilters(matrix.filters);
-    }, [matrix.filters]);
+        setLookupFilterInput({
+            supplier_scope: matrix.filters.supplier_scope,
+            supplier_ids: matrix.filters.supplier_ids,
+            category_ids: matrix.filters.category_ids,
+            brand_ids: matrix.filters.brand_ids,
+        });
+    }, [
+        matrix.filters.supplier_scope,
+        matrix.filters.supplier_ids,
+        matrix.filters.category_ids,
+        matrix.filters.brand_ids,
+    ]);
 
     const selectedSupplierIds = React.useMemo(
         () => matrix.filters.supplier_ids.map((id) => String(id)),
@@ -364,9 +312,6 @@ export default function PricingMatrixView() {
         const allowed = new Set(selectedSupplierIds.map(Number));
         return lookups.suppliers.filter((supplier) => allowed.has(supplier.id));
     }, [supplierFilterActive, selectedSupplierIds, lookups.suppliers]);
-
-    const requiresExplicitBatchSupplier =
-        supplierFilterActive && selectedSupplierIds.length > 1;
 
     const defaultBatchSupplierId = React.useMemo(() => {
         if (!supplierFilterActive || selectedSupplierIds.length !== 1) return null;
@@ -488,101 +433,76 @@ export default function PricingMatrixView() {
     const [printMatrixRows, setPrintMatrixRows] = React.useState<MatrixRow[]>([]);
     const [printTiers, setPrintTiers] = React.useState<string[]>([]);
     const [printUsedUnitIds, setPrintUsedUnitIds] = React.useState<Set<number>>(new Set());
+    const [printPrepareOpen, setPrintPrepareOpen] = React.useState(false);
+    const [printPrepareProgress, setPrintPrepareProgress] = React.useState({ done: 0, total: 0 });
+    const printAbortRef = React.useRef<AbortController | null>(null);
+
+    const cancelPrintPrepare = React.useCallback(() => {
+        printAbortRef.current?.abort();
+        printAbortRef.current = null;
+        setPrintPrepareOpen(false);
+        setIsPrinting(false);
+    }, []);
 
     const openPrint = React.useCallback(async () => {
+        const controller = new AbortController();
+        printAbortRef.current = controller;
+        const { signal } = controller;
+
         setIsPrinting(true);
         try {
             const filters = matrix.filters;
+            const printParams = buildPrintFilterParams(filters);
 
-            const params: PrintProductsParams = {
-                q: safeStr(filters.q) || undefined,
-                category_ids: filters.category_ids.length ? filters.category_ids.join(",") : undefined,
-                brand_ids: filters.brand_ids.length ? filters.brand_ids.join(",") : undefined,
-                unit_ids: filters.unit_ids.length ? filters.unit_ids.join(",") : undefined,
-                supplier_ids: filters.supplier_ids.length ? filters.supplier_ids.join(",") : undefined,
-                supplier_scope: filters.supplier_scope,
-                active_only: toBool01(filters.active_only, "1"),
-                missing_tier: toBool01(filters.missing_tier, "0"),
-            };
+            const metaRes = await api.getPrintMatrixMeta(printParams, { signal });
+            const { meta, groupIds } = metaRes;
 
-            // 1. Fetch ALL products (no pagination)
-            const res = await api.getPrintProducts(params);
-            const allProducts = extractPrintRows(res);
-
-            if (allProducts.length === 0) {
+            if (meta.totalGroups === 0) {
                 toast.warning("No printable products found for the current filters.");
                 return;
             }
 
             if (
-                allProducts.length > PRINT_CONFIRM_PRODUCT_THRESHOLD &&
+                meta.totalGroups > PRINT_CONFIRM_PRODUCT_THRESHOLD &&
                 !window.confirm(
-                    `This print job contains ${allProducts.length.toLocaleString()} product group(s). Preparing it may take a while. Continue?`,
+                    `This print job contains ${meta.totalGroups.toLocaleString()} product group(s). Preparing it may take a while. Continue?`,
                 )
             ) {
                 return;
             }
 
-            // 2. Fetch ALL prices for these products in chunks (avoid URL length limits)
-            const allProductIds = allProducts.map(p => p.product_id);
-            const CHUNK_SIZE = 200;
-            const priceRows: PriceRow[] = [];
-
-            for (let i = 0; i < allProductIds.length; i += CHUNK_SIZE) {
-                const slice = allProductIds.slice(i, i + CHUNK_SIZE);
-                const chunkRes = await api.getPricesForProducts(slice);
-                if (Array.isArray(chunkRes.data)) {
-                    priceRows.push(...chunkRes.data);
-                }
-            }
-
-            const priceMap = pivotPrices(pt.priceTypes, priceRows);
-
-            // 3. Group into MatrixRows
-            const groups = new Map<number, ProductRow[]>();
-            const usedUnitIds = new Set<number>();
-
-            for (const p of allProducts) {
-                // Harden gid: if parent_id is 0 or null, use product_id
-                const gid = (p.parent_id && p.parent_id > 0) ? p.parent_id : p.product_id;
-
-                if (!groups.has(gid)) groups.set(gid, []);
-                groups.get(gid)!.push(p);
-
-                if (p.unit_of_measurement) usedUnitIds.add(Number(p.unit_of_measurement));
-            }
+            setPrintPrepareProgress({ done: 0, total: meta.totalGroups });
+            setPrintPrepareOpen(true);
 
             const assembled: MatrixRow[] = [];
-            const emptyPivotForPrint = emptyPivot(pt.priceTypes);
+            const usedUnitIds = new Set<number>();
 
-            for (const [groupId, variants] of groups.entries()) {
-                const display = variants.find(v => v.product_id === groupId) || variants[0];
-                const variantsByUnitId: Record<number, VariantCell> = {};
+            for (let offset = 0; offset < groupIds.length; offset += PRINT_GROUP_CHUNK_SIZE) {
+                if (signal.aborted) return;
 
-                for (const v of variants) {
-                    const uomId = Number(v.unit_of_measurement);
-                    if (uomId) {
-                        variantsByUnitId[uomId] = {
-                            product: v,
-                            tiers: {
-                                ...(priceMap.get(v.product_id) ?? emptyPivotForPrint),
-                                LIST: toNullableNumber(v.cost_per_unit),
-                            },
-                        };
-                    }
+                const chunk = groupIds.slice(offset, offset + PRINT_GROUP_CHUNK_SIZE);
+                const pageRes = await api.getPrintMatrixPage(
+                    {
+                        ...printParams,
+                        group_ids: chunk.join(","),
+                    },
+                    { signal },
+                );
+
+                assembled.push(...(pageRes.data ?? []));
+                for (const unitId of pageRes.usedUnitIds ?? []) {
+                    usedUnitIds.add(unitId);
                 }
 
-                assembled.push({
-                    group_id: groupId,
-                    display,
-                    variantsByUnitId,
-                    category_name: display.product_category ? lookupMaps.categoriesById.get(Number(display.product_category)) ?? null : null,
-                    brand_name: display.product_brand ? lookupMaps.brandsById.get(Number(display.product_brand)) ?? null : null,
+                setPrintPrepareProgress({
+                    done: Math.min(offset + chunk.length, meta.totalGroups),
+                    total: meta.totalGroups,
                 });
             }
 
-            assembled.sort((a, b) =>
-                (a.display.product_name || "").localeCompare(b.display.product_name || "")
+            const enriched = enrichPrintMatrixRows(assembled, lookupMaps);
+            enriched.sort((a, b) =>
+                (a.display.product_name || "").localeCompare(b.display.product_name || ""),
             );
 
             const resolvedFiltersText = buildFiltersText({
@@ -595,20 +515,22 @@ export default function PricingMatrixView() {
             });
 
             const printableTiers = buildMatrixTierKeys(pt.priceTypes);
-
             const now = new Date();
 
             setPrintGeneratedAt(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
             setPrintFiltersText(resolvedFiltersText);
-            setPrintMatrixRows(assembled);
+            setPrintMatrixRows(enriched);
             setPrintTiers(printableTiers);
             setPrintUsedUnitIds(usedUnitIds);
             setPrintOpen(true);
         } catch (error: unknown) {
+            if (signal.aborted) return;
             const message = error instanceof Error ? error.message : "Failed to open print editor";
             toast.error(message);
         } finally {
+            setPrintPrepareOpen(false);
             setIsPrinting(false);
+            printAbortRef.current = null;
         }
     }, [matrix.filters, lookupMaps, pt.priceTypes]);
 
@@ -623,7 +545,7 @@ export default function PricingMatrixView() {
         (lookups.loading || pt.loading || matrix.loading);
 
     React.useEffect(() => {
-        if (matrix.dirtyCount === 0) return;
+        if (dirtySummary.dirtyCount === 0) return;
 
         const onBeforeUnload = (event: BeforeUnloadEvent) => {
             event.preventDefault();
@@ -632,45 +554,45 @@ export default function PricingMatrixView() {
 
         window.addEventListener("beforeunload", onBeforeUnload);
         return () => window.removeEventListener("beforeunload", onBeforeUnload);
-    }, [matrix.dirtyCount]);
+    }, [dirtySummary.dirtyCount]);
 
     const handleSave = React.useCallback(() => {
-        if (matrix.dirtyCount > 0) {
+        if (dirtySummary.dirtyCount > 0) {
             setBatchDialogOpen(true);
         }
-    }, [matrix.dirtyCount]);
+    }, [dirtySummary.dirtyCount]);
 
     const requestRefresh = React.useCallback(() => {
-        if (matrix.dirtyCount > 0) {
+        if (dirtySummary.dirtyCount > 0) {
             setUnsavedAction("refresh");
             return;
         }
         void matrix.refresh();
-    }, [matrix]);
+    }, [matrix, dirtySummary.dirtyCount]);
 
     const requestDiscard = React.useCallback(() => {
-        if (matrix.dirtyCount > 0) {
+        if (dirtySummary.dirtyCount > 0) {
             setUnsavedAction("discard");
             return;
         }
-        matrix.discardAll();
-    }, [matrix]);
+        dirtySummary.discardAll();
+    }, [dirtySummary]);
 
     const confirmUnsavedAction = React.useCallback(() => {
         const action = unsavedAction;
         setUnsavedAction(null);
         if (action === "refresh") {
-            matrix.discardAll();
+            dirtySummary.discardAll();
             void matrix.refresh();
             return;
         }
         if (action === "discard") {
-            matrix.discardAll();
+            dirtySummary.discardAll();
         }
-    }, [matrix, unsavedAction]);
+    }, [matrix, dirtySummary, unsavedAction]);
 
     if (lookups.unauthorized || pt.unauthorized || matrix.unauthorized) {
-        return <SessionExpiredPanel />;
+        return <SessionExpiredPanel returnPath="/fm/price-control/product-pricing" />;
     }
 
     if (isInitialLoad) {
@@ -704,10 +626,10 @@ export default function PricingMatrixView() {
 
                 <div className="shrink-0">
                     <BulkSaveBar
-                        dirtyCount={matrix.dirtyCount}
-                        priceDirtyCount={matrix.priceDirtyCount}
-                        costDirtyCount={matrix.costDirtyCount}
-                        offPageDirtyCount={matrix.offPageDirtyCount}
+                        dirtyCount={dirtySummary.dirtyCount}
+                        priceDirtyCount={dirtySummary.priceDirtyCount}
+                        costDirtyCount={dirtySummary.costDirtyCount}
+                        offPageDirtyCount={dirtySummary.offPageDirtyCount}
                         onSave={handleSave}
                         onDiscard={requestDiscard}
                         onRefresh={requestRefresh}
@@ -722,13 +644,32 @@ export default function PricingMatrixView() {
                         <AlertTitle>Products could not be loaded</AlertTitle>
                         <AlertDescription className="space-y-3">
                             <p>{matrix.error}</p>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => requestRefresh()}
+                                disabled={Boolean(matrix.loading)}
+                            >
+                                {matrix.loading ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Retry
+                            </Button>
                         </AlertDescription>
                     </Alert>
                 ) : null}
 
                 <div className="min-h-0 flex-1">
-                    <PricingTable matrix={matrix} />
+                    <PricingTable matrix={matrix} dirtyVersion={dirtySummary.dirtyVersion} />
                 </div>
+
+                <PrintPrepareDialog
+                    open={printPrepareOpen}
+                    prepared={printPrepareProgress.done}
+                    total={printPrepareProgress.total}
+                    onCancel={cancelPrintPrepare}
+                />
 
                 <PrintPricingDialog
                     open={printOpen}
@@ -749,12 +690,11 @@ export default function PricingMatrixView() {
                     suppliers={lookups.suppliers}
                     batchSupplierOptions={batchSupplierOptions}
                     defaultSupplierId={defaultBatchSupplierId}
-                    requiresExplicitBatchSupplier={requiresExplicitBatchSupplier}
-                    priceLineCount={matrix.priceDirtyCount}
-                    costLineCount={matrix.costDirtyCount}
-                    offPageDirtyCount={matrix.offPageDirtyCount}
-                    previewLines={matrix.dirtyPreviewLines}
-                    onSubmit={(payload) => matrix.saveAll(payload)}
+                    priceLineCount={dirtySummary.priceDirtyCount}
+                    costLineCount={dirtySummary.costDirtyCount}
+                    offPageDirtyCount={dirtySummary.offPageDirtyCount}
+                    previewLines={dirtySummary.dirtyPreviewLines}
+                    onSubmit={(payload) => dirtySummary.saveAll(payload)}
                 />
 
                 <AlertDialog
@@ -768,14 +708,14 @@ export default function PricingMatrixView() {
                             <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
                             <AlertDialogDescription>
                                 {unsavedAction === "refresh"
-                                    ? `You have ${matrix.dirtyCount} unsaved change(s). Refreshing will reload the grid and discard those edits.${
-                                          matrix.offPageDirtyCount > 0
-                                              ? ` ${matrix.offPageDirtyCount} of those are on other pages.`
+                                    ? `You have ${dirtySummary.dirtyCount} unsaved change(s). Refreshing will reload the grid and discard those edits.${
+                                          dirtySummary.offPageDirtyCount > 0
+                                              ? ` ${dirtySummary.offPageDirtyCount} of those are on other pages.`
                                               : ""
                                       }`
-                                    : `You have ${matrix.dirtyCount} unsaved change(s). This action cannot be undone.${
-                                          matrix.offPageDirtyCount > 0
-                                              ? ` ${matrix.offPageDirtyCount} of those are on other pages.`
+                                    : `You have ${dirtySummary.dirtyCount} unsaved change(s). This action cannot be undone.${
+                                          dirtySummary.offPageDirtyCount > 0
+                                              ? ` ${dirtySummary.offPageDirtyCount} of those are on other pages.`
                                               : ""
                                       }`}
                             </AlertDialogDescription>

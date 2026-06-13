@@ -7,6 +7,7 @@ import { applyLoadError } from "../../shared/loadErrorState";
 
 type UsePCRListOptions = {
     requestType?: "price" | "cost";
+    enabled?: boolean;
 };
 
 type UsePCRListInitial = Partial<ListQuery> & UsePCRListOptions;
@@ -47,6 +48,7 @@ export function usePCRList(
         options?.requestType ??
         (isInitialArg(queryOrInitial, setQuery) ? queryOrInitial.requestType : undefined) ??
         "price";
+    const enabled = options?.enabled ?? true;
 
     const [internalQuery, setInternalQuery] = React.useState<ListQuery>(() => {
         if (isControlled) {
@@ -76,6 +78,9 @@ export function usePCRList(
     const [error, setError] = React.useState<string | null>(null);
     const [unauthorized, setUnauthorized] = React.useState(false);
     const requestIdRef = React.useRef(0);
+    const lastFetchedQueryKeyRef = React.useRef<string | null>(null);
+
+    const queryKey = React.useMemo(() => JSON.stringify(query), [query]);
 
     const loadErrorFallback =
         requestType === "cost" ? "Failed to load list cost requests" : "Failed to load price change requests";
@@ -95,6 +100,7 @@ export function usePCRList(
             setTotal(Number(res.meta?.total_count ?? (res.data?.length ?? 0)));
             setError(null);
             setUnauthorized(false);
+            lastFetchedQueryKeyRef.current = JSON.stringify(query);
         } catch (error: unknown) {
             if (requestId !== requestIdRef.current) return;
 
@@ -109,8 +115,11 @@ export function usePCRList(
     }, [loadErrorFallback, query, requestType]);
 
     React.useEffect(() => {
+        if (!enabled) return;
+        if (lastFetchedQueryKeyRef.current === queryKey) return;
+        lastFetchedQueryKeyRef.current = queryKey;
         void refresh();
-    }, [refresh]);
+    }, [enabled, queryKey, refresh]);
 
     return {
         query,

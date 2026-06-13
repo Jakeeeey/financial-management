@@ -154,7 +154,7 @@ export type ListQuery = {
     status?: PCRStatusFilter;
     q?: string;
     product_id?: number | "";
-    supplier_id?: number | "";
+    supplier_ids?: number[];
     price_type_id?: number | "";
     requested_by?: number | "";
     date_from?: string | "";
@@ -196,6 +196,7 @@ export type BulkActionResult = {
     successIds: number[];
     failedIds: number[];
     failures: BulkActionFailure[];
+    unauthorized?: boolean;
 };
 
 /** @deprecated Use BulkActionResult */

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PriceControlSearchableSelect } from "../../shared/PriceControlSearchableSelect";
 import {
     Table,
     TableBody,
@@ -38,7 +38,6 @@ type Props = {
     suppliers: Supplier[];
     batchSupplierOptions?: Supplier[];
     defaultSupplierId: number | null;
-    requiresExplicitBatchSupplier?: boolean;
     priceLineCount: number;
     costLineCount: number;
     offPageDirtyCount?: number;
@@ -62,7 +61,6 @@ export function PriceChangeBatchDialog({
     suppliers,
     batchSupplierOptions,
     defaultSupplierId,
-    requiresExplicitBatchSupplier = false,
     priceLineCount,
     costLineCount,
     offPageDirtyCount = 0,
@@ -220,31 +218,18 @@ export function PriceChangeBatchDialog({
 
                     {requiresBatchFields ? (
                         <>
-                            {requiresExplicitBatchSupplier ? (
-                                <Alert>
-                                    <AlertDescription>
-                                        Multiple suppliers are filtered. Select which supplier this batch is for
-                                        before submitting.
-                                    </AlertDescription>
-                                </Alert>
-                            ) : null}
-
                             <div className="flex flex-col gap-1.5">
                                 <Label>
                                     Supplier
                                     <span className="text-destructive"> *</span>
                                 </Label>
-                                <SearchableSelect
+                                <PriceControlSearchableSelect
                                     value={supplierId}
                                     onValueChange={(value) => {
                                         setSupplierId(value);
                                         setErrors((prev) => ({ ...prev, supplier_id: undefined }));
                                     }}
-                                    placeholder={
-                                        requiresExplicitBatchSupplier
-                                            ? "Select supplier for this batch"
-                                            : "Select supplier"
-                                    }
+                                    placeholder="Select supplier"
                                     disabled={submitting}
                                     options={supplierOptions.map((supplier) => ({
                                         value: String(supplier.id),

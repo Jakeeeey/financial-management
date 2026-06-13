@@ -11,6 +11,8 @@ export function applyBulkActionResult<TSnapshot extends { request_id: number }>(
     removeSelectionIds: (ids: number[]) => void,
     setBulkActionOutcome: (outcome: BulkActionOutcome<TSnapshot> | null) => void,
 ) {
+    if (result.unauthorized) return;
+
     if (result.successIds.length > 0) {
         removeSelectionIds(result.successIds);
     }

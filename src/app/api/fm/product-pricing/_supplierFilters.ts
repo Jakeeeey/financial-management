@@ -1,4 +1,4 @@
-import { getChildProductIdsForParents } from "./_directusPaging";
+import { getChildProductIdsForParents, getSupplierProductIdsForSuppliers } from "./_directusPaging";
 import {
     DETAILS,
     directusHeaders,
@@ -159,6 +159,77 @@ export function appendBatchSupplierFilter(
             `filter[_and][${andIdx}][_or][${i + 1}][header_id][_in]`,
             headerChunks[i].join(","),
         );
+    }
+
+    return andIdx + 1;
+}
+
+function normSupplierParam(value: string | null): string {
+    const text = String(value ?? "").trim();
+    if (!text || text === "undefined" || text === "null") return "";
+    return text;
+}
+
+export function resolveSupplierIds(searchParams: URLSearchParams): string[] {
+    const multi = normSupplierParam(searchParams.get("supplier_ids"));
+    if (multi) {
+        return multi
+            .split(",")
+            .map((part) => part.trim())
+            .filter((part) => /^\d+$/.test(part));
+    }
+
+    const single = normSupplierParam(searchParams.get("supplier_id"));
+    return single ? [single] : [];
+}
+
+export async function getSupplierScopedProductIdsForSuppliers(supplierIds: string[]): Promise<number[]> {
+    if (!supplierIds.length) return [];
+
+    const directIds = await getSupplierProductIdsForSuppliers(supplierIds);
+    if (!directIds.length) return [];
+
+    const childIds = await getChildProductIdsForParents(directIds);
+    return Array.from(new Set([...directIds, ...childIds]));
+}
+
+export async function resolveBatchSuppliersFilter(supplierIds: string[]): Promise<{
+    headerIdsFromProducts: number[];
+}> {
+    const productIds = await getSupplierScopedProductIdsForSuppliers(supplierIds);
+    const headerIdsFromProducts =
+        productIds.length > 0 ? await getBatchHeaderIdsForProducts(productIds) : [];
+    return { headerIdsFromProducts };
+}
+
+export function appendBatchSuppliersFilter(
+    params: URLSearchParams,
+    andIdx: number,
+    supplierIds: string[],
+    headerIdsFromProducts: number[],
+): number {
+    if (!supplierIds.length) return andIdx;
+
+    if (supplierIds.length === 1 && headerIdsFromProducts.length === 0) {
+        params.set(`filter[_and][${andIdx}][supplier_id][_eq]`, supplierIds[0]);
+        return andIdx + 1;
+    }
+
+    let orIdx = 0;
+    for (const supplierId of supplierIds) {
+        params.set(`filter[_and][${andIdx}][_or][${orIdx}][supplier_id][_eq]`, supplierId);
+        orIdx += 1;
+    }
+
+    if (headerIdsFromProducts.length > 0) {
+        const headerChunks = chunk(headerIdsFromProducts, PRODUCT_ID_CHUNK_SIZE);
+        for (const headerChunk of headerChunks) {
+            params.set(
+                `filter[_and][${andIdx}][_or][${orIdx}][header_id][_in]`,
+                headerChunk.join(","),
+            );
+            orIdx += 1;
+        }
     }
 
     return andIdx + 1;

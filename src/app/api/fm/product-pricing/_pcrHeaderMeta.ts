@@ -55,6 +55,13 @@ export function resolveHeaderId(headerId: PcrHeaderIdRef): number | null {
     return resolveHeaderMeta(headerId).batch_header_id;
 }
 
+export function headerIdNeedsFetch(headerId: PcrHeaderIdRef): boolean {
+    if (headerId === null || headerId === undefined) return false;
+    if (isRecord(headerId)) return false;
+    const batchHeaderId = Number(headerId);
+    return Number.isFinite(batchHeaderId) && batchHeaderId > 0;
+}
+
 export async function fetchHeaderMetaByIds(
     ids: number[],
 ): Promise<Map<number, { remarks: string | null; reference_no: string | null }>> {
@@ -100,10 +107,12 @@ export type EnrichablePcrRow = {
 
 export async function enrichPcrRows<T extends EnrichablePcrRow>(rows: T[]): Promise<T[]> {
     const headerIds = rows
+        .filter((row) => headerIdNeedsFetch(row.header_id ?? null))
         .map((row) => resolveHeaderId(row.header_id ?? null))
         .filter((id): id is number => id != null);
 
-    const headerMap = await fetchHeaderMetaByIds(headerIds);
+    const headerMap =
+        headerIds.length > 0 ? await fetchHeaderMetaByIds(headerIds) : new Map();
 
     return rows.map((row) => {
         const base = resolveHeaderMeta(row.header_id ?? null);

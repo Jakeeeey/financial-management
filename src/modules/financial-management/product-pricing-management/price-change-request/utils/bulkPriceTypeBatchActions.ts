@@ -1,3 +1,4 @@
+import { isUnauthorizedError } from "../../shared/apiHttp";
 import type { BulkActionResult, PriceTypeSelectionSnapshot } from "../types";
 
 function emptyBulkResult(action: BulkActionResult["action"]): BulkActionResult {
@@ -42,6 +43,7 @@ export async function approveManyBatches(
             await approveBatch(headerId);
             successIds.push(...requestIds);
         } catch (error: unknown) {
+            if (isUnauthorizedError(error)) throw error;
             const message = error instanceof Error ? error.message : "Batch approval failed";
             failedIds.push(...requestIds);
             for (const requestId of requestIds) {
@@ -71,6 +73,7 @@ export async function rejectManyBatches(
             await rejectBatch(headerId, reason);
             successIds.push(...requestIds);
         } catch (error: unknown) {
+            if (isUnauthorizedError(error)) throw error;
             const message = error instanceof Error ? error.message : "Batch rejection failed";
             failedIds.push(...requestIds);
             for (const requestId of requestIds) {

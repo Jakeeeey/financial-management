@@ -15,11 +15,13 @@ import { ListCostRequestManager } from "./components/ListCostRequestManager";
 import { SessionExpiredPanel } from "../shared/SessionExpiredPanel";
 import { isUnauthorizedError } from "../shared/apiHttp";
 
-import { getLookups, SupplierOption } from "./providers/pcrApi";
+import { getSuppliers, SupplierOption } from "./providers/pcrApi";
 import type { ApprovalTypeFilter, ListQuery } from "./types";
+import { cn } from "@/lib/utils";
 
 const DEFAULT_SHARED_QUERY: ListQuery = {
     status: "ALL",
+    supplier_ids: [],
     page: 1,
     page_size: 50,
 };
@@ -31,6 +33,7 @@ export function PriceChangeRequestsModule() {
     const [sessionExpired, setSessionExpired] = React.useState(false);
     const [typeTab, setTypeTab] = React.useState<ApprovalTypeFilter>("all");
     const [sharedQuery, setSharedQuery] = React.useState<ListQuery>(DEFAULT_SHARED_QUERY);
+    const [mountedTabs, setMountedTabs] = React.useState(() => new Set<ApprovalTypeFilter>(["all"]));
 
     const handleUnauthorized = React.useCallback(() => {
         setSessionExpired(true);
@@ -39,7 +42,7 @@ export function PriceChangeRequestsModule() {
     const loadSuppliers = React.useCallback(async () => {
         setSuppliersLoading(true);
         try {
-            const res = await getLookups();
+            const res = await getSuppliers();
             setSuppliers(res.suppliers);
             setSuppliersError(null);
         } catch (error: unknown) {
@@ -67,6 +70,15 @@ export function PriceChangeRequestsModule() {
         setSharedQuery((q) => ({ ...q, page: 1 }));
     }, [typeTab]);
 
+    React.useEffect(() => {
+        setMountedTabs((prev) => {
+            if (prev.has(typeTab)) return prev;
+            const next = new Set(prev);
+            next.add(typeTab);
+            return next;
+        });
+    }, [typeTab]);
+
     const supplierLookupProps = {
         suppliers,
         suppliersLoading,
@@ -76,7 +88,7 @@ export function PriceChangeRequestsModule() {
     if (sessionExpired) {
         return (
             <div className="space-y-3">
-                <SessionExpiredPanel />
+                <SessionExpiredPanel returnPath="/fm/price-control/price-change-requests" />
             </div>
         );
     }
@@ -122,32 +134,53 @@ export function PriceChangeRequestsModule() {
                     >
                         <PcrTypeTabList />
 
-                        <TabsContent value="all">
-                            <UnifiedApprovalsManager
-                                {...supplierLookupProps}
-                                query={sharedQuery}
-                                setQuery={setSharedQuery}
-                                onUnauthorized={handleUnauthorized}
-                            />
-                        </TabsContent>
+                        {mountedTabs.has("all") ? (
+                            <TabsContent
+                                forceMount
+                                value="all"
+                                className={cn(typeTab !== "all" && "hidden")}
+                            >
+                                <UnifiedApprovalsManager
+                                    {...supplierLookupProps}
+                                    query={sharedQuery}
+                                    setQuery={setSharedQuery}
+                                    onUnauthorized={handleUnauthorized}
+                                    active={typeTab === "all"}
+                                />
+                            </TabsContent>
+                        ) : null}
 
-                        <TabsContent value="price">
-                            <PriceTypeRequestManager
-                                {...supplierLookupProps}
-                                query={sharedQuery}
-                                setQuery={setSharedQuery}
-                                onUnauthorized={handleUnauthorized}
-                            />
-                        </TabsContent>
+                        {mountedTabs.has("price") ? (
+                            <TabsContent
+                                forceMount
+                                value="price"
+                                className={cn(typeTab !== "price" && "hidden")}
+                            >
+                                <PriceTypeRequestManager
+                                    {...supplierLookupProps}
+                                    query={sharedQuery}
+                                    setQuery={setSharedQuery}
+                                    onUnauthorized={handleUnauthorized}
+                                    active={typeTab === "price"}
+                                />
+                            </TabsContent>
+                        ) : null}
 
-                        <TabsContent value="cost">
-                            <ListCostRequestManager
-                                {...supplierLookupProps}
-                                query={sharedQuery}
-                                setQuery={setSharedQuery}
-                                onUnauthorized={handleUnauthorized}
-                            />
-                        </TabsContent>
+                        {mountedTabs.has("cost") ? (
+                            <TabsContent
+                                forceMount
+                                value="cost"
+                                className={cn(typeTab !== "cost" && "hidden")}
+                            >
+                                <ListCostRequestManager
+                                    {...supplierLookupProps}
+                                    query={sharedQuery}
+                                    setQuery={setSharedQuery}
+                                    onUnauthorized={handleUnauthorized}
+                                    active={typeTab === "cost"}
+                                />
+                            </TabsContent>
+                        ) : null}
                     </Tabs>
                 </CardContent>
             </Card>

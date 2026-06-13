@@ -10,7 +10,9 @@ import { applyActionError, applyLoadError } from "../../shared/loadErrorState";
 export function useUnifiedApprovals(
     query: ListQuery,
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>,
+    options?: { enabled?: boolean },
 ) {
+    const enabled = options?.enabled ?? true;
     const [rows, setRows] = React.useState<ItemUnifiedApprovalRow[]>([]);
     const [total, setTotal] = React.useState(0);
     const [loading, setLoading] = React.useState(true);
@@ -18,6 +20,9 @@ export function useUnifiedApprovals(
     const [error, setError] = React.useState<string | null>(null);
     const [unauthorized, setUnauthorized] = React.useState(false);
     const requestIdRef = React.useRef(0);
+    const lastFetchedQueryKeyRef = React.useRef<string | null>(null);
+
+    const queryKey = React.useMemo(() => JSON.stringify(query), [query]);
 
     const refresh = React.useCallback(async () => {
         const requestId = ++requestIdRef.current;
@@ -31,6 +36,7 @@ export function useUnifiedApprovals(
             setTotal(Number(res.meta?.total_count ?? (res.data?.length ?? 0)));
             setError(null);
             setUnauthorized(false);
+            lastFetchedQueryKeyRef.current = JSON.stringify(query);
         } catch (error: unknown) {
             if (requestId !== requestIdRef.current) return;
 
@@ -45,8 +51,11 @@ export function useUnifiedApprovals(
     }, [query]);
 
     React.useEffect(() => {
+        if (!enabled) return;
+        if (lastFetchedQueryKeyRef.current === queryKey) return;
+        lastFetchedQueryKeyRef.current = queryKey;
         void refresh();
-    }, [refresh]);
+    }, [enabled, queryKey, refresh]);
 
     const approveBatch = React.useCallback(async (headerId: number) => {
         setActing(true);
@@ -56,7 +65,7 @@ export function useUnifiedApprovals(
             await refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to approve batch", { setUnauthorized })) {
-                return;
+                throw error;
             }
             throw error;
         } finally {
@@ -72,7 +81,7 @@ export function useUnifiedApprovals(
             await refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to reject batch", { setUnauthorized })) {
-                return;
+                throw error;
             }
             throw error;
         } finally {

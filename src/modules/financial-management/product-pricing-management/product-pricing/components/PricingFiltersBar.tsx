@@ -9,21 +9,18 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-} from "@/components/ui/command";
-import {
     InputGroup,
     InputGroupAddon,
     InputGroupButton,
     InputGroupInput,
 } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+    FilterField,
+    labelCount,
+    MultiSelectFilter,
+    type MultiSelectOption,
+} from "../../shared/MultiSelectFilter";
 import {
     Select,
     SelectContent,
@@ -33,7 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { Check, ChevronDown, ChevronsUpDown, Filter, RotateCcw, Search, X } from "lucide-react";
+import { ChevronDown, Filter, RotateCcw, Search, X } from "lucide-react";
 
 type Props = {
     filters: PricingFilters;
@@ -48,12 +45,6 @@ type Props = {
 };
 
 type FilterArrayKey = "category_ids" | "brand_ids" | "unit_ids" | "supplier_ids" | "price_type_ids";
-
-type MultiSelectOption = {
-    id: string;
-    label: string;
-    search?: string;
-};
 
 function safeStr(v: unknown): string {
     const s = String(v ?? "").trim();
@@ -94,28 +85,14 @@ function setIds(
     setFilters((prev) => {
         const numericIds = toNumericIds(ids);
 
-        const next: PricingFilters = {
+        return {
             ...prev,
             [arrayKey]: numericIds,
         } as PricingFilters;
-
-        if (arrayKey === "supplier_ids") {
-            next.supplier_scope = numericIds.length > 0 ? "LINKED_ONLY" : "ALL";
-        }
-
-        return next;
     });
 }
 
-function toggleId(list: string[], id: string): string[] {
-    if (list.includes(id)) return list.filter((x) => x !== id);
-    return [...list, id];
-}
-
-function labelCount(title: string, count: number, emptyLabel: string): string {
-    if (count <= 0) return emptyLabel;
-    return `${title} (${count})`;
-}
+const ADVANCED_FILTER_DEBOUNCE_MS = 400;
 
 function priceTypeText(pt: PriceType): string {
     const label = safeStr(pt.price_type_name);
@@ -130,144 +107,7 @@ function sortPriceTypes(priceTypes: PriceType[]): PriceType[] {
     });
 }
 
-function FilterField(props: {
-    label: string;
-    helper?: string;
-    children: React.ReactNode;
-    className?: string;
-}) {
-    const { label, helper, children, className } = props;
-
-    return (
-        <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
-            <Label className="text-xs font-medium text-foreground">{label}</Label>
-            {children}
-            {helper ? <p className="text-[11px] leading-snug text-muted-foreground">{helper}</p> : null}
-        </div>
-    );
-}
-
-function MultiSelectFilter(props: {
-    label: string;
-    helper?: string;
-    triggerLabel: string;
-    searchPlaceholder: string;
-    emptyText: string;
-    groupLabel: string;
-    options: MultiSelectOption[];
-    selectedIds: string[];
-    onChange: (ids: string[]) => void;
-    clearTitle: string;
-    footer?: React.ReactNode;
-    limit?: number;
-    contentMaxWidth?: string;
-    className?: string;
-}) {
-    const {
-        label,
-        helper,
-        triggerLabel,
-        searchPlaceholder,
-        emptyText,
-        groupLabel,
-        options,
-        selectedIds,
-        onChange,
-        clearTitle,
-        footer,
-        limit = 140,
-        contentMaxWidth = "max-w-[360px]",
-        className,
-    } = props;
-
-    const [open, setOpen] = React.useState(false);
-    const [query, setQuery] = React.useState("");
-
-    const filteredOptions = React.useMemo(() => {
-        const q = query.trim().toLowerCase();
-        const source = q
-            ? options.filter((option) => {
-                const search = `${option.label} ${option.id} ${option.search ?? ""}`.toLowerCase();
-                return search.includes(q);
-            })
-            : options;
-
-        return source.slice(0, limit);
-    }, [limit, options, query]);
-
-    return (
-        <FilterField label={label} helper={helper} className={className}>
-            <Popover open={open} onOpenChange={setOpen}>
-                <PopoverTrigger asChild>
-                    <Button
-                        variant="outline"
-                        className="h-10 w-full justify-between gap-2 bg-background px-3 shadow-none"
-                        type="button"
-                    >
-                        <span className="truncate">{triggerLabel}</span>
-                        <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-60" />
-                    </Button>
-                </PopoverTrigger>
-
-                <PopoverContent
-                    className={cn("w-[calc(100vw-2rem)] p-0", contentMaxWidth)}
-                    align="start"
-                >
-                    <Command shouldFilter={false}>
-                        <div className="flex items-center gap-2 px-2 pt-2">
-                            <CommandInput
-                                placeholder={searchPlaceholder}
-                                value={query}
-                                onValueChange={setQuery}
-                            />
-                            {selectedIds.length > 0 ? (
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => onChange([])}
-                                    title={clearTitle}
-                                    type="button"
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            ) : null}
-                        </div>
-
-                        <CommandList>
-                            <CommandEmpty>{emptyText}</CommandEmpty>
-                            <CommandGroup heading={groupLabel}>
-                                {filteredOptions.map((option) => {
-                                    const selected = selectedIds.includes(option.id);
-
-                                    return (
-                                        <CommandItem
-                                            key={option.id}
-                                            value={`${option.label} ${option.id}`}
-                                            onSelect={() => onChange(toggleId(selectedIds, option.id))}
-                                        >
-                                            <Check
-                                                className={cn(
-                                                    "mr-2 h-4 w-4",
-                                                    selected ? "opacity-100" : "opacity-0",
-                                                )}
-                                            />
-                                            <span className="truncate">{option.label}</span>
-                                        </CommandItem>
-                                    );
-                                })}
-                            </CommandGroup>
-                        </CommandList>
-                    </Command>
-
-                    {footer ? <div className="border-t px-3 py-2 text-xs text-muted-foreground">{footer}</div> : null}
-                </PopoverContent>
-            </Popover>
-        </FilterField>
-    );
-}
-
-export default function PricingFiltersBar(props: Props) {
+export function PricingFiltersBar(props: Props) {
     const { filters, setFilters, resetFilters, categories, brands, units, suppliers, priceTypes } = props;
 
     const selectedSupplierIds = React.useMemo(
@@ -292,31 +132,125 @@ export default function PricingFiltersBar(props: Props) {
     );
 
     const [localQ, setLocalQ] = React.useState(filters.q);
+    const [localSupplierIds, setLocalSupplierIds] = React.useState(() => getIds(filters, "supplier_ids"));
+    const [localBrandIds, setLocalBrandIds] = React.useState(() => getIds(filters, "brand_ids"));
+    const [localCategoryIds, setLocalCategoryIds] = React.useState(() => getIds(filters, "category_ids"));
+    const [localUnitIds, setLocalUnitIds] = React.useState(() => getIds(filters, "unit_ids"));
     const [advancedOpen, setAdvancedOpen] = React.useState(true);
 
     React.useEffect(() => {
         setLocalQ(filters.q);
     }, [filters.q]);
 
-    const supplierOptions = React.useMemo<MultiSelectOption[]>(
-        () => {
-            const options: MultiSelectOption[] = [];
+    React.useEffect(() => {
+        setLocalSupplierIds(getIds(filters, "supplier_ids"));
+    }, [filters.supplier_ids]);
 
-            for (const supplier of suppliers) {
-                const id = safeStr(supplier.id);
-                if (!id) continue;
+    React.useEffect(() => {
+        setLocalBrandIds(getIds(filters, "brand_ids"));
+    }, [filters.brand_ids]);
 
-                options.push({
-                    id,
-                    label: supplierText(supplier),
-                    search: safeStr(supplier.supplier_shortcut),
-                });
-            }
+    React.useEffect(() => {
+        setLocalCategoryIds(getIds(filters, "category_ids"));
+    }, [filters.category_ids]);
 
-            return options;
-        },
-        [suppliers],
-    );
+    React.useEffect(() => {
+        setLocalUnitIds(getIds(filters, "unit_ids"));
+    }, [filters.unit_ids]);
+
+    React.useEffect(() => {
+        const committedSupplierIds = getIds(filters, "supplier_ids").join(",");
+        const draftSupplierIds = localSupplierIds.join(",");
+
+        if (draftSupplierIds === committedSupplierIds) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            setFilters((prev) => {
+                const nextSupplierIds = toNumericIds(localSupplierIds);
+                const sameSuppliers =
+                    JSON.stringify(prev.supplier_ids ?? []) === JSON.stringify(nextSupplierIds);
+                if (sameSuppliers) return prev;
+
+                return {
+                    ...prev,
+                    supplier_ids: nextSupplierIds,
+                    supplier_scope: nextSupplierIds.length > 0 ? "LINKED_ONLY" : "ALL",
+                };
+            });
+        }, ADVANCED_FILTER_DEBOUNCE_MS);
+
+        return () => window.clearTimeout(timer);
+    }, [localSupplierIds, filters.supplier_ids, setFilters]);
+
+    React.useEffect(() => {
+        const committedBrandIds = getIds(filters, "brand_ids").join(",");
+        const committedCategoryIds = getIds(filters, "category_ids").join(",");
+        const committedUnitIds = getIds(filters, "unit_ids").join(",");
+        const draftBrandIds = localBrandIds.join(",");
+        const draftCategoryIds = localCategoryIds.join(",");
+        const draftUnitIds = localUnitIds.join(",");
+
+        if (
+            draftBrandIds === committedBrandIds &&
+            draftCategoryIds === committedCategoryIds &&
+            draftUnitIds === committedUnitIds
+        ) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            setFilters((prev) => {
+                const nextBrandIds = toNumericIds(localBrandIds);
+                const nextCategoryIds = toNumericIds(localCategoryIds);
+                const nextUnitIds = toNumericIds(localUnitIds);
+
+                const sameBrands =
+                    JSON.stringify(prev.brand_ids ?? []) === JSON.stringify(nextBrandIds);
+                const sameCategories =
+                    JSON.stringify(prev.category_ids ?? []) === JSON.stringify(nextCategoryIds);
+                const sameUnits =
+                    JSON.stringify(prev.unit_ids ?? []) === JSON.stringify(nextUnitIds);
+
+                if (sameBrands && sameCategories && sameUnits) return prev;
+
+                return {
+                    ...prev,
+                    brand_ids: nextBrandIds,
+                    category_ids: nextCategoryIds,
+                    unit_ids: nextUnitIds,
+                };
+            });
+        }, ADVANCED_FILTER_DEBOUNCE_MS);
+
+        return () => window.clearTimeout(timer);
+    }, [
+        localBrandIds,
+        localCategoryIds,
+        localUnitIds,
+        filters.brand_ids,
+        filters.category_ids,
+        filters.unit_ids,
+        setFilters,
+    ]);
+
+    const supplierOptions = React.useMemo<MultiSelectOption[]>(() => {
+        const options: MultiSelectOption[] = [];
+
+        for (const supplier of suppliers) {
+            const id = safeStr(supplier.id);
+            if (!id) continue;
+
+            options.push({
+                id,
+                label: supplierText(supplier),
+                search: safeStr(supplier.supplier_name),
+            });
+        }
+
+        return options;
+    }, [suppliers]);
 
     const brandOptions = React.useMemo<MultiSelectOption[]>(
         () => {
@@ -431,7 +365,7 @@ export default function PricingFiltersBar(props: Props) {
                     ? `PRICE:${focusedPriceTypeId}`
                     : "LIST";
 
-    const advancedCount = selectedBrandIds.length + selectedCategoryIds.length + selectedUnitIds.length;
+    const advancedCount = localBrandIds.length + localCategoryIds.length + localUnitIds.length;
 
     React.useEffect(() => {
         if (advancedCount > 0) setAdvancedOpen(true);
@@ -484,8 +418,24 @@ export default function PricingFiltersBar(props: Props) {
     const resetAllFilters = React.useCallback(() => {
         resetFilters();
         setLocalQ("");
+        setLocalSupplierIds([]);
+        setLocalBrandIds([]);
+        setLocalCategoryIds([]);
+        setLocalUnitIds([]);
         setAdvancedOpen(true);
     }, [resetFilters]);
+
+    const commitSupplierIds = React.useCallback(
+        (ids: string[]) => {
+            const numericIds = toNumericIds(ids);
+            setFilters((prev) => ({
+                ...prev,
+                supplier_ids: numericIds,
+                supplier_scope: numericIds.length > 0 ? "LINKED_ONLY" : "ALL",
+            }));
+        },
+        [setFilters],
+    );
 
     const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
 
@@ -503,8 +453,11 @@ export default function PricingFiltersBar(props: Props) {
         chips.push({
             key: `s:${id}`,
             label: `Supplier: ${label}`,
-            onRemove: () =>
-                setIds(setFilters, "supplier_ids", selectedSupplierIds.filter((x) => x !== id)),
+            onRemove: () => {
+                const next = selectedSupplierIds.filter((x) => x !== id);
+                setLocalSupplierIds(next);
+                commitSupplierIds(next);
+            },
         });
     }
 
@@ -513,8 +466,11 @@ export default function PricingFiltersBar(props: Props) {
         chips.push({
             key: `b:${id}`,
             label: `Brand: ${label}`,
-            onRemove: () =>
-                setIds(setFilters, "brand_ids", selectedBrandIds.filter((x) => x !== id)),
+            onRemove: () => {
+                const next = selectedBrandIds.filter((x) => x !== id);
+                setLocalBrandIds(next);
+                setFilters((prev) => ({ ...prev, brand_ids: toNumericIds(next) }));
+            },
         });
     }
 
@@ -523,8 +479,11 @@ export default function PricingFiltersBar(props: Props) {
         chips.push({
             key: `c:${id}`,
             label: `Category: ${label}`,
-            onRemove: () =>
-                setIds(setFilters, "category_ids", selectedCategoryIds.filter((x) => x !== id)),
+            onRemove: () => {
+                const next = selectedCategoryIds.filter((x) => x !== id);
+                setLocalCategoryIds(next);
+                setFilters((prev) => ({ ...prev, category_ids: toNumericIds(next) }));
+            },
         });
     }
 
@@ -533,8 +492,11 @@ export default function PricingFiltersBar(props: Props) {
         chips.push({
             key: `u:${id}`,
             label: `UOM: ${label}`,
-            onRemove: () =>
-                setIds(setFilters, "unit_ids", selectedUnitIds.filter((x) => x !== id)),
+            onRemove: () => {
+                const next = selectedUnitIds.filter((x) => x !== id);
+                setLocalUnitIds(next);
+                setFilters((prev) => ({ ...prev, unit_ids: toNumericIds(next) }));
+            },
         });
     }
 
@@ -653,20 +615,22 @@ export default function PricingFiltersBar(props: Props) {
                     </FilterField>
 
                     <MultiSelectFilter
-                        label="Supplier"
-                        helper={selectedSupplierIds.length > 0 ? "Showing linked supplier products." : "All suppliers included."}
-                        triggerLabel={
-                            `${labelCount("Suppliers", selectedSupplierIds.length, "All suppliers")}${selectedSupplierIds.length ? " - Linked" : ""}`
+                        label="Suppliers"
+                        helper={
+                            localSupplierIds.length > 0
+                                ? localSupplierIds.length === 1
+                                    ? "Showing linked supplier products."
+                                    : `Showing products linked to ${localSupplierIds.length} suppliers.`
+                                : "Select one or more suppliers to limit the matrix to linked products."
                         }
+                        triggerLabel={labelCount("Suppliers", localSupplierIds.length, "All suppliers")}
                         searchPlaceholder="Search supplier"
                         emptyText="No suppliers found."
                         groupLabel="Suppliers"
                         options={supplierOptions}
-                        selectedIds={selectedSupplierIds}
-                        onChange={(ids) => setIds(setFilters, "supplier_ids", ids)}
+                        selectedIds={localSupplierIds}
+                        onChange={setLocalSupplierIds}
                         clearTitle="Clear suppliers"
-                        footer="Selecting a supplier limits the matrix to products linked to that supplier."
-                        contentMaxWidth="max-w-[380px]"
                     />
 
                     <FilterField label="Price view" helper="Choose the price columns shown in the matrix.">
@@ -752,37 +716,37 @@ export default function PricingFiltersBar(props: Props) {
                         <div className="grid gap-3 px-1 pt-3 md:grid-cols-3">
                             <MultiSelectFilter
                                 label="Brand"
-                                triggerLabel={labelCount("Brands", selectedBrandIds.length, "All brands")}
+                                triggerLabel={labelCount("Brands", localBrandIds.length, "All brands")}
                                 searchPlaceholder="Search brand"
                                 emptyText="No brands found."
                                 groupLabel="Brands"
                                 options={brandOptions}
-                                selectedIds={selectedBrandIds}
-                                onChange={(ids) => setIds(setFilters, "brand_ids", ids)}
+                                selectedIds={localBrandIds}
+                                onChange={setLocalBrandIds}
                                 clearTitle="Clear brands"
                             />
 
                             <MultiSelectFilter
                                 label="Category"
-                                triggerLabel={labelCount("Categories", selectedCategoryIds.length, "All categories")}
+                                triggerLabel={labelCount("Categories", localCategoryIds.length, "All categories")}
                                 searchPlaceholder="Search category"
                                 emptyText="No categories found."
                                 groupLabel="Categories"
                                 options={categoryOptions}
-                                selectedIds={selectedCategoryIds}
-                                onChange={(ids) => setIds(setFilters, "category_ids", ids)}
+                                selectedIds={localCategoryIds}
+                                onChange={setLocalCategoryIds}
                                 clearTitle="Clear categories"
                             />
 
                             <MultiSelectFilter
                                 label="Unit of measure"
-                                triggerLabel={labelCount("UOM", selectedUnitIds.length, "All units")}
+                                triggerLabel={labelCount("UOM", localUnitIds.length, "All units")}
                                 searchPlaceholder="Search unit"
                                 emptyText="No units found."
                                 groupLabel="Units"
                                 options={unitOptions}
-                                selectedIds={selectedUnitIds}
-                                onChange={(ids) => setIds(setFilters, "unit_ids", ids)}
+                                selectedIds={localUnitIds}
+                                onChange={setLocalUnitIds}
                                 clearTitle="Clear units"
                             />
                         </div>
@@ -820,3 +784,5 @@ export default function PricingFiltersBar(props: Props) {
         </Card>
     );
 }
+
+export default React.memo(PricingFiltersBar);

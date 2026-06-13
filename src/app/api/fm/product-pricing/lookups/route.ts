@@ -7,6 +7,7 @@ import {
     getChildProductIdsForParents,
     getSupplierProductIdsForSuppliers,
 } from "../_directusPaging";
+import { collectCascadeSets } from "../_lookupCascade";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -107,6 +108,29 @@ function safeCsvIds(v: string | null) {
         .filter((x) => /^\d+$/.test(x));
 }
 
+function parseFieldsParam(v: string | null): Set<string> | null {
+    const s = String(v ?? "").trim();
+    if (!s) return null;
+
+    return new Set(
+        s
+            .split(",")
+            .map((x) => x.trim().toLowerCase())
+            .filter(Boolean),
+    );
+}
+
+async function fetchSuppliers() {
+    return fetchAllPages<DirectusSupplier>(SUPPLIERS, () => {
+        const params = new URLSearchParams();
+        params.set("fields", "id,supplier_name,supplier_shortcut,isActive");
+        params.set("sort", "supplier_name");
+        params.set("filter[isActive][_eq]", "1");
+        params.set("filter[supplier_type][_eq]", "TRADE");
+        return params;
+    });
+}
+
 function safeInt(v: string | null) {
     const n = Number(String(v ?? "").trim());
     return Number.isFinite(n) ? n : 0;
@@ -190,6 +214,19 @@ export async function GET(req: NextRequest) {
 
         const { searchParams } = new URL(req.url);
 
+        const fieldsParam = parseFieldsParam(searchParams.get("fields"));
+        const suppliersOnly =
+            fieldsParam !== null &&
+            fieldsParam.size === 1 &&
+            fieldsParam.has("suppliers");
+
+        if (suppliersOnly) {
+            const suppliers = await fetchSuppliers();
+            return NextResponse.json({
+                data: { categories: [], brands: [], units: [], suppliers },
+            });
+        }
+
         const supplierIds = safeCsvIds(searchParams.get("supplier_ids"));
         const supplierScope = (searchParams.get("supplier_scope") || "ALL").toUpperCase();
         const categoryId = safeInt(searchParams.get("category_id"));
@@ -214,14 +251,7 @@ export async function GET(req: NextRequest) {
                 params.set("sort", "order,unit_name");
                 return params;
             }),
-            fetchAllPages<DirectusSupplier>(SUPPLIERS, () => {
-                const params = new URLSearchParams();
-                params.set("fields", "id,supplier_name,supplier_shortcut,isActive");
-                params.set("sort", "supplier_name");
-                params.set("filter[isActive][_eq]", "1");
-                params.set("filter[supplier_type][_eq]", "TRADE");
-                return params;
-            }),
+            fetchSuppliers(),
         ]);
 
         let categories: DirectusCategory[] = categoriesInitial;
@@ -249,27 +279,21 @@ export async function GET(req: NextRequest) {
             (universeProductIds && universeProductIds.length > 0) || categoryId > 0 || brandId > 0;
 
         if (needsCascade) {
-            const catsSets = await collectSetsFromProducts({
+            const { catsResult, brandsResult, unitsResult } = await collectCascadeSets({
                 productIds: universeProductIds ?? undefined,
-                brandId: brandId > 0 ? brandId : 0,
-                categoryId: 0,
+                categoryId,
+                brandId,
+                runScan: (filter) =>
+                    collectSetsFromProducts({
+                        productIds: universeProductIds ?? undefined,
+                        categoryId: filter.categoryId,
+                        brandId: filter.brandId,
+                    }),
             });
 
-            const brandsSets = await collectSetsFromProducts({
-                productIds: universeProductIds ?? undefined,
-                categoryId: categoryId > 0 ? categoryId : 0,
-                brandId: 0,
-            });
-
-            const unitSets = await collectSetsFromProducts({
-                productIds: universeProductIds ?? undefined,
-                categoryId: categoryId > 0 ? categoryId : 0,
-                brandId: brandId > 0 ? brandId : 0,
-            });
-
-            categories = categories.filter((c) => catsSets.catSet.has(String(c.category_id)));
-            brands = brands.filter((b) => brandsSets.brandSet.has(String(b.brand_id)));
-            units = units.filter((u) => unitSets.unitSet.has(String(u.unit_id)));
+            categories = categories.filter((c) => catsResult.catSet.has(String(c.category_id)));
+            brands = brands.filter((b) => brandsResult.brandSet.has(String(b.brand_id)));
+            units = units.filter((u) => unitsResult.unitSet.has(String(u.unit_id)));
         }
 
         return NextResponse.json({

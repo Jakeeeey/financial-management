@@ -7,6 +7,7 @@ import {
     getChildProductIdsForParents,
     getSupplierProductIdsForSuppliers,
 } from "../../_directusPaging";
+import { collectCascadeSets } from "../../_lookupCascade";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -178,15 +179,21 @@ export async function GET(req: NextRequest) {
 
         const needsCascade = (universeProductIds && universeProductIds.length > 0) || categoryId > 0 || brandId > 0;
         if (needsCascade) {
-            const [cSets, bSets, uSets] = await Promise.all([
-                collectSetsFromProducts({ productIds: universeProductIds ?? undefined, brandId, categoryId: 0 }),
-                collectSetsFromProducts({ productIds: universeProductIds ?? undefined, categoryId, brandId: 0 }),
-                collectSetsFromProducts({ productIds: universeProductIds ?? undefined, categoryId, brandId }),
-            ]);
+            const { catsResult, brandsResult, unitsResult } = await collectCascadeSets({
+                productIds: universeProductIds ?? undefined,
+                categoryId,
+                brandId,
+                runScan: (filter) =>
+                    collectSetsFromProducts({
+                        productIds: universeProductIds ?? undefined,
+                        categoryId: filter.categoryId,
+                        brandId: filter.brandId,
+                    }),
+            });
 
-            categories = categories.filter(c => cSets.catSet.has(String(c.category_id)));
-            brands = brands.filter(b => bSets.brandSet.has(String(b.brand_id)));
-            units = units.filter(u => uSets.unitSet.has(String(u.unit_id)));
+            categories = categories.filter((c) => catsResult.catSet.has(String(c.category_id)));
+            brands = brands.filter((b) => brandsResult.brandSet.has(String(b.brand_id)));
+            units = units.filter((u) => unitsResult.unitSet.has(String(u.unit_id)));
         }
 
         return NextResponse.json({ data: { categories, brands, units, suppliers } });

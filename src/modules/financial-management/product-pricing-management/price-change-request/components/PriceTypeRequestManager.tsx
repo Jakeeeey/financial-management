@@ -5,6 +5,7 @@ import { AlertCircle, CheckCheck, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { applyActionError } from "../../shared/loadErrorState";
+import { isUnauthorizedError } from "../../shared/apiHttp";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -44,6 +45,7 @@ type Props = {
     query: ListQuery;
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
     onUnauthorized?: () => void;
+    active?: boolean;
 };
 
 export function PriceTypeRequestManager({
@@ -53,8 +55,9 @@ export function PriceTypeRequestManager({
     query,
     setQuery,
     onUnauthorized,
+    active = true,
 }: Props) {
-    const inbox = usePCRList(query, setQuery, { requestType: "price" });
+    const inbox = usePCRList(query, setQuery, { requestType: "price", enabled: active });
     const statusTab: PCRStatusFilter = inbox.query.status || "ALL";
     const [viewingRequestId, setViewingRequestId] = React.useState<number | null>(null);
     const [confirmingBatchHeaderId, setConfirmingBatchHeaderId] = React.useState<number | null>(null);
@@ -102,7 +105,7 @@ export function PriceTypeRequestManager({
             await inbox.refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to approve batch", { onUnauthorized })) {
-                return;
+                throw error;
             }
             throw error;
         } finally {
@@ -118,7 +121,7 @@ export function PriceTypeRequestManager({
             await inbox.refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to reject batch", { onUnauthorized })) {
-                return;
+                throw error;
             }
             throw error;
         } finally {
@@ -136,18 +139,34 @@ export function PriceTypeRequestManager({
 
     const handleConfirmBulkApprove = React.useCallback(async () => {
         if (selectedSnapshots.length === 0) return;
-        const result = await approveManyBatches(selectedSnapshots, approveBatch);
-        applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
+        try {
+            const result = await approveManyBatches(selectedSnapshots, approveBatch);
+            applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
+        } catch (error: unknown) {
+            if (isUnauthorizedError(error)) {
+                onUnauthorized?.();
+                return;
+            }
+            throw error;
+        }
         setConfirmingBulkApprove(false);
-    }, [approveBatch, removeSelectionIds, selectedSnapshots]);
+    }, [approveBatch, onUnauthorized, removeSelectionIds, selectedSnapshots]);
 
     const handleRejectBulk = React.useCallback(
         async (reason: string) => {
             if (selectedSnapshots.length === 0) return;
-            const result = await rejectManyBatches(selectedSnapshots, reason, rejectBatch);
-            applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
+            try {
+                const result = await rejectManyBatches(selectedSnapshots, reason, rejectBatch);
+                applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
+            } catch (error: unknown) {
+                if (isUnauthorizedError(error)) {
+                    onUnauthorized?.();
+                    return;
+                }
+                throw error;
+            }
         },
-        [rejectBatch, removeSelectionIds, selectedSnapshots],
+        [rejectBatch, onUnauthorized, removeSelectionIds, selectedSnapshots],
     );
 
     const rawSetInboxQuery = inbox.setQuery;
@@ -162,8 +181,6 @@ export function PriceTypeRequestManager({
     React.useEffect(() => {
         if (inbox.unauthorized) onUnauthorized?.();
     }, [inbox.unauthorized, onUnauthorized]);
-
-    if (inbox.unauthorized) return null;
 
     return (
         <div className="space-y-3">
@@ -203,7 +220,21 @@ export function PriceTypeRequestManager({
                     <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertTitle>Price type requests could not be loaded</AlertTitle>
-                        <AlertDescription>{inbox.error}</AlertDescription>
+                        <AlertDescription className="space-y-3">
+                            <p>{inbox.error}</p>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void inbox.refresh()}
+                                disabled={inbox.loading}
+                            >
+                                {inbox.loading ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Retry
+                            </Button>
+                        </AlertDescription>
                     </Alert>
                 ) : null}
 

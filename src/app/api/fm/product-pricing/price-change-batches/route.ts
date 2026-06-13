@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { parseApprovalSearchQuery } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
-import { appendBatchSupplierFilter, resolveBatchSupplierFilter } from "../_supplierFilters";
+import { appendBatchSuppliersFilter, resolveBatchSuppliersFilter, resolveSupplierIds } from "../_supplierFilters";
 import {
     BatchDetailRow,
     BatchHeaderRow,
@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
 
         const { searchParams } = new URL(req.url);
         const status = norm(searchParams.get("status"));
-        const supplierId = norm(searchParams.get("supplier_id"));
+        const supplierIds = resolveSupplierIds(searchParams);
         const q = norm(searchParams.get("q"));
         const dateFrom = norm(searchParams.get("date_from"));
         const dateTo = norm(searchParams.get("date_to"));
@@ -92,9 +92,9 @@ export async function GET(req: NextRequest) {
         };
 
         if (status) addAnd("[status][_eq]", status);
-        if (supplierId) {
-            const { headerIdsFromProducts } = await resolveBatchSupplierFilter(supplierId);
-            andIdx = appendBatchSupplierFilter(params, andIdx, supplierId, headerIdsFromProducts);
+        if (supplierIds.length > 0) {
+            const { headerIdsFromProducts } = await resolveBatchSuppliersFilter(supplierIds);
+            andIdx = appendBatchSuppliersFilter(params, andIdx, supplierIds, headerIdsFromProducts);
         }
         if (dateFrom) addAnd("[requested_at][_gte]", dateFrom);
         if (dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(dateTo));

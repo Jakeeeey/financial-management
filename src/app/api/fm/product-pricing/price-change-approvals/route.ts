@@ -4,9 +4,15 @@ import { parseApprovalSearchQuery } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
 import {
     appendProductIdInFilter,
-    getSupplierScopedProductIds,
+    getSupplierScopedProductIdsForSuppliers,
+    resolveSupplierIds,
 } from "../_supplierFilters";
 import { enrichPcrRows } from "../_pcrHeaderMeta";
+import {
+    fetchStreamTopRows,
+    MAX_UNIFIED_FETCH,
+    mergeUnifiedRows,
+} from "../_unifiedApprovalMerge";
 import {
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
@@ -127,7 +133,7 @@ type UnifiedApprovalRow = {
 
 type ApprovalFilters = {
     status: string;
-    supplierId: string;
+    supplierIds: string[];
     q: string;
     dateFrom: string;
     dateTo: string;
@@ -153,12 +159,6 @@ function toMoney(value: unknown): number | null {
     if (value === null || value === undefined || value === "") return null;
     const n = Number(value);
     return Number.isFinite(n) ? n : null;
-}
-
-function parseRequestedAt(value: string | null | undefined): number {
-    if (!value) return 0;
-    const time = new Date(value).getTime();
-    return Number.isFinite(time) ? time : 0;
 }
 
 function appendPriceFilters(params: URLSearchParams, filters: ApprovalFilters, supplierProductIds?: number[]) {
@@ -219,15 +219,17 @@ function appendCostFilters(params: URLSearchParams, filters: ApprovalFilters, su
 
 async function fetchPriceRequestsPage(
     filters: ApprovalFilters,
+    offset: number,
     limit: number,
     supplierProductIds?: number[],
 ): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
-    if (filters.supplierId && (!supplierProductIds || supplierProductIds.length === 0)) {
+    if (filters.supplierIds.length > 0 && (!supplierProductIds || supplierProductIds.length === 0)) {
         return { rows: [], total: 0 };
     }
 
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, limit)));
+    params.set("offset", String(Math.max(0, offset)));
     params.set("meta", "total_count");
     params.set("sort", "-requested_at");
     params.set(
@@ -301,15 +303,17 @@ async function fetchPriceRequestsPage(
 
 async function fetchCostRequestsPage(
     filters: ApprovalFilters,
+    offset: number,
     limit: number,
     supplierProductIds?: number[],
 ): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
-    if (filters.supplierId && (!supplierProductIds || supplierProductIds.length === 0)) {
+    if (filters.supplierIds.length > 0 && (!supplierProductIds || supplierProductIds.length === 0)) {
         return { rows: [], total: 0 };
     }
 
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, limit)));
+    params.set("offset", String(Math.max(0, offset)));
     params.set("meta", "total_count");
     params.set("sort", "-requested_at");
     params.set(
@@ -378,31 +382,53 @@ export async function GET(req: NextRequest) {
 
         const { searchParams } = new URL(req.url);
         const status = norm(searchParams.get("status"));
-        const supplierId = norm(searchParams.get("supplier_id"));
+        const supplierIds = resolveSupplierIds(searchParams);
         const q = norm(searchParams.get("q"));
         const dateFrom = norm(searchParams.get("date_from"));
         const dateTo = norm(searchParams.get("date_to"));
         const page = Math.max(1, Number(searchParams.get("page") ?? 1));
         const pageSize = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
 
-        const filters: ApprovalFilters = { status, supplierId, q, dateFrom, dateTo };
+        const filters: ApprovalFilters = { status, supplierIds, q, dateFrom, dateTo };
         const offset = (page - 1) * pageSize;
-        const fetchLimit = offset + pageSize;
+        let needed = offset + pageSize;
 
-        const supplierProductIds = supplierId ? await getSupplierScopedProductIds(supplierId) : undefined;
+        const supplierProductIds =
+            supplierIds.length > 0
+                ? await getSupplierScopedProductIdsForSuppliers(supplierIds)
+                : undefined;
 
-        const [pricePage, costPage] = await Promise.all([
-            fetchPriceRequestsPage(filters, fetchLimit, supplierProductIds),
-            fetchCostRequestsPage(filters, fetchLimit, supplierProductIds),
-        ]);
+        const fetchPriceTop = (fetchNeeded: number) =>
+            fetchStreamTopRows(
+                (streamOffset, streamLimit) =>
+                    fetchPriceRequestsPage(filters, streamOffset, streamLimit, supplierProductIds),
+                fetchNeeded,
+            );
 
-        const merged = [...pricePage.rows, ...costPage.rows].sort(
-            (a, b) => parseRequestedAt(b.requested_at) - parseRequestedAt(a.requested_at),
-        );
+        const fetchCostTop = (fetchNeeded: number) =>
+            fetchStreamTopRows(
+                (streamOffset, streamLimit) =>
+                    fetchCostRequestsPage(filters, streamOffset, streamLimit, supplierProductIds),
+                fetchNeeded,
+            );
 
-        const data = merged.slice(offset, offset + pageSize);
+        let [pricePage, costPage] = await Promise.all([fetchPriceTop(needed), fetchCostTop(needed)]);
+
+        let merged = mergeUnifiedRows(pricePage.rows, costPage.rows);
+        let data = merged.slice(offset, offset + pageSize);
 
         const totalCount = pricePage.total + costPage.total;
+
+        if (
+            data.length < pageSize &&
+            offset + data.length < totalCount &&
+            needed < MAX_UNIFIED_FETCH
+        ) {
+            needed = Math.min(needed * 2, MAX_UNIFIED_FETCH);
+            [pricePage, costPage] = await Promise.all([fetchPriceTop(needed), fetchCostTop(needed)]);
+            merged = mergeUnifiedRows(pricePage.rows, costPage.rows);
+            data = merged.slice(offset, offset + pageSize);
+        }
 
         return NextResponse.json({
             data,

@@ -92,10 +92,19 @@ export function usePricingMatrix(args: {
     const [dirtyMeta, setDirtyMeta] = useState<Map<DirtyKey, DirtyCellMeta>>(new Map());
     const dirtyRef = useRef(dirty);
     dirtyRef.current = dirty;
+    const dirtyErrorsRef = useRef(dirtyErrors);
+    dirtyErrorsRef.current = dirtyErrors;
+
+    const [dirtyVersion, setDirtyVersion] = useState(0);
+    const bumpDirtyVersion = useCallback(() => setDirtyVersion((v) => v + 1), []);
 
     const [pendingMap, setPendingMap] = useState<Map<PendingKey, number>>(new Map());
+    const rowsRef = useRef(rows);
+    rowsRef.current = rows;
+    const pendingMapRef = useRef(pendingMap);
+    pendingMapRef.current = pendingMap;
 
-    const filtersKey = useMemo(
+    const serverFiltersKey = useMemo(
         () =>
             JSON.stringify({
                 q: filters.q,
@@ -106,9 +115,6 @@ export function usePricingMatrix(args: {
                 brand_ids: filters.brand_ids ?? [],
                 unit_ids: filters.unit_ids ?? [],
                 supplier_ids: filters.supplier_ids ?? [],
-                price_view: filters.price_view,
-                price_type_ids: filters.price_type_ids ?? [],
-                show_list_price: filters.show_list_price,
             }),
         [
             filters.q,
@@ -119,15 +125,12 @@ export function usePricingMatrix(args: {
             filters.brand_ids,
             filters.unit_ids,
             filters.supplier_ids,
-            filters.price_view,
-            filters.price_type_ids,
-            filters.show_list_price,
         ],
     );
 
     useEffect(() => {
         setPage(1);
-    }, [filtersKey]);
+    }, [serverFiltersKey]);
 
     const refresh = useCallback(async () => {
         const requestId = ++requestIdRef.current;
@@ -305,7 +308,7 @@ export function usePricingMatrix(args: {
                 setLoading(false);
             }
         }
-    }, [filters, page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes, emptyPivotForTypes]);
+    }, [serverFiltersKey, page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes, emptyPivotForTypes]);
 
     useEffect(() => {
         void refresh();
@@ -313,7 +316,7 @@ export function usePricingMatrix(args: {
 
     const setCell = useCallback((productId: number, tier: ProductTierKey, raw: unknown) => {
         const key: DirtyKey = `${productId}:${tier}`;
-        if (pendingMap.has(key)) return;
+        if (pendingMapRef.current.has(key)) return;
 
         const rawString = String(raw ?? "");
 
@@ -333,12 +336,13 @@ export function usePricingMatrix(args: {
                 next.delete(key);
                 return next;
             });
+            bumpDirtyVersion();
             return;
         }
 
         const value = clampMoney(toNumberOrNull(rawString.trim()));
         const err = validatePrice(value);
-        const meta = snapshotDirtyCellMeta(rows, productId, tier);
+        const meta = snapshotDirtyCellMeta(rowsRef.current, productId, tier);
 
         if (moneyValuesEqual(value, meta.current_value)) {
             setDirty((prev) => {
@@ -356,6 +360,7 @@ export function usePricingMatrix(args: {
                 next.delete(key);
                 return next;
             });
+            bumpDirtyVersion();
             return;
         }
 
@@ -377,21 +382,23 @@ export function usePricingMatrix(args: {
             next.set(key, meta);
             return next;
         });
-    }, [pendingMap, rows]);
+        bumpDirtyVersion();
+    }, [bumpDirtyVersion]);
 
     const getCellValue = useCallback((productId: number, tier: ProductTierKey, base: number | null) => {
         const key: DirtyKey = `${productId}:${tier}`;
-        if (dirty.has(key)) return dirty.get(key) ?? "";
+        const d = dirtyRef.current;
+        if (d.has(key)) return d.get(key) ?? "";
         return base;
-    }, [dirty]);
+    }, []);
 
     const isDirty = useCallback((productId: number, tier: ProductTierKey) => {
-        return dirty.has(`${productId}:${tier}` as DirtyKey);
-    }, [dirty]);
+        return dirtyRef.current.has(`${productId}:${tier}` as DirtyKey);
+    }, []);
 
     const getError = useCallback((productId: number, tier: ProductTierKey) => {
-        return dirtyErrors.get(`${productId}:${tier}` as DirtyKey) ?? null;
-    }, [dirtyErrors]);
+        return dirtyErrorsRef.current.get(`${productId}:${tier}` as DirtyKey) ?? null;
+    }, []);
 
     const getPendingValue = useCallback((productId: number, tier: ProductTierKey) => {
         return pendingMap.get(`${productId}:${tier}` as PendingKey) ?? null;
@@ -591,6 +598,7 @@ export function usePricingMatrix(args: {
                     setDirty(new Map());
                     setDirtyErrors(new Map());
                     setDirtyMeta(new Map());
+                    bumpDirtyVersion();
                     await refresh();
 
                     const skippedMessages = buildSkippedMessages(
@@ -660,6 +668,7 @@ export function usePricingMatrix(args: {
                 setDirty(new Map());
                 setDirtyErrors(new Map());
                 setDirtyMeta(new Map());
+                bumpDirtyVersion();
                 await refresh();
 
                 const skippedMessages = buildSkippedMessages(
@@ -695,82 +704,95 @@ export function usePricingMatrix(args: {
             toast.error(formatSaveErrorMessage(error));
             return { success: false, reason: "api_error" };
         }
-    }, [dirty, dirtyErrors, dirtyMeta, refresh, rows, findCurrentPrice]);
+    }, [dirty, dirtyErrors, dirtyMeta, refresh, rows, findCurrentPrice, bumpDirtyVersion]);
 
     const discardAll = useCallback(() => {
         setDirty(new Map());
         setDirtyErrors(new Map());
         setDirtyMeta(new Map());
-    }, []);
+        bumpDirtyVersion();
+    }, [bumpDirtyVersion]);
 
     const resetFilters = useCallback(() => {
         setFilters(defaultFilters);
         setPage(1);
     }, []);
 
-    return useMemo(() => ({
-        TIERS: matrixTierKeys,
-        loading,
-        error,
-        unauthorized,
-        rows,
-        meta,
-        usedUnits,
-        priceTypes,
+    const matrix = useMemo(
+        () => ({
+            TIERS: matrixTierKeys,
+            loading,
+            error,
+            unauthorized,
+            rows,
+            meta,
+            usedUnits,
+            priceTypes,
 
-        filters,
-        setFilters,
-        resetFilters,
+            filters,
+            setFilters,
+            resetFilters,
 
-        page,
-        setPage,
-        pageSize,
-        setPageSize,
+            page,
+            setPage,
+            pageSize,
+            setPageSize,
 
-        setCell,
-        getCellValue,
-        getPendingValue,
-        isDirty,
-        getError,
+            setCell,
+            getCellValue,
+            getPendingValue,
+            isDirty,
+            getError,
 
-        dirtyCount: dirtyCounts.price + dirtyCounts.cost,
-        priceDirtyCount: dirtyCounts.price,
-        costDirtyCount: dirtyCounts.cost,
-        offPageDirtyCount,
-        dirtyPreviewLines,
-        saveAll,
-        discardAll,
+            refresh,
+        }),
+        [
+            matrixTierKeys,
+            loading,
+            error,
+            unauthorized,
+            rows,
+            meta,
+            usedUnits,
+            priceTypes,
+            filters,
+            setFilters,
+            resetFilters,
+            page,
+            setPage,
+            pageSize,
+            setPageSize,
+            setCell,
+            getCellValue,
+            getPendingValue,
+            isDirty,
+            getError,
+            refresh,
+        ],
+    );
 
-        refresh,
-    }), [
-        matrixTierKeys,
-        loading,
-        error,
-        unauthorized,
-        rows,
-        meta,
-        usedUnits,
-        priceTypes,
-        filters,
-        setFilters,
-        resetFilters,
-        page,
-        setPage,
-        pageSize,
-        setPageSize,
-        setCell,
-        getCellValue,
-        getPendingValue,
-        isDirty,
-        getError,
-        dirty,
-        dirtyCounts,
-        offPageDirtyCount,
-        dirtyPreviewLines,
-        saveAll,
-        discardAll,
-        refresh,
-    ]);
+    const dirtySummary = useMemo(
+        () => ({
+            dirtyVersion,
+            dirtyCount: dirtyCounts.price + dirtyCounts.cost,
+            priceDirtyCount: dirtyCounts.price,
+            costDirtyCount: dirtyCounts.cost,
+            offPageDirtyCount,
+            dirtyPreviewLines,
+            saveAll,
+            discardAll,
+        }),
+        [
+            dirtyVersion,
+            dirtyCounts,
+            offPageDirtyCount,
+            dirtyPreviewLines,
+            saveAll,
+            discardAll,
+        ],
+    );
+
+    return { matrix, dirtySummary };
 }
 
 function parseDirtyProposedValue(raw: string): number | null {

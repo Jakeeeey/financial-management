@@ -16,7 +16,7 @@ type Props = {
 
 const PENDING_EDIT_MESSAGE = "A price change request is pending approval for this cell.";
 
-export default function PriceCell(props: Props) {
+function PriceCell(props: Props) {
     const { value, pendingValue, dirty, error, onChange } = props;
     const hasPending = pendingValue !== null && pendingValue !== undefined;
 
@@ -70,3 +70,5 @@ export default function PriceCell(props: Props) {
         </div>
     );
 }
+
+export default React.memo(PriceCell);

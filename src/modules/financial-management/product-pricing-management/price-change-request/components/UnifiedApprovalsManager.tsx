@@ -23,6 +23,7 @@ import { useRequestBulkSelection } from "../hooks/useRequestBulkSelection";
 import { usePCRActions } from "../hooks/usePCRActions";
 import { pcrApproveButtonClass, pcrRejectButtonClass } from "../utils/pcrStatusStyles";
 import { useUnifiedApprovals } from "../hooks/useUnifiedApprovals";
+import { isUnauthorizedError } from "../../shared/apiHttp";
 import type { SupplierOption } from "../providers/pcrApi";
 import { applyBulkActionResult, type BulkActionOutcome } from "../utils/applyBulkActionResult";
 import {
@@ -48,6 +49,7 @@ type Props = {
     query: ListQuery;
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
     onUnauthorized?: () => void;
+    active?: boolean;
 };
 
 function resolveUnifiedSelectionKey(row: ItemUnifiedApprovalRow): string {
@@ -61,8 +63,9 @@ export function UnifiedApprovalsManager({
     query,
     setQuery,
     onUnauthorized,
+    active = true,
 }: Props) {
-    const feed = useUnifiedApprovals(query, setQuery);
+    const feed = useUnifiedApprovals(query, setQuery, { enabled: active });
     const statusTab: PCRStatusFilter = feed.query.status || "ALL";
 
     const [creatingBatch, setCreatingBatch] = React.useState(false);
@@ -175,15 +178,23 @@ export function UnifiedApprovalsManager({
 
     const handleConfirmBulkPriceApprove = React.useCallback(async () => {
         if (selectedPriceSnapshots.length === 0) return;
-        const result = await approveManyBatches(selectedPriceSnapshots, feed.approveBatch);
-        applyBulkActionResult(
-            result,
-            selectedPriceSnapshots,
-            removePriceSelectionIds,
-            setBulkPriceActionOutcome,
-        );
+        try {
+            const result = await approveManyBatches(selectedPriceSnapshots, feed.approveBatch);
+            applyBulkActionResult(
+                result,
+                selectedPriceSnapshots,
+                removePriceSelectionIds,
+                setBulkPriceActionOutcome,
+            );
+        } catch (error: unknown) {
+            if (isUnauthorizedError(error)) {
+                onUnauthorized?.();
+                return;
+            }
+            throw error;
+        }
         setConfirmingBulkPriceApprove(false);
-    }, [feed.approveBatch, removePriceSelectionIds, selectedPriceSnapshots]);
+    }, [feed.approveBatch, onUnauthorized, removePriceSelectionIds, selectedPriceSnapshots]);
 
     const openRequestReview = React.useCallback((id: number) => {
         const row = feed.rows.find((item) => Number(item.request_id) === id);
@@ -281,15 +292,23 @@ export function UnifiedApprovalsManager({
     const handleRejectSelectedPrice = React.useCallback(
         async (reason: string) => {
             if (selectedPriceSnapshots.length === 0) return;
-            const result = await rejectManyBatches(selectedPriceSnapshots, reason, feed.rejectBatch);
-            applyBulkActionResult(
-                result,
-                selectedPriceSnapshots,
-                removePriceSelectionIds,
-                setBulkPriceActionOutcome,
-            );
+            try {
+                const result = await rejectManyBatches(selectedPriceSnapshots, reason, feed.rejectBatch);
+                applyBulkActionResult(
+                    result,
+                    selectedPriceSnapshots,
+                    removePriceSelectionIds,
+                    setBulkPriceActionOutcome,
+                );
+            } catch (error: unknown) {
+                if (isUnauthorizedError(error)) {
+                    onUnauthorized?.();
+                    return;
+                }
+                throw error;
+            }
         },
-        [feed.rejectBatch, removePriceSelectionIds, selectedPriceSnapshots],
+        [feed.rejectBatch, onUnauthorized, removePriceSelectionIds, selectedPriceSnapshots],
     );
 
     const handleBulkReject = React.useCallback(() => {
@@ -313,8 +332,6 @@ export function UnifiedApprovalsManager({
     React.useEffect(() => {
         if (feed.unauthorized) onUnauthorized?.();
     }, [feed.unauthorized, onUnauthorized]);
-
-    if (feed.unauthorized) return null;
 
     return (
         <div className="space-y-3">
@@ -361,7 +378,21 @@ export function UnifiedApprovalsManager({
                     <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertTitle>Approval records could not be loaded</AlertTitle>
-                        <AlertDescription>{feed.error}</AlertDescription>
+                        <AlertDescription className="space-y-3">
+                            <p>{feed.error}</p>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void feed.refresh()}
+                                disabled={feed.loading}
+                            >
+                                {feed.loading ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Retry
+                            </Button>
+                        </AlertDescription>
                     </Alert>
                 ) : null}
 

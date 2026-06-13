@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PriceControlSearchableSelect } from "../../shared/PriceControlSearchableSelect";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -615,7 +615,7 @@ export function CreatePriceChangeBatchDialog({
                             <Label>
                                 Supplier <span className="text-destructive">*</span>
                             </Label>
-                            <SearchableSelect
+                            <PriceControlSearchableSelect
                                 options={supplierOptions}
                                 value={supplierId}
                                 onValueChange={handleSupplierChange}

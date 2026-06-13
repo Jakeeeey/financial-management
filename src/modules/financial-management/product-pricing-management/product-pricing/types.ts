@@ -90,7 +90,7 @@ export type PricingFilters = {
     brand_ids: number[];
     unit_ids: number[];
 
-    // ✅ multi supplier + scope (hook uses this)
+    // single-select UI; 0 or 1 supplier IDs + scope (hook uses this)
     supplier_ids: number[];
     supplier_scope: "ALL" | "LINKED_ONLY";
 

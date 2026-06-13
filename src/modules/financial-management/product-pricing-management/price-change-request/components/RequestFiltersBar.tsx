@@ -10,8 +10,12 @@ import {
     InputGroupButton,
     InputGroupInput,
 } from "@/components/ui/input-group";
-import { Label } from "@/components/ui/label";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+    FilterField,
+    labelCount,
+    MultiSelectFilter,
+    type MultiSelectOption,
+} from "../../shared/MultiSelectFilter";
 import { CalendarDays, RefreshCw, RotateCcw, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,9 +44,11 @@ type Props = {
 
 function supplierFilterHelperText(
     filterContext: FilterContext,
-    hasSupplier: boolean,
+    supplierCount: number,
 ): string {
-    if (!hasSupplier) {
+    const hasSuppliers = supplierCount > 0;
+
+    if (!hasSuppliers) {
         if (filterContext === "all") return "All suppliers included.";
         if (filterContext === "price") {
             return "All suppliers included. Batches match by header supplier or product-linked batch lines.";
@@ -50,13 +56,18 @@ function supplierFilterHelperText(
         return "All suppliers included. List-cost requests match supplier-linked products (incl. variants).";
     }
 
+    const prefix =
+        supplierCount > 1
+            ? `${supplierCount} suppliers selected. `
+            : "";
+
     if (filterContext === "all") {
-        return "Batches: header supplier or lines for supplier-linked products (incl. variants). List-cost: linked products only.";
+        return `${prefix}Batches: header supplier or lines for supplier-linked products (incl. variants). List-cost: linked products only.`;
     }
     if (filterContext === "price") {
-        return "Batches for this supplier by header or product-linked batch lines (incl. variants).";
+        return `${prefix}Batches for selected suppliers by header or product-linked batch lines (incl. variants).`;
     }
-    return "List-cost requests for supplier-linked products, including unit variants.";
+    return `${prefix}List-cost requests for supplier-linked products, including unit variants.`;
 }
 
 function safeStr(value: unknown): string {
@@ -70,22 +81,20 @@ function supplierText(supplier: SupplierOption): string {
     return shortcut ? `${shortcut} - ${name}` : name || `Supplier #${supplier.id}`;
 }
 
-function FilterField(props: {
-    label: string;
-    helper?: string;
-    children: React.ReactNode;
-    className?: string;
-}) {
-    const { label, helper, children, className } = props;
-
-    return (
-        <div className={["flex min-w-0 flex-col gap-1.5", className].filter(Boolean).join(" ")}>
-            <Label className="text-xs font-medium text-foreground">{label}</Label>
-            {children}
-            {helper ? <p className="text-[11px] leading-snug text-muted-foreground">{helper}</p> : null}
-        </div>
-    );
+function toSupplierIdStrings(ids: number[] | undefined): string[] {
+    return (ids ?? [])
+        .map((id) => String(id))
+        .filter((id) => /^\d+$/.test(id) && Number(id) > 0);
 }
+
+function toNumericSupplierIds(ids: string[]): number[] {
+    return ids
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0);
+}
+
+const DATE_FILTER_DEBOUNCE_MS = 400;
+const SUPPLIER_FILTER_DEBOUNCE_MS = 400;
 
 export function RequestFiltersBar(props: Props) {
     const {
@@ -105,35 +114,109 @@ export function RequestFiltersBar(props: Props) {
         onReset,
     } = props;
 
+    const selectedSupplierIds = React.useMemo(
+        () => toSupplierIdStrings(query.supplier_ids),
+        [query.supplier_ids],
+    );
+
+    const [localSupplierIds, setLocalSupplierIds] = React.useState(() =>
+        toSupplierIdStrings(query.supplier_ids),
+    );
+
     const supplierFilterDisabled = suppliersLoading || Boolean(suppliersError);
     const supplierHelper = suppliersError
         ? "Supplier filter is unavailable until suppliers reload successfully."
         : suppliersLoading
           ? "Loading suppliers..."
-          : supplierFilterHelperText(filterContext, Boolean(query.supplier_id));
+          : supplierFilterHelperText(filterContext, localSupplierIds.length);
 
     const [localQ, setLocalQ] = React.useState(query.q ?? "");
+    const [localDateFrom, setLocalDateFrom] = React.useState(query.date_from ?? "");
+    const [localDateTo, setLocalDateTo] = React.useState(query.date_to ?? "");
 
     React.useEffect(() => {
         setLocalQ(query.q ?? "");
     }, [query.q]);
 
-    const supplierOptions = React.useMemo(
-        () => [
-            { value: "", label: "All suppliers" },
-            ...suppliers.map((supplier) => ({
-                value: String(supplier.id),
+    React.useEffect(() => {
+        setLocalDateFrom(query.date_from ?? "");
+        setLocalDateTo(query.date_to ?? "");
+    }, [query.date_from, query.date_to]);
+
+    React.useEffect(() => {
+        setLocalSupplierIds(toSupplierIdStrings(query.supplier_ids));
+    }, [query.supplier_ids]);
+
+    React.useEffect(() => {
+        const committedSupplierIds = toSupplierIdStrings(query.supplier_ids).join(",");
+        const draftSupplierIds = localSupplierIds.join(",");
+
+        if (draftSupplierIds === committedSupplierIds) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            setQuery((prev) => {
+                const nextSupplierIds = toNumericSupplierIds(localSupplierIds);
+                const sameSuppliers =
+                    JSON.stringify(prev.supplier_ids ?? []) === JSON.stringify(nextSupplierIds);
+                if (sameSuppliers) return prev;
+
+                return {
+                    ...prev,
+                    supplier_ids: nextSupplierIds,
+                    page: 1,
+                };
+            });
+        }, SUPPLIER_FILTER_DEBOUNCE_MS);
+
+        return () => window.clearTimeout(timer);
+    }, [localSupplierIds, query.supplier_ids, setQuery]);
+
+    React.useEffect(() => {
+        const committedFrom = query.date_from ?? "";
+        const committedTo = query.date_to ?? "";
+
+        if (localDateFrom === committedFrom && localDateTo === committedTo) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            setQuery((prev) => {
+                const prevFrom = prev.date_from ?? "";
+                const prevTo = prev.date_to ?? "";
+                if (prevFrom === localDateFrom && prevTo === localDateTo) {
+                    return prev;
+                }
+                return {
+                    ...prev,
+                    date_from: localDateFrom,
+                    date_to: localDateTo,
+                    page: 1,
+                };
+            });
+        }, DATE_FILTER_DEBOUNCE_MS);
+
+        return () => window.clearTimeout(timer);
+    }, [localDateFrom, localDateTo, query.date_from, query.date_to, setQuery]);
+
+    const supplierOptions = React.useMemo<MultiSelectOption[]>(
+        () =>
+            suppliers.map((supplier) => ({
+                id: String(supplier.id),
                 label: supplierText(supplier),
+                search: safeStr(supplier.supplier_name),
             })),
-        ],
         [suppliers],
     );
 
-    const selectedSupplierLabel = React.useMemo(() => {
-        const supplierId = String(query.supplier_id ?? "");
-        if (!supplierId) return "";
-        return supplierOptions.find((option) => option.value === supplierId)?.label ?? `Supplier #${supplierId}`;
-    }, [query.supplier_id, supplierOptions]);
+    const supplierLabelById = React.useMemo(() => {
+        const map = new Map<string, string>();
+        for (const supplier of suppliers) {
+            map.set(String(supplier.id), supplierText(supplier));
+        }
+        return map;
+    }, [suppliers]);
 
     const applySearch = React.useCallback(() => {
         setQuery((prev) => ({
@@ -152,22 +235,11 @@ export function RequestFiltersBar(props: Props) {
         }));
     }, [setQuery]);
 
-    const setSupplier = React.useCallback(
-        (value: string) => {
+    const commitSupplierIds = React.useCallback(
+        (ids: string[]) => {
             setQuery((prev) => ({
                 ...prev,
-                supplier_id: value ? Number(value) : "",
-                page: 1,
-            }));
-        },
-        [setQuery],
-    );
-
-    const setDate = React.useCallback(
-        (key: "date_from" | "date_to", value: string) => {
-            setQuery((prev) => ({
-                ...prev,
-                [key]: value,
+                supplier_ids: toNumericSupplierIds(ids),
                 page: 1,
             }));
         },
@@ -176,10 +248,13 @@ export function RequestFiltersBar(props: Props) {
 
     const resetFilters = React.useCallback(() => {
         setLocalQ("");
+        setLocalDateFrom("");
+        setLocalDateTo("");
+        setLocalSupplierIds([]);
         setQuery((prev) => ({
             ...prev,
             q: "",
-            supplier_id: "",
+            supplier_ids: [],
             date_from: "",
             date_to: "",
             status: "ALL",
@@ -191,7 +266,7 @@ export function RequestFiltersBar(props: Props) {
     const q = safeStr(query.q);
     const hasDateRange = Boolean(query.date_from || query.date_to);
     const hasStatusFilter = Boolean(query.status && query.status !== "ALL");
-    const hasFilters = Boolean(q || query.supplier_id || hasDateRange || hasStatusFilter);
+    const hasFilters = Boolean(q || selectedSupplierIds.length > 0 || hasDateRange || hasStatusFilter);
 
     const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
 
@@ -203,11 +278,16 @@ export function RequestFiltersBar(props: Props) {
         });
     }
 
-    if (query.supplier_id) {
+    for (const id of selectedSupplierIds) {
+        const label = supplierLabelById.get(id) ?? `Supplier #${id}`;
         chips.push({
-            key: "supplier",
-            label: `Supplier: ${selectedSupplierLabel}`,
-            onRemove: () => setSupplier(""),
+            key: `supplier:${id}`,
+            label: `Supplier: ${label}`,
+            onRemove: () => {
+                const next = selectedSupplierIds.filter((value) => value !== id);
+                setLocalSupplierIds(next);
+                commitSupplierIds(next);
+            },
         });
     }
 
@@ -321,24 +401,31 @@ export function RequestFiltersBar(props: Props) {
                         </InputGroup>
                     </FilterField>
 
-                    <FilterField label="Supplier" helper={supplierHelper}>
-                        <SearchableSelect
-                            className="h-10 w-full justify-between bg-background shadow-none"
-                            placeholder={suppliersLoading ? "Loading suppliers..." : "All suppliers"}
-                            value={String(query.supplier_id ?? "")}
-                            onValueChange={setSupplier}
-                            options={supplierOptions}
-                            disabled={supplierFilterDisabled}
-                        />
-                    </FilterField>
+                    <MultiSelectFilter
+                        label="Suppliers"
+                        helper={supplierHelper}
+                        triggerLabel={
+                            suppliersLoading
+                                ? "Loading suppliers..."
+                                : labelCount("Suppliers", localSupplierIds.length, "All suppliers")
+                        }
+                        searchPlaceholder="Search supplier"
+                        emptyText="No suppliers found."
+                        groupLabel="Suppliers"
+                        options={supplierOptions}
+                        selectedIds={localSupplierIds}
+                        onChange={setLocalSupplierIds}
+                        clearTitle="Clear suppliers"
+                        disabled={supplierFilterDisabled}
+                    />
 
                     <FilterField label="From date" helper="Start date.">
                         <div className="flex h-10 min-w-0 items-center gap-2 rounded-md border bg-background px-3">
                             <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
                             <input
                                 type="date"
-                                value={query.date_from ?? ""}
-                                onChange={(event) => setDate("date_from", event.target.value)}
+                                value={localDateFrom}
+                                onChange={(event) => setLocalDateFrom(event.target.value)}
                                 className="min-w-0 flex-1 bg-transparent text-sm outline-none"
                             />
                         </div>
@@ -349,8 +436,8 @@ export function RequestFiltersBar(props: Props) {
                             <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
                             <input
                                 type="date"
-                                value={query.date_to ?? ""}
-                                onChange={(event) => setDate("date_to", event.target.value)}
+                                value={localDateTo}
+                                onChange={(event) => setLocalDateTo(event.target.value)}
                                 className="min-w-0 flex-1 bg-transparent text-sm outline-none"
                             />
                         </div>

@@ -43,7 +43,7 @@ function appendListQuery(sp: URLSearchParams, query: ListQuery) {
     const status = apiStatusParam(query.status);
     if (status) sp.set("status", status);
     if (query.q) sp.set("q", query.q);
-    if (query.supplier_id) sp.set("supplier_id", String(query.supplier_id));
+    if (query.supplier_ids?.length) sp.set("supplier_ids", query.supplier_ids.join(","));
     if (query.date_from) sp.set("date_from", query.date_from);
     if (query.date_to) sp.set("date_to", query.date_to);
     sp.set("page", String(query.page ?? 1));
@@ -147,6 +147,16 @@ export async function getLookups(params?: {
         categories: Array.isArray(d.categories) ? d.categories : [],
         brands: Array.isArray(d.brands) ? d.brands : [],
         units: Array.isArray(d.units) ? d.units : [],
+        suppliers: Array.isArray(d.suppliers) ? d.suppliers : [],
+    };
+}
+
+export async function getSuppliers() {
+    const res = await http<{ data: Pick<LookupsResponse, "suppliers"> }>(
+        `${LOOKUPS_ENDPOINT}?fields=suppliers`,
+    );
+    const d = res.data ?? ({} as Pick<LookupsResponse, "suppliers">);
+    return {
         suppliers: Array.isArray(d.suppliers) ? d.suppliers : [],
     };
 }
@@ -371,29 +381,38 @@ export async function getPricesForProducts(productIds: number[]) {
         return { data: [] as TierPriceRow[] };
     }
 
-    const sp = new URLSearchParams({ product_ids: productIds.join(",") });
-    const res = await http<{ data: unknown[] }>(`/api/fm/product-pricing/prices?${sp.toString()}`);
+    const chunks: number[][] = [];
+    for (let i = 0; i < productIds.length; i += PRODUCT_IDS_CHUNK_SIZE) {
+        chunks.push(productIds.slice(i, i + PRODUCT_IDS_CHUNK_SIZE));
+    }
 
-    const data = (res.data ?? [])
-        .map((item): TierPriceRow | null => {
-            if (!isRecord(item)) return null;
+    const results = await Promise.all(
+        chunks.map(async (chunk) => {
+            const sp = new URLSearchParams({ product_ids: chunk.join(",") });
+            const res = await http<{ data: unknown[] }>(`/api/fm/product-pricing/prices?${sp.toString()}`);
 
-            const productId = Number(item.product_id);
-            const priceTypeId = Number(item.price_type_id);
-            if (!Number.isFinite(productId) || productId <= 0) return null;
-            if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) return null;
+            return (res.data ?? [])
+                .map((item): TierPriceRow | null => {
+                    if (!isRecord(item)) return null;
 
-            const price = toNullableNumber(item.price);
+                    const productId = Number(item.product_id);
+                    const priceTypeId = Number(item.price_type_id);
+                    if (!Number.isFinite(productId) || productId <= 0) return null;
+                    if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) return null;
 
-            return {
-                product_id: productId,
-                price_type_id: priceTypeId,
-                price,
-            };
-        })
-        .filter((row): row is TierPriceRow => row !== null);
+                    const price = toNullableNumber(item.price);
 
-    return { data };
+                    return {
+                        product_id: productId,
+                        price_type_id: priceTypeId,
+                        price,
+                    };
+                })
+                .filter((row): row is TierPriceRow => row !== null);
+        }),
+    );
+
+    return { data: results.flat() };
 }
 
 export async function listPriceChangeBatches(query: ListQuery) {

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { BulkActionResult } from "../types";
 import * as api from "../providers/pcrApi";
 import { applyActionError } from "../../shared/loadErrorState";
+import { isUnauthorizedError } from "../../shared/apiHttp";
 
 function getErrorMessage(error: unknown, fallback: string): string {
     if (error instanceof Error && error.message) return error.message;
@@ -47,6 +48,7 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
             const successIds: number[] = [];
             const failedIds: number[] = [];
             const failures: BulkActionResult["failures"] = [];
+            let unauthorized = false;
 
             try {
                 for (const request_id of uniqueIds) {
@@ -55,6 +57,7 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
                         successIds.push(request_id);
                     } catch (error: unknown) {
                         if (applyActionError(error, "Request failed", { onUnauthorized })) {
+                            unauthorized = isUnauthorizedError(error);
                             break;
                         }
                         failedIds.push(request_id);
@@ -65,19 +68,21 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
                     }
                 }
 
-                if (successIds.length > 0 && failedIds.length === 0) {
-                    toast.success(`${successIds.length} request(s) approved and applied.`);
-                } else if (failedIds.length > 0) {
-                    const successPart =
-                        successIds.length > 0 ? `${successIds.length} approved, ` : "";
-                    toast.warning(`${successPart}${failedIds.length} failed — see details`);
+                if (!unauthorized) {
+                    if (successIds.length > 0 && failedIds.length === 0) {
+                        toast.success(`${successIds.length} request(s) approved and applied.`);
+                    } else if (failedIds.length > 0) {
+                        const successPart =
+                            successIds.length > 0 ? `${successIds.length} approved, ` : "";
+                        toast.warning(`${successPart}${failedIds.length} failed — see details`);
+                    }
+
+                    if (successIds.length > 0) {
+                        onDone?.();
+                    }
                 }
 
-                if (successIds.length > 0) {
-                    onDone?.();
-                }
-
-                return { action: "approve", successIds, failedIds, failures };
+                return { action: "approve", successIds, failedIds, failures, unauthorized };
             } finally {
                 setActing(false);
             }
@@ -130,6 +135,7 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
             const successIds: number[] = [];
             const failedIds: number[] = [];
             const failures: BulkActionResult["failures"] = [];
+            let unauthorized = false;
 
             try {
                 for (const request_id of uniqueIds) {
@@ -138,6 +144,7 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
                         successIds.push(request_id);
                     } catch (error: unknown) {
                         if (applyActionError(error, "Request failed", { onUnauthorized })) {
+                            unauthorized = isUnauthorizedError(error);
                             break;
                         }
                         failedIds.push(request_id);
@@ -148,19 +155,21 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
                     }
                 }
 
-                if (successIds.length > 0 && failedIds.length === 0) {
-                    toast.success(`${successIds.length} request(s) rejected.`);
-                } else if (failedIds.length > 0) {
-                    const successPart =
-                        successIds.length > 0 ? `${successIds.length} rejected, ` : "";
-                    toast.warning(`${successPart}${failedIds.length} failed — see details`);
+                if (!unauthorized) {
+                    if (successIds.length > 0 && failedIds.length === 0) {
+                        toast.success(`${successIds.length} request(s) rejected.`);
+                    } else if (failedIds.length > 0) {
+                        const successPart =
+                            successIds.length > 0 ? `${successIds.length} rejected, ` : "";
+                        toast.warning(`${successPart}${failedIds.length} failed — see details`);
+                    }
+
+                    if (successIds.length > 0) {
+                        onDone?.();
+                    }
                 }
 
-                if (successIds.length > 0) {
-                    onDone?.();
-                }
-
-                return { action: "reject", successIds, failedIds, failures };
+                return { action: "reject", successIds, failedIds, failures, unauthorized };
             } finally {
                 setActing(false);
             }
