@@ -292,7 +292,7 @@ export default function PricingFiltersBar(props: Props) {
     );
 
     const [localQ, setLocalQ] = React.useState(filters.q);
-    const [advancedOpen, setAdvancedOpen] = React.useState(false);
+    const [advancedOpen, setAdvancedOpen] = React.useState(true);
 
     React.useEffect(() => {
         setLocalQ(filters.q);
@@ -484,7 +484,7 @@ export default function PricingFiltersBar(props: Props) {
     const resetAllFilters = React.useCallback(() => {
         resetFilters();
         setLocalQ("");
-        setAdvancedOpen(false);
+        setAdvancedOpen(true);
     }, [resetFilters]);
 
     const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
@@ -538,26 +538,14 @@ export default function PricingFiltersBar(props: Props) {
         });
     }
 
-    if (filters.price_view === "ALL") {
-        chips.push({
-            key: "price_view_all",
-            label: "Price view: All prices",
-            onRemove: () =>
-                setFilters((prev) => ({
-                    ...prev,
-                    price_view: "FOCUSED",
-                    price_type_ids: [],
-                    show_list_price: false,
-                })),
-        });
-    } else if (filters.price_view === "LIST") {
+    if (filters.price_view === "LIST") {
         chips.push({
             key: "price_view_list",
             label: "Price view: List Cost",
             onRemove: () =>
                 setFilters((prev) => ({
                     ...prev,
-                    price_view: "FOCUSED",
+                    price_view: "ALL",
                     price_type_ids: [],
                     show_list_price: false,
                 })),
@@ -571,7 +559,7 @@ export default function PricingFiltersBar(props: Props) {
             onRemove: () =>
                 setFilters((prev) => ({
                     ...prev,
-                    price_view: "FOCUSED",
+                    price_view: "ALL",
                     price_type_ids: [],
                     show_list_price: false,
                 })),
@@ -596,7 +584,7 @@ export default function PricingFiltersBar(props: Props) {
 
     const hasNonDefaultFilters =
         chips.length > 0 ||
-        filters.price_view !== "FOCUSED" ||
+        filters.price_view !== "ALL" ||
         selectedPriceTypeIds.length > 0 ||
         Boolean(filters.show_list_price);
 

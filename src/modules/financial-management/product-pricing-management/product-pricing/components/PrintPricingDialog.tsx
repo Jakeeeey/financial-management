@@ -25,6 +25,7 @@ import { generatePricingMatrixPdf } from "../utils/printPdf";
 
 type Paper = "a4" | "legal" | "a3";
 type Orient = "landscape" | "portrait";
+type PrintLayout = "table" | "cards";
 
 type Props = {
     open: boolean;
@@ -49,9 +50,11 @@ export default function PrintPricingDialog(props: Props) {
     const [fontSize, setFontSize] = React.useState<number>(6);
     const [compact, setCompact] = React.useState(true);
     const [includeBarcode, setIncludeBarcode] = React.useState(true);
+    const [layout, setLayout] = React.useState<PrintLayout>("table");
 
     const downloadPdf = React.useCallback(() => {
         generatePricingMatrixPdf(rows, {
+            layout,
             paper,
             orientation,
             fontSize,
@@ -62,7 +65,7 @@ export default function PrintPricingDialog(props: Props) {
             units: props.units,
             usedUnitIds: props.usedUnitIds,
         });
-    }, [rows, paper, orientation, fontSize, compact, includeBarcode, props.priceTypes, props.tiers, props.units, props.usedUnitIds]);
+    }, [rows, layout, paper, orientation, fontSize, compact, includeBarcode, props.priceTypes, props.tiers, props.units, props.usedUnitIds]);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -86,6 +89,12 @@ export default function PrintPricingDialog(props: Props) {
                                     {filtersText ? filtersText : "(none)"}
                                 </span>
                             </div>
+                            <div className="text-xs text-muted-foreground">
+                                Prepared:{" "}
+                                <span className="text-foreground/80">
+                                    {rows.length.toLocaleString()} product group{rows.length === 1 ? "" : "s"}
+                                </span>
+                            </div>
                         </div>
 
                         <Separator className="mt-5" />
@@ -94,6 +103,19 @@ export default function PrintPricingDialog(props: Props) {
                     <div className="px-6 py-5">
                         <div className="grid gap-4">
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <div className="space-y-2">
+                                    <Label className="text-xs text-muted-foreground">Layout</Label>
+                                    <Select value={layout} onValueChange={(v) => setLayout(v as PrintLayout)}>
+                                        <SelectTrigger className="h-11 rounded-xl">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="table">Table</SelectItem>
+                                            <SelectItem value="cards">Cards</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
                                 <div className="space-y-2">
                                     <Label className="text-xs text-muted-foreground">Paper</Label>
                                     <Select value={paper} onValueChange={(v) => setPaper(v as Paper)}>
@@ -107,7 +129,9 @@ export default function PrintPricingDialog(props: Props) {
                                         </SelectContent>
                                     </Select>
                                 </div>
+                            </div>
 
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label className="text-xs text-muted-foreground">Orientation</Label>
                                     <Select
@@ -123,9 +147,7 @@ export default function PrintPricingDialog(props: Props) {
                                         </SelectContent>
                                     </Select>
                                 </div>
-                            </div>
 
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label className="text-xs text-muted-foreground">Font size</Label>
                                     <Select
@@ -144,34 +166,33 @@ export default function PrintPricingDialog(props: Props) {
                                         </SelectContent>
                                     </Select>
                                 </div>
+                            </div>
 
-                                <div className="space-y-2">
-                                    <Label className="text-xs text-muted-foreground">Options</Label>
-
-                                    <div className="grid gap-2">
-                                        <label className="flex items-center justify-between rounded-xl border px-4 py-3">
-                                            <div className="min-w-0">
-                                                <div className="text-sm font-medium leading-none">Compact</div>
-                                                <div className="mt-1 text-xs text-muted-foreground">
-                                                    Tighter row height.
-                                                </div>
+                            <div className="space-y-2">
+                                <Label className="text-xs text-muted-foreground">Options</Label>
+                                <div className="grid gap-2 md:grid-cols-2">
+                                    <label className="flex items-center justify-between rounded-xl border px-4 py-3">
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-medium leading-none">Compact</div>
+                                            <div className="mt-1 text-xs text-muted-foreground">
+                                                Tighter spacing.
                                             </div>
-                                            <Switch checked={compact} onCheckedChange={setCompact} />
-                                        </label>
+                                        </div>
+                                        <Switch checked={compact} onCheckedChange={setCompact} />
+                                    </label>
 
-                                        <label className="flex items-center justify-between rounded-xl border px-4 py-3">
-                                            <div className="min-w-0">
-                                                <div className="text-sm font-medium leading-none">Barcode</div>
-                                                <div className="mt-1 text-xs text-muted-foreground">
-                                                    Include barcode column.
-                                                </div>
+                                    <label className="flex items-center justify-between rounded-xl border px-4 py-3">
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-medium leading-none">Barcode</div>
+                                            <div className="mt-1 text-xs text-muted-foreground">
+                                                Include barcode details.
                                             </div>
-                                            <Switch
-                                                checked={includeBarcode}
-                                                onCheckedChange={setIncludeBarcode}
-                                            />
-                                        </label>
-                                    </div>
+                                        </div>
+                                        <Switch
+                                            checked={includeBarcode}
+                                            onCheckedChange={setIncludeBarcode}
+                                        />
+                                    </label>
                                 </div>
                             </div>
                         </div>

@@ -54,7 +54,7 @@ const defaultFilters: PricingFilters = {
     supplier_scope: "ALL",
     active_only: true,
     missing_tier: false,
-    price_view: "FOCUSED",
+    price_view: "ALL",
     price_type_ids: [],
     show_list_price: false,
 };

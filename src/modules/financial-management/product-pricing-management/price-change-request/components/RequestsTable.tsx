@@ -4,18 +4,28 @@ import * as React from "react";
 import type { ListMeta, PriceChangeRequestRow, CostChangeRequestRow } from "../types";
 import { productLabel, priceTypeLabel, uomLabel } from "../utils/labels";
 
-import { Eye } from "lucide-react";
-
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 function fmt(v: number | string | null | undefined) {
     const n = Number(v);
     if (!Number.isFinite(n)) return "—";
     return n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function requestedAtParts(value: string | null | undefined) {
+    if (!value) return { date: "â€”", time: "" };
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return { date: "â€”", time: "" };
+
+    return {
+        date: date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
+        time: date.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
+    };
 }
 
 function safeInt(v: number | string | null | undefined, fallback = 0) {
@@ -42,15 +52,86 @@ function getTotalPages(meta: ListMeta | null | undefined, pageSize: number, curr
     return 0;
 }
 
+type LoadingTableBodyProps = {
+    rowCount: number;
+    showSelectionColumn: boolean;
+    showTypeColumn: boolean;
+    showActionsColumn: boolean;
+};
+
+function LoadingTableBody({
+    rowCount,
+    showSelectionColumn,
+    showTypeColumn,
+    showActionsColumn,
+}: LoadingTableBodyProps) {
+    return (
+        <>
+            {Array.from({ length: rowCount }).map((_, index) => (
+                <TableRow key={`loading-row-${index}`} className="hover:bg-transparent">
+                    {showSelectionColumn ? (
+                        <TableCell className="px-2">
+                            <div className="flex items-center justify-center">
+                                <Skeleton className="h-[18px] w-[18px] rounded-sm" />
+                            </div>
+                        </TableCell>
+                    ) : null}
+                    <TableCell className="px-2">
+                        <Skeleton className="h-4 w-14" />
+                    </TableCell>
+                    <TableCell className="px-2">
+                        <Skeleton className="h-4 w-full max-w-[180px]" />
+                    </TableCell>
+                    <TableCell className="px-2">
+                        <Skeleton className="h-5 w-10 rounded-md" />
+                    </TableCell>
+                    {showTypeColumn ? (
+                        <TableCell className="px-2">
+                            <Skeleton className="h-4 w-12" />
+                        </TableCell>
+                    ) : null}
+                    <TableCell className="px-2">
+                        <div className="flex flex-col items-end gap-1">
+                            <Skeleton className="h-4 w-16" />
+                            <Skeleton className="h-3 w-20" />
+                        </div>
+                    </TableCell>
+                    <TableCell className="px-2">
+                        <Skeleton className="h-5 w-16 rounded-full" />
+                    </TableCell>
+                    <TableCell className="px-2">
+                        <Skeleton className="mb-1 h-3 w-16" />
+                        <Skeleton className="h-3 w-12" />
+                    </TableCell>
+                    {showActionsColumn ? (
+                        <TableCell className="px-2 text-right">
+                            <div className="inline-flex justify-end gap-1">
+                                <Skeleton className="h-7 w-14 rounded-md" />
+                                <Skeleton className="h-7 w-16 rounded-md" />
+                                <Skeleton className="h-7 w-14 rounded-md" />
+                            </div>
+                        </TableCell>
+                    ) : null}
+                </TableRow>
+            ))}
+        </>
+    );
+}
+
 type Props = {
     rows: (PriceChangeRequestRow | CostChangeRequestRow)[];
     mode: "approver" | "mine" | "all";
-    requestType?: "price" | "cost";
+    requestType?: "price" | "cost" | "mixed";
+    loading?: boolean;
     acting?: boolean;
     onApprove?: (id: number) => void;
     onReject?: (id: number) => void;
     onReview?: (id: number) => void;
     onCancel?: (id: number) => void;
+    canSelectRow?: (row: PriceChangeRequestRow | CostChangeRequestRow) => boolean;
+    canReviewRow?: (row: PriceChangeRequestRow | CostChangeRequestRow) => boolean;
+    canApproveRow?: (row: PriceChangeRequestRow | CostChangeRequestRow) => boolean;
+    canRejectRow?: (row: PriceChangeRequestRow | CostChangeRequestRow) => boolean;
 
     meta?: ListMeta | null;
     page: number;
@@ -61,15 +142,23 @@ type Props = {
     footerItemLabel?: string;
 
     selectedIds?: number[];
+    selectedKeys?: string[];
+    getSelectionKey?: (row: PriceChangeRequestRow | CostChangeRequestRow) => string;
     onToggleSelect?: (
-        id: number,
+        key: string,
         checked: boolean,
         row?: PriceChangeRequestRow | CostChangeRequestRow,
     ) => void;
     onToggleSelectAllPage?: (checked: boolean) => void;
+
+    showSelectionColumn?: boolean;
+    showActionsColumn?: boolean;
 };
 
 export default function RequestsTable(props: Props) {
+    const mode = props.mode;
+    const canSelectRow = props.canSelectRow;
+    const getSelectionKey = props.getSelectionKey;
     const requestType = props.requestType ?? "price";
     const rows = React.useMemo<(PriceChangeRequestRow | CostChangeRequestRow)[]>(
         () => props.rows ?? [],
@@ -90,94 +179,135 @@ export default function RequestsTable(props: Props) {
 
     const itemLabel = (props.footerItemLabel ?? "requests").trim() || "requests";
 
-    const selectedIdSet = React.useMemo(() => new Set(props.selectedIds ?? []), [props.selectedIds]);
+    const resolveSelectionKey = React.useCallback(
+        (row: PriceChangeRequestRow | CostChangeRequestRow) =>
+            getSelectionKey?.(row) ?? String(Number(row.request_id)),
+        [getSelectionKey],
+    );
+
+    const selectedKeySet = React.useMemo(() => {
+        if (props.selectedKeys) return new Set(props.selectedKeys);
+        return new Set((props.selectedIds ?? []).map((id) => String(id)));
+    }, [props.selectedIds, props.selectedKeys]);
+
+    const showSelectionColumn = props.showSelectionColumn ?? mode === "approver";
+    const showActionsColumn =
+        props.showActionsColumn ?? Boolean(props.onReview || props.onApprove || props.onReject);
 
     const selectableRows = React.useMemo(
         () =>
-            props.mode === "approver"
-                ? rows.filter((r) => r.status === "PENDING")
+            showSelectionColumn
+                ? rows.filter((r) => r.status === "PENDING" && (canSelectRow?.(r) ?? true))
                 : [],
-        [props.mode, rows],
+        [canSelectRow, showSelectionColumn, rows],
     );
 
-    const selectableIds = React.useMemo(
-        () => selectableRows.map((r) => Number(r.request_id)).filter((id) => Number.isFinite(id)),
-        [selectableRows],
+    const selectableKeys = React.useMemo(
+        () => selectableRows.map((r) => resolveSelectionKey(r)),
+        [resolveSelectionKey, selectableRows],
     );
 
-    const selectedOnPageCount = selectableIds.filter((id) => selectedIdSet.has(id)).length;
-    const allPageSelected = selectableIds.length > 0 && selectedOnPageCount === selectableIds.length;
-    const somePageSelected = selectedOnPageCount > 0 && selectedOnPageCount < selectableIds.length;
+    const canToggleSelect = Boolean(props.onToggleSelect);
+    const canToggleSelectAllPage = Boolean(props.onToggleSelectAllPage);
+    const selectedOnPageCount = selectableKeys.filter((key) => selectedKeySet.has(key)).length;
+    const allPageSelected = selectableKeys.length > 0 && selectedOnPageCount === selectableKeys.length;
+    const somePageSelected = selectedOnPageCount > 0 && selectedOnPageCount < selectableKeys.length;
 
-    const colSpan = (props.mode === "approver" ? 9 : 7) - (requestType === "cost" ? 1 : 0);
+    const showTypeColumn = requestType !== "cost";
+    const loading = Boolean(props.loading);
+    const skeletonRowCount = Math.min(pageSize, 8);
+    let colSpan = 6;
+    if (showTypeColumn) colSpan += 1;
+    if (showSelectionColumn) colSpan += 1;
+    if (showActionsColumn) colSpan += 1;
 
     return (
-        <div className="rounded-xl border bg-background">
-            <Table>
+        <div className="overflow-hidden rounded-xl border bg-background">
+            <Table className="w-full table-fixed">
                 <TableHeader className="sticky top-0 z-10 bg-background shadow-sm">
                     <TableRow>
-                        {props.mode === "approver" && (
-                            <TableHead className="w-[52px]">
+                        {showSelectionColumn ? (
+                            <TableHead className="w-10 px-2">
                                 <Checkbox
                                     checked={allPageSelected ? true : somePageSelected ? "indeterminate" : false}
                                     onCheckedChange={(checked) => props.onToggleSelectAllPage?.(checked === true)}
                                     aria-label="Select all pending requests on this page"
-                                    disabled={selectableIds.length === 0 || props.acting}
+                                    disabled={selectableKeys.length === 0 || props.acting || !canToggleSelectAllPage}
                                 />
                             </TableHead>
-                        )}
-                        <TableHead className="w-[110px]">Request #</TableHead>
-                        <TableHead>Product</TableHead>
-                        <TableHead className="w-[100px]">UOM</TableHead>
-                        {requestType === "price" && <TableHead className="w-[90px]">Type</TableHead>}
-                        <TableHead className="w-[140px] text-right">Proposed</TableHead>
-                        <TableHead className="w-[140px]">Status</TableHead>
-                        <TableHead className="w-[170px]">Requested At</TableHead>
-                        {props.mode === "approver" && <TableHead className="min-w-[280px] text-right">Actions</TableHead>}
+                        ) : null}
+                        <TableHead className="w-[88px] px-2">Request #</TableHead>
+                        <TableHead className="px-2">Product</TableHead>
+                        <TableHead className="w-[72px] px-2">UOM</TableHead>
+                        {showTypeColumn && <TableHead className="w-[78px] px-2">Type</TableHead>}
+                        <TableHead className="w-[112px] px-2 text-right">Proposed</TableHead>
+                        <TableHead className="w-[102px] px-2">Status</TableHead>
+                        <TableHead className="w-[108px] px-2">Requested</TableHead>
+                        {showActionsColumn ? (
+                            <TableHead className="w-[188px] px-2 text-right">Actions</TableHead>
+                        ) : null}
                     </TableRow>
                 </TableHeader>
 
                 <TableBody>
                     {rows.map((r) => {
                         const id = Number(r.request_id);
+                        const selectionKey = resolveSelectionKey(r);
                         const isPending = r.status === "PENDING";
-                        const isSelected = selectedIdSet.has(id);
+                        const isSelected = selectedKeySet.has(selectionKey);
+                        const isCostRow = "proposed_cost" in r;
+                        const rowType = requestType === "mixed" ? (isCostRow ? "cost" : "price") : requestType;
+                        const canSelect = props.canSelectRow?.(r) ?? true;
+                        const canReview = props.canReviewRow?.(r) ?? true;
+                        const canApprove = props.canApproveRow?.(r) ?? true;
+                        const canReject = props.canRejectRow?.(r) ?? true;
 
-                        const proposedValue = requestType === "cost" 
-                            ? (r as CostChangeRequestRow).proposed_cost 
+                        const proposedValue = rowType === "cost"
+                            ? (r as CostChangeRequestRow).proposed_cost
                             : (r as PriceChangeRequestRow).proposed_price;
+                        const requestedAt = requestedAtParts(r.requested_at);
 
                         return (
-                            <TableRow key={id}>
-                                {props.mode === "approver" && (
-                                <TableCell>
-                                    <div className="flex items-center justify-center p-1">
+                            <TableRow key={selectionKey}>
+                                {showSelectionColumn ? (
+                                <TableCell className="px-2">
+                                    <div className="flex items-center justify-center">
                                         <Checkbox
                                             className="h-[18px] w-[18px]"
                                             checked={isSelected}
                                             onCheckedChange={(checked) =>
-                                                props.onToggleSelect?.(id, checked === true, r)
+                                                props.onToggleSelect?.(selectionKey, checked === true, r)
                                             }
-                                            aria-label={`Select request PCR-${id}`}
-                                            disabled={props.acting || !isPending}
+                                            aria-label={`Select request ${rowType === "cost" ? "CCR" : "PCR"}-${id}`}
+                                            disabled={props.acting || !isPending || !canToggleSelect || !canSelect}
                                         />
                                     </div>
                                 </TableCell>
-                                )}
+                                ) : null}
 
-                                <TableCell className="font-medium">{requestType === "cost" ? "CCR" : "PCR"}-{id}</TableCell>
-                                <TableCell className="max-w-[420px] truncate">{productLabel(r as PriceChangeRequestRow)}</TableCell>
-                                <TableCell>
+                                <TableCell className="truncate px-2 font-medium" title={`${rowType === "cost" ? "CCR" : "PCR"}-${id}`}>
+                                    {rowType === "cost" ? "CCR" : "PCR"}-{id}
+                                </TableCell>
+                                <TableCell className="min-w-0 truncate px-2" title={productLabel(r as PriceChangeRequestRow)}>
+                                    {productLabel(r as PriceChangeRequestRow)}
+                                </TableCell>
+                                <TableCell className="px-2">
                                     <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                                         {uomLabel(r as PriceChangeRequestRow)}
                                     </span>
                                 </TableCell>
-                                {requestType === "price" && <TableCell>{priceTypeLabel(r as PriceChangeRequestRow)}</TableCell>}
-                                <TableCell className="text-right">
+                                {showTypeColumn && (
+                                    <TableCell className="truncate px-2" title={rowType === "cost" ? "List Cost" : priceTypeLabel(r as PriceChangeRequestRow)}>
+                                        <span className="block truncate">
+                                            {rowType === "cost" ? "List Cost" : priceTypeLabel(r as PriceChangeRequestRow)}
+                                        </span>
+                                    </TableCell>
+                                )}
+                                <TableCell className="px-2 text-right">
                                     <div className="flex flex-col items-end gap-0.5">
                                         <div className="text-sm font-semibold">{fmt(proposedValue)}</div>
                                         {(() => {
-                                            const currentCost = requestType === "cost" 
+                                            const currentCost = rowType === "cost"
                                                 ? (r as CostChangeRequestRow).current_cost
                                                 : typeof r.product_id === "object" ? r.product_id.cost_per_unit : null;
                                             
@@ -187,7 +317,7 @@ export default function RequestsTable(props: Props) {
                                             if (currentNum > 0 && Number.isFinite(proposedNum)) {
                                                 const diffPct = ((proposedNum - currentNum) / currentNum) * 100;
                                                 return (
-                                                    <div className="flex items-center text-xs gap-1">
+                                                    <div className="flex max-w-full items-center gap-1 text-xs">
                                                         <span className="text-muted-foreground line-through" title="Cost Price">{fmt(currentNum)}</span>
                                                         <span className={diffPct > 0 ? "text-green-600 dark:text-green-400 font-medium" : diffPct < 0 ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground font-medium"}>
                                                             {diffPct > 0 ? "+" : ""}{diffPct.toFixed(2)}%
@@ -199,53 +329,73 @@ export default function RequestsTable(props: Props) {
                                         })()}
                                     </div>
                                 </TableCell>
-                                <TableCell>
-                                    <Badge variant="outline" className={pcrStatusBadgeClass(r.status)}>
+                                <TableCell className="px-2">
+                                    <Badge variant="outline" className={`${pcrStatusBadgeClass(r.status)} max-w-full truncate px-2 text-[11px]`}>
                                         {r.status}
                                     </Badge>
                                 </TableCell>
-                                <TableCell>{r.requested_at ? new Date(r.requested_at).toLocaleString() : "—"}</TableCell>
+                                <TableCell className="px-2">
+                                    <div className="min-w-0 text-xs leading-tight">
+                                        <div className="truncate">{requestedAt.date}</div>
+                                        {requestedAt.time ? (
+                                            <div className="truncate text-muted-foreground">{requestedAt.time}</div>
+                                        ) : null}
+                                    </div>
+                                </TableCell>
 
-                                {props.mode === "approver" && (
-                                    <TableCell className="text-right">
-                                        <div className="inline-flex flex-nowrap items-center justify-end gap-2">
-                                            {props.onReview ? (
+                                {showActionsColumn ? (
+                                    <TableCell className="whitespace-nowrap px-2 text-right">
+                                        <div className="inline-flex flex-nowrap items-center justify-end gap-1">
+                                            {props.onReview && canReview ? (
                                                 <Button
                                                     size="sm"
                                                     variant="outline"
+                                                    className="h-7 px-2 text-[11px]"
                                                     onClick={() => props.onReview?.(id)}
                                                     disabled={props.acting}
+                                                    aria-label="Review request"
                                                 >
-                                                    <Eye className="mr-2 size-4" />
                                                     Review
                                                 </Button>
                                             ) : null}
-                                            <Button size="sm" className={pcrApproveButtonClass} onClick={() => props.onApprove?.(id)} disabled={props.acting || !isPending}>
+                                            <Button
+                                                size="sm"
+                                                className={`${pcrApproveButtonClass} h-7 px-2 text-[11px]`}
+                                                onClick={() => props.onApprove?.(id)}
+                                                disabled={props.acting || !isPending || !props.onApprove || !canApprove}
+                                            >
                                                 Approve
                                             </Button>
                                             <Button
                                                 size="sm"
                                                 variant="outline"
-                                                className={pcrRejectButtonClass}
+                                                className={`${pcrRejectButtonClass} h-7 px-2 text-[11px]`}
                                                 onClick={() => props.onReject?.(id)}
-                                                disabled={props.acting || !isPending}
+                                                disabled={props.acting || !isPending || !props.onReject || !canReject}
                                             >
                                                 Reject
                                             </Button>
                                         </div>
                                     </TableCell>
-                                )}
+                                ) : null}
                             </TableRow>
                         );
                     })}
 
-                    {rows.length === 0 && (
+                    {rows.length === 0 && loading ? (
+                        <LoadingTableBody
+                            rowCount={skeletonRowCount}
+                            showSelectionColumn={showSelectionColumn}
+                            showTypeColumn={showTypeColumn}
+                            showActionsColumn={showActionsColumn}
+                        />
+                    ) : rows.length === 0 ? (
                         <TableRow>
                             <TableCell colSpan={colSpan} className="py-10 text-center text-muted-foreground">
                                 No requests found.
                             </TableCell>
                         </TableRow>
-                    )}
+                    ) : null}
                 </TableBody>
             </Table>
 
@@ -287,14 +437,14 @@ export default function RequestsTable(props: Props) {
                         </div>
                     ) : null}
 
-                    <Button variant="outline" size="sm" disabled={!canPrev} onClick={() => props.onPageChange(page - 1)}>
+                    <Button variant="outline" size="sm" disabled={loading || !canPrev} onClick={() => props.onPageChange(page - 1)}>
                         Prev
                     </Button>
 
                     <Button
                         variant="outline"
                         size="sm"
-                        disabled={!canNext}
+                        disabled={loading || !canNext}
                         onClick={() => props.onPageChange(totalPages > 0 ? Math.min(page + 1, totalPages) : page + 1)}
                     >
                         Next

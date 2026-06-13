@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import type { ListQuery, UnifiedApprovalRow } from "../types";
+import type { ItemUnifiedApprovalRow, ListQuery } from "../types";
 import * as api from "../providers/pcrApi";
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -15,9 +15,9 @@ export function useUnifiedApprovals(
     query: ListQuery,
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>,
 ) {
-    const [rows, setRows] = React.useState<UnifiedApprovalRow[]>([]);
+    const [rows, setRows] = React.useState<ItemUnifiedApprovalRow[]>([]);
     const [total, setTotal] = React.useState(0);
-    const [loading, setLoading] = React.useState(false);
+    const [loading, setLoading] = React.useState(true);
     const [acting, setActing] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
 
@@ -50,6 +50,7 @@ export function useUnifiedApprovals(
             await refresh();
         } catch (error: unknown) {
             toast.error(getErrorMessage(error, "Failed to approve batch"));
+            throw error;
         } finally {
             setActing(false);
         }
@@ -63,6 +64,7 @@ export function useUnifiedApprovals(
             await refresh();
         } catch (error: unknown) {
             toast.error(getErrorMessage(error, "Failed to reject batch"));
+            throw error;
         } finally {
             setActing(false);
         }

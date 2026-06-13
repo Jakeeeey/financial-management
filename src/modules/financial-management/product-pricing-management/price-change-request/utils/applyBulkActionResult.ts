@@ -1,15 +1,15 @@
 import type { BulkActionResult, ListCostSelectionSnapshot } from "../types";
 
-export type BulkActionOutcome = {
+export type BulkActionOutcome<TSnapshot extends { request_id: number } = ListCostSelectionSnapshot> = {
     result: BulkActionResult;
-    snapshots: ListCostSelectionSnapshot[];
+    snapshots: TSnapshot[];
 };
 
-export function applyBulkActionResult(
+export function applyBulkActionResult<TSnapshot extends { request_id: number }>(
     result: BulkActionResult,
-    snapshots: ListCostSelectionSnapshot[],
+    snapshots: TSnapshot[],
     removeSelectionIds: (ids: number[]) => void,
-    setBulkActionOutcome: (outcome: BulkActionOutcome | null) => void,
+    setBulkActionOutcome: (outcome: BulkActionOutcome<TSnapshot> | null) => void,
 ) {
     if (result.successIds.length > 0) {
         removeSelectionIds(result.successIds);

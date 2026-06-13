@@ -17,16 +17,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-import type { UnifiedApprovalRow } from "../types";
+import type { PriceTypeUnifiedApprovalRow } from "../types";
+import { priceTypeLabel } from "../utils/labels";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
-    row: UnifiedApprovalRow | null;
+    row: PriceTypeUnifiedApprovalRow | null;
     open: boolean;
     acting: boolean;
     onOpenChange: (open: boolean) => void;
-    onApprove: (requestId: number) => Promise<void>;
-    onReject: (requestId: number, reason: string) => Promise<void>;
+    onApproveBatch: (headerId: number) => Promise<void>;
+    onRejectBatch: (headerId: number, reason: string) => Promise<void>;
 };
 
 function money(value: number | null | undefined) {
@@ -51,13 +52,13 @@ function deltaClass(current: number | null | undefined, proposed: number | null 
     return "text-muted-foreground";
 }
 
-export function ListPriceRequestDetailDialog({
+export function PriceTypeRequestDetailDialog({
     row,
     open,
     acting,
     onOpenChange,
-    onApprove,
-    onReject,
+    onApproveBatch,
+    onRejectBatch,
 }: Props) {
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
@@ -71,13 +72,13 @@ export function ListPriceRequestDetailDialog({
         }
     }, [open]);
 
-    const requestId = row?.kind === "list_price" && row.request_id ? Number(row.request_id) : null;
+    const requestId = row?.request_id ? Number(row.request_id) : null;
+    const headerId = row?.batch_header_id ? Number(row.batch_header_id) : null;
     const isPending = row?.status === "PENDING";
-    const currentCost = row?.kind === "list_price" ? row.current_cost : null;
-    const proposedCost = row?.kind === "list_price" ? row.proposed_cost : null;
-    const rejectReasonValue = row?.kind === "list_price" ? row.reject_reason : null;
-    const currentNumeric = Number(currentCost);
-    const proposedNumeric = Number(proposedCost);
+    const proposedPrice = row?.proposed_price ?? null;
+    const currentPrice = row?.current_price ?? null;
+    const currentNumeric = Number(currentPrice);
+    const proposedNumeric = Number(proposedPrice);
     const delta =
         Number.isFinite(currentNumeric) && Number.isFinite(proposedNumeric)
             ? proposedNumeric - currentNumeric
@@ -87,12 +88,13 @@ export function ListPriceRequestDetailDialog({
             ? (delta / currentNumeric) * 100
             : null;
     const busy = acting || submitting;
+    const canAct = isPending && headerId != null && headerId > 0;
 
     const handleApprove = async () => {
-        if (!requestId) return;
+        if (!headerId) return;
         setSubmitting(true);
         try {
-            await onApprove(requestId);
+            await onApproveBatch(headerId);
             onOpenChange(false);
         } finally {
             setSubmitting(false);
@@ -100,10 +102,10 @@ export function ListPriceRequestDetailDialog({
     };
 
     const handleReject = async () => {
-        if (!requestId || !rejectReason.trim()) return;
+        if (!headerId || !rejectReason.trim()) return;
         setSubmitting(true);
         try {
-            await onReject(requestId, rejectReason.trim());
+            await onRejectBatch(headerId, rejectReason.trim());
             onOpenChange(false);
         } finally {
             setSubmitting(false);
@@ -114,8 +116,8 @@ export function ListPriceRequestDetailDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>{row?.record_label ?? "List Cost Request"}</DialogTitle>
-                    <DialogDescription>Review the current and proposed list cost before approving.</DialogDescription>
+                    <DialogTitle>{row?.record_label ?? "Price Type Request"}</DialogTitle>
+                    <DialogDescription>Review the proposed price type change and batch remarks.</DialogDescription>
                 </DialogHeader>
 
                 {!row ? (
@@ -131,6 +133,10 @@ export function ListPriceRequestDetailDialog({
                                 ) : null}
                             </div>
                             <div>
+                                <div className="text-xs font-medium uppercase text-muted-foreground">Price Type</div>
+                                <div className="mt-1 font-medium">{priceTypeLabel(row)}</div>
+                            </div>
+                            <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Status</div>
                                 <div className="mt-1">
                                     <Badge variant="outline" className={pcrStatusBadgeClass(row.status)}>
@@ -138,14 +144,20 @@ export function ListPriceRequestDetailDialog({
                                     </Badge>
                                 </div>
                             </div>
+                            {row.reference_no ? (
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Reference</div>
+                                    <div className="mt-1 font-medium">{row.reference_no}</div>
+                                </div>
+                            ) : null}
                             <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Requested At</div>
                                 <div className="mt-1 font-medium">{safeDate(row.requested_at)}</div>
                             </div>
-                            {rejectReasonValue ? (
+                            {row.remarks ? (
                                 <div className="sm:col-span-2">
-                                    <div className="text-xs font-medium uppercase text-muted-foreground">Reject Reason</div>
-                                    <div className="mt-1 whitespace-pre-wrap text-sm">{rejectReasonValue}</div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Remarks</div>
+                                    <div className="mt-1 whitespace-pre-wrap text-sm">{row.remarks}</div>
                                 </div>
                             ) : null}
                         </div>
@@ -157,9 +169,9 @@ export function ListPriceRequestDetailDialog({
                                 <div className="text-right">Change</div>
                             </div>
                             <div className="grid grid-cols-3 gap-2 px-3 py-3 text-sm">
-                                <div className="font-medium">₱{money(currentCost)}</div>
-                                <div className="font-medium">₱{money(proposedCost)}</div>
-                                <div className={cn("text-right font-medium", deltaClass(currentCost, proposedCost))}>
+                                <div className="font-medium">₱{money(currentPrice)}</div>
+                                <div className="font-medium">₱{money(proposedPrice)}</div>
+                                <div className={cn("text-right font-medium", deltaClass(currentPrice, proposedPrice))}>
                                     {delta === null ? "—" : `₱${money(delta)}`}
                                     {percentChange !== null ? (
                                         <div className="text-xs font-normal">
@@ -173,6 +185,13 @@ export function ListPriceRequestDetailDialog({
                                 </div>
                             </div>
                         </div>
+
+                        {canAct ? (
+                            <p className="text-xs text-muted-foreground">
+                                Approving or rejecting applies to the entire price change batch
+                                {headerId ? ` (PCB-${headerId})` : ""}.
+                            </p>
+                        ) : null}
 
                         {rejecting ? (
                             <div className="space-y-2">
@@ -192,7 +211,7 @@ export function ListPriceRequestDetailDialog({
                     <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
                         Close
                     </Button>
-                    {isPending && requestId ? (
+                    {canAct && requestId ? (
                         rejecting ? (
                             <>
                                 <Button
@@ -211,7 +230,7 @@ export function ListPriceRequestDetailDialog({
                                     disabled={busy || !rejectReason.trim()}
                                 >
                                     {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                                    Confirm Reject
+                                    Confirm Reject Batch
                                 </Button>
                             </>
                         ) : (
@@ -222,7 +241,7 @@ export function ListPriceRequestDetailDialog({
                                     onClick={() => setRejecting(true)}
                                     disabled={busy}
                                 >
-                                    Reject
+                                    Reject Batch
                                 </Button>
                                 <Button
                                     className={pcrApproveButtonClass}
@@ -230,7 +249,7 @@ export function ListPriceRequestDetailDialog({
                                     disabled={busy}
                                 >
                                     {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                                    Approve
+                                    Approve Batch
                                 </Button>
                             </>
                         )

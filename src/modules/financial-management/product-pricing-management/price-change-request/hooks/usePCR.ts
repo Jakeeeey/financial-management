@@ -75,7 +75,7 @@ export function usePCRList(
 
     const [rows, setRows] = React.useState<(PriceChangeRequestRow | CostChangeRequestRow)[]>([]);
     const [total, setTotal] = React.useState<number>(0);
-    const [loading, setLoading] = React.useState(false);
+    const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState<string | null>(null);
 
     const loadErrorFallback =

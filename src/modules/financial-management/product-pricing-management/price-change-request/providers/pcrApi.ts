@@ -8,7 +8,7 @@ import type {
     PriceChangeRequestRow,
     CostChangeRequestRow,
     ListMeta,
-    UnifiedApprovalRow,
+    ItemUnifiedApprovalRow,
 } from "../types";
 import { apiStatusParam } from "../utils/pcrQuery";
 
@@ -433,7 +433,7 @@ export async function listUnifiedApprovals(query: ListQuery) {
     const sp = new URLSearchParams();
     appendListQuery(sp, query);
 
-    return http<{ data: UnifiedApprovalRow[]; meta: ListMeta | null }>(
+    return http<{ data: ItemUnifiedApprovalRow[]; meta: ListMeta | null }>(
         `/api/fm/product-pricing/price-change-approvals?${sp.toString()}`,
     );
 }

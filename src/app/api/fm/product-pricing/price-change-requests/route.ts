@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseApprovalSearchQuery } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
 import { appendProductIdInFilter, getSupplierScopedProductIds } from "../_supplierFilters";
+import { enrichPcrRows } from "../_pcrHeaderMeta";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,18 @@ type DirectusUomRef = {
 
 type DirectusPCRRow = {
     request_id?: number | string | null;
+    header_id?:
+        | number
+        | string
+        | {
+        header_id?: number | string | null;
+        id?: number | string | null;
+        remarks?: string | null;
+        reference_no?: string | null;
+        status?: string | null;
+    }
+        | null;
+    current_price?: number | string | null;
     product_id?:
         | number
         | string
@@ -260,6 +273,12 @@ export async function GET(req: NextRequest) {
                 "status",
                 "requested_by",
                 "requested_at",
+                "header_id",
+                "header_id.header_id",
+                "header_id.remarks",
+                "header_id.reference_no",
+                "header_id.status",
+                "current_price",
                 "product_id.product_id",
                 "product_id.product_code",
                 "product_id.product_name",
@@ -310,8 +329,10 @@ export async function GET(req: NextRequest) {
             headers: directusHeaders(),
         });
 
+        const data = await enrichPcrRows(json.data ?? []);
+
         return NextResponse.json({
-            data: json.data ?? [],
+            data,
             meta: json.meta ?? null,
         });
     } catch (error: unknown) {

@@ -26,7 +26,7 @@ import PricingTable from "./PricingTable";
 import BulkSaveBar from "./BulkSaveBar";
 import { PriceChangeBatchDialog } from "./PriceChangeBatchDialog";
 
-import { emptyPivot, pivotPrices, priceViewFilterLabel, resolveVisibleTierKeys } from "../utils/pivot";
+import { buildMatrixTierKeys, emptyPivot, pivotPrices, priceViewFilterLabel } from "../utils/pivot";
 import * as api from "../providers/pricingApi";
 import PrintPricingDialog from "./PrintPricingDialog";
 
@@ -64,7 +64,7 @@ const EMPTY_FILTERS: PricingFilters = {
     supplier_scope: "ALL",
     active_only: true,
     missing_tier: false,
-    price_view: "FOCUSED",
+    price_view: "ALL",
     price_type_ids: [],
     show_list_price: false,
 };
@@ -580,18 +580,14 @@ export default function PricingMatrixView() {
                 priceTypes: pt.priceTypes,
             });
 
-            const visibleTiers = resolveVisibleTierKeys({
-                priceView: filters.price_view,
-                priceTypeIds: filters.price_type_ids,
-                priceTypes: pt.priceTypes,
-            });
+            const printableTiers = buildMatrixTierKeys(pt.priceTypes);
 
             const now = new Date();
 
             setPrintGeneratedAt(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
             setPrintFiltersText(resolvedFiltersText);
             setPrintMatrixRows(assembled);
-            setPrintTiers(visibleTiers);
+            setPrintTiers(printableTiers);
             setPrintUsedUnitIds(usedUnitIds);
             setPrintOpen(true);
         } catch (error: unknown) {

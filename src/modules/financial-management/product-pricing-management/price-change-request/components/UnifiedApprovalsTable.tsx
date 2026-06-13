@@ -81,9 +81,10 @@ export function UnifiedApprovalsTable({
 
     const pendingCostIdsOnPage = React.useMemo(
         () =>
-            rows
-                .filter((row) => row.kind === "list_price" && row.status === "PENDING" && row.request_id)
-                .map((row) => Number(row.request_id)),
+            rows.flatMap((row) => {
+                if (row.kind !== "list_price" || row.status !== "PENDING" || !row.request_id) return [];
+                return [Number(row.request_id)];
+            }),
         [rows],
     );
 
@@ -139,15 +140,15 @@ export function UnifiedApprovalsTable({
                         rows.map((row) => {
                             const isPending = row.status === "PENDING";
                             const isBatch = row.kind === "price_batch";
-                            const requestId = row.request_id ? Number(row.request_id) : null;
-                            const batchId = row.batch_id ? Number(row.batch_id) : null;
+                            const requestId = row.kind === "list_price" && row.request_id ? Number(row.request_id) : null;
+                            const batchId = row.kind === "price_batch" && row.batch_id ? Number(row.batch_id) : null;
                             const isCostSelected = requestId ? selectedCostIds.includes(requestId) : false;
 
                             return (
                                 <TableRow key={row.row_key}>
                                     {showCostSelection ? (
                                         <TableCell>
-                                            {!isBatch && requestId ? (
+                                            {row.kind === "list_price" && requestId ? (
                                                 <div className="flex items-center justify-center p-1">
                                                     <Checkbox
                                                         className="h-[18px] w-[18px]"
@@ -175,7 +176,7 @@ export function UnifiedApprovalsTable({
                                                 {row.subtitle}
                                             </div>
                                         ) : null}
-                                        {isBatch && row.line_count != null ? (
+                                        {row.kind === "price_batch" && row.line_count != null ? (
                                             <div className="mt-0.5 text-xs text-muted-foreground">
                                                 {row.line_count} line(s)
                                             </div>

@@ -3,14 +3,6 @@
 import * as React from "react";
 
 import { Input } from "@/components/ui/input";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 import * as api from "../providers/pcrApi";
@@ -60,51 +52,40 @@ export function BatchPriceGrid({
     );
 
     return (
-        <div className="max-h-[46vh] overflow-auto">
-            <Table>
-                <TableHeader className="sticky top-0 z-10 bg-background">
-                    <TableRow>
-                        <TableHead className="min-w-[270px]">Product</TableHead>
-                        <TableHead className="min-w-[140px]">Code / Barcode</TableHead>
-                        <TableHead className="min-w-[90px]">Group</TableHead>
-                        {priceTypes.map((priceType) => (
-                            <TableHead
-                                key={priceType.price_type_id}
-                                className="min-w-[150px] text-right"
-                            >
-                                {priceTypeLabel(priceType)}
-                            </TableHead>
-                        ))}
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {products.map((product, rowIndex) => {
-                        const groupId = groupIdFor(product);
+        <div className="max-h-[46vh] overflow-y-auto rounded-md border">
+            <div className="sticky top-0 z-10 border-b bg-background px-3 py-2 text-xs font-medium text-muted-foreground">
+                Products and proposed prices
+            </div>
+            <div className="divide-y">
+                {products.map((product, rowIndex) => {
+                    const groupId = groupIdFor(product);
 
-                        return (
-                            <TableRow key={product.product_id}>
-                                <TableCell className="max-w-[320px] whitespace-normal">
-                                    <div className="font-medium">{product.product_name}</div>
-                                    <div className="text-xs text-muted-foreground">
-                                        Product #{product.product_id}
+                    return (
+                        <div key={product.product_id} className="space-y-3 px-3 py-3">
+                            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                                <div className="min-w-0">
+                                    <div className="truncate text-sm font-medium" title={product.product_name}>
+                                        {product.product_name}
                                     </div>
-                                </TableCell>
-                                <TableCell>
-                                    <div>{product.product_code || "-"}</div>
-                                    <div className="text-xs text-muted-foreground">{product.barcode || "-"}</div>
-                                </TableCell>
-                                <TableCell>
-                                    <span
-                                        className={cn(
-                                            "rounded-md border px-2 py-1 text-xs",
-                                            isChildVariant(product)
-                                                ? "bg-muted text-muted-foreground"
-                                                : "bg-background text-foreground",
-                                        )}
-                                    >
-                                        {isChildVariant(product) ? `Child ${groupId}` : "Parent"}
-                                    </span>
-                                </TableCell>
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                        <span>Product #{product.product_id}</span>
+                                        <span>Code: {product.product_code || "-"}</span>
+                                        <span>Barcode: {product.barcode || "-"}</span>
+                                    </div>
+                                </div>
+                                <span
+                                    className={cn(
+                                        "w-fit shrink-0 rounded-md border px-2 py-1 text-xs",
+                                        isChildVariant(product)
+                                            ? "bg-muted text-muted-foreground"
+                                            : "bg-background text-foreground",
+                                    )}
+                                >
+                                    {isChildVariant(product) ? `Child ${groupId}` : "Parent"}
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
                                 {priceTypes.map((priceType, colIndex) => {
                                     const key = cellKey(product.product_id, priceType.price_type_id);
                                     const rawValue = draftPrices.get(key) ?? "";
@@ -113,47 +94,50 @@ export function BatchPriceGrid({
                                     const label = priceTypeLabel(priceType);
 
                                     return (
-                                        <TableCell key={key} className="text-right">
-                                            <div className="flex min-w-[130px] flex-col gap-1">
-                                                <div className="text-[11px] text-muted-foreground">
-                                                    Current {formatMoney(currentPriceFor(product, priceType))}
+                                        <div key={key} className="min-w-0 rounded-md border bg-background p-2">
+                                            <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
+                                                <div className="truncate text-xs font-medium" title={label}>
+                                                    {label}
                                                 </div>
-                                                <Input
-                                                    inputMode="decimal"
-                                                    value={rawValue}
-                                                    onChange={(event) =>
-                                                        onDraftPriceChange(
-                                                            product,
-                                                            priceType.price_type_id,
-                                                            event.target.value,
-                                                        )
-                                                    }
-                                                    onKeyDown={(event) =>
-                                                        gridNav.onKeyDown(event, rowIndex, colIndex)
-                                                    }
-                                                    onPaste={(event) =>
-                                                        gridNav.onPaste(event, rowIndex, colIndex, handlePasteCell)
-                                                    }
-                                                    onFocus={() => gridNav.setActive(rowIndex, colIndex)}
-                                                    ref={(el) => gridNav.register(rowIndex, colIndex, el)}
-                                                    placeholder="Proposed"
-                                                    aria-label={`Proposed price, row ${rowIndex + 1}, ${label}`}
-                                                    aria-invalid={Boolean(hasError)}
-                                                    disabled={saving}
-                                                    className="h-8 text-right text-sm"
-                                                />
-                                                {hasError ? (
-                                                    <div className="text-[11px] text-destructive">{parsed.error}</div>
-                                                ) : null}
+                                                <div className="shrink-0 text-[11px] text-muted-foreground">
+                                                    {formatMoney(currentPriceFor(product, priceType))}
+                                                </div>
                                             </div>
-                                        </TableCell>
+                                            <Input
+                                                inputMode="decimal"
+                                                value={rawValue}
+                                                onChange={(event) =>
+                                                    onDraftPriceChange(
+                                                        product,
+                                                        priceType.price_type_id,
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                onKeyDown={(event) =>
+                                                    gridNav.onKeyDown(event, rowIndex, colIndex)
+                                                }
+                                                onPaste={(event) =>
+                                                    gridNav.onPaste(event, rowIndex, colIndex, handlePasteCell)
+                                                }
+                                                onFocus={() => gridNav.setActive(rowIndex, colIndex)}
+                                                ref={(el) => gridNav.register(rowIndex, colIndex, el)}
+                                                placeholder="Proposed"
+                                                aria-label={`Proposed price, row ${rowIndex + 1}, ${label}`}
+                                                aria-invalid={Boolean(hasError)}
+                                                disabled={saving}
+                                                className="h-8 text-right text-sm"
+                                            />
+                                            {hasError ? (
+                                                <div className="mt-1 text-[11px] text-destructive">{parsed.error}</div>
+                                            ) : null}
+                                        </div>
                                     );
                                 })}
-                            </TableRow>
-                        );
-                    })}
-                </TableBody>
-            </Table>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 }
