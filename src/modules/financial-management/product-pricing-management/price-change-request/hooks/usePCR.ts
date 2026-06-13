@@ -3,11 +3,7 @@
 import * as React from "react";
 import type { ListQuery, PriceChangeRequestRow, CostChangeRequestRow } from "../types";
 import * as api from "../providers/pcrApi";
-
-function getErrorMessage(error: unknown, fallback: string): string {
-    if (error instanceof Error && error.message) return error.message;
-    return fallback;
-}
+import { applyLoadError } from "../../shared/loadErrorState";
 
 type UsePCRListOptions = {
     requestType?: "price" | "cost";
@@ -22,6 +18,7 @@ type UsePCRListResult = {
     total: number;
     loading: boolean;
     error: string | null;
+    unauthorized: boolean;
     refresh: () => Promise<void>;
 };
 
@@ -77,11 +74,14 @@ export function usePCRList(
     const [total, setTotal] = React.useState<number>(0);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState<string | null>(null);
+    const [unauthorized, setUnauthorized] = React.useState(false);
+    const requestIdRef = React.useRef(0);
 
     const loadErrorFallback =
         requestType === "cost" ? "Failed to load list cost requests" : "Failed to load price change requests";
 
     const refresh = React.useCallback(async () => {
+        const requestId = ++requestIdRef.current;
         setLoading(true);
         try {
             const res =
@@ -89,16 +89,22 @@ export function usePCRList(
                     ? await api.listCostRequests(query)
                     : await api.listRequests(query);
 
+            if (requestId !== requestIdRef.current) return;
+
             setRows(res.data ?? []);
             setTotal(Number(res.meta?.total_count ?? (res.data?.length ?? 0)));
             setError(null);
+            setUnauthorized(false);
         } catch (error: unknown) {
-            const message = getErrorMessage(error, loadErrorFallback);
+            if (requestId !== requestIdRef.current) return;
+
             setRows([]);
             setTotal(0);
-            setError(message);
+            applyLoadError(error, loadErrorFallback, setUnauthorized, setError);
         } finally {
-            setLoading(false);
+            if (requestId === requestIdRef.current) {
+                setLoading(false);
+            }
         }
     }, [loadErrorFallback, query, requestType]);
 
@@ -113,6 +119,7 @@ export function usePCRList(
         total,
         loading,
         error,
+        unauthorized,
         refresh,
     };
 }

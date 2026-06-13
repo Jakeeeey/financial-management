@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -14,6 +15,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -25,6 +27,7 @@ import PricingFiltersBar from "./PricingFiltersBar";
 import PricingTable from "./PricingTable";
 import BulkSaveBar from "./BulkSaveBar";
 import { PriceChangeBatchDialog } from "./PriceChangeBatchDialog";
+import { SessionExpiredPanel } from "../../shared/SessionExpiredPanel";
 
 import { buildMatrixTierKeys, emptyPivot, pivotPrices, priceViewFilterLabel } from "../utils/pivot";
 import * as api from "../providers/pricingApi";
@@ -603,7 +606,10 @@ export default function PricingMatrixView() {
         if (pt.error) toast.error(pt.error);
     }, [lookups.error, pt.error]);
 
-    const isInitialLoad = (lookups.loading || pt.loading) && currentRows.length === 0;
+    const isInitialLoad =
+        currentRows.length === 0 &&
+        !matrix.error &&
+        (lookups.loading || pt.loading || matrix.loading);
 
     React.useEffect(() => {
         if (matrix.dirtyCount === 0) return;
@@ -652,6 +658,10 @@ export default function PricingMatrixView() {
         }
     }, [matrix, unsavedAction]);
 
+    if (lookups.unauthorized || pt.unauthorized || matrix.unauthorized) {
+        return <SessionExpiredPanel />;
+    }
+
     if (isInitialLoad) {
         return (
             <div className="space-y-3">
@@ -694,6 +704,16 @@ export default function PricingMatrixView() {
                         loading={Boolean(matrix.loading) || isPrinting}
                     />
                 </div>
+
+                {matrix.error ? (
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Products could not be loaded</AlertTitle>
+                        <AlertDescription className="space-y-3">
+                            <p>{matrix.error}</p>
+                        </AlertDescription>
+                    </Alert>
+                ) : null}
 
                 <div className="min-h-0 flex-1">
                     <PricingTable matrix={matrix} />

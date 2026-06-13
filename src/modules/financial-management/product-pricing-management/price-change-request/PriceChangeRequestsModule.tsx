@@ -12,6 +12,8 @@ import { PcrTypeTabList } from "./components/PcrTypeTabs";
 import { UnifiedApprovalsManager } from "./components/UnifiedApprovalsManager";
 import { PriceTypeRequestManager } from "./components/PriceTypeRequestManager";
 import { ListCostRequestManager } from "./components/ListCostRequestManager";
+import { SessionExpiredPanel } from "../shared/SessionExpiredPanel";
+import { isUnauthorizedError } from "../shared/apiHttp";
 
 import { getLookups, SupplierOption } from "./providers/pcrApi";
 import type { ApprovalTypeFilter, ListQuery } from "./types";
@@ -26,8 +28,13 @@ export function PriceChangeRequestsModule() {
     const [suppliers, setSuppliers] = React.useState<SupplierOption[]>([]);
     const [suppliersLoading, setSuppliersLoading] = React.useState(true);
     const [suppliersError, setSuppliersError] = React.useState<string | null>(null);
+    const [sessionExpired, setSessionExpired] = React.useState(false);
     const [typeTab, setTypeTab] = React.useState<ApprovalTypeFilter>("all");
     const [sharedQuery, setSharedQuery] = React.useState<ListQuery>(DEFAULT_SHARED_QUERY);
+
+    const handleUnauthorized = React.useCallback(() => {
+        setSessionExpired(true);
+    }, []);
 
     const loadSuppliers = React.useCallback(async () => {
         setSuppliersLoading(true);
@@ -36,6 +43,13 @@ export function PriceChangeRequestsModule() {
             setSuppliers(res.suppliers);
             setSuppliersError(null);
         } catch (error: unknown) {
+            if (isUnauthorizedError(error)) {
+                setSessionExpired(true);
+                setSuppliers([]);
+                setSuppliersError(null);
+                return;
+            }
+
             const message = error instanceof Error ? error.message : "Failed to load suppliers";
             setSuppliers([]);
             setSuppliersError(message);
@@ -58,6 +72,14 @@ export function PriceChangeRequestsModule() {
         suppliersLoading,
         suppliersError,
     };
+
+    if (sessionExpired) {
+        return (
+            <div className="space-y-3">
+                <SessionExpiredPanel />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-3">
@@ -105,6 +127,7 @@ export function PriceChangeRequestsModule() {
                                 {...supplierLookupProps}
                                 query={sharedQuery}
                                 setQuery={setSharedQuery}
+                                onUnauthorized={handleUnauthorized}
                             />
                         </TabsContent>
 
@@ -113,6 +136,7 @@ export function PriceChangeRequestsModule() {
                                 {...supplierLookupProps}
                                 query={sharedQuery}
                                 setQuery={setSharedQuery}
+                                onUnauthorized={handleUnauthorized}
                             />
                         </TabsContent>
 
@@ -121,6 +145,7 @@ export function PriceChangeRequestsModule() {
                                 {...supplierLookupProps}
                                 query={sharedQuery}
                                 setQuery={setSharedQuery}
+                                onUnauthorized={handleUnauthorized}
                             />
                         </TabsContent>
                     </Tabs>

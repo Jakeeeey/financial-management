@@ -22,6 +22,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { generatePricingMatrixPdf } from "../utils/printPdf";
+import { openPricingMatrixPrintWindow } from "../utils/printPricingMatrixHtml";
 
 type Paper = "a4" | "legal" | "a3";
 type Orient = "landscape" | "portrait";
@@ -54,6 +55,21 @@ export default function PrintPricingDialog(props: Props) {
 
     const downloadPdf = React.useCallback(() => {
         generatePricingMatrixPdf(rows, {
+            layout,
+            paper,
+            orientation,
+            fontSize,
+            compact,
+            includeBarcode,
+            priceTypes: props.priceTypes,
+            tiers: props.tiers,
+            units: props.units,
+            usedUnitIds: props.usedUnitIds,
+        });
+    }, [rows, layout, paper, orientation, fontSize, compact, includeBarcode, props.priceTypes, props.tiers, props.units, props.usedUnitIds]);
+
+    const printInBrowser = React.useCallback(() => {
+        openPricingMatrixPrintWindow(rows, {
             layout,
             paper,
             orientation,
@@ -175,7 +191,7 @@ export default function PrintPricingDialog(props: Props) {
                                         <div className="min-w-0">
                                             <div className="text-sm font-medium leading-none">Compact</div>
                                             <div className="mt-1 text-xs text-muted-foreground">
-                                                Tighter spacing.
+                                                0.5 inch page margins; maximizes printable area.
                                             </div>
                                         </div>
                                         <Switch checked={compact} onCheckedChange={setCompact} />
@@ -206,6 +222,13 @@ export default function PrintPricingDialog(props: Props) {
                                 onClick={() => onOpenChange(false)}
                             >
                                 Close
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="h-11 rounded-xl"
+                                onClick={printInBrowser}
+                            >
+                                Print
                             </Button>
                             <Button className="h-11 rounded-xl px-6" onClick={downloadPdf}>
                                 Download PDF

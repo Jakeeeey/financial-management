@@ -35,6 +35,7 @@ type Props = {
     suppliersError: string | null;
     query: ListQuery;
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
+    onUnauthorized?: () => void;
 };
 
 export function ListCostRequestManager({
@@ -43,6 +44,7 @@ export function ListCostRequestManager({
     suppliersError,
     query,
     setQuery,
+    onUnauthorized,
 }: Props) {
     const inbox = usePCRList(query, setQuery, { requestType: "cost" });
 
@@ -86,7 +88,7 @@ export function ListCostRequestManager({
 
     const actions = usePCRActions(() => {
         inbox.refresh();
-    });
+    }, onUnauthorized);
 
     const handleApproveSelected = React.useCallback(() => {
         if (selectedIds.length === 0) return;
@@ -128,6 +130,12 @@ export function ListCostRequestManager({
         const result = await actions.rejectMany(selectedIds, reason);
         applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
     }, [actions, selectedIds, selectedSnapshots, removeSelectionIds]);
+
+    React.useEffect(() => {
+        if (inbox.unauthorized) onUnauthorized?.();
+    }, [inbox.unauthorized, onUnauthorized]);
+
+    if (inbox.unauthorized) return null;
 
     return (
         <div className="space-y-3">
@@ -245,6 +253,7 @@ export function ListCostRequestManager({
                     showSelectionColumn={statusTab === "PENDING" || statusTab === "ALL"}
                     requestType="cost"
                     loading={inbox.loading}
+                    hasLoadError={Boolean(inbox.error)}
                     acting={actions.acting}
                     onReview={openRequestReview}
                     onApprove={(id) => setConfirmingApprove({ type: "single", id })}

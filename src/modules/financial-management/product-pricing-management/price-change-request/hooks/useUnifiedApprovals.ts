@@ -5,11 +5,7 @@ import { toast } from "sonner";
 
 import type { ItemUnifiedApprovalRow, ListQuery } from "../types";
 import * as api from "../providers/pcrApi";
-
-function getErrorMessage(error: unknown, fallback: string): string {
-    if (error instanceof Error && error.message) return error.message;
-    return fallback;
-}
+import { applyActionError, applyLoadError } from "../../shared/loadErrorState";
 
 export function useUnifiedApprovals(
     query: ListQuery,
@@ -20,21 +16,31 @@ export function useUnifiedApprovals(
     const [loading, setLoading] = React.useState(true);
     const [acting, setActing] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
+    const [unauthorized, setUnauthorized] = React.useState(false);
+    const requestIdRef = React.useRef(0);
 
     const refresh = React.useCallback(async () => {
+        const requestId = ++requestIdRef.current;
         setLoading(true);
         try {
             const res = await api.listUnifiedApprovals(query);
+
+            if (requestId !== requestIdRef.current) return;
+
             setRows(res.data ?? []);
             setTotal(Number(res.meta?.total_count ?? (res.data?.length ?? 0)));
             setError(null);
+            setUnauthorized(false);
         } catch (error: unknown) {
-            const message = getErrorMessage(error, "Failed to load approvals");
+            if (requestId !== requestIdRef.current) return;
+
             setRows([]);
             setTotal(0);
-            setError(message);
+            applyLoadError(error, "Failed to load approvals", setUnauthorized, setError);
         } finally {
-            setLoading(false);
+            if (requestId === requestIdRef.current) {
+                setLoading(false);
+            }
         }
     }, [query]);
 
@@ -49,7 +55,9 @@ export function useUnifiedApprovals(
             toast.success(`${result.affected} price change line(s) approved and applied.`);
             await refresh();
         } catch (error: unknown) {
-            toast.error(getErrorMessage(error, "Failed to approve batch"));
+            if (applyActionError(error, "Failed to approve batch", { setUnauthorized })) {
+                return;
+            }
             throw error;
         } finally {
             setActing(false);
@@ -63,7 +71,9 @@ export function useUnifiedApprovals(
             toast.success("Batch rejected.");
             await refresh();
         } catch (error: unknown) {
-            toast.error(getErrorMessage(error, "Failed to reject batch"));
+            if (applyActionError(error, "Failed to reject batch", { setUnauthorized })) {
+                return;
+            }
             throw error;
         } finally {
             setActing(false);
@@ -78,6 +88,7 @@ export function useUnifiedApprovals(
         loading,
         acting,
         error,
+        unauthorized,
         refresh,
         approveBatch,
         rejectBatch,

@@ -126,6 +126,7 @@ type PricingMatrixLike = {
     meta?: MatrixMeta;
 
     loading?: boolean;
+    error?: string | null;
 
     page?: number;
     pageSize?: number;
@@ -332,12 +333,13 @@ function PricingCards(props: {
     totalGroups: number;
 }) {
     const { matrix, rows, tiers, usedUnits, loading, totalGroups } = props;
+    const hasLoadError = Boolean(matrix.error);
 
     if (loading && rows.length === 0) {
         return <LoadingCardBody rowCount={6} />;
     }
 
-    if (!loading && totalGroups === 0) {
+    if (!loading && totalGroups === 0 && !hasLoadError) {
         return <div className="p-8 text-center text-sm text-muted-foreground">No products found.</div>;
     }
 
@@ -406,6 +408,7 @@ export default function PricingTable({ matrix }: Props) {
     const rows: MatrixRow[] = Array.isArray(matrix.rows) ? matrix.rows : [];
     const meta: MatrixMeta = matrix.meta ?? {};
     const loading = Boolean(matrix.loading);
+    const hasLoadError = Boolean(matrix.error);
 
     const page = toNum(meta.page ?? matrix.page ?? 1, 1);
     const pageSize = toNum(meta.pageSize ?? matrix.pageSize ?? 50, 50);
@@ -712,7 +715,7 @@ export default function PricingTable({ matrix }: Props) {
                                         );
                                     })}
 
-                                {!loading && totalGroups === 0 ? (
+                                {!loading && totalGroups === 0 && !hasLoadError ? (
                                     <PTableRow>
                                         <PTableCell className="py-10 text-center text-muted-foreground">
                                             No products found.

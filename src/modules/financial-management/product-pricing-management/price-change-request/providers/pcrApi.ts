@@ -11,6 +11,7 @@ import type {
     ItemUnifiedApprovalRow,
 } from "../types";
 import { apiStatusParam } from "../utils/pcrQuery";
+import { readApiResponse } from "../../shared/apiHttp";
 
 /** Existing consolidated lookups route */
 const LOOKUPS_ENDPOINT = "/api/fm/product-pricing/lookups";
@@ -35,32 +36,7 @@ function toStringSafe(value: unknown, fallback = ""): string {
 
 async function http<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
     const res = await fetch(input, { cache: "no-store", ...init });
-    const text = await res.text().catch(() => "");
-
-    if (!res.ok) {
-        try {
-            const parsed: unknown = JSON.parse(text);
-
-            if (isRecord(parsed)) {
-                const errorMessage =
-                    typeof parsed.error === "string"
-                        ? parsed.error
-                        : typeof parsed.details === "string"
-                            ? parsed.details
-                            : typeof parsed.message === "string"
-                                ? parsed.message
-                                : "Request failed";
-
-                throw new Error(errorMessage);
-            }
-
-            throw new Error("Request failed");
-        } catch {
-            throw new Error(text || "Request failed");
-        }
-    }
-
-    return text ? (JSON.parse(text) as T) : ({} as T);
+    return readApiResponse<T>(res);
 }
 
 function appendListQuery(sp: URLSearchParams, query: ListQuery) {

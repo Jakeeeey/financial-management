@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import type { BulkActionResult } from "../types";
 import * as api from "../providers/pcrApi";
+import { applyActionError } from "../../shared/loadErrorState";
 
 function getErrorMessage(error: unknown, fallback: string): string {
     if (error instanceof Error && error.message) return error.message;
@@ -14,7 +15,7 @@ function emptyBulkResult(action: BulkActionResult["action"]): BulkActionResult {
     return { action, successIds: [], failedIds: [], failures: [] };
 }
 
-export function usePCRActions(onDone?: () => void) {
+export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) {
     const [acting, setActing] = React.useState(false);
 
     const approve = React.useCallback(
@@ -25,12 +26,12 @@ export function usePCRActions(onDone?: () => void) {
                 toast.success("Approved and applied.");
                 onDone?.();
             } catch (error: unknown) {
-                toast.error(getErrorMessage(error, "Failed to approve"));
+                applyActionError(error, "Failed to approve", { onUnauthorized });
             } finally {
                 setActing(false);
             }
         },
-        [onDone],
+        [onDone, onUnauthorized],
     );
 
     const approveMany = React.useCallback(
@@ -53,6 +54,9 @@ export function usePCRActions(onDone?: () => void) {
                         await api.actionCostRequest({ action: "approve", request_id });
                         successIds.push(request_id);
                     } catch (error: unknown) {
+                        if (applyActionError(error, "Request failed", { onUnauthorized })) {
+                            break;
+                        }
                         failedIds.push(request_id);
                         failures.push({
                             request_id,
@@ -78,7 +82,7 @@ export function usePCRActions(onDone?: () => void) {
                 setActing(false);
             }
         },
-        [onDone],
+        [onDone, onUnauthorized],
     );
 
     const cancel = React.useCallback(
@@ -89,12 +93,12 @@ export function usePCRActions(onDone?: () => void) {
                 toast.success("Cancelled.");
                 onDone?.();
             } catch (error: unknown) {
-                toast.error(getErrorMessage(error, "Failed to cancel"));
+                applyActionError(error, "Failed to cancel", { onUnauthorized });
             } finally {
                 setActing(false);
             }
         },
-        [onDone],
+        [onDone, onUnauthorized],
     );
 
     const reject = React.useCallback(
@@ -105,12 +109,12 @@ export function usePCRActions(onDone?: () => void) {
                 toast.success("Rejected.");
                 onDone?.();
             } catch (error: unknown) {
-                toast.error(getErrorMessage(error, "Failed to reject"));
+                applyActionError(error, "Failed to reject", { onUnauthorized });
             } finally {
                 setActing(false);
             }
         },
-        [onDone],
+        [onDone, onUnauthorized],
     );
 
     const rejectMany = React.useCallback(
@@ -133,6 +137,9 @@ export function usePCRActions(onDone?: () => void) {
                         await api.actionCostRequest({ action: "reject", request_id, reject_reason });
                         successIds.push(request_id);
                     } catch (error: unknown) {
+                        if (applyActionError(error, "Request failed", { onUnauthorized })) {
+                            break;
+                        }
                         failedIds.push(request_id);
                         failures.push({
                             request_id,
@@ -158,7 +165,7 @@ export function usePCRActions(onDone?: () => void) {
                 setActing(false);
             }
         },
-        [onDone],
+        [onDone, onUnauthorized],
     );
 
     return { acting, approve, approveMany, cancel, reject, rejectMany };

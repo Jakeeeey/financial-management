@@ -4,6 +4,7 @@ import * as React from "react";
 import { AlertCircle, CheckCheck, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { applyActionError } from "../../shared/loadErrorState";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -42,6 +43,7 @@ type Props = {
     suppliersError: string | null;
     query: ListQuery;
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
+    onUnauthorized?: () => void;
 };
 
 export function PriceTypeRequestManager({
@@ -50,6 +52,7 @@ export function PriceTypeRequestManager({
     suppliersError,
     query,
     setQuery,
+    onUnauthorized,
 }: Props) {
     const inbox = usePCRList(query, setQuery, { requestType: "price" });
     const statusTab: PCRStatusFilter = inbox.query.status || "ALL";
@@ -98,8 +101,9 @@ export function PriceTypeRequestManager({
             toast.success(`${result.affected} price change line(s) approved and applied.`);
             await inbox.refresh();
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : "Failed to approve batch";
-            toast.error(message);
+            if (applyActionError(error, "Failed to approve batch", { onUnauthorized })) {
+                return;
+            }
             throw error;
         } finally {
             setBatchActing(false);
@@ -113,8 +117,9 @@ export function PriceTypeRequestManager({
             toast.success("Batch rejected.");
             await inbox.refresh();
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : "Failed to reject batch";
-            toast.error(message);
+            if (applyActionError(error, "Failed to reject batch", { onUnauthorized })) {
+                return;
+            }
             throw error;
         } finally {
             setBatchActing(false);
@@ -153,6 +158,12 @@ export function PriceTypeRequestManager({
         },
         [clearSelection, rawSetInboxQuery],
     );
+
+    React.useEffect(() => {
+        if (inbox.unauthorized) onUnauthorized?.();
+    }, [inbox.unauthorized, onUnauthorized]);
+
+    if (inbox.unauthorized) return null;
 
     return (
         <div className="space-y-3">
@@ -274,6 +285,7 @@ export function PriceTypeRequestManager({
                     showSelectionColumn={showBulkBar}
                     requestType="price"
                     loading={inbox.loading}
+                    hasLoadError={Boolean(inbox.error)}
                     acting={inbox.loading || batchActing}
                     canSelectRow={isPriceRowSelectable}
                     onReview={(id) => setViewingRequestId(id)}

@@ -18,9 +18,9 @@ function fmt(v: number | string | null | undefined) {
 }
 
 function requestedAtParts(value: string | null | undefined) {
-    if (!value) return { date: "â€”", time: "" };
+    if (!value) return { date: "—", time: "" };
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return { date: "â€”", time: "" };
+    if (Number.isNaN(date.getTime())) return { date: "—", time: "" };
 
     return {
         date: date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
@@ -123,6 +123,7 @@ type Props = {
     mode: "approver" | "mine" | "all";
     requestType?: "price" | "cost" | "mixed";
     loading?: boolean;
+    hasLoadError?: boolean;
     acting?: boolean;
     onApprove?: (id: number) => void;
     onReject?: (id: number) => void;
@@ -215,6 +216,7 @@ export default function RequestsTable(props: Props) {
 
     const showTypeColumn = requestType !== "cost";
     const loading = Boolean(props.loading);
+    const hasLoadError = Boolean(props.hasLoadError);
     const skeletonRowCount = Math.min(pageSize, 8);
     let colSpan = 6;
     if (showTypeColumn) colSpan += 1;
@@ -389,7 +391,7 @@ export default function RequestsTable(props: Props) {
                             showTypeColumn={showTypeColumn}
                             showActionsColumn={showActionsColumn}
                         />
-                    ) : rows.length === 0 ? (
+                    ) : rows.length === 0 && !hasLoadError ? (
                         <TableRow>
                             <TableCell colSpan={colSpan} className="py-10 text-center text-muted-foreground">
                                 No requests found.

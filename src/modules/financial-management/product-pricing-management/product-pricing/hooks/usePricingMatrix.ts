@@ -27,6 +27,8 @@ import {
     tierLabelForTierKey,
 } from "../utils/pivot";
 import { validatePrice } from "../utils/validators";
+import { applyLoadError } from "../../shared/loadErrorState";
+import { isUnauthorizedError } from "../../shared/apiHttp";
 
 type DirtyKey = `${number}:${ProductTierKey}`;
 type PendingKey = `${number}:${ProductTierKey}`;
@@ -77,10 +79,13 @@ export function usePricingMatrix(args: {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(50);
 
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [unauthorized, setUnauthorized] = useState(false);
     const [rows, setRows] = useState<MatrixRow[]>([]);
     const [meta, setMeta] = useState<ProductsMeta>(undefined);
     const [usedUnits, setUsedUnits] = useState<Unit[]>([]);
+    const requestIdRef = useRef(0);
 
     const [dirty, setDirty] = useState<Map<DirtyKey, string>>(new Map());
     const [dirtyErrors, setDirtyErrors] = useState<Map<DirtyKey, string>>(new Map());
@@ -125,6 +130,7 @@ export function usePricingMatrix(args: {
     }, [filtersKey]);
 
     const refresh = useCallback(async () => {
+        const requestId = ++requestIdRef.current;
         setLoading(true);
 
         try {
@@ -282,17 +288,27 @@ export function usePricingMatrix(args: {
                 String(a.display.product_name ?? "").localeCompare(String(b.display.product_name ?? "")),
             );
 
+            if (requestId !== requestIdRef.current) return;
+
             setRows(assembled);
+            setError(null);
+            setUnauthorized(false);
+        } catch (err: unknown) {
+            if (requestId !== requestIdRef.current) return;
+
+            setRows([]);
+            setMeta(undefined);
+            setUsedUnits([]);
+            applyLoadError(err, "Failed to load pricing matrix", setUnauthorized, setError);
         } finally {
-            setLoading(false);
+            if (requestId === requestIdRef.current) {
+                setLoading(false);
+            }
         }
     }, [filters, page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes, emptyPivotForTypes]);
 
     useEffect(() => {
-        refresh().catch((error: unknown) => {
-            const message = error instanceof Error ? error.message : "Failed to load pricing matrix";
-            toast.error(message);
-        });
+        void refresh();
     }, [refresh]);
 
     const setCell = useCallback((productId: number, tier: ProductTierKey, raw: unknown) => {
@@ -672,6 +688,10 @@ export function usePricingMatrix(args: {
             toast.message("No new price requests were created.");
             return { success: false, reason: "nothing_created" };
         } catch (error: unknown) {
+            if (isUnauthorizedError(error)) {
+                setUnauthorized(true);
+                return { success: false, reason: "api_error" };
+            }
             toast.error(formatSaveErrorMessage(error));
             return { success: false, reason: "api_error" };
         }
@@ -691,6 +711,8 @@ export function usePricingMatrix(args: {
     return useMemo(() => ({
         TIERS: matrixTierKeys,
         loading,
+        error,
+        unauthorized,
         rows,
         meta,
         usedUnits,
@@ -723,6 +745,8 @@ export function usePricingMatrix(args: {
     }), [
         matrixTierKeys,
         loading,
+        error,
+        unauthorized,
         rows,
         meta,
         usedUnits,

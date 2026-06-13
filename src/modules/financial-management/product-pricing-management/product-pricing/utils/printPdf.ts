@@ -3,28 +3,21 @@ import jsPDF from "jspdf";
 
 import type { MatrixRow, Unit, PriceType } from "../types";
 import { buildMatrixTierKeys, tierLabelForTierKey } from "./pivot";
+import {
+    formatPrintMoney,
+    getPrintPageMetrics,
+    printTextValue,
+    type PrintLayoutOptions,
+    type PrintPageMetrics,
+} from "./printLayout";
 
-type Options = {
-    layout?: "table" | "cards";
-    paper?: "a4" | "legal" | "a3";
-    orientation?: "landscape" | "portrait";
-    fontSize?: number;
-    compact?: boolean;
+type Options = PrintLayoutOptions & {
     includeBarcode?: boolean;
     priceTypes?: PriceType[];
     tiers?: string[];
     units?: Unit[];
     usedUnitIds?: Set<number>;
 };
-
-function money(v: unknown): string {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return "";
-    return n.toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 4,
-    });
-}
 
 const TIER_PALETTE: Array<{ fill: [number, number, number]; text: [number, number, number] }> = [
     { fill: [248, 250, 252], text: [30, 41, 59] },
@@ -39,31 +32,70 @@ function tierPalette(index: number) {
     return TIER_PALETTE[index % TIER_PALETTE.length];
 }
 
-function textValue(v: unknown): string {
-    const s = String(v ?? "").trim();
-    return s || "-";
+function unitLabel(unit: Unit | undefined, fallback: string) {
+    return printTextValue(unit?.unit_shortcut || unit?.unit_name || fallback);
 }
 
-function drawPageFooter(doc: jsPDF) {
-    const str = "Page " + doc.getCurrentPageInfo().pageNumber;
+function drawPageFooter(doc: jsPDF, metrics: PrintPageMetrics) {
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const str = `Page ${doc.getCurrentPageInfo().pageNumber}`;
     doc.setFontSize(8);
     doc.setTextColor(100);
-    doc.text(str, 40, doc.internal.pageSize.getHeight() - 18);
+    doc.text(str, metrics.contentLeft, pageHeight - metrics.marginPt + 10);
 }
 
-function drawReportHeader(doc: jsPDF, args: { now: Date; total: number; layout: string }) {
+function drawReportHeader(
+    doc: jsPDF,
+    args: {
+        now: Date;
+        total: number;
+        layout: string;
+        metrics: PrintPageMetrics;
+        continuation?: boolean;
+    },
+) {
+    const { metrics } = args;
+    const x = metrics.contentLeft;
+    let y = metrics.marginPt + (args.continuation ? 8 : 10);
+
+    if (args.continuation) {
+        doc.setFontSize(9);
+        doc.setTextColor(100);
+        doc.setFont("helvetica", "bold");
+        doc.text("Product Pricing Matrix Report (continued)", x, y);
+        return;
+    }
+
+    if (metrics.compact) {
+        doc.setFontSize(11);
+        doc.setTextColor(20);
+        doc.setFont("helvetica", "bold");
+        doc.text("Product Pricing Matrix Report", x, y);
+        y += 12;
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(90);
+        doc.text(
+            `Generated: ${args.now.toLocaleDateString()} ${args.now.toLocaleTimeString()}  |  Products: ${args.total}  |  Layout: ${args.layout}`,
+            x,
+            y,
+        );
+        return;
+    }
+
     doc.setFontSize(14);
     doc.setTextColor(20);
-    doc.text("Product Pricing Matrix Report", 40, 40);
+    doc.setFont("helvetica", "bold");
+    doc.text("Product Pricing Matrix Report", x, y);
+    y += 14;
     doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
     doc.setTextColor(100);
-    doc.text(`Generated on: ${args.now.toLocaleDateString()} ${args.now.toLocaleTimeString()}`, 40, 55);
-    doc.text(`Total Products: ${args.total}`, 40, 68);
-    doc.text(`Layout: ${args.layout}`, 40, 81);
-}
-
-function unitLabel(unit: Unit | undefined, fallback: string) {
-    return textValue(unit?.unit_shortcut || unit?.unit_name || fallback);
+    doc.text(`Generated on: ${args.now.toLocaleDateString()} ${args.now.toLocaleTimeString()}`, x, y);
+    y += 12;
+    doc.text(`Total Products: ${args.total}`, x, y);
+    y += 12;
+    doc.text(`Layout: ${args.layout}`, x, y);
 }
 
 function renderPricingProductBlocksPdf(
@@ -73,50 +105,76 @@ function renderPricingProductBlocksPdf(
         layoutLabel: "Table" | "Cards";
         now: Date;
         includeBarcode: boolean;
-        compact: boolean;
+        metrics: PrintPageMetrics;
         fontSize: number;
         priceTypes: PriceType[];
         tiers: string[];
         usedUnits: Unit[];
     },
 ) {
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 40;
-    const gap = 12;
-    const columns = args.layoutLabel === "Table" ? 1 : pageWidth >= 760 ? 2 : 1;
-    const cardWidth = (pageWidth - margin * 2 - gap * (columns - 1)) / columns;
-    const lineHeight = args.compact ? 10 : 12;
-    const cardPadding = args.compact ? 8 : 10;
-    const pillHeight = args.compact ? 12 : 14;
-    const tableHeaderHeight = args.compact ? 15 : 17;
-    const tableRowHeight = args.compact ? 15 : 18;
-    const topStart = 98;
-    let x = margin;
-    let y = topStart;
+    const { metrics } = args;
+    const {
+        columns,
+        cardWidth,
+        gap,
+        lineHeight,
+        cardPadding,
+        pillHeight,
+        tableHeaderHeight,
+        tableRowHeight,
+        contentLeft,
+        contentTop,
+        contentBottom,
+        footerReserve,
+    } = metrics;
+
+    let x = contentLeft;
+    let y = contentTop;
     let columnIndex = 0;
+    let rowMaxHeight = 0;
 
-    drawReportHeader(doc, { now: args.now, total: rows.length, layout: args.layoutLabel });
-
-    const addPage = () => {
-        drawPageFooter(doc);
-        doc.addPage();
-        drawReportHeader(doc, { now: args.now, total: rows.length, layout: args.layoutLabel });
-        x = margin;
-        y = topStart;
+    const resetPosition = () => {
+        x = contentLeft;
+        y = contentTop;
         columnIndex = 0;
+        rowMaxHeight = 0;
     };
 
+    const maxY = () => contentBottom - footerReserve;
+
+    const addPage = () => {
+        drawPageFooter(doc, metrics);
+        doc.addPage();
+        drawReportHeader(doc, {
+            now: args.now,
+            total: rows.length,
+            layout: args.layoutLabel,
+            metrics,
+            continuation: true,
+        });
+        resetPosition();
+    };
+
+    drawReportHeader(doc, {
+        now: args.now,
+        total: rows.length,
+        layout: args.layoutLabel,
+        metrics,
+        continuation: false,
+    });
+
     const advanceCardPosition = (height: number) => {
+        rowMaxHeight = Math.max(rowMaxHeight, height);
         if (columnIndex + 1 < columns) {
             columnIndex += 1;
-            x = margin + columnIndex * (cardWidth + gap);
+            x = contentLeft + columnIndex * (cardWidth + gap);
             return;
         }
 
         columnIndex = 0;
-        x = margin;
-        y += height + gap;
+        x = contentLeft;
+        y += rowMaxHeight + gap;
+        rowMaxHeight = 0;
     };
 
     for (const row of rows) {
@@ -135,10 +193,10 @@ function renderPricingProductBlocksPdf(
                 : [{ unit_id: 0, unit_name: "Price", unit_shortcut: "Price" }];
 
         const metaPills = [
-            textValue(row.brand_name),
-            textValue(row.category_name),
-            `Code: ${textValue(display.product_code)}`,
-            args.includeBarcode ? `Barcode: ${textValue(display.barcode)}` : "",
+            printTextValue(row.brand_name),
+            printTextValue(row.category_name),
+            `Code: ${printTextValue(display.product_code)}`,
+            args.includeBarcode ? `Barcode: ${printTextValue(display.barcode)}` : "",
         ].filter(Boolean);
 
         doc.setFont("helvetica", "normal");
@@ -159,18 +217,28 @@ function renderPricingProductBlocksPdf(
         }
         if (currentPillRow.length > 0) pillRows.push(currentPillRow);
 
-        const wrappedName = doc.splitTextToSize(textValue(display.product_name), cardWidth - cardPadding * 2);
+        const wrappedName = doc.splitTextToSize(printTextValue(display.product_name), cardWidth - cardPadding * 2);
         const tableHeight = tableHeaderHeight + args.tiers.length * tableRowHeight;
 
         const cardHeight =
             cardPadding * 2 +
             wrappedName.length * (lineHeight + 1) +
             Math.max(pillRows.length, 1) * (pillHeight + 3) +
-            10 +
+            (metrics.compact ? 6 : 10) +
             tableHeight;
 
-        if (y + cardHeight > pageHeight - 36) {
-            addPage();
+        if (columnIndex === 0) {
+            if (y + cardHeight > maxY()) {
+                addPage();
+            }
+        } else if (y + Math.max(rowMaxHeight, cardHeight) > maxY()) {
+            columnIndex = 0;
+            x = contentLeft;
+            y += rowMaxHeight + gap;
+            rowMaxHeight = 0;
+            if (y + cardHeight > maxY()) {
+                addPage();
+            }
         }
 
         doc.setDrawColor(210, 210, 210);
@@ -178,7 +246,7 @@ function renderPricingProductBlocksPdf(
         doc.roundedRect(x, y, cardWidth, cardHeight, 4, 4, "FD");
 
         let cursorY = y + cardPadding + 2;
-        doc.setFontSize(args.fontSize + 2);
+        doc.setFontSize(args.fontSize + (metrics.compact ? 1 : 2));
         doc.setTextColor(20);
         doc.setFont("helvetica", "bold");
         doc.text(wrappedName, x + cardPadding, cursorY);
@@ -200,7 +268,7 @@ function renderPricingProductBlocksPdf(
             cursorY += pillHeight + 3;
         }
 
-        cursorY += 5;
+        cursorY += metrics.compact ? 4 : 5;
         const tableX = x + cardPadding;
         const tableWidth = cardWidth - cardPadding * 2;
         const tierColumnWidth = Math.min(88, tableWidth * 0.36);
@@ -248,7 +316,7 @@ function renderPricingProductBlocksPdf(
                 const variant = row.variantsByUnitId[Number(unit.unit_id)];
                 const price = variant?.tiers?.[tier];
                 doc.text(
-                    price != null ? money(price) : "-",
+                    price != null ? formatPrintMoney(price) : "-",
                     cellX + unitColumnWidth - 4,
                     rowY + tableRowHeight - 5,
                     { align: "right" },
@@ -261,13 +329,10 @@ function renderPricingProductBlocksPdf(
         advanceCardPosition(cardHeight);
     }
 
-    drawPageFooter(doc);
+    drawPageFooter(doc, metrics);
 }
 
-export function generatePricingMatrixPdf(
-    rows: MatrixRow[],
-    opts: Options = {}
-) {
+export function generatePricingMatrixPdf(rows: MatrixRow[], opts: Options = {}) {
     const paper = opts.paper ?? "a4";
     const orientation = opts.orientation ?? "landscape";
     const layout = opts.layout ?? "table";
@@ -278,25 +343,34 @@ export function generatePricingMatrixPdf(
     const now = new Date();
 
     const doc = new jsPDF({ orientation, unit: "pt", format: paper });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const layoutLabel = layout === "cards" ? "Cards" : "Table";
+    const metrics = getPrintPageMetrics(pageWidth, pageHeight, {
+        layout,
+        paper,
+        orientation,
+        compact,
+        fontSize: opts.fontSize,
+        layoutLabel,
+    });
 
-    // Filter units that are actually used in the data
     const usedUnits = unitsList
-        .filter(u => usedUnitIds.has(Number(u.unit_id)))
+        .filter((u) => usedUnitIds.has(Number(u.unit_id)))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     const priceTypesList = opts.priceTypes ?? [];
     const tiers = opts.tiers?.length ? opts.tiers : buildMatrixTierKeys(priceTypesList);
 
     renderPricingProductBlocksPdf(doc, rows, {
-        layoutLabel: layout === "cards" ? "Cards" : "Table",
+        layoutLabel,
         now,
         includeBarcode,
-        compact,
+        metrics,
         fontSize: opts.fontSize || 7,
         priceTypes: priceTypesList,
         tiers,
         usedUnits,
     });
     doc.save(`Product_Pricing_Matrix_${now.toISOString().split("T")[0]}.pdf`);
-    return;
 }

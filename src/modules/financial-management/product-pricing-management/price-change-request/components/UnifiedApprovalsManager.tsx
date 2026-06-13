@@ -47,6 +47,7 @@ type Props = {
     suppliersError?: string | null;
     query: ListQuery;
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
+    onUnauthorized?: () => void;
 };
 
 function resolveUnifiedSelectionKey(row: ItemUnifiedApprovalRow): string {
@@ -59,6 +60,7 @@ export function UnifiedApprovalsManager({
     suppliersError,
     query,
     setQuery,
+    onUnauthorized,
 }: Props) {
     const feed = useUnifiedApprovals(query, setQuery);
     const statusTab: PCRStatusFilter = feed.query.status || "ALL";
@@ -121,7 +123,7 @@ export function UnifiedApprovalsManager({
 
     const costActions = usePCRActions(() => {
         void feed.refresh();
-    });
+    }, onUnauthorized);
 
     const viewingCostRequest = React.useMemo(
         () =>
@@ -308,6 +310,12 @@ export function UnifiedApprovalsManager({
 
     const acting = feed.acting || costActions.acting;
 
+    React.useEffect(() => {
+        if (feed.unauthorized) onUnauthorized?.();
+    }, [feed.unauthorized, onUnauthorized]);
+
+    if (feed.unauthorized) return null;
+
     return (
         <div className="space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -450,6 +458,7 @@ export function UnifiedApprovalsManager({
                     showSelectionColumn={showBulkBar}
                     requestType="mixed"
                     loading={feed.loading}
+                    hasLoadError={Boolean(feed.error)}
                     acting={acting}
                     meta={{ total_count: feed.total }}
                     page={Number(feed.query.page ?? 1)}
