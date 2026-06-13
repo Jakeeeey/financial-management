@@ -780,7 +780,7 @@ function parseDirtyProposedValue(raw: string): number | null {
 }
 
 function formatSaveErrorMessage(error: unknown): string {
-    let displayMessage = "Failed to save changes";
+    const displayMessage = "Failed to save changes";
     if (!(error instanceof Error)) return displayMessage;
 
     try {

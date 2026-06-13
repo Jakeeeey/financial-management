@@ -427,16 +427,6 @@ export function UnifiedApprovalsManager({
                             </Button>
 
                             <Button
-                                variant="outline"
-                                className={pcrRejectButtonClass}
-                                onClick={handleBulkReject}
-                                disabled={acting || !hasAnySelection || isMixedSelection}
-                            >
-                                <X className="mr-2 h-4 w-4" />
-                                Reject Selected
-                            </Button>
-
-                            <Button
                                 className={pcrApproveButtonClass}
                                 onClick={handleBulkApprove}
                                 disabled={acting || !hasAnySelection || isMixedSelection}
@@ -447,6 +437,16 @@ export function UnifiedApprovalsManager({
                                     <CheckCheck className="mr-2 h-4 w-4" />
                                 )}
                                 Approve Selected
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                className={pcrRejectButtonClass}
+                                onClick={handleBulkReject}
+                                disabled={acting || !hasAnySelection || isMixedSelection}
+                            >
+                                <X className="mr-2 h-4 w-4" />
+                                Reject Selected
                             </Button>
                         </div>
                     </div>

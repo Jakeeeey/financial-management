@@ -72,6 +72,8 @@ const EMPTY_FILTERS: PricingFilters = {
     show_list_price: false,
 };
 
+const PRINT_CONFIRM_PRODUCT_THRESHOLD = 1000;
+
 function safeStr(v: unknown): string {
     const s = String(v ?? "").trim();
     if (!s || s === "undefined" || s === "null") return "";
@@ -509,6 +511,15 @@ export default function PricingMatrixView() {
 
             if (allProducts.length === 0) {
                 toast.warning("No printable products found for the current filters.");
+                return;
+            }
+
+            if (
+                allProducts.length > PRINT_CONFIRM_PRODUCT_THRESHOLD &&
+                !window.confirm(
+                    `This print job contains ${allProducts.length.toLocaleString()} product group(s). Preparing it may take a while. Continue?`,
+                )
+            ) {
                 return;
             }
 

@@ -406,7 +406,7 @@ export function mergeCompleteVariantsIntoGroups(
     completeByGroup: Map<number, ProductRow[]>,
 ): void {
     for (const group of groupEntries) {
-        let completeVariants = completeByGroup.get(group.group_id) ?? [];
+        const completeVariants = completeByGroup.get(group.group_id) ?? [];
         if (completeVariants.length === 0) continue;
 
         group.variants = completeVariants;

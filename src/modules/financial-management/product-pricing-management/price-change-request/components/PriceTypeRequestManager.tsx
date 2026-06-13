@@ -108,7 +108,7 @@ export function PriceTypeRequestManager({
         } finally {
             setBatchActing(false);
         }
-    }, [inbox]);
+    }, [inbox, onUnauthorized]);
 
     const rejectBatch = React.useCallback(async (headerId: number, reason: string) => {
         setBatchActing(true);
@@ -124,7 +124,7 @@ export function PriceTypeRequestManager({
         } finally {
             setBatchActing(false);
         }
-    }, [inbox]);
+    }, [inbox, onUnauthorized]);
 
     const resolveBatchHeaderId = React.useCallback(
         (requestId: number) => {
@@ -254,16 +254,6 @@ export function PriceTypeRequestManager({
                             </Button>
 
                             <Button
-                                variant="outline"
-                                className={pcrRejectButtonClass}
-                                onClick={() => setRejectingBulk(true)}
-                                disabled={(inbox.loading || batchActing) || selectedIds.length === 0}
-                            >
-                                <X className="mr-2 h-4 w-4" />
-                                Reject Selected
-                            </Button>
-
-                            <Button
                                 className={pcrApproveButtonClass}
                                 onClick={() => setConfirmingBulkApprove(true)}
                                 disabled={(inbox.loading || batchActing) || selectedIds.length === 0}
@@ -274,6 +264,16 @@ export function PriceTypeRequestManager({
                                     <CheckCheck className="mr-2 h-4 w-4" />
                                 )}
                                 Approve Selected
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                className={pcrRejectButtonClass}
+                                onClick={() => setRejectingBulk(true)}
+                                disabled={(inbox.loading || batchActing) || selectedIds.length === 0}
+                            >
+                                <X className="mr-2 h-4 w-4" />
+                                Reject Selected
                             </Button>
                         </div>
                     </div>

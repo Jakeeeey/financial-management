@@ -222,16 +222,6 @@ export function ListCostRequestManager({
                             </Button>
 
                             <Button
-                                variant="outline"
-                                className={pcrRejectButtonClass}
-                                onClick={() => setRejectingBulk(true)}
-                                disabled={actions.acting || selectedIds.length === 0}
-                            >
-                                <X className="mr-2 h-4 w-4" />
-                                Reject Selected
-                            </Button>
-
-                            <Button
                                 className={pcrApproveButtonClass}
                                 onClick={handleApproveSelected}
                                 disabled={actions.acting || selectedIds.length === 0}
@@ -242,6 +232,16 @@ export function ListCostRequestManager({
                                     <CheckCheck className="mr-2 h-4 w-4" />
                                 )}
                                 Approve Selected
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                className={pcrRejectButtonClass}
+                                onClick={() => setRejectingBulk(true)}
+                                disabled={actions.acting || selectedIds.length === 0}
+                            >
+                                <X className="mr-2 h-4 w-4" />
+                                Reject Selected
                             </Button>
                         </div>
                     </div>

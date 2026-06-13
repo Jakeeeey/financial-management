@@ -26,6 +26,10 @@ export function isUnauthorizedError(error: unknown): boolean {
     return error instanceof ApiHttpError && error.status === 401;
 }
 
+export function isAccessDeniedError(error: unknown): boolean {
+    return error instanceof ApiHttpError && error.status === 403;
+}
+
 export async function readApiResponse<T>(res: Response): Promise<T> {
     const text = await res.text().catch(() => "");
 

@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 
-import { isUnauthorizedError } from "./apiHttp";
+import { isAccessDeniedError, isUnauthorizedError } from "./apiHttp";
 
 export type ActionErrorHandlers = {
     onUnauthorized?: () => void;
@@ -12,6 +12,12 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return fallback;
 }
 
+function getAccessDeniedMessage(error: unknown): string {
+    const message = getErrorMessage(error, "");
+    if (message && !/^request failed\s*\(403\)$/i.test(message)) return message;
+    return "You do not have permission to access this price-control data. Please ask an administrator to update your Directus role permissions.";
+}
+
 export function applyActionError(
     error: unknown,
     fallback: string,
@@ -20,6 +26,11 @@ export function applyActionError(
     if (isUnauthorizedError(error)) {
         handlers.setUnauthorized?.(true);
         handlers.onUnauthorized?.();
+        return true;
+    }
+
+    if (isAccessDeniedError(error)) {
+        toast.error(getAccessDeniedMessage(error));
         return true;
     }
 
@@ -36,6 +47,12 @@ export function applyLoadError(
     if (isUnauthorizedError(error)) {
         setUnauthorized(true);
         setError(null);
+        return;
+    }
+
+    if (isAccessDeniedError(error)) {
+        setUnauthorized(false);
+        setError(getAccessDeniedMessage(error));
         return;
     }
 
