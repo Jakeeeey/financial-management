@@ -53,6 +53,7 @@ export interface Disbursement {
     divisionName?: string;
     departmentName?: string;
     status: string;
+    supportingDocumentsUrl?: string;
 
     payables: PayableLine[];
     payments: PaymentLine[];
@@ -103,6 +104,7 @@ export interface COADto {
     coaId: number;
     glCode: string;
     accountTitle: string;
+    accountType?: number | null;
     isPayment?: boolean;
     isPaymentDuplicate?: boolean;
 }
@@ -136,10 +138,17 @@ export interface MemoDto {
 }
 
 // Add to your existing types.ts in the disbursement module
+export interface DepartmentExpense {
+    departmentId: number;
+    departmentName: string;
+    totalExpense: number;
+}
+
 export interface DivisionExpense {
     divisionId: number;
     divisionName: string;
     totalExpense: number;
+    departments?: DepartmentExpense[];
 }
 
 export interface VoucherSummary {
@@ -153,6 +162,7 @@ export interface VoucherSummary {
     checkNumbers: string;
     bankNames: string;
     expenseAccountsHit: string;
+    supportingDocumentsUrl?: string;
 }
 
 export interface DisbursementDashboardData {
@@ -160,9 +170,11 @@ export interface DisbursementDashboardData {
     totalPaid: number;
     totalUnpaidPayables: number;
     divisionExpenses: DivisionExpense[];
-    coaExpenses: CoaExpense[]; // 🚀 NEW
+    coaExpenses?: CoaExpense[];
+    paymentCoaExpenses: CoaExpense[];
+    payableCoaExpenses: CoaExpense[];
     vouchers: VoucherSummary[];
-
+    activeEncoderIds?: number[];
 }
 
 export interface DashboardFilters {
@@ -174,6 +186,7 @@ export interface DashboardFilters {
     encoderId?: number | "";
     coaId?: number | "";
     amount?: number | "";
+    remarks?: string;
 }
 
 export interface CoaExpense {

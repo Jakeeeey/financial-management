@@ -95,6 +95,13 @@ export const disbursementProvider = {
         return res.json();
     },
 
+    // 🚀 Fetch COAs restricted to payable account types (3,4,7,8,9,10)
+    getPayableCOAs: async (): Promise<COADto[]> => {
+        const res = await fetch("/api/fm/treasury/coas?forPayable=true");
+        if (!res.ok) throw new Error("Failed to fetch payable COAs");
+        return res.json();
+    },
+
     getBanks: async (): Promise<BankAccountDto[]> => {
         const res = await fetch("/api/fm/treasury/bank-accounts/active");
         if (!res.ok) throw new Error("Failed to fetch banks");
@@ -147,9 +154,17 @@ export const disbursementProvider = {
         if (filters.encoderId) params.append("encoderId", filters.encoderId.toString());
         if (filters.coaId) params.append("coaId", filters.coaId.toString());
         if (filters.amount) params.append("amount", filters.amount.toString());
+        if (filters.remarks) params.append("remarks", filters.remarks);
 
         const res = await fetch(`${API_BASE}/dashboard?${params.toString()}`);
         if (!res.ok) throw new Error("Failed to fetch dashboard data");
         return res.json();
+    },
+
+    getNextDocNo: async (supplierType: string = "Trade"): Promise<string> => {
+        const res = await fetch(`${API_BASE}?nextDocNo=true&supplierType=${encodeURIComponent(supplierType)}`);
+        if (!res.ok) throw new Error("Failed to fetch next doc no");
+        const data = await res.json();
+        return data.nextDocNo;
     }
 };

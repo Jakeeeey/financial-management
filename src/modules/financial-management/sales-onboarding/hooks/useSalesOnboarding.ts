@@ -2,18 +2,19 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { Salesman, Customer, SalesInvoiceType, SalesInvoice } from "../types";
-
+import { Salesman, Customer, SalesInvoiceType, SalesInvoice, DiscountType } from "../types";
+ 
 export function useSalesOnboarding() {
   const [salesmen, setSalesmen] = useState<Salesman[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [invoiceTypes, setInvoiceTypes] = useState<SalesInvoiceType[]>([]);
   const [recentInvoices, setRecentInvoices] = useState<SalesInvoice[]>([]);
+  const [discountTypes, setDiscountTypes] = useState<DiscountType[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+ 
   const loadInitialData = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -28,6 +29,7 @@ export function useSalesOnboarding() {
       setCustomers(data.customers || []);
       setInvoiceTypes(data.invoiceTypes || []);
       setRecentInvoices(data.recentInvoices || []);
+      setDiscountTypes(data.discountTypes || []);
     } catch (err: unknown) {
       console.error(err);
       const msg = err instanceof Error ? err.message : "Error loading data";
@@ -120,6 +122,7 @@ export function useSalesOnboarding() {
     customers,
     invoiceTypes,
     recentInvoices,
+    discountTypes,
     isLoading,
     isSubmitting,
     error,

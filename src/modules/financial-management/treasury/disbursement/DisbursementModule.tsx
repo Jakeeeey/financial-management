@@ -23,7 +23,7 @@ import { toast } from "sonner";
 
 export default function DisbursementModule() {
     const {
-        data, loading, page, setPage, totalPages,
+        data, loading, page, setPage, size, changeSize, totalPages,
         activeType, handleTabChange, refresh,
         create, update, changeStatus, actionLoading,
         supplierSearch, setSupplierSearch, startDate, setStartDate, endDate, setEndDate,
@@ -54,7 +54,7 @@ export default function DisbursementModule() {
     };
 
     return (
-        <div className="flex flex-col gap-8 p-4 sm:p-8 animate-in fade-in duration-700 max-w-[1600px] mx-auto min-h-screen">
+        <div className="flex flex-col gap-8 p-4 sm:p-8 animate-in fade-in duration-700 max-w-[1600px] mx-auto min-h-screen" style={{ background: 'linear-gradient(180deg, hsl(var(--muted) / 0.15) 0%, transparent 600px)' }}>
 
             {/* 🌟 PREMIUM GLOBAL HEADER */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pb-2 border-b border-border/50">
@@ -265,34 +265,52 @@ export default function DisbursementModule() {
                                 </TabsList>
                             </div>
 
-                            <div className="bg-card border border-border shadow-sm rounded-2xl overflow-hidden">
+                            <div className="bg-card border border-border shadow-sm rounded-2xl overflow-hidden transition-all duration-300">
                                 <DisbursementTable data={data} loading={loading} onView={handleView} />
                             </div>
                         </Tabs>
 
                         {/* Pagination */}
-                        <div className="flex items-center justify-between px-2 pt-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-9 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest border-border/50 hover:bg-muted/50"
-                                disabled={page === 0 || loading}
-                                onClick={() => setPage(p => p - 1)}
-                            >
-                                Previous
-                            </Button>
-                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest px-4 py-1.5 rounded-full bg-muted/50 border border-border/30">
-                                Page {page + 1} of {totalPages || 1}
-                            </span>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-9 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest border-border/50 hover:bg-muted/50"
-                                disabled={page >= totalPages - 1 || loading || totalPages === 0}
-                                onClick={() => setPage(p => p + 1)}
-                            >
-                                Next
-                            </Button>
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2 pt-2">
+                            {/* Rows per page selector */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Rows per page:</span>
+                                <select 
+                                    className="h-9 rounded-xl border border-border/50 bg-background px-3 text-[10px] font-black uppercase text-foreground shadow-sm focus:ring-1 focus:ring-primary/30 transition-all outline-none cursor-pointer hover:bg-muted/50"
+                                    value={size}
+                                    onChange={(e) => changeSize(Number(e.target.value))}
+                                >
+                                    <option value={10}>10 rows</option>
+                                    <option value={20}>20 rows</option>
+                                    <option value={50}>50 rows</option>
+                                    <option value={100}>100 rows</option>
+                                </select>
+                            </div>
+
+                            {/* Navigation controls */}
+                            <div className="flex items-center gap-3">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-9 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest border-border/50 hover:bg-muted/50"
+                                    disabled={page === 0 || loading}
+                                    onClick={() => setPage(p => p - 1)}
+                                >
+                                    Previous
+                                </Button>
+                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest px-4 py-1.5 rounded-full bg-muted/50 border border-border/30">
+                                    Page {page + 1} of {totalPages || 1}
+                                </span>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-9 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest border-border/50 hover:bg-muted/50"
+                                    disabled={page >= totalPages - 1 || loading || totalPages === 0}
+                                    onClick={() => setPage(p => p + 1)}
+                                >
+                                    Next
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </TabsContent>

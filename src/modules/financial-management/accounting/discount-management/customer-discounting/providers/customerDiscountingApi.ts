@@ -38,11 +38,13 @@ export const customerDiscountingApi = {
     page?: number;
     pageSize?: number;
     search?: string;
+    storeTypeId?: number | null;
   }): Promise<CustomerDiscountingModuleData> {
     const params = new URLSearchParams();
     if (query?.page) params.set("page", String(query.page));
     if (query?.pageSize) params.set("page_size", String(query.pageSize));
     if (query?.search) params.set("q", query.search);
+    if (query?.storeTypeId) params.set("store_type_id", String(query.storeTypeId));
 
     const url = params.size > 0 ? `${BASE}/module-data?${params.toString()}` : `${BASE}/module-data`;
     const res = await fetch(url, { cache: "no-store" });
@@ -128,7 +130,10 @@ export const customerDiscountingApi = {
     const params = new URLSearchParams({ id: String(id) });
     if (userId) params.set("userId", String(userId));
     const res = await fetch(`${BASE}/product-rules?${params.toString()}`, { method: "DELETE" });
-    return parseResponse<unknown>(res, "Failed to delete product discount");
+    return parseResponse<{ success: boolean; hardDeleted?: boolean; localOnly?: boolean }>(
+      res,
+      "Failed to delete product discount",
+    );
   },
 
   /**
@@ -165,6 +170,19 @@ export const customerDiscountingApi = {
     const params = new URLSearchParams({ q: query });
     const res = await fetch(`${BASE}/suppliers/search?${params.toString()}`, { cache: "no-store" });
     const json = await parseResponse<{ data: CustomerDiscountingSupplier[] }>(res, "Failed to search suppliers");
+    return Array.isArray(json.data) ? json.data : [];
+  },
+
+  /**
+   * Loads categories represented by a supplier's active parent products.
+   */
+  async getSupplierCategories(supplierId: number) {
+    const params = new URLSearchParams({ supplier_id: String(supplierId) });
+    const res = await fetch(`${BASE}/supplier-categories?${params.toString()}`, { cache: "no-store" });
+    const json = await parseResponse<{ data: { categoryId: number; categoryName: string }[] }>(
+      res,
+      "Failed to load supplier categories",
+    );
     return Array.isArray(json.data) ? json.data : [];
   },
 

@@ -16,7 +16,17 @@ export type CustomerDiscountingCustomer = {
   customerCode: string;
   customerName: string;
   storeName: string;
+  storeTypeId: number | null;
+  storeTypeName: string;
   globalDiscount: DiscountOption | null;
+};
+
+/**
+ * Store type option used by the customer list filter.
+ */
+export type CustomerDiscountingStoreType = {
+  id: number;
+  storeType: string;
 };
 
 /**
@@ -81,6 +91,8 @@ export type ProductRule = {
   productName: string;
   productCode: string;
   barcode: string;
+  categoryId: number | null;
+  categoryName: string;
   unitId: number | null;
   unitName: string;
   unitShortcut: string;
@@ -94,14 +106,15 @@ export type ProductRule = {
 export type CustomerDiscountingModuleData = {
   customers: CustomerDiscountingCustomer[];
   discountTypes: DiscountOption[];
+  storeTypes: CustomerDiscountingStoreType[];
   suppliers: CustomerDiscountingSupplier[];
-  categories: CustomerDiscountingCategory[];
   pagination: {
     page: number;
     pageSize: number;
     total: number;
     totalPages: number;
     search: string;
+    storeTypeId: number | null;
   };
 };
 

@@ -3,6 +3,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
 import { JournalEntryGroup } from "../types";
+import type { AdjustingEntry } from "../../adjusting-journal-entries/types";
 
 const COMPANY_NAME = "MEN2 MARKETING AND DISTRIBUTION ENTERPRISE CORPORATION";
 const REPORT_TITLE = "GENERAL JOURNAL";
@@ -17,7 +18,7 @@ const formatNumber = (val: number) => {
   }).format(val);
 };
 
-const buildExportData = (groups: JournalEntryGroup[]) => {
+const buildExportData = (groups: JournalEntryGroup[], ajeData?: AdjustingEntry[]) => {
   const rows: (string | number)[][] = [];
   let sumDebit = 0;
   let sumCredit = 0;
@@ -40,12 +41,13 @@ const buildExportData = (groups: JournalEntryGroup[]) => {
     debitEntries.forEach((entry, idx) => {
       const isFirst = idx === 0;
       const isLast = idx === lastDebitIdx;
+      const accountTitle = entry.accountTitle || "N/A";
       rows.push([
         isFirst ? formattedDate : "",
         isFirst ? group.sourceModule.split(" ")[0] : "",
         isFirst ? group.jeNo : "",
-        entry.accountTitle,
-        isFirst ? (group.description || "N/A") : `- ${entry.accountTitle} distribution`,
+        accountTitle,
+        isFirst ? (group.description || "N/A") : `- ${accountTitle} distribution`,
         entry.debit,
         "",
         isLast ? currentDebitTotal : "",
@@ -56,18 +58,41 @@ const buildExportData = (groups: JournalEntryGroup[]) => {
     const lastCreditIdx = Math.max(0, creditEntries.length - 1);
     creditEntries.forEach((entry, idx) => {
       const isLast = idx === lastCreditIdx;
+      const accountTitle = entry.accountTitle || "N/A";
       rows.push([
         "",
         "",
         "",
-        `    ${entry.accountTitle}`,
-        `- ${entry.accountTitle} distribution`,
+        `    ${accountTitle}`,
+        `- ${accountTitle} distribution`,
         "",
         entry.credit,
         isLast ? netBalance : "",
       ]);
     });
   });
+
+  // Adjusting Entries
+  if (ajeData && ajeData.length > 0) {
+    ajeData.forEach((aje) => {
+      const ajeDate = aje.transactionDate ? format(new Date(aje.transactionDate), "yyyy-MM-dd") : "";
+
+      aje.details.forEach((line) => {
+        rows.push([
+          ajeDate,
+          "Adjusting",
+          aje.jeNo || "",
+          line.accountTitle || "N/A",
+          aje.description || "Adjustment",
+          line.debit,
+          line.credit,
+          "",
+        ]);
+        sumDebit = Number((sumDebit + line.debit).toFixed(2));
+        sumCredit = Number((sumCredit + line.credit).toFixed(2));
+      });
+    });
+  }
 
   // Total Row
   rows.push([
@@ -77,8 +102,8 @@ const buildExportData = (groups: JournalEntryGroup[]) => {
   return rows;
 };
 
-export const exportJournalToExcel = (groups: JournalEntryGroup[], dateRangeText: string, filename: string = "Journal_Entries.xlsx") => {
-  const dataRows = buildExportData(groups);
+export const exportJournalToExcel = (groups: JournalEntryGroup[], dateRangeText: string, filename: string = "Journal_Entries.xlsx", ajeData?: AdjustingEntry[]) => {
+  const dataRows = buildExportData(groups, ajeData);
 
   const worksheetData = [
     [COMPANY_NAME],
@@ -118,9 +143,9 @@ export const exportJournalToExcel = (groups: JournalEntryGroup[], dateRangeText:
   XLSX.writeFile(wb, filename);
 };
 
-export const exportJournalToPdf = (groups: JournalEntryGroup[], dateRangeText: string, filename: string = "Journal_Entries.pdf") => {
+export const exportJournalToPdf = (groups: JournalEntryGroup[], dateRangeText: string, filename: string = "Journal_Entries.pdf", ajeData?: AdjustingEntry[]) => {
   const doc = new jsPDF("landscape");
-  const dataRows = buildExportData(groups);
+  const dataRows = buildExportData(groups, ajeData);
 
   // Format numbers for PDF display
   const formattedRows = dataRows.map(row => 

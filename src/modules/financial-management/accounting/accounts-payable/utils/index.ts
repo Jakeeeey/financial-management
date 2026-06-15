@@ -3,6 +3,7 @@
 import type {
   RawAPRow, APRecord, APStatus, AgingBucket,
   SupplierEntry, StatusEntry, APMetrics,
+  APCategory, APCategoryBreakdown,
 } from '../types';
 
 export const COLORS = [
@@ -19,10 +20,20 @@ export const STATUS_COLORS: Record<APStatus, string> = {
   'Partially Paid | Overdue': '#f97316',
 };
 
+/**
+ * Brand color set for the Trade vs Non-Trade split. Teal/blue
+ * for Trade (operational, "money out for goods") and amber for
+ * Non-Trade (overhead, expenses, payroll, etc.).
+ */
+export const CATEGORY_GRADIENT: Record<APCategory, { from: string; to: string; ring: string; chip: string }> = {
+  'Trade':     { from: '#0ea5e9', to: '#6366f1', ring: 'rgba(14,165,233,0.35)',  chip: 'bg-sky-500/10 text-sky-700 border-sky-500/30' },
+  'Non-Trade': { from: '#f59e0b', to: '#ef4444', ring: 'rgba(245,158,11,0.35)',  chip: 'bg-amber-500/10 text-amber-700 border-amber-500/30' },
+};
+
 export const formatPeso = (v: number): string =>
   `₱${v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export const formatDate = (d?: string): string => {
+export const formatDate = (d?: string | null): string => {
   if (!d) return '—';
   const date = new Date(d);
   return isNaN(date.getTime())
@@ -41,7 +52,7 @@ export const formatDate = (d?: string): string => {
  *
  * Uses Math.floor so same-day always yields 0, never 1.
  */
-function computeAgingDays(dueDateStr: string): number | null {
+function computeAgingDays(dueDateStr: string | null | undefined): number | null {
   if (!dueDateStr || dueDateStr === '—') return null;
 
   const due = new Date(dueDateStr);
@@ -54,11 +65,25 @@ function computeAgingDays(dueDateStr: string): number | null {
   return Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+/**
+ * Resolve the AP category for a raw row. The BFF sends
+ * `apCategory` pre-computed from the transaction_type name, but
+ * we fall back to the heuristic here so the function also works
+ * in tests / Storybook / etc.
+ */
+function resolveCategory(row: RawAPRow): APCategory {
+  if (row.apCategory === 'Trade' || row.apCategory === 'Non-Trade') {
+    return row.apCategory;
+  }
+  const name = (row.transactionTypeName || '').toLowerCase();
+  return name.includes('trade') ? 'Trade' : 'Non-Trade';
+}
+
 export function transformAPRows(raw: RawAPRow[]): APRecord[] {
   return raw.map((row, i) => {
     const amountPayable      = Number(row.totalPayable       ?? 0);
     const amountPaid         = Number(row.totalPaid          ?? 0);
-    const outstandingBalance = Number(row.outstandingBalance ?? (amountPayable - amountPaid));
+    const outstandingBalance = Number(row.outstandingBalance ?? Math.max(0, amountPayable - amountPaid));
     const division           = String(row.divisionName       ?? row.division ?? '—');
     const invoiceDate        = String(row.transactionDate    ?? '');
     const dueDate            = String(row.dueDate            ?? '');
@@ -83,7 +108,7 @@ export function transformAPRows(raw: RawAPRow[]): APRecord[] {
       id:                 String(row.disbursementId ?? `AP-${i + 1}`),
       refNo:              String(row.docNo          ?? `AP-${i + 1}`),
       supplier:           String(row.supplierName   ?? '—'),
-      invoiceNo:          String(row.docNo          ?? '—'),
+      invoiceNo:          String(row.referenceNo    ?? row.docNo ?? '—'),
       division,
       invoiceDate,
       dueDate,
@@ -92,6 +117,8 @@ export function transformAPRows(raw: RawAPRow[]): APRecord[] {
       outstandingBalance,
       aging,
       status,
+      apCategory:         resolveCategory(row),
+      transactionTypeName: row.transactionTypeName ?? null,
     };
   });
 }
@@ -150,6 +177,28 @@ export function deriveMetrics(records: APRecord[]): APMetrics {
     ).length,
     totalRecords: records.length,
   };
+}
+
+/**
+ * Build a side-by-side Trade vs Non-Trade summary used by the
+ * KPI strip and the tab labels. Returns both categories even
+ * when one is empty so the layout doesn't shift around.
+ */
+export function buildCategoryBreakdown(records: APRecord[]): APCategoryBreakdown[] {
+  const categories: APCategory[] = ['Trade', 'Non-Trade'];
+  return categories.map(category => {
+    const subset = records.filter(r => r.apCategory === category);
+    const m = deriveMetrics(subset);
+    return {
+      category,
+      totalRecords:     m.totalRecords,
+      totalPayable:     m.totalPayable,
+      totalPaid:        m.totalPaid,
+      totalOutstanding: m.totalOutstanding,
+      overdueCount:     m.overdueCount,
+      paidPct:          m.totalPayable > 0 ? (m.totalPaid / m.totalPayable) * 100 : 0,
+    };
+  });
 }
 
 export function getPageNumbers(current: number, total: number): (number | 'ellipsis')[] {

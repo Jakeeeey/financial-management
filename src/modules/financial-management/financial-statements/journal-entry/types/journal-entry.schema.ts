@@ -13,9 +13,9 @@ export const JournalEntrySchema = z.object({
   department: z.string().nullable().default(null),
   departmentName: z.string().nullable().default(null),
   creator: z.string().nullable().default(null),
-  coaId: z.number(),
-  accountNumber: z.string().optional(),
-  accountTitle: z.string(),
+  coaId: z.number().nullable().optional(),
+  accountNumber: z.string().nullable().optional(),
+  accountTitle: z.string().nullable().optional(),
   debit: z.number(),
   credit: z.number(),
   postingDate: z.string().nullable().optional(),
@@ -41,9 +41,22 @@ export interface JournalEntryGroup {
   entries: JournalEntry[];
   totalDebit: number;
   totalCredit: number;
+  adjustmentTotalDebit?: number;
+  adjustmentTotalCredit?: number;
+  adjustedTotalDebit?: number;
+  adjustedTotalCredit?: number;
+  adjustedBalance?: number;
+  hasPostedAdjustments?: boolean;
   balance: number;
   isImbalanced: boolean;
   postingDate: string | null;
+}
+
+export interface PostedAdjustmentTotals {
+  sourceJeNo: string;
+  totalDebit: number;
+  totalCredit: number;
+  variance: number;
 }
 
 export type PresetRange = "Monthly" | "Quarterly" | "Yearly" | "Custom";

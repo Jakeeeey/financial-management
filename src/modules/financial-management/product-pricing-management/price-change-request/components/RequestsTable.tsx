@@ -142,14 +142,17 @@ export default function RequestsTable(props: Props) {
                         return (
                             <TableRow key={id}>
                                 {props.mode === "approver" && (
-                                    <TableCell>
+                                <TableCell>
+                                    <div className="flex items-center justify-center p-1">
                                         <Checkbox
+                                            className="h-[18px] w-[18px]"
                                             checked={isSelected}
                                             onCheckedChange={(checked) => props.onToggleSelect?.(id, checked === true)}
                                             aria-label={`Select request PCR-${id}`}
                                             disabled={props.acting || !isPending}
                                         />
-                                    </TableCell>
+                                    </div>
+                                </TableCell>
                                 )}
 
                                 <TableCell className="font-medium">{requestType === "cost" ? "CCR" : "PCR"}-{id}</TableCell>
@@ -160,7 +163,32 @@ export default function RequestsTable(props: Props) {
                                     </span>
                                 </TableCell>
                                 {requestType === "price" && <TableCell>{priceTypeLabel(r as PriceChangeRequestRow)}</TableCell>}
-                                <TableCell className="text-right">{fmt(proposedValue)}</TableCell>
+                                <TableCell className="text-right">
+                                    <div className="flex flex-col items-end gap-0.5">
+                                        <div className="text-sm font-semibold">{fmt(proposedValue)}</div>
+                                        {(() => {
+                                            const currentCost = requestType === "cost" 
+                                                ? (r as CostChangeRequestRow).current_cost
+                                                : typeof r.product_id === "object" ? r.product_id.cost_per_unit : null;
+                                            
+                                            const currentNum = Number(currentCost);
+                                            const proposedNum = Number(proposedValue);
+                                            
+                                            if (currentNum > 0 && Number.isFinite(proposedNum)) {
+                                                const diffPct = ((proposedNum - currentNum) / currentNum) * 100;
+                                                return (
+                                                    <div className="flex items-center text-xs gap-1">
+                                                        <span className="text-muted-foreground line-through" title="Cost Price">{fmt(currentNum)}</span>
+                                                        <span className={diffPct > 0 ? "text-green-600 dark:text-green-400 font-medium" : diffPct < 0 ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground font-medium"}>
+                                                            {diffPct > 0 ? "+" : ""}{diffPct.toFixed(2)}%
+                                                        </span>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        })()}
+                                    </div>
+                                </TableCell>
                                 <TableCell>
                                     <Badge variant={r.status === "PENDING" ? "default" : r.status === "APPROVED" ? "secondary" : "outline"}>
                                         {r.status}
