@@ -3,8 +3,9 @@ export const MAX_UNIFIED_FETCH = 5000;
 
 export type UnifiedApprovalRowLike = {
     row_key: string;
-    kind: "price_type" | "list_price";
-    request_id: number;
+    kind: "price_batch" | "cost_batch" | "price_type" | "list_price";
+    request_id?: number;
+    batch_id?: number;
     requested_at: string | null;
 };
 
@@ -21,14 +22,15 @@ export function compareUnifiedRows<T extends UnifiedApprovalRowLike>(a: T, b: T)
     const kindDiff = a.kind.localeCompare(b.kind);
     if (kindDiff !== 0) return kindDiff;
 
-    return b.request_id - a.request_id;
+    const aId = Number(a.request_id ?? a.batch_id ?? 0);
+    const bId = Number(b.request_id ?? b.batch_id ?? 0);
+    return bId - aId;
 }
 
 export function mergeUnifiedRows<T extends UnifiedApprovalRowLike>(
-    priceRows: T[],
-    costRows: T[],
+    ...rowGroups: T[][]
 ): T[] {
-    return [...priceRows, ...costRows].sort(compareUnifiedRows);
+    return rowGroups.flat().sort(compareUnifiedRows);
 }
 
 export async function fetchStreamTopRows<T>(

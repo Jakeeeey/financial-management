@@ -80,6 +80,7 @@ export default function VirtualizedProductGroupList<TRow>(props: VirtualizedProd
         [rows, estimateItemSize, columnsPerRow, isGridMode],
     );
 
+    // eslint-disable-next-line react-hooks/incompatible-library
     const virtualizer = useVirtualizer({
         count: virtualRowCount,
         getScrollElement: () => parentRef.current,

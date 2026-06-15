@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { parseApprovalSearchQuery } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
+import { fetchPendingPcrByProductIds } from "../_fetchPendingByProductIds";
 import { appendProductIdInFilter, getSupplierScopedProductIdsForSuppliers, resolveSupplierIds } from "../_supplierFilters";
 import { enrichPcrRows } from "../_pcrHeaderMeta";
 
@@ -11,7 +12,6 @@ export const dynamic = "force-dynamic";
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const PCR = "price_change_requests";
-const PRODUCT_IDS_CHUNK_SIZE = 200;
 const DEPRECATED_PRICE_REQUEST_MESSAGE =
     "Item-level price change requests are deprecated. Use price change batches instead.";
 
@@ -151,12 +151,6 @@ function unwrapErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function chunk<T>(arr: T[], size: number): T[][] {
-    const out: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-    return out;
-}
-
 function parseProductIdsParam(raw: string | null): number[] | null {
     if (raw === null) return null;
     const ids = raw
@@ -164,36 +158,6 @@ function parseProductIdsParam(raw: string | null): number[] | null {
         .map((s) => Number(s.trim()))
         .filter((n) => Number.isFinite(n) && n > 0);
     return ids;
-}
-
-async function fetchPcrByProductIds(
-    productIds: number[],
-    status: string,
-): Promise<DirectusPCRRow[]> {
-    const fields = [
-        "product_id",
-        "price_type_id",
-        "proposed_price",
-        "product_id.product_id",
-        "price_type_id.price_type_id",
-    ].join(",");
-
-    const batches = chunk(productIds, PRODUCT_IDS_CHUNK_SIZE);
-    const results = await Promise.all(
-        batches.map(async (batch) => {
-            const params = new URLSearchParams();
-            params.set("limit", "500");
-            params.set("fields", fields);
-            params.set("filter[product_id][_in]", batch.join(","));
-            if (status) params.set("filter[status][_eq]", status);
-
-            const url = `${mustBase()}/items/${PCR}?${params.toString()}`;
-            const json = await fetchDirectus<DirectusListPCRResponse>(url, { headers: directusHeaders() });
-            return json.data ?? [];
-        }),
-    );
-
-    return results.flat();
 }
 
 function parseWrappedError(message: string): DirectusWrappedError | null {
@@ -242,7 +206,7 @@ export async function GET(req: NextRequest) {
                 return NextResponse.json({ data: [] });
             }
 
-            const data = await fetchPcrByProductIds(productIds, status);
+            const data = await fetchPendingPcrByProductIds(productIds, status);
             return NextResponse.json({ data });
         }
 

@@ -96,6 +96,41 @@ export async function getProducts(params: {
     );
 }
 
+export async function getMatrixPage(params: {
+    q?: string;
+    category_id?: string;
+    category_ids?: string;
+    brand_id?: string;
+    brand_ids?: string;
+    unit_id?: string;
+    unit_ids?: string;
+    supplier_id?: string;
+    supplier_ids?: string;
+    supplier_scope?: "ALL" | "LINKED_ONLY";
+    active_only?: "0" | "1";
+    missing_tier?: "0" | "1";
+    page?: string;
+    page_size?: string;
+    pending_product_ids?: string;
+}) {
+    const sp = new URLSearchParams();
+
+    for (const [k, v] of Object.entries(params)) {
+        if (v === undefined || v === null) continue;
+        const s = String(v).trim();
+        if (!s || s === "undefined" || s === "null") continue;
+        sp.set(k, s);
+    }
+
+    return http<{
+        data: ProductRow[];
+        meta: ProductsMeta;
+        prices: PriceRow[];
+        pending_price_requests: PriceChangeRequest[];
+        pending_cost_requests: CostChangeRequest[];
+    }>(`/api/fm/product-pricing/products/matrix-page?${sp.toString()}`);
+}
+
 export type PrintFilterParams = {
     q?: string;
     category_id?: string;
@@ -234,6 +269,7 @@ export async function createCostChangeRequests(
 ) {
     return http<{
         created: number;
+        header_id?: number;
         skipped_duplicates?: number;
         skipped_existing_pending?: number;
     }>(`/api/fm/product-pricing/cost-change-requests/bulk`, {
@@ -260,6 +296,7 @@ export type MixedSaveResponse = {
         created: number;
         skipped_duplicates?: number;
         skipped_existing_pending?: number;
+        header_id?: number;
     };
 };
 

@@ -75,21 +75,6 @@ function toNumericIds(ids: string[]): number[] {
         .filter((id) => Number.isFinite(id) && id > 0);
 }
 
-function setIds(
-    setFilters: Props["setFilters"],
-    arrayKey: FilterArrayKey,
-    ids: string[],
-) {
-    setFilters((prev) => {
-        const numericIds = toNumericIds(ids);
-
-        return {
-            ...prev,
-            [arrayKey]: numericIds,
-        } as PricingFilters;
-    });
-}
-
 const ADVANCED_FILTER_DEBOUNCE_MS = 400;
 
 function priceTypeText(pt: PriceType): string {
@@ -126,7 +111,7 @@ export function PricingFiltersBar(props: Props) {
     );
     const selectedPriceViewIds = React.useMemo(
         () => priceViewSelectionFromFilters(filters),
-        [filters.price_view, filters.price_type_ids, filters.show_list_price],
+        [filters],
     );
 
     const [localQ, setLocalQ] = React.useState(filters.q);
@@ -139,27 +124,27 @@ export function PricingFiltersBar(props: Props) {
 
     React.useEffect(() => {
         setLocalQ(filters.q);
-    }, [filters.q]);
+    }, [filters, filters.q]);
 
     React.useEffect(() => {
         setLocalSupplierIds(getIds(filters, "supplier_ids"));
-    }, [filters.supplier_ids]);
+    }, [filters, filters.supplier_ids]);
 
     React.useEffect(() => {
         setLocalBrandIds(getIds(filters, "brand_ids"));
-    }, [filters.brand_ids]);
+    }, [filters, filters.brand_ids]);
 
     React.useEffect(() => {
         setLocalCategoryIds(getIds(filters, "category_ids"));
-    }, [filters.category_ids]);
+    }, [filters, filters.category_ids]);
 
     React.useEffect(() => {
         setLocalUnitIds(getIds(filters, "unit_ids"));
-    }, [filters.unit_ids]);
+    }, [filters, filters.unit_ids]);
 
     React.useEffect(() => {
         setLocalPriceViewIds(priceViewSelectionFromFilters(filters));
-    }, [filters.price_view, filters.price_type_ids, filters.show_list_price]);
+    }, [filters, filters.price_view, filters.price_type_ids, filters.show_list_price]);
 
     React.useEffect(() => {
         const committedSupplierIds = getIds(filters, "supplier_ids").join(",");
@@ -185,7 +170,7 @@ export function PricingFiltersBar(props: Props) {
         }, ADVANCED_FILTER_DEBOUNCE_MS);
 
         return () => window.clearTimeout(timer);
-    }, [localSupplierIds, filters.supplier_ids, setFilters]);
+    }, [localSupplierIds, filters, filters.supplier_ids, setFilters]);
 
     React.useEffect(() => {
         const committedBrandIds = getIds(filters, "brand_ids").join(",");
@@ -232,6 +217,7 @@ export function PricingFiltersBar(props: Props) {
         localBrandIds,
         localCategoryIds,
         localUnitIds,
+        filters,
         filters.brand_ids,
         filters.category_ids,
         filters.unit_ids,

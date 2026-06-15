@@ -26,7 +26,7 @@ import {
     pivotPrices,
     tierLabelForTierKey,
 } from "../utils/pivot";
-import { validatePrice } from "../utils/validators";
+import { EMPTY_PRICE_ERROR, validatePrice } from "../utils/validators";
 import { applyLoadError } from "../../shared/loadErrorState";
 import { isUnauthorizedError } from "../../shared/apiHttp";
 
@@ -137,7 +137,11 @@ export function usePricingMatrix(args: {
         setLoading(true);
 
         try {
-            const res = await api.getProducts({
+            const dirtyProductIds = [...dirtyRef.current.keys()]
+                .map((key) => Number(String(key).split(":")[0]))
+                .filter((id) => Number.isFinite(id) && id > 0);
+
+            const res = await api.getMatrixPage({
                 q: filters.q || undefined,
                 category_ids: filters.category_ids.length ? filters.category_ids.join(",") : undefined,
                 brand_ids: filters.brand_ids.length ? filters.brand_ids.join(",") : undefined,
@@ -148,6 +152,8 @@ export function usePricingMatrix(args: {
                 missing_tier: filters.missing_tier ? "1" : "0",
                 page: String(page),
                 page_size: String(pageSize),
+                pending_product_ids:
+                    dirtyProductIds.length > 0 ? dirtyProductIds.join(",") : undefined,
             });
 
             const products: MatrixProductRow[] = (res.data ?? []) as MatrixProductRow[];
@@ -181,20 +187,13 @@ export function usePricingMatrix(args: {
                 .map((p) => toNumberOrNull(p.product_id))
                 .filter((id): id is number => id !== null);
 
-            const dirtyProductIds = [...dirtyRef.current.keys()]
-                .map((key) => Number(String(key).split(":")[0]))
-                .filter((id) => Number.isFinite(id) && id > 0);
-            const pendingScopeIds = Array.from(new Set([...productIds, ...dirtyProductIds]));
-            const pageProductIdSet = new Set(productIds);
             const dirtyProductIdSet = new Set(dirtyProductIds);
+            const pageProductIdSet = new Set(productIds);
 
-            const priceRes = await api.getPricesForProducts(productIds);
-            const priceMap = pivotPrices(priceTypes, priceRes.data ?? []);
+            const priceMap = pivotPrices(priceTypes, res.prices ?? []);
 
-            const [pendingPriceRes, pendingCostRes] = await Promise.all([
-                api.getPendingPriceRequests(pendingScopeIds),
-                api.getPendingCostRequests(pendingScopeIds),
-            ]);
+            const pendingPriceRes = { data: res.pending_price_requests ?? [] };
+            const pendingCostRes = { data: res.pending_cost_requests ?? [] };
 
             setPendingMap((prev) => {
                 const nextPending = new Map<PendingKey, number>();
@@ -308,7 +307,7 @@ export function usePricingMatrix(args: {
                 setLoading(false);
             }
         }
-    }, [serverFiltersKey, page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes, emptyPivotForTypes]);
+    }, [page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes, emptyPivotForTypes, filters]);
 
     useEffect(() => {
         void refresh();
@@ -319,21 +318,42 @@ export function usePricingMatrix(args: {
         if (pendingMapRef.current.has(key)) return;
 
         const rawString = String(raw ?? "");
+        const meta = snapshotDirtyCellMeta(rowsRef.current, productId, tier);
 
         if (!rawString.trim()) {
+            if (meta.current_value === null) {
+                setDirty((prev) => {
+                    const next = new Map(prev);
+                    next.delete(key);
+                    return next;
+                });
+                setDirtyErrors((prev) => {
+                    const next = new Map(prev);
+                    next.delete(key);
+                    return next;
+                });
+                setDirtyMeta((prev) => {
+                    const next = new Map(prev);
+                    next.delete(key);
+                    return next;
+                });
+                bumpDirtyVersion();
+                return;
+            }
+
             setDirty((prev) => {
                 const next = new Map(prev);
-                next.delete(key);
+                next.set(key, "");
                 return next;
             });
             setDirtyErrors((prev) => {
                 const next = new Map(prev);
-                next.delete(key);
+                next.set(key, EMPTY_PRICE_ERROR);
                 return next;
             });
             setDirtyMeta((prev) => {
                 const next = new Map(prev);
-                next.delete(key);
+                next.set(key, meta);
                 return next;
             });
             bumpDirtyVersion();
@@ -342,7 +362,6 @@ export function usePricingMatrix(args: {
 
         const value = clampMoney(toNumberOrNull(rawString.trim()));
         const err = validatePrice(value);
-        const meta = snapshotDirtyCellMeta(rowsRef.current, productId, tier);
 
         if (moneyValuesEqual(value, meta.current_value)) {
             setDirty((prev) => {
@@ -408,8 +427,7 @@ export function usePricingMatrix(args: {
         let price = 0;
         let cost = 0;
 
-        for (const [key, raw] of dirty.entries()) {
-            if (!raw.trim()) continue;
+        for (const key of dirty.keys()) {
             const tier = key.slice(key.indexOf(":") + 1);
             if (isListTierKey(tier)) cost += 1;
             else price += 1;
@@ -431,8 +449,7 @@ export function usePricingMatrix(args: {
 
     const offPageDirtyCount = useMemo(() => {
         let count = 0;
-        for (const [key, raw] of dirty.entries()) {
-            if (!raw.trim()) continue;
+        for (const key of dirty.keys()) {
             const productId = Number(key.split(":")[0]);
             if (!Number.isFinite(productId) || !visibleProductIds.has(productId)) {
                 count += 1;
@@ -457,15 +474,52 @@ export function usePricingMatrix(args: {
         const lines: DirtyPreviewLine[] = [];
 
         for (const [k, price] of dirty.entries()) {
-            const proposed = parseDirtyProposedValue(price);
-            if (proposed === null || proposed === 0) continue;
-
             const productId = Number(k.slice(0, k.indexOf(":")));
             const tier = k.slice(k.indexOf(":") + 1);
             const meta = dirtyMeta.get(k);
             const product = findProductInRows(rows, productId);
             const product_name = meta?.product_name ?? product?.product_name ?? `Product #${productId}`;
             const product_code = meta?.product_code ?? product?.product_code ?? null;
+
+            if (!price.trim()) {
+                const validation_error = dirtyErrors.get(k) ?? EMPTY_PRICE_ERROR;
+
+                if (isListTierKey(tier)) {
+                    const current_cost =
+                        meta?.current_value ??
+                        (product ? toNumberOrNull(product.cost_per_unit) : null);
+
+                    lines.push({
+                        product_id: productId,
+                        product_name,
+                        product_code,
+                        tier_label: "List Cost",
+                        kind: "cost",
+                        current_value: current_cost,
+                        proposed_value: null,
+                        validation_error,
+                    });
+                    continue;
+                }
+
+                const priceTypeId = Number(tier);
+                if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) continue;
+
+                lines.push({
+                    product_id: productId,
+                    product_name,
+                    product_code,
+                    tier_label: tierLabelForTierKey(tier, priceTypes),
+                    kind: "price",
+                    current_value: meta?.current_value ?? findCurrentPrice(productId, tier),
+                    proposed_value: null,
+                    validation_error,
+                });
+                continue;
+            }
+
+            const proposed = parseDirtyProposedValue(price);
+            if (proposed === null || proposed === 0) continue;
 
             if (isListTierKey(tier)) {
                 const current_cost =
@@ -504,7 +558,7 @@ export function usePricingMatrix(args: {
             if (a.kind !== b.kind) return a.kind === "price" ? -1 : 1;
             return a.tier_label.localeCompare(b.tier_label);
         });
-    }, [dirty, dirtyMeta, findCurrentPrice, priceTypes, rows]);
+    }, [dirty, dirtyErrors, dirtyMeta, findCurrentPrice, priceTypes, rows]);
 
     const saveAll = useCallback(async (batch?: SavePriceChangeBatchInput): Promise<SaveAllResult> => {
         if (dirtyErrors.size > 0) {
@@ -512,8 +566,8 @@ export function usePricingMatrix(args: {
             return { success: false, reason: "validation" };
         }
 
-        const hasNonemptyDirty = Array.from(dirty.values()).some((raw) => raw.trim().length > 0);
-        if (!hasNonemptyDirty) {
+        const hasDirty = dirty.size > 0;
+        if (!hasDirty) {
             toast.message("No changes to submit.");
             return { success: false, reason: "no_changes" };
         }
@@ -728,6 +782,7 @@ export function usePricingMatrix(args: {
             meta,
             usedUnits,
             priceTypes,
+            dirtyVersion,
 
             filters,
             setFilters,
@@ -755,6 +810,7 @@ export function usePricingMatrix(args: {
             meta,
             usedUnits,
             priceTypes,
+            dirtyVersion,
             filters,
             setFilters,
             resetFilters,

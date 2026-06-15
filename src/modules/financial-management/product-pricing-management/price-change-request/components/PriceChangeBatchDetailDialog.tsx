@@ -14,6 +14,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import {
     Table,
     TableBody,
@@ -22,9 +23,11 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 import type { PriceChangeBatchDetail, PriceChangeBatchLine } from "../types";
+import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { getPriceChangeBatch } from "../providers/pcrApi";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
@@ -34,12 +37,17 @@ type Props = {
     acting: boolean;
     onOpenChange: (open: boolean) => void;
     onApprove: (headerId: number) => Promise<void> | void;
-    onReject: (headerId: number) => void;
+    onReject: (headerId: number, reason: string) => Promise<void> | void;
 };
 
 function money(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
-    return Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return new Intl.NumberFormat("en-PH", {
+        style: "currency",
+        currency: "PHP",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(value));
 }
 
 function percent(value: number | null | undefined) {
@@ -100,6 +108,9 @@ export function PriceChangeBatchDetailDialog({
 }: Props) {
     const [detail, setDetail] = React.useState<PriceChangeBatchDetail | null>(null);
     const [loading, setLoading] = React.useState(false);
+    const [rejecting, setRejecting] = React.useState(false);
+    const [rejectReason, setRejectReason] = React.useState("");
+    const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | null>(null);
 
     React.useEffect(() => {
         let cancelled = false;
@@ -129,14 +140,42 @@ export function PriceChangeBatchDetailDialog({
         };
     }, [batchId, open]);
 
-    const lines = detail?.details ?? [];
+    const lines = React.useMemo(() => detail?.details ?? [], [detail?.details]);
     const isPending = detail?.status === "PENDING";
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
     const headerId = detail?.header_id ?? batchId ?? 0;
 
+    const handleOpenChange = React.useCallback(
+        (nextOpen: boolean) => {
+            if (!nextOpen) {
+                setRejecting(false);
+                setRejectReason("");
+                setConfirmingAction(null);
+            }
+            onOpenChange(nextOpen);
+        },
+        [onOpenChange],
+    );
+
+    const handleApprove = React.useCallback(async () => {
+        if (!headerId) return;
+        await onApprove(headerId);
+        setConfirmingAction(null);
+        handleOpenChange(false);
+    }, [handleOpenChange, headerId, onApprove]);
+
+    const handleReject = React.useCallback(async () => {
+        const reason = rejectReason.trim();
+        if (!headerId || !reason) return;
+        await onReject(headerId, reason);
+        setConfirmingAction(null);
+        handleOpenChange(false);
+    }, [handleOpenChange, headerId, onReject, rejectReason]);
+
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-5xl">
+        <>
+            <Dialog open={open} onOpenChange={handleOpenChange}>
+                <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-5xl">
                 <DialogHeader>
                     <DialogTitle>Price Change Batch {headerId ? `PCB-${headerId}` : ""}</DialogTitle>
                     <DialogDescription>
@@ -240,31 +279,66 @@ export function PriceChangeBatchDetailDialog({
                                 Amounts are not totaled across products and price types.
                             </p>
                         </div>
+
+                        {isPending && rejecting ? (
+                            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+                                <Label htmlFor="batch-reject-reason">Reject Reason</Label>
+                                <Textarea
+                                    id="batch-reject-reason"
+                                    value={rejectReason}
+                                    onChange={(event) => setRejectReason(event.target.value)}
+                                    placeholder="Enter reason..."
+                                    rows={4}
+                                />
+                            </div>
+                        ) : null}
                     </div>
                 ) : (
                     <div className="py-10 text-center text-muted-foreground">No batch selected.</div>
                 )}
 
                 <DialogFooter>
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>
+                    <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={acting}>
                         Close
                     </Button>
                     {isPending && headerId ? (
                         <>
-                            <Button
-                                variant="outline"
-                                className={pcrRejectButtonClass}
-                                onClick={() => onReject(headerId)}
-                                disabled={acting}
-                            >
-                                Reject Batch
-                            </Button>
+                            {rejecting ? (
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => {
+                                            setRejecting(false);
+                                            setRejectReason("");
+                                        }}
+                                        disabled={acting}
+                                    >
+                                        Cancel Reject
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        className={pcrRejectButtonClass}
+                                        onClick={() => setConfirmingAction("reject")}
+                                        disabled={acting || !rejectReason.trim()}
+                                    >
+                                        Confirm Reject Batch
+                                    </Button>
+                                </>
+                            ) : (
+                                <Button
+                                    variant="outline"
+                                    className={pcrRejectButtonClass}
+                                    onClick={() => setRejecting(true)}
+                                    disabled={acting}
+                                >
+                                    Reject Batch
+                                </Button>
+                            )}
                             <Button
                                 className={pcrApproveButtonClass}
-                                onClick={() => onApprove(headerId)}
+                                onClick={() => setConfirmingAction("approve")}
                                 disabled={acting}
                             >
-                                {acting ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
                                 Approve Batch
                             </Button>
                         </>
@@ -272,5 +346,23 @@ export function PriceChangeBatchDetailDialog({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+
+            <DecisionConfirmationDialog
+                open={confirmingAction != null}
+                action={confirmingAction ?? "approve"}
+                recordLabel={headerId ? `PCB-${headerId}` : "Price Change Batch"}
+                loading={acting}
+                description={
+                    confirmingAction === "reject"
+                        ? `Reject ${headerId ? `PCB-${headerId}` : "this price change batch"}? This will reject the entire price change batch.`
+                        : `Approve ${headerId ? `PCB-${headerId}` : "this price change batch"}? This will approve and apply the entire price change batch.`
+                }
+                rejectReason={confirmingAction === "reject" ? rejectReason.trim() : undefined}
+                onOpenChange={(nextOpen) => {
+                    if (!nextOpen) setConfirmingAction(null);
+                }}
+                onConfirm={confirmingAction === "reject" ? handleReject : handleApprove}
+            />
+        </>
     );
 }

@@ -59,6 +59,7 @@ type PricingMatrixLike = {
     usedUnits?: Unit[];
     rows?: MatrixRow[];
     meta?: MatrixMeta;
+    dirtyVersion?: number;
 
     loading?: boolean;
     error?: string | null;
@@ -580,7 +581,7 @@ function PricingCards(props: {
             columnsPerRow={columnsPerRow}
             itemClassName="px-3 pb-3"
             getItemKey={(row) => String(row.group_id)}
-            estimateItemSize={(row, index) =>
+            estimateItemSize={(row) =>
                 estimateProductGroupCardHeight({
                     tierCount: tiers.length,
                     usedUnits,
@@ -629,7 +630,10 @@ export default function PricingTable({ matrix, dirtyVersion = 0 }: Props) {
         ],
     );
 
-    const rows: MatrixRow[] = Array.isArray(matrix.rows) ? matrix.rows : [];
+    const rows = React.useMemo<MatrixRow[]>(
+        () => Array.isArray(matrix.rows) ? matrix.rows : [],
+        [matrix.rows],
+    );
     const meta: MatrixMeta = matrix.meta ?? {};
     const loading = Boolean(matrix.loading);
 
@@ -652,7 +656,7 @@ export default function PricingTable({ matrix, dirtyVersion = 0 }: Props) {
             }
             return handler;
         },
-        [matrix.setCell],
+        [matrix],
     );
 
     const totalGroups = toNum(meta.total ?? 0, 0);

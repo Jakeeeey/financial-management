@@ -4,6 +4,7 @@ import { parseApprovalSearchQuery, shouldFetchCostStreamInUnifiedSearch, shouldF
 import { toInclusiveDateToEnd } from "../_dateFilters";
 import {
     appendProductIdInFilter,
+    getBatchHeaderIdsForProducts,
     getSupplierScopedProductIdsForSuppliers,
     resolveSupplierIds,
 } from "../_supplierFilters";
@@ -18,9 +19,25 @@ import {
     directusErrorResponse,
     directusHeaders,
     fetchDirectus,
+    BatchDetailRow,
+    BatchHeaderRow,
+    DETAILS,
+    HEADERS,
     isRecord,
     mustBase,
+    normalizeHeaderId,
+    normalizeProductId,
+    pickId,
 } from "../price-change-batches/_batch";
+import {
+    COST_HEADERS,
+    COST_DETAILS,
+    CostDetailRow,
+    CostHeaderRow,
+    normalizeCostHeaderId,
+    normalizeCostHeaderIdOfDetail,
+    normalizeCostProductId,
+} from "../cost-change-batches/_batch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +49,7 @@ type DirectusList<T> = { data?: T[]; meta?: { total_count?: number } | null };
 
 type DirectusCCRRow = {
     request_id?: number | string | null;
+    header_id?: number | string | CostHeaderRow | null;
     product_id?:
         | number
         | string
@@ -111,24 +129,38 @@ type DirectusPCRRow = {
 
 type UnifiedApprovalRow = {
     row_key: string;
-    kind: "price_type" | "list_price";
+    kind: "price_batch" | "cost_batch" | "price_type" | "list_price";
     record_label: string;
     title: string;
     subtitle?: string;
     status: string;
     requested_at: string | null;
     requested_by?: number | null;
-    request_id: number;
-    product_id: unknown;
+    requested_by_name?: string | null;
+    request_id?: number;
+    product_id?: unknown;
     price_type_id?: unknown;
     proposed_price?: number | null;
     current_cost?: number | null;
     proposed_cost?: number | null;
     reject_reason?: string | null;
     batch_header_id?: number | null;
+    batch_id?: number;
+    line_count?: number;
+    total_products?: number;
+    proposed_min?: number | null;
+    proposed_max?: number | null;
     remarks?: string | null;
     reference_no?: string | null;
     current_price?: number | null;
+};
+
+type DirectusUserRow = {
+    user_id?: number | string | null;
+    user_fname?: string | null;
+    user_mname?: string | null;
+    user_lname?: string | null;
+    user_email?: string | null;
 };
 
 type ApprovalFilters = {
@@ -161,6 +193,248 @@ function toMoney(value: unknown): number | null {
     return Number.isFinite(n) ? n : null;
 }
 
+function isCostHeaderAccessError(error: unknown): boolean {
+    if (!(error instanceof Error) || !error.message) return false;
+
+    try {
+        const parsed: unknown = JSON.parse(error.message);
+        if (!isRecord(parsed)) return false;
+
+        const status = Number(parsed.status);
+        const url = String(parsed.url ?? "");
+        const body = String(parsed.body ?? "");
+        const text = `${url} ${body}`.toLowerCase();
+
+        return (
+            [400, 401, 403, 404].includes(status) &&
+            (text.includes(COST_DETAILS) || text.includes("header_id") || text.includes("price_change_headers"))
+        );
+    } catch {
+        return false;
+    }
+}
+
+function joinName(parts: Array<string | null | undefined>): string {
+    return parts.map((part) => String(part ?? "").trim()).filter(Boolean).join(" ");
+}
+
+async function fetchUserNamesById(userIds: Array<number | null | undefined>): Promise<Map<number, string>> {
+    const ids = Array.from(
+        new Set(
+            userIds
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value) && value > 0),
+        ),
+    );
+    const userNames = new Map<number, string>();
+    if (ids.length === 0) return userNames;
+
+    try {
+        for (let i = 0; i < ids.length; i += 100) {
+            const chunk = ids.slice(i, i + 100);
+            const params = new URLSearchParams();
+            params.set("limit", String(Math.max(100, chunk.length)));
+            params.set("fields", "user_id,user_fname,user_mname,user_lname,user_email");
+            params.set("filter[user_id][_in]", chunk.join(","));
+
+            const url = `${mustBase()}/items/user?${params.toString()}`;
+            const json = await fetchDirectus<DirectusList<DirectusUserRow>>(url, { headers: directusHeaders() });
+
+            for (const user of json.data ?? []) {
+                const id = Number(user.user_id);
+                if (!Number.isFinite(id) || id <= 0) continue;
+
+                const displayName =
+                    joinName([user.user_fname, user.user_mname, user.user_lname]) ||
+                    String(user.user_email ?? "").trim() ||
+                    `User #${id}`;
+                userNames.set(id, displayName);
+            }
+        }
+    } catch {
+        return userNames;
+    }
+
+    return userNames;
+}
+
+async function addRequestedByNames(rows: UnifiedApprovalRow[]): Promise<UnifiedApprovalRow[]> {
+    const namesById = await fetchUserNamesById(rows.map((row) => row.requested_by));
+
+    return rows.map((row) => {
+        const requestedBy = Number(row.requested_by);
+        return {
+            ...row,
+            requested_by_name:
+                Number.isFinite(requestedBy) && requestedBy > 0
+                    ? namesById.get(requestedBy) ?? `User #${requestedBy}`
+                    : null,
+        };
+    });
+}
+
+function supplierNameOf(value: unknown): string {
+    if (!isRecord(value)) return "";
+    const shortcut = String(value.supplier_shortcut ?? "").trim();
+    const name = String(value.supplier_name ?? "").trim();
+    return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
+}
+
+function headerIdOfDetail(row: BatchDetailRow): number {
+    const raw = row.header_id;
+    if (isRecord(raw)) return pickId(raw.header_id ?? raw.id) ?? 0;
+    return pickId(raw) ?? 0;
+}
+
+type BatchLineSummary = {
+    lineCount: number;
+    totalProducts: number;
+    proposedMin: number | null;
+    proposedMax: number | null;
+};
+
+async function summarizeBatchLines(headerIds: number[]): Promise<Map<number, BatchLineSummary>> {
+    const summaries = new Map<number, {
+        lineCount: number;
+        productIds: Set<number>;
+        proposedValues: number[];
+    }>();
+
+    const ids = Array.from(new Set(headerIds.filter((id) => Number.isFinite(id) && id > 0)));
+    if (ids.length === 0) return new Map();
+
+    for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const params = new URLSearchParams();
+        params.set("limit", "-1");
+        params.set("fields", "header_id,product_id,proposed_price");
+        params.set("filter[header_id][_in]", chunk.join(","));
+
+        const url = `${mustBase()}/items/${DETAILS}?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<BatchDetailRow>>(url, { headers: directusHeaders() });
+
+        for (const line of json.data ?? []) {
+            const headerId = headerIdOfDetail(line);
+            if (!headerId) continue;
+
+            const summary = summaries.get(headerId) ?? {
+                lineCount: 0,
+                productIds: new Set<number>(),
+                proposedValues: [],
+            };
+
+            summary.lineCount += 1;
+
+            const productId = normalizeProductId(line);
+            if (productId > 0) summary.productIds.add(productId);
+
+            const proposed = toMoney(line.proposed_price);
+            if (proposed !== null) summary.proposedValues.push(proposed);
+
+            summaries.set(headerId, summary);
+        }
+    }
+
+    const normalized = new Map<number, BatchLineSummary>();
+    for (const [headerId, summary] of summaries) {
+        normalized.set(headerId, {
+            lineCount: summary.lineCount,
+            totalProducts: summary.productIds.size,
+            proposedMin: summary.proposedValues.length ? Math.min(...summary.proposedValues) : null,
+            proposedMax: summary.proposedValues.length ? Math.max(...summary.proposedValues) : null,
+        });
+    }
+
+    return normalized;
+}
+
+async function summarizeCostBatchLines(headerIds: number[]): Promise<Map<number, BatchLineSummary>> {
+    const summaries = new Map<number, {
+        lineCount: number;
+        productIds: Set<number>;
+        proposedValues: number[];
+    }>();
+
+    const ids = Array.from(new Set(headerIds.filter((id) => Number.isFinite(id) && id > 0)));
+    if (ids.length === 0) return new Map();
+
+    for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const params = new URLSearchParams();
+        params.set("limit", "-1");
+        params.set("fields", "header_id,product_id,proposed_cost");
+        params.set("filter[header_id][_in]", chunk.join(","));
+
+        const url = `${mustBase()}/items/${COST_DETAILS}?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<CostDetailRow>>(url, { headers: directusHeaders() });
+
+        for (const line of json.data ?? []) {
+            const headerId = normalizeCostHeaderIdOfDetail(line);
+            if (!headerId) continue;
+
+            const summary = summaries.get(headerId) ?? {
+                lineCount: 0,
+                productIds: new Set<number>(),
+                proposedValues: [],
+            };
+
+            summary.lineCount += 1;
+
+            const productId = normalizeCostProductId(line);
+            if (productId > 0) summary.productIds.add(productId);
+
+            const proposed = toMoney(line.proposed_cost);
+            if (proposed !== null) summary.proposedValues.push(proposed);
+
+            summaries.set(headerId, summary);
+        }
+    }
+
+    const normalized = new Map<number, BatchLineSummary>();
+    for (const [headerId, summary] of summaries) {
+        normalized.set(headerId, {
+            lineCount: summary.lineCount,
+            totalProducts: summary.productIds.size,
+            proposedMin: summary.proposedValues.length ? Math.min(...summary.proposedValues) : null,
+            proposedMax: summary.proposedValues.length ? Math.max(...summary.proposedValues) : null,
+        });
+    }
+
+    return normalized;
+}
+
+async function getBatchHeaderIdsForProductSearch(text: string): Promise<number[]> {
+    const q = String(text ?? "").trim();
+    if (!q) return [];
+
+    const ids: number[] = [];
+    let offset = 0;
+    const limit = 500;
+
+    while (true) {
+        const params = new URLSearchParams();
+        params.set("limit", String(limit));
+        params.set("offset", String(offset));
+        params.set("fields", "header_id");
+        params.set("filter[_or][0][product_id][product_name][_contains]", q);
+        params.set("filter[_or][1][product_id][product_code][_contains]", q);
+
+        const url = `${mustBase()}/items/${DETAILS}?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<BatchDetailRow>>(url, { headers: directusHeaders() });
+        const rows = json.data ?? [];
+
+        for (const row of rows) {
+            const headerId = headerIdOfDetail(row);
+            if (headerId > 0) ids.push(headerId);
+        }
+
+        if (rows.length < limit) break;
+        offset += rows.length;
+    }
+
+    return Array.from(new Set(ids));
+}
+
 function appendPriceFilters(params: URLSearchParams, filters: ApprovalFilters, supplierProductIds?: number[]) {
     let andIdx = 0;
     const addAnd = (suffix: string, value: string) => {
@@ -185,6 +459,200 @@ function appendPriceFilters(params: URLSearchParams, filters: ApprovalFilters, s
         } else if (parsed.textContains) {
             addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
             params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+        }
+    }
+
+    return andIdx;
+}
+
+async function getCostHeaderIdsForProductSearch(text: string): Promise<number[]> {
+    const q = String(text ?? "").trim();
+    if (!q) return [];
+
+    const ids: number[] = [];
+    let offset = 0;
+    const limit = 500;
+
+    while (true) {
+        const params = new URLSearchParams();
+        params.set("limit", String(limit));
+        params.set("offset", String(offset));
+        params.set("fields", "header_id");
+        params.set("filter[_or][0][product_id][product_name][_contains]", q);
+        params.set("filter[_or][1][product_id][product_code][_contains]", q);
+
+        const url = `${mustBase()}/items/${COST_DETAILS}?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<CostDetailRow>>(url, { headers: directusHeaders() });
+        const rows = json.data ?? [];
+
+        for (const row of rows) {
+            const headerId = normalizeCostHeaderIdOfDetail(row);
+            if (headerId > 0) ids.push(headerId);
+        }
+
+        if (rows.length < limit) break;
+        offset += rows.length;
+    }
+
+    return Array.from(new Set(ids));
+}
+
+async function getCostHeaderIdsForProducts(productIds: number[]): Promise<number[]> {
+    const ids = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
+    if (ids.length === 0) return [];
+
+    const headerIds: number[] = [];
+
+    for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200);
+        const params = new URLSearchParams();
+        params.set("limit", "-1");
+        params.set("fields", "header_id");
+        params.set("filter[product_id][_in]", chunk.join(","));
+
+        const url = `${mustBase()}/items/${COST_DETAILS}?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<CostDetailRow>>(url, { headers: directusHeaders() });
+
+        for (const row of json.data ?? []) {
+            const headerId = normalizeCostHeaderIdOfDetail(row);
+            if (headerId > 0) headerIds.push(headerId);
+        }
+    }
+
+    return Array.from(new Set(headerIds));
+}
+
+async function getAllCostBatchHeaderIds(): Promise<number[]> {
+    const headerIds: number[] = [];
+    let offset = 0;
+    const limit = 500;
+
+    while (true) {
+        const params = new URLSearchParams();
+        params.set("limit", String(limit));
+        params.set("offset", String(offset));
+        params.set("fields", "header_id");
+        params.set("filter[header_id][_nnull]", "true");
+
+        const url = `${mustBase()}/items/${COST_DETAILS}?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<CostDetailRow>>(url, { headers: directusHeaders() });
+        const rows = json.data ?? [];
+
+        for (const row of rows) {
+            const headerId = normalizeCostHeaderIdOfDetail(row);
+            if (headerId > 0) headerIds.push(headerId);
+        }
+
+        if (rows.length < limit) break;
+        offset += rows.length;
+    }
+
+    return Array.from(new Set(headerIds));
+}
+
+async function getAllPriceBatchHeaderIds(): Promise<number[]> {
+    const headerIds: number[] = [];
+    let offset = 0;
+    const limit = 500;
+
+    while (true) {
+        const params = new URLSearchParams();
+        params.set("limit", String(limit));
+        params.set("offset", String(offset));
+        params.set("fields", "header_id");
+        params.set("filter[header_id][_nnull]", "true");
+
+        const url = `${mustBase()}/items/${DETAILS}?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<BatchDetailRow>>(url, { headers: directusHeaders() });
+        const rows = json.data ?? [];
+
+        for (const row of rows) {
+            const headerId = headerIdOfDetail(row);
+            if (headerId > 0) headerIds.push(headerId);
+        }
+
+        if (rows.length < limit) break;
+        offset += rows.length;
+    }
+
+    return Array.from(new Set(headerIds));
+}
+
+function intersectHeaderIds(left: number[], right: number[]): number[] {
+    const rightSet = new Set(right);
+    return left.filter((id) => rightSet.has(id));
+}
+
+function appendBatchFilters(
+    params: URLSearchParams,
+    filters: ApprovalFilters,
+    priceHeaderIds: number[],
+    headerIdsFromSearch?: number[],
+) {
+    let andIdx = 0;
+    const addAnd = (suffix: string, value: string) => {
+        params.set(`filter[_and][${andIdx}]${suffix}`, value);
+        andIdx += 1;
+    };
+
+    if (priceHeaderIds.length === 0) {
+        addAnd("[header_id][_in]", "0");
+    } else {
+        addAnd("[header_id][_in]", priceHeaderIds.join(","));
+    }
+    if (filters.status) addAnd("[status][_eq]", filters.status);
+    if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
+    if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
+
+    if (filters.q) {
+        const parsed = parseApprovalSearchQuery(filters.q);
+        const headerId = parsed.batchHeaderId ?? parsed.numericId;
+
+        if (headerId != null) {
+            addAnd("[header_id][_eq]", String(headerId));
+        } else if (parsed.textContains) {
+            addAnd("[_or][0][reference_no][_contains]", parsed.textContains);
+            params.set(`filter[_and][${andIdx - 1}][_or][1][remarks][_contains]`, parsed.textContains);
+            if (headerIdsFromSearch && headerIdsFromSearch.length > 0) {
+                params.set(`filter[_and][${andIdx - 1}][_or][2][header_id][_in]`, headerIdsFromSearch.join(","));
+            }
+        }
+    }
+}
+
+function appendCostBatchFilters(
+    params: URLSearchParams,
+    filters: ApprovalFilters,
+    costHeaderIds: number[],
+    headerIdsFromSearch?: number[],
+) {
+    let andIdx = 0;
+    const addAnd = (suffix: string, value: string) => {
+        params.set(`filter[_and][${andIdx}]${suffix}`, value);
+        andIdx += 1;
+    };
+
+    if (costHeaderIds.length === 0) {
+        addAnd("[header_id][_in]", "0");
+    } else {
+        addAnd("[header_id][_in]", costHeaderIds.join(","));
+    }
+    if (filters.status) addAnd("[status][_eq]", filters.status);
+    if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
+    if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
+
+    if (filters.q) {
+        const parsed = parseApprovalSearchQuery(filters.q);
+        const headerId = parsed.costRequestId ?? parsed.numericId;
+
+        if (headerId != null) {
+            addAnd("[header_id][_eq]", String(headerId));
+        } else if (parsed.textContains) {
+            addAnd("[_or][0][reference_no][_contains]", parsed.textContains);
+            params.set(`filter[_and][${andIdx - 1}][_or][1][remarks][_contains]`, parsed.textContains);
+            if (headerIdsFromSearch && headerIdsFromSearch.length > 0) {
+                params.set(`filter[_and][${andIdx - 1}][_or][2][header_id][_in]`, headerIdsFromSearch.join(","));
+            }
         }
     }
 }
@@ -215,6 +683,8 @@ function appendCostFilters(params: URLSearchParams, filters: ApprovalFilters, su
             params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
         }
     }
+
+    return andIdx;
 }
 
 async function fetchPriceRequestsPage(
@@ -236,6 +706,7 @@ async function fetchPriceRequestsPage(
         "fields",
         [
             "request_id",
+            "header_id",
             "product_id",
             "price_type_id",
             "proposed_price",
@@ -259,7 +730,8 @@ async function fetchPriceRequestsPage(
         ].join(","),
     );
 
-    appendPriceFilters(params, filters, supplierProductIds);
+    const nextAndIdx = appendPriceFilters(params, filters, supplierProductIds);
+    params.set(`filter[_and][${nextAndIdx}][header_id][_null]`, "true");
 
     const url = `${mustBase()}/items/${PCR}?${params.toString()}`;
     const json = await fetchDirectus<DirectusList<DirectusPCRRow>>(url, { headers: directusHeaders() });
@@ -292,6 +764,161 @@ async function fetchPriceRequestsPage(
             remarks: row.remarks ?? null,
             reference_no: row.reference_no ?? null,
             current_price: toMoney(row.current_price),
+        });
+    }
+
+    return {
+        rows,
+        total: Number(json.meta?.total_count ?? rows.length),
+    };
+}
+
+async function fetchPriceBatchesPage(
+    filters: ApprovalFilters,
+    offset: number,
+    limit: number,
+    priceHeaderIds: number[],
+    headerIdsFromSearch?: number[],
+): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
+    if (priceHeaderIds.length === 0) {
+        return { rows: [], total: 0 };
+    }
+
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, limit)));
+    params.set("offset", String(Math.max(0, offset)));
+    params.set("meta", "total_count");
+    params.set("sort", "-requested_at");
+    params.set(
+        "fields",
+        [
+            "header_id",
+            "supplier_id",
+            "supplier_id.id",
+            "supplier_id.supplier_name",
+            "supplier_id.supplier_shortcut",
+            "reference_no",
+            "remarks",
+            "status",
+            "requested_by",
+            "requested_at",
+        ].join(","),
+    );
+
+    appendBatchFilters(params, filters, priceHeaderIds, headerIdsFromSearch);
+
+    const url = `${mustBase()}/items/${HEADERS}?${params.toString()}`;
+    const json = await fetchDirectus<DirectusList<BatchHeaderRow>>(url, { headers: directusHeaders() });
+    const headerRows = json.data ?? [];
+    const headerIds = headerRows.map(normalizeHeaderId).filter((id) => id > 0);
+    const summaries = await summarizeBatchLines(headerIds);
+
+    const rows: UnifiedApprovalRow[] = [];
+    for (const row of headerRows) {
+        const headerId = normalizeHeaderId(row);
+        if (!headerId) continue;
+
+        const requestedBy = Number(row.requested_by);
+        const summary = summaries.get(headerId);
+        const supplierName = supplierNameOf(row.supplier_id);
+        const referenceNo = String(row.reference_no ?? "").trim();
+        const remarks = String(row.remarks ?? "").trim();
+        const proposedMin = summary?.proposedMin ?? null;
+        const proposedMax = summary?.proposedMax ?? null;
+
+        rows.push({
+            row_key: `batch:${headerId}`,
+            kind: "price_batch",
+            record_label: `PCB-${headerId}`,
+            title: supplierName || referenceNo || `Price change batch #${headerId}`,
+            subtitle: remarks || referenceNo || undefined,
+            status: String(row.status ?? "PENDING"),
+            requested_at: row.requested_at ?? null,
+            requested_by: Number.isFinite(requestedBy) ? requestedBy : null,
+            request_id: headerId,
+            batch_id: headerId,
+            line_count: summary?.lineCount ?? 0,
+            total_products: summary?.totalProducts ?? 0,
+            proposed_min: proposedMin,
+            proposed_max: proposedMax,
+            proposed_price: proposedMin === proposedMax ? proposedMin : null,
+            remarks: remarks || null,
+            reference_no: referenceNo || null,
+        });
+    }
+
+    return {
+        rows,
+        total: Number(json.meta?.total_count ?? rows.length),
+    };
+}
+
+async function fetchCostBatchesPage(
+    filters: ApprovalFilters,
+    offset: number,
+    limit: number,
+    costHeaderIds: number[],
+    headerIdsFromSearch?: number[],
+): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
+    if (costHeaderIds.length === 0) {
+        return { rows: [], total: 0 };
+    }
+
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, limit)));
+    params.set("offset", String(Math.max(0, offset)));
+    params.set("meta", "total_count");
+    params.set("sort", "-requested_at");
+    params.set(
+        "fields",
+        [
+            "header_id",
+            "reference_no",
+            "remarks",
+            "status",
+            "requested_by",
+            "requested_at",
+        ].join(","),
+    );
+
+    appendCostBatchFilters(params, filters, costHeaderIds, headerIdsFromSearch);
+
+    const url = `${mustBase()}/items/${COST_HEADERS}?${params.toString()}`;
+    const json = await fetchDirectus<DirectusList<CostHeaderRow>>(url, { headers: directusHeaders() });
+    const headerRows = json.data ?? [];
+    const headerIds = headerRows.map(normalizeCostHeaderId).filter((id) => id > 0);
+    const summaries = await summarizeCostBatchLines(headerIds);
+
+    const rows: UnifiedApprovalRow[] = [];
+    for (const row of headerRows) {
+        const headerId = normalizeCostHeaderId(row);
+        if (!headerId) continue;
+
+        const requestedBy = Number(row.requested_by);
+        const summary = summaries.get(headerId);
+        const referenceNo = String(row.reference_no ?? "").trim();
+        const remarks = String(row.remarks ?? "").trim();
+        const proposedMin = summary?.proposedMin ?? null;
+        const proposedMax = summary?.proposedMax ?? null;
+
+        rows.push({
+            row_key: `cost-batch:${headerId}`,
+            kind: "cost_batch",
+            record_label: `CCR-${headerId}`,
+            title: remarks || referenceNo || `List cost batch #${headerId}`,
+            subtitle: remarks && referenceNo ? referenceNo : undefined,
+            status: String(row.status ?? "PENDING"),
+            requested_at: row.requested_at ?? null,
+            requested_by: Number.isFinite(requestedBy) ? requestedBy : null,
+            request_id: headerId,
+            batch_id: headerId,
+            line_count: summary?.lineCount ?? 0,
+            total_products: summary?.totalProducts ?? 0,
+            proposed_min: proposedMin,
+            proposed_max: proposedMax,
+            proposed_cost: proposedMin === proposedMax ? proposedMin : null,
+            remarks: remarks || null,
+            reference_no: referenceNo || null,
         });
     }
 
@@ -336,10 +963,21 @@ async function fetchCostRequestsPage(
         ].join(","),
     );
 
-    appendCostFilters(params, filters, supplierProductIds);
+    const nextAndIdx = appendCostFilters(params, filters, supplierProductIds);
+    const linkedFilterKey = `filter[_and][${nextAndIdx}][header_id][_null]`;
+    params.set(linkedFilterKey, "true");
 
-    const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
-    const json = await fetchDirectus<DirectusList<DirectusCCRRow>>(url, { headers: directusHeaders() });
+    let json: DirectusList<DirectusCCRRow>;
+    try {
+        const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
+        json = await fetchDirectus<DirectusList<DirectusCCRRow>>(url, { headers: directusHeaders() });
+    } catch (error: unknown) {
+        if (!isCostHeaderAccessError(error)) throw error;
+
+        params.delete(linkedFilterKey);
+        const fallbackUrl = `${mustBase()}/items/${CCR}?${params.toString()}`;
+        json = await fetchDirectus<DirectusList<DirectusCCRRow>>(fallbackUrl, { headers: directusHeaders() });
+    }
 
     const rows: UnifiedApprovalRow[] = [];
 
@@ -386,6 +1024,7 @@ export async function GET(req: NextRequest) {
         const q = norm(searchParams.get("q"));
         const dateFrom = norm(searchParams.get("date_from"));
         const dateTo = norm(searchParams.get("date_to"));
+        const scope = norm(searchParams.get("scope"));
         const page = Math.max(1, Number(searchParams.get("page") ?? 1));
         const pageSize = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
 
@@ -394,17 +1033,91 @@ export async function GET(req: NextRequest) {
         let needed = offset + pageSize;
 
         const searchParse = q ? parseApprovalSearchQuery(q) : null;
-        const includePrice = !searchParse || shouldFetchPriceStreamInUnifiedSearch(searchParse);
-        const includeCost = !searchParse || shouldFetchCostStreamInUnifiedSearch(searchParse);
+        const includePriceScope = scope !== "cost";
+        const includeCostScope = scope !== "price";
+        const includePrice = includePriceScope && (!searchParse || shouldFetchPriceStreamInUnifiedSearch(searchParse));
+        const includeCost = includeCostScope && (!searchParse || shouldFetchCostStreamInUnifiedSearch(searchParse));
+        const includeBatch =
+            includePrice &&
+            (!searchParse ||
+                searchParse.batchHeaderId != null ||
+                searchParse.numericId != null ||
+                searchParse.textContains != null);
+        const includeCostBatch =
+            includeCost &&
+            (!searchParse ||
+                searchParse.costRequestId != null ||
+                searchParse.numericId != null ||
+                searchParse.textContains != null);
+        const includeStandalonePrice =
+            includePrice &&
+            !(
+                searchParse &&
+                searchParse.batchHeaderId != null &&
+                searchParse.numericId == null &&
+                searchParse.priceRequestId == null &&
+                searchParse.costRequestId == null
+            );
 
         const supplierProductIds =
             supplierIds.length > 0
                 ? await getSupplierScopedProductIdsForSuppliers(supplierIds)
                 : undefined;
+        let priceBatchHeaderIds: number[] = [];
+        if (includeBatch) {
+            const allPriceBatchHeaderIds = await getAllPriceBatchHeaderIds();
+            if (supplierIds.length > 0) {
+                const supplierPriceBatchHeaderIds = supplierProductIds
+                    ? await getBatchHeaderIdsForProducts(supplierProductIds)
+                    : [];
+                priceBatchHeaderIds = intersectHeaderIds(allPriceBatchHeaderIds, supplierPriceBatchHeaderIds);
+            } else {
+                priceBatchHeaderIds = allPriceBatchHeaderIds;
+            }
+        }
+        let costBatchHeaderIds: number[] = [];
+        if (includeCostBatch) {
+            try {
+                costBatchHeaderIds = supplierProductIds
+                    ? await getCostHeaderIdsForProducts(supplierProductIds)
+                    : await getAllCostBatchHeaderIds();
+            } catch (error: unknown) {
+                if (!isCostHeaderAccessError(error)) throw error;
+                costBatchHeaderIds = [];
+            }
+        }
+        const batchHeaderIdsFromSearch =
+            includeBatch && searchParse?.textContains
+                ? await getBatchHeaderIdsForProductSearch(searchParse.textContains)
+                : undefined;
+        let costHeaderIdsFromSearch: number[] | undefined;
+        if (includeCostBatch && searchParse?.textContains) {
+            try {
+                costHeaderIdsFromSearch = await getCostHeaderIdsForProductSearch(searchParse.textContains);
+            } catch (error: unknown) {
+                if (!isCostHeaderAccessError(error)) throw error;
+                costHeaderIdsFromSearch = [];
+            }
+        }
 
         const emptyStreamPage = () => Promise.resolve({ rows: [], total: 0 });
 
-        const fetchPriceTop = includePrice
+        const fetchBatchTop = includeBatch
+            ? (fetchNeeded: number) =>
+                  fetchStreamTopRows(
+                      (streamOffset, streamLimit) =>
+                          fetchPriceBatchesPage(
+                              filters,
+                              streamOffset,
+                              streamLimit,
+                              priceBatchHeaderIds,
+                              batchHeaderIdsFromSearch,
+                          ),
+                      fetchNeeded,
+                  )
+            : emptyStreamPage;
+
+        const fetchPriceTop = includeStandalonePrice
             ? (fetchNeeded: number) =>
                   fetchStreamTopRows(
                       (streamOffset, streamLimit) =>
@@ -422,12 +1135,32 @@ export async function GET(req: NextRequest) {
                   )
             : emptyStreamPage;
 
-        let [pricePage, costPage] = await Promise.all([fetchPriceTop(needed), fetchCostTop(needed)]);
+        const fetchCostBatchTop = includeCostBatch
+            ? (fetchNeeded: number) =>
+                  fetchStreamTopRows(
+                      (streamOffset, streamLimit) =>
+                          fetchCostBatchesPage(
+                              filters,
+                              streamOffset,
+                              streamLimit,
+                              costBatchHeaderIds,
+                              costHeaderIdsFromSearch,
+                          ),
+                      fetchNeeded,
+                  )
+            : emptyStreamPage;
 
-        let merged = mergeUnifiedRows(pricePage.rows, costPage.rows);
+        let [batchPage, pricePage, costBatchPage, costPage] = await Promise.all([
+            fetchBatchTop(needed),
+            fetchPriceTop(needed),
+            fetchCostBatchTop(needed),
+            fetchCostTop(needed),
+        ]);
+
+        let merged = mergeUnifiedRows(batchPage.rows, pricePage.rows, costBatchPage.rows, costPage.rows);
         let data = merged.slice(offset, offset + pageSize);
 
-        const totalCount = pricePage.total + costPage.total;
+        const totalCount = batchPage.total + pricePage.total + costBatchPage.total + costPage.total;
 
         if (
             data.length < pageSize &&
@@ -435,13 +1168,20 @@ export async function GET(req: NextRequest) {
             needed < MAX_UNIFIED_FETCH
         ) {
             needed = Math.min(needed * 2, MAX_UNIFIED_FETCH);
-            [pricePage, costPage] = await Promise.all([fetchPriceTop(needed), fetchCostTop(needed)]);
-            merged = mergeUnifiedRows(pricePage.rows, costPage.rows);
+            [batchPage, pricePage, costBatchPage, costPage] = await Promise.all([
+                fetchBatchTop(needed),
+                fetchPriceTop(needed),
+                fetchCostBatchTop(needed),
+                fetchCostTop(needed),
+            ]);
+            merged = mergeUnifiedRows(batchPage.rows, pricePage.rows, costBatchPage.rows, costPage.rows);
             data = merged.slice(offset, offset + pageSize);
         }
 
+        const enrichedData = await addRequestedByNames(data);
+
         return NextResponse.json({
-            data,
+            data: enrichedData,
             meta: { total_count: totalCount },
         });
     } catch (error: unknown) {

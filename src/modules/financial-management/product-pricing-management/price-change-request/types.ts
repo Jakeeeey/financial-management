@@ -2,7 +2,7 @@ export type PCRStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 
 export type PCRStatusFilter = PCRStatus | "ALL";
 
-export type ApprovalKind = "price_batch" | "price_type" | "list_price";
+export type ApprovalKind = "price_batch" | "cost_batch" | "price_type" | "list_price";
 
 export type ApprovalTypeFilter = "all" | "price" | "cost";
 
@@ -39,6 +39,7 @@ export type PriceChangeRequestRow = {
     status: PCRStatus;
 
     requested_by: number;
+    requested_by_name?: string | null;
     requested_at: string;
 
     header_id?:
@@ -82,6 +83,7 @@ export type PriceChangeBatchHeader = {
     remarks?: string;
     status: PriceChangeBatchStatus;
     requested_by?: number | string | null;
+    requested_by_name?: string | null;
     requested_at?: string | null;
     approved_by?: number | string | null;
     approved_at?: string | null;
@@ -103,6 +105,7 @@ export type CostChangeRequestRow = {
     status: PCRStatus;
 
     requested_by: number;
+    requested_by_name?: string | null;
     requested_at: string;
 
     approved_by?: number | null;
@@ -111,6 +114,41 @@ export type CostChangeRequestRow = {
     rejected_by?: number | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
+};
+
+export type ListCostBatchStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+
+export type ListCostBatchLine = {
+    request_id: number | null;
+    product_id: number;
+    product_name: string;
+    product_code?: string;
+    current_cost: number | null;
+    proposed_cost: number | null;
+    delta: number | null;
+    percent_change: number | null;
+    status: ListCostBatchStatus | PCRStatus | string;
+};
+
+export type ListCostBatchHeader = {
+    id: number;
+    header_id: number;
+    reference_no?: string;
+    remarks?: string;
+    status: ListCostBatchStatus;
+    requested_by?: number | string | null;
+    requested_by_name?: string | null;
+    requested_at?: string | null;
+    approved_by?: number | string | null;
+    approved_at?: string | null;
+    rejected_by?: number | string | null;
+    rejected_at?: string | null;
+    reject_reason?: string | null;
+    line_count?: number;
+};
+
+export type ListCostBatchDetail = ListCostBatchHeader & {
+    details: ListCostBatchLine[];
 };
 
 export type PriceTypeUnifiedApprovalRow = PriceChangeRequestRow & {
@@ -141,8 +179,35 @@ export type UnifiedApprovalRow =
           subtitle?: string;
           status: PCRStatus;
           requested_at: string | null;
+          requested_by?: number | string | null;
+          requested_by_name?: string | null;
           line_count?: number;
+          total_products?: number;
+          proposed_min?: number | null;
+          proposed_max?: number | null;
+          proposed_price?: number | null;
           batch_id?: number;
+          request_id?: number;
+      }
+    | {
+          row_key: string;
+          kind: "cost_batch";
+          record_label: string;
+          title: string;
+          subtitle?: string;
+          status: PCRStatus;
+          requested_at: string | null;
+          requested_by?: number | string | null;
+          requested_by_name?: string | null;
+          line_count?: number;
+          total_products?: number;
+          proposed_min?: number | null;
+          proposed_max?: number | null;
+          proposed_cost?: number | null;
+          batch_id?: number;
+          request_id?: number;
+          remarks?: string | null;
+          reference_no?: string | null;
       }
     | ItemUnifiedApprovalRow;
 

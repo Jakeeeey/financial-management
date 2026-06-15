@@ -18,7 +18,12 @@ type Props = {
 
 function money(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
-    return Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return new Intl.NumberFormat("en-PH", {
+        style: "currency",
+        currency: "PHP",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(value));
 }
 
 function changeLabel(current: number | null, proposed: number) {

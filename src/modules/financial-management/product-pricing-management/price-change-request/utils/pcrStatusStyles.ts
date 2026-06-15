@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-import type { PCRStatus } from "../types";
+import type { ApprovalKind, ApprovalTypeFilter, PCRStatus } from "../types";
 
 const STATUS_VALUES: PCRStatus[] = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"];
 
@@ -49,5 +49,37 @@ export function pcrStatusTabTriggerClass(status: "PENDING" | "APPROVED" | "REJEC
                 "text-red-800 dark:text-red-300",
                 "data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-sm",
             );
+    }
+}
+
+export function approvalTypeLabel(kind: ApprovalKind): string {
+    return kind === "price_batch" || kind === "price_type" ? "Price Type" : "List Cost";
+}
+
+export function approvalTypeBadgeClass(kind: ApprovalKind): string {
+    switch (kind) {
+        case "price_batch":
+        case "price_type":
+            return "border-blue-200 bg-blue-100 text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200";
+        case "cost_batch":
+        case "list_price":
+            return "border-violet-200 bg-violet-100 text-violet-900 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-200";
+    }
+}
+
+export function approvalTypeTabTriggerClass(type: ApprovalTypeFilter): string {
+    switch (type) {
+        case "price":
+            return cn(
+                "text-blue-700 dark:text-blue-300",
+                "data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm",
+            );
+        case "cost":
+            return cn(
+                "text-violet-700 dark:text-violet-300",
+                "data-[state=active]:bg-violet-600 data-[state=active]:text-white data-[state=active]:shadow-sm",
+            );
+        default:
+            return "";
     }
 }

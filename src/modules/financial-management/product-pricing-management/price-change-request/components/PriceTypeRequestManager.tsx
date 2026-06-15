@@ -13,13 +13,14 @@ import { ApproveDialog } from "./ApproveDialog";
 import { BulkPriceTypeActionResultDialog } from "./BulkPriceTypeActionResultDialog";
 import { BulkPriceTypeApprovePreview } from "./BulkPriceTypeApprovePreview";
 import { PcrStatusTabs } from "./PcrStatusTabs";
+import { PriceChangeBatchDetailDialog } from "./PriceChangeBatchDetailDialog";
 import { PriceTypeRequestDetailDialog } from "./PriceTypeRequestDetailDialog";
 import { RejectDialog } from "./RejectDialog";
 import { RequestFiltersBar } from "./RequestFiltersBar";
 import RequestsTable from "./RequestsTable";
 
 import { useRequestBulkSelection } from "../hooks/useRequestBulkSelection";
-import { usePCRList } from "../hooks/usePCR";
+import { useUnifiedApprovals } from "../hooks/useUnifiedApprovals";
 import type { SupplierOption } from "../providers/pcrApi";
 import * as pcrApi from "../providers/pcrApi";
 import { applyBulkActionResult, type BulkActionOutcome } from "../utils/applyBulkActionResult";
@@ -30,13 +31,13 @@ import {
     uniqueBatchCount,
 } from "../utils/bulkPriceTypeBatchActions";
 import { pcrApproveButtonClass, pcrRejectButtonClass } from "../utils/pcrStatusStyles";
-import { pcrBatchMeta, priceRequestToUnifiedRow, snapshotFromPriceRow } from "../utils/labels";
+import { snapshotFromPriceApprovalRow } from "../utils/labels";
 import type {
-    CostChangeRequestRow,
     ListQuery,
     PCRStatusFilter,
-    PriceChangeRequestRow,
     PriceTypeSelectionSnapshot,
+    PriceTypeUnifiedApprovalRow,
+    UnifiedApprovalRow,
 } from "../types";
 
 type Props = {
@@ -58,8 +59,9 @@ export function PriceTypeRequestManager({
     onUnauthorized,
     active = true,
 }: Props) {
-    const inbox = usePCRList(query, setQuery, { requestType: "price", enabled: active });
+    const inbox = useUnifiedApprovals(query, setQuery, { scope: "price", enabled: active });
     const statusTab: PCRStatusFilter = inbox.query.status || "ALL";
+    const [viewingBatchHeaderId, setViewingBatchHeaderId] = React.useState<number | null>(null);
     const [viewingRequestId, setViewingRequestId] = React.useState<number | null>(null);
     const [confirmingBatchHeaderId, setConfirmingBatchHeaderId] = React.useState<number | null>(null);
     const [rejectingBatchHeaderId, setRejectingBatchHeaderId] = React.useState<number | null>(null);
@@ -70,10 +72,6 @@ export function PriceTypeRequestManager({
     const [bulkActionOutcome, setBulkActionOutcome] =
         React.useState<BulkActionOutcome<PriceTypeSelectionSnapshot> | null>(null);
     const [batchActing, setBatchActing] = React.useState(false);
-
-    const isPriceRowSelectable = React.useCallback((row: PriceChangeRequestRow | CostChangeRequestRow) => {
-        return row.status === "PENDING";
-    }, []);
 
     const {
         selectedKeys,
@@ -86,18 +84,20 @@ export function PriceTypeRequestManager({
         removeSelectionIds,
     } = useRequestBulkSelection({
         rows: inbox.rows,
-        isSelectable: isPriceRowSelectable,
-        toSnapshot: (row) => snapshotFromPriceRow(row as PriceChangeRequestRow),
+        isSelectable: (row) =>
+            (row.kind === "price_batch" || row.kind === "price_type") && row.status === "PENDING",
+        toSnapshot: (row) => snapshotFromPriceApprovalRow(row),
+        getRowKey: (row) => row.row_key,
     });
 
-    const showBulkBar = statusTab === "PENDING" || statusTab === "ALL";
+    const showBulkBar = false;
     const selectedBatchCount = uniqueBatchCount(selectedSnapshots);
     const selectedOrphanCount = orphanPriceSnapshotCount(selectedSnapshots);
 
     const viewingRequest = React.useMemo(() => {
         if (viewingRequestId == null) return null;
-        const row = inbox.rows.find((r) => Number(r.request_id) === viewingRequestId);
-        return row ? priceRequestToUnifiedRow(row as PriceChangeRequestRow) : null;
+        const row = inbox.rows.find((r) => r.kind === "price_type" && Number(r.request_id) === viewingRequestId);
+        return row ? (row as PriceTypeUnifiedApprovalRow) : null;
     }, [inbox.rows, viewingRequestId]);
 
     const approveBatch = React.useCallback(async (headerId: number) => {
@@ -166,8 +166,13 @@ export function PriceTypeRequestManager({
 
     const resolveBatchHeaderId = React.useCallback(
         (requestId: number) => {
-            const row = inbox.rows.find((r) => Number(r.request_id) === requestId);
-            return row ? pcrBatchMeta(row as PriceChangeRequestRow).batch_header_id : null;
+            const row = inbox.rows.find((r) => {
+                if (r.kind === "price_batch") return Number(r.batch_id ?? r.request_id) === requestId;
+                return Number(r.request_id) === requestId;
+            });
+            if (row?.kind === "price_batch") return Number(row.batch_id ?? row.request_id);
+            if (row?.kind === "price_type") return row.batch_header_id ?? null;
+            return null;
         },
         [inbox.rows],
     );
@@ -362,8 +367,18 @@ export function PriceTypeRequestManager({
                     loading={inbox.loading}
                     hasLoadError={Boolean(inbox.error)}
                     acting={inbox.loading || batchActing}
-                    canSelectRow={isPriceRowSelectable}
-                    onReview={(id) => setViewingRequestId(id)}
+                    canSelectRow={(row) => row.status === "PENDING"}
+                    onReview={(id) => {
+                        const row = inbox.rows.find((item) => {
+                            if (item.kind === "price_batch") return Number(item.batch_id ?? item.request_id) === id;
+                            return Number(item.request_id) === id;
+                        });
+                        if (row?.kind === "price_batch") {
+                            setViewingBatchHeaderId(Number(row.batch_id ?? row.request_id));
+                            return;
+                        }
+                        setViewingRequestId(id);
+                    }}
                     onApprove={(id) => {
                         const headerId = resolveBatchHeaderId(id);
                         if (headerId) {
@@ -398,10 +413,24 @@ export function PriceTypeRequestManager({
                     }
                     footerItemLabel="requests"
                     selectedKeys={selectedKeys}
-                    onToggleSelect={toggleSelect}
+                    getSelectionKey={(row) => (row as UnifiedApprovalRow).row_key}
+                    onToggleSelect={(key, checked, row) =>
+                        toggleSelect(key, checked, row as UnifiedApprovalRow | undefined)
+                    }
                     onToggleSelectAllPage={toggleSelectAllPage}
                 />
             </div>
+
+            <PriceChangeBatchDetailDialog
+                batchId={viewingBatchHeaderId}
+                open={viewingBatchHeaderId != null}
+                acting={inbox.loading || batchActing}
+                onOpenChange={(open) => {
+                    if (!open) setViewingBatchHeaderId(null);
+                }}
+                onApprove={approveBatch}
+                onReject={rejectBatch}
+            />
 
             <PriceTypeRequestDetailDialog
                 row={viewingRequest}

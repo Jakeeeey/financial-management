@@ -14,6 +14,8 @@ import { BulkPriceTypeApprovePreview } from "./BulkPriceTypeApprovePreview";
 import { CreatePriceChangeBatchDialog } from "./CreatePriceChangeBatchDialog";
 import { PcrStatusTabs } from "./PcrStatusTabs";
 import { ListPriceRequestDetailDialog } from "./ListPriceRequestDetailDialog";
+import { ListCostBatchDetailDialog } from "./ListCostBatchDetailDialog";
+import { PriceChangeBatchDetailDialog } from "./PriceChangeBatchDetailDialog";
 import { PriceTypeRequestDetailDialog } from "./PriceTypeRequestDetailDialog";
 import { RejectDialog } from "./RejectDialog";
 import { RequestFiltersBar } from "./RequestFiltersBar";
@@ -32,15 +34,14 @@ import {
     rejectManyPriceRequestsHybrid,
     uniqueBatchCount,
 } from "../utils/bulkPriceTypeBatchActions";
-import { snapshotFromPriceUnifiedRow, snapshotFromUnifiedRow } from "../utils/labels";
+import { snapshotFromPriceApprovalRow, snapshotFromUnifiedRow } from "../utils/labels";
 import type {
     CostChangeRequestRow,
-    ItemUnifiedApprovalRow,
     ListQuery,
     PCRStatusFilter,
     PriceChangeRequestRow,
     PriceTypeSelectionSnapshot,
-    PriceTypeUnifiedApprovalRow,
+    UnifiedApprovalRow,
 } from "../types";
 
 type Props = {
@@ -53,8 +54,17 @@ type Props = {
     active?: boolean;
 };
 
-function resolveUnifiedSelectionKey(row: ItemUnifiedApprovalRow): string {
+function resolveUnifiedSelectionKey(row: UnifiedApprovalRow): string {
     return row.row_key;
+}
+
+function resolveApprovalActionRow(rows: UnifiedApprovalRow[], id: number) {
+    return rows.find((row) => {
+        if (row.kind === "price_batch" || row.kind === "cost_batch") {
+            return Number(row.batch_id ?? row.request_id) === id;
+        }
+        return Number(row.request_id) === id;
+    });
 }
 
 export function UnifiedApprovalsManager({
@@ -70,6 +80,8 @@ export function UnifiedApprovalsManager({
     const statusTab: PCRStatusFilter = feed.query.status || "ALL";
 
     const [creatingBatch, setCreatingBatch] = React.useState(false);
+    const [viewingBatchHeaderId, setViewingBatchHeaderId] = React.useState<number | null>(null);
+    const [viewingCostBatchHeaderId, setViewingCostBatchHeaderId] = React.useState<number | null>(null);
     const [viewingCostRequestId, setViewingCostRequestId] = React.useState<number | null>(null);
     const [viewingPriceRequestId, setViewingPriceRequestId] = React.useState<number | null>(null);
     const [rejectingCostId, setRejectingCostId] = React.useState<number | null>(null);
@@ -99,7 +111,7 @@ export function UnifiedApprovalsManager({
     } = useRequestBulkSelection({
         rows: feed.rows,
         isSelectable: (row) => row.kind === "list_price" && row.status === "PENDING" && Boolean(row.request_id),
-        toSnapshot: snapshotFromUnifiedRow,
+        toSnapshot: (row) => snapshotFromUnifiedRow(row as Extract<UnifiedApprovalRow, { kind: "list_price" }>),
         getRowKey: resolveUnifiedSelectionKey,
     });
 
@@ -108,14 +120,12 @@ export function UnifiedApprovalsManager({
         selectedIds: selectedPriceIds,
         selectedSnapshots: selectedPriceSnapshots,
         offPageSelectedCount: offPageSelectedPriceCount,
-        toggleSelect: togglePriceSelect,
-        toggleSelectAllPage: toggleSelectAllPendingPrice,
         clearSelection: clearPriceSelection,
         removeSelectionIds: removePriceSelectionIds,
     } = useRequestBulkSelection({
         rows: feed.rows,
-        isSelectable: (row) => row.kind === "price_type" && row.status === "PENDING" && Boolean(row.request_id),
-        toSnapshot: (row) => snapshotFromPriceUnifiedRow(row as PriceTypeUnifiedApprovalRow),
+        isSelectable: () => false,
+        toSnapshot: (row) => snapshotFromPriceApprovalRow(row),
         getRowKey: resolveUnifiedSelectionKey,
     });
 
@@ -146,7 +156,7 @@ export function UnifiedApprovalsManager({
         return row && row.kind === "price_type" ? row : null;
     }, [feed.rows, viewingPriceRequestId]);
 
-    const showBulkBar = statusTab === "PENDING" || statusTab === "ALL";
+    const showBulkBar = false;
     const hasCostSelection = selectedCostIds.length > 0;
     const hasPriceSelection = selectedPriceIds.length > 0;
     const isMixedSelection = hasCostSelection && hasPriceSelection;
@@ -210,7 +220,15 @@ export function UnifiedApprovalsManager({
     ]);
 
     const openRequestReview = React.useCallback((id: number) => {
-        const row = feed.rows.find((item) => Number(item.request_id) === id);
+        const row = resolveApprovalActionRow(feed.rows, id);
+        if (row?.kind === "price_batch") {
+            setViewingBatchHeaderId(Number(row.batch_id ?? row.request_id));
+            return;
+        }
+        if (row?.kind === "cost_batch") {
+            setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
+            return;
+        }
         if (row && row.kind === "list_price") {
             setViewingCostRequestId(id);
             return;
@@ -220,9 +238,17 @@ export function UnifiedApprovalsManager({
 
     const handleTableApprove = React.useCallback(
         (id: number) => {
-            const row = feed.rows.find((item) => Number(item.request_id) === id);
+            const row = resolveApprovalActionRow(feed.rows, id);
             if (row?.kind === "list_price") {
                 setConfirmingCostApprove({ type: "single", id });
+                return;
+            }
+            if (row?.kind === "price_batch") {
+                setConfirmingPriceBatchHeaderId(Number(row.batch_id ?? row.request_id));
+                return;
+            }
+            if (row?.kind === "cost_batch") {
+                setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
                 return;
             }
             if (row?.kind === "price_type") {
@@ -238,9 +264,17 @@ export function UnifiedApprovalsManager({
 
     const handleTableReject = React.useCallback(
         (id: number) => {
-            const row = feed.rows.find((item) => Number(item.request_id) === id);
+            const row = resolveApprovalActionRow(feed.rows, id);
             if (row?.kind === "list_price") {
                 setRejectingCostId(id);
+                return;
+            }
+            if (row?.kind === "price_batch") {
+                setRejectingPriceBatchHeaderId(Number(row.batch_id ?? row.request_id));
+                return;
+            }
+            if (row?.kind === "cost_batch") {
+                setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
                 return;
             }
             if (row?.kind === "price_type") {
@@ -254,44 +288,38 @@ export function UnifiedApprovalsManager({
         [feed.rows],
     );
 
-    const canSelectUnifiedRow = React.useCallback((row: PriceChangeRequestRow | CostChangeRequestRow) => {
-        const unified = row as ItemUnifiedApprovalRow;
+    const canSelectUnifiedRow = React.useCallback((row: PriceChangeRequestRow | CostChangeRequestRow | UnifiedApprovalRow) => {
+        const unified = row as UnifiedApprovalRow;
         if (unified.kind === "list_price") return unified.status === "PENDING";
-        if (unified.kind === "price_type") return unified.status === "PENDING";
         return false;
     }, []);
 
-    const canActOnRow = React.useCallback((row: ItemUnifiedApprovalRow) => {
+    const canActOnRow = React.useCallback((row: UnifiedApprovalRow) => {
         if (row.kind === "list_price") return true;
         return row.status === "PENDING";
     }, []);
 
     const getUnifiedSelectionKey = React.useCallback(
-        (row: PriceChangeRequestRow | CostChangeRequestRow) =>
-            resolveUnifiedSelectionKey(row as ItemUnifiedApprovalRow),
+        (row: PriceChangeRequestRow | CostChangeRequestRow | UnifiedApprovalRow) =>
+            (row as UnifiedApprovalRow).row_key,
         [],
     );
 
     const handleToggleSelect = React.useCallback(
-        (key: string, checked: boolean, row?: PriceChangeRequestRow | CostChangeRequestRow) => {
-            const unified = row as ItemUnifiedApprovalRow | undefined;
-            if (unified?.kind === "price_type") {
-                togglePriceSelect(key, checked, unified);
-                return;
-            }
+        (key: string, checked: boolean, row?: UnifiedApprovalRow) => {
+            const unified = row as UnifiedApprovalRow | undefined;
             if (unified?.kind === "list_price") {
                 toggleCostSelect(key, checked, unified);
             }
         },
-        [toggleCostSelect, togglePriceSelect],
+        [toggleCostSelect],
     );
 
     const handleToggleSelectAllPage = React.useCallback(
         (checked: boolean) => {
             toggleSelectAllPendingCost(checked);
-            toggleSelectAllPendingPrice(checked);
         },
-        [toggleSelectAllPendingCost, toggleSelectAllPendingPrice],
+        [toggleSelectAllPendingCost],
     );
 
     const handleRejectSelectedCost = React.useCallback(
@@ -467,7 +495,7 @@ export function UnifiedApprovalsManager({
                                     </span>
                                 </div>
                             ) : (
-                                "Select pending list cost or price type requests to approve or reject in bulk."
+                                "Select pending list cost requests to approve or reject in bulk."
                             )}
                         </div>
 
@@ -525,13 +553,15 @@ export function UnifiedApprovalsManager({
                     getSelectionKey={getUnifiedSelectionKey}
                     onReview={openRequestReview}
                     onReject={handleTableReject}
-                    onToggleSelect={handleToggleSelect}
+                    onToggleSelect={(key, checked, row) =>
+                        handleToggleSelect(key, checked, row as UnifiedApprovalRow | undefined)
+                    }
                     onToggleSelectAllPage={handleToggleSelectAllPage}
                     onApprove={handleTableApprove}
                     canSelectRow={canSelectUnifiedRow}
                     canReviewRow={() => true}
-                    canApproveRow={(row) => canActOnRow(row as ItemUnifiedApprovalRow)}
-                    canRejectRow={(row) => canActOnRow(row as ItemUnifiedApprovalRow)}
+                    canApproveRow={(row) => canActOnRow(row as UnifiedApprovalRow)}
+                    canRejectRow={(row) => canActOnRow(row as UnifiedApprovalRow)}
                 />
             </div>
 
@@ -544,6 +574,28 @@ export function UnifiedApprovalsManager({
                 }}
                 onApprove={costActions.approve}
                 onReject={costActions.reject}
+            />
+
+            <PriceChangeBatchDetailDialog
+                batchId={viewingBatchHeaderId}
+                open={viewingBatchHeaderId != null}
+                acting={acting}
+                onOpenChange={(open) => {
+                    if (!open) setViewingBatchHeaderId(null);
+                }}
+                onApprove={feed.approveBatch}
+                onReject={feed.rejectBatch}
+            />
+
+            <ListCostBatchDetailDialog
+                batchId={viewingCostBatchHeaderId}
+                open={viewingCostBatchHeaderId != null}
+                acting={acting}
+                onOpenChange={(open) => {
+                    if (!open) setViewingCostBatchHeaderId(null);
+                }}
+                onApprove={feed.approveCostBatch}
+                onReject={feed.rejectCostBatch}
             />
 
             <PriceTypeRequestDetailDialog

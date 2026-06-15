@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { parseApprovalSearchQuery } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
+import { fetchPendingCcrByProductIds } from "../_fetchPendingByProductIds";
 import { appendProductIdInFilter, getSupplierScopedProductIdsForSuppliers, resolveSupplierIds } from "../_supplierFilters";
+import { isCostBatchStorageSetupError } from "../cost-change-batches/_batch";
+import { createPendingCostRequests, planCostBulkCreate } from "./_bulk";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +13,17 @@ export const dynamic = "force-dynamic";
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const CCR = "cost_change_requests";
-const PRODUCT_IDS_CHUNK_SIZE = 200;
+
+function costBatchStorageSetupResponse(details: string) {
+    return NextResponse.json(
+        {
+            error: "List cost batch storage is not configured.",
+            details,
+            setup_required: true,
+        },
+        { status: 503 },
+    );
+}
 
 type DirectusMeta = {
     total_count?: number;
@@ -37,10 +50,6 @@ type DirectusCCRRow = {
     rejected_by?: number | string | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
-};
-
-type DirectusCreateCCRResponse = {
-    data: DirectusCCRRow;
 };
 
 type DirectusListCCRResponse = {
@@ -133,18 +142,6 @@ function unwrapErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function nowManila(): string {
-    return new Date()
-        .toLocaleString("sv-SE", { timeZone: "Asia/Manila" })
-        .replace(" ", "T");
-}
-
-function chunk<T>(arr: T[], size: number): T[][] {
-    const out: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-    return out;
-}
-
 function parseProductIdsParam(raw: string | null): number[] | null {
     if (raw === null) return null;
     const ids = raw
@@ -152,30 +149,6 @@ function parseProductIdsParam(raw: string | null): number[] | null {
         .map((s) => Number(s.trim()))
         .filter((n) => Number.isFinite(n) && n > 0);
     return ids;
-}
-
-async function fetchCcrByProductIds(
-    productIds: number[],
-    status: string,
-): Promise<DirectusCCRRow[]> {
-    const fields = ["product_id", "proposed_cost", "product_id.product_id"].join(",");
-
-    const batches = chunk(productIds, PRODUCT_IDS_CHUNK_SIZE);
-    const results = await Promise.all(
-        batches.map(async (batch) => {
-            const params = new URLSearchParams();
-            params.set("limit", "500");
-            params.set("fields", fields);
-            params.set("filter[product_id][_in]", batch.join(","));
-            if (status) params.set("filter[status][_eq]", status);
-
-            const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
-            const json = await fetchDirectus<DirectusListCCRResponse>(url, { headers: directusHeaders() });
-            return json.data ?? [];
-        }),
-    );
-
-    return results.flat();
 }
 
 function parseWrappedError(message: string): DirectusWrappedError | null {
@@ -223,7 +196,7 @@ export async function GET(req: NextRequest) {
                 return NextResponse.json({ data: [] });
             }
 
-            const data = await fetchCcrByProductIds(productIds, status);
+            const data = await fetchPendingCcrByProductIds(productIds, status);
             return NextResponse.json({ data });
         }
 
@@ -248,6 +221,7 @@ export async function GET(req: NextRequest) {
             "fields",
             [
                 "request_id",
+                "header_id",
                 "product_id",
                 "current_cost",
                 "proposed_cost",
@@ -300,6 +274,8 @@ export async function GET(req: NextRequest) {
             }
         }
 
+        addAnd("[header_id][_null]", "true");
+
         const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
         const json = await fetchDirectus<DirectusListCCRResponse>(url, {
             headers: directusHeaders(),
@@ -311,6 +287,10 @@ export async function GET(req: NextRequest) {
         });
     } catch (error: unknown) {
         const message = unwrapErrorMessage(error);
+        if (isCostBatchStorageSetupError(error)) {
+            return costBatchStorageSetupResponse(message);
+        }
+
         const wrapped = parseWrappedError(message);
 
         if (wrapped) {
@@ -352,23 +332,34 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "proposed_cost is required" }, { status: 400 });
         }
 
-        // Removed duplicate pending request check to allow creating new ones
+        const plan = await planCostBulkCreate([{ product_id, current_cost, proposed_cost }]);
+        if (plan.itemsToCreate.length === 0) {
+            return NextResponse.json(
+                {
+                    created: 0,
+                    skipped_duplicates: plan.skippedDuplicates,
+                    skipped_existing_pending: plan.skippedExistingPending,
+                },
+                { status: 200 },
+            );
+        }
 
-        const createUrl = `${mustBase()}/items/${CCR}`;
-        const created = await fetchDirectus<DirectusCreateCCRResponse>(createUrl, {
-            method: "POST",
-            headers: directusHeaders(),
-            body: JSON.stringify({
-                product_id,
-                current_cost,
-                proposed_cost,
-                status: "PENDING",
-                requested_by: userId,
-                requested_at: nowManila(),
-            }),
+        const created = await createPendingCostRequests({
+            userId,
+            itemsToCreate: plan.itemsToCreate,
+            remarks: "List cost change request",
         });
 
-        return NextResponse.json({ data: created.data }, { status: 201 });
+        return NextResponse.json(
+            {
+                created: created.created,
+                header_id: created.headerId,
+                data: created.detailRows[0] ?? null,
+                skipped_duplicates: plan.skippedDuplicates,
+                skipped_existing_pending: plan.skippedExistingPending,
+            },
+            { status: 201 },
+        );
     } catch (error: unknown) {
         const message = unwrapErrorMessage(error);
         const wrapped = parseWrappedError(message);

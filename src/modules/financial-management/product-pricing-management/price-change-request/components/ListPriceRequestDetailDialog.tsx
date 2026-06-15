@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 import type { UnifiedApprovalRow } from "../types";
+import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
@@ -31,7 +31,12 @@ type Props = {
 
 function money(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
-    return Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return new Intl.NumberFormat("en-PH", {
+        style: "currency",
+        currency: "PHP",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(value));
 }
 
 function safeDate(value: string | null | undefined) {
@@ -61,12 +66,14 @@ export function ListPriceRequestDetailDialog({
 }: Props) {
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
+    const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | null>(null);
     const [submitting, setSubmitting] = React.useState(false);
 
     React.useEffect(() => {
         if (!open) {
             setRejecting(false);
             setRejectReason("");
+            setConfirmingAction(null);
             setSubmitting(false);
         }
     }, [open]);
@@ -93,6 +100,7 @@ export function ListPriceRequestDetailDialog({
         setSubmitting(true);
         try {
             await onApprove(requestId);
+            setConfirmingAction(null);
             onOpenChange(false);
         } finally {
             setSubmitting(false);
@@ -104,6 +112,7 @@ export function ListPriceRequestDetailDialog({
         setSubmitting(true);
         try {
             await onReject(requestId, rejectReason.trim());
+            setConfirmingAction(null);
             onOpenChange(false);
         } finally {
             setSubmitting(false);
@@ -111,8 +120,9 @@ export function ListPriceRequestDetailDialog({
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
+        <>
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle>{row?.record_label ?? "List Cost Request"}</DialogTitle>
                     <DialogDescription>Review the current and proposed list cost before approving.</DialogDescription>
@@ -157,10 +167,10 @@ export function ListPriceRequestDetailDialog({
                                 <div className="text-right">Change</div>
                             </div>
                             <div className="grid grid-cols-3 gap-2 px-3 py-3 text-sm">
-                                <div className="font-medium">₱{money(currentCost)}</div>
-                                <div className="font-medium">₱{money(proposedCost)}</div>
+                                <div className="font-medium">{money(currentCost)}</div>
+                                <div className="font-medium">{money(proposedCost)}</div>
                                 <div className={cn("text-right font-medium", deltaClass(currentCost, proposedCost))}>
-                                    {delta === null ? "—" : `₱${money(delta)}`}
+                                    {delta === null ? "—" : money(delta)}
                                     {percentChange !== null ? (
                                         <div className="text-xs font-normal">
                                             {percentChange.toLocaleString("en-PH", {
@@ -207,10 +217,9 @@ export function ListPriceRequestDetailDialog({
                                 </Button>
                                 <Button
                                     variant="destructive"
-                                    onClick={() => void handleReject()}
+                                    onClick={() => setConfirmingAction("reject")}
                                     disabled={busy || !rejectReason.trim()}
                                 >
-                                    {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
                                     Confirm Reject
                                 </Button>
                             </>
@@ -226,10 +235,9 @@ export function ListPriceRequestDetailDialog({
                                 </Button>
                                 <Button
                                     className={pcrApproveButtonClass}
-                                    onClick={() => void handleApprove()}
+                                    onClick={() => setConfirmingAction("approve")}
                                     disabled={busy}
                                 >
-                                    {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
                                     Approve
                                 </Button>
                             </>
@@ -238,5 +246,18 @@ export function ListPriceRequestDetailDialog({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+
+            <DecisionConfirmationDialog
+                open={confirmingAction != null}
+                action={confirmingAction ?? "approve"}
+                recordLabel={row?.record_label ?? "List Cost Request"}
+                loading={busy}
+                rejectReason={confirmingAction === "reject" ? rejectReason.trim() : undefined}
+                onOpenChange={(nextOpen) => {
+                    if (!nextOpen) setConfirmingAction(null);
+                }}
+                onConfirm={confirmingAction === "reject" ? handleReject : handleApprove}
+            />
+        </>
     );
 }

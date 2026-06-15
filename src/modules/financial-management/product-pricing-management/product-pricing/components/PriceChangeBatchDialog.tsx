@@ -206,7 +206,11 @@ export function PriceChangeBatchDialog({
                                                     {formatPHP(line.current_value)}
                                                 </TableCell>
                                                 <TableCell className="text-right font-medium">
-                                                    {formatPHP(line.proposed_value)}
+                                                    {line.validation_error ? (
+                                                        <span className="text-destructive">{line.validation_error}</span>
+                                                    ) : (
+                                                        formatPHP(line.proposed_value)
+                                                    )}
                                                 </TableCell>
                                             </TableRow>
                                         ))

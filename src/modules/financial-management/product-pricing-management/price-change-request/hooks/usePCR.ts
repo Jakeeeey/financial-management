@@ -60,12 +60,11 @@ export function usePCRList(
         }
 
         const initial = queryOrInitial as UsePCRListInitial;
-        const { requestType: _requestType, ...rest } = initial;
         return {
             status: "ALL",
             page: 1,
             page_size: 50,
-            ...rest,
+            ...(initial as Partial<ListQuery>),
         };
     });
 

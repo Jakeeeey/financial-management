@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 import type { PriceTypeUnifiedApprovalRow } from "../types";
+import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { priceRowHasBatchLink, priceTypeLabel } from "../utils/labels";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
@@ -34,7 +34,12 @@ type Props = {
 
 function money(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
-    return Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return new Intl.NumberFormat("en-PH", {
+        style: "currency",
+        currency: "PHP",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(value));
 }
 
 function safeDate(value: string | null | undefined) {
@@ -66,12 +71,14 @@ export function PriceTypeRequestDetailDialog({
 }: Props) {
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
+    const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | null>(null);
     const [submitting, setSubmitting] = React.useState(false);
 
     React.useEffect(() => {
         if (!open) {
             setRejecting(false);
             setRejectReason("");
+            setConfirmingAction(null);
             setSubmitting(false);
         }
     }, [open]);
@@ -104,6 +111,7 @@ export function PriceTypeRequestDetailDialog({
             } else {
                 await onApproveRequest(requestId);
             }
+            setConfirmingAction(null);
             onOpenChange(false);
         } finally {
             setSubmitting(false);
@@ -119,15 +127,19 @@ export function PriceTypeRequestDetailDialog({
             } else {
                 await onRejectRequest(requestId, rejectReason.trim());
             }
+            setConfirmingAction(null);
             onOpenChange(false);
         } finally {
             setSubmitting(false);
         }
     };
 
+    const recordLabel = isBatchLinked && headerId ? `PCB-${headerId}` : row?.record_label ?? "Price Type Request";
+
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
+        <>
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle>{row?.record_label ?? "Price Type Request"}</DialogTitle>
                     <DialogDescription>Review the proposed price type change and batch remarks.</DialogDescription>
@@ -182,10 +194,10 @@ export function PriceTypeRequestDetailDialog({
                                 <div className="text-right">Change</div>
                             </div>
                             <div className="grid grid-cols-3 gap-2 px-3 py-3 text-sm">
-                                <div className="font-medium">₱{money(currentPrice)}</div>
-                                <div className="font-medium">₱{money(proposedPrice)}</div>
+                                <div className="font-medium">{money(currentPrice)}</div>
+                                <div className="font-medium">{money(proposedPrice)}</div>
                                 <div className={cn("text-right font-medium", deltaClass(currentPrice, proposedPrice))}>
-                                    {delta === null ? "—" : `₱${money(delta)}`}
+                                    {delta === null ? "—" : money(delta)}
                                     {percentChange !== null ? (
                                         <div className="text-xs font-normal">
                                             {percentChange.toLocaleString("en-PH", {
@@ -242,10 +254,9 @@ export function PriceTypeRequestDetailDialog({
                                 </Button>
                                 <Button
                                     variant="destructive"
-                                    onClick={() => void handleReject()}
+                                    onClick={() => setConfirmingAction("reject")}
                                     disabled={busy || !rejectReason.trim()}
                                 >
-                                    {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
                                     {isBatchLinked ? "Confirm Reject Batch" : "Confirm Reject"}
                                 </Button>
                             </>
@@ -261,10 +272,9 @@ export function PriceTypeRequestDetailDialog({
                                 </Button>
                                 <Button
                                     className={pcrApproveButtonClass}
-                                    onClick={() => void handleApprove()}
+                                    onClick={() => setConfirmingAction("approve")}
                                     disabled={busy}
                                 >
-                                    {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
                                     {isBatchLinked ? "Approve Batch" : "Approve"}
                                 </Button>
                             </>
@@ -273,5 +283,25 @@ export function PriceTypeRequestDetailDialog({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+
+            <DecisionConfirmationDialog
+                open={confirmingAction != null}
+                action={confirmingAction ?? "approve"}
+                recordLabel={recordLabel}
+                loading={busy}
+                description={
+                    isBatchLinked
+                        ? confirmingAction === "reject"
+                            ? `Reject ${recordLabel}? This will reject the entire price change batch.`
+                            : `Approve ${recordLabel}? This will approve and apply the entire price change batch.`
+                        : undefined
+                }
+                rejectReason={confirmingAction === "reject" ? rejectReason.trim() : undefined}
+                onOpenChange={(nextOpen) => {
+                    if (!nextOpen) setConfirmingAction(null);
+                }}
+                onConfirm={confirmingAction === "reject" ? handleReject : handleApprove}
+            />
+        </>
     );
 }

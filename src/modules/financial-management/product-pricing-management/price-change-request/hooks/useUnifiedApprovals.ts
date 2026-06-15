@@ -3,17 +3,18 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import type { ItemUnifiedApprovalRow, ListQuery } from "../types";
+import type { ListQuery, UnifiedApprovalRow } from "../types";
 import * as api from "../providers/pcrApi";
 import { applyActionError, applyLoadError } from "../../shared/loadErrorState";
 
 export function useUnifiedApprovals(
     query: ListQuery,
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>,
-    options?: { enabled?: boolean },
+    options?: { enabled?: boolean; scope?: "all" | "price" | "cost" },
 ) {
     const enabled = options?.enabled ?? true;
-    const [rows, setRows] = React.useState<ItemUnifiedApprovalRow[]>([]);
+    const scope = options?.scope ?? "all";
+    const [rows, setRows] = React.useState<UnifiedApprovalRow[]>([]);
     const [total, setTotal] = React.useState(0);
     const [loading, setLoading] = React.useState(true);
     const [acting, setActing] = React.useState(false);
@@ -28,7 +29,7 @@ export function useUnifiedApprovals(
         const requestId = ++requestIdRef.current;
         setLoading(true);
         try {
-            const res = await api.listUnifiedApprovals(query);
+            const res = await api.listUnifiedApprovals(query, scope);
 
             if (requestId !== requestIdRef.current) return;
 
@@ -48,7 +49,7 @@ export function useUnifiedApprovals(
                 setLoading(false);
             }
         }
-    }, [query]);
+    }, [query, scope]);
 
     React.useEffect(() => {
         if (!enabled) return;
@@ -81,6 +82,38 @@ export function useUnifiedApprovals(
             await refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to reject batch", { setUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
+    const approveCostBatch = React.useCallback(async (headerId: number) => {
+        setActing(true);
+        try {
+            const result = await api.approveListCostBatch(headerId);
+            toast.success(`${result.affected} list cost line(s) approved and applied.`);
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to approve list cost batch", { setUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
+    const rejectCostBatch = React.useCallback(async (headerId: number, reason: string) => {
+        setActing(true);
+        try {
+            await api.rejectListCostBatch(headerId, reason);
+            toast.success("List cost batch rejected.");
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to reject list cost batch", { setUnauthorized })) {
                 throw error;
             }
             throw error;
@@ -133,6 +166,8 @@ export function useUnifiedApprovals(
         refresh,
         approveBatch,
         rejectBatch,
+        approveCostBatch,
+        rejectCostBatch,
         approvePriceRequest,
         rejectPriceRequest,
     };

@@ -2,8 +2,8 @@ import {
     directusHeaders,
     fetchDirectus,
     mustBase,
-    nowManila,
 } from "../price-change-batches/_batch";
+import { createPendingCostBatch } from "../cost-change-batches/_batch";
 
 export const CCR = "cost_change_requests";
 
@@ -29,10 +29,6 @@ export type CostBulkPlan = {
 
 type DirectusCostRow = {
     product_id?: number | string | null;
-};
-
-type DirectusBulkCreateRow = {
-    request_id?: number | string | null;
 };
 
 type DirectusList<T> = { data?: T[] };
@@ -122,30 +118,13 @@ export async function planCostBulkCreate(rawItems: CostBulkItemInput[]): Promise
 export async function createPendingCostRequests(args: {
     userId: number;
     itemsToCreate: NormalizedCostBulkItem[];
+    referenceNo?: string;
+    remarks?: string;
 }) {
-    const { userId, itemsToCreate } = args;
-
-    if (itemsToCreate.length === 0) {
-        return { created: 0 };
-    }
-
-    const payload = itemsToCreate.map((item) => ({
-        product_id: item.product_id,
-        current_cost: item.current_cost,
-        proposed_cost: item.proposed_cost,
-        status: "PENDING",
-        requested_by: userId,
-        requested_at: nowManila(),
-    }));
-
-    const createUrl = `${mustBase()}/items/${CCR}`;
-    const created = await fetchDirectus<{ data: DirectusBulkCreateRow[] }>(createUrl, {
-        method: "POST",
-        headers: directusHeaders(),
-        body: JSON.stringify(payload),
+    return createPendingCostBatch({
+        userId: args.userId,
+        itemsToCreate: args.itemsToCreate,
+        referenceNo: args.referenceNo,
+        remarks: args.remarks,
     });
-
-    return {
-        created: (created.data ?? []).length,
-    };
 }

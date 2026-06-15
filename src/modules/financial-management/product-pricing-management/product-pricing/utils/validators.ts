@@ -1,3 +1,5 @@
+export const EMPTY_PRICE_ERROR = "Enter a proposed price";
+
 export function validatePrice(v: number | null): string | null {
     if (v === null) return null; // allowed
     if (!Number.isFinite(v)) return "Invalid number";

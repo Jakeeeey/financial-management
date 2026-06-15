@@ -161,7 +161,8 @@ export type DirtyPreviewLine = {
     tier_label: string;
     kind: "price" | "cost";
     current_value: number | null;
-    proposed_value: number;
+    proposed_value: number | null;
+    validation_error?: string | null;
 };
 
 export type CostChangeRequest = {

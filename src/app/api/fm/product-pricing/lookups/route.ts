@@ -13,7 +13,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
-const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 
 const CATEGORIES = "categories";
 const BRAND = "brand";
@@ -59,18 +58,6 @@ type JwtPayload = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
-}
-
-function directusHeaders() {
-    const h: Record<string, string> = { "Content-Type": "application/json" };
-    if (DIRECTUS_TOKEN) h.Authorization = `Bearer ${DIRECTUS_TOKEN}`;
-    return h;
-}
-
-async function fetchDirectus<T>(url: string): Promise<T> {
-    const res = await fetch(url, { cache: "no-store", headers: directusHeaders() });
-    if (!res.ok) throw new Error(await res.text());
-    return (await res.json()) as T;
 }
 
 function decodeUserIdFromJwtCookie(req: NextRequest, cookieName = "vos_access_token") {

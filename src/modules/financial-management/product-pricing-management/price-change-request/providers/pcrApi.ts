@@ -11,7 +11,8 @@ import type {
     PriceChangeRequestRow,
     CostChangeRequestRow,
     ListMeta,
-    ItemUnifiedApprovalRow,
+    ListCostBatchDetail,
+    UnifiedApprovalRow,
 } from "../types";
 import { apiStatusParam } from "../utils/pcrQuery";
 import { readApiResponse } from "../../shared/apiHttp";
@@ -443,11 +444,12 @@ export async function listPriceChangeBatches(query: ListQuery) {
     );
 }
 
-export async function listUnifiedApprovals(query: ListQuery) {
+export async function listUnifiedApprovals(query: ListQuery, scope: "all" | "price" | "cost" = "all") {
     const sp = new URLSearchParams();
     appendListQuery(sp, query);
+    sp.set("scope", scope);
 
-    return http<{ data: ItemUnifiedApprovalRow[]; meta: ListMeta | null }>(
+    return http<{ data: UnifiedApprovalRow[]; meta: ListMeta | null }>(
         `/api/fm/product-pricing/price-change-approvals?${sp.toString()}`,
     );
 }
@@ -455,6 +457,12 @@ export async function listUnifiedApprovals(query: ListQuery) {
 export async function getPriceChangeBatch(headerId: number) {
     return http<{ data: PriceChangeBatchDetail }>(
         `/api/fm/product-pricing/price-change-batches/${headerId}`,
+    );
+}
+
+export async function getListCostBatch(headerId: number) {
+    return http<{ data: ListCostBatchDetail }>(
+        `/api/fm/product-pricing/cost-change-batches/${headerId}`,
     );
 }
 
@@ -478,9 +486,27 @@ export async function approvePriceChangeBatch(headerId: number) {
     );
 }
 
+export async function approveListCostBatch(headerId: number) {
+    return http<{ ok: boolean; header_id: number; affected: number }>(
+        `/api/fm/product-pricing/cost-change-batches/${headerId}/approve`,
+        { method: "POST" },
+    );
+}
+
 export async function rejectPriceChangeBatch(headerId: number, reject_reason: string) {
     return http<{ ok: boolean; header_id: number; rejected: number }>(
         `/api/fm/product-pricing/price-change-batches/${headerId}/reject`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reject_reason }),
+        },
+    );
+}
+
+export async function rejectListCostBatch(headerId: number, reject_reason: string) {
+    return http<{ ok: boolean; header_id: number; rejected: number }>(
+        `/api/fm/product-pricing/cost-change-batches/${headerId}/reject`,
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },

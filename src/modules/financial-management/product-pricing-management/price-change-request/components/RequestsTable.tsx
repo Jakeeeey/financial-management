@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { ListMeta, PriceChangeRequestRow, CostChangeRequestRow } from "../types";
+import type { ListMeta, PriceChangeRequestRow, CostChangeRequestRow, UnifiedApprovalRow } from "../types";
 import { productLabel, priceTypeLabel, uomLabel } from "../utils/labels";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,12 +9,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import { approvalTypeBadgeClass, approvalTypeLabel, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 function fmt(v: number | string | null | undefined) {
     const n = Number(v);
     if (!Number.isFinite(n)) return "—";
-    return n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return new Intl.NumberFormat("en-PH", {
+        style: "currency",
+        currency: "PHP",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(n);
 }
 
 function requestedAtParts(value: string | null | undefined) {
@@ -50,6 +55,81 @@ function getTotalPages(meta: ListMeta | null | undefined, pageSize: number, curr
         return 0;
     }
     return 0;
+}
+
+type ApprovalRecordRow = PriceChangeRequestRow | CostChangeRequestRow | UnifiedApprovalRow;
+
+function approvalKind(row: ApprovalRecordRow): "price_batch" | "cost_batch" | "price_type" | "list_price" {
+    if ("kind" in row) return row.kind;
+    return "proposed_cost" in row ? "list_price" : "price_type";
+}
+
+function requestedByText(row: ApprovalRecordRow) {
+    const displayName = "requested_by_name" in row ? String(row.requested_by_name ?? "").trim() : "";
+    if (displayName && displayName !== "null" && displayName !== "undefined") return displayName;
+
+    const value = "requested_by" in row ? row.requested_by : null;
+    const text = String(value ?? "").trim();
+    if (!text || text === "null" || text === "undefined") return "-";
+    return /^\d+$/.test(text) ? `User #${text}` : text;
+}
+
+function approvalRecordLabel(row: ApprovalRecordRow) {
+    const kind = approvalKind(row);
+    if ("record_label" in row && row.record_label) return row.record_label;
+    if (kind === "price_batch" || kind === "cost_batch") {
+        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" }>;
+        return kind === "cost_batch"
+            ? `CCR-${Number(batch.batch_id ?? batch.request_id)}`
+            : `PCB-${Number(batch.batch_id ?? batch.request_id)}`;
+    }
+    if (kind === "list_price") return `CCR-${Number(row.request_id)}`;
+    return `PCR-${Number(row.request_id)}`;
+}
+
+function approvalActionId(row: ApprovalRecordRow) {
+    const kind = approvalKind(row);
+    if (kind === "price_batch" || kind === "cost_batch") {
+        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" }>;
+        return Number(batch.batch_id ?? batch.request_id);
+    }
+    return Number(row.request_id);
+}
+
+function totalProductsText(row: ApprovalRecordRow) {
+    const kind = approvalKind(row);
+    if (kind === "price_batch" || kind === "cost_batch") {
+        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" }>;
+        const totalProducts = Number(batch.total_products ?? 0);
+        if (Number.isFinite(totalProducts) && totalProducts > 0) return totalProducts.toLocaleString("en-PH");
+        const lineCount = Number(batch.line_count ?? 0);
+        return Number.isFinite(lineCount) && lineCount > 0 ? lineCount.toLocaleString("en-PH") : "-";
+    }
+    return "1";
+}
+
+function proposedText(row: ApprovalRecordRow) {
+    const kind = approvalKind(row);
+    if (kind === "price_batch") {
+        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" }>;
+        const min = Number(batch.proposed_min);
+        const max = Number(batch.proposed_max);
+        const hasMin = Number.isFinite(min);
+        const hasMax = Number.isFinite(max);
+        if (hasMin && hasMax) return min === max ? fmt(min) : `${fmt(min)} - ${fmt(max)}`;
+        return fmt(batch.proposed_price);
+    }
+    if (kind === "cost_batch") {
+        const batch = row as Extract<UnifiedApprovalRow, { kind: "cost_batch" }>;
+        const min = Number(batch.proposed_min);
+        const max = Number(batch.proposed_max);
+        const hasMin = Number.isFinite(min);
+        const hasMax = Number.isFinite(max);
+        if (hasMin && hasMax) return min === max ? fmt(min) : `${fmt(min)} - ${fmt(max)}`;
+        return fmt(batch.proposed_cost);
+    }
+    if (kind === "list_price") return fmt((row as CostChangeRequestRow).proposed_cost);
+    return fmt((row as PriceChangeRequestRow).proposed_price);
 }
 
 type LoadingTableBodyProps = {
@@ -119,7 +199,7 @@ function LoadingTableBody({
 }
 
 type Props = {
-    rows: (PriceChangeRequestRow | CostChangeRequestRow)[];
+    rows: ApprovalRecordRow[];
     mode: "approver" | "mine" | "all";
     requestType?: "price" | "cost" | "mixed";
     loading?: boolean;
@@ -129,10 +209,10 @@ type Props = {
     onReject?: (id: number) => void;
     onReview?: (id: number) => void;
     onCancel?: (id: number) => void;
-    canSelectRow?: (row: PriceChangeRequestRow | CostChangeRequestRow) => boolean;
-    canReviewRow?: (row: PriceChangeRequestRow | CostChangeRequestRow) => boolean;
-    canApproveRow?: (row: PriceChangeRequestRow | CostChangeRequestRow) => boolean;
-    canRejectRow?: (row: PriceChangeRequestRow | CostChangeRequestRow) => boolean;
+    canSelectRow?: (row: ApprovalRecordRow) => boolean;
+    canReviewRow?: (row: ApprovalRecordRow) => boolean;
+    canApproveRow?: (row: ApprovalRecordRow) => boolean;
+    canRejectRow?: (row: ApprovalRecordRow) => boolean;
 
     meta?: ListMeta | null;
     page: number;
@@ -144,11 +224,11 @@ type Props = {
 
     selectedIds?: number[];
     selectedKeys?: string[];
-    getSelectionKey?: (row: PriceChangeRequestRow | CostChangeRequestRow) => string;
+    getSelectionKey?: (row: ApprovalRecordRow) => string;
     onToggleSelect?: (
         key: string,
         checked: boolean,
-        row?: PriceChangeRequestRow | CostChangeRequestRow,
+        row?: ApprovalRecordRow,
     ) => void;
     onToggleSelectAllPage?: (checked: boolean) => void;
 
@@ -161,7 +241,7 @@ export default function RequestsTable(props: Props) {
     const canSelectRow = props.canSelectRow;
     const getSelectionKey = props.getSelectionKey;
     const requestType = props.requestType ?? "price";
-    const rows = React.useMemo<(PriceChangeRequestRow | CostChangeRequestRow)[]>(
+    const rows = React.useMemo<ApprovalRecordRow[]>(
         () => props.rows ?? [],
         [props.rows],
     );
@@ -181,8 +261,8 @@ export default function RequestsTable(props: Props) {
     const itemLabel = (props.footerItemLabel ?? "requests").trim() || "requests";
 
     const resolveSelectionKey = React.useCallback(
-        (row: PriceChangeRequestRow | CostChangeRequestRow) =>
-            getSelectionKey?.(row) ?? String(Number(row.request_id)),
+        (row: ApprovalRecordRow) =>
+            getSelectionKey?.(row) ?? ("row_key" in row ? row.row_key : String(Number(row.request_id))),
         [getSelectionKey],
     );
 
@@ -218,10 +298,194 @@ export default function RequestsTable(props: Props) {
     const loading = Boolean(props.loading);
     const hasLoadError = Boolean(props.hasLoadError);
     const skeletonRowCount = Math.min(pageSize, 8);
+    const showApprovalSummaryColumns = requestType !== "cost";
     let colSpan = 6;
     if (showTypeColumn) colSpan += 1;
     if (showSelectionColumn) colSpan += 1;
     if (showActionsColumn) colSpan += 1;
+
+    if (showApprovalSummaryColumns) {
+        const summaryColSpan = 7 + (showSelectionColumn ? 1 : 0) + (showActionsColumn ? 1 : 0);
+
+        return (
+            <div className="overflow-hidden rounded-xl border bg-background">
+                <Table className="w-full table-fixed">
+                    <TableHeader className="sticky top-0 z-10 bg-background shadow-sm">
+                        <TableRow>
+                            {showSelectionColumn ? (
+                                <TableHead className="w-10 px-2">
+                                    <Checkbox
+                                        checked={allPageSelected ? true : somePageSelected ? "indeterminate" : false}
+                                        onCheckedChange={(checked) => props.onToggleSelectAllPage?.(checked === true)}
+                                        aria-label="Select all pending records on this page"
+                                        disabled={selectableKeys.length === 0 || props.acting || !canToggleSelectAllPage}
+                                    />
+                                </TableHead>
+                            ) : null}
+                            <TableHead className="w-[110px] px-2">Request #</TableHead>
+                            <TableHead className="w-[84px] px-2">Type</TableHead>
+                            <TableHead className="w-[140px] px-2">Requested By</TableHead>
+                            <TableHead className="w-[120px] px-2 text-right">Total Products</TableHead>
+                            <TableHead className="w-[180px] px-2 text-right">Proposed</TableHead>
+                            <TableHead className="w-[102px] px-2">Status</TableHead>
+                            <TableHead className="w-[130px] px-2">Requested</TableHead>
+                            {showActionsColumn ? (
+                                <TableHead className="w-[188px] px-2 text-right">Actions</TableHead>
+                            ) : null}
+                        </TableRow>
+                    </TableHeader>
+
+                    <TableBody>
+                        {rows.map((r) => {
+                            const id = approvalActionId(r);
+                            const selectionKey = resolveSelectionKey(r);
+                            const isPending = r.status === "PENDING";
+                            const isSelected = selectedKeySet.has(selectionKey);
+                            const canSelect = props.canSelectRow?.(r) ?? true;
+                            const canReview = props.canReviewRow?.(r) ?? true;
+                            const requestedAt = requestedAtParts(r.requested_at);
+
+                            return (
+                                <TableRow key={selectionKey}>
+                                    {showSelectionColumn ? (
+                                        <TableCell className="px-2">
+                                            <div className="flex items-center justify-center">
+                                                <Checkbox
+                                                    className="h-[18px] w-[18px]"
+                                                    checked={isSelected}
+                                                    onCheckedChange={(checked) =>
+                                                        props.onToggleSelect?.(selectionKey, checked === true, r)
+                                                    }
+                                                    aria-label={`Select ${approvalRecordLabel(r)}`}
+                                                    disabled={props.acting || !isPending || !canToggleSelect || !canSelect}
+                                                />
+                                            </div>
+                                        </TableCell>
+                                    ) : null}
+
+                                    <TableCell className="truncate px-2 font-medium" title={approvalRecordLabel(r)}>
+                                        {approvalRecordLabel(r)}
+                                    </TableCell>
+                                    <TableCell className="px-2">
+                                        <Badge variant="outline" className={`${approvalTypeBadgeClass(approvalKind(r))} text-[11px] px-2 whitespace-nowrap`}>
+                                            {approvalTypeLabel(approvalKind(r))}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell className="truncate px-2" title={requestedByText(r)}>
+                                        {requestedByText(r)}
+                                    </TableCell>
+                                    <TableCell className="px-2 text-right">{totalProductsText(r)}</TableCell>
+                                    <TableCell className="px-2 text-right font-semibold">{proposedText(r)}</TableCell>
+                                    <TableCell className="px-2">
+                                        <Badge variant="outline" className={`${pcrStatusBadgeClass(r.status)} max-w-full truncate px-2 text-[11px]`}>
+                                            {r.status}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell className="px-2">
+                                        <div className="min-w-0 text-xs leading-tight">
+                                            <div className="truncate">{requestedAt.date}</div>
+                                            {requestedAt.time ? (
+                                                <div className="truncate text-muted-foreground">{requestedAt.time}</div>
+                                            ) : null}
+                                        </div>
+                                    </TableCell>
+
+                                    {showActionsColumn ? (
+                                        <TableCell className="whitespace-nowrap px-2 text-right">
+                                            <div className="inline-flex flex-nowrap items-center justify-end gap-1">
+                                                {props.onReview && canReview ? (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="h-7 px-2 text-[11px]"
+                                                        onClick={() => props.onReview?.(id)}
+                                                        disabled={props.acting}
+                                                        aria-label="Review record"
+                                                    >
+                                                        Review
+                                                    </Button>
+                                                ) : null}
+                                            </div>
+                                        </TableCell>
+                                    ) : null}
+                                </TableRow>
+                            );
+                        })}
+
+                        {rows.length === 0 && loading ? (
+                            <TableRow>
+                                <TableCell colSpan={summaryColSpan} className="h-32 text-center text-muted-foreground">
+                                    <Skeleton className="mx-auto mb-2 h-5 w-40" />
+                                    <Skeleton className="mx-auto h-4 w-64" />
+                                </TableCell>
+                            </TableRow>
+                        ) : rows.length === 0 && !hasLoadError ? (
+                            <TableRow>
+                                <TableCell colSpan={summaryColSpan} className="py-10 text-center text-muted-foreground">
+                                    No records found.
+                                </TableCell>
+                            </TableRow>
+                        ) : null}
+                    </TableBody>
+                </Table>
+
+                <div className="flex flex-col gap-3 border-t px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-sm text-muted-foreground">
+                        {total > 0 ? (
+                            <>
+                                Showing <span className="font-medium text-foreground">{startIndex}</span> -{" "}
+                                <span className="font-medium text-foreground">{endIndex}</span> of{" "}
+                                <span className="font-medium text-foreground">{total}</span> {itemLabel}
+                            </>
+                        ) : (
+                            <>
+                                Showing <span className="font-medium text-foreground">{startIndex}</span> -{" "}
+                                <span className="font-medium text-foreground">{endIndex}</span> {itemLabel}
+                            </>
+                        )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                        {props.onPageSizeChange ? (
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm text-muted-foreground">Rows</span>
+                                <select
+                                    className="h-9 rounded-md border bg-background px-2 text-sm"
+                                    value={String(pageSize)}
+                                    onChange={(e) => {
+                                        const nextSize = clamp(safeInt(e.target.value, pageSize), 1, 500);
+                                        props.onPageSizeChange?.(nextSize);
+                                        props.onPageChange(1);
+                                    }}
+                                >
+                                    {[25, 50, 100, 200].map((n) => (
+                                        <option key={n} value={String(n)}>
+                                            {n} / page
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        ) : null}
+
+                        <Button variant="outline" size="sm" disabled={loading || !canPrev} onClick={() => props.onPageChange(page - 1)}>
+                            Prev
+                        </Button>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={loading || !canNext}
+                            onClick={() => props.onPageChange(totalPages > 0 ? Math.min(page + 1, totalPages) : page + 1)}
+                        >
+                            Next
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    const detailRows = rows as (PriceChangeRequestRow | CostChangeRequestRow)[];
 
     return (
         <div className="overflow-hidden rounded-xl border bg-background">
@@ -252,18 +516,14 @@ export default function RequestsTable(props: Props) {
                 </TableHeader>
 
                 <TableBody>
-                    {rows.map((r) => {
+                    {detailRows.map((r) => {
                         const id = Number(r.request_id);
                         const selectionKey = resolveSelectionKey(r);
                         const isPending = r.status === "PENDING";
                         const isSelected = selectedKeySet.has(selectionKey);
-                        const isCostRow = "proposed_cost" in r;
-                        const rowType = requestType === "mixed" ? (isCostRow ? "cost" : "price") : requestType;
+                        const rowType = "cost";
                         const canSelect = props.canSelectRow?.(r) ?? true;
                         const canReview = props.canReviewRow?.(r) ?? true;
-                        const canApprove = props.canApproveRow?.(r) ?? true;
-                        const canReject = props.canRejectRow?.(r) ?? true;
-
                         const proposedValue = rowType === "cost"
                             ? (r as CostChangeRequestRow).proposed_cost
                             : (r as PriceChangeRequestRow).proposed_price;
@@ -360,23 +620,6 @@ export default function RequestsTable(props: Props) {
                                                     Review
                                                 </Button>
                                             ) : null}
-                                            <Button
-                                                size="sm"
-                                                className={`${pcrApproveButtonClass} h-7 px-2 text-[11px]`}
-                                                onClick={() => props.onApprove?.(id)}
-                                                disabled={props.acting || !isPending || !props.onApprove || !canApprove}
-                                            >
-                                                Approve
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className={`${pcrRejectButtonClass} h-7 px-2 text-[11px]`}
-                                                onClick={() => props.onReject?.(id)}
-                                                disabled={props.acting || !isPending || !props.onReject || !canReject}
-                                            >
-                                                Reject
-                                            </Button>
                                         </div>
                                     </TableCell>
                                 ) : null}

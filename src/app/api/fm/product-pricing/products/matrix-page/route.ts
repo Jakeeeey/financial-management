@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { parseProductCatalogQuery, parseProductIdsList } from "../_productCatalogQuery";
-import {
-    fetchPaginatedProductGroups,
-    fetchProductsByIds,
-    resolveSupplierScopedProductIds,
-    type ProductRow,
-} from "../_productGroups";
+import { fetchMatrixPage } from "../../_matrixPage";
+import { parseProductCatalogQuery } from "../../_productCatalogQuery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,14 +17,6 @@ type DirectusErrorShape = {
     status?: number;
     url?: string;
     body?: string;
-};
-
-type ProductsMeta = {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-    totalVariants: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -60,12 +47,6 @@ function decodeUserIdFromJwtCookie(req: NextRequest, cookieName = "vos_access_to
     }
 }
 
-function norm(v: string | null) {
-    const s = (v ?? "").trim();
-    if (!s || s === "undefined" || s === "null") return "";
-    return s;
-}
-
 function parseErrorMessage(message: string): DirectusErrorShape | null {
     try {
         const parsed: unknown = JSON.parse(message);
@@ -85,63 +66,10 @@ export async function GET(req: NextRequest) {
         if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
         const { searchParams } = new URL(req.url);
+        const query = parseProductCatalogQuery(searchParams);
+        const payload = await fetchMatrixPage(query);
 
-        const activeOnly = norm(searchParams.get("active_only") || "1") === "1";
-        const productIdsParam = parseProductIdsList(norm(searchParams.get("product_ids")));
-
-        if (productIdsParam.length > 0) {
-            const rows = await fetchProductsByIds(productIdsParam, activeOnly);
-            return NextResponse.json({ data: rows, meta: { total: rows.length } });
-        }
-
-        const { filters, page, pageSize, supplierScope, supplierIdsRaw } =
-            parseProductCatalogQuery(searchParams);
-
-        const supplierProductIds = await resolveSupplierScopedProductIds({
-            supplierScope,
-            supplierIdsRaw,
-        });
-
-        if (supplierProductIds && supplierProductIds.length === 0) {
-            const emptyMeta: ProductsMeta = {
-                page,
-                pageSize,
-                total: 0,
-                totalPages: 0,
-                totalVariants: 0,
-            };
-
-            return NextResponse.json({ data: [], meta: emptyMeta });
-        }
-
-        const { pageGroups, totalGroups, totalVariants, safePage } = await fetchPaginatedProductGroups({
-            page,
-            pageSize,
-            supplierProductIds,
-            filters,
-        });
-
-        const totalPages = totalGroups > 0 ? Math.ceil(totalGroups / pageSize) : 0;
-
-        const pageVariants: ProductRow[] = [];
-        for (const group of pageGroups) {
-            for (const variant of group.variants) {
-                pageVariants.push({ ...variant, __group_id: group.group_id });
-            }
-        }
-
-        const meta: ProductsMeta = {
-            page: safePage,
-            pageSize,
-            total: totalGroups,
-            totalPages,
-            totalVariants,
-        };
-
-        return NextResponse.json({
-            data: pageVariants,
-            meta,
-        });
+        return NextResponse.json(payload);
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         const parsed = parseErrorMessage(message);

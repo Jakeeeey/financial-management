@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ApproveDialog } from "./ApproveDialog";
 import { BulkListCostActionResultDialog } from "./BulkListCostActionResultDialog";
 import { BulkListCostApprovePreview } from "./BulkListCostApprovePreview";
+import { ListCostBatchDetailDialog } from "./ListCostBatchDetailDialog";
 import { ListPriceRequestDetailDialog } from "./ListPriceRequestDetailDialog";
 import { PcrStatusTabs } from "./PcrStatusTabs";
 import { RejectDialog } from "./RejectDialog";
@@ -16,8 +17,8 @@ import { RequestFiltersBar } from "./RequestFiltersBar";
 import RequestsTable from "./RequestsTable";
 
 import { useListCostBulkSelection } from "../hooks/useListCostBulkSelection";
-import { usePCRList } from "../hooks/usePCR";
 import { usePCRActions } from "../hooks/usePCRActions";
+import { useUnifiedApprovals } from "../hooks/useUnifiedApprovals";
 import type { SupplierOption } from "../providers/pcrApi";
 import { applyBulkActionResult, type BulkActionOutcome } from "../utils/applyBulkActionResult";
 import { pcrApproveButtonClass, pcrRejectButtonClass } from "../utils/pcrStatusStyles";
@@ -27,6 +28,7 @@ import type {
     ListQuery,
     PCRStatusFilter,
     PriceChangeRequestRow,
+    UnifiedApprovalRow,
 } from "../types";
 
 type Props = {
@@ -48,10 +50,12 @@ export function ListCostRequestManager({
     onUnauthorized,
     active = true,
 }: Props) {
-    const inbox = usePCRList(query, setQuery, { requestType: "cost", enabled: active });
+    const inbox = useUnifiedApprovals(query, setQuery, { scope: "cost", enabled: active });
 
     const statusTab: PCRStatusFilter = inbox.query.status || "ALL";
+    const showBulkBar = false;
 
+    const [viewingCostBatchHeaderId, setViewingCostBatchHeaderId] = React.useState<number | null>(null);
     const [viewingRequestId, setViewingRequestId] = React.useState<number | null>(null);
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
     const [rejectingBulk, setRejectingBulk] = React.useState<boolean>(false);
@@ -71,20 +75,20 @@ export function ListCostRequestManager({
         removeSelectionIds,
     } = useListCostBulkSelection({
         rows: inbox.rows,
-        isSelectable: (row) => row.status === "PENDING",
+        isSelectable: (row) => row.kind === "list_price" && row.status === "PENDING",
         toSnapshot: (row) => snapshotFromCostRow(row as CostChangeRequestRow),
     });
 
     const toggleSelect = React.useCallback(
-        (key: string, checked: boolean, row?: CostChangeRequestRow | PriceChangeRequestRow) => {
-            toggleSelectRaw(key, checked, row && "proposed_cost" in row ? row : undefined);
+        (key: string, checked: boolean, row?: UnifiedApprovalRow | CostChangeRequestRow | PriceChangeRequestRow) => {
+            toggleSelectRaw(key, checked, row && "kind" in row && row.kind === "list_price" ? row : undefined);
         },
         [toggleSelectRaw],
     );
 
     const viewingRequest = React.useMemo(() => {
         if (viewingRequestId == null) return null;
-        const row = inbox.rows.find((r) => Number(r.request_id) === viewingRequestId);
+        const row = inbox.rows.find((r) => r.kind === "list_price" && Number(r.request_id) === viewingRequestId);
         return row ? costRequestToUnifiedRow(row as CostChangeRequestRow) : null;
     }, [inbox.rows, viewingRequestId]);
 
@@ -98,8 +102,18 @@ export function ListCostRequestManager({
     }, [selectedIds]);
 
     const openRequestReview = React.useCallback((id: number) => {
+        const row = inbox.rows.find((item) => {
+            if (item.kind === "cost_batch") return Number(item.batch_id ?? item.request_id) === id;
+            return Number(item.request_id) === id;
+        });
+
+        if (row?.kind === "cost_batch") {
+            setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
+            return;
+        }
+
         setViewingRequestId(id);
-    }, []);
+    }, [inbox.rows]);
 
     const handleConfirmApprove = React.useCallback(async () => {
         if (!confirmingApprove) return;
@@ -193,7 +207,7 @@ export function ListCostRequestManager({
                     </Alert>
                 ) : null}
 
-                {(statusTab === "PENDING" || statusTab === "ALL") && (
+                {showBulkBar ? (
                     <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="text-sm text-muted-foreground">
                             {selectedIds.length > 0 ? (
@@ -259,16 +273,16 @@ export function ListCostRequestManager({
                             </Button>
                         </div>
                     </div>
-                )}
+                ) : null}
 
                 <RequestsTable
                     rows={inbox.rows}
                     mode="approver"
-                    showSelectionColumn={statusTab === "PENDING" || statusTab === "ALL"}
-                    requestType="cost"
+                    showSelectionColumn={showBulkBar}
+                    requestType="mixed"
                     loading={inbox.loading}
                     hasLoadError={Boolean(inbox.error)}
-                    acting={actions.acting}
+                    acting={actions.acting || inbox.acting}
                     onReview={openRequestReview}
                     onApprove={(id) => setConfirmingApprove({ type: "single", id })}
                     onReject={(id) => setRejectingId(id)}
@@ -290,7 +304,9 @@ export function ListCostRequestManager({
                     }
                     footerItemLabel="requests"
                     selectedKeys={selectedKeys}
-                    onToggleSelect={toggleSelect}
+                    onToggleSelect={(key, checked, row) =>
+                        toggleSelect(key, checked, row as CostChangeRequestRow | undefined)
+                    }
                     onToggleSelectAllPage={toggleSelectAllPage}
                 />
             </div>
@@ -304,6 +320,17 @@ export function ListCostRequestManager({
                 }}
                 onApprove={actions.approve}
                 onReject={actions.reject}
+            />
+
+            <ListCostBatchDetailDialog
+                batchId={viewingCostBatchHeaderId}
+                open={viewingCostBatchHeaderId != null}
+                acting={actions.acting || inbox.acting}
+                onOpenChange={(open) => {
+                    if (!open) setViewingCostBatchHeaderId(null);
+                }}
+                onApprove={inbox.approveCostBatch}
+                onReject={inbox.rejectCostBatch}
             />
 
             <RejectDialog

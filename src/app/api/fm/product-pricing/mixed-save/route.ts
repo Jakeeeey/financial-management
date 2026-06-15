@@ -15,11 +15,24 @@ import {
     createPendingCostRequests,
     planCostBulkCreate,
 } from "../cost-change-requests/_bulk";
+import { isCostBatchStorageSetupError } from "../cost-change-batches/_batch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MIXED_SAVE_ROLLBACK_REASON = "Auto-cancelled: mixed save failed";
+
+function costBatchStorageSetupResponse(details: string, rolledBack = false) {
+    return NextResponse.json(
+        {
+            error: "List cost batch storage is not configured.",
+            details,
+            setup_required: true,
+            rolled_back: rolledBack,
+        },
+        { status: 503 },
+    );
+}
 
 type MixedSaveBatchInput = {
     supplier_id: number;
@@ -111,6 +124,7 @@ export async function POST(req: NextRequest) {
             created: number;
             skipped_duplicates: number;
             skipped_existing_pending: number;
+            header_id?: number;
         } = {
             created: 0,
             skipped_duplicates: 0,
@@ -175,12 +189,15 @@ export async function POST(req: NextRequest) {
                     const created = await createPendingCostRequests({
                         userId,
                         itemsToCreate: costPlan.itemsToCreate,
+                        referenceNo,
+                        remarks: remarks || "List cost change request",
                     });
 
                     costResult = {
                         created: created.created,
                         skipped_duplicates: costPlan.skippedDuplicates,
                         skipped_existing_pending: costPlan.skippedExistingPending,
+                        header_id: created.headerId,
                     };
                 } catch (costError: unknown) {
                     if (isMixed && priceResult.header_id) {
@@ -192,6 +209,9 @@ export async function POST(req: NextRequest) {
 
                         const message =
                             costError instanceof Error ? costError.message : String(costError);
+                        if (isCostBatchStorageSetupError(costError)) {
+                            return costBatchStorageSetupResponse(message, true);
+                        }
 
                         return NextResponse.json(
                             {
@@ -201,6 +221,12 @@ export async function POST(req: NextRequest) {
                                 details: message,
                             },
                             { status: 500 },
+                        );
+                    }
+
+                    if (isCostBatchStorageSetupError(costError)) {
+                        return costBatchStorageSetupResponse(
+                            costError instanceof Error ? costError.message : String(costError),
                         );
                     }
 
@@ -231,6 +257,10 @@ export async function POST(req: NextRequest) {
             { status: 201 },
         );
     } catch (error: unknown) {
+        if (isCostBatchStorageSetupError(error)) {
+            return costBatchStorageSetupResponse(error.message);
+        }
+
         return directusErrorResponse(error);
     }
 }

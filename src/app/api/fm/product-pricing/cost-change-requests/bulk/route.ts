@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { isCostBatchStorageSetupError } from "../../cost-change-batches/_batch";
 import { decodeUserIdFromJwtCookie } from "../../price-change-batches/_batch";
 import {
     CostBulkItemInput,
@@ -9,6 +10,17 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function costBatchStorageSetupResponse(details: string) {
+    return NextResponse.json(
+        {
+            error: "List cost batch storage is not configured.",
+            details,
+            setup_required: true,
+        },
+        { status: 503 },
+    );
+}
 
 function parseWrappedError(message: string) {
     try {
@@ -39,6 +51,8 @@ export async function POST(req: NextRequest) {
 
         const body = (await req.json()) as Partial<{
             items: CostBulkItemInput[];
+            reference_no: string;
+            remarks: string;
         }>;
 
         const rawItems = Array.isArray(body.items) ? body.items : [];
@@ -63,11 +77,14 @@ export async function POST(req: NextRequest) {
         const result = await createPendingCostRequests({
             userId,
             itemsToCreate: plan.itemsToCreate,
+            referenceNo: body.reference_no,
+            remarks: body.remarks,
         });
 
         return NextResponse.json(
             {
                 created: result.created,
+                header_id: result.headerId,
                 skipped_duplicates: plan.skippedDuplicates,
                 skipped_existing_pending: plan.skippedExistingPending,
             },
@@ -75,6 +92,10 @@ export async function POST(req: NextRequest) {
         );
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
+        if (isCostBatchStorageSetupError(error)) {
+            return costBatchStorageSetupResponse(message);
+        }
+
         const wrapped = parseWrappedError(message);
 
         if (wrapped) {

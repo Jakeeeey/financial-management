@@ -204,6 +204,28 @@ export function snapshotFromPriceUnifiedRow(row: PriceTypeUnifiedApprovalRow): P
     };
 }
 
+export function snapshotFromPriceApprovalRow(row: UnifiedApprovalRow): PriceTypeSelectionSnapshot {
+    if (row.kind === "price_batch") {
+        const headerId = Number(row.batch_id ?? row.request_id ?? 0);
+        return {
+            request_id: -headerId,
+            record_label: row.record_label || `PCB-${headerId}`,
+            product_label: row.title || `Price change batch #${headerId}`,
+            price_type_label: "Batch",
+            batch_header_id: headerId,
+            batch_label: `PCB-${headerId}`,
+            current_price: null,
+            proposed_price: Number(row.proposed_min ?? row.proposed_price ?? 0),
+        };
+    }
+
+    if (row.kind !== "price_type") {
+        throw new Error("Only price approval rows can be converted to price snapshots.");
+    }
+
+    return snapshotFromPriceUnifiedRow(row);
+}
+
 export function priceTypeLabel(r: PriceChangeRequestRow) {
     const priceType = r.price_type_id;
 
