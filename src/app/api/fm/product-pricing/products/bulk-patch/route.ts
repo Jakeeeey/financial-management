@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateGroupIndexCacheOnCatalogChange } from "../../_productGroupIndexCache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -124,6 +125,8 @@ export async function POST(req: NextRequest) {
                 { status: 500 },
             );
         }
+
+        invalidateGroupIndexCacheOnCatalogChange();
 
         return NextResponse.json({ ok: true, affected: results.length });
     } catch (error: unknown) {

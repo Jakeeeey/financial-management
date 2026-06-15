@@ -3,6 +3,7 @@ import {
     type LegacyPriceTypeRow,
     resolveLegacyProductsPatch,
 } from "../_legacyProductPriceSync";
+import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -245,6 +246,7 @@ export async function POST(req: NextRequest) {
 
         if (syncOps.length) {
             await Promise.all(syncOps);
+            invalidateGroupIndexCacheOnCatalogChange();
         }
 
         return NextResponse.json({ ok: true, affected });

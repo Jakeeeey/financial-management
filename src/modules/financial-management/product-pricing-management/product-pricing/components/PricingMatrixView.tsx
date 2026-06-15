@@ -606,8 +606,8 @@ export default function PricingMatrixView() {
     }
 
     return (
-        <div className="min-h-0 px-0">
-            <div className="flex min-h-0 flex-col gap-3">
+        <div className="flex min-h-0 flex-1 flex-col px-0">
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
                 <div className="shrink-0">
                     <PricingFiltersBar
                         filters={matrix.filters}
@@ -661,7 +661,7 @@ export default function PricingMatrixView() {
                     </Alert>
                 ) : null}
 
-                <div className="min-h-0 flex-1">
+                <div className="flex min-h-0 flex-1 flex-col">
                     <PricingTable matrix={matrix} dirtyVersion={dirtySummary.dirtyVersion} />
                 </div>
 

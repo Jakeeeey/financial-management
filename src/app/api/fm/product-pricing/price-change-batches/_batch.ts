@@ -3,6 +3,7 @@ import {
     type LegacyPriceTypeRow,
     resolveLegacyProductsPatch,
 } from "../_legacyProductPriceSync";
+import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 
 export const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -717,6 +718,8 @@ export async function applyApprovedBatch(headerId: number, userId: number) {
                 }),
             ),
     );
+
+    invalidateGroupIndexCacheOnCatalogChange();
 
     return NextResponse.json({ ok: true, header_id: headerId, affected: normalizedDetails.length });
 }

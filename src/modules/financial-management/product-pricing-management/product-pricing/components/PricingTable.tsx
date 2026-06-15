@@ -17,7 +17,13 @@ import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LayoutGrid, Table2 } from "lucide-react";
 
 import PriceCell from "./PriceCell";
+import VirtualizedProductGroupList from "./VirtualizedProductGroupList";
 import { isListTierKey, priceViewFilterLabel, resolveVisibleTierKeys, tierLabelForTierKey } from "../utils/pivot";
+import {
+    estimateProductGroupBlockHeight,
+    estimateProductGroupCardHeight,
+} from "../utils/estimateProductGroupHeight";
+import { useCardsColumnsPerRow } from "../hooks/useCardsColumnsPerRow";
 
 type VariantProduct = {
     product_id: number | string | null | undefined;
@@ -135,7 +141,7 @@ const VIEW_MODE_STORAGE_KEY = "product-pricing:view-mode";
 
 function LoadingCardBody({ rowCount }: { rowCount: number }) {
     return (
-        <div className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: rowCount }).map((_, i) => (
                 <div key={`csk-${i}`} className="rounded-lg border bg-background p-3">
                     <Skeleton className="mb-2 h-4 w-3/4" />
@@ -396,6 +402,112 @@ function ProductBlockPriceTable(props: {
     );
 }
 
+const ProductGroupBlockRow = React.memo(function ProductGroupBlockRow(props: {
+    matrix: PricingMatrixLike;
+    row: MatrixRow;
+    tiers: ProductTierKey[];
+    usedUnits: Unit[];
+    getSetCellHandler: SetCellHandler;
+}) {
+    const { matrix, row, tiers, usedUnits, getSetCellHandler } = props;
+    const display = row.display ?? {};
+    const groupKey = String(row.group_id);
+
+    return (
+        <article key={`C-${groupKey}`} className="rounded-lg border bg-background p-3 shadow-sm">
+            <div className="space-y-1.5">
+                <div className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
+                    {display.product_name ?? "-"}
+                </div>
+                <ProductMetaPills row={row} display={display} />
+            </div>
+
+            <div className="mt-3">
+                <ProductBlockPriceTable
+                    matrix={matrix}
+                    row={row}
+                    tiers={tiers}
+                    usedUnits={usedUnits}
+                    getSetCellHandler={getSetCellHandler}
+                />
+            </div>
+        </article>
+    );
+});
+
+const ProductGroupCardRow = React.memo(function ProductGroupCardRow(props: {
+    matrix: PricingMatrixLike;
+    row: MatrixRow;
+    tiers: ProductTierKey[];
+    usedUnits: Unit[];
+    getSetCellHandler: SetCellHandler;
+}) {
+    const { matrix, row, tiers, usedUnits, getSetCellHandler } = props;
+    const display = row.display ?? {};
+    const groupKey = String(row.group_id);
+
+    return (
+        <article key={`C-${groupKey}`} className="rounded-lg border bg-background p-3 shadow-sm">
+            <div className="space-y-1.5">
+                <div className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
+                    {display.product_name ?? "-"}
+                </div>
+                <ProductMetaPills row={row} display={display} />
+            </div>
+
+            <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                {tiers.flatMap((tier) => {
+                    if (usedUnits.length > 0) {
+                        return usedUnits.map((unit) => {
+                            const uomId = Number(unit.unit_id);
+                            const variant = row.variantsByUnitId?.[String(uomId)];
+                            const cell = cellPropsFor(matrix, getSetCellHandler, variant, tier);
+
+                            return (
+                                <CardPriceCell
+                                    key={`${groupKey}-${String(tier)}-${String(unit.unit_id)}`}
+                                    row={row}
+                                    tier={tier}
+                                    unit={unit}
+                                    tiers={matrix.TIERS}
+                                    priceTypes={matrix.priceTypes}
+                                    cell={
+                                        cell ?? {
+                                            value: null,
+                                            pendingValue: null,
+                                            dirty: false,
+                                            error: null,
+                                            onChange: () => {},
+                                        }
+                                    }
+                                />
+                            );
+                        });
+                    }
+
+                    return [
+                        <CardPriceCell
+                            key={`${groupKey}-${String(tier)}-none`}
+                            row={row}
+                            tier={tier}
+                            unit={null}
+                            tiers={matrix.TIERS}
+                            priceTypes={matrix.priceTypes}
+                            cell={{
+                                value: null,
+                                pendingValue: null,
+                                dirty: false,
+                                error: null,
+                                onChange: () => {},
+                            }}
+                        />,
+                    ];
+                })}
+            </div>
+        </article>
+    );
+});
+
 function PricingProductBlocks(props: {
     matrix: PricingMatrixLike;
     rows: MatrixRow[];
@@ -404,8 +516,9 @@ function PricingProductBlocks(props: {
     loading: boolean;
     totalGroups: number;
     getSetCellHandler: SetCellHandler;
+    listKey: string;
 }) {
-    const { matrix, rows, tiers, usedUnits, loading, totalGroups, getSetCellHandler } = props;
+    const { matrix, rows, tiers, usedUnits, loading, totalGroups, getSetCellHandler, listKey } = props;
     const hasLoadError = Boolean(matrix.error);
 
     if (loading && rows.length === 0) {
@@ -417,33 +530,23 @@ function PricingProductBlocks(props: {
     }
 
     return (
-        <div className={cn("grid gap-3 p-3", loading && rows.length > 0 && "pmx-loading-row")}>
-            {rows.map((row) => {
-                const display = row.display ?? {};
-                const groupKey = String(row.group_id);
-
-                return (
-                    <article key={`C-${groupKey}`} className="rounded-lg border bg-background p-3 shadow-sm">
-                        <div className="space-y-1.5">
-                            <div className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
-                                {display.product_name ?? "-"}
-                            </div>
-                            <ProductMetaPills row={row} display={display} />
-                        </div>
-
-                        <div className="mt-3">
-                            <ProductBlockPriceTable
-                                matrix={matrix}
-                                row={row}
-                                tiers={tiers}
-                                usedUnits={usedUnits}
-                                getSetCellHandler={getSetCellHandler}
-                            />
-                        </div>
-                    </article>
-                );
-            })}
-        </div>
+        <VirtualizedProductGroupList
+            rows={rows}
+            listKey={listKey}
+            loading={loading}
+            itemClassName="px-3 pb-3"
+            getItemKey={(row) => String(row.group_id)}
+            estimateItemSize={() => estimateProductGroupBlockHeight(tiers.length)}
+            renderItem={(row) => (
+                <ProductGroupBlockRow
+                    matrix={matrix}
+                    row={row}
+                    tiers={tiers}
+                    usedUnits={usedUnits}
+                    getSetCellHandler={getSetCellHandler}
+                />
+            )}
+        />
     );
 }
 
@@ -455,8 +558,10 @@ function PricingCards(props: {
     loading: boolean;
     totalGroups: number;
     getSetCellHandler: SetCellHandler;
+    listKey: string;
 }) {
-    const { matrix, rows, tiers, usedUnits, loading, totalGroups, getSetCellHandler } = props;
+    const { matrix, rows, tiers, usedUnits, loading, totalGroups, getSetCellHandler, listKey } = props;
+    const columnsPerRow = useCardsColumnsPerRow();
     const hasLoadError = Boolean(matrix.error);
 
     if (loading && rows.length === 0) {
@@ -468,73 +573,38 @@ function PricingCards(props: {
     }
 
     return (
-        <div className={cn("grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3", loading && rows.length > 0 && "pmx-loading-row")}>
-            {rows.map((row) => {
-                const display = row.display ?? {};
-                const groupKey = String(row.group_id);
-
-                return (
-                    <article key={`C-${groupKey}`} className="rounded-lg border bg-background p-3 shadow-sm">
-                        <div className="space-y-1.5">
-                            <div className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
-                                {display.product_name ?? "-"}
-                            </div>
-                            <ProductMetaPills row={row} display={display} />
-                        </div>
-
-                        <div className="mt-3 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
-                            {tiers.flatMap((tier) => {
-                                if (usedUnits.length > 0) {
-                                    return usedUnits.map((unit) => {
-                                        const uomId = Number(unit.unit_id);
-                                        const variant = row.variantsByUnitId?.[String(uomId)];
-                                        const cell = cellPropsFor(matrix, getSetCellHandler, variant, tier);
-
-                                        return (
-                                            <CardPriceCell
-                                                key={`${groupKey}-${String(tier)}-${String(unit.unit_id)}`}
-                                                row={row}
-                                                tier={tier}
-                                                unit={unit}
-                                                tiers={matrix.TIERS}
-                                                priceTypes={matrix.priceTypes}
-                                                cell={
-                                                    cell ?? {
-                                                        value: null,
-                                                        pendingValue: null,
-                                                        dirty: false,
-                                                        error: null,
-                                                        onChange: () => {},
-                                                    }
-                                                }
-                                            />
-                                        );
-                                    });
-                                }
-
-                                return [
-                                    <CardPriceCell
-                                        key={`${groupKey}-${String(tier)}-none`}
-                                        row={row}
-                                        tier={tier}
-                                        unit={null}
-                                        tiers={matrix.TIERS}
-                                        priceTypes={matrix.priceTypes}
-                                        cell={{
-                                            value: null,
-                                            pendingValue: null,
-                                            dirty: false,
-                                            error: null,
-                                            onChange: () => {},
-                                        }}
-                                    />,
-                                ];
-                            })}
-                        </div>
-                    </article>
-                );
-            })}
-        </div>
+        <VirtualizedProductGroupList
+            rows={rows}
+            listKey={`${listKey}:${columnsPerRow}`}
+            loading={loading}
+            columnsPerRow={columnsPerRow}
+            itemClassName="px-3 pb-3"
+            getItemKey={(row) => String(row.group_id)}
+            estimateItemSize={(row, index) =>
+                estimateProductGroupCardHeight({
+                    tierCount: tiers.length,
+                    usedUnits,
+                    row,
+                })
+            }
+            renderRow={(chunk) => (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {chunk.map((row) => (
+                        <ProductGroupCardRow
+                            key={String(row.group_id)}
+                            matrix={matrix}
+                            row={row}
+                            tiers={tiers}
+                            usedUnits={usedUnits}
+                            getSetCellHandler={getSetCellHandler}
+                        />
+                    ))}
+                    {Array.from({ length: Math.max(0, columnsPerRow - chunk.length) }).map((_, i) => (
+                        <div key={`pad-${i}`} aria-hidden className="min-w-0" />
+                    ))}
+                </div>
+            )}
+        />
     );
 }
 
@@ -637,6 +707,19 @@ export default function PricingTable({ matrix, dirtyVersion = 0 }: Props) {
                     ? `Showing selected price columns: ${priceViewLabel}. Clear the price view filter to show every tier.`
                     : `Focused editing for ${priceViewLabel}. Clear the price view filter to show every tier.`;
 
+    const listKey = React.useMemo(
+        () =>
+            JSON.stringify({
+                viewMode,
+                page,
+                pageSize,
+                tierCount: tiers.length,
+                rowCount: rows.length,
+                firstGroupId: rows[0]?.group_id ?? null,
+            }),
+        [viewMode, page, pageSize, tiers.length, rows],
+    );
+
     return (
         <div
             className="relative z-0 flex min-h-0 min-w-0 flex-col rounded-2xl border bg-background shadow-sm"
@@ -654,7 +737,7 @@ export default function PricingTable({ matrix, dirtyVersion = 0 }: Props) {
                 </div>
             )}
 
-            <div className="flex flex-col gap-2 border-b bg-muted/20 px-3 py-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex shrink-0 flex-col gap-2 border-b bg-muted/20 px-3 py-2 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                     <div className="text-sm font-semibold text-foreground">{priceViewLabel}</div>
                     <div className="text-xs text-muted-foreground">{priceViewHelp}</div>
@@ -685,29 +768,33 @@ export default function PricingTable({ matrix, dirtyVersion = 0 }: Props) {
                 </div>
             </div>
 
-            {viewMode === "table" ? (
-                <PricingProductBlocks
-                    matrix={matrix}
-                    rows={rows}
-                    tiers={tiers}
-                    usedUnits={usedUnits}
-                    loading={loading}
-                    totalGroups={totalGroups}
-                    getSetCellHandler={getSetCellHandler}
-                />
-            ) : (
-                <PricingCards
-                    matrix={matrix}
-                    rows={rows}
-                    tiers={tiers}
-                    usedUnits={usedUnits}
-                    loading={loading}
-                    totalGroups={totalGroups}
-                    getSetCellHandler={getSetCellHandler}
-                />
-            )}
+            <div className="flex min-h-0 flex-1 flex-col">
+                {viewMode === "table" ? (
+                    <PricingProductBlocks
+                        matrix={matrix}
+                        rows={rows}
+                        tiers={tiers}
+                        usedUnits={usedUnits}
+                        loading={loading}
+                        totalGroups={totalGroups}
+                        getSetCellHandler={getSetCellHandler}
+                        listKey={listKey}
+                    />
+                ) : (
+                    <PricingCards
+                        matrix={matrix}
+                        rows={rows}
+                        tiers={tiers}
+                        usedUnits={usedUnits}
+                        loading={loading}
+                        totalGroups={totalGroups}
+                        getSetCellHandler={getSetCellHandler}
+                        listKey={listKey}
+                    />
+                )}
+            </div>
 
-            <div className="flex flex-col gap-2 border-t bg-background/60 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex shrink-0 flex-col gap-2 border-t bg-background/60 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     {loading ? (
                         <>

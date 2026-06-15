@@ -1,4 +1,5 @@
 import { resolveLegacyProductsPatch } from "../_legacyProductPriceSync";
+import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 import { resolveHeaderMeta } from "../_pcrHeaderMeta";
 import {
     DETAILS,
@@ -174,6 +175,8 @@ async function applyProposedPrice(args: {
             }),
         });
     }
+
+    invalidateGroupIndexCacheOnCatalogChange();
 }
 
 export async function approveOneOrphanPriceRequest(

@@ -6,6 +6,7 @@ import {
     nowManila,
 } from "../price-change-batches/_batch";
 import { chunkArray, IN_CHUNK_SIZE } from "../_directusPaging";
+import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 
 export const CCR = "cost_change_requests";
 const PRODUCTS = "products";
@@ -105,6 +106,8 @@ export async function approveOneCostRequest(
             approved_at: nowManila(),
         }),
     });
+
+    invalidateGroupIndexCacheOnCatalogChange();
 
     return updated.data;
 }

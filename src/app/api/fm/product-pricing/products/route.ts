@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
-    buildGroupEntries,
-    fetchAllMatchingVariants,
-    fetchCompleteVariantsForGroups,
+    fetchPaginatedProductGroups,
     fetchProductsByIds,
-    mergeCompleteVariantsIntoGroups,
     resolveSupplierScopedProductIds,
     type ProductRow,
 } from "../_productGroups";
@@ -183,28 +180,14 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ data: [], meta: emptyMeta });
         }
 
-        const allVariants = await fetchAllMatchingVariants({
+        const { pageGroups, totalGroups, totalVariants, safePage } = await fetchPaginatedProductGroups({
+            page,
+            pageSize: groupPageSize,
             supplierProductIds,
             filters,
         });
 
-        const groupEntries = buildGroupEntries(allVariants);
-
-        const totalVariants = allVariants.length;
-        const totalGroups = groupEntries.length;
         const totalPages = totalGroups > 0 ? Math.ceil(totalGroups / groupPageSize) : 0;
-
-        const safePage = Math.min(Math.max(1, page), Math.max(1, totalPages || 1));
-        const start = (safePage - 1) * groupPageSize;
-        const pageGroups = groupEntries.slice(start, start + groupPageSize);
-
-        const completeByGroup = await fetchCompleteVariantsForGroups({
-            groupIds: pageGroups.map((g) => g.group_id),
-            activeOnly,
-            unitIds,
-        });
-
-        mergeCompleteVariantsIntoGroups(pageGroups, completeByGroup);
 
         const pageVariants: ProductRow[] = [];
         for (const group of pageGroups) {

@@ -1,9 +1,12 @@
 import {
     chunkArray,
+    DEFAULT_PAGE_SIZE,
     fetchAllPages,
+    fetchOnePage,
     getChildProductIdsForParents,
     getSupplierProductIdsForSuppliers,
 } from "./_directusPaging";
+import { buildGroupIndexCacheKey, getOrBuildGroupIndex } from "./_productGroupIndexCache";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const PRODUCTS = "products";
@@ -220,6 +223,198 @@ export type ProductCatalogFilters = {
     activeOnly?: boolean;
     missingTier?: boolean;
 };
+
+export type GroupIndexEntry = {
+    group_id: number;
+    sort_name: string;
+};
+
+function buildFilteredProductParams(
+    args: ProductCatalogFilters & { productIdsIn?: number[] },
+    offset: number,
+    limit: number,
+): URLSearchParams {
+    const {
+        q = "",
+        categoryIds = [],
+        brandIds = [],
+        unitIds = [],
+        activeOnly = true,
+        missingTier = false,
+        productIdsIn,
+    } = args;
+
+    const params = new URLSearchParams();
+    params.set("fields", PRODUCT_LIST_FIELDS);
+    params.set("sort", "product_name");
+    applyCommonFilters({
+        params,
+        q,
+        categoryIds,
+        brandIds,
+        unitIds,
+        activeOnly,
+        missingTier,
+        productIdsIn,
+    });
+    params.set("limit", String(limit));
+    params.set("offset", String(offset));
+    return params;
+}
+
+export function ingestVariantsIntoGroupIndex(
+    index: Map<number, string>,
+    variants: ProductRow[],
+): void {
+    for (const row of variants) {
+        const gid = groupKey(row);
+        if (!gid) continue;
+
+        const name = String(row.product_name ?? "");
+        const existing = index.get(gid);
+        if (existing === undefined) {
+            index.set(gid, name);
+            continue;
+        }
+
+        if (name.localeCompare(existing) < 0) {
+            index.set(gid, name);
+        }
+    }
+}
+
+export function finalizeGroupIndex(index: Map<number, string>): GroupIndexEntry[] {
+    return Array.from(index.entries())
+        .map(([group_id, sort_name]) => ({ group_id, sort_name }))
+        .sort((a, b) => a.sort_name.localeCompare(b.sort_name));
+}
+
+async function streamMatchingVariants(
+    args: {
+        supplierProductIds: number[] | null;
+        filters: ProductCatalogFilters;
+    },
+    onChunk: (rows: ProductRow[]) => boolean | void,
+): Promise<number> {
+    const { supplierProductIds, filters } = args;
+    let totalVariants = 0;
+
+    const streamProductIds = async (productIdsIn?: number[]) => {
+        let offset = 0;
+
+        while (true) {
+            const { rows } = await fetchOnePage<ProductRow>(
+                PRODUCTS,
+                (pageOffset, pageLimit) =>
+                    buildFilteredProductParams(
+                        { ...filters, productIdsIn },
+                        pageOffset,
+                        pageLimit,
+                    ),
+                offset,
+                DEFAULT_PAGE_SIZE,
+            );
+
+            if (rows.length === 0) break;
+
+            const normalized = rows.map(normalizeProductRow);
+            totalVariants += normalized.length;
+
+            const shouldContinue = onChunk(normalized);
+            if (shouldContinue === false) return false;
+
+            if (rows.length < DEFAULT_PAGE_SIZE) break;
+            offset += DEFAULT_PAGE_SIZE;
+        }
+
+        return true;
+    };
+
+    if (!supplierProductIds) {
+        await streamProductIds();
+        return totalVariants;
+    }
+
+    if (supplierProductIds.length === 0) {
+        return 0;
+    }
+
+    for (const productIdsIn of chunkArray(supplierProductIds, 150)) {
+        const shouldContinue = await streamProductIds(productIdsIn);
+        if (shouldContinue === false) break;
+    }
+
+    return totalVariants;
+}
+
+export async function buildGroupIndex(args: {
+    supplierProductIds: number[] | null;
+    filters: ProductCatalogFilters;
+}): Promise<{ groups: GroupIndexEntry[]; totalVariants: number }> {
+    const key = buildGroupIndexCacheKey(args.filters, args.supplierProductIds);
+
+    return getOrBuildGroupIndex(key, async () => {
+        const index = new Map<number, string>();
+
+        const totalVariants = await streamMatchingVariants(args, (rows) => {
+            ingestVariantsIntoGroupIndex(index, rows);
+        });
+
+        return {
+            groups: finalizeGroupIndex(index),
+            totalVariants,
+        };
+    });
+}
+
+export async function fetchPaginatedProductGroups(args: {
+    page: number;
+    pageSize: number;
+    supplierProductIds: number[] | null;
+    filters: ProductCatalogFilters;
+}): Promise<{
+    pageGroups: ProductGroupEntry[];
+    totalGroups: number;
+    totalVariants: number;
+    safePage: number;
+}> {
+    const { page, pageSize, supplierProductIds, filters } = args;
+    const { groups: groupIndex, totalVariants } = await buildGroupIndex({
+        supplierProductIds,
+        filters,
+    });
+
+    const totalGroups = groupIndex.length;
+    const totalPages = totalGroups > 0 ? Math.ceil(totalGroups / pageSize) : 0;
+    const safePage = Math.min(Math.max(1, page), Math.max(1, totalPages || 1));
+    const start = (safePage - 1) * pageSize;
+    const pageIndex = groupIndex.slice(start, start + pageSize);
+
+    const pageGroups: ProductGroupEntry[] = pageIndex.map((entry) => ({
+        group_id: entry.group_id,
+        display: {
+            product_id: entry.group_id,
+            product_name: entry.sort_name,
+        },
+        variants: [],
+        variant_product_ids: [],
+    }));
+
+    const completeByGroup = await fetchCompleteVariantsForGroups({
+        groupIds: pageGroups.map((group) => group.group_id),
+        activeOnly: filters.activeOnly ?? true,
+        unitIds: filters.unitIds,
+    });
+
+    mergeCompleteVariantsIntoGroups(pageGroups, completeByGroup);
+
+    return {
+        pageGroups,
+        totalGroups,
+        totalVariants,
+        safePage,
+    };
+}
 
 export async function resolveSupplierScopedProductIds(args: {
     supplierScope: "ALL" | "LINKED_ONLY";

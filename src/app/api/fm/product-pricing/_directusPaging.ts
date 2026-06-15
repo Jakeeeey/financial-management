@@ -5,7 +5,7 @@ export const DEFAULT_PAGE_SIZE = 500;
 export const IN_CHUNK_SIZE = 200;
 export const PRODUCTS_COLLECTION = "products";
 
-type DirectusList<T> = { data?: T[] };
+type DirectusList<T> = { data?: T[]; meta?: { filter_count?: number } | null };
 
 export function chunkArray<T>(arr: T[], size: number): T[][] {
     const out: T[][] = [];
@@ -36,6 +36,33 @@ export async function fetchAllPages<T>(
     }
 
     return all;
+}
+
+export async function fetchOnePage<T>(
+    collection: string,
+    buildParams: (offset: number, limit: number) => URLSearchParams,
+    offset: number,
+    limit: number,
+    options?: { includeFilterCount?: boolean },
+): Promise<{ rows: T[]; filterCount?: number }> {
+    const params = buildParams(offset, limit);
+    params.set("limit", String(limit));
+    params.set("offset", String(offset));
+
+    if (options?.includeFilterCount) {
+        params.set("meta", "filter_count");
+    }
+
+    const url = `${mustBase()}/items/${collection}?${params.toString()}`;
+    const json = await fetchDirectus<DirectusList<T>>(url, { headers: directusHeaders() });
+
+    return {
+        rows: json.data ?? [],
+        filterCount:
+            options?.includeFilterCount && json.meta?.filter_count != null
+                ? Number(json.meta.filter_count)
+                : undefined,
+    };
 }
 
 export async function fetchItemsWhereIn<T>(
