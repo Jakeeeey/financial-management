@@ -17,13 +17,13 @@ export function useSupplierProducts(supplierId: number | null) {
   /**
    * Fetch products for supplier
    */
-  const fetchProducts = useCallback(async (id: number) => {
+  const fetchProducts = useCallback(async (id: number, silent = false) => {
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       setError(null);
 
       // DEBUGGER
-      const apiUrl = `/api/supplier-registration/suppliers/${id}/products`;
+      const apiUrl = `/api/fm/supplier-registration/suppliers/${id}/products`;
 
       const response = await fetch(apiUrl);
 
@@ -37,7 +37,7 @@ export function useSupplierProducts(supplierId: number | null) {
       setError(err instanceof Error ? err : new Error("Unknown error"));
       setProducts([]);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, []);
 
@@ -50,7 +50,7 @@ export function useSupplierProducts(supplierId: number | null) {
       try {
         // Logic: The API route already handles the "isProductAlreadyAdded" check server-side
         const response = await fetch(
-          `/api/supplier-registration/suppliers/${supplierId}/products`,
+          `/api/fm/supplier-registration/suppliers/${supplierId}/products`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -69,10 +69,11 @@ export function useSupplierProducts(supplierId: number | null) {
         }
 
         toast.success("Product added successfully");
-        await fetchProducts(supplierId);
+        await fetchProducts(supplierId, true);
         return true;
       } catch (err) {
-        console.error(err); toast.error("An error occurred while adding the product");
+        console.error(err);
+        toast.error("An error occurred while adding the product");
         return false;
       }
     },
@@ -87,7 +88,7 @@ export function useSupplierProducts(supplierId: number | null) {
       if (!supplierId) return false;
       try {
         const response = await fetch(
-          `/api/supplier-registration/products-per-supplier/${itemId}`,
+          `/api/fm/supplier-registration/products-per-supplier/${itemId}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -97,7 +98,7 @@ export function useSupplierProducts(supplierId: number | null) {
 
         if (!response.ok) throw new Error("Update failed");
         toast.success("Discount type updated");
-        await fetchProducts(supplierId);
+        await fetchProducts(supplierId, true);
         return true;
       } catch {
         toast.error("Failed to update discount");
@@ -115,7 +116,7 @@ export function useSupplierProducts(supplierId: number | null) {
       if (!supplierId) return false;
       try {
         const response = await fetch(
-          `/api/supplier-registration/products-per-supplier/${itemId}`,
+          `/api/fm/supplier-registration/products-per-supplier/${itemId}`,
           {
             method: "DELETE",
           },
@@ -123,7 +124,7 @@ export function useSupplierProducts(supplierId: number | null) {
 
         if (!response.ok) throw new Error("Delete failed");
         toast.success("Product removed");
-        await fetchProducts(supplierId);
+        await fetchProducts(supplierId, true);
         return true;
       } catch {
         toast.error("Failed to remove product");
@@ -154,11 +155,51 @@ export function useSupplierProducts(supplierId: number | null) {
     }
   }, [supplierId, fetchProducts]);
 
+  /**
+   * Add multiple products to supplier in bulk
+   */
+  const addProductsBulk = useCallback(
+    async (productIds: number[]) => {
+      if (!supplierId || productIds.length === 0) return false;
+      try {
+        setIsLoading(true);
+
+        const response = await fetch(
+          `/api/fm/supplier-registration/suppliers/${supplierId}/products/bulk`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ product_ids: productIds }),
+          },
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          toast.error(result.error || "Failed to add products in bulk");
+          return false;
+        }
+
+        toast.success(result.message || "Products added successfully");
+        await fetchProducts(supplierId, true);
+        return true;
+      } catch (err) {
+        console.error(err);
+        toast.error("An error occurred during bulk assignment");
+        return false;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [supplierId, fetchProducts],
+  );
+
   return {
     products,
     isLoading,
     error,
     addProduct,
+    addProductsBulk,
     updateDiscount,
     removeProduct,
     refresh,

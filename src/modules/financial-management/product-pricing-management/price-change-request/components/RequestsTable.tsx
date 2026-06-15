@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import type { ListMeta, PriceChangeRequestRow } from "../types";
-import { productLabel, priceTypeLabel } from "../utils/labels";
+import type { ListMeta, PriceChangeRequestRow, CostChangeRequestRow } from "../types";
+import { productLabel, priceTypeLabel, uomLabel } from "../utils/labels";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -40,8 +40,9 @@ function getTotalPages(meta: ListMeta | null | undefined, pageSize: number, curr
 }
 
 type Props = {
-    rows: PriceChangeRequestRow[];
+    rows: (PriceChangeRequestRow | CostChangeRequestRow)[];
     mode: "approver" | "mine" | "all";
+    requestType?: "price" | "cost";
     acting?: boolean;
     onApprove?: (id: number) => void;
     onReject?: (id: number) => void;
@@ -61,7 +62,8 @@ type Props = {
 };
 
 export default function RequestsTable(props: Props) {
-    const rows = React.useMemo<PriceChangeRequestRow[]>(
+    const requestType = props.requestType ?? "price";
+    const rows = React.useMemo<(PriceChangeRequestRow | CostChangeRequestRow)[]>(
         () => props.rows ?? [],
         [props.rows],
     );
@@ -99,12 +101,12 @@ export default function RequestsTable(props: Props) {
     const allPageSelected = selectableIds.length > 0 && selectedOnPageCount === selectableIds.length;
     const somePageSelected = selectedOnPageCount > 0 && selectedOnPageCount < selectableIds.length;
 
-    const colSpan = props.mode === "approver" ? 8 : 7;
+    const colSpan = (props.mode === "approver" ? 9 : 7) - (requestType === "cost" ? 1 : 0);
 
     return (
         <div className="rounded-xl border bg-background">
             <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 z-10 bg-background shadow-sm">
                     <TableRow>
                         {props.mode === "approver" && (
                             <TableHead className="w-[52px]">
@@ -118,11 +120,12 @@ export default function RequestsTable(props: Props) {
                         )}
                         <TableHead className="w-[110px]">Request #</TableHead>
                         <TableHead>Product</TableHead>
-                        <TableHead className="w-[90px]">Type</TableHead>
+                        <TableHead className="w-[100px]">UOM</TableHead>
+                        {requestType === "price" && <TableHead className="w-[90px]">Type</TableHead>}
                         <TableHead className="w-[140px] text-right">Proposed</TableHead>
                         <TableHead className="w-[140px]">Status</TableHead>
                         <TableHead className="w-[170px]">Requested At</TableHead>
-                        <TableHead className="w-[220px] text-right">Actions</TableHead>
+                        {props.mode === "approver" && <TableHead className="w-[220px] text-right">Actions</TableHead>}
                     </TableRow>
                 </TableHeader>
 
@@ -132,23 +135,60 @@ export default function RequestsTable(props: Props) {
                         const isPending = r.status === "PENDING";
                         const isSelected = selectedIdSet.has(id);
 
+                        const proposedValue = requestType === "cost" 
+                            ? (r as CostChangeRequestRow).proposed_cost 
+                            : (r as PriceChangeRequestRow).proposed_price;
+
                         return (
                             <TableRow key={id}>
                                 {props.mode === "approver" && (
-                                    <TableCell>
+                                <TableCell>
+                                    <div className="flex items-center justify-center p-1">
                                         <Checkbox
+                                            className="h-[18px] w-[18px]"
                                             checked={isSelected}
                                             onCheckedChange={(checked) => props.onToggleSelect?.(id, checked === true)}
                                             aria-label={`Select request PCR-${id}`}
                                             disabled={props.acting || !isPending}
                                         />
-                                    </TableCell>
+                                    </div>
+                                </TableCell>
                                 )}
 
-                                <TableCell className="font-medium">PCR-{id}</TableCell>
-                                <TableCell className="max-w-[420px] truncate">{productLabel(r)}</TableCell>
-                                <TableCell>{priceTypeLabel(r)}</TableCell>
-                                <TableCell className="text-right">{fmt(r.proposed_price)}</TableCell>
+                                <TableCell className="font-medium">{requestType === "cost" ? "CCR" : "PCR"}-{id}</TableCell>
+                                <TableCell className="max-w-[420px] truncate">{productLabel(r as PriceChangeRequestRow)}</TableCell>
+                                <TableCell>
+                                    <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                                        {uomLabel(r as PriceChangeRequestRow)}
+                                    </span>
+                                </TableCell>
+                                {requestType === "price" && <TableCell>{priceTypeLabel(r as PriceChangeRequestRow)}</TableCell>}
+                                <TableCell className="text-right">
+                                    <div className="flex flex-col items-end gap-0.5">
+                                        <div className="text-sm font-semibold">{fmt(proposedValue)}</div>
+                                        {(() => {
+                                            const currentCost = requestType === "cost" 
+                                                ? (r as CostChangeRequestRow).current_cost
+                                                : typeof r.product_id === "object" ? r.product_id.cost_per_unit : null;
+                                            
+                                            const currentNum = Number(currentCost);
+                                            const proposedNum = Number(proposedValue);
+                                            
+                                            if (currentNum > 0 && Number.isFinite(proposedNum)) {
+                                                const diffPct = ((proposedNum - currentNum) / currentNum) * 100;
+                                                return (
+                                                    <div className="flex items-center text-xs gap-1">
+                                                        <span className="text-muted-foreground line-through" title="Cost Price">{fmt(currentNum)}</span>
+                                                        <span className={diffPct > 0 ? "text-green-600 dark:text-green-400 font-medium" : diffPct < 0 ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground font-medium"}>
+                                                            {diffPct > 0 ? "+" : ""}{diffPct.toFixed(2)}%
+                                                        </span>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        })()}
+                                    </div>
+                                </TableCell>
                                 <TableCell>
                                     <Badge variant={r.status === "PENDING" ? "default" : r.status === "APPROVED" ? "secondary" : "outline"}>
                                         {r.status}
@@ -156,36 +196,23 @@ export default function RequestsTable(props: Props) {
                                 </TableCell>
                                 <TableCell>{r.requested_at ? new Date(r.requested_at).toLocaleString() : "—"}</TableCell>
 
-                                <TableCell className="text-right">
-                                    <div className="inline-flex gap-2">
-                                        {props.mode === "approver" && (
-                                            <>
-                                                <Button size="sm" onClick={() => props.onApprove?.(id)} disabled={props.acting || !isPending}>
-                                                    Approve
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="destructive"
-                                                    onClick={() => props.onReject?.(id)}
-                                                    disabled={props.acting || !isPending}
-                                                >
-                                                    Reject
-                                                </Button>
-                                            </>
-                                        )}
-
-                                        {props.mode === "mine" && (
+                                {props.mode === "approver" && (
+                                    <TableCell className="text-right">
+                                        <div className="inline-flex gap-2">
+                                            <Button size="sm" onClick={() => props.onApprove?.(id)} disabled={props.acting || !isPending}>
+                                                Approve
+                                            </Button>
                                             <Button
                                                 size="sm"
-                                                variant="outline"
-                                                onClick={() => props.onCancel?.(id)}
+                                                variant="destructive"
+                                                onClick={() => props.onReject?.(id)}
                                                 disabled={props.acting || !isPending}
                                             >
-                                                Cancel
+                                                Reject
                                             </Button>
-                                        )}
-                                    </div>
-                                </TableCell>
+                                        </div>
+                                    </TableCell>
+                                )}
                             </TableRow>
                         );
                     })}

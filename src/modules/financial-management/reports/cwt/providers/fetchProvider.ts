@@ -1,5 +1,3 @@
-// src/modules/financial-management/reports/cwt/providers/fetchProvider.ts
-
 import { cookies } from 'next/headers';
 
 const COOKIE_KEY = 'springboot_token';

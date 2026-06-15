@@ -10,13 +10,15 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxLabel,
+  ComboboxList,
+} from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -56,7 +58,7 @@ import {
   User,
 } from "@/modules/financial-management/asset-management/types";
 import { format } from "date-fns";
-import { Check, ChevronsUpDown, Loader2, UploadCloud, X } from "lucide-react";
+import { Loader2, UploadCloud, X } from "lucide-react";
 import { assetService } from "../../services/assetService";
 import { cn } from "../../utils/lib";
 
@@ -85,11 +87,13 @@ export default function EditAssetModal({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
+  // Search states for comboboxes
+  const [typeSearch, setTypeSearch] = useState("");
+  const [classificationSearch, setClassificationSearch] = useState("");
+  const [departmentSearch, setDepartmentSearch] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+
   // Popover states to auto-close upon selection
-  const [typeOpen, setTypeOpen] = useState(false);
-  const [classificationOpen, setClassificationOpen] = useState(false);
-  const [departmentOpen, setDepartmentOpen] = useState(false);
-  const [employeeOpen, setEmployeeOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
 
   const form = useForm<AssetFormValues>({
@@ -316,10 +320,19 @@ export default function EditAssetModal({
                     </Button>
                   </div>
                 ) : (
-                  <div className="text-center p-4">
-                    <UploadCloud className="mx-auto h-6 w-6 text-muted-foreground" />
-                    <p className="text-sm font-medium">Click to update image</p>
-                  </div>
+                  <>
+                    <div className="p-4">
+                      <UploadCloud className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-medium">
+                        Click to upload or drag and drop
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        PNG, JPG or WebP (max. 2MB)
+                      </p>
+                    </div>
+                  </>
                 )}
                 <input
                   id="edit-image-upload"
@@ -433,49 +446,34 @@ export default function EditAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Item Type *</FormLabel>
-                    <Popover open={typeOpen} onOpenChange={setTypeOpen}>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className="w-full justify-between"
-                          >
-                            {field.value || "Select type..."}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                        <Command>
-                          <CommandInput placeholder="Search type..." />
-                          <CommandList>
-                            <CommandEmpty>No type found.</CommandEmpty>
-                            <CommandGroup>
-                              {types.map((t) => (
-                                <CommandItem
-                                  key={t.id}
-                                  value={t.type_name}
-                                  onSelect={(val) => {
-                                    form.setValue("item_type", val);
-                                    setTypeOpen(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      t.type_name === field.value
-                                        ? "opacity-100"
-                                        : "opacity-0",
-                                    )}
-                                  />
+                    <Combobox
+                      value={field.value}
+                      onValueChange={(val) => {
+                        if (val) {
+                          form.setValue("item_type", val);
+                          setTypeSearch("");
+                        }
+                      }}
+                      inputValue={typeSearch}
+                      onInputValueChange={setTypeSearch}
+                    >
+                      <ComboboxInput placeholder="Search type..." showTrigger={true} />
+                      <ComboboxContent align="start" className="w-(--radix-popover-trigger-width) p-0 pointer-events-auto z-[100]">
+                        <ComboboxList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                          <ComboboxGroup>
+                            <ComboboxLabel>Existing Types</ComboboxLabel>
+                            {types
+                              .filter((t) => t.type_name.toLowerCase().includes(typeSearch.toLowerCase()))
+                              .map((t) => (
+                                <ComboboxItem key={t.id} value={t.type_name}>
                                   {t.type_name}
-                                </CommandItem>
+                                </ComboboxItem>
                               ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
+                          </ComboboxGroup>
+                          <ComboboxEmpty>No type found.</ComboboxEmpty>
+                        </ComboboxList>
+                      </ComboboxContent>
+                    </Combobox>
                   </FormItem>
                 )}
               />
@@ -487,54 +485,34 @@ export default function EditAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Classification *</FormLabel>
-                    <Popover
-                      open={classificationOpen}
-                      onOpenChange={setClassificationOpen}
+                    <Combobox
+                      value={field.value}
+                      onValueChange={(val) => {
+                        if (val) {
+                          form.setValue("item_classification", val);
+                          setClassificationSearch("");
+                        }
+                      }}
+                      inputValue={classificationSearch}
+                      onInputValueChange={setClassificationSearch}
                     >
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className="w-full justify-between"
-                          >
-                            {field.value || "Select classification..."}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                        <Command>
-                          <CommandInput placeholder="Search classification..." />
-                          <CommandList>
-                            <CommandEmpty>
-                              No classification found.
-                            </CommandEmpty>
-                            <CommandGroup>
-                              {classifications.map((c) => (
-                                <CommandItem
-                                  key={c.id}
-                                  value={c.classification_name}
-                                  onSelect={(val) => {
-                                    form.setValue("item_classification", val);
-                                    setClassificationOpen(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      c.classification_name === field.value
-                                        ? "opacity-100"
-                                        : "opacity-0",
-                                    )}
-                                  />
+                      <ComboboxInput placeholder="Search classification..." showTrigger={true} />
+                      <ComboboxContent align="start" className="w-(--radix-popover-trigger-width) p-0 pointer-events-auto z-[100]">
+                        <ComboboxList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                          <ComboboxGroup>
+                            <ComboboxLabel>Existing Classifications</ComboboxLabel>
+                            {classifications
+                              .filter((c) => c.classification_name.toLowerCase().includes(classificationSearch.toLowerCase()))
+                              .map((c) => (
+                                <ComboboxItem key={c.id} value={c.classification_name}>
                                   {c.classification_name}
-                                </CommandItem>
+                                </ComboboxItem>
                               ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
+                          </ComboboxGroup>
+                          <ComboboxEmpty>No classification found.</ComboboxEmpty>
+                        </ComboboxList>
+                      </ComboboxContent>
+                    </Combobox>
                   </FormItem>
                 )}
               />
@@ -549,56 +527,34 @@ export default function EditAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Department *</FormLabel>
-                    <Popover
-                      open={departmentOpen}
-                      onOpenChange={setDepartmentOpen}
+                    <Combobox
+                      value={field.value?.toString()}
+                      onValueChange={(val) => {
+                        if (val) {
+                          form.setValue("department", parseInt(val));
+                          setDepartmentSearch("");
+                        }
+                      }}
+                      inputValue={departmentSearch}
+                      onInputValueChange={setDepartmentSearch}
                     >
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className="w-full justify-between"
-                          >
-                            {departments.find(
-                              (d) => d.department_id === field.value,
-                            )?.department_name || "Select "}
-                            <ChevronsUpDown className="h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                        <Command>
-                          <CommandInput placeholder="Search department..." />
-                          <CommandList>
-                            <CommandGroup>
-                              {departments.map((d) => (
-                                <CommandItem
-                                  key={d.department_id}
-                                  value={d.department_name}
-                                  onSelect={() => {
-                                    form.setValue(
-                                      "department",
-                                      d.department_id,
-                                    );
-                                    setDepartmentOpen(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      d.department_id === field.value
-                                        ? "opacity-100"
-                                        : "opacity-0",
-                                    )}
-                                  />
+                      <ComboboxInput placeholder="Search department..." showTrigger={true} />
+                      <ComboboxContent align="start" className="w-(--radix-popover-trigger-width) p-0 pointer-events-auto z-[100]">
+                        <ComboboxList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                          <ComboboxGroup>
+                            <ComboboxLabel>Departments</ComboboxLabel>
+                            {departments
+                              .filter((d) => d.department_name.toLowerCase().includes(departmentSearch.toLowerCase()))
+                              .map((d) => (
+                                <ComboboxItem key={d.department_id} value={d.department_id.toString()}>
                                   {d.department_name}
-                                </CommandItem>
+                                </ComboboxItem>
                               ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
+                          </ComboboxGroup>
+                          <ComboboxEmpty>No department found.</ComboboxEmpty>
+                        </ComboboxList>
+                      </ComboboxContent>
+                    </Combobox>
                   </FormItem>
                 )}
               />
@@ -610,50 +566,36 @@ export default function EditAssetModal({
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Assigned To</FormLabel>
-                    <Popover open={employeeOpen} onOpenChange={setEmployeeOpen}>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className="w-full justify-between"
-                          >
-                            {users.find((u) => u.user_id === field.value)
-                              ? `${users.find((u) => u.user_id === field.value)?.user_fname} ${users.find((u) => u.user_id === field.value)?.user_lname}`
-                              : "Select "}
-                            <ChevronsUpDown className="h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                        <Command>
-                          <CommandInput placeholder="Search employee..." />
-                          <CommandList>
-                            <CommandGroup>
-                              {users.map((u) => (
-                                <CommandItem
-                                  key={u.user_id}
-                                  value={`${u.user_fname} ${u.user_lname}`}
-                                  onSelect={() => {
-                                    form.setValue("employee", u.user_id);
-                                    setEmployeeOpen(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      u.user_id === field.value
-                                        ? "opacity-100"
-                                        : "opacity-0",
-                                    )}
-                                  />
+                    <Combobox
+                      value={field.value?.toString()}
+                      onValueChange={(val) => {
+                        if (val) {
+                          form.setValue("employee", parseInt(val));
+                          setEmployeeSearch("");
+                        }
+                      }}
+                      inputValue={employeeSearch}
+                      onInputValueChange={setEmployeeSearch}
+                    >
+                      <ComboboxInput placeholder="Search employee..." showTrigger={true} />
+                      <ComboboxContent align="start" className="w-(--radix-popover-trigger-width) p-0 pointer-events-auto z-[100]">
+                        <ComboboxList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                          <ComboboxGroup>
+                            <ComboboxLabel>Employees</ComboboxLabel>
+                            {users
+                              .filter((u) => 
+                                `${u.user_fname} ${u.user_lname}`.toLowerCase().includes(employeeSearch.toLowerCase())
+                              )
+                              .map((u) => (
+                                <ComboboxItem key={u.user_id} value={u.user_id.toString()}>
                                   {u.user_fname} {u.user_lname}
-                                </CommandItem>
+                                </ComboboxItem>
                               ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
+                          </ComboboxGroup>
+                          <ComboboxEmpty>No employee found.</ComboboxEmpty>
+                        </ComboboxList>
+                      </ComboboxContent>
+                    </Combobox>
                   </FormItem>
                 )}
               />
@@ -684,7 +626,7 @@ export default function EditAssetModal({
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent className="w-auto p-0 pointer-events-auto z-[100]" align="start">
                         <Calendar
                           mode="single"
                           selected={field.value}

@@ -53,6 +53,8 @@ const EMPTY_FILTERS: PricingFilters = {
     supplier_scope: "ALL",
     active_only: true,
     missing_tier: false,
+    price_type_ids: [],
+    show_list_price: false,
 };
 
 function safeStr(v: unknown): string {
@@ -126,11 +128,15 @@ function buildFiltersText(args: {
     if (categoryIds.length) {
         const names = labelListFromIds(categoryIds, categoriesById);
         parts.push(`Categories: ${names.join(", ")}`);
+    } else {
+        parts.push(`Categories: All Categories`);
     }
 
     if (brandIds.length) {
         const names = labelListFromIds(brandIds, brandsById);
         parts.push(`Brands: ${names.join(", ")}`);
+    } else {
+        parts.push(`Brands: All Brands`);
     }
 
     if (unitIds.length) {
@@ -232,6 +238,7 @@ function normalizePrintRow(value: unknown): ProductRow | null {
         priceC: toNumberOrZero(value.priceC),
         priceD: toNumberOrZero(value.priceD),
         priceE: toNumberOrZero(value.priceE),
+        cost_per_unit: toNullableNumber(value.cost_per_unit),
     };
 }
 
@@ -492,7 +499,7 @@ export default function PricingMatrixView() {
             }
 
             const assembled: MatrixRow[] = [];
-            const EMPTY_PIVOT = { A: null, B: null, C: null, D: null, E: null };
+            const EMPTY_PIVOT = { A: null, B: null, C: null, D: null, E: null, LIST: null };
 
             for (const [groupId, variants] of groups.entries()) {
                 const display = variants.find(v => v.product_id === groupId) || variants[0];
@@ -561,8 +568,8 @@ export default function PricingMatrixView() {
     }
 
     return (
-        <div className="h-[calc(100dvh-64px)] min-h-0 overflow-hidden px-0">
-            <div className="flex h-full min-h-0 flex-col gap-3">
+        <div className="min-h-0 px-0">
+            <div className="flex min-h-0 flex-col gap-3">
                 <div className="shrink-0">
                     <PricingFiltersBar
                         filters={matrix.filters}
@@ -572,6 +579,7 @@ export default function PricingMatrixView() {
                         brands={scopedBrands}
                         units={scopedUnits}
                         suppliers={lookups.suppliers}
+                        priceTypes={pt.priceTypes}
                     />
                 </div>
 
@@ -590,7 +598,7 @@ export default function PricingMatrixView() {
                     />
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-hidden">
+                <div className="min-h-0 flex-1">
                     <PricingTable matrix={matrix} />
                 </div>
 

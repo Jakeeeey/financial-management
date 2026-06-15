@@ -42,9 +42,10 @@ export type ProductRow = {
     priceC: number | null;
     priceD: number | null;
     priceE: number | null;
+    cost_per_unit: number | null;
 };
 
-export type ProductTierKey = "A" | "B" | "C" | "D" | "E";
+export type ProductTierKey = "A" | "B" | "C" | "D" | "E" | "LIST";
 
 export type PriceRow = {
     id: number;
@@ -93,6 +94,10 @@ export type PricingFilters = {
 
     active_only: boolean;
     missing_tier: boolean;
+
+    // ✅ New: UI filters for column visibility
+    price_type_ids: number[];
+    show_list_price: boolean;
 };
 
 export type UpsertLine = {
@@ -103,3 +108,20 @@ export type UpsertLine = {
     created_by?: number | null;
     status?: string;
 };
+
+export type PriceChangeRequest = {
+    id: number;
+    product_id: number | { product_id: number };
+    price_type_id: number | { price_type_id: number };
+    proposed_price: number;
+    status: string;
+};
+
+export type CostChangeRequest = {
+    id: number;
+    product_id: number | { product_id: number };
+    proposed_cost: number;
+    current_cost: number | null;
+    status: string;
+};
+

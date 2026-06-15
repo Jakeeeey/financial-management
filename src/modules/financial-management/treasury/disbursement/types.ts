@@ -24,33 +24,43 @@ export interface PaymentLine {
 export interface Disbursement {
     id: number;
     docNo: string;
-    payeeId?: number; // 🚀 Added for Edit mode population
+    payeeId?: number;
     transactionTypeName?: string;
     payeeName?: string;
     remarks?: string;
     totalAmount: number;
     paidAmount: number;
 
+    // 🚀 NEW: Financial Header Aggregates
+    totalDebit?: number;
+    totalCredit?: number;
+    balance?: number;
+
     encoderName?: string;
     approverName?: string;
     postedByName?: string;
+    encoderId?: number;
+    approverId?: number;
+    postedById?: number;
 
     isPosted: number;
     transactionDate?: string;
     dateCreated?: string;
     dateApproved?: string;
     datePosted?: string;
-
+    divisionId?: number;
+    departmentId?: number;
     divisionName?: string;
     departmentName?: string;
     status: string;
+    supportingDocumentsUrl?: string;
 
     payables: PayableLine[];
     payments: PaymentLine[];
 }
 
 export interface DisbursementPayload {
-    docNo?: string; // 🚀 Made optional so the backend can auto-generate
+    docNo?: string;
     transactionTypeId?: number;
     payeeId: number;
     remarks?: string;
@@ -63,6 +73,16 @@ export interface DisbursementPayload {
 
     payables: PayableLine[];
     payments: PaymentLine[];
+}
+
+export interface DivisionDto {
+    divisionId: number;
+    divisionName: string;
+}
+
+export interface DepartmentDto {
+    departmentId: number;
+    departmentName: string;
 }
 
 export interface SupplierDto {
@@ -84,14 +104,17 @@ export interface COADto {
     coaId: number;
     glCode: string;
     accountTitle: string;
-    isPayment?: boolean; // 🚀 Added to support the payments dropdown filter
-    isPaymentDuplicate?: boolean; // 🚀 Added to support the payments dropdown filter
+    accountType?: number | null;
+    isPayment?: boolean;
+    isPaymentDuplicate?: boolean;
 }
+
 export interface BankAccountDto {
     bankId: number;
     bankName: string;
     accountNumber: string;
 }
+
 export interface UnpaidPoDto {
     uniqueKey: string;
     poId: number;
@@ -99,5 +122,75 @@ export interface UnpaidPoDto {
     receiptNo: string;
     date: string;
     amountDue: number;
-    type: string; // 🚀 NEW
+    type: string;
+}
+
+export interface MemoDto {
+    id: number;
+    memo_number: string;
+    type: number;
+    memo_type_name: string;
+    date: string;
+    amount: number;
+    reason: string | null;
+    coa_id: number;
+    account_title: string;
+}
+
+// Add to your existing types.ts in the disbursement module
+export interface DepartmentExpense {
+    departmentId: number;
+    departmentName: string;
+    totalExpense: number;
+}
+
+export interface DivisionExpense {
+    divisionId: number;
+    divisionName: string;
+    totalExpense: number;
+    departments?: DepartmentExpense[];
+}
+
+export interface VoucherSummary {
+    id: number;
+    docNo: string;
+    transactionDate: string;
+    status: string;
+    payeeName: string;
+    totalAmount: number;
+    paidAmount: number;
+    checkNumbers: string;
+    bankNames: string;
+    expenseAccountsHit: string;
+    supportingDocumentsUrl?: string;
+}
+
+export interface DisbursementDashboardData {
+    totalDisbursed: number;
+    totalPaid: number;
+    totalUnpaidPayables: number;
+    divisionExpenses: DivisionExpense[];
+    coaExpenses?: CoaExpense[];
+    paymentCoaExpenses: CoaExpense[];
+    payableCoaExpenses: CoaExpense[];
+    vouchers: VoucherSummary[];
+    activeEncoderIds?: number[];
+}
+
+export interface DashboardFilters {
+    startDate?: string;
+    endDate?: string;
+    status?: string;
+    payeeId?: number | "";
+    transactionType?: number | ""; // 🚀 NEW
+    encoderId?: number | "";
+    coaId?: number | "";
+    amount?: number | "";
+    remarks?: string;
+}
+
+export interface CoaExpense {
+    coaId: number;
+    accountTitle: string;
+    totalExpense: number;
 }

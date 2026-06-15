@@ -95,7 +95,7 @@ export default function SupplierRepresentativeModulePage() {
           </Button>
           <Button onClick={() => setAddModalOpen(true)}>
             <Plus className="h-4 w-4" />
-            Add New Supplier
+            Add Supplier
           </Button>
         </div>
       </div>

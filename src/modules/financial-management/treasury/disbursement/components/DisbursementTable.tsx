@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { FileText, Building2, Wallet, Lock } from "lucide-react";
+import { StickyTableWrapper } from "./StickyTableWrapper";
+import { formatCurrency, getStatusColor } from "../utils/disbursement-utils";
 
 interface DisbursementTableProps {
     data: Disbursement[];
@@ -15,25 +17,11 @@ interface DisbursementTableProps {
 }
 
 export function DisbursementTable({ data, loading, onView }: DisbursementTableProps) {
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount);
-    };
-
-    const getStatusColor = (status: string) => {
-        switch (status.toUpperCase()) {
-            case "DRAFT": return "bg-muted text-muted-foreground border-border";
-            case "SUBMITTED": return "bg-blue-100/50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800";
-            case "APPROVED": return "bg-emerald-100/50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800";
-            case "RELEASED": return "bg-purple-100/50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800";
-            case "POSTED": return "bg-primary text-primary-foreground border-primary";
-            default: return "bg-muted text-muted-foreground border-border";
-        }
-    };
 
     return (
-        <div className="rounded-md border border-border bg-card shadow-sm overflow-hidden">
+        <StickyTableWrapper className="rounded-md border border-border bg-card shadow-sm overflow-auto max-h-[65vh]">
             <Table>
-                <TableHeader className="bg-muted/50">
+                <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                     <TableRow className="border-border">
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-[180px]">Voucher Info</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Payee & Particulars</TableHead>
@@ -50,7 +38,7 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                         <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements found in this category.</TableCell></TableRow>
                     ) : (
                         data.map((d) => (
-                            <TableRow key={d.id} className="group hover:bg-muted/50 transition-colors border-border">
+                            <TableRow key={d.id} className="group hover:bg-primary/[0.04] transition-all duration-200 border-border even:bg-muted/20">
                                 <TableCell className="align-top py-4">
                                     <div className="flex flex-col gap-1">
                                         <div className="flex items-center gap-1.5 text-foreground">
@@ -99,6 +87,6 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                     )}
                 </TableBody>
             </Table>
-        </div>
+        </StickyTableWrapper>
     );
 }
