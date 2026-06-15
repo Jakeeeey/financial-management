@@ -296,9 +296,9 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
         return source?.balanceTypeId === 1 ? sum - a.amountApplied : sum + a.amountApplied;
     }, 0), [allocations, wallet]);
 
-    const remainingToAllocate = (pouchTotal + ewtTotal + varianceTotal) - totalAllocated;
-    const cartTotalBalance = useMemo(() => cartInvoices.reduce((sum, inv) => sum + (inv.remainingBalance || 0), 0), [cartInvoices]);
-    const cartTotalAppliedSession = useMemo(() => allocations.reduce((sum, a) => sum + a.amountApplied, 0), [allocations]);
+    const remainingToAllocate = Math.round(((pouchTotal + ewtTotal + varianceTotal) - totalAllocated) * 100) / 100;
+    const cartTotalBalance = Math.round(cartInvoices.reduce((sum, inv) => sum + (inv.remainingBalance || 0), 0) * 100) / 100;
+    const cartTotalAppliedSession = Math.round(allocations.reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
 
     const handleMasterSave = async () => {
         setIsSubmitting(true);
