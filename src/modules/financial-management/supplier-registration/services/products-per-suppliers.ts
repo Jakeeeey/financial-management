@@ -96,7 +96,7 @@ export async function fetchSupplierProducts(
             : (item.product_id as number),
           discount_type: item.discount_type,
           product_name:
-             (expanded?.short_description as string) || "Unknown Product",
+             (expanded?.product_name as string) || "Unknown Product",
           product_code: (expanded?.product_code as string) || null,
           unit_of_measurement:
             unitsMap[expanded?.unit_of_measurement as number] ||
