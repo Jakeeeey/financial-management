@@ -74,7 +74,7 @@ export function AddRepresentativeForm({
                     First Name <span className="text-destructive">*</span>
                   </FormLabel>
                   <FormControl>
-                    <Input placeholder="First name" {...field} />
+                    <Input placeholder="First name" maxLength={100} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -90,7 +90,7 @@ export function AddRepresentativeForm({
                     Last Name <span className="text-destructive">*</span>
                   </FormLabel>
                   <FormControl>
-                    <Input placeholder="Last name" {...field} />
+                    <Input placeholder="Last name" maxLength={100} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -109,6 +109,7 @@ export function AddRepresentativeForm({
                   <FormControl>
                     <Input
                       placeholder="Middle name"
+                      maxLength={100}
                       {...field}
                       value={field.value || ""}
                     />
@@ -127,6 +128,7 @@ export function AddRepresentativeForm({
                   <FormControl>
                     <Input
                       placeholder="Jr, Sr, III"
+                      maxLength={10}
                       {...field}
                       value={field.value || ""}
                     />
@@ -150,6 +152,7 @@ export function AddRepresentativeForm({
                   <Input
                     type="email"
                     placeholder="email@example.com"
+                    maxLength={255}
                     {...field}
                   />
                 </FormControl>
@@ -168,7 +171,7 @@ export function AddRepresentativeForm({
                   Contact Number <span className="text-destructive">*</span>
                 </FormLabel>
                 <FormControl>
-                  <Input placeholder="09XXXXXXXXX" {...field} />
+                  <Input placeholder="09XXXXXXXXX" maxLength={13} {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
