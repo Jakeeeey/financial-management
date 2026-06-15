@@ -93,6 +93,14 @@ export interface DispatchPlan {
     vehicleName: string;
 }
 
+export interface PendingEditPayload {
+    amount?: number;
+    referenceNo?: string;
+    findingId?: number;
+    balanceTypeId?: number;
+    remarks?: string;
+}
+
 export function useSettlement(pouchId: string | number) {
     const [isLoading, setIsLoading] = useState(true);
     const [wallet, setWallet] = useState<WalletItem[]>([]);
@@ -116,11 +124,15 @@ export function useSettlement(pouchId: string | number) {
     const [isLoadingPlans, setIsLoadingPlans] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+    const [pendingDeletions, setPendingDeletions] = useState<{ id: string; dbId: number; type: "EWT" | "ADJUSTMENT" }[]>([]);
+    const [pendingEdits, setPendingEdits] = useState<Record<string, { type: "EWT" | "ADJUSTMENT"; dbId: number; payload: PendingEditPayload }>>({});
 
     const fetchData = useCallback(async () => {
         if (!pouchId) return;
         setIsLoading(true);
         try {
+            setPendingEdits({});
+            setPendingDeletions([]);
             setAllocations([]);
             setCartInvoices([]);
             setWallet([]);
@@ -347,23 +359,24 @@ export function useSettlement(pouchId: string | number) {
                 toast.error("Database ID missing. Cannot update.");
                 return;
             }
-            try {
-                const endpoint = item.type === "EWT" ? `/api/fm/treasury/ewts/${dbId}` : `/api/fm/treasury/adjustments/${dbId}`;
-                const payload = item.type === "EWT" ? {
-                    amount: updatedFields.originalAmount,
-                    referenceNo: updatedFields.customerName
-                } : {
-                    findingId: updatedFields.findingId,
-                    amount: updatedFields.originalAmount,
-                    balanceTypeId: updatedFields.balanceTypeId,
-                    remarks: updatedFields.customerName
-                };
-                await fetchProvider.put(endpoint, payload);
-            } catch (e) {
-                console.error("Update failed", e);
-                toast.error("Failed to update record in database.");
-                return;
-            }
+            const payload = item.type === "EWT" ? {
+                amount: updatedFields.originalAmount !== undefined ? updatedFields.originalAmount : item.originalAmount,
+                referenceNo: updatedFields.customerName !== undefined ? updatedFields.customerName : item.customerName
+            } : {
+                findingId: updatedFields.findingId !== undefined ? updatedFields.findingId : item.findingId,
+                amount: updatedFields.originalAmount !== undefined ? updatedFields.originalAmount : item.originalAmount,
+                balanceTypeId: updatedFields.balanceTypeId !== undefined ? updatedFields.balanceTypeId : item.balanceTypeId,
+                remarks: updatedFields.customerName !== undefined ? updatedFields.customerName : item.customerName
+            };
+
+            setPendingEdits(prev => ({
+                ...prev,
+                [itemId]: {
+                    type: item.type as "ADJUSTMENT" | "EWT",
+                    dbId,
+                    payload
+                }
+            }));
         }
 
         setWallet(prev => prev.map(w => w.id === itemId ? {...w, ...updatedFields} : w));
@@ -382,20 +395,23 @@ export function useSettlement(pouchId: string | number) {
         if (!item) return;
 
         if (!item.isLocal && (type === "ADJUSTMENT" || type === "EWT")) {
-            if (!silent && !confirm("This will permanently delete the record from the database. Continue?")) return;
+            if (!silent && !confirm("Are you sure you want to delete this record? This deletion will be committed once you save the settlement session.")) return;
             const dbId = item.dbId;
             if (!dbId) {
                 if (!silent) toast.error("Database ID missing. Cannot delete.");
                 return;
             }
-            try {
-                const endpoint = type === "EWT" ? `/api/fm/treasury/ewts/${dbId}` : `/api/fm/treasury/adjustments/${dbId}`;
-                await fetchProvider.delete(endpoint);
-            } catch (e) {
-                console.error("Delete failed", e);
-                if (!silent) toast.error("Failed to delete record from database.");
-                return;
-            }
+
+            setPendingEdits(prev => {
+                const copy = { ...prev };
+                delete copy[itemId];
+                return copy;
+            });
+
+            setPendingDeletions(prev => [
+                ...prev,
+                { id: itemId, dbId, type: type as "EWT" | "ADJUSTMENT" }
+            ]);
         }
 
         setWallet(prev => prev.filter(w => w.id !== itemId));
@@ -510,8 +526,8 @@ export function useSettlement(pouchId: string | number) {
         }
     };
 
-    const getUsedAmount = (sourceId: string) => allocations.filter(a => a.sourceTempId === sourceId).reduce((sum, a) => sum + a.amountApplied, 0);
-    const getInvoiceApplied = (invoiceId: number) => allocations.filter(a => a.invoiceId === invoiceId).reduce((sum, a) => sum + a.amountApplied, 0);
+    const getUsedAmount = (sourceId: string) => Math.round(allocations.filter(a => a.sourceTempId === sourceId).reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
+    const getInvoiceApplied = (invoiceId: number) => Math.round(allocations.filter(a => a.invoiceId === invoiceId).reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
 
     const handleAllocate = (invoiceId: number, sourceId: string, amountInput: number) => {
         setAllocations(prev => {
@@ -610,6 +626,26 @@ export function useSettlement(pouchId: string | number) {
 
     const submitSettlement = async (): Promise<boolean> => {
         try {
+            // 1. Process all pending edits in database
+            for (const [, editInfo] of Object.entries(pendingEdits)) {
+                const endpoint = editInfo.type === "EWT"
+                    ? `/api/fm/treasury/ewts/${editInfo.dbId}`
+                    : `/api/fm/treasury/adjustments/${editInfo.dbId}`;
+                await fetchProvider.put(endpoint, editInfo.payload);
+            }
+
+            // 2. Process all pending deletions in database
+            for (const delInfo of pendingDeletions) {
+                const endpoint = delInfo.type === "EWT"
+                    ? `/api/fm/treasury/ewts/${delInfo.dbId}`
+                    : `/api/fm/treasury/adjustments/${delInfo.dbId}`;
+                await fetchProvider.delete(endpoint);
+            }
+
+            // Clear the queues since DB changes succeeded
+            setPendingEdits({});
+            setPendingDeletions([]);
+
             const newAdjustments = wallet.filter(w => w.type === "ADJUSTMENT" && w.isLocal).map(w => ({
                 findingId: w.findingId || w.dbId, amount: w.originalAmount, balanceTypeId: w.balanceTypeId || 1,
                 remarks: w.customerName || "Session Variance", invoiceId: allocations.find(a => a.sourceTempId === w.id)?.invoiceId || null, tempId: w.id
