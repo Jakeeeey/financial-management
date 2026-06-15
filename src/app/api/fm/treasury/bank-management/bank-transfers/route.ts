@@ -391,21 +391,27 @@ async function getReleasedDisbursementIds(disbursementIds: number[]) {
   const uniqueIds = Array.from(new Set(disbursementIds)).filter(Boolean);
   if (uniqueIds.length === 0) return new Set<number>();
 
-  const params = new URLSearchParams();
-  params.set("limit", "-1");
-  params.set("fields", "id,status");
-  params.set("filter[id][_in]", uniqueIds.join(","));
+  const releasedIds = new Set<number>();
 
-  const res = await directusFetch<DirectusList<DisbursementRow>>(
-    `/items/disbursement?${params.toString()}`,
-  );
+  for (let index = 0; index < uniqueIds.length; index += 500) {
+    const chunk = uniqueIds.slice(index, index + 500);
+    const params = new URLSearchParams();
+    params.set("limit", "-1");
+    params.set("fields", "id,status");
+    params.set("filter[id][_in]", chunk.join(","));
 
-  return new Set(
+    const res = await directusFetch<DirectusList<DisbursementRow>>(
+      `/items/disbursement?${params.toString()}`,
+    );
+
     (res.data ?? [])
       .filter(isReleasedDisbursement)
       .map((row) => asNumber(row.id) ?? 0)
-      .filter(Boolean),
-  );
+      .filter(Boolean)
+      .forEach((id) => releasedIds.add(id));
+  }
+
+  return releasedIds;
 }
 
 async function filterReleasedDisbursementPayments(
