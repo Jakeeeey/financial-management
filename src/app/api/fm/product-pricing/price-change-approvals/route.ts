@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { parseApprovalSearchQuery } from "../_approvalSearch";
+import { parseApprovalSearchQuery, shouldFetchCostStreamInUnifiedSearch, shouldFetchPriceStreamInUnifiedSearch } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
 import {
     appendProductIdInFilter,
@@ -393,24 +393,34 @@ export async function GET(req: NextRequest) {
         const offset = (page - 1) * pageSize;
         let needed = offset + pageSize;
 
+        const searchParse = q ? parseApprovalSearchQuery(q) : null;
+        const includePrice = !searchParse || shouldFetchPriceStreamInUnifiedSearch(searchParse);
+        const includeCost = !searchParse || shouldFetchCostStreamInUnifiedSearch(searchParse);
+
         const supplierProductIds =
             supplierIds.length > 0
                 ? await getSupplierScopedProductIdsForSuppliers(supplierIds)
                 : undefined;
 
-        const fetchPriceTop = (fetchNeeded: number) =>
-            fetchStreamTopRows(
-                (streamOffset, streamLimit) =>
-                    fetchPriceRequestsPage(filters, streamOffset, streamLimit, supplierProductIds),
-                fetchNeeded,
-            );
+        const emptyStreamPage = () => Promise.resolve({ rows: [], total: 0 });
 
-        const fetchCostTop = (fetchNeeded: number) =>
-            fetchStreamTopRows(
-                (streamOffset, streamLimit) =>
-                    fetchCostRequestsPage(filters, streamOffset, streamLimit, supplierProductIds),
-                fetchNeeded,
-            );
+        const fetchPriceTop = includePrice
+            ? (fetchNeeded: number) =>
+                  fetchStreamTopRows(
+                      (streamOffset, streamLimit) =>
+                          fetchPriceRequestsPage(filters, streamOffset, streamLimit, supplierProductIds),
+                      fetchNeeded,
+                  )
+            : emptyStreamPage;
+
+        const fetchCostTop = includeCost
+            ? (fetchNeeded: number) =>
+                  fetchStreamTopRows(
+                      (streamOffset, streamLimit) =>
+                          fetchCostRequestsPage(filters, streamOffset, streamLimit, supplierProductIds),
+                      fetchNeeded,
+                  )
+            : emptyStreamPage;
 
         let [pricePage, costPage] = await Promise.all([fetchPriceTop(needed), fetchCostTop(needed)]);
 

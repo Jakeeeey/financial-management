@@ -21,16 +21,14 @@ import {
     MultiSelectFilter,
     type MultiSelectOption,
 } from "../../shared/MultiSelectFilter";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { ChevronDown, Filter, RotateCcw, Search, X } from "lucide-react";
+import {
+    filtersFromPriceViewSelection,
+    PRICE_VIEW_LIST_OPTION_ID,
+    priceViewSelectionFromFilters,
+} from "../utils/pivot";
 
 type Props = {
     filters: PricingFilters;
@@ -126,9 +124,9 @@ export function PricingFiltersBar(props: Props) {
         () => getIds(filters, "unit_ids"),
         [filters],
     );
-    const selectedPriceTypeIds = React.useMemo(
-        () => getIds(filters, "price_type_ids"),
-        [filters],
+    const selectedPriceViewIds = React.useMemo(
+        () => priceViewSelectionFromFilters(filters),
+        [filters.price_view, filters.price_type_ids, filters.show_list_price],
     );
 
     const [localQ, setLocalQ] = React.useState(filters.q);
@@ -136,6 +134,7 @@ export function PricingFiltersBar(props: Props) {
     const [localBrandIds, setLocalBrandIds] = React.useState(() => getIds(filters, "brand_ids"));
     const [localCategoryIds, setLocalCategoryIds] = React.useState(() => getIds(filters, "category_ids"));
     const [localUnitIds, setLocalUnitIds] = React.useState(() => getIds(filters, "unit_ids"));
+    const [localPriceViewIds, setLocalPriceViewIds] = React.useState(() => priceViewSelectionFromFilters(filters));
     const [advancedOpen, setAdvancedOpen] = React.useState(true);
 
     React.useEffect(() => {
@@ -157,6 +156,10 @@ export function PricingFiltersBar(props: Props) {
     React.useEffect(() => {
         setLocalUnitIds(getIds(filters, "unit_ids"));
     }, [filters.unit_ids]);
+
+    React.useEffect(() => {
+        setLocalPriceViewIds(priceViewSelectionFromFilters(filters));
+    }, [filters.price_view, filters.price_type_ids, filters.show_list_price]);
 
     React.useEffect(() => {
         const committedSupplierIds = getIds(filters, "supplier_ids").join(",");
@@ -304,6 +307,31 @@ export function PricingFiltersBar(props: Props) {
         [units],
     );
 
+    const sortedPriceTypes = React.useMemo(() => sortPriceTypes(priceTypes), [priceTypes]);
+
+    const priceViewOptions = React.useMemo<MultiSelectOption[]>(() => {
+        const options: MultiSelectOption[] = [
+            {
+                id: PRICE_VIEW_LIST_OPTION_ID,
+                label: "List Cost",
+                search: "list cost",
+            },
+        ];
+
+        for (const pt of sortedPriceTypes) {
+            const id = safeStr(pt.price_type_id);
+            if (!id) continue;
+
+            options.push({
+                id,
+                label: priceTypeText(pt),
+                search: safeStr(pt.price_type_name),
+            });
+        }
+
+        return options;
+    }, [sortedPriceTypes]);
+
     const supplierLabelById = React.useMemo(() => {
         const map = new Map<string, string>();
         for (const s of suppliers) {
@@ -353,54 +381,17 @@ export function PricingFiltersBar(props: Props) {
         return map;
     }, [priceTypes]);
 
-    const sortedPriceTypes = React.useMemo(() => sortPriceTypes(priceTypes), [priceTypes]);
-    const defaultPriceType = sortedPriceTypes[0] ?? null;
-    const focusedPriceTypeId = selectedPriceTypeIds[0] || (defaultPriceType ? safeStr(defaultPriceType.price_type_id) : "");
-    const priceViewValue =
-        filters.price_view === "ALL"
-            ? "ALL"
-            : filters.price_view === "LIST"
-                ? "LIST"
-                : focusedPriceTypeId
-                    ? `PRICE:${focusedPriceTypeId}`
-                    : "LIST";
-
     const advancedCount = localBrandIds.length + localCategoryIds.length + localUnitIds.length;
 
     React.useEffect(() => {
         if (advancedCount > 0) setAdvancedOpen(true);
     }, [advancedCount]);
 
-    const setPriceView = React.useCallback(
-        (value: string) => {
-            if (value === "ALL") {
-                setFilters((prev) => ({
-                    ...prev,
-                    price_view: "ALL",
-                    price_type_ids: [],
-                    show_list_price: false,
-                }));
-                return;
-            }
-
-            if (value === "LIST") {
-                setFilters((prev) => ({
-                    ...prev,
-                    price_view: "LIST",
-                    price_type_ids: [],
-                    show_list_price: false,
-                }));
-                return;
-            }
-
-            const priceTypeId = Number(value.replace("PRICE:", ""));
-            if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) return;
-
+    const commitPriceViewIds = React.useCallback(
+        (ids: string[]) => {
             setFilters((prev) => ({
                 ...prev,
-                price_view: "FOCUSED",
-                price_type_ids: [priceTypeId],
-                show_list_price: false,
+                ...filtersFromPriceViewSelection(ids),
             }));
         },
         [setFilters],
@@ -422,6 +413,7 @@ export function PricingFiltersBar(props: Props) {
         setLocalBrandIds([]);
         setLocalCategoryIds([]);
         setLocalUnitIds([]);
+        setLocalPriceViewIds([]);
         setAdvancedOpen(true);
     }, [resetFilters]);
 
@@ -500,31 +492,19 @@ export function PricingFiltersBar(props: Props) {
         });
     }
 
-    if (filters.price_view === "LIST") {
-        chips.push({
-            key: "price_view_list",
-            label: "Price view: List Cost",
-            onRemove: () =>
-                setFilters((prev) => ({
-                    ...prev,
-                    price_view: "ALL",
-                    price_type_ids: [],
-                    show_list_price: false,
-                })),
-        });
-    } else if (selectedPriceTypeIds.length > 0) {
-        const id = selectedPriceTypeIds[0];
-        const label = priceTypeLabelById.get(id) ?? `#${id}`;
+    for (const id of selectedPriceViewIds) {
+        const label =
+            id === PRICE_VIEW_LIST_OPTION_ID
+                ? "List Cost"
+                : `Price ${priceTypeLabelById.get(id) ?? `#${id}`}`;
         chips.push({
             key: `price_view:${id}`,
-            label: `Price view: Price ${label}`,
-            onRemove: () =>
-                setFilters((prev) => ({
-                    ...prev,
-                    price_view: "ALL",
-                    price_type_ids: [],
-                    show_list_price: false,
-                })),
+            label: `Price view: ${label}`,
+            onRemove: () => {
+                const next = selectedPriceViewIds.filter((x) => x !== id);
+                setLocalPriceViewIds(next);
+                commitPriceViewIds(next);
+            },
         });
     }
 
@@ -547,8 +527,7 @@ export function PricingFiltersBar(props: Props) {
     const hasNonDefaultFilters =
         chips.length > 0 ||
         filters.price_view !== "ALL" ||
-        selectedPriceTypeIds.length > 0 ||
-        Boolean(filters.show_list_price);
+        selectedPriceViewIds.length > 0;
 
     return (
         <Card className="overflow-hidden rounded-2xl shadow-sm">
@@ -633,22 +612,27 @@ export function PricingFiltersBar(props: Props) {
                         clearTitle="Clear suppliers"
                     />
 
-                    <FilterField label="Price view" helper="Choose the price columns shown in the matrix.">
-                        <Select value={priceViewValue} onValueChange={setPriceView}>
-                            <SelectTrigger className="h-10 w-full bg-background shadow-none">
-                                <SelectValue placeholder="Select price view" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {sortedPriceTypes.map((pt) => (
-                                    <SelectItem key={pt.price_type_id} value={`PRICE:${pt.price_type_id}`}>
-                                        {priceTypeText(pt)}
-                                    </SelectItem>
-                                ))}
-                                <SelectItem value="LIST">List Cost</SelectItem>
-                                <SelectItem value="ALL">All Prices</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </FilterField>
+                    <MultiSelectFilter
+                        label="Price view"
+                        helper={
+                            localPriceViewIds.length > 0
+                                ? localPriceViewIds.length === 1
+                                    ? "Showing one selected price column."
+                                    : `Showing ${localPriceViewIds.length} selected price columns.`
+                                : "Select price columns to show in the matrix, or leave empty for all prices."
+                        }
+                        triggerLabel={labelCount("Price view", localPriceViewIds.length, "All prices")}
+                        searchPlaceholder="Search price type"
+                        emptyText="No price types found."
+                        groupLabel="Price columns"
+                        options={priceViewOptions}
+                        selectedIds={localPriceViewIds}
+                        onChange={(ids) => {
+                            setLocalPriceViewIds(ids);
+                            commitPriceViewIds(ids);
+                        }}
+                        clearTitle="Clear price view"
+                    />
 
                     <FilterField label="Product status" helper="Limit results by product or price condition.">
                         <div className="flex min-h-10 flex-col gap-2 rounded-md border bg-background px-3 py-2 sm:flex-row sm:items-center sm:gap-4">

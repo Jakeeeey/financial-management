@@ -7,13 +7,22 @@ import * as api from "../providers/pcrApi";
 import { applyActionError } from "../../shared/loadErrorState";
 import { isUnauthorizedError } from "../../shared/apiHttp";
 
-function getErrorMessage(error: unknown, fallback: string): string {
-    if (error instanceof Error && error.message) return error.message;
-    return fallback;
-}
-
 function emptyBulkResult(action: BulkActionResult["action"]): BulkActionResult {
     return { action, successIds: [], failedIds: [], failures: [] };
+}
+
+function showBulkToast(action: BulkActionResult["action"], successIds: number[], failedIds: number[]) {
+    if (successIds.length > 0 && failedIds.length === 0) {
+        const verb = action === "approve" ? "approved and applied" : "rejected";
+        toast.success(`${successIds.length} request(s) ${verb}.`);
+        return;
+    }
+
+    if (failedIds.length > 0) {
+        const verb = action === "approve" ? "approved" : "rejected";
+        const successPart = successIds.length > 0 ? `${successIds.length} ${verb}, ` : "";
+        toast.warning(`${successPart}${failedIds.length} failed — see details`);
+    }
 }
 
 export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) {
@@ -45,44 +54,49 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
 
             setActing(true);
 
-            const successIds: number[] = [];
-            const failedIds: number[] = [];
-            const failures: BulkActionResult["failures"] = [];
-            let unauthorized = false;
-
             try {
-                for (const request_id of uniqueIds) {
-                    try {
-                        await api.actionCostRequest({ action: "approve", request_id });
-                        successIds.push(request_id);
-                    } catch (error: unknown) {
-                        if (applyActionError(error, "Request failed", { onUnauthorized })) {
-                            unauthorized = isUnauthorizedError(error);
-                            break;
-                        }
-                        failedIds.push(request_id);
-                        failures.push({
+                const response = await api.actionCostRequestsBulk({
+                    action: "approve",
+                    request_ids: uniqueIds,
+                });
+
+                const result: BulkActionResult = {
+                    action: "approve",
+                    successIds: response.successIds,
+                    failedIds: response.failedIds,
+                    failures: response.failures,
+                };
+
+                showBulkToast("approve", result.successIds, result.failedIds);
+
+                if (result.successIds.length > 0) {
+                    onDone?.();
+                }
+
+                return result;
+            } catch (error: unknown) {
+                if (applyActionError(error, "Request failed", { onUnauthorized })) {
+                    return {
+                        action: "approve",
+                        successIds: [],
+                        failedIds: uniqueIds,
+                        failures: uniqueIds.map((request_id) => ({
                             request_id,
-                            message: getErrorMessage(error, "Request failed"),
-                        });
-                    }
+                            message: error instanceof Error ? error.message : "Request failed",
+                        })),
+                        unauthorized: isUnauthorizedError(error),
+                    };
                 }
 
-                if (!unauthorized) {
-                    if (successIds.length > 0 && failedIds.length === 0) {
-                        toast.success(`${successIds.length} request(s) approved and applied.`);
-                    } else if (failedIds.length > 0) {
-                        const successPart =
-                            successIds.length > 0 ? `${successIds.length} approved, ` : "";
-                        toast.warning(`${successPart}${failedIds.length} failed — see details`);
-                    }
-
-                    if (successIds.length > 0) {
-                        onDone?.();
-                    }
-                }
-
-                return { action: "approve", successIds, failedIds, failures, unauthorized };
+                return {
+                    action: "approve",
+                    successIds: [],
+                    failedIds: uniqueIds,
+                    failures: uniqueIds.map((request_id) => ({
+                        request_id,
+                        message: error instanceof Error ? error.message : "Request failed",
+                    })),
+                };
             } finally {
                 setActing(false);
             }
@@ -132,44 +146,50 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
 
             setActing(true);
 
-            const successIds: number[] = [];
-            const failedIds: number[] = [];
-            const failures: BulkActionResult["failures"] = [];
-            let unauthorized = false;
-
             try {
-                for (const request_id of uniqueIds) {
-                    try {
-                        await api.actionCostRequest({ action: "reject", request_id, reject_reason });
-                        successIds.push(request_id);
-                    } catch (error: unknown) {
-                        if (applyActionError(error, "Request failed", { onUnauthorized })) {
-                            unauthorized = isUnauthorizedError(error);
-                            break;
-                        }
-                        failedIds.push(request_id);
-                        failures.push({
+                const response = await api.actionCostRequestsBulk({
+                    action: "reject",
+                    request_ids: uniqueIds,
+                    reject_reason,
+                });
+
+                const result: BulkActionResult = {
+                    action: "reject",
+                    successIds: response.successIds,
+                    failedIds: response.failedIds,
+                    failures: response.failures,
+                };
+
+                showBulkToast("reject", result.successIds, result.failedIds);
+
+                if (result.successIds.length > 0) {
+                    onDone?.();
+                }
+
+                return result;
+            } catch (error: unknown) {
+                if (applyActionError(error, "Request failed", { onUnauthorized })) {
+                    return {
+                        action: "reject",
+                        successIds: [],
+                        failedIds: uniqueIds,
+                        failures: uniqueIds.map((request_id) => ({
                             request_id,
-                            message: getErrorMessage(error, "Request failed"),
-                        });
-                    }
+                            message: error instanceof Error ? error.message : "Request failed",
+                        })),
+                        unauthorized: isUnauthorizedError(error),
+                    };
                 }
 
-                if (!unauthorized) {
-                    if (successIds.length > 0 && failedIds.length === 0) {
-                        toast.success(`${successIds.length} request(s) rejected.`);
-                    } else if (failedIds.length > 0) {
-                        const successPart =
-                            successIds.length > 0 ? `${successIds.length} rejected, ` : "";
-                        toast.warning(`${successPart}${failedIds.length} failed — see details`);
-                    }
-
-                    if (successIds.length > 0) {
-                        onDone?.();
-                    }
-                }
-
-                return { action: "reject", successIds, failedIds, failures, unauthorized };
+                return {
+                    action: "reject",
+                    successIds: [],
+                    failedIds: uniqueIds,
+                    failures: uniqueIds.map((request_id) => ({
+                        request_id,
+                        message: error instanceof Error ? error.message : "Request failed",
+                    })),
+                };
             } finally {
                 setActing(false);
             }

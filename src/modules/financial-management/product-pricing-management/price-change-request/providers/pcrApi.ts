@@ -1,8 +1,11 @@
 import type {
     ActionPayload,
+    BulkCostActionPayload,
+    BulkCostActionResponse,
     CreatePriceChangeBatchPayload,
     CreateCCRPayload,
     ListQuery,
+    PriceActionPayload,
     PriceChangeBatchDetail,
     PriceChangeBatchHeader,
     PriceChangeRequestRow,
@@ -83,6 +86,22 @@ export async function createCostRequest(payload: CreateCCRPayload) {
 
 export async function actionCostRequest(payload: ActionPayload) {
     return http<{ data: CostChangeRequestRow }>(`/api/fm/product-pricing/cost-change-requests/actions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function actionCostRequestsBulk(payload: BulkCostActionPayload) {
+    return http<BulkCostActionResponse>(`/api/fm/product-pricing/cost-change-requests/actions/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function actionPriceRequest(payload: PriceActionPayload) {
+    return http<{ data: PriceChangeRequestRow }>(`/api/fm/product-pricing/price-change-requests/actions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

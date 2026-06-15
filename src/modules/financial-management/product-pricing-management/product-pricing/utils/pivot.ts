@@ -1,6 +1,7 @@
-import type { PriceRow, PriceType, PriceViewMode, ProductTierKey } from "../types";
+import type { PriceRow, PriceType, PriceViewMode, PricingFilters, ProductTierKey } from "../types";
 
 export const LIST_TIER_KEY = "LIST";
+export const PRICE_VIEW_LIST_OPTION_ID = "LIST";
 
 export function sortPriceTypes(priceTypes: PriceType[]): PriceType[] {
     return [...priceTypes].sort((a, b) => {
@@ -23,13 +24,52 @@ export function buildMatrixTierKeys(priceTypes: PriceType[]): string[] {
     return [LIST_TIER_KEY, ...sorted.map((pt) => priceTierKey(pt.price_type_id))];
 }
 
+export function priceViewSelectionFromFilters(
+    filters: Pick<PricingFilters, "price_view" | "price_type_ids" | "show_list_price">,
+): string[] {
+    if (filters.price_view === "ALL") return [];
+    if (filters.price_view === "LIST") return [PRICE_VIEW_LIST_OPTION_ID];
+
+    const ids: string[] = [];
+    if (filters.show_list_price) ids.push(PRICE_VIEW_LIST_OPTION_ID);
+    for (const id of filters.price_type_ids) {
+        ids.push(String(id));
+    }
+    return ids;
+}
+
+export function filtersFromPriceViewSelection(
+    ids: string[],
+): Pick<PricingFilters, "price_view" | "price_type_ids" | "show_list_price"> {
+    if (ids.length === 0) {
+        return { price_view: "ALL", price_type_ids: [], show_list_price: false };
+    }
+
+    const hasList = ids.includes(PRICE_VIEW_LIST_OPTION_ID);
+    const priceTypeIds = ids
+        .filter((id) => id !== PRICE_VIEW_LIST_OPTION_ID)
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0);
+
+    if (hasList && priceTypeIds.length === 0) {
+        return { price_view: "LIST", price_type_ids: [], show_list_price: true };
+    }
+
+    return {
+        price_view: "FOCUSED",
+        price_type_ids: priceTypeIds,
+        show_list_price: hasList,
+    };
+}
+
 export function resolveVisibleTierKeys(args: {
     priceView: PriceViewMode;
     priceTypeIds: number[];
     priceTypes: PriceType[];
+    showListPrice?: boolean;
     allTierKeys?: ProductTierKey[];
 }): ProductTierKey[] {
-    const { priceView, priceTypeIds, priceTypes, allTierKeys } = args;
+    const { priceView, priceTypeIds, priceTypes, showListPrice = false, allTierKeys } = args;
 
     if (priceView === "ALL") {
         return allTierKeys ?? buildMatrixTierKeys(priceTypes);
@@ -39,33 +79,44 @@ export function resolveVisibleTierKeys(args: {
         return [LIST_TIER_KEY];
     }
 
-    const sorted = sortPriceTypes(priceTypes);
-    const selectedPriceType =
-        sorted.find((pt) => priceTypeIds.includes(pt.price_type_id)) ?? sorted[0] ?? null;
-    const focusedTier = selectedPriceType ? priceTierKey(selectedPriceType.price_type_id) : "";
-    if (!focusedTier) return [LIST_TIER_KEY];
+    const tiers: ProductTierKey[] = [];
+    if (showListPrice) tiers.push(LIST_TIER_KEY);
 
-    return [focusedTier, LIST_TIER_KEY];
+    const sorted = sortPriceTypes(priceTypes);
+    for (const pt of sorted) {
+        if (priceTypeIds.includes(pt.price_type_id)) {
+            tiers.push(priceTierKey(pt.price_type_id));
+        }
+    }
+
+    if (tiers.length === 0) return [LIST_TIER_KEY];
+    return tiers;
 }
 
 export function priceViewFilterLabel(args: {
     priceView: PriceViewMode;
     priceTypeIds: number[];
     priceTypes: PriceType[];
+    showListPrice?: boolean;
 }): string {
-    const { priceView, priceTypeIds, priceTypes } = args;
+    const { priceView, priceTypeIds, priceTypes, showListPrice = false } = args;
 
     if (priceView === "ALL") return "All";
     if (priceView === "LIST") return "List Cost";
 
+    const labels: string[] = [];
     const sorted = sortPriceTypes(priceTypes);
-    const selectedPriceType =
-        sorted.find((pt) => priceTypeIds.includes(pt.price_type_id)) ?? sorted[0] ?? null;
-    const tierName = selectedPriceType
-        ? tierLabelForTierKey(priceTierKey(selectedPriceType.price_type_id), priceTypes)
-        : "Focused";
 
-    return `${tierName} + List Cost`;
+    for (const pt of sorted) {
+        if (priceTypeIds.includes(pt.price_type_id)) {
+            labels.push(tierLabelForTierKey(priceTierKey(pt.price_type_id), priceTypes));
+        }
+    }
+
+    if (showListPrice) labels.push("List Cost");
+
+    if (labels.length === 0) return "Focused";
+    return labels.join(", ");
 }
 
 export function emptyPivot(priceTypes: PriceType[]): Record<string, number | null> {

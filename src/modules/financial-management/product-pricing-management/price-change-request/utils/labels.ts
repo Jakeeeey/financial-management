@@ -94,6 +94,15 @@ export function pcrBatchMeta(row: PriceChangeRequestRow) {
     };
 }
 
+export function priceRowHasBatchLink(
+    row: PriceChangeRequestRow | PriceTypeUnifiedApprovalRow,
+): boolean {
+    if ("kind" in row && row.kind === "price_type") {
+        return Number(row.batch_header_id ?? 0) > 0;
+    }
+    return Boolean(pcrBatchMeta(row as PriceChangeRequestRow).batch_header_id);
+}
+
 export function priceRequestToUnifiedRow(row: PriceChangeRequestRow): PriceTypeUnifiedApprovalRow {
     const requestId = Number(row.request_id);
     const product = isRecord(row.product_id) ? row.product_id : null;

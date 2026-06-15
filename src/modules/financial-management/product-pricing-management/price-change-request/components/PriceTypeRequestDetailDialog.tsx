@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 import type { PriceTypeUnifiedApprovalRow } from "../types";
-import { priceTypeLabel } from "../utils/labels";
+import { priceRowHasBatchLink, priceTypeLabel } from "../utils/labels";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
@@ -28,6 +28,8 @@ type Props = {
     onOpenChange: (open: boolean) => void;
     onApproveBatch: (headerId: number) => Promise<void>;
     onRejectBatch: (headerId: number, reason: string) => Promise<void>;
+    onApproveRequest: (requestId: number) => Promise<void>;
+    onRejectRequest: (requestId: number, reason: string) => Promise<void>;
 };
 
 function money(value: number | null | undefined) {
@@ -59,6 +61,8 @@ export function PriceTypeRequestDetailDialog({
     onOpenChange,
     onApproveBatch,
     onRejectBatch,
+    onApproveRequest,
+    onRejectRequest,
 }: Props) {
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
@@ -74,6 +78,7 @@ export function PriceTypeRequestDetailDialog({
 
     const requestId = row?.request_id ? Number(row.request_id) : null;
     const headerId = row?.batch_header_id ? Number(row.batch_header_id) : null;
+    const isBatchLinked = row ? priceRowHasBatchLink(row) : false;
     const isPending = row?.status === "PENDING";
     const proposedPrice = row?.proposed_price ?? null;
     const currentPrice = row?.current_price ?? null;
@@ -88,13 +93,17 @@ export function PriceTypeRequestDetailDialog({
             ? (delta / currentNumeric) * 100
             : null;
     const busy = acting || submitting;
-    const canAct = isPending && headerId != null && headerId > 0;
+    const canAct = isPending && requestId != null;
 
     const handleApprove = async () => {
-        if (!headerId) return;
+        if (!requestId) return;
         setSubmitting(true);
         try {
-            await onApproveBatch(headerId);
+            if (isBatchLinked && headerId) {
+                await onApproveBatch(headerId);
+            } else {
+                await onApproveRequest(requestId);
+            }
             onOpenChange(false);
         } finally {
             setSubmitting(false);
@@ -102,10 +111,14 @@ export function PriceTypeRequestDetailDialog({
     };
 
     const handleReject = async () => {
-        if (!headerId || !rejectReason.trim()) return;
+        if (!requestId || !rejectReason.trim()) return;
         setSubmitting(true);
         try {
-            await onRejectBatch(headerId, rejectReason.trim());
+            if (isBatchLinked && headerId) {
+                await onRejectBatch(headerId, rejectReason.trim());
+            } else {
+                await onRejectRequest(requestId, rejectReason.trim());
+            }
             onOpenChange(false);
         } finally {
             setSubmitting(false);
@@ -188,8 +201,11 @@ export function PriceTypeRequestDetailDialog({
 
                         {canAct ? (
                             <p className="text-xs text-muted-foreground">
-                                Approving or rejecting applies to the entire price change batch
-                                {headerId ? ` (PCB-${headerId})` : ""}.
+                                {isBatchLinked
+                                    ? `Approving or rejecting applies to the entire price change batch${
+                                          headerId ? ` (PCB-${headerId})` : ""
+                                      }.`
+                                    : "Approving or rejecting applies to this request only."}
                             </p>
                         ) : null}
 
@@ -230,7 +246,7 @@ export function PriceTypeRequestDetailDialog({
                                     disabled={busy || !rejectReason.trim()}
                                 >
                                     {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                                    Confirm Reject Batch
+                                    {isBatchLinked ? "Confirm Reject Batch" : "Confirm Reject"}
                                 </Button>
                             </>
                         ) : (
@@ -241,7 +257,7 @@ export function PriceTypeRequestDetailDialog({
                                     onClick={() => setRejecting(true)}
                                     disabled={busy}
                                 >
-                                    Reject Batch
+                                    {isBatchLinked ? "Reject Batch" : "Reject"}
                                 </Button>
                                 <Button
                                     className={pcrApproveButtonClass}
@@ -249,7 +265,7 @@ export function PriceTypeRequestDetailDialog({
                                     disabled={busy}
                                 >
                                     {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                                    Approve Batch
+                                    {isBatchLinked ? "Approve Batch" : "Approve"}
                                 </Button>
                             </>
                         )

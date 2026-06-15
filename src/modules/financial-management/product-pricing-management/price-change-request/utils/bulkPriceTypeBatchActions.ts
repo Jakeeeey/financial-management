@@ -5,6 +5,36 @@ function emptyBulkResult(action: BulkActionResult["action"]): BulkActionResult {
     return { action, successIds: [], failedIds: [], failures: [] };
 }
 
+function mergeBulkResults(action: BulkActionResult["action"], parts: BulkActionResult[]): BulkActionResult {
+    const successIds: number[] = [];
+    const failedIds: number[] = [];
+    const failures: BulkActionResult["failures"] = [];
+
+    for (const part of parts) {
+        successIds.push(...part.successIds);
+        failedIds.push(...part.failedIds);
+        failures.push(...part.failures);
+    }
+
+    return { action, successIds, failedIds, failures };
+}
+
+function splitSnapshotsByBatchLink(snapshots: PriceTypeSelectionSnapshot[]) {
+    const batched: PriceTypeSelectionSnapshot[] = [];
+    const orphans: PriceTypeSelectionSnapshot[] = [];
+
+    for (const snapshot of snapshots) {
+        const headerId = Number(snapshot.batch_header_id);
+        if (Number.isFinite(headerId) && headerId > 0) {
+            batched.push(snapshot);
+        } else {
+            orphans.push(snapshot);
+        }
+    }
+
+    return { batched, orphans };
+}
+
 export function groupSnapshotsByBatch(
     snapshots: PriceTypeSelectionSnapshot[],
 ): Map<number, PriceTypeSelectionSnapshot[]> {
@@ -24,6 +54,83 @@ export function groupSnapshotsByBatch(
 
 export function uniqueBatchCount(snapshots: PriceTypeSelectionSnapshot[]): number {
     return groupSnapshotsByBatch(snapshots).size;
+}
+
+export function orphanPriceSnapshotCount(snapshots: PriceTypeSelectionSnapshot[]): number {
+    return splitSnapshotsByBatchLink(snapshots).orphans.length;
+}
+
+async function approveManyOrphanRequests(
+    snapshots: PriceTypeSelectionSnapshot[],
+    approveRequest: (requestId: number) => Promise<void>,
+): Promise<BulkActionResult> {
+    if (snapshots.length === 0) return emptyBulkResult("approve");
+
+    const successIds: number[] = [];
+    const failedIds: number[] = [];
+    const failures: BulkActionResult["failures"] = [];
+
+    const settled = await Promise.allSettled(
+        snapshots.map(async (snapshot) => {
+            await approveRequest(snapshot.request_id);
+            return snapshot.request_id;
+        }),
+    );
+
+    for (let i = 0; i < snapshots.length; i += 1) {
+        const requestId = snapshots[i].request_id;
+        const result = settled[i];
+
+        if (result.status === "fulfilled") {
+            successIds.push(requestId);
+        } else {
+            if (isUnauthorizedError(result.reason)) throw result.reason;
+            failedIds.push(requestId);
+            failures.push({
+                request_id: requestId,
+                message: result.reason instanceof Error ? result.reason.message : "Request approval failed",
+            });
+        }
+    }
+
+    return { action: "approve", successIds, failedIds, failures };
+}
+
+async function rejectManyOrphanRequests(
+    snapshots: PriceTypeSelectionSnapshot[],
+    reason: string,
+    rejectRequest: (requestId: number, rejectReason: string) => Promise<void>,
+): Promise<BulkActionResult> {
+    if (snapshots.length === 0) return emptyBulkResult("reject");
+
+    const successIds: number[] = [];
+    const failedIds: number[] = [];
+    const failures: BulkActionResult["failures"] = [];
+
+    const settled = await Promise.allSettled(
+        snapshots.map(async (snapshot) => {
+            await rejectRequest(snapshot.request_id, reason);
+            return snapshot.request_id;
+        }),
+    );
+
+    for (let i = 0; i < snapshots.length; i += 1) {
+        const requestId = snapshots[i].request_id;
+        const result = settled[i];
+
+        if (result.status === "fulfilled") {
+            successIds.push(requestId);
+        } else {
+            if (isUnauthorizedError(result.reason)) throw result.reason;
+            failedIds.push(requestId);
+            failures.push({
+                request_id: requestId,
+                message: result.reason instanceof Error ? result.reason.message : "Request rejection failed",
+            });
+        }
+    }
+
+    return { action: "reject", successIds, failedIds, failures };
 }
 
 export async function approveManyBatches(
@@ -83,4 +190,45 @@ export async function rejectManyBatches(
     }
 
     return { action: "reject", successIds, failedIds, failures };
+}
+
+export async function approveManyPriceRequestsHybrid(
+    snapshots: PriceTypeSelectionSnapshot[],
+    approveBatch: (headerId: number) => Promise<void>,
+    approveRequest: (requestId: number) => Promise<void>,
+): Promise<BulkActionResult> {
+    if (snapshots.length === 0) return emptyBulkResult("approve");
+
+    const { batched, orphans } = splitSnapshotsByBatchLink(snapshots);
+    const parts: BulkActionResult[] = [];
+
+    if (batched.length > 0) {
+        parts.push(await approveManyBatches(batched, approveBatch));
+    }
+    if (orphans.length > 0) {
+        parts.push(await approveManyOrphanRequests(orphans, approveRequest));
+    }
+
+    return mergeBulkResults("approve", parts);
+}
+
+export async function rejectManyPriceRequestsHybrid(
+    snapshots: PriceTypeSelectionSnapshot[],
+    reason: string,
+    rejectBatch: (headerId: number, rejectReason: string) => Promise<void>,
+    rejectRequest: (requestId: number, rejectReason: string) => Promise<void>,
+): Promise<BulkActionResult> {
+    if (snapshots.length === 0) return emptyBulkResult("reject");
+
+    const { batched, orphans } = splitSnapshotsByBatchLink(snapshots);
+    const parts: BulkActionResult[] = [];
+
+    if (batched.length > 0) {
+        parts.push(await rejectManyBatches(batched, reason, rejectBatch));
+    }
+    if (orphans.length > 0) {
+        parts.push(await rejectManyOrphanRequests(orphans, reason, rejectRequest));
+    }
+
+    return mergeBulkResults("reject", parts);
 }

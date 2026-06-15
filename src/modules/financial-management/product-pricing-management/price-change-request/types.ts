@@ -186,6 +186,20 @@ export type ActionPayload =
     | { action: "cancel"; request_id: number }
     | { action: "reject"; request_id: number; reject_reason: string };
 
+export type PriceActionPayload =
+    | { action: "approve"; request_id: number }
+    | { action: "cancel"; request_id: number }
+    | { action: "reject"; request_id: number; reject_reason: string };
+
+export type BulkCostActionPayload =
+    | { action: "approve"; request_ids: number[] }
+    | { action: "reject"; request_ids: number[]; reject_reason: string };
+
+export type BulkCostActionResponse = Pick<
+    BulkActionResult,
+    "action" | "successIds" | "failedIds" | "failures"
+>;
+
 export type BulkActionFailure = {
     request_id: number;
     message: string;

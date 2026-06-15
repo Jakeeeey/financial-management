@@ -89,6 +89,38 @@ export function useUnifiedApprovals(
         }
     }, [refresh]);
 
+    const approvePriceRequest = React.useCallback(async (requestId: number) => {
+        setActing(true);
+        try {
+            await api.actionPriceRequest({ action: "approve", request_id: requestId });
+            toast.success("Approved and applied.");
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to approve request", { setUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
+    const rejectPriceRequest = React.useCallback(async (requestId: number, reason: string) => {
+        setActing(true);
+        try {
+            await api.actionPriceRequest({ action: "reject", request_id: requestId, reject_reason: reason });
+            toast.success("Rejected.");
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to reject request", { setUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
     return {
         query,
         setQuery,
@@ -101,5 +133,7 @@ export function useUnifiedApprovals(
         refresh,
         approveBatch,
         rejectBatch,
+        approvePriceRequest,
+        rejectPriceRequest,
     };
 }

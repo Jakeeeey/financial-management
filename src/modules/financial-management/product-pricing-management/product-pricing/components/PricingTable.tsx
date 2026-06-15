@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LayoutGrid, Table2 } from "lucide-react";
 
 import PriceCell from "./PriceCell";
-import { isListTierKey, resolveVisibleTierKeys, tierLabelForTierKey } from "../utils/pivot";
+import { isListTierKey, priceViewFilterLabel, resolveVisibleTierKeys, tierLabelForTierKey } from "../utils/pivot";
 
 type VariantProduct = {
     product_id: number | string | null | undefined;
@@ -547,9 +547,16 @@ export default function PricingTable({ matrix, dirtyVersion = 0 }: Props) {
                 priceView: matrix.filters.price_view,
                 priceTypeIds: matrix.filters.price_type_ids,
                 priceTypes: matrix.priceTypes,
+                showListPrice: matrix.filters.show_list_price,
                 allTierKeys: matrix.TIERS,
             }),
-        [matrix.TIERS, matrix.filters.price_view, matrix.filters.price_type_ids, matrix.priceTypes],
+        [
+            matrix.TIERS,
+            matrix.filters.price_view,
+            matrix.filters.price_type_ids,
+            matrix.filters.show_list_price,
+            matrix.priceTypes,
+        ],
     );
 
     const rows: MatrixRow[] = Array.isArray(matrix.rows) ? matrix.rows : [];
@@ -612,25 +619,23 @@ export default function PricingTable({ matrix, dirtyVersion = 0 }: Props) {
     }, []);
 
     const focusedPriceTiers = tiers.filter((tier) => !isListTierKey(tier));
-    const showsListCost = tiers.some(isListTierKey);
     const priceViewLabel =
         matrix.filters.price_view === "ALL"
             ? "All Prices"
-            : matrix.filters.price_view === "LIST"
-                ? "List Cost"
-                : showsListCost && focusedPriceTiers.length > 0
-                    ? `${tierLabelForTierKey(focusedPriceTiers[0], matrix.priceTypes)} + List Cost`
-                    : isListTierKey(tiers[0] ?? "")
-                        ? "List Cost"
-                        : tierLabelForTierKey(tiers[0] ?? "", matrix.priceTypes);
+            : priceViewFilterLabel({
+                priceView: matrix.filters.price_view,
+                priceTypeIds: matrix.filters.price_type_ids,
+                priceTypes: matrix.priceTypes,
+                showListPrice: matrix.filters.show_list_price,
+            });
     const priceViewHelp =
         matrix.filters.price_view === "ALL"
             ? "Showing every price type grouped by product."
             : matrix.filters.price_view === "LIST"
-                ? "Focused editing for list cost. Switch to All Prices when you need the full matrix."
-                : showsListCost && focusedPriceTiers.length > 0
-                    ? `Edit ${tierLabelForTierKey(focusedPriceTiers[0], matrix.priceTypes)} with list cost visible alongside. Switch to All Prices only when you need every tier.`
-                    : `Focused editing for ${priceViewLabel}. Switch to All Prices only when you need the full matrix.`;
+                ? "Focused editing for list cost. Clear the price view filter to show every tier."
+                : focusedPriceTiers.length > 1
+                    ? `Showing selected price columns: ${priceViewLabel}. Clear the price view filter to show every tier.`
+                    : `Focused editing for ${priceViewLabel}. Clear the price view filter to show every tier.`;
 
     return (
         <div

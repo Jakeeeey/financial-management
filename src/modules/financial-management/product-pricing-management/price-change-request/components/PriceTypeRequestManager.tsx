@@ -24,8 +24,9 @@ import type { SupplierOption } from "../providers/pcrApi";
 import * as pcrApi from "../providers/pcrApi";
 import { applyBulkActionResult, type BulkActionOutcome } from "../utils/applyBulkActionResult";
 import {
-    approveManyBatches,
-    rejectManyBatches,
+    approveManyPriceRequestsHybrid,
+    orphanPriceSnapshotCount,
+    rejectManyPriceRequestsHybrid,
     uniqueBatchCount,
 } from "../utils/bulkPriceTypeBatchActions";
 import { pcrApproveButtonClass, pcrRejectButtonClass } from "../utils/pcrStatusStyles";
@@ -64,13 +65,14 @@ export function PriceTypeRequestManager({
     const [rejectingBatchHeaderId, setRejectingBatchHeaderId] = React.useState<number | null>(null);
     const [confirmingBulkApprove, setConfirmingBulkApprove] = React.useState(false);
     const [rejectingBulk, setRejectingBulk] = React.useState(false);
+    const [confirmingOrphanApproveId, setConfirmingOrphanApproveId] = React.useState<number | null>(null);
+    const [rejectingOrphanId, setRejectingOrphanId] = React.useState<number | null>(null);
     const [bulkActionOutcome, setBulkActionOutcome] =
         React.useState<BulkActionOutcome<PriceTypeSelectionSnapshot> | null>(null);
     const [batchActing, setBatchActing] = React.useState(false);
 
     const isPriceRowSelectable = React.useCallback((row: PriceChangeRequestRow | CostChangeRequestRow) => {
-        if (row.status !== "PENDING") return false;
-        return Boolean(pcrBatchMeta(row as PriceChangeRequestRow).batch_header_id);
+        return row.status === "PENDING";
     }, []);
 
     const {
@@ -90,6 +92,7 @@ export function PriceTypeRequestManager({
 
     const showBulkBar = statusTab === "PENDING" || statusTab === "ALL";
     const selectedBatchCount = uniqueBatchCount(selectedSnapshots);
+    const selectedOrphanCount = orphanPriceSnapshotCount(selectedSnapshots);
 
     const viewingRequest = React.useMemo(() => {
         if (viewingRequestId == null) return null;
@@ -129,6 +132,38 @@ export function PriceTypeRequestManager({
         }
     }, [inbox, onUnauthorized]);
 
+    const approvePriceRequest = React.useCallback(async (requestId: number) => {
+        setBatchActing(true);
+        try {
+            await pcrApi.actionPriceRequest({ action: "approve", request_id: requestId });
+            toast.success("Approved and applied.");
+            await inbox.refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to approve request", { onUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setBatchActing(false);
+        }
+    }, [inbox, onUnauthorized]);
+
+    const rejectPriceRequest = React.useCallback(async (requestId: number, reason: string) => {
+        setBatchActing(true);
+        try {
+            await pcrApi.actionPriceRequest({ action: "reject", request_id: requestId, reject_reason: reason });
+            toast.success("Rejected.");
+            await inbox.refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to reject request", { onUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setBatchActing(false);
+        }
+    }, [inbox, onUnauthorized]);
+
     const resolveBatchHeaderId = React.useCallback(
         (requestId: number) => {
             const row = inbox.rows.find((r) => Number(r.request_id) === requestId);
@@ -140,7 +175,11 @@ export function PriceTypeRequestManager({
     const handleConfirmBulkApprove = React.useCallback(async () => {
         if (selectedSnapshots.length === 0) return;
         try {
-            const result = await approveManyBatches(selectedSnapshots, approveBatch);
+            const result = await approveManyPriceRequestsHybrid(
+                selectedSnapshots,
+                approveBatch,
+                approvePriceRequest,
+            );
             applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
         } catch (error: unknown) {
             if (isUnauthorizedError(error)) {
@@ -150,13 +189,18 @@ export function PriceTypeRequestManager({
             throw error;
         }
         setConfirmingBulkApprove(false);
-    }, [approveBatch, onUnauthorized, removeSelectionIds, selectedSnapshots]);
+    }, [approveBatch, approvePriceRequest, onUnauthorized, removeSelectionIds, selectedSnapshots]);
 
     const handleRejectBulk = React.useCallback(
         async (reason: string) => {
             if (selectedSnapshots.length === 0) return;
             try {
-                const result = await rejectManyBatches(selectedSnapshots, reason, rejectBatch);
+                const result = await rejectManyPriceRequestsHybrid(
+                    selectedSnapshots,
+                    reason,
+                    rejectBatch,
+                    rejectPriceRequest,
+                );
                 applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
             } catch (error: unknown) {
                 if (isUnauthorizedError(error)) {
@@ -166,7 +210,7 @@ export function PriceTypeRequestManager({
                 throw error;
             }
         },
-        [rejectBatch, onUnauthorized, removeSelectionIds, selectedSnapshots],
+        [rejectBatch, rejectPriceRequest, onUnauthorized, removeSelectionIds, selectedSnapshots],
     );
 
     const rawSetInboxQuery = inbox.setQuery;
@@ -322,11 +366,19 @@ export function PriceTypeRequestManager({
                     onReview={(id) => setViewingRequestId(id)}
                     onApprove={(id) => {
                         const headerId = resolveBatchHeaderId(id);
-                        if (headerId) setConfirmingBatchHeaderId(headerId);
+                        if (headerId) {
+                            setConfirmingBatchHeaderId(headerId);
+                            return;
+                        }
+                        setConfirmingOrphanApproveId(id);
                     }}
                     onReject={(id) => {
                         const headerId = resolveBatchHeaderId(id);
-                        if (headerId) setRejectingBatchHeaderId(headerId);
+                        if (headerId) {
+                            setRejectingBatchHeaderId(headerId);
+                            return;
+                        }
+                        setRejectingOrphanId(id);
                     }}
                     meta={{ total_count: inbox.total }}
                     page={Number(inbox.query.page ?? 1)}
@@ -360,6 +412,35 @@ export function PriceTypeRequestManager({
                 }}
                 onApproveBatch={approveBatch}
                 onRejectBatch={rejectBatch}
+                onApproveRequest={approvePriceRequest}
+                onRejectRequest={rejectPriceRequest}
+            />
+
+            <ApproveDialog
+                open={confirmingOrphanApproveId != null}
+                onOpenChange={() => setConfirmingOrphanApproveId(null)}
+                loading={inbox.loading || batchActing}
+                title="Approve Price Type Request"
+                description="Approve this price type request and apply the proposed price?"
+                onConfirm={async () => {
+                    if (confirmingOrphanApproveId == null) return;
+                    await approvePriceRequest(confirmingOrphanApproveId);
+                    setConfirmingOrphanApproveId(null);
+                }}
+            />
+
+            <RejectDialog
+                open={rejectingOrphanId != null}
+                onOpenChange={(open) => {
+                    if (!open) setRejectingOrphanId(null);
+                }}
+                loading={inbox.loading || batchActing}
+                title="Reject Request"
+                onConfirm={async (reason) => {
+                    if (rejectingOrphanId == null) return;
+                    await rejectPriceRequest(rejectingOrphanId, reason);
+                    setRejectingOrphanId(null);
+                }}
             />
 
             <ApproveDialog
@@ -395,7 +476,9 @@ export function PriceTypeRequestManager({
                 loading={inbox.loading || batchActing}
                 contentClassName="sm:max-w-2xl"
                 title="Approve Selected Price Type Requests"
-                description={`You are about to approve ${selectedSnapshots.length} price type request(s) across ${selectedBatchCount} batch(es). Each batch is approved in full.`}
+                description={`You are about to approve ${selectedSnapshots.length} price type request(s)${
+                    selectedBatchCount > 0 ? ` across ${selectedBatchCount} batch(es)` : ""
+                }${selectedOrphanCount > 0 ? `, including ${selectedOrphanCount} standalone request(s)` : ""}.`}
                 onConfirm={() => void handleConfirmBulkApprove()}
             >
                 <div className="space-y-2">

@@ -27,8 +27,9 @@ import { isUnauthorizedError } from "../../shared/apiHttp";
 import type { SupplierOption } from "../providers/pcrApi";
 import { applyBulkActionResult, type BulkActionOutcome } from "../utils/applyBulkActionResult";
 import {
-    approveManyBatches,
-    rejectManyBatches,
+    approveManyPriceRequestsHybrid,
+    orphanPriceSnapshotCount,
+    rejectManyPriceRequestsHybrid,
     uniqueBatchCount,
 } from "../utils/bulkPriceTypeBatchActions";
 import { snapshotFromPriceUnifiedRow, snapshotFromUnifiedRow } from "../utils/labels";
@@ -80,6 +81,8 @@ export function UnifiedApprovalsManager({
     const [confirmingBulkPriceApprove, setConfirmingBulkPriceApprove] = React.useState(false);
     const [confirmingPriceBatchHeaderId, setConfirmingPriceBatchHeaderId] = React.useState<number | null>(null);
     const [rejectingPriceBatchHeaderId, setRejectingPriceBatchHeaderId] = React.useState<number | null>(null);
+    const [confirmingOrphanPriceApproveId, setConfirmingOrphanPriceApproveId] = React.useState<number | null>(null);
+    const [rejectingOrphanPriceId, setRejectingOrphanPriceId] = React.useState<number | null>(null);
     const [bulkCostActionOutcome, setBulkCostActionOutcome] = React.useState<BulkActionOutcome | null>(null);
     const [bulkPriceActionOutcome, setBulkPriceActionOutcome] =
         React.useState<BulkActionOutcome<PriceTypeSelectionSnapshot> | null>(null);
@@ -111,8 +114,7 @@ export function UnifiedApprovalsManager({
         removeSelectionIds: removePriceSelectionIds,
     } = useRequestBulkSelection({
         rows: feed.rows,
-        isSelectable: (row) =>
-            row.kind === "price_type" && row.status === "PENDING" && Boolean(row.batch_header_id),
+        isSelectable: (row) => row.kind === "price_type" && row.status === "PENDING" && Boolean(row.request_id),
         toSnapshot: (row) => snapshotFromPriceUnifiedRow(row as PriceTypeUnifiedApprovalRow),
         getRowKey: resolveUnifiedSelectionKey,
     });
@@ -150,6 +152,7 @@ export function UnifiedApprovalsManager({
     const isMixedSelection = hasCostSelection && hasPriceSelection;
     const hasAnySelection = hasCostSelection || hasPriceSelection;
     const selectedBatchCount = uniqueBatchCount(selectedPriceSnapshots);
+    const selectedOrphanPriceCount = orphanPriceSnapshotCount(selectedPriceSnapshots);
     const mergedSelectedKeys = React.useMemo(
         () => [...selectedCostKeys, ...selectedPriceKeys],
         [selectedCostKeys, selectedPriceKeys],
@@ -179,7 +182,11 @@ export function UnifiedApprovalsManager({
     const handleConfirmBulkPriceApprove = React.useCallback(async () => {
         if (selectedPriceSnapshots.length === 0) return;
         try {
-            const result = await approveManyBatches(selectedPriceSnapshots, feed.approveBatch);
+            const result = await approveManyPriceRequestsHybrid(
+                selectedPriceSnapshots,
+                feed.approveBatch,
+                feed.approvePriceRequest,
+            );
             applyBulkActionResult(
                 result,
                 selectedPriceSnapshots,
@@ -194,7 +201,13 @@ export function UnifiedApprovalsManager({
             throw error;
         }
         setConfirmingBulkPriceApprove(false);
-    }, [feed.approveBatch, onUnauthorized, removePriceSelectionIds, selectedPriceSnapshots]);
+    }, [
+        feed.approveBatch,
+        feed.approvePriceRequest,
+        onUnauthorized,
+        removePriceSelectionIds,
+        selectedPriceSnapshots,
+    ]);
 
     const openRequestReview = React.useCallback((id: number) => {
         const row = feed.rows.find((item) => Number(item.request_id) === id);
@@ -212,8 +225,12 @@ export function UnifiedApprovalsManager({
                 setConfirmingCostApprove({ type: "single", id });
                 return;
             }
-            if (row?.kind === "price_type" && row.batch_header_id) {
-                setConfirmingPriceBatchHeaderId(row.batch_header_id);
+            if (row?.kind === "price_type") {
+                if (row.batch_header_id) {
+                    setConfirmingPriceBatchHeaderId(row.batch_header_id);
+                } else {
+                    setConfirmingOrphanPriceApproveId(id);
+                }
             }
         },
         [feed.rows],
@@ -226,8 +243,12 @@ export function UnifiedApprovalsManager({
                 setRejectingCostId(id);
                 return;
             }
-            if (row?.kind === "price_type" && row.batch_header_id) {
-                setRejectingPriceBatchHeaderId(row.batch_header_id);
+            if (row?.kind === "price_type") {
+                if (row.batch_header_id) {
+                    setRejectingPriceBatchHeaderId(row.batch_header_id);
+                } else {
+                    setRejectingOrphanPriceId(id);
+                }
             }
         },
         [feed.rows],
@@ -236,15 +257,13 @@ export function UnifiedApprovalsManager({
     const canSelectUnifiedRow = React.useCallback((row: PriceChangeRequestRow | CostChangeRequestRow) => {
         const unified = row as ItemUnifiedApprovalRow;
         if (unified.kind === "list_price") return unified.status === "PENDING";
-        if (unified.kind === "price_type") {
-            return unified.status === "PENDING" && Boolean(unified.batch_header_id);
-        }
+        if (unified.kind === "price_type") return unified.status === "PENDING";
         return false;
     }, []);
 
     const canActOnRow = React.useCallback((row: ItemUnifiedApprovalRow) => {
         if (row.kind === "list_price") return true;
-        return row.status === "PENDING" && Boolean(row.batch_header_id);
+        return row.status === "PENDING";
     }, []);
 
     const getUnifiedSelectionKey = React.useCallback(
@@ -293,7 +312,12 @@ export function UnifiedApprovalsManager({
         async (reason: string) => {
             if (selectedPriceSnapshots.length === 0) return;
             try {
-                const result = await rejectManyBatches(selectedPriceSnapshots, reason, feed.rejectBatch);
+                const result = await rejectManyPriceRequestsHybrid(
+                    selectedPriceSnapshots,
+                    reason,
+                    feed.rejectBatch,
+                    feed.rejectPriceRequest,
+                );
                 applyBulkActionResult(
                     result,
                     selectedPriceSnapshots,
@@ -308,7 +332,7 @@ export function UnifiedApprovalsManager({
                 throw error;
             }
         },
-        [feed.rejectBatch, onUnauthorized, removePriceSelectionIds, selectedPriceSnapshots],
+        [feed.rejectBatch, feed.rejectPriceRequest, onUnauthorized, removePriceSelectionIds, selectedPriceSnapshots],
     );
 
     const handleBulkReject = React.useCallback(() => {
@@ -531,6 +555,8 @@ export function UnifiedApprovalsManager({
                 }}
                 onApproveBatch={feed.approveBatch}
                 onRejectBatch={feed.rejectBatch}
+                onApproveRequest={feed.approvePriceRequest}
+                onRejectRequest={feed.rejectPriceRequest}
             />
 
             <CreatePriceChangeBatchDialog
@@ -603,6 +629,20 @@ export function UnifiedApprovalsManager({
             </RejectDialog>
 
             <RejectDialog
+                open={rejectingOrphanPriceId != null}
+                onOpenChange={(open) => {
+                    if (!open) setRejectingOrphanPriceId(null);
+                }}
+                loading={acting}
+                title="Reject Request"
+                onConfirm={async (reason) => {
+                    if (rejectingOrphanPriceId == null) return;
+                    await feed.rejectPriceRequest(rejectingOrphanPriceId, reason);
+                    setRejectingOrphanPriceId(null);
+                }}
+            />
+
+            <RejectDialog
                 open={rejectingPriceBatchHeaderId != null}
                 onOpenChange={(open) => {
                     if (!open) setRejectingPriceBatchHeaderId(null);
@@ -656,7 +696,9 @@ export function UnifiedApprovalsManager({
                 loading={acting}
                 contentClassName="sm:max-w-2xl"
                 title="Approve Selected Price Type Requests"
-                description={`You are about to approve ${selectedPriceSnapshots.length} price type request(s) across ${selectedBatchCount} batch(es). Each batch is approved in full.`}
+                description={`You are about to approve ${selectedPriceSnapshots.length} price type request(s)${
+                    selectedBatchCount > 0 ? ` across ${selectedBatchCount} batch(es)` : ""
+                }${selectedOrphanPriceCount > 0 ? `, including ${selectedOrphanPriceCount} standalone request(s)` : ""}.`}
                 onConfirm={() => void handleConfirmBulkPriceApprove()}
             >
                 <div className="space-y-2">
@@ -671,6 +713,19 @@ export function UnifiedApprovalsManager({
                     <BulkPriceTypeApprovePreview items={selectedPriceSnapshots} />
                 </div>
             </ApproveDialog>
+
+            <ApproveDialog
+                open={confirmingOrphanPriceApproveId != null}
+                onOpenChange={() => setConfirmingOrphanPriceApproveId(null)}
+                loading={acting}
+                title="Approve Price Type Request"
+                description="Approve this price type request and apply the proposed price?"
+                onConfirm={async () => {
+                    if (confirmingOrphanPriceApproveId == null) return;
+                    await feed.approvePriceRequest(confirmingOrphanPriceApproveId);
+                    setConfirmingOrphanPriceApproveId(null);
+                }}
+            />
 
             <ApproveDialog
                 open={confirmingPriceBatchHeaderId != null}

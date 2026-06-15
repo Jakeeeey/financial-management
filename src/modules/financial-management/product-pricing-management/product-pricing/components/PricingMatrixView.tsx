@@ -155,6 +155,7 @@ function buildFiltersText(args: {
             priceView: filters.price_view,
             priceTypeIds: filters.price_type_ids,
             priceTypes,
+            showListPrice: filters.show_list_price,
         })}`,
     );
 

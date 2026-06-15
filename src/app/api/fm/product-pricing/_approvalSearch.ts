@@ -54,3 +54,25 @@ export function parseApprovalSearchQuery(q: string): ApprovalSearchParse {
         textContains: raw,
     };
 }
+
+function isPrefixedSingleStreamSearch(parsed: ApprovalSearchParse): "price" | "cost" | null {
+    if (parsed.numericId != null || parsed.textContains != null) return null;
+
+    const hasPrice = parsed.priceRequestId != null;
+    const hasCost = parsed.costRequestId != null;
+    const hasBatch = parsed.batchHeaderId != null;
+
+    if (hasPrice && !hasCost && !hasBatch) return "price";
+    if (hasCost && !hasPrice && !hasBatch) return "cost";
+    return null;
+}
+
+/** Unified All tab: skip price stream when search is CCR-{id} only. */
+export function shouldFetchPriceStreamInUnifiedSearch(parsed: ApprovalSearchParse): boolean {
+    return isPrefixedSingleStreamSearch(parsed) !== "cost";
+}
+
+/** Unified All tab: skip cost stream when search is PCR-{id} only. */
+export function shouldFetchCostStreamInUnifiedSearch(parsed: ApprovalSearchParse): boolean {
+    return isPrefixedSingleStreamSearch(parsed) !== "price";
+}
