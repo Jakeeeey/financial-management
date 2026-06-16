@@ -12,7 +12,7 @@ export function buildSupplierPrintParams(supplierId: number): pricingApi.PrintFi
 
 export async function fetchSupplierPrintMatrixPages(
     supplierId: number,
-    groupIds: string[],
+    groupIds: number[],
     init?: {
         signal?: AbortSignal;
         onProgress?: (done: number, total: number) => void;

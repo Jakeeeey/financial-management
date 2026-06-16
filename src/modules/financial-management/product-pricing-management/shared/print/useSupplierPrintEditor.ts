@@ -27,7 +27,7 @@ export type OpenSupplierPrintArgs = {
 };
 
 type PendingSupplierPrintJob = OpenSupplierPrintArgs & {
-    groupIds: string[];
+    groupIds: number[];
     totalGroups: number;
 };
 
@@ -95,8 +95,8 @@ export function useSupplierPrintEditor() {
 
         try {
             const [priceTypesResult, lookupsResult, matrixResult] = await Promise.all([
-                pcrApi.getPriceTypes({ signal }),
-                pcrApi.getLookups({ signal }),
+                pcrApi.getPriceTypes(),
+                pcrApi.getLookups(),
                 fetchSupplierPrintMatrixPages(job.supplierId, job.groupIds, {
                     signal,
                     onProgress: (done, total) => setPrepareProgress({ done, total }),
