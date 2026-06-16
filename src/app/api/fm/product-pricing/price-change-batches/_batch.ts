@@ -24,6 +24,17 @@ export type DirectusWrappedError = {
     body: string;
 };
 
+type DirectusUserRelation = {
+    id?: number | string | null;
+    user_id?: number | string | null;
+    user_fname?: string | null;
+    user_mname?: string | null;
+    user_lname?: string | null;
+    suffix_name?: string | null;
+    nickname?: string | null;
+    user_email?: string | null;
+};
+
 export type BatchHeaderRow = {
     id?: number | string | null;
     header_id?: number | string | null;
@@ -33,9 +44,9 @@ export type BatchHeaderRow = {
     status?: string | null;
     requested_by?: number | string | null;
     requested_at?: string | null;
-    approved_by?: number | string | null;
+    approved_by?: number | string | DirectusUserRelation | null;
     approved_at?: string | null;
-    rejected_by?: number | string | null;
+    rejected_by?: number | string | DirectusUserRelation | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
 };
@@ -490,8 +501,22 @@ export async function getHeader(headerId: number) {
             "requested_by",
             "requested_at",
             "approved_by",
+            "approved_by.user_id",
+            "approved_by.user_fname",
+            "approved_by.user_mname",
+            "approved_by.user_lname",
+            "approved_by.suffix_name",
+            "approved_by.nickname",
+            "approved_by.user_email",
             "approved_at",
             "rejected_by",
+            "rejected_by.user_id",
+            "rejected_by.user_fname",
+            "rejected_by.user_mname",
+            "rejected_by.user_lname",
+            "rejected_by.suffix_name",
+            "rejected_by.nickname",
+            "rejected_by.user_email",
             "rejected_at",
             "reject_reason",
         ].join(","),
@@ -831,4 +856,143 @@ export async function getSupplierNamesByProductId(productIds: number[]): Promise
         if (label) result.set(id, label);
     }
     return result;
+}
+
+type DirectusUserRow = DirectusUserRelation;
+
+const USER_LOOKUP_FIELDS = [
+    "id",
+    "user_id",
+    "user_fname",
+    "user_mname",
+    "user_lname",
+    "suffix_name",
+    "nickname",
+    "user_email",
+].join(",");
+
+function formatUserDisplayName(user: DirectusUserRow): string {
+    const fullName = [
+        user.user_fname,
+        user.user_mname,
+        user.user_lname,
+        user.suffix_name,
+    ]
+        .map((part) => String(part ?? "").trim())
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (fullName) return fullName;
+
+    const nickname = String(user.nickname ?? "").trim();
+    if (nickname) return nickname;
+
+    const email = String(user.user_email ?? "").trim();
+    if (email) return email;
+
+    return "";
+}
+
+export function normalizeStoredUserId(value: unknown): number | null {
+    if (isRecord(value)) {
+        return pickId(value.user_id) ?? pickId(value.id);
+    }
+    return pickId(value);
+}
+
+function userNameFromRelationValue(value: unknown): string | null {
+    if (!isRecord(value)) return null;
+    const displayName = formatUserDisplayName(value as DirectusUserRow);
+    return displayName || null;
+}
+
+async function fetchUsersByLookupField(
+    field: "user_id" | "id",
+    ids: number[],
+    into: Map<number, string>,
+    remaining: Set<number>,
+): Promise<void> {
+    if (ids.length === 0) return;
+
+    for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const params = new URLSearchParams();
+        params.set("limit", String(Math.max(100, chunk.length)));
+        params.set("fields", USER_LOOKUP_FIELDS);
+        params.set(`filter[${field}][_in]`, chunk.join(","));
+
+        const url = `${mustBase()}/items/user?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<DirectusUserRow>>(url, { headers: directusHeaders() });
+
+        for (const user of json.data ?? []) {
+            const lookupId = field === "user_id" ? Number(user.user_id) : Number(user.id);
+            if (!Number.isFinite(lookupId) || lookupId <= 0 || !remaining.has(lookupId)) continue;
+
+            const displayName = formatUserDisplayName(user);
+            if (!displayName) continue;
+
+            into.set(lookupId, displayName);
+            remaining.delete(lookupId);
+        }
+    }
+}
+
+export async function fetchUserNamesById(
+    userIds: Array<number | string | null | undefined>,
+): Promise<Map<number, string>> {
+    const ids = Array.from(
+        new Set(
+            userIds
+                .map((value) => normalizeStoredUserId(value))
+                .filter((value): value is number => value !== null),
+        ),
+    );
+    const userNames = new Map<number, string>();
+    if (ids.length === 0) return userNames;
+
+    const remaining = new Set(ids);
+
+    try {
+        await fetchUsersByLookupField("user_id", ids, userNames, remaining);
+        if (remaining.size > 0) {
+            await fetchUsersByLookupField("id", Array.from(remaining), userNames, remaining);
+        }
+    } catch {
+        return userNames;
+    }
+
+    return userNames;
+}
+
+export function resolveUserDisplayName(
+    userId: number | string | null | undefined,
+    namesById: Map<number, string>,
+): string | null {
+    const id = normalizeStoredUserId(userId);
+    if (id === null) return null;
+    return namesById.get(id) ?? null;
+}
+
+export async function resolveBatchDecisionUserNames(header: {
+    approved_by?: number | string | DirectusUserRelation | null;
+    rejected_by?: number | string | DirectusUserRelation | null;
+}): Promise<{ approved_by_name: string | null; rejected_by_name: string | null }> {
+    const approvedFromRelation = userNameFromRelationValue(header.approved_by);
+    const rejectedFromRelation = userNameFromRelationValue(header.rejected_by);
+
+    const namesById = await fetchUserNamesById([
+        normalizeStoredUserId(header.approved_by),
+        normalizeStoredUserId(header.rejected_by),
+    ]);
+
+    return {
+        approved_by_name:
+            approvedFromRelation ??
+            resolveUserDisplayName(normalizeStoredUserId(header.approved_by), namesById),
+        rejected_by_name:
+            rejectedFromRelation ??
+            resolveUserDisplayName(normalizeStoredUserId(header.rejected_by), namesById),
+    };
 }

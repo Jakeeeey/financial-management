@@ -17,7 +17,13 @@ type Options = PrintLayoutOptions & {
     tiers?: string[];
     units?: Unit[];
     usedUnitIds?: Set<number>;
+    supplierNames?: string[];
+    filtersText?: string;
+    title?: string;
+    saveAsName?: string;
 };
+
+const DEFAULT_TITLE = "Product Pricing Matrix Report";
 
 const TIER_PALETTE: Array<{ fill: [number, number, number]; text: [number, number, number] }> = [
     { fill: [248, 250, 252], text: [30, 41, 59] },
@@ -36,6 +42,23 @@ function unitLabel(unit: Unit | undefined, fallback: string) {
     return printTextValue(unit?.unit_shortcut || unit?.unit_name || fallback);
 }
 
+function wrapHeaderLines(doc: jsPDF, text: string, maxWidth: number, maxLines = 2): string[] {
+    const lines = doc.splitTextToSize(text, maxWidth) as string[];
+    if (lines.length <= maxLines) return lines;
+
+    const clipped = lines.slice(0, maxLines);
+    const last = clipped[maxLines - 1] ?? "";
+    clipped[maxLines - 1] = `${last.replace(/\s+\S*$/, "").trimEnd()}...`;
+    return clipped;
+}
+
+function supplierHeaderText(supplierNames: string[]): string | null {
+    const names = supplierNames.map((name) => String(name ?? "").trim()).filter(Boolean);
+    if (names.length === 0) return null;
+    if (names.length === 1) return `Supplier: ${names[0]}`;
+    return `Suppliers: ${names.join(", ")}`;
+}
+
 function drawPageFooter(doc: jsPDF, metrics: PrintPageMetrics) {
     const pageHeight = doc.internal.pageSize.getHeight();
     const str = `Page ${doc.getCurrentPageInfo().pageNumber}`;
@@ -52,50 +75,69 @@ function drawReportHeader(
         layout: string;
         metrics: PrintPageMetrics;
         continuation?: boolean;
+        title: string;
+        supplierNames?: string[];
+        filtersText?: string;
     },
-) {
+): number {
     const { metrics } = args;
     const x = metrics.contentLeft;
+    const maxWidth = metrics.contentWidth;
     let y = metrics.marginPt + (args.continuation ? 8 : 10);
 
     if (args.continuation) {
         doc.setFontSize(9);
         doc.setTextColor(100);
         doc.setFont("helvetica", "bold");
-        doc.text("Product Pricing Matrix Report (continued)", x, y);
-        return;
+        doc.text(`${args.title} (continued)`, x, y);
+        return y + 12;
+    }
+
+    const titleSize = metrics.compact ? 11 : 14;
+    const bodySize = metrics.compact ? 8 : 9;
+    const lineGap = metrics.compact ? 10 : 12;
+
+    doc.setFontSize(titleSize);
+    doc.setTextColor(20);
+    doc.setFont("helvetica", "bold");
+    doc.text(args.title, x, y);
+    y += lineGap;
+
+    doc.setFontSize(bodySize);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(90);
+
+    const supplierLine = supplierHeaderText(args.supplierNames ?? []);
+    if (supplierLine) {
+        const wrapped = wrapHeaderLines(doc, supplierLine, maxWidth, 2);
+        doc.text(wrapped, x, y);
+        y += wrapped.length * (lineGap - 1);
+    }
+
+    const filters = String(args.filtersText ?? "").trim();
+    if (filters) {
+        const wrapped = wrapHeaderLines(doc, `Filters: ${filters}`, maxWidth, 2);
+        doc.text(wrapped, x, y);
+        y += wrapped.length * (lineGap - 1);
     }
 
     if (metrics.compact) {
-        doc.setFontSize(11);
-        doc.setTextColor(20);
-        doc.setFont("helvetica", "bold");
-        doc.text("Product Pricing Matrix Report", x, y);
-        y += 12;
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(90);
         doc.text(
             `Generated: ${args.now.toLocaleDateString()} ${args.now.toLocaleTimeString()}  |  Products: ${args.total}  |  Layout: ${args.layout}`,
             x,
             y,
         );
-        return;
+        y += lineGap;
+    } else {
+        doc.text(`Generated on: ${args.now.toLocaleDateString()} ${args.now.toLocaleTimeString()}`, x, y);
+        y += lineGap;
+        doc.text(`Total Products: ${args.total}`, x, y);
+        y += lineGap;
+        doc.text(`Layout: ${args.layout}`, x, y);
+        y += lineGap;
     }
 
-    doc.setFontSize(14);
-    doc.setTextColor(20);
-    doc.setFont("helvetica", "bold");
-    doc.text("Product Pricing Matrix Report", x, y);
-    y += 14;
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(100);
-    doc.text(`Generated on: ${args.now.toLocaleDateString()} ${args.now.toLocaleTimeString()}`, x, y);
-    y += 12;
-    doc.text(`Total Products: ${args.total}`, x, y);
-    y += 12;
-    doc.text(`Layout: ${args.layout}`, x, y);
+    return y + 4;
 }
 
 function renderPricingProductBlocksPdf(
@@ -110,11 +152,13 @@ function renderPricingProductBlocksPdf(
         priceTypes: PriceType[];
         tiers: string[];
         usedUnits: Unit[];
+        title: string;
+        supplierNames?: string[];
+        filtersText?: string;
     },
 ) {
     const { metrics } = args;
     const {
-        columns,
         cardWidth,
         gap,
         lineHeight,
@@ -123,49 +167,63 @@ function renderPricingProductBlocksPdf(
         tableHeaderHeight,
         tableRowHeight,
         contentLeft,
-        contentTop,
         contentBottom,
         footerReserve,
+        blocksPerPage,
+        blockSlotHeight,
     } = metrics;
 
+    const denseBlocks = blocksPerPage > 1;
+    const maxNameLines = denseBlocks ? 2 : 4;
+    const maxPillRows = denseBlocks ? 1 : 3;
+
     let x = contentLeft;
-    let y = contentTop;
+    let y = 0;
     let columnIndex = 0;
     let rowMaxHeight = 0;
+    let blocksOnPage = 0;
 
-    const resetPosition = () => {
+    const maxY = () => contentBottom - footerReserve;
+
+    const resetPosition = (contentTop: number) => {
         x = contentLeft;
         y = contentTop;
         columnIndex = 0;
         rowMaxHeight = 0;
+        blocksOnPage = 0;
     };
 
-    const maxY = () => contentBottom - footerReserve;
-
-    const addPage = () => {
-        drawPageFooter(doc, metrics);
-        doc.addPage();
-        drawReportHeader(doc, {
+    const drawHeaderAndReset = (continuation: boolean) => {
+        const contentTop = drawReportHeader(doc, {
             now: args.now,
             total: rows.length,
             layout: args.layoutLabel,
             metrics,
-            continuation: true,
+            continuation,
+            title: args.title,
+            supplierNames: args.supplierNames,
+            filtersText: args.filtersText,
         });
-        resetPosition();
+        resetPosition(contentTop);
     };
 
-    drawReportHeader(doc, {
-        now: args.now,
-        total: rows.length,
-        layout: args.layoutLabel,
-        metrics,
-        continuation: false,
-    });
+    const addPage = () => {
+        drawPageFooter(doc, metrics);
+        doc.addPage();
+        drawHeaderAndReset(true);
+    };
+
+    drawHeaderAndReset(false);
 
     const advanceCardPosition = (height: number) => {
+        if (denseBlocks) {
+            y += height + gap;
+            blocksOnPage += 1;
+            return;
+        }
+
         rowMaxHeight = Math.max(rowMaxHeight, height);
-        if (columnIndex + 1 < columns) {
+        if (columnIndex + 1 < metrics.columns) {
             columnIndex += 1;
             x = contentLeft + columnIndex * (cardWidth + gap);
             return;
@@ -217,17 +275,31 @@ function renderPricingProductBlocksPdf(
         }
         if (currentPillRow.length > 0) pillRows.push(currentPillRow);
 
-        const wrappedName = doc.splitTextToSize(printTextValue(display.product_name), cardWidth - cardPadding * 2);
+        const wrappedNameAll = doc.splitTextToSize(
+            printTextValue(display.product_name),
+            cardWidth - cardPadding * 2,
+        ) as string[];
+        const wrappedName = wrappedNameAll.slice(0, maxNameLines);
+        const visiblePillRows = pillRows.slice(0, maxPillRows);
         const tableHeight = tableHeaderHeight + args.tiers.length * tableRowHeight;
 
-        const cardHeight =
+        const naturalCardHeight =
             cardPadding * 2 +
             wrappedName.length * (lineHeight + 1) +
-            Math.max(pillRows.length, 1) * (pillHeight + 3) +
+            Math.max(visiblePillRows.length, 1) * (pillHeight + 3) +
             (metrics.compact ? 6 : 10) +
             tableHeight;
 
-        if (columnIndex === 0) {
+        const cardHeight =
+            denseBlocks && blockSlotHeight != null
+                ? Math.max(naturalCardHeight, blockSlotHeight)
+                : naturalCardHeight;
+
+        if (denseBlocks) {
+            if (blocksOnPage >= blocksPerPage || (blocksOnPage > 0 && y + cardHeight > maxY())) {
+                addPage();
+            }
+        } else if (columnIndex === 0) {
             if (y + cardHeight > maxY()) {
                 addPage();
             }
@@ -241,21 +313,25 @@ function renderPricingProductBlocksPdf(
             }
         }
 
+        const blockX = denseBlocks ? contentLeft : x;
+        const blockY = y;
+        const blockWidth = denseBlocks ? metrics.contentWidth : cardWidth;
+
         doc.setDrawColor(210, 210, 210);
         doc.setFillColor(255, 255, 255);
-        doc.roundedRect(x, y, cardWidth, cardHeight, 4, 4, "FD");
+        doc.roundedRect(blockX, blockY, blockWidth, cardHeight, denseBlocks ? 2 : 4, denseBlocks ? 2 : 4, "FD");
 
-        let cursorY = y + cardPadding + 2;
-        doc.setFontSize(args.fontSize + (metrics.compact ? 1 : 2));
+        let cursorY = blockY + cardPadding + 2;
+        doc.setFontSize(args.fontSize + (metrics.compact ? (denseBlocks ? 0 : 1) : 2));
         doc.setTextColor(20);
         doc.setFont("helvetica", "bold");
-        doc.text(wrappedName, x + cardPadding, cursorY);
+        doc.text(wrappedName, blockX + cardPadding, cursorY);
         cursorY += wrappedName.length * (lineHeight + 1);
 
         doc.setFontSize(args.fontSize);
         doc.setFont("helvetica", "normal");
-        for (const pillRow of pillRows) {
-            let pillX = x + cardPadding;
+        for (const pillRow of visiblePillRows) {
+            let pillX = blockX + cardPadding;
             for (const pill of pillRow) {
                 const pillWidth = Math.min(maxPillWidth, doc.getTextWidth(pill) + 10);
                 doc.setFillColor(248, 250, 252);
@@ -269,9 +345,9 @@ function renderPricingProductBlocksPdf(
         }
 
         cursorY += metrics.compact ? 4 : 5;
-        const tableX = x + cardPadding;
-        const tableWidth = cardWidth - cardPadding * 2;
-        const tierColumnWidth = Math.min(88, tableWidth * 0.36);
+        const tableX = blockX + cardPadding;
+        const tableWidth = blockWidth - cardPadding * 2;
+        const tierColumnWidth = Math.min(denseBlocks ? 72 : 88, tableWidth * 0.36);
         const unitCount = Math.max(printableUnits.length, 1);
         const unitColumnWidth = (tableWidth - tierColumnWidth) / unitCount;
 
@@ -286,7 +362,7 @@ function renderPricingProductBlocksPdf(
             const cellX = tableX + tierColumnWidth + index * unitColumnWidth;
             const label = unitLabel(unit, `Unit ${unit.unit_id}`);
             doc.text(
-                doc.splitTextToSize(label, unitColumnWidth - 6)[0] ?? "-",
+                (doc.splitTextToSize(label, unitColumnWidth - 6)[0] as string | undefined) ?? "-",
                 cellX + 4,
                 cursorY + tableHeaderHeight - 5,
             );
@@ -304,7 +380,9 @@ function renderPricingProductBlocksPdf(
             doc.setTextColor(...palette.text);
             doc.setFont("helvetica", "bold");
             doc.text(
-                doc.splitTextToSize(tierLabelForTierKey(tier, args.priceTypes), tierColumnWidth - 6)[0] ?? "-",
+                (doc.splitTextToSize(tierLabelForTierKey(tier, args.priceTypes), tierColumnWidth - 6)[0] as
+                    | string
+                    | undefined) ?? "-",
                 tableX + 4,
                 rowY + tableRowHeight - 5,
             );
@@ -341,6 +419,8 @@ export function generatePricingMatrixPdf(rows: MatrixRow[], opts: Options = {}) 
     const usedUnitIds = opts.usedUnitIds ?? new Set();
     const unitsList = opts.units ?? [];
     const now = new Date();
+    const title = opts.title ?? DEFAULT_TITLE;
+    const blocksPerPage = opts.blocksPerPage ?? 1;
 
     const doc = new jsPDF({ orientation, unit: "pt", format: paper });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -353,6 +433,7 @@ export function generatePricingMatrixPdf(rows: MatrixRow[], opts: Options = {}) 
         compact,
         fontSize: opts.fontSize,
         layoutLabel,
+        blocksPerPage,
     });
 
     const usedUnits = unitsList
@@ -367,10 +448,16 @@ export function generatePricingMatrixPdf(rows: MatrixRow[], opts: Options = {}) 
         now,
         includeBarcode,
         metrics,
-        fontSize: opts.fontSize || 7,
+        fontSize: opts.fontSize || (blocksPerPage > 1 ? 5 : 7),
         priceTypes: priceTypesList,
         tiers,
         usedUnits,
+        title,
+        supplierNames: opts.supplierNames,
+        filtersText: opts.filtersText,
     });
-    doc.save(`Product_Pricing_Matrix_${now.toISOString().split("T")[0]}.pdf`);
+
+    const fileStamp = now.toISOString().split("T")[0];
+    const fileName = opts.saveAsName ?? `Product_Pricing_Matrix_${fileStamp}.pdf`;
+    doc.save(fileName);
 }

@@ -12,11 +12,12 @@ import {
     mustBase,
     nowManila,
     pickId,
+    resolveBatchDecisionUserNames,
 } from "../price-change-batches/_batch";
 
 import type { NormalizedCostBulkItem } from "../cost-change-requests/_bulk";
 
-export { decodeUserIdFromJwtCookie, directusErrorResponse, getSupplierNamesByProductId, isRecord, pickId };
+export { decodeUserIdFromJwtCookie, directusErrorResponse, getSupplierNamesByProductId, isRecord, pickId, resolveBatchDecisionUserNames };
 
 export const COST_HEADERS = HEADERS;
 export const COST_DETAILS = "cost_change_requests";
@@ -36,9 +37,27 @@ export type CostHeaderRow = {
     status?: string | null;
     requested_by?: number | string | null;
     requested_at?: string | null;
-    approved_by?: number | string | null;
+    approved_by?: number | string | {
+        id?: number | string | null;
+        user_id?: number | string | null;
+        user_fname?: string | null;
+        user_mname?: string | null;
+        user_lname?: string | null;
+        suffix_name?: string | null;
+        nickname?: string | null;
+        user_email?: string | null;
+    } | null;
     approved_at?: string | null;
-    rejected_by?: number | string | null;
+    rejected_by?: number | string | {
+        id?: number | string | null;
+        user_id?: number | string | null;
+        user_fname?: string | null;
+        user_mname?: string | null;
+        user_lname?: string | null;
+        suffix_name?: string | null;
+        nickname?: string | null;
+        user_email?: string | null;
+    } | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
 };
@@ -232,8 +251,22 @@ export async function getCostHeader(headerId: number) {
             "requested_by",
             "requested_at",
             "approved_by",
+            "approved_by.user_id",
+            "approved_by.user_fname",
+            "approved_by.user_mname",
+            "approved_by.user_lname",
+            "approved_by.suffix_name",
+            "approved_by.nickname",
+            "approved_by.user_email",
             "approved_at",
             "rejected_by",
+            "rejected_by.user_id",
+            "rejected_by.user_fname",
+            "rejected_by.user_mname",
+            "rejected_by.user_lname",
+            "rejected_by.suffix_name",
+            "rejected_by.nickname",
+            "rejected_by.user_email",
             "rejected_at",
             "reject_reason",
         ].join(","),

@@ -88,8 +88,10 @@ export type PriceChangeBatchHeader = {
     requested_at?: string | null;
     approved_by?: number | string | null;
     approved_at?: string | null;
+    approved_by_name?: string | null;
     rejected_by?: number | string | null;
     rejected_at?: string | null;
+    rejected_by_name?: string | null;
     reject_reason?: string | null;
     line_count?: number;
 };
@@ -143,8 +145,10 @@ export type ListCostBatchHeader = {
     requested_at?: string | null;
     approved_by?: number | string | null;
     approved_at?: string | null;
+    approved_by_name?: string | null;
     rejected_by?: number | string | null;
     rejected_at?: string | null;
+    rejected_by_name?: string | null;
     reject_reason?: string | null;
     line_count?: number;
 };
@@ -248,6 +252,50 @@ export type CreatePriceChangeBatchPayload = {
         current_price?: number | null;
         proposed_price: number;
     }>;
+};
+
+export type BatchImportProductCatalogRow = {
+    product_id: number;
+    product_name: string;
+    parent_id?: number | null;
+    product_code?: string | null;
+    barcode?: string | null;
+    __group_id?: number | null;
+    unit_of_measurement?: number | null;
+    price_per_unit?: number | null;
+    priceA?: number | null;
+    priceB?: number | null;
+    priceC?: number | null;
+    priceD?: number | null;
+    priceE?: number | null;
+};
+
+export type BatchImportPrefill = {
+    supplierId: number;
+    supplierName: string;
+    remarks: string;
+    productCatalog: Map<number, BatchImportProductCatalogRow>;
+    tierPriceMap: Map<string, number | null>;
+    draftPrices: Map<string, string>;
+    draftCosts: Map<number, string>;
+    currentCostMap: Map<number, number | null>;
+    importedProductIds: number[];
+};
+
+export type ListCostImportLine = {
+    product_id: number;
+    product_code: string | null;
+    barcode: string | null;
+    product_name: string;
+    current_cost: number | null;
+    proposed_cost: number;
+};
+
+export type ListCostImportPrefill = {
+    supplierId: number;
+    supplierName: string;
+    remarks: string;
+    lines: ListCostImportLine[];
 };
 
 export type CreateCCRPayload = {

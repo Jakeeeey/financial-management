@@ -85,6 +85,53 @@ export async function createCostRequest(payload: CreateCCRPayload) {
     });
 }
 
+export async function createBulkCostChangeRequests(payload: {
+    items: CreateCCRPayload[];
+    reference_no?: string;
+    remarks?: string;
+}) {
+    return http<{
+        created: number;
+        header_id?: number;
+        skipped_duplicates?: number;
+        skipped_existing_pending?: number;
+    }>(`/api/fm/product-pricing/cost-change-requests/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function saveMixedPricingChanges(payload: {
+    batch: {
+        supplier_id: number;
+        reference_no?: string;
+        remarks: string;
+    };
+    price_lines: CreatePriceChangeBatchPayload["lines"];
+    cost_items: CreateCCRPayload[];
+}) {
+    return http<{
+        created: number;
+        price: {
+            created: number;
+            skipped_duplicates?: number;
+            skipped_existing_pending?: number;
+            header_id?: number;
+        };
+        cost: {
+            created: number;
+            skipped_duplicates?: number;
+            skipped_existing_pending?: number;
+            header_id?: number;
+        };
+    }>(`/api/fm/product-pricing/mixed-save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+}
+
 export async function actionCostRequest(payload: ActionPayload) {
     return http<{ data: CostChangeRequestRow }>(`/api/fm/product-pricing/cost-change-requests/actions`, {
         method: "POST",

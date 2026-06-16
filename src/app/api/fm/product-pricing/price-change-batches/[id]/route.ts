@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
     BatchDetailRow,
+    applyApprovedBatch,
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
     getDetails,
@@ -11,6 +12,8 @@ import {
     normalizePriceTypeId,
     normalizeProductId,
     pickId,
+    rejectPriceChangeBatch,
+    resolveBatchDecisionUserNames,
 } from "../_batch";
 
 export const runtime = "nodejs";
@@ -91,6 +94,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
             .map((line) => normalizeProductId(line))
             .filter((id) => id > 0);
         const supplierByProductId = await getSupplierNamesByProductId(detailProductIds);
+        const { approved_by_name, rejected_by_name } = await resolveBatchDecisionUserNames(header);
 
         return NextResponse.json({
             data: {
@@ -105,8 +109,10 @@ export async function GET(req: NextRequest, context: RouteContext) {
                 requested_at: header.requested_at ?? null,
                 approved_by: header.approved_by ?? null,
                 approved_at: header.approved_at ?? null,
+                approved_by_name,
                 rejected_by: header.rejected_by ?? null,
                 rejected_at: header.rejected_at ?? null,
+                rejected_by_name,
                 reject_reason: header.reject_reason ?? null,
                 details: details.map((line) => {
                     const pid = normalizeProductId(line);
@@ -117,6 +123,41 @@ export async function GET(req: NextRequest, context: RouteContext) {
                 }),
             },
         });
+    } catch (error: unknown) {
+        return directusErrorResponse(error);
+    }
+}
+
+export async function POST(req: NextRequest, context: RouteContext) {
+    try {
+        const userId = decodeUserIdFromJwtCookie(req);
+        if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+        const { id } = await context.params;
+        const headerId = Number(id);
+        if (!Number.isFinite(headerId) || headerId <= 0) {
+            return NextResponse.json({ error: "Invalid batch id" }, { status: 400 });
+        }
+
+        const body = (await req.json().catch(() => ({}))) as Partial<{
+            action: string;
+            reject_reason: string;
+        }>;
+        const action = String(body.action ?? "").trim().toLowerCase();
+
+        if (action === "approve") {
+            return applyApprovedBatch(headerId, userId);
+        }
+
+        if (action === "reject") {
+            const rejectReason = String(body.reject_reason ?? "").trim();
+            if (!rejectReason) {
+                return NextResponse.json({ error: "reject_reason is required" }, { status: 400 });
+            }
+            return rejectPriceChangeBatch(headerId, userId, rejectReason);
+        }
+
+        return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
     } catch (error: unknown) {
         return directusErrorResponse(error);
     }

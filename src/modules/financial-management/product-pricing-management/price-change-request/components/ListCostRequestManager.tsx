@@ -9,14 +9,19 @@ import { Button } from "@/components/ui/button";
 import { ApproveDialog } from "./ApproveDialog";
 import { BulkListCostActionResultDialog } from "./BulkListCostActionResultDialog";
 import { BulkListCostApprovePreview } from "./BulkListCostApprovePreview";
+import { CreateListCostBatchDialog } from "./CreateListCostBatchDialog";
 import { ListCostBatchDetailDialog } from "./ListCostBatchDetailDialog";
 import { ListPriceRequestDetailDialog } from "./ListPriceRequestDetailDialog";
 import { PcrStatusTabs } from "./PcrStatusTabs";
+import { PcrTabExportImportActions } from "./PcrTabExportImportActions";
 import { RejectDialog } from "./RejectDialog";
 import { RequestFiltersBar } from "./RequestFiltersBar";
 import RequestsTable from "./RequestsTable";
 
 import { useListCostBulkSelection } from "../hooks/useListCostBulkSelection";
+import { useListCostSupplierExportImport } from "../hooks/useListCostSupplierExportImport";
+import { SupplierPrintEditorModals } from "../../shared/print/SupplierPrintEditorModals";
+import { useSupplierPrintEditor } from "../../shared/print/useSupplierPrintEditor";
 import { usePCRActions } from "../hooks/usePCRActions";
 import { useUnifiedApprovals } from "../hooks/useUnifiedApprovals";
 import type { SupplierOption } from "../providers/pcrApi";
@@ -54,6 +59,12 @@ export function ListCostRequestManager({
 
     const statusTab: PCRStatusFilter = inbox.query.status || "ALL";
     const showBulkBar = false;
+    const { openSupplierPrint, modalsProps: printModalsProps } = useSupplierPrintEditor();
+    const listCostExportImport = useListCostSupplierExportImport({
+        supplierIds: query.supplier_ids,
+        suppliers,
+        onOpenPrintEditor: openSupplierPrint,
+    });
 
     const [viewingCostBatchHeaderId, setViewingCostBatchHeaderId] = React.useState<number | null>(null);
     const [viewingRequestId, setViewingRequestId] = React.useState<number | null>(null);
@@ -153,14 +164,23 @@ export function ListCostRequestManager({
 
     return (
         <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <PcrStatusTabs
                     value={statusTab as string}
                     onValueChange={(status) => {
                         clearSelection();
                         inbox.setQuery((q) => ({ ...q, status, page: 1 }));
                     }}
-                    className="w-full"
+                    className="w-full sm:w-auto"
+                />
+                <PcrTabExportImportActions
+                    mode="cost"
+                    busy={listCostExportImport.busy}
+                    onExportPdf={() => void listCostExportImport.handleExportPdf()}
+                    onExportExcel={() => void listCostExportImport.handleExportExcel()}
+                    onImportExcelClick={listCostExportImport.handleImportExcelClick}
+                    onImportExcelFile={listCostExportImport.handleImportExcelFile}
+                    importFileInputRef={listCostExportImport.importFileInputRef}
                 />
             </div>
 
@@ -411,6 +431,19 @@ export function ListCostRequestManager({
                 result={bulkActionOutcome?.result ?? null}
                 snapshots={bulkActionOutcome?.snapshots ?? []}
             />
+
+            <CreateListCostBatchDialog
+                open={listCostExportImport.reviewOpen}
+                onOpenChange={(open) => {
+                    listCostExportImport.setReviewOpen(open);
+                    if (!open) listCostExportImport.clearImportPrefill();
+                }}
+                importPrefill={listCostExportImport.importPrefill}
+                onCreated={() => void inbox.refresh()}
+                onUnauthorized={onUnauthorized}
+            />
+
+            <SupplierPrintEditorModals {...printModalsProps} />
         </div>
     );
 }

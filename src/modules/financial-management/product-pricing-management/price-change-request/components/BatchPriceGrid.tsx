@@ -24,6 +24,10 @@ type Props = {
     groupIdFor: (product: api.ProductSearchRow) => number;
     isChildVariant: (product: api.ProductSearchRow) => boolean;
     onDraftPriceChange: (product: api.ProductSearchRow, priceTypeId: number, value: string) => void;
+    showListCost?: boolean;
+    draftCosts?: Map<number, string>;
+    currentCostFor?: (product: api.ProductSearchRow) => number | null;
+    onDraftCostChange?: (product: api.ProductSearchRow, value: string) => void;
 };
 
 export function BatchPriceGrid({
@@ -40,15 +44,26 @@ export function BatchPriceGrid({
     groupIdFor,
     isChildVariant,
     onDraftPriceChange,
+    showListCost = false,
+    draftCosts,
+    currentCostFor,
+    onDraftCostChange,
 }: Props) {
     const handlePasteCell = React.useCallback(
         (row: number, col: number, value: string) => {
             const product = products[row];
-            const priceType = priceTypes[col];
-            if (!product || !priceType) return;
+            if (!product) return;
+
+            if (showListCost && col === 0) {
+                onDraftCostChange?.(product, value);
+                return;
+            }
+
+            const priceType = priceTypes[showListCost ? col - 1 : col];
+            if (!priceType) return;
             onDraftPriceChange(product, priceType.price_type_id, value);
         },
-        [onDraftPriceChange, priceTypes, products],
+        [onDraftCostChange, onDraftPriceChange, priceTypes, products, showListCost],
     );
 
     return (
@@ -86,7 +101,54 @@ export function BatchPriceGrid({
                             </div>
 
                             <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
+                                {showListCost ? (
+                                    <div className="min-w-0 rounded-md border bg-background p-2">
+                                        <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
+                                            <div className="truncate text-xs font-medium" title="List Cost">
+                                                List Cost
+                                            </div>
+                                            <div className="shrink-0 text-[11px] text-muted-foreground">
+                                                {formatMoney(currentCostFor?.(product) ?? null)}
+                                            </div>
+                                        </div>
+                                        <Input
+                                            inputMode="decimal"
+                                            value={draftCosts?.get(product.product_id) ?? ""}
+                                            onChange={(event) =>
+                                                onDraftCostChange?.(product, event.target.value)
+                                            }
+                                            onKeyDown={(event) => gridNav.onKeyDown(event, rowIndex, 0)}
+                                            onPaste={(event) =>
+                                                gridNav.onPaste(event, rowIndex, 0, handlePasteCell)
+                                            }
+                                            onFocus={() => gridNav.setActive(rowIndex, 0)}
+                                            ref={(el) => gridNav.register(rowIndex, 0, el)}
+                                            placeholder="Proposed"
+                                            aria-label={`Proposed list cost, row ${rowIndex + 1}`}
+                                            aria-invalid={Boolean(
+                                                (draftCosts?.get(product.product_id) ?? "").trim() &&
+                                                    parsePriceInput(
+                                                        draftCosts?.get(product.product_id) ?? "",
+                                                    ).error,
+                                            )}
+                                            disabled={saving}
+                                            className="h-8 text-right text-sm"
+                                        />
+                                        {(draftCosts?.get(product.product_id) ?? "").trim() &&
+                                        parsePriceInput(draftCosts?.get(product.product_id) ?? "").error ? (
+                                            <div className="mt-1 text-[11px] text-destructive">
+                                                {
+                                                    parsePriceInput(
+                                                        draftCosts?.get(product.product_id) ?? "",
+                                                    ).error
+                                                }
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+
                                 {priceTypes.map((priceType, colIndex) => {
+                                    const gridColIndex = showListCost ? colIndex + 1 : colIndex;
                                     const key = cellKey(product.product_id, priceType.price_type_id);
                                     const rawValue = draftPrices.get(key) ?? "";
                                     const parsed = parsePriceInput(rawValue);
@@ -114,13 +176,18 @@ export function BatchPriceGrid({
                                                     )
                                                 }
                                                 onKeyDown={(event) =>
-                                                    gridNav.onKeyDown(event, rowIndex, colIndex)
+                                                    gridNav.onKeyDown(event, rowIndex, gridColIndex)
                                                 }
                                                 onPaste={(event) =>
-                                                    gridNav.onPaste(event, rowIndex, colIndex, handlePasteCell)
+                                                    gridNav.onPaste(
+                                                        event,
+                                                        rowIndex,
+                                                        gridColIndex,
+                                                        handlePasteCell,
+                                                    )
                                                 }
-                                                onFocus={() => gridNav.setActive(rowIndex, colIndex)}
-                                                ref={(el) => gridNav.register(rowIndex, colIndex, el)}
+                                                onFocus={() => gridNav.setActive(rowIndex, gridColIndex)}
+                                                ref={(el) => gridNav.register(rowIndex, gridColIndex, el)}
                                                 placeholder="Proposed"
                                                 aria-label={`Proposed price, row ${rowIndex + 1}, ${label}`}
                                                 aria-invalid={Boolean(hasError)}

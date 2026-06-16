@@ -671,6 +671,7 @@ function intersectHeaderIds(left: number[], right: number[]): number[] {
 }
 
 const HEADER_ID_CHUNK_SIZE = 200;
+const STANDALONE_PRODUCT_CHUNK_SIZE = 200;
 
 function appendChunkedHeaderIds(params: URLSearchParams, andIdx: number, headerIds: number[]): number {
     if (headerIds.length === 0) {
@@ -803,16 +804,24 @@ function appendCostFilters(params: URLSearchParams, filters: ApprovalFilters, su
     return andIdx;
 }
 
-async function fetchPriceRequestsPage(
+function appendStandaloneProductChunk(params: URLSearchParams, andIdx: number, productIds: number[]): number {
+    if (productIds.length === 0) return andIdx;
+    params.set(`filter[_and][${andIdx}][product_id][_in]`, productIds.join(","));
+    return andIdx + 1;
+}
+
+function chunkIds(ids: number[], size: number): number[][] {
+    const chunks: number[][] = [];
+    for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size));
+    return chunks;
+}
+
+async function fetchPriceRequestsDirectPage(
     filters: ApprovalFilters,
     offset: number,
     limit: number,
     supplierProductIds?: number[],
 ): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
-    if (filters.supplierIds.length > 0 && (!supplierProductIds || supplierProductIds.length === 0)) {
-        return { rows: [], total: 0 };
-    }
-
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, limit)));
     params.set("offset", String(Math.max(0, offset)));
@@ -887,6 +896,42 @@ async function fetchPriceRequestsPage(
         rows,
         total: Number(json.meta?.total_count ?? rows.length),
     };
+}
+
+async function fetchChunkedPriceRequestsPage(
+    filters: ApprovalFilters,
+    offset: number,
+    limit: number,
+    supplierProductIds: number[],
+): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
+    const needed = offset + limit;
+    const pages = await Promise.all(
+        chunkIds(supplierProductIds, STANDALONE_PRODUCT_CHUNK_SIZE).map((chunk) =>
+            fetchPriceRequestsDirectPage(filters, 0, needed, chunk),
+        ),
+    );
+    const mergedRows = mergeUnifiedRows(...pages.map((page) => page.rows));
+    return {
+        rows: mergedRows.slice(offset, offset + limit),
+        total: pages.reduce((sum, page) => sum + page.total, 0),
+    };
+}
+
+async function fetchPriceRequestsPage(
+    filters: ApprovalFilters,
+    offset: number,
+    limit: number,
+    supplierProductIds?: number[],
+): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
+    if (filters.supplierIds.length > 0 && (!supplierProductIds || supplierProductIds.length === 0)) {
+        return { rows: [], total: 0 };
+    }
+
+    if (supplierProductIds && supplierProductIds.length > STANDALONE_PRODUCT_CHUNK_SIZE) {
+        return fetchChunkedPriceRequestsPage(filters, offset, limit, supplierProductIds);
+    }
+
+    return fetchPriceRequestsDirectPage(filters, offset, limit, supplierProductIds);
 }
 
 async function fetchPriceBatchesPage(
@@ -1058,16 +1103,12 @@ async function fetchCostBatchesPage(
     };
 }
 
-async function fetchCostRequestsPage(
+async function fetchCostRequestsDirectPage(
     filters: ApprovalFilters,
     offset: number,
     limit: number,
     supplierProductIds?: number[],
 ): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
-    if (filters.supplierIds.length > 0 && (!supplierProductIds || supplierProductIds.length === 0)) {
-        return { rows: [], total: 0 };
-    }
-
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, limit)));
     params.set("offset", String(Math.max(0, offset)));
@@ -1093,7 +1134,10 @@ async function fetchCostRequestsPage(
         ].join(","),
     );
 
-    const nextAndIdx = appendCostFilters(params, filters, supplierProductIds);
+    let nextAndIdx = appendCostFilters(params, filters, undefined);
+    if (supplierProductIds && supplierProductIds.length > 0) {
+        nextAndIdx = appendStandaloneProductChunk(params, nextAndIdx, supplierProductIds);
+    }
     const linkedFilterKey = `filter[_and][${nextAndIdx}][header_id][_null]`;
     params.set(linkedFilterKey, "true");
 
@@ -1140,6 +1184,42 @@ async function fetchCostRequestsPage(
         rows,
         total: Number(json.meta?.total_count ?? rows.length),
     };
+}
+
+async function fetchChunkedCostRequestsPage(
+    filters: ApprovalFilters,
+    offset: number,
+    limit: number,
+    supplierProductIds: number[],
+): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
+    const needed = offset + limit;
+    const pages = await Promise.all(
+        chunkIds(supplierProductIds, STANDALONE_PRODUCT_CHUNK_SIZE).map((chunk) =>
+            fetchCostRequestsDirectPage(filters, 0, needed, chunk),
+        ),
+    );
+    const mergedRows = mergeUnifiedRows(...pages.map((page) => page.rows));
+    return {
+        rows: mergedRows.slice(offset, offset + limit),
+        total: pages.reduce((sum, page) => sum + page.total, 0),
+    };
+}
+
+async function fetchCostRequestsPage(
+    filters: ApprovalFilters,
+    offset: number,
+    limit: number,
+    supplierProductIds?: number[],
+): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
+    if (filters.supplierIds.length > 0 && (!supplierProductIds || supplierProductIds.length === 0)) {
+        return { rows: [], total: 0 };
+    }
+
+    if (supplierProductIds && supplierProductIds.length > STANDALONE_PRODUCT_CHUNK_SIZE) {
+        return fetchChunkedCostRequestsPage(filters, offset, limit, supplierProductIds);
+    }
+
+    return fetchCostRequestsDirectPage(filters, offset, limit, supplierProductIds);
 }
 
 export async function GET(req: NextRequest) {

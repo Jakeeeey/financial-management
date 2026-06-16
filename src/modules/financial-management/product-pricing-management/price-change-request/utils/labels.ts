@@ -245,3 +245,12 @@ export function priceTypeLabel(r: PriceChangeRequestRow) {
 
     return `#${r.price_type_id}`;
 }
+
+export function decisionUserLabel(
+    _userId: number | string | null | undefined,
+    userName: string | null | undefined,
+): string {
+    const resolvedName = String(userName ?? "").trim();
+    if (resolvedName) return resolvedName;
+    return "-";
+}

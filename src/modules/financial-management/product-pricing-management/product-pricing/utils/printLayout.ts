@@ -12,6 +12,7 @@ export type PrintLayoutOptions = {
     orientation?: PrintOrientation;
     compact?: boolean;
     fontSize?: number;
+    blocksPerPage?: number;
 };
 
 const PAPER_SIZES_PT: Record<PrintPaper, { width: number; height: number }> = {
@@ -56,6 +57,8 @@ export type PrintPageMetrics = {
     headerHeightContinuation: number;
     footerReserve: number;
     compact: boolean;
+    blocksPerPage: number;
+    blockSlotHeight: number | null;
 };
 
 export function getPrintPageMetrics(
@@ -64,24 +67,30 @@ export function getPrintPageMetrics(
     options: PrintLayoutOptions & { layoutLabel: "Table" | "Cards" },
 ): PrintPageMetrics {
     const compact = options.compact ?? true;
+    const blocksPerPage = Math.max(1, options.blocksPerPage ?? 1);
+    const denseBlocks = blocksPerPage > 1;
     const marginPt = compact ? PAGE_MARGIN_PT : NORMAL_MARGIN_PT;
-    const gap = compact ? 6 : 12;
-    const minCardWidth = compact ? 280 : 320;
-
+    const gap = denseBlocks ? 4 : compact ? 6 : 12;
     const contentLeft = marginPt;
     const contentWidth = pageWidth - marginPt * 2;
+    const minCardWidth = compact ? 280 : 320;
     const footerReserve = 14;
-    const headerHeight = compact ? 34 : 50;
+    const headerHeight = compact ? (denseBlocks ? 40 : 34) : 50;
     const headerHeightContinuation = compact ? 16 : 24;
     const contentTop = marginPt + headerHeight + (compact ? 4 : 8);
     const contentBottom = pageHeight - marginPt;
 
     let columns = 1;
-    if (options.layoutLabel === "Cards") {
+    if (options.layoutLabel === "Cards" && !denseBlocks) {
         columns = Math.max(1, Math.floor((contentWidth + gap) / (minCardWidth + gap)));
     }
 
     const cardWidth = columns > 0 ? (contentWidth - gap * (columns - 1)) / columns : contentWidth;
+    const usableHeight = contentBottom - contentTop - footerReserve;
+    const blockSlotHeight =
+        blocksPerPage > 1
+            ? (usableHeight - gap * (blocksPerPage - 1)) / blocksPerPage
+            : null;
 
     return {
         marginPt,
@@ -93,15 +102,17 @@ export function getPrintPageMetrics(
         columns,
         cardWidth,
         gap,
-        lineHeight: compact ? 10 : 12,
-        cardPadding: compact ? 8 : 10,
-        pillHeight: compact ? 12 : 14,
-        tableHeaderHeight: compact ? 15 : 17,
-        tableRowHeight: compact ? 15 : 18,
+        lineHeight: denseBlocks ? 8 : compact ? 10 : 12,
+        cardPadding: denseBlocks ? 5 : compact ? 8 : 10,
+        pillHeight: denseBlocks ? 10 : compact ? 12 : 14,
+        tableHeaderHeight: denseBlocks ? 12 : compact ? 15 : 17,
+        tableRowHeight: denseBlocks ? 12 : compact ? 15 : 18,
         headerHeight,
         headerHeightContinuation,
         footerReserve,
         compact,
+        blocksPerPage,
+        blockSlotHeight,
     };
 }
 

@@ -12,7 +12,9 @@ import { Button } from "@/components/ui/button";
 import { ApproveDialog } from "./ApproveDialog";
 import { BulkPriceTypeActionResultDialog } from "./BulkPriceTypeActionResultDialog";
 import { BulkPriceTypeApprovePreview } from "./BulkPriceTypeApprovePreview";
+import { CreatePriceChangeBatchDialog } from "./CreatePriceChangeBatchDialog";
 import { PcrStatusTabs } from "./PcrStatusTabs";
+import { PcrTabExportImportActions } from "./PcrTabExportImportActions";
 import { PriceChangeBatchDetailDialog } from "./PriceChangeBatchDetailDialog";
 import { PriceTypeRequestDetailDialog } from "./PriceTypeRequestDetailDialog";
 import { RejectDialog } from "./RejectDialog";
@@ -20,6 +22,9 @@ import { RequestFiltersBar } from "./RequestFiltersBar";
 import RequestsTable from "./RequestsTable";
 
 import { useRequestBulkSelection } from "../hooks/useRequestBulkSelection";
+import { usePriceTypeSupplierExportImport } from "../hooks/usePriceTypeSupplierExportImport";
+import { SupplierPrintEditorModals } from "../../shared/print/SupplierPrintEditorModals";
+import { useSupplierPrintEditor } from "../../shared/print/useSupplierPrintEditor";
 import { useUnifiedApprovals } from "../hooks/useUnifiedApprovals";
 import type { SupplierOption } from "../providers/pcrApi";
 import * as pcrApi from "../providers/pcrApi";
@@ -61,6 +66,12 @@ export function PriceTypeRequestManager({
 }: Props) {
     const inbox = useUnifiedApprovals(query, setQuery, { scope: "price", enabled: active });
     const statusTab: PCRStatusFilter = inbox.query.status || "ALL";
+    const { openSupplierPrint, modalsProps: printModalsProps } = useSupplierPrintEditor();
+    const priceExportImport = usePriceTypeSupplierExportImport({
+        supplierIds: query.supplier_ids,
+        suppliers,
+        onOpenPrintEditor: openSupplierPrint,
+    });
     const [viewingBatchHeaderId, setViewingBatchHeaderId] = React.useState<number | null>(null);
     const [viewingRequestId, setViewingRequestId] = React.useState<number | null>(null);
     const [confirmingBatchHeaderId, setConfirmingBatchHeaderId] = React.useState<number | null>(null);
@@ -233,14 +244,25 @@ export function PriceTypeRequestManager({
 
     return (
         <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <PcrStatusTabs
                     value={statusTab as string}
                     onValueChange={(status) => {
                         clearSelection();
                         inbox.setQuery((q) => ({ ...q, status, page: 1 }));
                     }}
-                    className="w-full"
+                    className="w-full sm:w-auto"
+                />
+                <PcrTabExportImportActions
+                    mode="price"
+                    busy={priceExportImport.busy}
+                    onExportPdf={() => void priceExportImport.handleExportPdf()}
+                    onExportExcel={() => void priceExportImport.handleExportExcel()}
+                    onImportExcelClick={priceExportImport.handleImportExcelClick}
+                    onImportExcelFile={priceExportImport.handleImportExcelFile}
+                    importFileInputRef={priceExportImport.importFileInputRef}
+                    showNewBatch
+                    onNewBatch={() => priceExportImport.setCreatingBatch(true)}
                 />
             </div>
 
@@ -557,6 +579,19 @@ export function PriceTypeRequestManager({
                 result={bulkActionOutcome?.result ?? null}
                 snapshots={bulkActionOutcome?.snapshots ?? []}
             />
+
+            <CreatePriceChangeBatchDialog
+                open={priceExportImport.creatingBatch}
+                onOpenChange={(open) => {
+                    priceExportImport.setCreatingBatch(open);
+                    if (!open) priceExportImport.clearImportPrefill();
+                }}
+                suppliers={suppliers}
+                onCreated={() => void inbox.refresh()}
+                importPrefill={priceExportImport.importPrefill}
+            />
+
+            <SupplierPrintEditorModals {...printModalsProps} />
         </div>
     );
 }

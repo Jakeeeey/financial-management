@@ -29,6 +29,7 @@ import {
 import { EMPTY_PRICE_ERROR, validatePrice } from "../utils/validators";
 import { applyLoadError } from "../../shared/loadErrorState";
 import { isUnauthorizedError } from "../../shared/apiHttp";
+import type { SupplierBatchPriceChange } from "../../shared/supplier-batch/supplierBatchExcel";
 
 type DirtyKey = `${number}:${ProductTierKey}`;
 type PendingKey = `${number}:${ProductTierKey}`;
@@ -767,6 +768,69 @@ export function usePricingMatrix(args: {
         bumpDirtyVersion();
     }, [bumpDirtyVersion]);
 
+    const applyImportedPriceChanges = useCallback(
+        (changes: SupplierBatchPriceChange[]): number => {
+            const pendingUpdates: Array<{
+                key: DirtyKey;
+                value: string;
+                meta: DirtyCellMeta;
+            }> = [];
+
+            for (const change of changes) {
+                const tier = String(change.price_type_id);
+                const key: DirtyKey = `${change.product_id}:${tier}`;
+                if (pendingMapRef.current.has(key)) continue;
+
+                const value = clampMoney(change.proposed_price);
+                const err = validatePrice(value);
+                if (err) continue;
+                if (moneyValuesEqual(value, change.current_price)) continue;
+
+                const existing = snapshotDirtyCellMeta(rowsRef.current, change.product_id, tier);
+                pendingUpdates.push({
+                    key,
+                    value: String(value),
+                    meta: {
+                        product_name: change.product_name || existing.product_name,
+                        product_code: change.product_code ?? existing.product_code,
+                        current_value: change.current_price ?? existing.current_value,
+                    },
+                });
+            }
+
+            if (pendingUpdates.length === 0) return 0;
+
+            setDirty((prev) => {
+                const next = new Map(prev);
+                for (const { key, value } of pendingUpdates) {
+                    next.set(key, value);
+                }
+                dirtyRef.current = next;
+                return next;
+            });
+
+            setDirtyErrors((prev) => {
+                const next = new Map(prev);
+                for (const { key } of pendingUpdates) {
+                    next.delete(key);
+                }
+                return next;
+            });
+
+            setDirtyMeta((prev) => {
+                const next = new Map(prev);
+                for (const { key, meta } of pendingUpdates) {
+                    next.set(key, meta);
+                }
+                return next;
+            });
+
+            bumpDirtyVersion();
+            return pendingUpdates.length;
+        },
+        [bumpDirtyVersion],
+    );
+
     const resetFilters = useCallback(() => {
         setFilters(defaultFilters);
         setPage(1);
@@ -837,6 +901,7 @@ export function usePricingMatrix(args: {
             dirtyPreviewLines,
             saveAll,
             discardAll,
+            applyImportedPriceChanges,
         }),
         [
             dirtyVersion,
@@ -845,6 +910,7 @@ export function usePricingMatrix(args: {
             dirtyPreviewLines,
             saveAll,
             discardAll,
+            applyImportedPriceChanges,
         ],
     );
 

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, CheckCheck, Loader2, Plus, X } from "lucide-react";
+import { AlertCircle, CheckCheck, Loader2, X } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { BulkPriceTypeActionResultDialog } from "./BulkPriceTypeActionResultDial
 import { BulkPriceTypeApprovePreview } from "./BulkPriceTypeApprovePreview";
 import { CreatePriceChangeBatchDialog } from "./CreatePriceChangeBatchDialog";
 import { PcrStatusTabs } from "./PcrStatusTabs";
+import { PcrTabExportImportActions } from "./PcrTabExportImportActions";
 import { ListPriceRequestDetailDialog } from "./ListPriceRequestDetailDialog";
 import { ListCostBatchDetailDialog } from "./ListCostBatchDetailDialog";
 import { PriceChangeBatchDetailDialog } from "./PriceChangeBatchDetailDialog";
@@ -23,6 +24,9 @@ import RequestsTable from "./RequestsTable";
 
 import { useRequestBulkSelection } from "../hooks/useRequestBulkSelection";
 import { usePCRActions } from "../hooks/usePCRActions";
+import { usePriceTypeSupplierExportImport } from "../hooks/usePriceTypeSupplierExportImport";
+import { SupplierPrintEditorModals } from "../../shared/print/SupplierPrintEditorModals";
+import { useSupplierPrintEditor } from "../../shared/print/useSupplierPrintEditor";
 import { pcrApproveButtonClass, pcrRejectButtonClass } from "../utils/pcrStatusStyles";
 import { useUnifiedApprovals } from "../hooks/useUnifiedApprovals";
 import { isUnauthorizedError } from "../../shared/apiHttp";
@@ -79,7 +83,13 @@ export function UnifiedApprovalsManager({
     const feed = useUnifiedApprovals(query, setQuery, { enabled: active });
     const statusTab: PCRStatusFilter = feed.query.status || "ALL";
 
-    const [creatingBatch, setCreatingBatch] = React.useState(false);
+    const { openSupplierPrint, modalsProps: printModalsProps } = useSupplierPrintEditor();
+    const priceExportImport = usePriceTypeSupplierExportImport({
+        supplierIds: query.supplier_ids,
+        suppliers,
+        includeListCost: true,
+        onOpenPrintEditor: openSupplierPrint,
+    });
     const [viewingBatchHeaderId, setViewingBatchHeaderId] = React.useState<number | null>(null);
     const [viewingCostBatchHeaderId, setViewingCostBatchHeaderId] = React.useState<number | null>(null);
     const [viewingCostRequestId, setViewingCostRequestId] = React.useState<number | null>(null);
@@ -396,10 +406,17 @@ export function UnifiedApprovalsManager({
                     }}
                 />
 
-                <Button type="button" onClick={() => setCreatingBatch(true)} className="w-full sm:w-auto">
-                    <Plus className="mr-2 h-4 w-4" />
-                    New Batch
-                </Button>
+                <PcrTabExportImportActions
+                    mode="price"
+                    busy={priceExportImport.busy}
+                    onExportPdf={() => void priceExportImport.handleExportPdf()}
+                    onExportExcel={() => void priceExportImport.handleExportExcel()}
+                    onImportExcelClick={priceExportImport.handleImportExcelClick}
+                    onImportExcelFile={priceExportImport.handleImportExcelFile}
+                    importFileInputRef={priceExportImport.importFileInputRef}
+                    showNewBatch
+                    onNewBatch={() => priceExportImport.setCreatingBatch(true)}
+                />
             </div>
 
             <div className="space-y-3">
@@ -612,10 +629,14 @@ export function UnifiedApprovalsManager({
             />
 
             <CreatePriceChangeBatchDialog
-                open={creatingBatch}
-                onOpenChange={setCreatingBatch}
+                open={priceExportImport.creatingBatch}
+                onOpenChange={(open) => {
+                    priceExportImport.setCreatingBatch(open);
+                    if (!open) priceExportImport.clearImportPrefill();
+                }}
                 suppliers={suppliers}
                 onCreated={feed.refresh}
+                importPrefill={priceExportImport.importPrefill}
             />
 
             <RejectDialog
@@ -809,6 +830,8 @@ export function UnifiedApprovalsManager({
                 result={bulkPriceActionOutcome?.result ?? null}
                 snapshots={bulkPriceActionOutcome?.snapshots ?? []}
             />
+
+            <SupplierPrintEditorModals {...printModalsProps} />
         </div>
     );
 }

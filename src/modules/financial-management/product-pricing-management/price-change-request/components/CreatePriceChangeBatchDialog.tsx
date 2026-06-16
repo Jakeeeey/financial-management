@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 import * as api from "../providers/pcrApi";
-import type { CreatePriceChangeBatchPayload } from "../types";
+import type { BatchImportPrefill, CreateCCRPayload, CreatePriceChangeBatchPayload } from "../types";
 import { buildTierPriceMap, lookupTierPrice } from "../utils/tierPriceLookup";
 import {
     buildVariantGroupIndex,
@@ -32,6 +32,7 @@ type Props = {
     onOpenChange: (open: boolean) => void;
     suppliers: api.SupplierOption[];
     onCreated: () => void;
+    importPrefill?: BatchImportPrefill | null;
 };
 
 function safeStr(value: unknown): string {
@@ -98,6 +99,7 @@ export function CreatePriceChangeBatchDialog({
     onOpenChange,
     suppliers,
     onCreated,
+    importPrefill = null,
 }: Props) {
     const [supplierId, setSupplierId] = React.useState("");
     const [referenceNo, setReferenceNo] = React.useState("");
@@ -110,6 +112,8 @@ export function CreatePriceChangeBatchDialog({
     const [productCatalog, setProductCatalog] = React.useState<Map<number, api.ProductSearchRow>>(new Map());
     const [tierPriceMap, setTierPriceMap] = React.useState<Map<string, number | null>>(new Map());
     const [draftPrices, setDraftPrices] = React.useState<Map<string, string>>(new Map());
+    const [draftCosts, setDraftCosts] = React.useState<Map<number, string>>(new Map());
+    const [currentCostMap, setCurrentCostMap] = React.useState<Map<number, number | null>>(new Map());
     const [catalogPage, setCatalogPage] = React.useState(1);
     const [catalogPageSize, setCatalogPageSize] = React.useState(DEFAULT_CATALOG_PAGE_SIZE);
     const [catalogTotal, setCatalogTotal] = React.useState(0);
@@ -123,6 +127,8 @@ export function CreatePriceChangeBatchDialog({
     const [loadingVariantIndex, setLoadingVariantIndex] = React.useState(false);
     const [loadError, setLoadError] = React.useState<string | null>(null);
     const [saving, setSaving] = React.useState(false);
+    const [importedProductIds, setImportedProductIds] = React.useState<number[]>([]);
+    const [catalogViewMode, setCatalogViewMode] = React.useState<"catalog" | "imported">("catalog");
 
     const productCatalogRef = React.useRef(productCatalog);
     const tierPriceMapRef = React.useRef(tierPriceMap);
@@ -134,6 +140,8 @@ export function CreatePriceChangeBatchDialog({
         setProductCatalog(new Map());
         setTierPriceMap(new Map());
         setDraftPrices(new Map());
+        setDraftCosts(new Map());
+        setCurrentCostMap(new Map());
         setVariantGroupIndex(new Map());
         setCatalogPage(1);
         setCatalogPageSize(DEFAULT_CATALOG_PAGE_SIZE);
@@ -154,8 +162,29 @@ export function CreatePriceChangeBatchDialog({
             resetCatalogState();
             setLoadError(null);
             setSaving(false);
+            setImportedProductIds([]);
+            setCatalogViewMode("catalog");
         }
     }, [open, resetCatalogState]);
+
+    React.useEffect(() => {
+        if (!open || !importPrefill) return;
+
+        setSupplierId(String(importPrefill.supplierId));
+        setRemarks(importPrefill.remarks);
+        setReferenceNo("");
+        setErrors({});
+        setProductCatalog(new Map(importPrefill.productCatalog));
+        setTierPriceMap(new Map(importPrefill.tierPriceMap));
+        setDraftPrices(new Map(importPrefill.draftPrices));
+        setDraftCosts(new Map(importPrefill.draftCosts));
+        setCurrentCostMap(new Map(importPrefill.currentCostMap));
+        setImportedProductIds(importPrefill.importedProductIds);
+        setCatalogViewMode("imported");
+        setCatalogPage(1);
+        setCatalogQuery("");
+        setLocalCatalogQ("");
+    }, [open, importPrefill]);
 
     React.useEffect(() => {
         if (!open) return;
@@ -311,6 +340,15 @@ export function CreatePriceChangeBatchDialog({
         setCatalogPage(1);
     }, [localCatalogQ]);
 
+    const importedProducts = React.useMemo(() => {
+        return importedProductIds
+            .map((productId) => productCatalog.get(productId))
+            .filter((product): product is api.ProductSearchRow => Boolean(product));
+    }, [importedProductIds, productCatalog]);
+
+    const gridProducts = catalogViewMode === "imported" ? importedProducts : products;
+    const showingImportedView = catalogViewMode === "imported" && importedProductIds.length > 0;
+
     const catalogStartIndex =
         catalogTotal > 0 && products.length > 0 ? (catalogPage - 1) * catalogPageSize + 1 : 0;
     const catalogEndIndex =
@@ -364,17 +402,49 @@ export function CreatePriceChangeBatchDialog({
     );
 
     const validation = React.useMemo(() => {
-        let validCount = 0;
-        const invalidKeys = new Set<string>();
+        let validPriceCount = 0;
+        let validCostCount = 0;
+        const invalidPriceKeys = new Set<string>();
+        const invalidCostIds = new Set<number>();
 
         for (const [key, raw] of draftPrices) {
             const result = parsePriceInput(raw);
-            if (result.error) invalidKeys.add(key);
-            if (result.value !== null) validCount += 1;
+            if (result.error) invalidPriceKeys.add(key);
+            if (result.value !== null) validPriceCount += 1;
         }
 
-        return { validCount, invalidKeys };
-    }, [draftPrices]);
+        for (const [productId, raw] of draftCosts) {
+            const result = parsePriceInput(raw);
+            if (result.error) invalidCostIds.add(productId);
+            if (result.value !== null) validCostCount += 1;
+        }
+
+        return {
+            validPriceCount,
+            validCostCount,
+            validCount: validPriceCount + validCostCount,
+            invalidPriceKeys,
+            invalidCostIds,
+            invalidKeys: invalidPriceKeys,
+        };
+    }, [draftCosts, draftPrices]);
+
+    const showListCost = draftCosts.size > 0;
+
+    const currentCostFor = React.useCallback(
+        (product: api.ProductSearchRow) => currentCostMap.get(product.product_id) ?? null,
+        [currentCostMap],
+    );
+
+    const setDraftCost = React.useCallback((product: api.ProductSearchRow, value: string) => {
+        setDraftCosts((prev) => {
+            const next = new Map(prev);
+            if (value.trim()) next.set(product.product_id, value);
+            else next.delete(product.product_id);
+            return next;
+        });
+        setErrors((prev) => ({ ...prev, lines: undefined }));
+    }, []);
 
     const setDraftPrice = React.useCallback(
         (product: api.ProductSearchRow, priceTypeId: number, value: string) => {
@@ -470,6 +540,27 @@ export function CreatePriceChangeBatchDialog({
         return lines;
     }, [applyParentPriceToChildren, currentPriceFor, draftPrices, priceTypesById, variantGroupIndex]);
 
+    const buildCostLines = React.useCallback((): CreateCCRPayload[] => {
+        const items: CreateCCRPayload[] = [];
+        const catalog = productCatalogRef.current;
+
+        for (const [productId, raw] of draftCosts) {
+            const parsed = parsePriceInput(raw);
+            if (parsed.value === null || parsed.error) continue;
+
+            const product = catalog.get(productId);
+            if (!product) continue;
+
+            items.push({
+                product_id: productId,
+                proposed_cost: parsed.value,
+                current_cost: currentCostMap.get(productId) ?? null,
+            });
+        }
+
+        return items;
+    }, [currentCostMap, draftCosts]);
+
     React.useEffect(() => {
         if (!applyParentPriceToChildren || variantGroupIndex.size === 0 || draftPrices.size === 0) {
             return;
@@ -518,8 +609,8 @@ export function CreatePriceChangeBatchDialog({
     ]);
 
     const gridNav = useEditableGridNavigation({
-        rowCount: products.length,
-        colCount: priceTypes.length,
+        rowCount: gridProducts.length,
+        colCount: priceTypes.length + (showListCost ? 1 : 0),
         disabled: saving,
         onPasteSkipped: (count) => {
             toast.warning(
@@ -536,7 +627,8 @@ export function CreatePriceChangeBatchDialog({
         Boolean(supplierId) &&
         Boolean(remarks.trim()) &&
         validation.validCount > 0 &&
-        validation.invalidKeys.size === 0;
+        validation.invalidPriceKeys.size === 0 &&
+        validation.invalidCostIds.size === 0;
 
     const handleSubmit = React.useCallback(async () => {
         const nextErrors: FieldErrors = {};
@@ -550,8 +642,8 @@ export function CreatePriceChangeBatchDialog({
         if (!trimmedRemarks) {
             nextErrors.remarks = "Remarks is required.";
         }
-        if (validation.invalidKeys.size > 0) {
-            nextErrors.lines = "Fix invalid proposed prices before submitting.";
+        if (validation.invalidPriceKeys.size > 0 || validation.invalidCostIds.size > 0) {
+            nextErrors.lines = "Fix invalid proposed prices or list costs before submitting.";
         }
 
         setErrors(nextErrors);
@@ -563,25 +655,70 @@ export function CreatePriceChangeBatchDialog({
                 await ensureCatalogHydrated(collectChildIdsForPropagation(draftPrices));
             }
 
-            const lines = buildLines();
-            if (lines.length === 0) {
-                setErrors({ lines: "Enter at least one proposed price." });
+            const priceLines = buildLines();
+            const costItems = buildCostLines();
+
+            if (priceLines.length === 0 && costItems.length === 0) {
+                setErrors({ lines: "Enter at least one proposed price or list cost." });
                 return;
             }
-            const result = await api.createPriceChangeBatch({
+
+            const batchPayload = {
                 supplier_id: selectedSupplierId,
                 reference_no: trimmedReferenceNo || undefined,
                 remarks: trimmedRemarks,
-                lines,
+            };
+
+            if (priceLines.length > 0 && costItems.length > 0) {
+                const result = await api.saveMixedPricingChanges({
+                    batch: batchPayload,
+                    price_lines: priceLines,
+                    cost_items: costItems,
+                });
+
+                const created = Number(result.created ?? 0);
+                if (created > 0) {
+                    toast.success(
+                        `Created ${result.price.created ?? 0} price line(s) and ${result.cost.created ?? 0} list cost line(s).`,
+                    );
+                    onCreated();
+                    onOpenChange(false);
+                } else {
+                    toast.info("No pending records were created.");
+                }
+                return;
+            }
+
+            if (priceLines.length > 0) {
+                const result = await api.createPriceChangeBatch({
+                    ...batchPayload,
+                    lines: priceLines,
+                });
+
+                const created = Number(result.created ?? 0);
+                if (created > 0) {
+                    toast.success(`Created price change batch with ${created} line(s).${summarizeCreated(result)}`);
+                    onCreated();
+                    onOpenChange(false);
+                } else {
+                    toast.info(`No batch was created.${summarizeCreated(result)}`);
+                }
+                return;
+            }
+
+            const result = await api.createBulkCostChangeRequests({
+                items: costItems,
+                reference_no: trimmedReferenceNo || undefined,
+                remarks: trimmedRemarks,
             });
 
             const created = Number(result.created ?? 0);
             if (created > 0) {
-                toast.success(`Created price change batch with ${created} line(s).${summarizeCreated(result)}`);
+                toast.success(`Created list cost batch with ${created} line(s).${summarizeCreated(result)}`);
                 onCreated();
                 onOpenChange(false);
             } else {
-                toast.info(`No batch was created.${summarizeCreated(result)}`);
+                toast.info(`No list cost batch was created.${summarizeCreated(result)}`);
             }
         } catch (error: unknown) {
             toast.error(error instanceof Error ? error.message : "Failed to create price change batch");
@@ -590,6 +727,7 @@ export function CreatePriceChangeBatchDialog({
         }
     }, [
         applyParentPriceToChildren,
+        buildCostLines,
         buildLines,
         collectChildIdsForPropagation,
         draftPrices,
@@ -599,7 +737,8 @@ export function CreatePriceChangeBatchDialog({
         referenceNo,
         remarks,
         supplierId,
-        validation.invalidKeys.size,
+        validation.invalidCostIds.size,
+        validation.invalidPriceKeys.size,
     ]);
 
     return (
@@ -620,7 +759,7 @@ export function CreatePriceChangeBatchDialog({
                                 value={supplierId}
                                 onValueChange={handleSupplierChange}
                                 placeholder="Select supplier"
-                                disabled={suppliers.length === 0 || saving}
+                                disabled={suppliers.length === 0 || saving || showingImportedView}
                             />
                             {errors.supplier_id ? (
                                 <p className="text-xs text-destructive">{errors.supplier_id}</p>
@@ -661,6 +800,28 @@ export function CreatePriceChangeBatchDialog({
                         <div className="flex flex-col gap-2 border-b bg-muted/30 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
                                 <div className="font-medium">Supplier Catalog</div>
+                                {importedProductIds.length > 0 ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant={catalogViewMode === "imported" ? "default" : "outline"}
+                                            onClick={() => setCatalogViewMode("imported")}
+                                            disabled={saving}
+                                        >
+                                            Imported ({importedProductIds.length})
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant={catalogViewMode === "catalog" ? "default" : "outline"}
+                                            onClick={() => setCatalogViewMode("catalog")}
+                                            disabled={saving}
+                                        >
+                                            Full Catalog
+                                        </Button>
+                                    </div>
+                                ) : null}
                                 <div className="flex items-center gap-2">
                                     <Switch
                                         id="apply-parent-price-to-children"
@@ -683,7 +844,12 @@ export function CreatePriceChangeBatchDialog({
                                 ) : null}
                             </div>
                             <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
-                                <div>{validation.validCount} edited price cell(s)</div>
+                                <div>
+                                    {validation.validPriceCount} price cell(s)
+                                    {validation.validCostCount > 0
+                                        ? ` · ${validation.validCostCount} list cost cell(s)`
+                                        : ""}
+                                </div>
                                 <div>
                                     Tab/Enter to move · Paste from Excel · Edits kept across pages · Invalid
                                     values (text or negatives) are skipped
@@ -691,7 +857,7 @@ export function CreatePriceChangeBatchDialog({
                             </div>
                         </div>
 
-                        {supplierId ? (
+                        {supplierId && !showingImportedView ? (
                             <div className="flex flex-col gap-2 border-b px-3 py-2 sm:flex-row sm:items-center">
                                 <div className="flex min-w-0 flex-1 items-center gap-2">
                                     <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -727,7 +893,7 @@ export function CreatePriceChangeBatchDialog({
                             <div className="px-3 py-8 text-center text-sm text-muted-foreground">
                                 Select a supplier to load linked products.
                             </div>
-                        ) : catalogLoading ? (
+                        ) : !showingImportedView && catalogLoading ? (
                             <div className="flex items-center justify-center gap-2 px-3 py-8 text-sm text-muted-foreground">
                                 <Loader2 className="h-4 w-4 animate-spin" />
                                 Loading catalog
@@ -736,16 +902,18 @@ export function CreatePriceChangeBatchDialog({
                             <div className="px-3 py-8 text-center text-sm text-muted-foreground">
                                 No price types found.
                             </div>
-                        ) : products.length === 0 ? (
+                        ) : gridProducts.length === 0 ? (
                             <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                                {catalogQuery
-                                    ? "No products match your search."
-                                    : "No linked products found for this supplier."}
+                                {showingImportedView
+                                    ? "No imported products to display."
+                                    : catalogQuery
+                                      ? "No products match your search."
+                                      : "No linked products found for this supplier."}
                             </div>
                         ) : (
                             <>
                                 <BatchPriceGrid
-                                    products={products}
+                                    products={gridProducts}
                                     priceTypes={priceTypes}
                                     draftPrices={draftPrices}
                                     saving={saving}
@@ -758,8 +926,22 @@ export function CreatePriceChangeBatchDialog({
                                     groupIdFor={groupIdFor}
                                     isChildVariant={isChildVariant}
                                     onDraftPriceChange={setDraftPrice}
+                                    showListCost={showListCost}
+                                    draftCosts={draftCosts}
+                                    currentCostFor={currentCostFor}
+                                    onDraftCostChange={setDraftCost}
                                 />
-                                <div className="flex flex-col gap-3 border-t px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                {showingImportedView ? (
+                                    <div className="border-t px-3 py-3 text-sm text-muted-foreground">
+                                        Showing{" "}
+                                        <span className="font-medium text-foreground">
+                                            {gridProducts.length}
+                                        </span>{" "}
+                                        imported product{gridProducts.length === 1 ? "" : "s"} with proposed
+                                        changes.
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-3 border-t px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                                     <div className="text-sm text-muted-foreground">
                                         Showing{" "}
                                         <span className="font-medium text-foreground">{catalogStartIndex}</span> -{" "}
@@ -825,7 +1007,8 @@ export function CreatePriceChangeBatchDialog({
                                             Next
                                         </Button>
                                     </div>
-                                </div>
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>

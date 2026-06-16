@@ -37,6 +37,10 @@ import PrintPricingDialog from "./PrintPricingDialog";
 import PrintPrepareDialog from "./PrintPrepareDialog";
 import PrintLargeJobConfirmDialog from "./PrintLargeJobConfirmDialog";
 
+import { exportSupplierBatchExcel, parseSupplierBatchExcelImport } from "../../shared/supplier-batch/supplierBatchExcel";
+import { fetchSupplierPrintMatrix } from "../../shared/supplier-batch/supplierPrintMatrix";
+import { requireSingleSupplier } from "../../shared/supplier-batch/requireSingleSupplier";
+
 import type {
     Brand,
     Category,
@@ -48,8 +52,10 @@ import type {
 
 type SupplierScope = "ALL" | "LINKED_ONLY";
 
-const PRINT_CONFIRM_PRODUCT_THRESHOLD = 1000;
-const PRINT_GROUP_CHUNK_SIZE = 50;
+import {
+    PRINT_CONFIRM_PRODUCT_THRESHOLD,
+    PRINT_GROUP_CHUNK_SIZE,
+} from "../../shared/print/printConstants";
 
 type PendingPrintJob = {
     filters: PricingFilters;
@@ -311,6 +317,11 @@ export default function PricingMatrixView() {
         [matrix.filters.supplier_ids],
     );
 
+    const printSupplierNames = React.useMemo(
+        () => labelListFromIds(selectedSupplierIds, lookupMaps.suppliersById),
+        [lookupMaps.suppliersById, selectedSupplierIds],
+    );
+
     const supplierScope: SupplierScope = matrix.filters.supplier_scope;
     const supplierFilterActive =
         selectedSupplierIds.length > 0 && supplierScope === "LINKED_ONLY";
@@ -446,6 +457,8 @@ export default function PricingMatrixView() {
     const [printPrepareProgress, setPrintPrepareProgress] = React.useState({ done: 0, total: 0 });
     const [largePrintConfirmOpen, setLargePrintConfirmOpen] = React.useState(false);
     const [pendingPrintJob, setPendingPrintJob] = React.useState<PendingPrintJob | null>(null);
+    const [excelBusy, setExcelBusy] = React.useState(false);
+    const importFileInputRef = React.useRef<HTMLInputElement | null>(null);
     const printAbortRef = React.useRef<AbortController | null>(null);
 
     const cancelPrintPrepare = React.useCallback(() => {
@@ -607,6 +620,97 @@ export default function PricingMatrixView() {
         }
     }, [dirtySummary.dirtyCount]);
 
+    const loadSupplierExcelMatrix = React.useCallback(async (supplierId: number) => {
+        const matrixResult = await fetchSupplierPrintMatrix(supplierId);
+        if (matrixResult.totalGroups === 0) {
+            throw new Error("No linked products found for the selected supplier.");
+        }
+        return matrixResult;
+    }, []);
+
+    const handleExportExcel = React.useCallback(async () => {
+        const supplier = requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers);
+        if (!supplier) return;
+
+        setExcelBusy(true);
+        try {
+            const data = await loadSupplierExcelMatrix(supplier.id);
+            await exportSupplierBatchExcel({
+                supplierId: supplier.id,
+                supplierName: supplier.name,
+                matrixRows: data.rows,
+                priceTypes: pt.priceTypes,
+                filenamePrefix: "product-pricing",
+            });
+            toast.success("Excel template downloaded.");
+        } catch (error: unknown) {
+            toast.error(error instanceof Error ? error.message : "Failed to export Excel.");
+        } finally {
+            setExcelBusy(false);
+        }
+    }, [loadSupplierExcelMatrix, lookups.suppliers, matrix.filters.supplier_ids, pt.priceTypes]);
+
+    const handleImportExcelClick = React.useCallback(() => {
+        if (!requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers)) return;
+        importFileInputRef.current?.click();
+    }, [lookups.suppliers, matrix.filters.supplier_ids]);
+
+    const handleImportExcelFile = React.useCallback(
+        async (event: React.ChangeEvent<HTMLInputElement>) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+
+            const supplier = requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers);
+            if (!supplier) return;
+
+            setExcelBusy(true);
+            try {
+                const data = await loadSupplierExcelMatrix(supplier.id);
+                const parsed = await parseSupplierBatchExcelImport({
+                    file,
+                    expectedSupplierId: supplier.id,
+                    priceTypes: pt.priceTypes,
+                    matrixRows: data.rows,
+                });
+
+                if (!parsed.ok) {
+                    const preview = parsed.errors.slice(0, 5).join("\n");
+                    const suffix =
+                        parsed.errors.length > 5
+                            ? `\n…and ${parsed.errors.length - 5} more issue(s).`
+                            : "";
+                    toast.error(`Import validation failed.\n${preview}${suffix}`);
+                    return;
+                }
+
+                const appliedCount = dirtySummary.applyImportedPriceChanges(parsed.priceChanges);
+                if (appliedCount === 0) {
+                    toast.message("No new proposed prices were applied.");
+                    return;
+                }
+
+                await matrix.refresh();
+                toast.success(`Imported ${appliedCount} proposed price change${appliedCount === 1 ? "" : "s"}.`);
+                setBatchDialogOpen(true);
+            } catch (error: unknown) {
+                toast.error(error instanceof Error ? error.message : "Failed to import Excel.");
+            } finally {
+                setExcelBusy(false);
+            }
+        },
+        [
+            dirtySummary,
+            loadSupplierExcelMatrix,
+            lookups.suppliers,
+            matrix,
+            pt.priceTypes,
+        ],
+    );
+
+    const actionBarLoading =
+        Boolean(matrix.loading) || isPrinting || excelBusy || lookups.loading || pt.loading;
+
     const requestRefresh = React.useCallback(() => {
         if (dirtySummary.dirtyCount > 0) {
             setUnsavedAction("refresh");
@@ -679,7 +783,16 @@ export default function PricingMatrixView() {
                         onDiscard={requestDiscard}
                         onRefresh={requestRefresh}
                         onPrint={openPrint}
-                        loading={Boolean(matrix.loading) || isPrinting}
+                        onExportExcel={() => void handleExportExcel()}
+                        onImportExcel={handleImportExcelClick}
+                        loading={actionBarLoading}
+                    />
+                    <input
+                        ref={importFileInputRef}
+                        type="file"
+                        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        className="hidden"
+                        onChange={(event) => void handleImportExcelFile(event)}
                     />
                 </div>
 
@@ -734,6 +847,7 @@ export default function PricingMatrixView() {
                     priceTypes={pt.priceTypes}
                     tiers={printTiers}
                     usedUnitIds={printUsedUnitIds}
+                    supplierNames={printSupplierNames}
                 />
 
                 <PriceChangeBatchDialog

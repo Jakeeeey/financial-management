@@ -5,7 +5,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Printer, RotateCcw, RefreshCw, Save } from "lucide-react";
+import { Printer, RotateCcw, RefreshCw, Save, FileSpreadsheet, FileUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function saveHelperText(priceDirtyCount: number, costDirtyCount: number): string {
@@ -35,9 +35,8 @@ type Props = {
     onDiscard: () => void;
     onRefresh: () => void;
     onPrint: () => void;
-
-    // ✅ new: show what will be printed (based on current filters)
-    filtersText?: string;
+    onExportExcel?: () => void;
+    onImportExcel?: () => void;
 };
 
 export default function BulkSaveBar(props: Props) {
@@ -51,6 +50,8 @@ export default function BulkSaveBar(props: Props) {
         onDiscard,
         onRefresh,
         onPrint,
+        onExportExcel,
+        onImportExcel,
     } = props;
 
     const hasDirty = dirtyCount > 0;
@@ -61,24 +62,58 @@ export default function BulkSaveBar(props: Props) {
             {/* Left: Printables + status (matches “pill / tight” feel) */}
             <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
                 <Card className="w-full rounded-2xl border p-3 shadow-sm sm:w-auto">
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                            <div className="text-sm font-semibold leading-tight">Printables</div>
-                            <div className="text-xs text-muted-foreground leading-tight">Pricing Matrix (PDF)</div>
+                    <div className="flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="text-sm font-semibold leading-tight">Printables</div>
+                                <div className="text-xs text-muted-foreground leading-tight">
+                                    Pricing Matrix (PDF / Excel)
+                                </div>
+                            </div>
 
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={onPrint}
+                                disabled={loading}
+                                className={cn("gap-2", "cursor-pointer")}
+                                type="button"
+                            >
+                                <Printer className="h-4 w-4" />
+                                Print PDF
+                            </Button>
                         </div>
 
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={onPrint}
-                            disabled={loading}
-                            className={cn("gap-2", "cursor-pointer")}
-                            type="button"
-                        >
-                            <Printer className="h-4 w-4" />
-                            Print
-                        </Button>
+                        {onExportExcel || onImportExcel ? (
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                                {onExportExcel ? (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={onExportExcel}
+                                        disabled={loading}
+                                        className="gap-2 cursor-pointer"
+                                        type="button"
+                                    >
+                                        <FileSpreadsheet className="h-4 w-4" />
+                                        Export Excel
+                                    </Button>
+                                ) : null}
+                                {onImportExcel ? (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={onImportExcel}
+                                        disabled={loading}
+                                        className="gap-2 cursor-pointer"
+                                        type="button"
+                                    >
+                                        <FileUp className="h-4 w-4" />
+                                        Import Excel
+                                    </Button>
+                                ) : null}
+                            </div>
+                        ) : null}
                     </div>
                 </Card>
 

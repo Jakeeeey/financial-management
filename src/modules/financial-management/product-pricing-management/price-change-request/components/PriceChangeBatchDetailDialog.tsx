@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 
 import type { PriceChangeBatchDetail, PriceChangeBatchLine } from "../types";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
+import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { getPriceChangeBatch } from "../providers/pcrApi";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
@@ -219,6 +220,7 @@ export function PriceChangeBatchDetailDialog({
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Remarks</div>
                                 <div className="mt-1 font-medium">{detail.remarks || "-"}</div>
                             </div>
+                            <BatchDecisionSummaryFields detail={detail} />
                         </div>
 
                         <div className="rounded-md border">

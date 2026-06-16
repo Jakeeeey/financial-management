@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 
 import type { ListCostBatchDetail, ListCostBatchLine } from "../types";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
+import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { getListCostBatch } from "../providers/pcrApi";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
@@ -214,6 +215,7 @@ export function ListCostBatchDetailDialog({
                                     <div className="text-xs font-medium uppercase text-muted-foreground">Remarks</div>
                                     <div className="mt-1 font-medium">{detail.remarks || "-"}</div>
                                 </div>
+                                <BatchDecisionSummaryFields detail={detail} />
                             </div>
 
                             <div className="rounded-md border">
