@@ -35,6 +35,7 @@ import * as api from "../providers/pricingApi";
 import type { PrintFilterParams } from "../providers/pricingApi";
 import PrintPricingDialog from "./PrintPricingDialog";
 import PrintPrepareDialog from "./PrintPrepareDialog";
+import PrintLargeJobConfirmDialog from "./PrintLargeJobConfirmDialog";
 
 import type {
     Brand,
@@ -49,6 +50,13 @@ type SupplierScope = "ALL" | "LINKED_ONLY";
 
 const PRINT_CONFIRM_PRODUCT_THRESHOLD = 1000;
 const PRINT_GROUP_CHUNK_SIZE = 50;
+
+type PendingPrintJob = {
+    filters: PricingFilters;
+    printParams: PrintFilterParams;
+    totalGroups: number;
+    groupIds: number[];
+};
 
 function safeStr(v: unknown): string {
     const s = String(v ?? "").trim();
@@ -436,6 +444,8 @@ export default function PricingMatrixView() {
     const [printUsedUnitIds, setPrintUsedUnitIds] = React.useState<Set<number>>(new Set());
     const [printPrepareOpen, setPrintPrepareOpen] = React.useState(false);
     const [printPrepareProgress, setPrintPrepareProgress] = React.useState({ done: 0, total: 0 });
+    const [largePrintConfirmOpen, setLargePrintConfirmOpen] = React.useState(false);
+    const [pendingPrintJob, setPendingPrintJob] = React.useState<PendingPrintJob | null>(null);
     const printAbortRef = React.useRef<AbortController | null>(null);
 
     const cancelPrintPrepare = React.useCallback(() => {
@@ -445,17 +455,101 @@ export default function PricingMatrixView() {
         setIsPrinting(false);
     }, []);
 
-    const openPrint = React.useCallback(async () => {
-        const controller = new AbortController();
-        printAbortRef.current = controller;
-        const { signal } = controller;
+    const cancelLargePrintConfirm = React.useCallback(() => {
+        setLargePrintConfirmOpen(false);
+        setPendingPrintJob(null);
+        setIsPrinting(false);
+    }, []);
 
+    const continuePrintPreparation = React.useCallback(
+        async (job: PendingPrintJob) => {
+            const controller = new AbortController();
+            printAbortRef.current = controller;
+            const { signal } = controller;
+
+            setIsPrinting(true);
+            setPrintPrepareProgress({ done: 0, total: job.totalGroups });
+            setPrintPrepareOpen(true);
+
+            try {
+                const assembled: MatrixRow[] = [];
+                const usedUnitIds = new Set<number>();
+
+                for (let offset = 0; offset < job.groupIds.length; offset += PRINT_GROUP_CHUNK_SIZE) {
+                    if (signal.aborted) return;
+
+                    const chunk = job.groupIds.slice(offset, offset + PRINT_GROUP_CHUNK_SIZE);
+                    const pageRes = await api.getPrintMatrixPage(
+                        {
+                            ...job.printParams,
+                            group_ids: chunk.join(","),
+                        },
+                        { signal },
+                    );
+
+                    assembled.push(...(pageRes.data ?? []));
+                    for (const unitId of pageRes.usedUnitIds ?? []) {
+                        usedUnitIds.add(unitId);
+                    }
+
+                    setPrintPrepareProgress({
+                        done: Math.min(offset + chunk.length, job.totalGroups),
+                        total: job.totalGroups,
+                    });
+                }
+
+                const enriched = enrichPrintMatrixRows(assembled, lookupMaps);
+                enriched.sort((a, b) =>
+                    (a.display.product_name || "").localeCompare(b.display.product_name || ""),
+                );
+
+                const resolvedFiltersText = buildFiltersText({
+                    filters: job.filters,
+                    categoriesById: lookupMaps.categoriesById,
+                    brandsById: lookupMaps.brandsById,
+                    unitsById: lookupMaps.unitsById,
+                    suppliersById: lookupMaps.suppliersById,
+                    priceTypes: pt.priceTypes,
+                });
+
+                const printableTiers = buildMatrixTierKeys(pt.priceTypes);
+                const now = new Date();
+
+                setPrintGeneratedAt(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
+                setPrintFiltersText(resolvedFiltersText);
+                setPrintMatrixRows(enriched);
+                setPrintTiers(printableTiers);
+                setPrintUsedUnitIds(usedUnitIds);
+                setPrintOpen(true);
+            } catch (error: unknown) {
+                if (signal.aborted) return;
+                const message = error instanceof Error ? error.message : "Failed to open print editor";
+                toast.error(message);
+            } finally {
+                setPrintPrepareOpen(false);
+                setIsPrinting(false);
+                printAbortRef.current = null;
+            }
+        },
+        [lookupMaps, pt.priceTypes],
+    );
+
+    const confirmLargePrint = React.useCallback(() => {
+        const job = pendingPrintJob;
+        if (!job) return;
+
+        setLargePrintConfirmOpen(false);
+        setPendingPrintJob(null);
+        void continuePrintPreparation(job);
+    }, [pendingPrintJob, continuePrintPreparation]);
+
+    const openPrint = React.useCallback(async () => {
         setIsPrinting(true);
         try {
             const filters = matrix.filters;
             const printParams = buildPrintFilterParams(filters);
 
-            const metaRes = await api.getPrintMatrixMeta(printParams, { signal });
+            const metaRes = await api.getPrintMatrixMeta(printParams);
             const { meta, groupIds } = metaRes;
 
             if (meta.totalGroups === 0) {
@@ -463,77 +557,27 @@ export default function PricingMatrixView() {
                 return;
             }
 
-            if (
-                meta.totalGroups > PRINT_CONFIRM_PRODUCT_THRESHOLD &&
-                !window.confirm(
-                    `This print job contains ${meta.totalGroups.toLocaleString()} product group(s). Preparing it may take a while. Continue?`,
-                )
-            ) {
+            const job: PendingPrintJob = {
+                filters,
+                printParams,
+                totalGroups: meta.totalGroups,
+                groupIds,
+            };
+
+            if (meta.totalGroups > PRINT_CONFIRM_PRODUCT_THRESHOLD) {
+                setPendingPrintJob(job);
+                setLargePrintConfirmOpen(true);
                 return;
             }
 
-            setPrintPrepareProgress({ done: 0, total: meta.totalGroups });
-            setPrintPrepareOpen(true);
-
-            const assembled: MatrixRow[] = [];
-            const usedUnitIds = new Set<number>();
-
-            for (let offset = 0; offset < groupIds.length; offset += PRINT_GROUP_CHUNK_SIZE) {
-                if (signal.aborted) return;
-
-                const chunk = groupIds.slice(offset, offset + PRINT_GROUP_CHUNK_SIZE);
-                const pageRes = await api.getPrintMatrixPage(
-                    {
-                        ...printParams,
-                        group_ids: chunk.join(","),
-                    },
-                    { signal },
-                );
-
-                assembled.push(...(pageRes.data ?? []));
-                for (const unitId of pageRes.usedUnitIds ?? []) {
-                    usedUnitIds.add(unitId);
-                }
-
-                setPrintPrepareProgress({
-                    done: Math.min(offset + chunk.length, meta.totalGroups),
-                    total: meta.totalGroups,
-                });
-            }
-
-            const enriched = enrichPrintMatrixRows(assembled, lookupMaps);
-            enriched.sort((a, b) =>
-                (a.display.product_name || "").localeCompare(b.display.product_name || ""),
-            );
-
-            const resolvedFiltersText = buildFiltersText({
-                filters,
-                categoriesById: lookupMaps.categoriesById,
-                brandsById: lookupMaps.brandsById,
-                unitsById: lookupMaps.unitsById,
-                suppliersById: lookupMaps.suppliersById,
-                priceTypes: pt.priceTypes,
-            });
-
-            const printableTiers = buildMatrixTierKeys(pt.priceTypes);
-            const now = new Date();
-
-            setPrintGeneratedAt(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
-            setPrintFiltersText(resolvedFiltersText);
-            setPrintMatrixRows(enriched);
-            setPrintTiers(printableTiers);
-            setPrintUsedUnitIds(usedUnitIds);
-            setPrintOpen(true);
+            await continuePrintPreparation(job);
         } catch (error: unknown) {
-            if (signal.aborted) return;
             const message = error instanceof Error ? error.message : "Failed to open print editor";
             toast.error(message);
         } finally {
-            setPrintPrepareOpen(false);
             setIsPrinting(false);
-            printAbortRef.current = null;
         }
-    }, [matrix.filters, lookupMaps, pt.priceTypes]);
+    }, [matrix.filters, continuePrintPreparation]);
 
     React.useEffect(() => {
         if (lookups.error) toast.error(lookups.error);
@@ -664,6 +708,13 @@ export default function PricingMatrixView() {
                 <div className="flex min-h-0 flex-1 flex-col">
                     <PricingTable matrix={matrix} dirtyVersion={dirtySummary.dirtyVersion} />
                 </div>
+
+                <PrintLargeJobConfirmDialog
+                    open={largePrintConfirmOpen}
+                    totalGroups={pendingPrintJob?.totalGroups ?? 0}
+                    onContinue={confirmLargePrint}
+                    onCancel={cancelLargePrintConfirm}
+                />
 
                 <PrintPrepareDialog
                     open={printPrepareOpen}

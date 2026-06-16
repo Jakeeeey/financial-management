@@ -86,6 +86,12 @@ export async function GET(req: NextRequest) {
 
         const { searchParams } = new URL(req.url);
 
+        const rawPageSize = norm(searchParams.get("page_size"));
+        const requestedPageSize = rawPageSize ? Number(rawPageSize) : 50;
+        if (Number.isFinite(requestedPageSize) && requestedPageSize > 500) {
+            return NextResponse.json({ error: `page_size cannot exceed 500. Requested: ${requestedPageSize}` }, { status: 400 });
+        }
+
         const activeOnly = norm(searchParams.get("active_only") || "1") === "1";
         const productIdsParam = parseProductIdsList(norm(searchParams.get("product_ids")));
 

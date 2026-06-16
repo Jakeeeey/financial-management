@@ -72,6 +72,7 @@ export type PriceChangeBatchLine = {
     delta: number | null;
     percent_change: number | null;
     status: PriceChangeBatchStatus | PCRStatus | string;
+    supplier_name?: string | null;
 };
 
 export type PriceChangeBatchHeader = {
@@ -128,6 +129,7 @@ export type ListCostBatchLine = {
     delta: number | null;
     percent_change: number | null;
     status: ListCostBatchStatus | PCRStatus | string;
+    supplier_name?: string | null;
 };
 
 export type ListCostBatchHeader = {
@@ -158,6 +160,8 @@ export type PriceTypeUnifiedApprovalRow = PriceChangeRequestRow & {
     title: string;
     subtitle?: string;
     batch_header_id?: number | null;
+    supplier_id?: number | null;
+    supplier_name?: string | null;
 };
 
 export type ListPriceUnifiedApprovalRow = CostChangeRequestRow & {
@@ -166,6 +170,8 @@ export type ListPriceUnifiedApprovalRow = CostChangeRequestRow & {
     record_label: string;
     title: string;
     subtitle?: string;
+    supplier_id?: number | null;
+    supplier_name?: string | null;
 };
 
 export type ItemUnifiedApprovalRow = PriceTypeUnifiedApprovalRow | ListPriceUnifiedApprovalRow;
@@ -188,6 +194,8 @@ export type UnifiedApprovalRow =
           proposed_price?: number | null;
           batch_id?: number;
           request_id?: number;
+          supplier_id?: number | null;
+          supplier_name?: string | null;
       }
     | {
           row_key: string;
@@ -208,6 +216,8 @@ export type UnifiedApprovalRow =
           request_id?: number;
           remarks?: string | null;
           reference_no?: string | null;
+          supplier_id?: number | null;
+          supplier_name?: string | null;
       }
     | ItemUnifiedApprovalRow;
 

@@ -168,6 +168,14 @@ export async function GET(req: NextRequest) {
 
         // Paginate Groups
         if (pageSize === -1) {
+            if (totalGroups > 500) {
+                return NextResponse.json(
+                    {
+                        error: `Result set too large for full export (${totalGroups} groups). Use the paginated print/matrix endpoint instead.`,
+                    },
+                    { status: 400 },
+                );
+            }
             return NextResponse.json({
                 data: rows,
                 meta: {

@@ -153,6 +153,8 @@ type UnifiedApprovalRow = {
     remarks?: string | null;
     reference_no?: string | null;
     current_price?: number | null;
+    supplier_id?: number | null;
+    supplier_name?: string | null;
 };
 
 type DirectusUserRow = {
@@ -258,6 +260,37 @@ async function fetchUserNamesById(userIds: Array<number | null | undefined>): Pr
     return userNames;
 }
 
+async function addSuppliersToRows(rows: UnifiedApprovalRow[]): Promise<UnifiedApprovalRow[]> {
+    const productIds: number[] = [];
+
+    for (const row of rows) {
+        if (row.kind === "price_type" || row.kind === "list_price") {
+            const pid = pickProductId(row.product_id);
+            if (pid) productIds.push(pid);
+        }
+    }
+
+    const supplierByProductId = await fetchSupplierByProductIds(productIds);
+
+    return rows.map((row) => {
+        if (row.kind === "price_batch" || row.kind === "cost_batch") {
+            return row;
+        }
+
+        const pid = pickProductId(row.product_id);
+        const suppliers = pid ? supplierByProductId.get(pid) : undefined;
+
+        if (!suppliers || suppliers.length === 0) {
+            return { ...row, supplier_id: null, supplier_name: null };
+        }
+
+        return {
+            ...row,
+            supplier_name: resolveSupplierName(suppliers),
+        };
+    });
+}
+
 async function addRequestedByNames(rows: UnifiedApprovalRow[]): Promise<UnifiedApprovalRow[]> {
     const namesById = await fetchUserNamesById(rows.map((row) => row.requested_by));
 
@@ -280,6 +313,57 @@ function supplierNameOf(value: unknown): string {
     return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
 }
 
+function supplierIdOf(value: unknown): number | null {
+    if (!isRecord(value)) return null;
+    return pickId(value.id) ?? null;
+}
+
+function pickProductId(value: unknown): number | null {
+    if (isRecord(value)) return pickId(value.product_id);
+    return pickId(value);
+}
+
+type SupplierInfo = { supplier_id: number; supplier_name: string };
+
+async function fetchSupplierByProductIds(productIds: number[]): Promise<Map<number, SupplierInfo[]>> {
+    const map = new Map<number, SupplierInfo[]>();
+    const uniqueIds = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
+    if (uniqueIds.length === 0) return map;
+
+    for (let i = 0; i < uniqueIds.length; i += 200) {
+        const chunk = uniqueIds.slice(i, i + 200);
+        const params = new URLSearchParams();
+        params.set("limit", "-1");
+        params.set("fields", "product_id,supplier_id,supplier_id.id,supplier_id.supplier_name,supplier_id.supplier_shortcut");
+        params.set("filter[product_id][_in]", chunk.join(","));
+
+        const url = `${mustBase()}/items/product_per_supplier?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<Record<string, unknown>>>(url, { headers: directusHeaders() });
+
+        for (const row of json.data ?? []) {
+            const pid = pickId(row.product_id);
+            if (!pid) continue;
+
+            const supplier = row.supplier_id;
+            const sid = isRecord(supplier) ? pickId(supplier.id) : null;
+            if (!sid) continue;
+
+            const sname = supplierNameOf(supplier);
+            const existing = map.get(pid) ?? [];
+            existing.push({ supplier_id: sid, supplier_name: sname || `Supplier #${sid}` });
+            map.set(pid, existing);
+        }
+    }
+
+    return map;
+}
+
+function resolveSupplierName(suppliers: SupplierInfo[]): string {
+    if (suppliers.length === 0) return "-";
+    const unique = Array.from(new Set(suppliers.map((s) => s.supplier_name)));
+    return unique.length === 1 ? unique[0] : "Multiple suppliers";
+}
+
 function headerIdOfDetail(row: BatchDetailRow): number {
     const raw = row.header_id;
     if (isRecord(raw)) return pickId(raw.header_id ?? raw.id) ?? 0;
@@ -291,6 +375,7 @@ type BatchLineSummary = {
     totalProducts: number;
     proposedMin: number | null;
     proposedMax: number | null;
+    productIds: number[];
 };
 
 async function summarizeBatchLines(headerIds: number[]): Promise<Map<number, BatchLineSummary>> {
@@ -342,6 +427,7 @@ async function summarizeBatchLines(headerIds: number[]): Promise<Map<number, Bat
             totalProducts: summary.productIds.size,
             proposedMin: summary.proposedValues.length ? Math.min(...summary.proposedValues) : null,
             proposedMax: summary.proposedValues.length ? Math.max(...summary.proposedValues) : null,
+            productIds: Array.from(summary.productIds),
         });
     }
 
@@ -397,6 +483,7 @@ async function summarizeCostBatchLines(headerIds: number[]): Promise<Map<number,
             totalProducts: summary.productIds.size,
             proposedMin: summary.proposedValues.length ? Math.min(...summary.proposedValues) : null,
             proposedMax: summary.proposedValues.length ? Math.max(...summary.proposedValues) : null,
+            productIds: Array.from(summary.productIds),
         });
     }
 
@@ -583,6 +670,27 @@ function intersectHeaderIds(left: number[], right: number[]): number[] {
     return left.filter((id) => rightSet.has(id));
 }
 
+const HEADER_ID_CHUNK_SIZE = 200;
+
+function appendChunkedHeaderIds(params: URLSearchParams, andIdx: number, headerIds: number[]): number {
+    if (headerIds.length === 0) {
+        params.set(`filter[_and][${andIdx}][header_id][_in]`, "0");
+        return andIdx + 1;
+    }
+
+    if (headerIds.length <= HEADER_ID_CHUNK_SIZE) {
+        params.set(`filter[_and][${andIdx}][header_id][_in]`, headerIds.join(","));
+        return andIdx + 1;
+    }
+
+    for (let i = 0; i < headerIds.length; i += HEADER_ID_CHUNK_SIZE) {
+        const chunk = headerIds.slice(i, i + HEADER_ID_CHUNK_SIZE);
+        const orIdx = Math.floor(i / HEADER_ID_CHUNK_SIZE);
+        params.set(`filter[_and][${andIdx}][_or][${orIdx}][header_id][_in]`, chunk.join(","));
+    }
+    return andIdx + 1;
+}
+
 function appendBatchFilters(
     params: URLSearchParams,
     filters: ApprovalFilters,
@@ -595,11 +703,7 @@ function appendBatchFilters(
         andIdx += 1;
     };
 
-    if (priceHeaderIds.length === 0) {
-        addAnd("[header_id][_in]", "0");
-    } else {
-        addAnd("[header_id][_in]", priceHeaderIds.join(","));
-    }
+    andIdx = appendChunkedHeaderIds(params, andIdx, priceHeaderIds);
     if (filters.status) addAnd("[status][_eq]", filters.status);
     if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
     if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
@@ -614,7 +718,15 @@ function appendBatchFilters(
             addAnd("[_or][0][reference_no][_contains]", parsed.textContains);
             params.set(`filter[_and][${andIdx - 1}][_or][1][remarks][_contains]`, parsed.textContains);
             if (headerIdsFromSearch && headerIdsFromSearch.length > 0) {
-                params.set(`filter[_and][${andIdx - 1}][_or][2][header_id][_in]`, headerIdsFromSearch.join(","));
+                if (headerIdsFromSearch.length <= HEADER_ID_CHUNK_SIZE) {
+                    params.set(`filter[_and][${andIdx - 1}][_or][2][header_id][_in]`, headerIdsFromSearch.join(","));
+                } else {
+                    for (let i = 0; i < headerIdsFromSearch.length; i += HEADER_ID_CHUNK_SIZE) {
+                        const chunk = headerIdsFromSearch.slice(i, i + HEADER_ID_CHUNK_SIZE);
+                        const orIdx = 2 + Math.floor(i / HEADER_ID_CHUNK_SIZE);
+                        params.set(`filter[_and][${andIdx - 1}][_or][${orIdx}][header_id][_in]`, chunk.join(","));
+                    }
+                }
             }
         }
     }
@@ -632,11 +744,7 @@ function appendCostBatchFilters(
         andIdx += 1;
     };
 
-    if (costHeaderIds.length === 0) {
-        addAnd("[header_id][_in]", "0");
-    } else {
-        addAnd("[header_id][_in]", costHeaderIds.join(","));
-    }
+    andIdx = appendChunkedHeaderIds(params, andIdx, costHeaderIds);
     if (filters.status) addAnd("[status][_eq]", filters.status);
     if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
     if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
@@ -651,7 +759,15 @@ function appendCostBatchFilters(
             addAnd("[_or][0][reference_no][_contains]", parsed.textContains);
             params.set(`filter[_and][${andIdx - 1}][_or][1][remarks][_contains]`, parsed.textContains);
             if (headerIdsFromSearch && headerIdsFromSearch.length > 0) {
-                params.set(`filter[_and][${andIdx - 1}][_or][2][header_id][_in]`, headerIdsFromSearch.join(","));
+                if (headerIdsFromSearch.length <= HEADER_ID_CHUNK_SIZE) {
+                    params.set(`filter[_and][${andIdx - 1}][_or][2][header_id][_in]`, headerIdsFromSearch.join(","));
+                } else {
+                    for (let i = 0; i < headerIdsFromSearch.length; i += HEADER_ID_CHUNK_SIZE) {
+                        const chunk = headerIdsFromSearch.slice(i, i + HEADER_ID_CHUNK_SIZE);
+                        const orIdx = 2 + Math.floor(i / HEADER_ID_CHUNK_SIZE);
+                        params.set(`filter[_and][${andIdx - 1}][_or][${orIdx}][header_id][_in]`, chunk.join(","));
+                    }
+                }
             }
         }
     }
@@ -844,6 +960,8 @@ async function fetchPriceBatchesPage(
             proposed_price: proposedMin === proposedMax ? proposedMin : null,
             remarks: remarks || null,
             reference_no: referenceNo || null,
+            supplier_id: supplierIdOf(row.supplier_id),
+            supplier_name: supplierName || null,
         });
     }
 
@@ -889,6 +1007,13 @@ async function fetchCostBatchesPage(
     const headerIds = headerRows.map(normalizeCostHeaderId).filter((id) => id > 0);
     const summaries = await summarizeCostBatchLines(headerIds);
 
+    const allCostProductIds = Array.from(
+        new Set(
+            Array.from(summaries.values()).flatMap((s) => s.productIds),
+        ),
+    );
+    const supplierByProductId = await fetchSupplierByProductIds(allCostProductIds);
+
     const rows: UnifiedApprovalRow[] = [];
     for (const row of headerRows) {
         const headerId = normalizeCostHeaderId(row);
@@ -900,6 +1025,10 @@ async function fetchCostBatchesPage(
         const remarks = String(row.remarks ?? "").trim();
         const proposedMin = summary?.proposedMin ?? null;
         const proposedMax = summary?.proposedMax ?? null;
+
+        const batchSupplierInfos = (summary?.productIds ?? [])
+            .flatMap((pid) => supplierByProductId.get(pid) ?? []);
+        const batchSupplierName = resolveSupplierName(batchSupplierInfos);
 
         rows.push({
             row_key: `cost-batch:${headerId}`,
@@ -919,6 +1048,7 @@ async function fetchCostBatchesPage(
             proposed_cost: proposedMin === proposedMax ? proposedMin : null,
             remarks: remarks || null,
             reference_no: referenceNo || null,
+            supplier_name: batchSupplierName !== "-" ? batchSupplierName : null,
         });
     }
 
@@ -1178,7 +1308,8 @@ export async function GET(req: NextRequest) {
             data = merged.slice(offset, offset + pageSize);
         }
 
-        const enrichedData = await addRequestedByNames(data);
+        let enrichedData = await addRequestedByNames(data);
+        enrichedData = await addSuppliersToRows(enrichedData);
 
         return NextResponse.json({
             data: enrichedData,

@@ -6,6 +6,7 @@ import {
     directusErrorResponse,
     getCostDetails,
     getCostHeader,
+    getSupplierNamesByProductId,
     isRecord,
     normalizeCostHeaderId,
     normalizeCostProductId,
@@ -62,6 +63,12 @@ export async function GET(req: NextRequest, context: RouteContext) {
         if (!header) return NextResponse.json({ error: "Cost batch not found" }, { status: 404 });
 
         const details = await getCostDetails(headerId);
+
+        const detailProductIds = details
+            .map((line) => normalizeCostProductId(line))
+            .filter((id) => id > 0);
+        const supplierByProductId = await getSupplierNamesByProductId(detailProductIds);
+
         return NextResponse.json({
             data: {
                 id: normalizeCostHeaderId(header),
@@ -76,7 +83,13 @@ export async function GET(req: NextRequest, context: RouteContext) {
                 rejected_by: header.rejected_by ?? null,
                 rejected_at: header.rejected_at ?? null,
                 reject_reason: header.reject_reason ?? null,
-                details: details.map(mapDetail),
+                details: details.map((line) => {
+                    const pid = normalizeCostProductId(line);
+                    return {
+                        ...mapDetail(line),
+                        supplier_name: supplierByProductId.get(pid) ?? null,
+                    };
+                }),
             },
         });
     } catch (error: unknown) {

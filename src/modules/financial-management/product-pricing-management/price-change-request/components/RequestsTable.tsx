@@ -74,6 +74,11 @@ function requestedByText(row: ApprovalRecordRow) {
     return /^\d+$/.test(text) ? `User #${text}` : text;
 }
 
+function supplierText(row: ApprovalRecordRow): string {
+    const name = "supplier_name" in row ? String(row.supplier_name ?? "").trim() : "";
+    return name || "-";
+}
+
 function approvalRecordLabel(row: ApprovalRecordRow) {
     const kind = approvalKind(row);
     if ("record_label" in row && row.record_label) return row.record_label;
@@ -305,7 +310,7 @@ export default function RequestsTable(props: Props) {
     if (showActionsColumn) colSpan += 1;
 
     if (showApprovalSummaryColumns) {
-        const summaryColSpan = 7 + (showSelectionColumn ? 1 : 0) + (showActionsColumn ? 1 : 0);
+        const summaryColSpan = 8 + (showSelectionColumn ? 1 : 0) + (showActionsColumn ? 1 : 0);
 
         return (
             <div className="overflow-hidden rounded-xl border bg-background">
@@ -324,6 +329,7 @@ export default function RequestsTable(props: Props) {
                             ) : null}
                             <TableHead className="w-[110px] px-2">Request #</TableHead>
                             <TableHead className="w-[84px] px-2">Type</TableHead>
+                            <TableHead className="w-[140px] px-2">Supplier</TableHead>
                             <TableHead className="w-[140px] px-2">Requested By</TableHead>
                             <TableHead className="w-[120px] px-2 text-right">Total Products</TableHead>
                             <TableHead className="w-[180px] px-2 text-right">Proposed</TableHead>
@@ -367,9 +373,12 @@ export default function RequestsTable(props: Props) {
                                         {approvalRecordLabel(r)}
                                     </TableCell>
                                     <TableCell className="px-2">
-                                        <Badge variant="outline" className={`${approvalTypeBadgeClass(approvalKind(r))} text-[11px] px-2 whitespace-nowrap`}>
+                                        <Badge variant="outline" className={`${approvalTypeBadgeClass(approvalKind(r))} text-[11px] px-2 whitespace-nowrap uppercase`}>
                                             {approvalTypeLabel(approvalKind(r))}
                                         </Badge>
+                                    </TableCell>
+                                    <TableCell className="truncate px-2" title={supplierText(r)}>
+                                        {supplierText(r)}
                                     </TableCell>
                                     <TableCell className="truncate px-2" title={requestedByText(r)}>
                                         {requestedByText(r)}

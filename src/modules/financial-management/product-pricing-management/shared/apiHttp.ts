@@ -37,11 +37,16 @@ export async function readApiResponse<T>(res: Response): Promise<T> {
         let message = `Request failed (${res.status})`;
 
         if (text) {
-            try {
-                const parsed: unknown = JSON.parse(text);
-                message = extractErrorMessage(parsed, message);
-            } catch {
-                message = text;
+            const trimmed = text.trimStart();
+            if (trimmed.startsWith("<!DOCTYPE html") || trimmed.startsWith("<html")) {
+                message = `Request failed (${res.status}): API route was not found`;
+            } else {
+                try {
+                    const parsed: unknown = JSON.parse(text);
+                    message = extractErrorMessage(parsed, message);
+                } catch {
+                    message = text;
+                }
             }
         }
 

@@ -6,15 +6,17 @@ import {
     directusErrorResponse,
     directusHeaders,
     fetchDirectus,
+    getSupplierNamesByProductId,
     HEADERS,
     isRecord,
     mustBase,
     nowManila,
     pickId,
 } from "../price-change-batches/_batch";
+
 import type { NormalizedCostBulkItem } from "../cost-change-requests/_bulk";
 
-export { decodeUserIdFromJwtCookie, directusErrorResponse, isRecord, pickId };
+export { decodeUserIdFromJwtCookie, directusErrorResponse, getSupplierNamesByProductId, isRecord, pickId };
 
 export const COST_HEADERS = HEADERS;
 export const COST_DETAILS = "cost_change_requests";

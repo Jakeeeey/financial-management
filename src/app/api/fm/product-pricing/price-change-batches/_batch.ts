@@ -614,6 +614,41 @@ async function fetchExistingPrices(productIds: number[], priceTypeIds: number[])
     return map;
 }
 
+export async function rejectPriceChangeBatch(headerId: number, userId: number, rejectReason: string) {
+    const header = await getHeader(headerId);
+    if (!header) return NextResponse.json({ error: "Batch not found" }, { status: 404 });
+    if (String(header.status ?? "") !== "PENDING") {
+        return NextResponse.json({ error: "Only PENDING batches can be rejected." }, { status: 400 });
+    }
+
+    await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
+        method: "PATCH",
+        headers: directusHeaders(),
+        body: JSON.stringify({
+            status: "REJECTED",
+            rejected_by: userId,
+            rejected_at: nowManila(),
+            reject_reason: rejectReason,
+        }),
+    });
+
+    const details = await getDetails(headerId);
+    await Promise.all(
+        details
+            .map((line) => pickId(line.request_id))
+            .filter((lineId): lineId is number => Boolean(lineId))
+            .map((lineId) =>
+                fetchDirectus(`${mustBase()}/items/${DETAILS}/${lineId}`, {
+                    method: "PATCH",
+                    headers: directusHeaders(),
+                    body: JSON.stringify({ status: "REJECTED" }),
+                }),
+            ),
+    );
+
+    return NextResponse.json({ ok: true, header_id: headerId, rejected: details.length });
+}
+
 export async function applyApprovedBatch(headerId: number, userId: number) {
     const header = await getHeader(headerId);
     if (!header) {
@@ -722,4 +757,78 @@ export async function applyApprovedBatch(headerId: number, userId: number) {
     invalidateGroupIndexCacheOnCatalogChange();
 
     return NextResponse.json({ ok: true, header_id: headerId, affected: normalizedDetails.length });
+}
+
+type DirectusProductRow = {
+    product_id?: number | string | null;
+    parent_id?: number | string | null;
+};
+
+export async function getSupplierNamesByProductId(productIds: number[]): Promise<Map<number, string>> {
+    const uniqueIds = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
+    if (uniqueIds.length === 0) return new Map();
+
+    const parentMap = new Map<number, number>();
+    for (let i = 0; i < uniqueIds.length; i += 200) {
+        const chunk = uniqueIds.slice(i, i + 200);
+        const p = new URLSearchParams();
+        p.set("limit", "-1");
+        p.set("fields", "product_id,parent_id");
+        p.set("filter[product_id][_in]", chunk.join(","));
+        const url = `${mustBase()}/items/${PRODUCTS}?${p.toString()}`;
+        const json = await fetchDirectus<DirectusList<DirectusProductRow>>(url, { headers: directusHeaders() });
+        for (const row of json.data ?? []) {
+            const pid = pickId(row.product_id);
+            const parentId = pickId(row.parent_id);
+            if (pid && parentId) parentMap.set(pid, parentId);
+        }
+    }
+
+    const allProductIds = Array.from(
+        new Set([...uniqueIds, ...Array.from(parentMap.values())]),
+    );
+
+    const supplierLabels = new Map<number, Set<string>>();
+    for (let i = 0; i < allProductIds.length; i += 200) {
+        const chunk = allProductIds.slice(i, i + 200);
+        const p = new URLSearchParams();
+        p.set("limit", "-1");
+        p.set("fields", "product_id,supplier_id,supplier_id.id,supplier_id.supplier_name,supplier_id.supplier_shortcut");
+        p.set("filter[product_id][_in]", chunk.join(","));
+        const url = `${mustBase()}/items/product_per_supplier?${p.toString()}`;
+        const json = await fetchDirectus<DirectusList<Record<string, unknown>>>(url, { headers: directusHeaders() });
+
+        for (const row of json.data ?? []) {
+            const pid = pickId(row.product_id);
+            if (!pid) continue;
+            const supplier = row.supplier_id;
+            if (!isRecord(supplier)) continue;
+            const shortcut = String(supplier.supplier_shortcut ?? "").trim();
+            const name = String(supplier.supplier_name ?? "").trim();
+            const label = shortcut && name ? `${shortcut} - ${name}` : name || shortcut || `Supplier #${String(supplier.id ?? "")}`;
+            const set = supplierLabels.get(pid) ?? new Set<string>();
+            set.add(label);
+            supplierLabels.set(pid, set);
+        }
+    }
+
+    const collapse = (set: Set<string> | undefined): string | null => {
+        if (!set || set.size === 0) return null;
+        return Array.from(set).join(", ");
+    };
+
+    const resolve = (productId: number): string | null => {
+        const direct = collapse(supplierLabels.get(productId));
+        if (direct) return direct;
+        const parentId = parentMap.get(productId);
+        if (parentId) return collapse(supplierLabels.get(parentId));
+        return null;
+    };
+
+    const result = new Map<number, string>();
+    for (const id of uniqueIds) {
+        const label = resolve(id);
+        if (label) result.set(id, label);
+    }
+    return result;
 }

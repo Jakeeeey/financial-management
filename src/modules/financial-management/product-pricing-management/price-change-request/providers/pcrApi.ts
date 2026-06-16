@@ -481,36 +481,44 @@ export async function createPriceChangeBatch(payload: CreatePriceChangeBatchPayl
 
 export async function approvePriceChangeBatch(headerId: number) {
     return http<{ ok: boolean; header_id: number; affected: number }>(
-        `/api/fm/product-pricing/price-change-batches/${headerId}/approve`,
-        { method: "POST" },
+        `/api/fm/product-pricing/price-change-batches/${headerId}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "approve" }),
+        },
     );
 }
 
 export async function approveListCostBatch(headerId: number) {
     return http<{ ok: boolean; header_id: number; affected: number }>(
-        `/api/fm/product-pricing/cost-change-batches/${headerId}/approve`,
-        { method: "POST" },
+        `/api/fm/product-pricing/cost-change-batches/${headerId}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "approve" }),
+        },
     );
 }
 
 export async function rejectPriceChangeBatch(headerId: number, reject_reason: string) {
     return http<{ ok: boolean; header_id: number; rejected: number }>(
-        `/api/fm/product-pricing/price-change-batches/${headerId}/reject`,
+        `/api/fm/product-pricing/price-change-batches/${headerId}`,
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reject_reason }),
+            body: JSON.stringify({ action: "reject", reject_reason }),
         },
     );
 }
 
 export async function rejectListCostBatch(headerId: number, reject_reason: string) {
     return http<{ ok: boolean; header_id: number; rejected: number }>(
-        `/api/fm/product-pricing/cost-change-batches/${headerId}/reject`,
+        `/api/fm/product-pricing/cost-change-batches/${headerId}`,
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reject_reason }),
+            body: JSON.stringify({ action: "reject", reject_reason }),
         },
     );
 }

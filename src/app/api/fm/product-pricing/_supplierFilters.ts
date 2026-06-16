@@ -234,3 +234,52 @@ export function appendBatchSuppliersFilter(
 
     return andIdx + 1;
 }
+
+export const CHUNK_SIZE = 200;
+export const WRITE_CONCURRENCY = 5;
+
+export { chunk };
+
+/**
+ * Append a chunked _or filter for a given field and ID list.
+ * Handles cases where the ID list exceeds the chunk size by splitting into
+ * multiple _or branches.
+ */
+export function appendChunkedInFilter(
+    params: URLSearchParams,
+    andIdx: number,
+    field: string,
+    ids: number[],
+    chunkSize = CHUNK_SIZE,
+): number {
+    if (ids.length === 0) return andIdx;
+
+    if (ids.length <= chunkSize) {
+        params.set(`filter[_and][${andIdx}][${field}][_in]`, ids.join(","));
+        return andIdx + 1;
+    }
+
+    for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        const orIdx = Math.floor(i / chunkSize);
+        params.set(`filter[_and][${andIdx}][_or][${orIdx}][${field}][_in]`, chunk.join(","));
+    }
+    return andIdx + 1;
+}
+
+/**
+ * Run an async operation on each item with a fixed concurrency limit.
+ */
+export async function batchAsyncOps<T, R>(
+    items: T[],
+    fn: (item: T) => Promise<R>,
+    concurrency = WRITE_CONCURRENCY,
+): Promise<R[]> {
+    const results: R[] = [];
+    for (let i = 0; i < items.length; i += concurrency) {
+        const batch = items.slice(i, i + concurrency);
+        const batchResults = await Promise.all(batch.map(fn));
+        results.push(...batchResults);
+    }
+    return results;
+}

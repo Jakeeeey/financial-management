@@ -4,6 +4,7 @@ import {
     resolveLegacyProductsPatch,
 } from "../_legacyProductPriceSync";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
+import { batchAsyncOps, CHUNK_SIZE } from "../_supplierFilters";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -157,19 +158,31 @@ export async function POST(req: NextRequest) {
         const productIds = Array.from(new Set(lines.map((line) => Number(line.product_id))));
         const priceTypeIds = Array.from(new Set(lines.map((line) => Number(line.price_type_id))));
 
-        const existingParams = new URLSearchParams();
-        existingParams.set("limit", "-1");
-        existingParams.set("fields", "id,product_id,price_type_id");
-        existingParams.set("filter[product_id][_in]", productIds.join(","));
-        existingParams.set("filter[price_type_id][_in]", priceTypeIds.join(","));
-
-        const existingUrl = `${DIRECTUS_URL}/items/${PRICES}?${existingParams.toString()}`;
-        const existingJson = await fetchDirectus<{ data: ExistingPriceRow[] }>(existingUrl);
-
         const existingKeyToId = new Map<string, number>();
-        for (const row of existingJson.data ?? []) {
-            const key = `${Number(row.product_id)}:${Number(row.price_type_id)}`;
-            existingKeyToId.set(key, Number(row.id));
+        const productIdChunks = [];
+        for (let i = 0; i < productIds.length; i += CHUNK_SIZE) {
+            productIdChunks.push(productIds.slice(i, i + CHUNK_SIZE));
+        }
+        for (const pidChunk of productIdChunks) {
+            const ptidChunks = [];
+            for (let i = 0; i < priceTypeIds.length; i += CHUNK_SIZE) {
+                ptidChunks.push(priceTypeIds.slice(i, i + CHUNK_SIZE));
+            }
+            for (const ptidChunk of ptidChunks) {
+                const existingParams = new URLSearchParams();
+                existingParams.set("limit", "-1");
+                existingParams.set("fields", "id,product_id,price_type_id");
+                existingParams.set("filter[product_id][_in]", pidChunk.join(","));
+                existingParams.set("filter[price_type_id][_in]", ptidChunk.join(","));
+
+                const existingUrl = `${DIRECTUS_URL}/items/${PRICES}?${existingParams.toString()}`;
+                const existingJson = await fetchDirectus<{ data: ExistingPriceRow[] }>(existingUrl);
+
+                for (const row of existingJson.data ?? []) {
+                    const key = `${Number(row.product_id)}:${Number(row.price_type_id)}`;
+                    existingKeyToId.set(key, Number(row.id));
+                }
+            }
         }
 
         const toCreate: CreatePriceRecordPayload[] = [];
@@ -209,14 +222,12 @@ export async function POST(req: NextRequest) {
         }
 
         if (toUpdate.length) {
-            await Promise.all(
-                toUpdate.map(({ id, payload }) =>
-                    fetchDirectus<unknown>(`${DIRECTUS_URL}/items/${PRICES}/${id}`, {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload),
-                    }),
-                ),
+            await batchAsyncOps(toUpdate, ({ id, payload }) =>
+                fetchDirectus<unknown>(`${DIRECTUS_URL}/items/${PRICES}/${id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                }),
             );
             affected += toUpdate.length;
         }
