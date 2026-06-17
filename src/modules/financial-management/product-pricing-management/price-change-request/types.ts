@@ -166,6 +166,7 @@ export type PriceTypeUnifiedApprovalRow = PriceChangeRequestRow & {
     batch_header_id?: number | null;
     supplier_id?: number | null;
     supplier_name?: string | null;
+    supplier_names?: string[];
 };
 
 export type ListPriceUnifiedApprovalRow = CostChangeRequestRow & {
@@ -176,6 +177,7 @@ export type ListPriceUnifiedApprovalRow = CostChangeRequestRow & {
     subtitle?: string;
     supplier_id?: number | null;
     supplier_name?: string | null;
+    supplier_names?: string[];
 };
 
 export type ItemUnifiedApprovalRow = PriceTypeUnifiedApprovalRow | ListPriceUnifiedApprovalRow;
@@ -200,6 +202,7 @@ export type UnifiedApprovalRow =
           request_id?: number;
           supplier_id?: number | null;
           supplier_name?: string | null;
+          supplier_names?: string[];
       }
     | {
           row_key: string;
@@ -222,6 +225,7 @@ export type UnifiedApprovalRow =
           reference_no?: string | null;
           supplier_id?: number | null;
           supplier_name?: string | null;
+          supplier_names?: string[];
       }
     | ItemUnifiedApprovalRow;
 

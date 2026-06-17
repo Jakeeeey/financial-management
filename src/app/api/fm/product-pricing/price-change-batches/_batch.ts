@@ -789,11 +789,12 @@ type DirectusProductRow = {
     parent_id?: number | string | null;
 };
 
-export async function getSupplierNamesByProductId(productIds: number[]): Promise<Map<number, string>> {
+export async function getSupplierNameListsByProductId(productIds: number[]): Promise<Map<number, string[]>> {
     const uniqueIds = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
     if (uniqueIds.length === 0) return new Map();
 
-    const parentMap = new Map<number, number>();
+    const parentMap = new Map<number, number | null>();
+    const groupIds = new Set<number>();
     for (let i = 0; i < uniqueIds.length; i += 200) {
         const chunk = uniqueIds.slice(i, i + 200);
         const p = new URLSearchParams();
@@ -805,12 +806,53 @@ export async function getSupplierNamesByProductId(productIds: number[]): Promise
         for (const row of json.data ?? []) {
             const pid = pickId(row.product_id);
             const parentId = pickId(row.parent_id);
-            if (pid && parentId) parentMap.set(pid, parentId);
+            if (!pid) continue;
+            parentMap.set(pid, parentId);
+            groupIds.add(parentId ?? pid);
+        }
+    }
+
+    for (const id of uniqueIds) {
+        if (!parentMap.has(id)) parentMap.set(id, null);
+        groupIds.add(parentMap.get(id) ?? id);
+    }
+
+    const productIdsByGroupId = new Map<number, Set<number>>();
+    for (const groupId of groupIds) {
+        productIdsByGroupId.set(groupId, new Set([groupId]));
+    }
+    for (const id of uniqueIds) {
+        const groupId = parentMap.get(id) ?? id;
+        const set = productIdsByGroupId.get(groupId) ?? new Set([groupId]);
+        set.add(id);
+        productIdsByGroupId.set(groupId, set);
+    }
+
+    const groupIdList = Array.from(groupIds);
+    for (let i = 0; i < groupIdList.length; i += 200) {
+        const chunk = groupIdList.slice(i, i + 200);
+        const p = new URLSearchParams();
+        p.set("limit", "-1");
+        p.set("fields", "product_id,parent_id");
+        p.set("filter[parent_id][_in]", chunk.join(","));
+        const url = `${mustBase()}/items/${PRODUCTS}?${p.toString()}`;
+        const json = await fetchDirectus<DirectusList<DirectusProductRow>>(url, { headers: directusHeaders() });
+        for (const row of json.data ?? []) {
+            const pid = pickId(row.product_id);
+            const parentId = pickId(row.parent_id);
+            if (!pid || !parentId) continue;
+            const set = productIdsByGroupId.get(parentId) ?? new Set([parentId]);
+            set.add(pid);
+            productIdsByGroupId.set(parentId, set);
         }
     }
 
     const allProductIds = Array.from(
-        new Set([...uniqueIds, ...Array.from(parentMap.values())]),
+        new Set([
+            ...uniqueIds,
+            ...groupIdList,
+            ...Array.from(productIdsByGroupId.values()).flatMap((ids) => Array.from(ids)),
+        ]),
     );
 
     const supplierLabels = new Map<number, Set<string>>();
@@ -837,23 +879,42 @@ export async function getSupplierNamesByProductId(productIds: number[]): Promise
         }
     }
 
-    const collapse = (set: Set<string> | undefined): string | null => {
+    const groupSupplierLabels = new Map<number, Set<string>>();
+    for (const [groupId, ids] of productIdsByGroupId) {
+        const labels = new Set<string>();
+        for (const id of ids) {
+            for (const label of supplierLabels.get(id) ?? []) {
+                labels.add(label);
+            }
+        }
+        if (labels.size > 0) groupSupplierLabels.set(groupId, labels);
+    }
+
+    const collapse = (set: Set<string> | undefined): string[] | null => {
         if (!set || set.size === 0) return null;
-        return Array.from(set).join(", ");
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
     };
 
-    const resolve = (productId: number): string | null => {
-        const direct = collapse(supplierLabels.get(productId));
-        if (direct) return direct;
-        const parentId = parentMap.get(productId);
-        if (parentId) return collapse(supplierLabels.get(parentId));
-        return null;
+    const resolve = (productId: number): string[] | null => {
+        const groupId = parentMap.get(productId) ?? productId;
+        return collapse(groupSupplierLabels.get(groupId))
+            ?? collapse(supplierLabels.get(productId))
+            ?? collapse(supplierLabels.get(groupId));
     };
 
-    const result = new Map<number, string>();
+    const result = new Map<number, string[]>();
     for (const id of uniqueIds) {
-        const label = resolve(id);
-        if (label) result.set(id, label);
+        const labels = resolve(id);
+        if (labels) result.set(id, labels);
+    }
+    return result;
+}
+
+export async function getSupplierNamesByProductId(productIds: number[]): Promise<Map<number, string>> {
+    const supplierLists = await getSupplierNameListsByProductId(productIds);
+    const result = new Map<number, string>();
+    for (const [productId, supplierNames] of supplierLists) {
+        if (supplierNames.length > 0) result.set(productId, supplierNames.join(", "));
     }
     return result;
 }

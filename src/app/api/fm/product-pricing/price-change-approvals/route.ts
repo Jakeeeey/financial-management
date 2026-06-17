@@ -23,6 +23,7 @@ import {
     BatchHeaderRow,
     DETAILS,
     HEADERS,
+    getSupplierNameListsByProductId,
     isRecord,
     mustBase,
     normalizeHeaderId,
@@ -155,6 +156,7 @@ type UnifiedApprovalRow = {
     current_price?: number | null;
     supplier_id?: number | null;
     supplier_name?: string | null;
+    supplier_names?: string[];
 };
 
 type DirectusUserRow = {
@@ -270,7 +272,7 @@ async function addSuppliersToRows(rows: UnifiedApprovalRow[]): Promise<UnifiedAp
         }
     }
 
-    const supplierByProductId = await fetchSupplierByProductIds(productIds);
+    const supplierByProductId = await getSupplierNameListsByProductId(productIds);
 
     return rows.map((row) => {
         if (row.kind === "price_batch" || row.kind === "cost_batch") {
@@ -278,15 +280,16 @@ async function addSuppliersToRows(rows: UnifiedApprovalRow[]): Promise<UnifiedAp
         }
 
         const pid = pickProductId(row.product_id);
-        const suppliers = pid ? supplierByProductId.get(pid) : undefined;
+        const supplierNames = pid ? supplierByProductId.get(pid) : undefined;
 
-        if (!suppliers || suppliers.length === 0) {
-            return { ...row, supplier_id: null, supplier_name: null };
+        if (!supplierNames || supplierNames.length === 0) {
+            return { ...row, supplier_id: null, supplier_name: null, supplier_names: [] };
         }
 
         return {
             ...row,
-            supplier_name: resolveSupplierName(suppliers),
+            supplier_name: compactSupplierDisplayName(supplierNames),
+            supplier_names: supplierNames,
         };
     });
 }
@@ -358,10 +361,23 @@ async function fetchSupplierByProductIds(productIds: number[]): Promise<Map<numb
     return map;
 }
 
+function uniqueSupplierNames(labels: string[]): string[] {
+    return Array.from(new Set(labels.map((label) => String(label ?? "").trim()).filter(Boolean)));
+}
+
+function uniqueSupplierNamesFromInfos(suppliers: SupplierInfo[]): string[] {
+    return uniqueSupplierNames(suppliers.map((supplier) => supplier.supplier_name));
+}
+
 function resolveSupplierName(suppliers: SupplierInfo[]): string {
     if (suppliers.length === 0) return "-";
     const unique = Array.from(new Set(suppliers.map((s) => s.supplier_name)));
     return unique.length === 1 ? unique[0] : "Multiple suppliers";
+}
+
+function compactSupplierDisplayName(labels: string[]): string {
+    if (labels.length === 0) return "-";
+    return labels.length === 1 ? labels[0] : "Multiple suppliers";
 }
 
 function headerIdOfDetail(row: BatchDetailRow): number {
@@ -982,6 +998,7 @@ async function fetchPriceBatchesPage(
         const requestedBy = Number(row.requested_by);
         const summary = summaries.get(headerId);
         const supplierName = supplierNameOf(row.supplier_id);
+        const supplierNames = supplierName ? [supplierName] : [];
         const referenceNo = String(row.reference_no ?? "").trim();
         const remarks = String(row.remarks ?? "").trim();
         const proposedMin = summary?.proposedMin ?? null;
@@ -1007,6 +1024,7 @@ async function fetchPriceBatchesPage(
             reference_no: referenceNo || null,
             supplier_id: supplierIdOf(row.supplier_id),
             supplier_name: supplierName || null,
+            supplier_names: supplierNames,
         });
     }
 
@@ -1073,6 +1091,7 @@ async function fetchCostBatchesPage(
 
         const batchSupplierInfos = (summary?.productIds ?? [])
             .flatMap((pid) => supplierByProductId.get(pid) ?? []);
+        const batchSupplierNames = uniqueSupplierNamesFromInfos(batchSupplierInfos);
         const batchSupplierName = resolveSupplierName(batchSupplierInfos);
 
         rows.push({
@@ -1094,6 +1113,7 @@ async function fetchCostBatchesPage(
             remarks: remarks || null,
             reference_no: referenceNo || null,
             supplier_name: batchSupplierName !== "-" ? batchSupplierName : null,
+            supplier_names: batchSupplierNames,
         });
     }
 

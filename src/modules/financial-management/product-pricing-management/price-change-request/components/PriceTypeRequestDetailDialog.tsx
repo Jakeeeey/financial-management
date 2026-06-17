@@ -135,11 +135,15 @@ export function PriceTypeRequestDetailDialog({
     };
 
     const recordLabel = isBatchLinked && headerId ? `PCB-${headerId}` : row?.record_label ?? "Price Type Request";
+    const supplierName = String(row?.supplier_name ?? "").trim();
+    const supplierNames = Array.isArray(row?.supplier_names)
+        ? row.supplier_names.map((name) => String(name ?? "").trim()).filter(Boolean)
+        : [];
 
     return (
         <>
             <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="sm:max-w-lg">
+                <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle>{row?.record_label ?? "Price Type Request"}</DialogTitle>
                     <DialogDescription>Review the proposed price type change and batch remarks.</DialogDescription>
@@ -156,6 +160,25 @@ export function PriceTypeRequestDetailDialog({
                                 {row.subtitle ? (
                                     <div className="text-xs text-muted-foreground">{row.subtitle}</div>
                                 ) : null}
+                            </div>
+                            <div className="sm:col-span-2">
+                                <div className="text-xs font-medium uppercase text-muted-foreground">Supplier</div>
+                                {supplierNames.length > 1 ? (
+                                    <div className="mt-1 space-y-1">
+                                        {supplierNames.map((name) => (
+                                            <div
+                                                key={name}
+                                                className="whitespace-normal break-words font-medium"
+                                            >
+                                                {name}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="mt-1 whitespace-normal break-words font-medium">
+                                        {supplierNames[0] || supplierName || "-"}
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Price Type</div>
