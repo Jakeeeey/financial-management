@@ -331,15 +331,11 @@ export async function POST(req: NextRequest) {
         const priceTypeName = await getPriceTypeName(price_type_id);
         const productField = mapPriceTypeToProductsField(priceTypeName);
 
-        if (!productField) {
-            return NextResponse.json(
-                { error: `Unsupported price type name "${priceTypeName}". Expected A–E.` },
-                { status: 400 },
-            );
-        }
-
         await upsertProductPerPriceType({ product_id, price_type_id, proposed_price, userId });
-        await patchProductPriceField({ product_id, field: productField, proposed_price });
+
+        if (productField) {
+            await patchProductPriceField({ product_id, field: productField, proposed_price });
+        }
 
         const url = `${mustBase()}/items/${PCR}/${request_id}`;
         const updated = await fetchDirectus<PatchedPcrResponse>(url, {

@@ -13,7 +13,7 @@ import type {
     PriceType,
 } from "../types";
 import * as api from "../providers/pricingApi";
-import { TIERS } from "../utils/constants";
+import { getDynamicTiers } from "../utils/constants";
 import { clampMoney, toNumberOrNull } from "../utils/format";
 import { pivotPrices, buildTierIdMap } from "../utils/pivot";
 import { validatePrice } from "../utils/validators";
@@ -35,14 +35,6 @@ type MatrixProductRow = ProductRow & {
     __group_id?: number | null;
 };
 
-const EMPTY_PIVOT: Record<ProductTierKey, number | null> = {
-    A: null,
-    B: null,
-    C: null,
-    D: null,
-    E: null,
-    LIST: null,
-};
 
 const defaultFilters: PricingFilters = {
     q: "",
@@ -68,6 +60,7 @@ export function usePricingMatrix(args: {
     const { categoriesById, brandsById, unitsById, unitsList = [], priceTypes } = args;
 
     const tierIdMap = useMemo(() => buildTierIdMap(priceTypes), [priceTypes]);
+    const TIERS = useMemo(() => getDynamicTiers(priceTypes), [priceTypes]);
 
     const [filters, setFilters] = useState<PricingFilters>(defaultFilters);
 
@@ -167,6 +160,11 @@ export function usePricingMatrix(args: {
             const priceRes = await api.getPricesForProducts(productIds);
             const priceMap = pivotPrices(priceTypes, priceRes.data ?? []);
 
+            const emptyPivot = TIERS.reduce((acc, tier) => {
+                acc[tier] = null;
+                return acc;
+            }, {} as Record<ProductTierKey, number | null>);
+
             // Fetch pending requests
             const [pendingPriceRes, pendingCostRes] = await Promise.all([
                 api.getPendingPriceRequests(),
@@ -243,7 +241,7 @@ export function usePricingMatrix(args: {
                     if (uomId === null || uomId <= 0) continue;
 
                     const productId = toNumberOrNull(v.product_id);
-                    const piv = productId !== null ? priceMap.get(productId) ?? EMPTY_PIVOT : EMPTY_PIVOT;
+                    const piv = productId !== null ? priceMap.get(productId) ?? emptyPivot : emptyPivot;
 
                     variantsByUnitId[uomId] = {
                         product: v,
@@ -268,7 +266,7 @@ export function usePricingMatrix(args: {
         } finally {
             setLoading(false);
         }
-    }, [filters, page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes, tierIdMap]);
+    }, [filters, page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes, tierIdMap, TIERS]);
 
     useEffect(() => {
         refresh().catch((error: unknown) => {
@@ -519,6 +517,7 @@ export function usePricingMatrix(args: {
 
         refresh,
     }), [
+        TIERS,
         loading,
         rows,
         meta,
