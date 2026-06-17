@@ -13,10 +13,30 @@ import {
 
 type RuleRow = {
   id?: unknown;
+  deleted_at?: unknown;
+};
+
+type ProductRow = {
+  product_id?: unknown;
+  parent_id?: unknown;
 };
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * Product-specific customer rules are stored on the parent product so child/UOM variants inherit them.
+ */
+async function parentProductId(productId: number) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "product_id,parent_id");
+  params.set("filter[product_id][_eq]", String(productId));
+
+  const res = await directusFetch<DirectusList<ProductRow>>(`/items/products?${params.toString()}`);
+  const row = res.data?.[0];
+  return asNumber(row?.parent_id) ?? asNumber(row?.product_id) ?? productId;
+}
 
 /**
  * Finds an existing active product-specific rule before insert/update.
@@ -44,6 +64,25 @@ async function findExistingRule(customerCode: string, productId: number) {
   return asNumber(res.data?.[0]?.id);
 }
 
+async function hardDeleteRule(id: number) {
+  await directusFetch<unknown>(`/items/product_per_customer/${id}`, {
+    method: "DELETE",
+  });
+}
+
+async function deletedAtFilterIsAvailable(id: number) {
+  const params = new URLSearchParams();
+  params.set("limit", "1");
+  params.set("fields", "id");
+  params.set("filter[id][_eq]", String(id));
+  addSoftDeleteFilters(params);
+
+  const res = await directusFetch<DirectusList<RuleRow>>(
+    `/items/product_per_customer?${params.toString()}`,
+  );
+  return (res.data ?? []).length === 0;
+}
+
 /**
  * Creates or updates a customer/product rule with either a discount type or explicit unit price.
  */
@@ -64,7 +103,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Select a discount type or enter a unit price" }, { status: 400 });
     }
 
-    const existingId = await findExistingRule(customerCode, productId);
+    const normalizedProductId = await parentProductId(productId);
+    const existingId = await findExistingRule(customerCode, normalizedProductId);
     if (existingId) {
       const updatePayload: Record<string, unknown> = {
         discount_type: discountTypeId,
@@ -82,7 +122,7 @@ export async function POST(request: NextRequest) {
 
     const payload: Record<string, unknown> = {
       customer_code: customerCode,
-      product_id: productId,
+      product_id: normalizedProductId,
       discount_type: discountTypeId,
     };
     if (unitPrice !== null) payload.unit_price = unitPrice;
@@ -100,7 +140,9 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Soft-deletes a product-specific rule by setting deleted_at/deleted_by.
+ * Deletes a product-specific rule. Soft-delete is preferred, but Directus
+ * instances that cannot filter deleted_at need a hard-delete fallback so the
+ * rule does not reappear after the list reloads.
  */
 export async function DELETE(request: NextRequest) {
   try {
@@ -117,10 +159,39 @@ export async function DELETE(request: NextRequest) {
     };
     if (userId) payload.deleted_by = userId;
 
-    await directusFetch<DirectusItem<RuleRow>>(`/items/product_per_customer/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
+    try {
+      await directusFetch<DirectusItem<RuleRow>>(`/items/product_per_customer/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      if (!isDeletedAtAccessError(error)) throw error;
+
+      await hardDeleteRule(id);
+      return NextResponse.json({ success: true, hardDeleted: true });
+    }
+
+    try {
+      const deletedRowIsHidden = await deletedAtFilterIsAvailable(id);
+      if (!deletedRowIsHidden) {
+        await hardDeleteRule(id);
+        return NextResponse.json({ success: true, hardDeleted: true });
+      }
+    } catch (error) {
+      if (!isDeletedAtAccessError(error)) throw error;
+
+      try {
+        await hardDeleteRule(id);
+        return NextResponse.json({ success: true, hardDeleted: true });
+      } catch {
+        return NextResponse.json({
+          success: true,
+          localOnly: true,
+          warning:
+            "Rule was soft-deleted, but this Directus role cannot filter deleted_at.",
+        });
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

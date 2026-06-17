@@ -4,10 +4,11 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import type { WheelEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { FilterX, LayoutGrid, Loader2, Settings2, Table2, Tags, Users } from "lucide-react";
+import { FilterX, LayoutGrid, Loader2, Search, Settings2, Table2, Tags, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Pagination,
   PaginationContent,
@@ -15,6 +16,13 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -63,6 +71,9 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState(initialModuleData.pagination.search);
+  const [storeTypeId, setStoreTypeId] = useState(
+    initialModuleData.pagination.storeTypeId ? String(initialModuleData.pagination.storeTypeId) : "all",
+  );
   const [viewMode, setViewMode] = useState<ViewMode>(() => initialViewMode ?? defaultViewMode());
   const [sheetOpen, setSheetOpen] = useState(false);
   const {
@@ -84,16 +95,18 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
   const pagination = moduleData.pagination;
   const customers = moduleData.customers;
   const displayLoading = loading || isPending;
+  const appliedStoreTypeId = pagination.storeTypeId ? String(pagination.storeTypeId) : "all";
   const totalPages = Math.max(1, pagination.totalPages);
   const safeCurrentPage = Math.min(pagination.page, totalPages);
   const startItem = pagination.total === 0 ? 0 : (safeCurrentPage - 1) * pagination.pageSize + 1;
   const endItem = Math.min(safeCurrentPage * pagination.pageSize, pagination.total);
 
-  // Keep search, page, and view mode in the URL so pagination remains server-driven.
-  const navigateToCustomerPage = useCallback((page: number, nextSearch = search, nextViewMode = viewMode) => {
+  // Keep search, page, store type, and view mode in the URL so pagination remains server-driven.
+  const navigateToCustomerPage = useCallback((page: number, nextSearch = search, nextViewMode = viewMode, nextStoreTypeId = storeTypeId) => {
     const params = new URLSearchParams();
     const trimmedSearch = nextSearch.trim();
     if (trimmedSearch) params.set("q", trimmedSearch);
+    if (nextStoreTypeId !== "all") params.set("storeTypeId", nextStoreTypeId);
     if (page > 1) params.set("page", String(page));
     params.set("view", nextViewMode);
     const query = params.toString();
@@ -101,23 +114,15 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
     startTransition(() => {
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     });
-  }, [pathname, router, search, viewMode]);
-
-  // Debounce table filtering to avoid replacing the route on every keystroke.
-  useEffect(() => {
-    const normalizedSearch = search.trim();
-    if (normalizedSearch === pagination.search) return;
-
-    const handle = window.setTimeout(() => {
-      navigateToCustomerPage(1, normalizedSearch);
-    }, 350);
-
-    return () => window.clearTimeout(handle);
-  }, [navigateToCustomerPage, pagination.search, search]);
+  }, [pathname, router, search, storeTypeId, viewMode]);
 
   const updateSearch = (value: string) => {
     setSearch(value);
   };
+
+  const applyFilters = useCallback(() => {
+    navigateToCustomerPage(1, search.trim(), viewMode, storeTypeId);
+  }, [navigateToCustomerPage, search, storeTypeId, viewMode]);
 
   const openCustomer = (customer: CustomerDiscountingCustomer) => {
     selectCustomer(customer);
@@ -155,52 +160,92 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
         </Badge>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-md border bg-card p-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="grid w-full gap-3 md:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] lg:max-w-3xl">
-          <div className="relative w-full">
-            <Users className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => updateSearch(event.target.value)}
-              placeholder="Filter customer table"
-              className="pl-8"
-            />
+      <div className="rounded-md border bg-card p-4">
+        <form
+          className="grid w-full gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(160px,200px)] xl:grid-cols-[minmax(0,1fr)_minmax(160px,200px)_minmax(220px,320px)_auto] lg:items-end"
+          onSubmit={(event) => {
+            event.preventDefault();
+            applyFilters();
+          }}
+        >
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="customer-discount-search">Customer Search</Label>
+            <div className="relative w-full">
+              <Users className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="customer-discount-search"
+                value={search}
+                onChange={(event) => updateSearch(event.target.value)}
+                placeholder="Customer name, code, or store"
+                className="pl-8"
+              />
+            </div>
           </div>
-          <CustomerQuickOpen onSelect={openCustomer} />
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {search ? (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setSearch("");
-                navigateToCustomerPage(1, "");
-              }}
-            >
-              <FilterX className="mr-2 h-4 w-4" />
-              Clear
-            </Button>
-          ) : null}
-          <ToggleGroup
-            type="single"
-            value={viewMode}
-            onValueChange={(value) => {
-              if (value === "table" || value === "card") setViewMode(value);
-            }}
-            variant="outline"
-            size="sm"
-            aria-label="Select customer view"
-          >
-            <ToggleGroupItem value="table" aria-label="Table view">
-              <Table2 className="h-4 w-4" />
-              <span className="ml-2">Table</span>
-            </ToggleGroupItem>
-            <ToggleGroupItem value="card" aria-label="Card view">
-              <LayoutGrid className="h-4 w-4" />
-              <span className="ml-2">Cards</span>
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="customer-discount-store-type">Store Type</Label>
+            <Select value={storeTypeId} onValueChange={setStoreTypeId}>
+              <SelectTrigger id="customer-discount-store-type">
+                <SelectValue placeholder="All store types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All store types</SelectItem>
+                {moduleData.storeTypes.map((storeType) => (
+                  <SelectItem key={storeType.id} value={String(storeType.id)}>
+                    {storeType.storeType}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="customer-quick-open">Open Customer</Label>
+            <CustomerQuickOpen inputId="customer-quick-open" onSelect={openCustomer} />
+          </div>
+          <div className="flex min-w-0 flex-col gap-2 lg:col-span-2 xl:col-span-1">
+            <Label>Actions</Label>
+            <div className="flex min-w-0 flex-wrap items-center gap-2 xl:flex-nowrap xl:justify-end">
+              <Button type="submit" className="h-10 whitespace-nowrap">
+                <Search className="mr-2 h-4 w-4" />
+                Search
+              </Button>
+              {search || storeTypeId !== "all" ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-10 whitespace-nowrap"
+                  onClick={() => {
+                    setSearch("");
+                    setStoreTypeId("all");
+                    navigateToCustomerPage(1, "", viewMode, "all");
+                  }}
+                >
+                  <FilterX className="mr-2 h-4 w-4" />
+                  Clear
+                </Button>
+              ) : null}
+              <ToggleGroup
+                type="single"
+                value={viewMode}
+                onValueChange={(value) => {
+                  if (value === "table" || value === "card") setViewMode(value);
+                }}
+                variant="outline"
+                size="sm"
+                aria-label="Select customer view"
+                className="h-10 justify-start"
+              >
+                <ToggleGroupItem value="table" aria-label="Table view">
+                  <Table2 className="h-4 w-4" />
+                  <span className="ml-2">Table</span>
+                </ToggleGroupItem>
+                <ToggleGroupItem value="card" aria-label="Card view">
+                  <LayoutGrid className="h-4 w-4" />
+                  <span className="ml-2">Cards</span>
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+          </div>
+        </form>
       </div>
 
       {viewMode === "table" ? (
@@ -241,7 +286,10 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
                 <TableRow key={customer.id}>
                   <TableCell className="whitespace-normal break-all font-mono text-xs">{customer.customerCode}</TableCell>
                   <TableCell className="whitespace-normal break-words font-medium">{customer.customerName}</TableCell>
-                  <TableCell className="whitespace-normal break-words text-sm text-muted-foreground">{customer.storeName || "No store"}</TableCell>
+                  <TableCell className="whitespace-normal break-words text-sm text-muted-foreground">
+                    <div>{customer.storeName || "No store"}</div>
+                    <div className="text-xs">{customer.storeTypeName || "No store type"}</div>
+                  </TableCell>
                   <TableCell className="whitespace-normal">
                     <Badge variant="outline" className="max-w-full whitespace-normal text-left">
                       {discountText(customer.globalDiscount)}
@@ -311,6 +359,10 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
                   <span className="min-w-0 truncate">{customer.storeName || "No store"}</span>
                 </div>
                 <div className="grid grid-cols-[88px_1fr] gap-3">
+                  <span className="text-muted-foreground">Type</span>
+                  <span className="min-w-0 truncate">{customer.storeTypeName || "No store type"}</span>
+                </div>
+                <div className="grid grid-cols-[88px_1fr] gap-3">
                   <span className="text-muted-foreground">Discount</span>
                   <Badge variant="outline" className="w-fit max-w-full truncate">
                     {discountText(customer.globalDiscount)}
@@ -337,7 +389,7 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
                   className={safeCurrentPage === 1 ? "pointer-events-none opacity-50" : ""}
                   onClick={(event) => {
                     event.preventDefault();
-                    navigateToCustomerPage(Math.max(1, safeCurrentPage - 1));
+                    navigateToCustomerPage(Math.max(1, safeCurrentPage - 1), pagination.search, viewMode, appliedStoreTypeId);
                   }}
                 />
               </PaginationItem>
@@ -353,7 +405,7 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
                   className={safeCurrentPage === totalPages ? "pointer-events-none opacity-50" : ""}
                   onClick={(event) => {
                     event.preventDefault();
-                    navigateToCustomerPage(Math.min(totalPages, safeCurrentPage + 1));
+                    navigateToCustomerPage(Math.min(totalPages, safeCurrentPage + 1), pagination.search, viewMode, appliedStoreTypeId);
                   }}
                 />
               </PaginationItem>
@@ -368,7 +420,6 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
         customer={selectedCustomer}
         discountTypes={moduleData.discountTypes}
         suppliers={moduleData.suppliers}
-        categories={moduleData.categories}
         supplierCategoryRules={rules.supplierCategoryRules}
         productRules={rules.productRules}
         loading={rulesLoading}
@@ -387,8 +438,10 @@ export default function CustomerDiscountingModule({ userId, initialModuleData, i
  * Async customer combobox used to open a customer without navigating table pages.
  */
 function CustomerQuickOpen({
+  inputId,
   onSelect,
 }: {
+  inputId?: string;
   onSelect: (customer: CustomerDiscountingCustomer) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -441,6 +494,7 @@ function CustomerQuickOpen({
     <div className="relative w-full">
       <Users className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
       <Input
+        id={inputId}
         value={query}
         onChange={(event) => {
           const nextQuery = event.target.value;

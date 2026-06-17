@@ -5,6 +5,9 @@ import {
 } from "@/modules/financial-management/supplier-registration/services/products-per-suppliers";
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = 'force-dynamic';
+
+
 /**
  * GET /api/fm/supplier-registration/suppliers/[id]/products
  * Fetch all products for a specific supplier

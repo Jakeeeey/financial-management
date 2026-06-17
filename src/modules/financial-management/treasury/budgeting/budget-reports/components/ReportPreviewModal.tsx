@@ -38,7 +38,7 @@ export function ReportPreviewModal({ isOpen, onClose, title, pdfUrl, loading }: 
             </div>
             <div className="flex flex-col">
               <span className="text-[11px] font-black text-white uppercase tracking-widest leading-none">{title}</span>
-              <span className="text-[9px] font-bold text-white/40 uppercase tracking-tighter mt-1">MEN2 MARKETING • PDF PREVIEW</span>
+              <span className="text-[9px] font-bold text-white/40 uppercase tracking-tighter mt-1">MEN2 MARKETING - PDF PREVIEW</span>
             </div>
           </div>
           

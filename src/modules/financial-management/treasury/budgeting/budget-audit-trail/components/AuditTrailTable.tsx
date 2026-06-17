@@ -189,12 +189,6 @@ export function AuditTrailTable({ logs }: { logs: BudgetAuditTrail[] }) {
                     <span className="text-[10px] font-mono tabular-nums text-muted-foreground/50 line-through">{fmt(log.previous_amount || 0)}</span>
                   )}
                   <span className="text-xs font-mono font-black tabular-nums text-foreground">{fmt(log.new_amount)}</span>
-                  {log.previous_amount !== null && log.action !== 'Created' && log.previous_amount !== log.new_amount && (
-                    <div className={`flex items-center gap-0.5 text-[9px] font-bold ${log.new_amount < (log.previous_amount || 0) ? "text-emerald-600" : "text-amber-600"}`}>
-                      {log.new_amount < (log.previous_amount || 0) ? "▼" : "▲"}
-                      {Math.abs(((log.new_amount - (log.previous_amount || 0)) / (log.previous_amount || 1)) * 100).toFixed(0)}%
-                    </div>
-                  )}
                 </div>
 
                 <span className="hidden md:block w-px h-3 bg-border/40" />

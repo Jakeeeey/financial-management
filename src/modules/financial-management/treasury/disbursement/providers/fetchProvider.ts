@@ -8,11 +8,19 @@ import {
     SupplierDto,
     COADto,
     BankAccountDto,
-    UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto
+    UnpaidPoDto,
+    MemoDto,
+    DivisionDto,
+    DepartmentDto,
+    DisbursementDashboardData,
+    DashboardFilters
 } from "../types";
 
 const API_BASE = "/api/fm/treasury/disbursements";
 const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
+
+const toStoredSupplierType = (type: string) =>
+    type.toUpperCase().startsWith("NON") ? "NON-TRADE" : "TRADE";
 
 export const disbursementProvider = {
     getDisbursements: async (
@@ -57,15 +65,40 @@ export const disbursementProvider = {
 
     // 🚀 Fetch Suppliers for the Dropdown
     getSuppliers: async (type: string = "Trade"): Promise<SupplierDto[]> => {
-        const res = await fetch(`${SUPPLIER_API_BASE}?type=${encodeURIComponent(type)}`);
+        const res = await fetch(`${SUPPLIER_API_BASE}?type=${encodeURIComponent(toStoredSupplierType(type))}`);
         if (!res.ok) throw new Error("Failed to fetch suppliers");
         return res.json();
+    },
+
+    createPayee: async (payload: {
+        supplier_name: string;
+        supplier_type: "TRADE" | "NON-TRADE";
+        tin_number: string;
+        bank_details?: string;
+        email_address?: string;
+        phone_number?: string;
+    }): Promise<SupplierDto> => {
+        const res = await fetch("/api/fm/payee-registration/payees", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || "Failed to create payee");
+        return json.data as SupplierDto;
     },
 
     // 🚀 Fetch COAs for the Line Items
     getCOAs: async (): Promise<COADto[]> => {
         const res = await fetch("/api/fm/treasury/coas");
         if (!res.ok) throw new Error("Failed to fetch COAs");
+        return res.json();
+    },
+
+    // 🚀 Fetch COAs restricted to payable account types (3,4,7,8,9,10)
+    getPayableCOAs: async (): Promise<COADto[]> => {
+        const res = await fetch("/api/fm/treasury/coas?forPayable=true");
+        if (!res.ok) throw new Error("Failed to fetch payable COAs");
         return res.json();
     },
 
@@ -84,16 +117,19 @@ export const disbursementProvider = {
         if (!res.ok) throw new Error("Failed to update disbursement");
         return res.json();
     },
+
     getUnpaidPos: async (supplierId: number): Promise<UnpaidPoDto[]> => {
         const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`);
         if (!res.ok) throw new Error("Failed to fetch unpaid POs");
         return res.json();
     },
+
     getSupplierMemos: async (supplierId: number): Promise<MemoDto[]> => {
         const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`);
         if (!res.ok) throw new Error("Failed to fetch supplier memos");
         return res.json();
     },
+
     getDivisions: async (): Promise<DivisionDto[]> => {
         // Replace with your actual division API route if different
         const res = await fetch("/api/fm/setup/divisions");
@@ -107,4 +143,28 @@ export const disbursementProvider = {
         if (!res.ok) throw new Error("Failed to fetch departments");
         return res.json();
     },
+
+    getDashboardData: async (filters: DashboardFilters): Promise<DisbursementDashboardData> => {
+        const params = new URLSearchParams();
+        if (filters.startDate) params.append("startDate", filters.startDate);
+        if (filters.endDate) params.append("endDate", filters.endDate);
+        if (filters.status) params.append("status", filters.status);
+        if (filters.payeeId) params.append("payeeId", filters.payeeId.toString());
+        if (filters.transactionType) params.append("transactionType", filters.transactionType.toString()); // 🚀 NEW
+        if (filters.encoderId) params.append("encoderId", filters.encoderId.toString());
+        if (filters.coaId) params.append("coaId", filters.coaId.toString());
+        if (filters.amount) params.append("amount", filters.amount.toString());
+        if (filters.remarks) params.append("remarks", filters.remarks);
+
+        const res = await fetch(`${API_BASE}/dashboard?${params.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch dashboard data");
+        return res.json();
+    },
+
+    getNextDocNo: async (supplierType: string = "Trade"): Promise<string> => {
+        const res = await fetch(`${API_BASE}?nextDocNo=true&supplierType=${encodeURIComponent(supplierType)}`);
+        if (!res.ok) throw new Error("Failed to fetch next doc no");
+        const data = await res.json();
+        return data.nextDocNo;
+    }
 };

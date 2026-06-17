@@ -14,7 +14,7 @@ export function LifecycleTabs() {
   ];
 
   return (
-    <div className="flex items-center gap-1 border-b border-border mb-4">
+    <div className="flex items-center gap-1">
       {tabs.map((tab) => {
         const isActive = filters.status === tab.value;
         return (

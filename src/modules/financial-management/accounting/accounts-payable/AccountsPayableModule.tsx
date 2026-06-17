@@ -1,61 +1,74 @@
 "use client";
 
-// AccountsPayableModule.tsx — Main module layout and composition.
-
 import { useState, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import { SearchableSelect } from '@/components/ui/searchable-select';
-import { PhilippinePeso, TrendingDown, FileText, X, Download } from 'lucide-react';
+  PhilippinePeso, TrendingDown, FileText, Download,
+  Briefcase, Wallet, ListChecks,
+} from 'lucide-react';
 import { useAccountsPayable } from './hooks/useAccountsPayable';
-import { MetricCard }       from './components/MetricCard';
-import { APAgingChart }     from './components/APAgingChart';
-import { APSupplierChart }  from './components/APSupplierChart';
+import { MetricCard } from './components/MetricCard';
+import { APAgingChart } from './components/APAgingChart';
+import { APSupplierChart } from './components/APSupplierChart';
 import { APStatusPieChart } from './components/APStatusPieChart';
-import { APTable }          from './components/APTable';
+import { APTable } from './components/APTable';
+import { CategorySplitHeader } from './components/CategorySplitHeader';
+import { APFilterBar } from './components/APFilterBar';
+import { AIInsightsPanel } from './components/AIInsightsPanel';
 import {
-  buildAgingBuckets, buildSupplierData, buildStatusData, deriveMetrics, formatPeso,
+  buildAgingBuckets, buildSupplierData, buildStatusData, deriveMetrics,
+  buildCategoryBreakdown, formatPeso,
 } from './utils';
-import type { APStatus } from './types';
+import type { APStatus, APCategory } from './types';
 
 const STATUS_OPTIONS: APStatus[] = [
   'Paid', 'Unpaid', 'Partially Paid', 'Unpaid | Overdue', 'Partially Paid | Overdue',
 ];
-
-function isTrade(refNo: string): boolean {
-  return refNo.toUpperCase().startsWith('TR');
-}
+type TabValue = 'all' | APCategory;
 
 export default function AccountsPayableModule() {
   const { loading, error, records } = useAccountsPayable();
-
-  const [page,     setPage]     = useState(1);
+  const [tab, setTab] = useState<TabValue>('all');
+  const [page, setPage] = useState(1);
   const [dateFrom, setDateFrom] = useState('');
-  const [dateTo,   setDateTo]   = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [supplier, setSupplier] = useState('');
-  const [status,   setStatus]   = useState('');
+  const [status, setStatus] = useState('');
 
-  // Only trade records (refNo starts with "TR")
-  const tradeRecords = useMemo(
-    () => records.filter((r) => isTrade(r.refNo)),
-    [records]
-  );
+  const tradeRecords    = useMemo(() => records.filter(r => r.apCategory === 'Trade'),     [records]);
+  const nonTradeRecords = useMemo(() => records.filter(r => r.apCategory === 'Non-Trade'), [records]);
+
+  const [tradeBreakdown, nonTradeBreakdown] = useMemo(() => {
+    const breakdown = buildCategoryBreakdown(records);
+    return [breakdown[0], breakdown[1]];
+  }, [records]);
+
+  const tabRecords = useMemo(() => {
+    if (tab === 'Trade')     return tradeRecords;
+    if (tab === 'Non-Trade') return nonTradeRecords;
+    return records;
+  }, [tab, records, tradeRecords, nonTradeRecords]);
 
   const supplierOptions = useMemo(
-    () => Array.from(new Set(tradeRecords.map((r) => r.supplier).filter(Boolean))).sort(),
-    [tradeRecords]
+    () => Array.from(new Set(tabRecords.map(r => r.supplier).filter(Boolean))).sort(),
+    [tabRecords]
   );
+
+  const handleTabChange = (v: string) => {
+    setTab(v as TabValue);
+    setSupplier('');
+    setStatus('');
+    setPage(1);
+  };
 
   const isFiltered = !!(dateFrom || dateTo || supplier || status);
 
   const filteredRecords = useMemo(() => {
-    return tradeRecords.filter((r) => {
+    return tabRecords.filter(r => {
       const recDate = (r.invoiceDate || r.dueDate || '').split(' ')[0];
       if (dateFrom && recDate && recDate < dateFrom) return false;
       if (dateTo   && recDate && recDate > dateTo)   return false;
@@ -63,30 +76,28 @@ export default function AccountsPayableModule() {
       if (status   && r.status   !== status)          return false;
       return true;
     });
-  }, [tradeRecords, dateFrom, dateTo, supplier, status]);
+  }, [tabRecords, dateFrom, dateTo, supplier, status]);
 
   const displayRecords      = filteredRecords;
-  const displayMetrics      = useMemo(() => deriveMetrics(filteredRecords),       [filteredRecords]);
-  const displayAgingData    = useMemo(() => buildAgingBuckets(filteredRecords),   [filteredRecords]);
-  const displaySupplierData = useMemo(() => buildSupplierData(filteredRecords),   [filteredRecords]);
-  const displayStatusData   = useMemo(() => buildStatusData(filteredRecords),     [filteredRecords]);
+  const displayMetrics      = useMemo(() => deriveMetrics(filteredRecords),     [filteredRecords]);
+  const displayAgingData    = useMemo(() => buildAgingBuckets(filteredRecords), [filteredRecords]);
+  const displaySupplierData = useMemo(() => buildSupplierData(filteredRecords), [filteredRecords]);
+  const displayStatusData   = useMemo(() => buildStatusData(filteredRecords),   [filteredRecords]);
 
   const clearFilters = () => {
     setDateFrom(''); setDateTo(''); setSupplier(''); setStatus(''); setPage(1);
   };
 
   const exportToPDF = () => {
-    const doc   = new jsPDF({ orientation: 'landscape' });
+    const doc = new jsPDF({ orientation: 'landscape' });
     const pageW = doc.internal.pageSize.getWidth();
     const total = displayMetrics.totalPayable;
-    const formattedTotal = `PHP ${total.toLocaleString('en-PH', {
-      minimumFractionDigits: 2, maximumFractionDigits: 2,
-    })}`;
+    const formattedTotal = `PHP ${total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(20, 20, 20);
-    doc.text('Accounts Payable Report (Men2 Corp)', 14, 16);
+    doc.text(`Accounts Payable Report - ${tab === 'all' ? 'All' : tab} (Men2 Corp)`, 14, 16);
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
@@ -101,13 +112,10 @@ export default function AccountsPayableModule() {
     doc.setFontSize(7.5);
     doc.setTextColor(120, 120, 120);
     doc.text(
-      `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Supplier: ${supplier || 'All'}   Status: ${status || 'All'}`,
+      `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Supplier: ${supplier || 'All'}   Status: ${status || 'All'}   Category: ${tab === 'all' ? 'Trade + Non-Trade' : tab}`,
       14, 26
     );
-    doc.text(
-      `Exported: ${new Date().toLocaleString('en-PH')}   Total Records: ${displayRecords.length}`,
-      14, 31
-    );
+    doc.text(`Exported: ${new Date().toLocaleString('en-PH')}   Total Records: ${displayRecords.length}`, 14, 31);
     doc.setTextColor(0);
 
     autoTable(doc, {
@@ -117,29 +125,26 @@ export default function AccountsPayableModule() {
       alternateRowStyles: { fillColor: [245, 245, 245] },
       head: [[
         'Ref. No.', 'Supplier', 'Invoice No.', 'Division', 'Invoice Date', 'Due Date',
-        'Amount Payable (PHP)', 'Amount Paid (PHP)', 'Outstanding Balance (PHP)', 'Aging (Days)', 'Status',
+        'Amount Payable (PHP)', 'Amount Paid (PHP)', 'Outstanding Balance (PHP)',
+        'Aging (Days)', 'Status', 'Category',
       ]],
-      body: displayRecords.map((r) => [
-        r.refNo,
-        r.supplier,
-        r.invoiceNo !== '—' ? r.invoiceNo : '',
+      body: displayRecords.map(r => [
+        r.refNo, r.supplier,
+        r.invoiceNo !== '\u2014' ? r.invoiceNo : '',
         r.division,
-        r.invoiceDate ? r.invoiceDate.split(' ')[0] : '—',
-        r.dueDate     ? r.dueDate.split(' ')[0]     : '—',
+        r.invoiceDate ? r.invoiceDate.split(' ')[0] : '\u2014',
+        r.dueDate     ? r.dueDate.split(' ')[0]     : '\u2014',
         r.amountPayable.toLocaleString('en-PH',      { minimumFractionDigits: 2 }),
         r.amountPaid.toLocaleString('en-PH',         { minimumFractionDigits: 2 }),
         r.outstandingBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 }),
         Math.max(0, r.aging ?? 0),
-        r.status,
+        r.status, r.apCategory,
       ]),
       margin: { left: 14, right: 14 },
     });
 
     const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY ?? 36;
-    const boxW = 110, boxH = 12;
-    const boxX = pageW - 14 - boxW;
-    const boxY = finalY + 6;
-
+    const boxW = 110, boxH = 12, boxX = pageW - 14 - boxW, boxY = finalY + 6;
     doc.setFillColor(24, 24, 27);
     doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, 'F');
     doc.setFontSize(8);
@@ -149,17 +154,21 @@ export default function AccountsPayableModule() {
     const amtW = doc.getTextWidth(formattedTotal);
     doc.text(formattedTotal, boxX + boxW - 4 - amtW, boxY + 7.5);
 
-    doc.save(`ap-export-${new Date().toISOString().split('T')[0]}.pdf`);
+    const tabSuffix = tab === 'all' ? 'all' : tab.toLowerCase();
+    doc.save(`ap-export-${tabSuffix}-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   if (loading) return (
     <div className="p-8 space-y-4">
-      <Skeleton className="h-8 w-1/3" />
+      <Skeleton className="h-10 w-1/3" />
       <Skeleton className="h-6 w-1/2" />
-      <div className="grid grid-cols-4 gap-4">
-        {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
+      <div className="grid grid-cols-2 gap-4">
+        <Skeleton className="h-40 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full rounded-xl" />
       </div>
-      <Skeleton className="h-64 w-full" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
+      </div>
       <Skeleton className="h-64 w-full" />
     </div>
   );
@@ -176,137 +185,126 @@ export default function AccountsPayableModule() {
   return (
     <div className="p-4 md:p-6 bg-background text-foreground min-h-screen space-y-6 w-full box-border overflow-hidden">
 
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Accounts Payable Monitoring</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Overview of outstanding payables and supplier balances
-        </p>
-      </div>
-
-      {/* Filter bar */}
-      <div className="flex flex-wrap items-center gap-2 w-full min-w-0">
-
-        {/* Date From */}
-        <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 h-9">
-          <span className="text-xs font-medium text-muted-foreground shrink-0">From</span>
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-            className="h-auto border-0 p-0 text-xs focus-visible:ring-0 shadow-none w-[110px] bg-transparent"
-          />
-        </div>
-
-        {/* Date To */}
-        <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 h-9">
-          <span className="text-xs font-medium text-muted-foreground shrink-0">To</span>
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
-            className="h-auto border-0 p-0 text-xs focus-visible:ring-0 shadow-none w-[110px] bg-transparent"
-          />
-        </div>
-
-        {/* Supplier (searchable, trade only) */}
-        <SearchableSelect
-          value={supplier}
-          onValueChange={(val) => { setSupplier(val); setPage(1); }}
-          placeholder="All Suppliers"
-          className="h-9 w-[180px] text-xs !block text-left truncate relative pr-8 [&_svg]:absolute [&_svg]:right-3 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
-          options={[
-            { value: '', label: 'All Suppliers' },
-            ...supplierOptions.map((name) => ({ value: name, label: name })),
-          ]}
-        />
-
-        {/* Status */}
-        <Select
-          value={status || '__all__'}
-          onValueChange={(val) => { setStatus(val === '__all__' ? '' : val); setPage(1); }}
-        >
-          <SelectTrigger className="h-9 w-[160px] text-xs">
-            <SelectValue placeholder="All Statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__" className="text-xs text-muted-foreground">All Statuses</SelectItem>
-            {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Clear */}
-        {isFiltered && (
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-sky-500/5 via-indigo-500/5 to-amber-500/5 px-5 sm:px-7 py-5 sm:py-6">
+        <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-gradient-to-br from-sky-500/20 to-indigo-500/20 blur-3xl pointer-events-none" aria-hidden />
+        <div className="absolute -right-8 -bottom-16 h-56 w-56 rounded-full bg-gradient-to-br from-amber-500/15 to-rose-500/15 blur-3xl pointer-events-none" aria-hidden />
+        <div className="relative flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+              Financial Monitoring
+            </p>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
+              Accounts Payable
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1 max-w-2xl">
+              Trade vs Non-Trade payables, aging analysis, and supplier exposure at a glance.
+            </p>
+          </div>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            onClick={clearFilters}
-            className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1.5"
+            onClick={exportToPDF}
+            className="h-9 px-3 text-xs gap-1.5 self-start sm:self-auto"
           >
-            <X className="h-3.5 w-3.5" /> Clear
+            <Download className="h-3.5 w-3.5" />
+            Export PDF
           </Button>
-        )}
-
-        {/* Export PDF */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={exportToPDF}
-          className="h-9 px-3 text-xs gap-1.5 ml-auto"
-        >
-          <Download className="h-3.5 w-3.5" />
-          Export PDF
-        </Button>
-      </div>
-
-      {/* Result count */}
-      {isFiltered && (
-        <p className="text-xs text-muted-foreground -mt-4">
-          Showing <span className="font-semibold text-foreground">{displayRecords.length}</span>{' '}
-          of <span className="font-semibold text-foreground">{tradeRecords.length}</span> records
-        </p>
-      )}
-
-      {/* Metrics */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 w-full">
-        <MetricCard
-          title="Total Payable"
-          value={formatPeso(displayMetrics.totalPayable)}
-          sub={`${displayMetrics.totalRecords} total records`}
-          icon={<PhilippinePeso className="h-4 w-4 text-primary" />}
-        />
-        <MetricCard
-          title="Total Paid"
-          value={formatPeso(displayMetrics.totalPaid)}
-          sub={`${((displayMetrics.totalPaid / (displayMetrics.totalPayable || 1)) * 100).toFixed(1)}% of total`}
-          icon={<FileText className="h-4 w-4 text-primary" />}
-        />
-        <MetricCard
-          title="Outstanding Balance"
-          value={formatPeso(displayMetrics.totalOutstanding)}
-          sub={`${((displayMetrics.totalOutstanding / (displayMetrics.totalPayable || 1)) * 100).toFixed(1)}% of total`}
-          icon={<TrendingDown className="h-4 w-4 text-primary" />}
-        />
-      </div>
-
-      {/* Charts Row 1 — Aging (2/3) + Status Pie (1/3) */}
-      <div className="grid gap-4 md:grid-cols-3 w-full min-w-0 items-stretch">
-        <div className="md:col-span-2 h-full">
-          <APAgingChart data={displayAgingData} isFiltered={isFiltered} />
-        </div>
-        <div className="md:col-span-1 h-full">
-          <APStatusPieChart data={displayStatusData} isFiltered={isFiltered} />
         </div>
       </div>
 
-      {/* Charts Row 2 — Supplier full width */}
-      <APSupplierChart data={displaySupplierData} isFiltered={isFiltered} />
+      <CategorySplitHeader trade={tradeBreakdown} nonTrade={nonTradeBreakdown} />
 
-      {/* Table — type filter already applied above, no tabs needed inside */}
-      <APTable records={displayRecords} page={page} setPage={setPage} />
+      <Tabs value={tab} onValueChange={handleTabChange} className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList className="h-9 p-1 bg-muted/60 border border-border">
+            <TabsTrigger value="all" className="h-7 px-3 text-xs font-bold data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm">
+              <ListChecks className="h-3.5 w-3.5 mr-1.5" />All
+              <span className="ml-1.5 text-[10px] font-black tabular-nums opacity-70">{records.length}</span>
+            </TabsTrigger>
+            <TabsTrigger value="Trade" className="h-7 px-3 text-xs font-bold data-[state=active]:bg-gradient-to-br data-[state=active]:from-sky-500 data-[state=active]:to-indigo-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
+              <Briefcase className="h-3.5 w-3.5 mr-1.5" />Trade
+              <span className="ml-1.5 text-[10px] font-black tabular-nums opacity-80">{tradeRecords.length}</span>
+            </TabsTrigger>
+            <TabsTrigger value="Non-Trade" className="h-7 px-3 text-xs font-bold data-[state=active]:bg-gradient-to-br data-[state=active]:from-amber-500 data-[state=active]:to-rose-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
+              <Wallet className="h-3.5 w-3.5 mr-1.5" />Non-Trade
+              <span className="ml-1.5 text-[10px] font-black tabular-nums opacity-80">{nonTradeRecords.length}</span>
+            </TabsTrigger>
+          </TabsList>
 
+          <p className="text-[11px] text-muted-foreground tabular-nums">
+            <span className="font-bold text-foreground">{formatPeso(displayMetrics.totalOutstanding)}</span>
+            {' '}outstanding across{' '}
+            <span className="font-bold text-foreground">{displayRecords.length}</span>
+            {' '}record{displayRecords.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+
+        <TabsContent value={tab} className="m-0 space-y-6">
+          <APFilterBar
+            dateFrom={dateFrom} setDateFrom={setDateFrom}
+            dateTo={dateTo}     setDateTo={setDateTo}
+            supplier={supplier} setSupplier={setSupplier}
+            status={status}     setStatus={setStatus}
+            supplierOptions={supplierOptions}
+            isFiltered={isFiltered}
+            clearFilters={clearFilters}
+            setPage={setPage}
+            STATUS_OPTIONS={STATUS_OPTIONS}
+          />
+
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 w-full">
+            <MetricCard
+              title="Total Payable"
+              value={formatPeso(displayMetrics.totalPayable)}
+              sub={`${displayMetrics.totalRecords} total records`}
+              icon={<PhilippinePeso className="h-4 w-4 text-primary" />}
+              gradient="bg-gradient-to-r from-sky-500 to-indigo-500"
+              progress={displayMetrics.totalPayable > 0 ? 100 : 0}
+            />
+            <MetricCard
+              title="Total Paid"
+              value={formatPeso(displayMetrics.totalPaid)}
+              sub={displayMetrics.totalPayable > 0
+                ? `${((displayMetrics.totalPaid / displayMetrics.totalPayable) * 100).toFixed(1)}% of total`
+                : 'No payables yet'}
+              icon={<FileText className="h-4 w-4 text-emerald-700" />}
+              gradient="bg-gradient-to-r from-emerald-500 to-emerald-400"
+              iconClass="bg-emerald-500/10 text-emerald-700"
+              progress={displayMetrics.totalPayable > 0
+                ? (displayMetrics.totalPaid / displayMetrics.totalPayable) * 100
+                : 0}
+            />
+            <MetricCard
+              title="Outstanding Balance"
+              value={formatPeso(displayMetrics.totalOutstanding)}
+              sub={displayMetrics.totalPayable > 0
+                ? `${((displayMetrics.totalOutstanding / displayMetrics.totalPayable) * 100).toFixed(1)}% of total`
+                : 'Fully settled'}
+              icon={<TrendingDown className="h-4 w-4 text-rose-700" />}
+              gradient="bg-gradient-to-r from-rose-500 to-amber-500"
+              iconClass="bg-rose-500/10 text-rose-700"
+              progress={displayMetrics.totalPayable > 0
+                ? (displayMetrics.totalOutstanding / displayMetrics.totalPayable) * 100
+                : 0}
+            />
+          </div>
+
+          <AIInsightsPanel records={displayRecords} />
+
+          <div className="grid gap-4 md:grid-cols-3 w-full min-w-0 items-stretch">
+            <div className="md:col-span-2 h-full">
+              <APAgingChart data={displayAgingData} isFiltered={isFiltered} />
+            </div>
+            <div className="md:col-span-1 h-full">
+              <APStatusPieChart data={displayStatusData} isFiltered={isFiltered} />
+            </div>
+          </div>
+
+          <APSupplierChart data={displaySupplierData} isFiltered={isFiltered} />
+
+          <APTable records={displayRecords} page={page} setPage={setPage} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

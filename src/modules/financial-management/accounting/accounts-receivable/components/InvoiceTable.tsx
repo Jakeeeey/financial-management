@@ -127,9 +127,10 @@ interface InvoiceTableProps {
   invoices: Invoice[];
   page:     number;
   setPage:  (p: number | ((prev: number) => number)) => void;
+  onRowClick?: (invoice: Invoice) => void;
 }
 
-export function InvoiceTable({ invoices, page, setPage }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTableProps) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<keyof Invoice | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
@@ -228,12 +229,27 @@ export function InvoiceTable({ invoices, page, setPage }: InvoiceTableProps) {
               </TableRow>
             ) : (
               paged.map((inv, i) => (
-                <TableRow key={`${inv.invoiceNo ?? ''}-${i}`} className="border-border/40 hover:bg-muted/20">
+                <TableRow 
+                  key={`${inv.invoiceNo ?? ''}-${i}`} 
+                  className="border-border/40 hover:bg-muted/20 cursor-pointer transition-colors active:bg-muted/30"
+                  onClick={() => onRowClick?.(inv)}
+                >
 
                   <TableCell className="py-3 pl-4">
-                    <span className="font-bold text-primary text-xs truncate block w-full" title={inv.invoiceNo}>
-                      {inv.invoiceNo}
-                    </span>
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="font-bold text-primary text-xs truncate block w-full" title={inv.invoiceNo}>
+                        {inv.invoiceNo}
+                      </span>
+                      {inv.isPosted ? (
+                        <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8.5px] font-semibold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase">
+                          Posted
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8.5px] font-semibold tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/20 uppercase">
+                          Draft
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
 
                   <TableCell className="py-3">

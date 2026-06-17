@@ -231,6 +231,8 @@ export default function SupplierDiscountingModule({
     setCategoryId(null);
     setBrandId(null);
     setCurrentDiscountFilter(DISCOUNT_FILTER_ALL);
+    setDiscountTypeId(null);
+    selectSupplier(null);
     setSelectedProductIds([]);
     setPage(1);
   }
