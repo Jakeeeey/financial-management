@@ -21,6 +21,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { generatePricingMatrixPdf } from "../../product-pricing/utils/printPdf";
+import { DEFAULT_TABLE_BLOCKS_PER_PAGE } from "../../product-pricing/utils/printLayout";
 import { openPricingMatrixPrintWindow } from "../../product-pricing/utils/printPricingMatrixHtml";
 
 type Paper = "a4" | "legal" | "a3";
@@ -56,7 +57,7 @@ export default function PrintPricingDialog(props: Props) {
         filtersText,
         generatedAtText,
         pdfTitle,
-        blocksPerPage,
+        blocksPerPage = DEFAULT_TABLE_BLOCKS_PER_PAGE,
         pdfSaveAsName,
         defaultFontSize = 6,
     } = props;
@@ -89,7 +90,8 @@ export default function PrintPricingDialog(props: Props) {
             supplierNames: props.supplierNames,
             filtersText,
             title: pdfTitle,
-            blocksPerPage,
+            blocksPerPage: layout === "cards" ? undefined : blocksPerPage,
+            cardsPerPage: layout === "cards" ? 6 : undefined,
             saveAsName: pdfSaveAsName,
         });
     }, [

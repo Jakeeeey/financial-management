@@ -56,6 +56,8 @@ import {
     PRINT_CONFIRM_PRODUCT_THRESHOLD,
     PRINT_GROUP_CHUNK_SIZE,
 } from "../../shared/print/printConstants";
+import { buildProductPricingPdfSaveAsName } from "../../shared/print/pdfFileNames";
+import { DEFAULT_TABLE_BLOCKS_PER_PAGE } from "../utils/printLayout";
 
 type PendingPrintJob = {
     filters: PricingFilters;
@@ -449,6 +451,7 @@ export default function PricingMatrixView() {
     const [unsavedAction, setUnsavedAction] = React.useState<"refresh" | "discard" | null>(null);
     const [printFiltersText, setPrintFiltersText] = React.useState("");
     const [printGeneratedAt, setPrintGeneratedAt] = React.useState("");
+    const [printPdfSaveAsName, setPrintPdfSaveAsName] = React.useState("");
     const [isPrinting, setIsPrinting] = React.useState(false);
     const [printMatrixRows, setPrintMatrixRows] = React.useState<MatrixRow[]>([]);
     const [printTiers, setPrintTiers] = React.useState<string[]>([]);
@@ -529,6 +532,13 @@ export default function PricingMatrixView() {
                 const now = new Date();
 
                 setPrintGeneratedAt(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
+                setPrintPdfSaveAsName(
+                    buildProductPricingPdfSaveAsName(
+                        job.filters.supplier_ids,
+                        lookupMaps.suppliersById,
+                        now,
+                    ),
+                );
                 setPrintFiltersText(resolvedFiltersText);
                 setPrintMatrixRows(enriched);
                 setPrintTiers(printableTiers);
@@ -848,6 +858,8 @@ export default function PricingMatrixView() {
                     tiers={printTiers}
                     usedUnitIds={printUsedUnitIds}
                     supplierNames={printSupplierNames}
+                    pdfSaveAsName={printPdfSaveAsName}
+                    blocksPerPage={DEFAULT_TABLE_BLOCKS_PER_PAGE}
                 />
 
                 <PriceChangeBatchDialog

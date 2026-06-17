@@ -41,7 +41,7 @@ export function exportSupplierBatchPdf(args: {
         fontSize: 5,
         compact: true,
         includeBarcode: true,
-        blocksPerPage: 3,
+        blocksPerPage: 4,
         title: "Supplier Price Change Template",
         supplierNames: [supplierName],
         priceTypes: mappedPriceTypes,

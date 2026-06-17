@@ -4,19 +4,17 @@
 import * as React from "react";
 import { useProductPrintables, defaultFilters } from "../hooks/useProductPrintables";
 import { useLookups } from "../hooks/useLookups";
-import type { MatrixRow, FilterState, ProductRow, VariantCell } from "../types";
+import type { MatrixRow, FilterState } from "../types";
 import PrintablesFiltersBar from "./PrintablesFiltersBar";
 import PrintablesMatrixTable from "./PrintablesMatrixTable";
 import PrintLabelsDialog from "./PrintLabelsDialog";
+import {
+    assembleMatrixRowsFromProducts,
+    fetchAllPrintableProducts,
+} from "../utils/printablesBulkFetch";
 import { Button } from "@/components/ui/button";
 import { Printer, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
-
-function pickId(v: string | number | null | undefined | Record<string, unknown>): number | null {
-    if (v === null || v === undefined) return null;
-    const n = Number((v as Record<string, unknown>)?.product_id ?? (v as Record<string, unknown>)?.id ?? v);
-    return Number.isFinite(n) && n > 0 ? n : null;
-}
 
 export default function ProductPrintablesView({ userName }: { userName?: string }) {
     const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
@@ -24,6 +22,7 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
     const { matrixRows, usedUnitIds, loading: productsLoading, resetFilters } = useProductPrintables(filters, setFilters, categories, brands);
     const [printOpen, setPrintOpen] = React.useState(false);
     const [isPrinting, setIsPrinting] = React.useState(false);
+    const [printProgress, setPrintProgress] = React.useState<{ page: number; total: number } | null>(null);
     const [allMatrixRows, setAllMatrixRows] = React.useState<MatrixRow[]>([]);
     const [allUsedUnitIds, setAllUsedUnitIds] = React.useState<Set<number>>(new Set());
     const [currentUser, setCurrentUser] = React.useState<string>(userName || "System User");
@@ -62,72 +61,16 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
 
     const handlePrintAll = async () => {
         setIsPrinting(true);
+        setPrintProgress(null);
         try {
-            const sp = new URLSearchParams();
-            if (filters.q) sp.set("q", filters.q);
-            if (filters.category_ids.length) sp.set("category_ids", filters.category_ids.join(","));
-            if (filters.brand_ids.length) sp.set("brand_ids", filters.brand_ids.join(","));
-            if (filters.unit_ids.length) sp.set("unit_ids", filters.unit_ids.join(","));
-            if (filters.supplier_ids.length) sp.set("supplier_ids", filters.supplier_ids.join(","));
-            sp.set("supplier_scope", filters.supplier_scope);
-            sp.set("active_only", filters.active_only ? "1" : "0");
-            sp.set("page_size", "-1"); // Custom param to fetch all
-
-            const res = await fetch(`/api/fm/product-pricing/printables?${sp.toString()}`);
-            if (!res.ok) throw new Error("Failed to fetch all products for printing");
-            const json = await res.json();
-            const products = json.data ?? [];
-
-            const catMap = new Map(categories.map(c => [Number(c.category_id), c.category_name]));
-            const brandMap = new Map(brands.map(b => [Number(b.brand_id), b.brand_name]));
-
-            const groups = new Map<number, ProductRow[]>();
-            const unitIds = new Set<number>();
-
-            for (const p of products) {
-                const pid = pickId(p.product_id);
-                const parentId = pickId(p.parent_id);
-                const gid = parentId || pid;
-
-                if (gid) {
-                    if (!groups.has(gid)) groups.set(gid, []);
-                    groups.get(gid)!.push(p);
-                }
-
-                const uomId = pickId(p.unit_of_measurement);
-                if (uomId) unitIds.add(uomId);
-            }
-
-            const assembled: MatrixRow[] = [];
-            for (const [groupId, variants] of groups.entries()) {
-                const display = variants.find(v => Number(v.product_id) === groupId) || variants[0];
-                const variantsByUnitId: Record<number, VariantCell> = {};
-
-                for (const v of variants) {
-                    const uomId = Number(v.unit_of_measurement);
-                    if (uomId) {
-                        variantsByUnitId[uomId] = {
-                            product: v,
-                            tiers: {
-                                ListPrice: v.cost_per_unit ? Number(v.cost_per_unit) : null,
-                                A: v.priceA ? Number(v.priceA) : null,
-                                B: v.priceB ? Number(v.priceB) : null,
-                                C: v.priceC ? Number(v.priceC) : null,
-                                D: v.priceD ? Number(v.priceD) : null,
-                                E: v.priceE ? Number(v.priceE) : null,
-                            }
-                        };
-                    }
-                }
-
-                assembled.push({
-                    group_id: groupId,
-                    display,
-                    variantsByUnitId,
-                    category_name: catMap.get(Number(display.product_category)) || "—",
-                    brand_name: brandMap.get(Number(display.product_brand)) || "—",
-                });
-            }
+            const products = await fetchAllPrintableProducts(filters, {
+                onProgress: (page, total) => setPrintProgress({ page, total }),
+            });
+            const { matrixRows: assembled, usedUnitIds: unitIds } = assembleMatrixRowsFromProducts(
+                products,
+                categories,
+                brands,
+            );
 
             setAllMatrixRows(assembled);
             setAllUsedUnitIds(unitIds);
@@ -135,12 +78,15 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
 
             if (assembled.length > 0) {
                 toast.success(`Prepared ${assembled.length} groups for printing.`);
+            } else {
+                toast.info("No products matched the current filters.");
             }
         } catch (error: unknown) {
             toast.error(error instanceof Error ? error.message : "Failed to prepare print data");
             console.error(error);
         } finally {
             setIsPrinting(false);
+            setPrintProgress(null);
         }
     };
 
@@ -167,7 +113,11 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
                         className="rounded-xl px-6 gap-2"
                     >
                         <Printer className="w-4 h-4" />
-                        {isPrinting ? "Prepping All Rows..." : "Print Spreadsheet"}
+                        {isPrinting
+                            ? printProgress
+                                ? `Prepping page ${printProgress.page} of ${printProgress.total}...`
+                                : "Prepping All Rows..."
+                            : "Print Spreadsheet"}
                     </Button>
                 </div>
             </div>

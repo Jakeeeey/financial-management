@@ -5,6 +5,7 @@ import {
     priceTierKey,
     sortPriceTypes,
 } from "../../product-pricing/utils/pivot";
+import { sanitizePdfFilenamePart } from "./pdfFileNames";
 
 export type SupplierPrintTierMode = "all" | "price" | "cost";
 
@@ -40,12 +41,12 @@ export function supplierPrintPdfOptions(args: {
     defaultFontSize: number;
 } {
     const stamp = new Date().toISOString().split("T")[0];
-    const safeName = args.supplierName.replace(/[<>:"/\\|?*]+/g, "_").trim() || "supplier";
+    const safeName = sanitizePdfFilenamePart(args.supplierName);
 
     if (args.tierMode === "cost") {
         return {
             pdfTitle: "Supplier List Cost Template",
-            blocksPerPage: 3,
+            blocksPerPage: 4,
             pdfSaveAsName: `supplier-list-cost-${safeName}-${stamp}.pdf`,
             defaultFontSize: 5,
         };
@@ -53,7 +54,7 @@ export function supplierPrintPdfOptions(args: {
 
     return {
         pdfTitle: "Supplier Price Change Template",
-        blocksPerPage: 3,
+        blocksPerPage: 4,
         pdfSaveAsName: `supplier-price-change-${safeName}-${stamp}.pdf`,
         defaultFontSize: 5,
     };
