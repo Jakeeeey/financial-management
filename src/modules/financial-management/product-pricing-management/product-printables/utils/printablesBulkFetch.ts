@@ -15,10 +15,26 @@ type PrintablesPageResponse = {
     error?: string;
 };
 
+type PrintablesProgress = {
+    done: number;
+    total: number;
+};
+
 function pickId(v: string | number | null | undefined | Record<string, unknown>): number | null {
     if (v === null || v === undefined) return null;
     const n = Number((v as Record<string, unknown>)?.product_id ?? (v as Record<string, unknown>)?.id ?? v);
     return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function countProductGroups(rows: ProductRow[] | undefined): number {
+    const groupIds = new Set<number>();
+    for (const row of rows ?? []) {
+        const groupId = pickId(row.parent_id) ?? pickId(row.product_id);
+        if (groupId !== null) {
+            groupIds.add(groupId);
+        }
+    }
+    return groupIds.size;
 }
 
 export function buildPrintablesSearchParams(
@@ -39,8 +55,13 @@ export function buildPrintablesSearchParams(
     return sp;
 }
 
-export async function fetchPrintablesPage(params: URLSearchParams): Promise<PrintablesPageResponse> {
-    const res = await fetch(`/api/fm/product-pricing/printables?${params.toString()}`);
+export async function fetchPrintablesPage(
+    params: URLSearchParams,
+    init?: { signal?: AbortSignal },
+): Promise<PrintablesPageResponse> {
+    const res = await fetch(`/api/fm/product-pricing/printables?${params.toString()}`, {
+        signal: init?.signal,
+    });
     const json = (await res.json().catch(() => ({}))) as PrintablesPageResponse;
 
     if (!res.ok) {
@@ -58,13 +79,18 @@ export async function fetchAllPrintableProducts(
     filters: FilterState,
     init?: {
         pageSize?: number;
-        onProgress?: (page: number, totalPages: number) => void;
+        signal?: AbortSignal;
+        onProgress?: (progress: PrintablesProgress) => void;
     },
 ): Promise<ProductRow[]> {
     const pageSize = init?.pageSize ?? PRINTABLES_EXPORT_PAGE_SIZE;
-    const firstPage = await fetchPrintablesPage(buildPrintablesSearchParams(filters, 1, pageSize));
+    const firstPage = await fetchPrintablesPage(buildPrintablesSearchParams(filters, 1, pageSize), {
+        signal: init?.signal,
+    });
     const totalPages = Math.max(1, Number(firstPage.meta?.total_pages ?? 1));
+    const totalGroups = Math.max(0, Number(firstPage.meta?.total_groups ?? 0));
     const productsById = new Map<number, ProductRow>();
+    let preparedGroups = 0;
 
     const mergeProducts = (rows: ProductRow[] | undefined) => {
         for (const row of rows ?? []) {
@@ -76,12 +102,22 @@ export async function fetchAllPrintableProducts(
     };
 
     mergeProducts(firstPage.data);
-    init?.onProgress?.(1, totalPages);
+    preparedGroups += countProductGroups(firstPage.data);
+    init?.onProgress?.({
+        done: totalGroups > 0 ? Math.min(preparedGroups, totalGroups) : preparedGroups,
+        total: totalGroups,
+    });
 
     for (let page = 2; page <= totalPages; page++) {
-        const pageResult = await fetchPrintablesPage(buildPrintablesSearchParams(filters, page, pageSize));
+        const pageResult = await fetchPrintablesPage(buildPrintablesSearchParams(filters, page, pageSize), {
+            signal: init?.signal,
+        });
         mergeProducts(pageResult.data);
-        init?.onProgress?.(page, totalPages);
+        preparedGroups += countProductGroups(pageResult.data);
+        init?.onProgress?.({
+            done: totalGroups > 0 ? Math.min(preparedGroups, totalGroups) : preparedGroups,
+            total: totalGroups,
+        });
     }
 
     return Array.from(productsById.values());

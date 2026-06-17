@@ -8,6 +8,7 @@ import type { MatrixRow, FilterState } from "../types";
 import PrintablesFiltersBar from "./PrintablesFiltersBar";
 import PrintablesMatrixTable from "./PrintablesMatrixTable";
 import PrintLabelsDialog from "./PrintLabelsDialog";
+import PrintPrepareDialog from "../../shared/print/PrintPrepareDialog";
 import {
     assembleMatrixRowsFromProducts,
     fetchAllPrintableProducts,
@@ -22,10 +23,12 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
     const { matrixRows, usedUnitIds, loading: productsLoading, resetFilters } = useProductPrintables(filters, setFilters, categories, brands);
     const [printOpen, setPrintOpen] = React.useState(false);
     const [isPrinting, setIsPrinting] = React.useState(false);
-    const [printProgress, setPrintProgress] = React.useState<{ page: number; total: number } | null>(null);
+    const [printPrepareOpen, setPrintPrepareOpen] = React.useState(false);
+    const [printPrepareProgress, setPrintPrepareProgress] = React.useState({ done: 0, total: 0 });
     const [allMatrixRows, setAllMatrixRows] = React.useState<MatrixRow[]>([]);
     const [allUsedUnitIds, setAllUsedUnitIds] = React.useState<Set<number>>(new Set());
     const [currentUser, setCurrentUser] = React.useState<string>(userName || "System User");
+    const printAbortRef = React.useRef<AbortController | null>(null);
 
     React.useEffect(() => {
         if (userName) {
@@ -59,12 +62,30 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
         return parts.join("\n");
     }, [filters, categories, brands, suppliers]);
 
+    const cancelPrintPrepare = React.useCallback(() => {
+        printAbortRef.current?.abort();
+        printAbortRef.current = null;
+        setPrintPrepareOpen(false);
+        setPrintPrepareProgress({ done: 0, total: 0 });
+        setIsPrinting(false);
+    }, []);
+
+    React.useEffect(() => {
+        return () => {
+            printAbortRef.current?.abort();
+        };
+    }, []);
+
     const handlePrintAll = async () => {
+        const controller = new AbortController();
+        printAbortRef.current = controller;
         setIsPrinting(true);
-        setPrintProgress(null);
+        setPrintPrepareProgress({ done: 0, total: 0 });
+        setPrintPrepareOpen(true);
         try {
             const products = await fetchAllPrintableProducts(filters, {
-                onProgress: (page, total) => setPrintProgress({ page, total }),
+                signal: controller.signal,
+                onProgress: ({ done, total }) => setPrintPrepareProgress({ done, total }),
             });
             const { matrixRows: assembled, usedUnitIds: unitIds } = assembleMatrixRowsFromProducts(
                 products,
@@ -82,11 +103,16 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
                 toast.info("No products matched the current filters.");
             }
         } catch (error: unknown) {
+            if (controller.signal.aborted) return;
             toast.error(error instanceof Error ? error.message : "Failed to prepare print data");
             console.error(error);
         } finally {
+            if (printAbortRef.current === controller) {
+                printAbortRef.current = null;
+            }
             setIsPrinting(false);
-            setPrintProgress(null);
+            setPrintPrepareOpen(false);
+            setPrintPrepareProgress({ done: 0, total: 0 });
         }
     };
 
@@ -113,11 +139,7 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
                         className="rounded-xl px-6 gap-2"
                     >
                         <Printer className="w-4 h-4" />
-                        {isPrinting
-                            ? printProgress
-                                ? `Prepping page ${printProgress.page} of ${printProgress.total}...`
-                                : "Prepping All Rows..."
-                            : "Print Spreadsheet"}
+                        {isPrinting ? "Preparing..." : "Print Spreadsheet"}
                     </Button>
                 </div>
             </div>
@@ -172,6 +194,13 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
                     </div>
                 </div>
             )}
+
+            <PrintPrepareDialog
+                open={printPrepareOpen}
+                prepared={printPrepareProgress.done}
+                total={printPrepareProgress.total}
+                onCancel={cancelPrintPrepare}
+            />
 
             <PrintLabelsDialog
                 open={printOpen}

@@ -125,6 +125,35 @@ function supplierHeaderText(supplierNames: string[]): string | null {
     return `Suppliers: ${names.join(", ")}`;
 }
 
+function rowUnits(row: MatrixRow, usedUnits: Unit[]): Unit[] {
+    if (usedUnits.length > 0) return usedUnits;
+
+    return Object.keys(row.variantsByUnitId)
+        .map((unitId) => Number(unitId))
+        .filter((unitId) => Number.isFinite(unitId) && unitId > 0)
+        .map((unitId) => ({
+            unit_id: unitId,
+            unit_name: `Unit ${unitId}`,
+            unit_shortcut: `U${unitId}`,
+        }));
+}
+
+function hasPriceValue(row: MatrixRow, tier: string, unitId: number): boolean {
+    return row.variantsByUnitId[unitId]?.tiers?.[tier] != null;
+}
+
+function populatedUnitsForRow(row: MatrixRow, tiers: string[], units: Unit[]): Unit[] {
+    return units.filter((unit) =>
+        tiers.some((tier) => hasPriceValue(row, tier, Number(unit.unit_id))),
+    );
+}
+
+function populatedTiersForRow(row: MatrixRow, tiers: string[], units: Unit[]): string[] {
+    return tiers.filter((tier) =>
+        units.some((unit) => hasPriceValue(row, tier, Number(unit.unit_id))),
+    );
+}
+
 type CardTableLayout = {
     tableTopY: number;
     tableHeaderHeight: number;
@@ -278,6 +307,235 @@ function drawReportHeader(
     return y + 4;
 }
 
+type SpreadsheetColumn =
+    | {
+          kind: "meta";
+          label: string;
+          width: number;
+          value: (row: MatrixRow) => string;
+          bold?: boolean;
+      }
+    | {
+          kind: "tier";
+          label: string;
+          width: number;
+          tier: string;
+          palette: { fill: [number, number, number]; text: [number, number, number] };
+      };
+
+function resolveSpreadsheetColumns(args: {
+    contentWidth: number;
+    tiers: string[];
+    priceTypes: PriceType[];
+    includeBarcode: boolean;
+}): SpreadsheetColumn[] {
+    const tierCount = Math.max(1, args.tiers.length);
+    const compact = tierCount > 7;
+    const brandWidth = compact ? 44 : 52;
+    const categoryWidth = compact ? 48 : 56;
+    const productWidth = compact ? 112 : 136;
+    const codeWidth = args.includeBarcode ? (compact ? 72 : 88) : 0;
+    const metaWidth = brandWidth + categoryWidth + productWidth + codeWidth;
+    const tierWidth = Math.max(38, (args.contentWidth - metaWidth) / tierCount);
+    const scale = metaWidth + tierWidth * tierCount > args.contentWidth
+        ? args.contentWidth / (metaWidth + tierWidth * tierCount)
+        : 1;
+
+    const columns: SpreadsheetColumn[] = [
+        {
+            kind: "meta",
+            label: "Brand",
+            width: brandWidth * scale,
+            value: (row) => printTextValue(row.brand_name),
+        },
+        {
+            kind: "meta",
+            label: "Category",
+            width: categoryWidth * scale,
+            value: (row) => printTextValue(row.category_name),
+        },
+        {
+            kind: "meta",
+            label: "Product Name",
+            width: productWidth * scale,
+            value: (row) => printTextValue(row.display.product_name),
+            bold: true,
+        },
+    ];
+
+    if (args.includeBarcode) {
+        columns.push({
+            kind: "meta",
+            label: "Code / Barcode",
+            width: codeWidth * scale,
+            value: (row) =>
+                [
+                    `Code: ${printTextValue(row.display.product_code)}`,
+                    `Barcode: ${printTextValue(row.display.barcode)}`,
+                ].join("\n"),
+        });
+    }
+
+    args.tiers.forEach((tier, index) => {
+        columns.push({
+            kind: "tier",
+            label: tierLabelForTierKey(tier, args.priceTypes),
+            width: tierWidth * scale,
+            tier,
+            palette: tierPalette(index),
+        });
+    });
+
+    return columns;
+}
+
+function splitCellLines(doc: jsPDF, text: string, width: number, maxLines: number): string[] {
+    const lines = doc.splitTextToSize(text, Math.max(8, width - 8)) as string[];
+    if (lines.length <= maxLines) return lines;
+
+    const clipped = lines.slice(0, maxLines);
+    const last = clipped[maxLines - 1] ?? "";
+    clipped[maxLines - 1] = truncatePdfText(doc, `${last}...`, Math.max(8, width - 8));
+    return clipped;
+}
+
+function tierCellText(row: MatrixRow, tier: string, units: Unit[]): string {
+    const lines = units
+        .map((unit) => {
+            const price = row.variantsByUnitId[Number(unit.unit_id)]?.tiers?.[tier];
+            return price != null ? `${unitLabel(unit, `Unit ${unit.unit_id}`)}: ${formatPrintMoney(price)}` : null;
+        })
+        .filter((line): line is string => line != null);
+
+    return lines.length > 0 ? lines.join("\n") : "-";
+}
+
+function renderPricingSpreadsheetPdf(
+    doc: jsPDF,
+    rows: MatrixRow[],
+    args: {
+        now: Date;
+        includeBarcode: boolean;
+        metrics: PrintPageMetrics;
+        fontSize: number;
+        priceTypes: PriceType[];
+        tiers: string[];
+        usedUnits: Unit[];
+        title: string;
+        supplierNames?: string[];
+        filtersText?: string;
+    },
+) {
+    const { metrics } = args;
+    const columns = resolveSpreadsheetColumns({
+        contentWidth: metrics.contentWidth,
+        tiers: args.tiers,
+        priceTypes: args.priceTypes,
+        includeBarcode: args.includeBarcode,
+    });
+    const headerHeight = metrics.compact ? 16 : 20;
+    const lineHeight = Math.max(args.fontSize + 2, 7);
+    const minRowHeight = metrics.compact ? 18 : 22;
+    const maxLinesPerCell = metrics.compact ? 3 : 4;
+    const maxY = () => metrics.contentBottom - metrics.footerReserve;
+
+    let y = drawReportHeader(doc, {
+        now: args.now,
+        total: rows.length,
+        layout: "Table",
+        metrics,
+        title: args.title,
+        supplierNames: args.supplierNames,
+        filtersText: args.filtersText,
+    });
+
+    const drawHeader = () => {
+        let x = metrics.contentLeft;
+        doc.setDrawColor(210, 210, 210);
+        doc.setFillColor(248, 250, 252);
+        doc.rect(metrics.contentLeft, y, metrics.contentWidth, headerHeight, "FD");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(Math.max(args.fontSize, 6));
+        doc.setTextColor(40);
+
+        columns.forEach((column) => {
+            if (column.kind === "tier") {
+                doc.setFillColor(...column.palette.fill);
+                doc.rect(x, y, column.width, headerHeight, "FD");
+                doc.setTextColor(...column.palette.text);
+            } else {
+                doc.setTextColor(40);
+            }
+
+            const label = truncatePdfText(doc, column.label, column.width - 8);
+            doc.text(label, x + 4, y + headerHeight / 2, { baseline: "middle" });
+            doc.setDrawColor(210, 210, 210);
+            doc.line(x, y, x, y + headerHeight);
+            x += column.width;
+        });
+
+        doc.line(metrics.contentLeft + metrics.contentWidth, y, metrics.contentLeft + metrics.contentWidth, y + headerHeight);
+        y += headerHeight;
+    };
+
+    drawHeader();
+
+    const addPage = () => {
+        drawPageFooter(doc, metrics);
+        doc.addPage();
+        y = drawReportHeader(doc, {
+            now: args.now,
+            total: rows.length,
+            layout: "Table",
+            metrics,
+            continuation: true,
+            title: args.title,
+            supplierNames: args.supplierNames,
+            filtersText: args.filtersText,
+        });
+        drawHeader();
+    };
+
+    rows.forEach((row) => {
+        const units = rowUnits(row, args.usedUnits);
+        const cellLines = columns.map((column) => {
+            const raw = column.kind === "tier" ? tierCellText(row, column.tier, units) : column.value(row);
+            return splitCellLines(doc, raw, column.width, maxLinesPerCell);
+        });
+        const rowHeight = Math.max(minRowHeight, Math.max(...cellLines.map((lines) => lines.length)) * lineHeight + 8);
+
+        if (y + rowHeight > maxY()) {
+            addPage();
+        }
+
+        let x = metrics.contentLeft;
+        columns.forEach((column, columnIndex) => {
+            const lines = cellLines[columnIndex] ?? ["-"];
+            if (column.kind === "tier") {
+                doc.setFillColor(...column.palette.fill);
+            } else {
+                doc.setFillColor(255, 255, 255);
+            }
+            doc.setDrawColor(225, 225, 225);
+            doc.rect(x, y, column.width, rowHeight, "FD");
+
+            doc.setFont("helvetica", column.kind === "meta" && column.bold ? "bold" : "normal");
+            doc.setFontSize(args.fontSize);
+            if (column.kind === "tier") {
+                doc.setTextColor(...column.palette.text);
+            } else {
+                doc.setTextColor(30);
+            }
+            doc.text(lines, x + 4, y + 6 + args.fontSize);
+            x += column.width;
+        });
+
+        y += rowHeight;
+    });
+
+    drawPageFooter(doc, metrics);
+}
+
 function renderPricingProductBlocksPdf(
     doc: jsPDF,
     rows: MatrixRow[],
@@ -386,17 +644,18 @@ function renderPricingProductBlocksPdf(
 
     for (const row of rows) {
         const display = row.display;
-        const unitsForRow =
-            args.usedUnits.length > 0
-                ? args.usedUnits
-                : Object.keys(row.variantsByUnitId).map((unitId) => ({
-                      unit_id: Number(unitId),
-                      unit_name: `Unit ${unitId}`,
-                      unit_shortcut: `U${unitId}`,
-                  }));
+        const unitsForRow = rowUnits(row, args.usedUnits);
+        const sparseTable = args.layoutLabel === "Table";
+        const productUnits = sparseTable
+            ? populatedUnitsForRow(row, args.tiers, unitsForRow)
+            : unitsForRow;
+        const productTiers = sparseTable
+            ? populatedTiersForRow(row, args.tiers, productUnits)
+            : args.tiers;
+        const hasPrintablePrices = !sparseTable || (productUnits.length > 0 && productTiers.length > 0);
         const printableUnits =
-            unitsForRow.length > 0
-                ? unitsForRow
+            productUnits.length > 0
+                ? productUnits
                 : [{ unit_id: 0, unit_name: "Price", unit_shortcut: "Price" }];
 
         const metaPills = useDenseProductHeader
@@ -438,14 +697,15 @@ function renderPricingProductBlocksPdf(
               ) as string[]);
         const wrappedName = wrappedNameAll.slice(0, maxNameLines);
         const visiblePillRows = pillRows.slice(0, maxPillRows);
-        const printableTiers = args.tiers;
+        const printableTiers = productTiers;
+        const visibleTableRows = Math.max(printableTiers.length, 1);
 
         const cardHeight =
             (fixedCardGrid || denseBlocks) && blockSlotHeight != null
                 ? blockSlotHeight
                 : (() => {
                       const tableHeight =
-                          tableHeaderHeight + printableTiers.length * tableRowHeight;
+                          tableHeaderHeight + visibleTableRows * tableRowHeight;
                       const headerContentHeight = useDenseProductHeader
                           ? denseProductHeaderBlockHeight()
                           : wrappedName.length * (lineHeight + 1) +
@@ -544,7 +804,7 @@ function renderPricingProductBlocksPdf(
             cardHeight,
             blockY,
             tableTopY: cursorY,
-            visibleTierCount: printableTiers.length,
+            visibleTierCount: visibleTableRows,
             defaultTableHeaderHeight: tableHeaderHeight,
             defaultTableRowHeight: tableRowHeight,
             bottomPadding: cardPadding,
@@ -567,7 +827,7 @@ function renderPricingProductBlocksPdf(
         doc.text("Price Type", tableX + 4, headerTextY, headerTextOptions);
         printableUnits.forEach((unit, index) => {
             const cellX = tableX + tierColumnWidth + index * unitColumnWidth;
-            const label = unitLabel(unit, `Unit ${unit.unit_id}`);
+            const label = hasPrintablePrices ? unitLabel(unit, `Unit ${unit.unit_id}`) : "No prices";
             doc.text(
                 (doc.splitTextToSize(label, unitColumnWidth - 6)[0] as string | undefined) ?? "-",
                 cellX + 4,
@@ -578,6 +838,24 @@ function renderPricingProductBlocksPdf(
 
         cursorY += resolvedHeaderHeight;
         doc.setFont("helvetica", "normal");
+        if (!hasPrintablePrices) {
+            const rowY = cursorY;
+            const rowHeight = Math.max(resolvedRowHeight, tableLayout.tableBottomY - rowY);
+            doc.setFillColor(249, 250, 251);
+            doc.setDrawColor(225, 225, 225);
+            doc.rect(tableX, rowY, tableWidth, rowHeight, "FD");
+            doc.setFont("helvetica", "italic");
+            doc.setTextColor(100);
+            doc.text(
+                "No prices available",
+                tableX + tableWidth / 2,
+                tableCellTextY(rowY, rowHeight, centerTableText),
+                { align: "center", ...(centerTableText ? ({ baseline: "middle" } as const) : {}) },
+            );
+            advanceCardPosition(cardHeight);
+            continue;
+        }
+
         printableTiers.forEach((tier, tierIndex) => {
             const rowY = cursorY + tierIndex * resolvedRowHeight;
             const isLastRow = tierIndex === printableTiers.length - 1;
@@ -666,19 +944,34 @@ export function generatePricingMatrixPdf(rows: MatrixRow[], opts: Options = {}) 
         opts.fontSize ||
         (metrics.fixedCardGrid ? 5 : blocksPerPage > 1 ? 5 : layout === "cards" ? 6 : 7);
 
-    renderPricingProductBlocksPdf(doc, rows, {
-        layoutLabel,
-        now,
-        includeBarcode,
-        metrics,
-        fontSize: defaultFontSize,
-        priceTypes: priceTypesList,
-        tiers,
-        usedUnits,
-        title,
-        supplierNames: opts.supplierNames,
-        filtersText: opts.filtersText,
-    });
+    if (layout === "table") {
+        renderPricingSpreadsheetPdf(doc, rows, {
+            now,
+            includeBarcode,
+            metrics,
+            fontSize: defaultFontSize,
+            priceTypes: priceTypesList,
+            tiers,
+            usedUnits,
+            title,
+            supplierNames: opts.supplierNames,
+            filtersText: opts.filtersText,
+        });
+    } else {
+        renderPricingProductBlocksPdf(doc, rows, {
+            layoutLabel,
+            now,
+            includeBarcode,
+            metrics,
+            fontSize: defaultFontSize,
+            priceTypes: priceTypesList,
+            tiers,
+            usedUnits,
+            title,
+            supplierNames: opts.supplierNames,
+            filtersText: opts.filtersText,
+        });
+    }
 
     const fileStamp = now.toISOString().split("T")[0];
     const fileName = opts.saveAsName ?? `Product_Pricing_Matrix_${fileStamp}.pdf`;

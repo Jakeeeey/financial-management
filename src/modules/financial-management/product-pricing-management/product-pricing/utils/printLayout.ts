@@ -152,10 +152,10 @@ export function getPrintPageMetrics(
 export function formatPrintMoney(v: unknown): string {
     const n = Number(v);
     if (!Number.isFinite(n)) return "";
-    return n.toLocaleString(undefined, {
+    return `PHP ${n.toLocaleString("en-PH", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 4,
-    });
+    })}`;
 }
 
 export function printTextValue(v: unknown): string {
