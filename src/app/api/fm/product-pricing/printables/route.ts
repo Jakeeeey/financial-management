@@ -147,25 +147,46 @@ export async function GET(req: NextRequest) {
 
         const gids = Array.from(groupMap.keys());
         const totalGroups = gids.length;
-        const totalPages = Math.ceil(totalGroups / pageSize);
+        const totalPages = pageSize === -1 ? 1 : Math.ceil(totalGroups / pageSize);
 
-        // Paginate Groups
-        if (pageSize === -1) {
-            return NextResponse.json({
-                data: rows,
-                meta: {
-                    total_groups: totalGroups,
-                    total_pages: 1,
-                    page: 1,
-                    page_size: totalGroups
-                }
-            });
-        }
-
-        const pagedGids = gids.slice((page - 1) * pageSize, page * pageSize);
+        const pagedGids = pageSize === -1 ? gids : gids.slice((page - 1) * pageSize, page * pageSize);
         const pagedRows: ProductRow[] = [];
-        for (const gid of pagedGids) {
-            pagedRows.push(...groupMap.get(gid)!);
+
+        if (pagedGids.length > 0) {
+            const variantParams = new URLSearchParams();
+            variantParams.set("limit", "-1");
+            variantParams.set("fields", fields);
+            let andIdx = 0;
+            const addVarAnd = (suffix: string, value: string) => {
+                variantParams.set(`filter[_and][${andIdx}]${suffix}`, value);
+                andIdx += 1;
+            };
+            if (activeOnly) {
+                addVarAnd("[isActive][_eq]", "1");
+            }
+            addVarAnd("[_or][0][product_id][_in]", pagedGids.join(","));
+            variantParams.set(`filter[_and][${andIdx - 1}][_or][1][parent_id][_in]`, pagedGids.join(","));
+
+            const varData = await fetchDirectus<{ data: ProductRow[] }>(`${DIRECTUS_URL}/items/${PRODUCTS}?${variantParams.toString()}`);
+            
+            const fetchedGroups = new Map<number, ProductRow[]>();
+            for (const r of varData.data) {
+                const gid = pickId(r.parent_id) ?? pickId(r.product_id);
+                if (gid === null) continue;
+                if (!pagedGids.includes(gid)) continue;
+                if (!fetchedGroups.has(gid)) fetchedGroups.set(gid, []);
+                fetchedGroups.get(gid)!.push(r);
+            }
+
+            for (const gid of pagedGids) {
+                let completeVariants = fetchedGroups.get(gid) ?? [];
+                if (unitIds.length > 0) {
+                    completeVariants = completeVariants.filter(
+                        (v) => v.unit_of_measurement && unitIds.includes(String(v.unit_of_measurement)),
+                    );
+                }
+                pagedRows.push(...completeVariants);
+            }
         }
 
         return NextResponse.json({
@@ -173,8 +194,8 @@ export async function GET(req: NextRequest) {
             meta: {
                 total_groups: totalGroups,
                 total_pages: totalPages,
-                page,
-                page_size: pageSize
+                page: pageSize === -1 ? 1 : page,
+                page_size: pageSize === -1 ? totalGroups : pageSize
             }
         });
 

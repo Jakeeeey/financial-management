@@ -3,7 +3,10 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import type { ProductRow, FilterState, MatrixRow, VariantCell, Category, Brand } from "../types";
+import type { ProductRow, FilterState, MatrixRow, VariantCell, Category, Brand, PriceType, ProductTierKey } from "../types";
+import { getPricesForProducts } from "../../product-pricing/providers/pricingApi";
+import { pivotPrices } from "../../product-pricing/utils/pivot";
+import { getDynamicTiers } from "../../product-pricing/utils/constants";
 
 export const defaultFilters: FilterState = {
     q: "",
@@ -28,7 +31,8 @@ export function useProductPrintables(
     filters: FilterState,
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>,
     categories: Category[] = [],
-    brands: Brand[] = []
+    brands: Brand[] = [],
+    priceTypes: PriceType[] = []
 ) {
     const [loading, setLoading] = React.useState(false);
     const [matrixRows, setMatrixRows] = React.useState<MatrixRow[]>([]);
@@ -55,6 +59,19 @@ export function useProductPrintables(
             const products: ProductRow[] = json.data ?? [];
             const meta = json.meta ?? { total_pages: 0 };
 
+            const productIds = products.map((p) => pickId(p.product_id)).filter((id): id is number => id !== null);
+            let priceMap = new Map<number, Record<string, number | null>>();
+            
+            if (productIds.length > 0) {
+                const priceRes = await getPricesForProducts(productIds);
+                priceMap = pivotPrices(priceTypes, priceRes.data ?? []);
+            }
+
+            const emptyPivot = getDynamicTiers(priceTypes).reduce((acc, tier) => {
+                acc[tier] = null;
+                return acc;
+            }, {} as Record<ProductTierKey, number | null>);
+
             const catMap = new Map(categories.map(c => [Number(c.category_id), c.category_name]));
             const brandMap = new Map(brands.map(b => [Number(b.brand_id), b.brand_name]));
 
@@ -80,16 +97,15 @@ export function useProductPrintables(
                 for (const v of variants) {
                     const uomId = Number(v.unit_of_measurement);
                     if (!Number.isFinite(uomId)) continue;
+                    
+                    const pid = pickId(v.product_id);
+                    const piv = pid ? (priceMap.get(pid) ?? emptyPivot) : emptyPivot;
 
                     variantsByUnitId[uomId] = {
                         product: v,
                         tiers: {
+                            ...piv,
                             ListPrice: v.cost_per_unit ? Number(v.cost_per_unit) : null,
-                            A: v.priceA ? Number(v.priceA) : null,
-                            B: v.priceB ? Number(v.priceB) : null,
-                            C: v.priceC ? Number(v.priceC) : null,
-                            D: v.priceD ? Number(v.priceD) : null,
-                            E: v.priceE ? Number(v.priceE) : null,
                         }
                     };
                 }
@@ -111,7 +127,7 @@ export function useProductPrintables(
         } finally {
             setLoading(false);
         }
-    }, [categories, brands, setFilters, filters.active_only, filters.brand_ids, filters.category_ids, filters.page, filters.q, filters.supplier_ids, filters.supplier_scope, filters.unit_ids]);
+    }, [categories, brands, priceTypes, setFilters, filters.active_only, filters.brand_ids, filters.category_ids, filters.page, filters.q, filters.supplier_ids, filters.supplier_scope, filters.unit_ids]);
 
     React.useEffect(() => {
         refresh();

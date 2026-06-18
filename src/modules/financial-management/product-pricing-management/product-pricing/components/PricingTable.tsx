@@ -159,7 +159,9 @@ const TIER_STYLES = [
 ] as const;
 
 function tierStyle(tierIndex: number) {
-    return TIER_STYLES[tierIndex] ?? TIER_STYLES[0];
+    if (tierIndex === 0) return TIER_STYLES[0];
+    const dynamicIndex = 1 + ((tierIndex - 1) % (TIER_STYLES.length - 1));
+    return TIER_STYLES[dynamicIndex] ?? TIER_STYLES[0];
 }
 
 function toNum(v: unknown, fallback: number) {
