@@ -20,6 +20,10 @@ export const defaultFilters: FilterState = {
     total_pages: 0,
 };
 
+const EMPTY_CATEGORIES: Category[] = [];
+const EMPTY_BRANDS: Brand[] = [];
+const EMPTY_PRICE_TYPES: PriceType[] = [];
+
 function pickId(v: string | number | null | undefined | Record<string, unknown>): number | null {
     if (v === null || v === undefined) return null;
     const n = Number((v as Record<string, unknown>)?.product_id ?? (v as Record<string, unknown>)?.id ?? v);
@@ -29,9 +33,9 @@ function pickId(v: string | number | null | undefined | Record<string, unknown>)
 export function useProductPrintables(
     filters: FilterState,
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>,
-    categories: Category[] = [],
-    brands: Brand[] = [],
-    priceTypes: PriceType[] = []
+    categories: Category[] = EMPTY_CATEGORIES,
+    brands: Brand[] = EMPTY_BRANDS,
+    priceTypes: PriceType[] = EMPTY_PRICE_TYPES
 ) {
     const [loading, setLoading] = React.useState(false);
     const [matrixRows, setMatrixRows] = React.useState<MatrixRow[]>([]);
@@ -117,7 +121,10 @@ export function useProductPrintables(
 
             setMatrixRows(assembled);
             setUsedUnitIds(unitIds);
-            setFilters(prev => ({ ...prev, total_pages: meta.total_pages }));
+            setFilters(prev => {
+                const totalPages = Number(meta.total_pages ?? 0);
+                return prev.total_pages === totalPages ? prev : { ...prev, total_pages: totalPages };
+            });
         } catch (error: unknown) {
             toast.error(error instanceof Error ? error.message : "Failed to load products");
         } finally {

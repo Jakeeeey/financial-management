@@ -9,6 +9,7 @@ import * as api from "../providers/pcrApi";
 import { useEditableGridNavigation } from "./useEditableGridNavigation";
 
 type GridNav = ReturnType<typeof useEditableGridNavigation>;
+type CardTone = "neutral" | "pending" | "increase" | "decrease";
 
 type Props = {
     products: api.ProductSearchRow[];
@@ -77,6 +78,36 @@ export function BatchPriceGrid({
         [cellKey, onDraftCostChange, onDraftPriceChange, pendingValues, priceTypes, products, showListCost],
     );
 
+    const cardToneFor = React.useCallback(
+        (args: { hasPending: boolean; rawValue: string; currentValue: number | null | undefined }): CardTone => {
+            if (args.hasPending) return "pending";
+            if (!args.rawValue.trim()) return "neutral";
+
+            const parsed = parsePriceInput(args.rawValue);
+            if (parsed.error || parsed.value === null) return "neutral";
+
+            const currentValue = Number(args.currentValue);
+            if (!Number.isFinite(currentValue)) return "neutral";
+            if (parsed.value > currentValue) return "increase";
+            if (parsed.value < currentValue) return "decrease";
+            return "neutral";
+        },
+        [parsePriceInput],
+    );
+
+    const cardToneClass = React.useCallback((tone: CardTone) => {
+        switch (tone) {
+            case "pending":
+                return "border-amber-300 bg-amber-50/80 text-amber-950 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-100";
+            case "increase":
+                return "border-emerald-300 bg-emerald-50/80 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/35 dark:text-emerald-100";
+            case "decrease":
+                return "border-red-300 bg-red-50/80 text-red-950 dark:border-red-800 dark:bg-red-950/35 dark:text-red-100";
+            default:
+                return "border-border bg-background";
+        }
+    }, []);
+
     return (
         <div className="max-h-[46vh] overflow-y-auto rounded-md border">
             <div className="sticky top-0 z-10 border-b bg-background px-3 py-2 text-xs font-medium text-muted-foreground">
@@ -117,8 +148,7 @@ export function BatchPriceGrid({
 
                             <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
                                 {showListCost ? (
-                                    <div className="min-w-0 rounded-md border bg-background p-2">
-                                        {(() => {
+                                    (() => {
                                             const pendingCost = pendingValues.get(`${product.product_id}:LIST`);
                                             const hasPendingCost = pendingCost !== undefined;
                                             const pendingHintId = `batch-list-cost-pending-${product.product_id}`;
@@ -127,15 +157,21 @@ export function BatchPriceGrid({
                                                 rawCost.trim() && !hasPendingCost
                                                     ? parsePriceInput(rawCost).error
                                                     : null;
+                                            const currentCost = currentCostFor?.(product) ?? null;
+                                            const tone = cardToneFor({
+                                                hasPending: hasPendingCost,
+                                                rawValue: rawCost,
+                                                currentValue: currentCost,
+                                            });
 
                                             return (
-                                                <>
+                                                <div className={cn("min-w-0 rounded-md border p-2", cardToneClass(tone))}>
                                                     <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
                                                         <div className="truncate text-xs font-medium" title="List Cost">
                                                             List Cost
                                                         </div>
                                                         <div className="shrink-0 text-[11px] text-muted-foreground">
-                                                            {formatMoney(currentCostFor?.(product) ?? null)}
+                                                            {formatMoney(currentCost)}
                                                         </div>
                                                     </div>
                                                     <Input
@@ -182,10 +218,9 @@ export function BatchPriceGrid({
                                                             {pendingLabel(pendingCost)}
                                                         </div>
                                                     ) : null}
-                                                </>
+                                                </div>
                                             );
-                                        })()}
-                                    </div>
+                                        })()
                                 ) : null}
 
                                 {priceTypes.map((priceType, colIndex) => {
@@ -198,15 +233,24 @@ export function BatchPriceGrid({
                                     const parsed = parsePriceInput(rawValue);
                                     const hasError = !hasPending && rawValue.trim() && parsed.error;
                                     const label = priceTypeLabel(priceType);
+                                    const currentPrice = currentPriceFor(product, priceType);
+                                    const tone = cardToneFor({
+                                        hasPending,
+                                        rawValue,
+                                        currentValue: currentPrice,
+                                    });
 
                                     return (
-                                        <div key={key} className="min-w-0 rounded-md border bg-background p-2">
+                                        <div
+                                            key={key}
+                                            className={cn("min-w-0 rounded-md border p-2", cardToneClass(tone))}
+                                        >
                                             <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
                                                 <div className="truncate text-xs font-medium" title={label}>
                                                     {label}
                                                 </div>
                                                 <div className="shrink-0 text-[11px] text-muted-foreground">
-                                                    {formatMoney(currentPriceFor(product, priceType))}
+                                                    {formatMoney(currentPrice)}
                                                 </div>
                                             </div>
                                             <Input

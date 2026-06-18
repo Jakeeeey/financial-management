@@ -20,7 +20,13 @@ import { toast } from "sonner";
 export default function ProductPrintablesView({ userName }: { userName?: string }) {
     const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
     const { categories, brands, units, suppliers, priceTypes, loading: lookupsLoading } = useLookups(filters);
-    const { matrixRows, usedUnitIds, loading: productsLoading, resetFilters } = useProductPrintables(filters, setFilters, categories, brands);
+    const { matrixRows, usedUnitIds, loading: productsLoading, resetFilters } = useProductPrintables(
+        filters,
+        setFilters,
+        categories,
+        brands,
+        priceTypes,
+    );
     const [printOpen, setPrintOpen] = React.useState(false);
     const [isPrinting, setIsPrinting] = React.useState(false);
     const [printPrepareOpen, setPrintPrepareOpen] = React.useState(false);
