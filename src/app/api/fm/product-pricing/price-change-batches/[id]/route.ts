@@ -4,6 +4,7 @@ import {
     applyApprovedBatch,
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
+    fetchUserNamesById,
     getDetails,
     getHeader,
     getSupplierNamesByProductId,
@@ -14,6 +15,7 @@ import {
     pickId,
     rejectPriceChangeBatch,
     resolveBatchDecisionUserNames,
+    resolveUserDisplayName,
 } from "../_batch";
 
 export const runtime = "nodejs";
@@ -51,6 +53,29 @@ function supplierNameOf(value: unknown): string {
     const shortcut = String(value.supplier_shortcut ?? "").trim();
     const name = String(value.supplier_name ?? "").trim();
     return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
+}
+
+function userIdOf(value: unknown): number | string | null {
+    if (isRecord(value)) {
+        return pickId(value.user_id) ?? pickId(value.id);
+    }
+    return pickId(value);
+}
+
+function userNameOf(value: unknown): string | null {
+    if (!isRecord(value)) return null;
+
+    const fullName = [value.user_fname, value.user_mname, value.user_lname]
+        .map((part) => String(part ?? "").trim())
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (fullName) return fullName;
+
+    const email = String(value.user_email ?? "").trim();
+    return email || null;
 }
 
 function mapDetail(line: BatchDetailRow) {
@@ -95,6 +120,11 @@ export async function GET(req: NextRequest, context: RouteContext) {
             .filter((id) => id > 0);
         const supplierByProductId = await getSupplierNamesByProductId(detailProductIds);
         const { approved_by_name, rejected_by_name } = await resolveBatchDecisionUserNames(header);
+        const detailRequester = details.find((line) => userIdOf(line.requested_by) !== null)?.requested_by ?? null;
+        const requestedBy = header.requested_by ?? detailRequester;
+        const requestedById = userIdOf(requestedBy);
+        const requesterNamesById = await fetchUserNamesById([requestedById]);
+        const requested_by_name = userNameOf(requestedBy) ?? resolveUserDisplayName(requestedById, requesterNamesById);
 
         return NextResponse.json({
             data: {
@@ -105,7 +135,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
                 reference_no: header.reference_no ?? "",
                 remarks: header.remarks ?? "",
                 status: header.status ?? "PENDING",
-                requested_by: header.requested_by ?? null,
+                requested_by: requestedById,
+                requested_by_name,
                 requested_at: header.requested_at ?? null,
                 approved_by: header.approved_by ?? null,
                 approved_at: header.approved_at ?? null,

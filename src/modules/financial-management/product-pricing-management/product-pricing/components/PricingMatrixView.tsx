@@ -33,6 +33,7 @@ import { SessionExpiredPanel } from "../../shared/SessionExpiredPanel";
 
 import { buildMatrixTierKeys, priceViewFilterLabel } from "../utils/pivot";
 import * as api from "../providers/pricingApi";
+import * as pcrApi from "../../price-change-request/providers/pcrApi";
 import type { PrintFilterParams } from "../providers/pricingApi";
 import PrintPricingDialog from "./PrintPricingDialog";
 import PrintPrepareDialog from "./PrintPrepareDialog";
@@ -40,6 +41,7 @@ import PrintLargeJobConfirmDialog from "./PrintLargeJobConfirmDialog";
 
 import { exportSupplierBatchExcel } from "../../shared/supplier-batch/supplierBatchExcel";
 import { parseSupplierBatchExcelImport } from "../../price-change-request/utils/supplierBatchExcel";
+import { productIdsFromMatrixRows } from "../../shared/supplier-batch/flattenPrintMatrix";
 import { fetchSupplierPrintMatrix } from "../../shared/supplier-batch/supplierPrintMatrix";
 import { requireSingleSupplier } from "../../shared/supplier-batch/requireSingleSupplier";
 import type { BatchImportPrefill } from "../../price-change-request/types";
@@ -650,6 +652,11 @@ export default function PricingMatrixView() {
         setExcelBusy(true);
         try {
             const data = await loadSupplierExcelMatrix(supplier.id);
+            const productIds = productIdsFromMatrixRows(data.rows);
+            const [pendingPriceResult, pendingCostResult] = await Promise.all([
+                pcrApi.getPendingPriceRequestsForProducts(productIds),
+                pcrApi.getPendingCostRequestsForProducts(productIds),
+            ]);
             await exportSupplierBatchExcel({
                 supplierId: supplier.id,
                 supplierName: supplier.name,
@@ -657,6 +664,8 @@ export default function PricingMatrixView() {
                 priceTypes: pt.priceTypes,
                 filenamePrefix: "product-pricing",
                 includeListCost: true,
+                pendingPriceRequests: pendingPriceResult.data,
+                pendingCostRequests: pendingCostResult.data,
             });
             toast.success("Excel template downloaded.");
         } catch (error: unknown) {

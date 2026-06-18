@@ -78,6 +78,19 @@ export function flattenPrintMatrixRows(
     return flat;
 }
 
+export function productIdsFromMatrixRows(rows: MatrixRow[]): number[] {
+    const ids = new Set<number>();
+
+    for (const row of rows) {
+        for (const variant of Object.values(row.variantsByUnitId)) {
+            const id = Number(variant.product.product_id);
+            if (Number.isFinite(id) && id > 0) ids.add(id);
+        }
+    }
+
+    return Array.from(ids);
+}
+
 export type FlatListCostProductRow = {
     product_id: number;
     product_code: string | null;

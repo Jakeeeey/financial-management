@@ -32,6 +32,7 @@ const COL_PARENT_ID = "Parent ID";
 const COL_UNIT_ID = "Unit ID";
 const COL_CURRENT_LIST_COST = "Current List Cost";
 const COL_PROPOSED_LIST_COST = "Proposed List Cost";
+const PENDING_MARKER = "Pending";
 
 const IDENTITY_HEADERS = [
     COL_PRODUCT_ID,
@@ -60,6 +61,17 @@ export type SupplierBatchCostChange = {
     current_cost: number | null;
 };
 
+export type SupplierBatchPendingPrice = {
+    product_id: number;
+    price_type_id: number;
+    proposed_price: number | null;
+};
+
+export type SupplierBatchPendingCost = {
+    product_id: number;
+    proposed_cost: number | null;
+};
+
 export type BatchExcelParseResult =
     | {
           ok: true;
@@ -82,6 +94,14 @@ function sanitizeFilenamePart(value: string) {
     return value.replace(/[<>:"/\\|?*]+/g, "_").trim() || "supplier";
 }
 
+function pendingNote(label: string, value: number | null | undefined) {
+    const amount = value === null || value === undefined ? "" : ` Proposed value: ${value.toLocaleString("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })}.`;
+    return `${label} already has a pending request.${amount}`;
+}
+
 export async function exportSupplierBatchExcel(args: {
     supplierId: number;
     supplierName: string;
@@ -89,6 +109,8 @@ export async function exportSupplierBatchExcel(args: {
     priceTypes: PriceTypeRef[];
     filenamePrefix?: string;
     includeListCost?: boolean;
+    pendingPriceRequests?: SupplierBatchPendingPrice[];
+    pendingCostRequests?: SupplierBatchPendingCost[];
 }) {
     const {
         supplierId,
@@ -97,9 +119,17 @@ export async function exportSupplierBatchExcel(args: {
         priceTypes,
         filenamePrefix = "price-change-batch",
         includeListCost = false,
+        pendingPriceRequests = [],
+        pendingCostRequests = [],
     } = args;
     const sortedPriceTypes = sortPriceTypes(priceTypes);
     const flatRows = flattenPrintMatrixRows(matrixRows, sortedPriceTypes);
+    const pendingPriceByKey = new Map<string, number | null>(
+        pendingPriceRequests.map((row) => [`${row.product_id}:${row.price_type_id}`, row.proposed_price] as const),
+    );
+    const pendingCostByProductId = new Map(
+        pendingCostRequests.map((row) => [row.product_id, row.proposed_cost] as const),
+    );
     const generatedAt = new Date();
     const templateVersion = includeListCost
         ? BATCH_EXCEL_COMBINED_TEMPLATE_VERSION
@@ -132,8 +162,10 @@ export async function exportSupplierBatchExcel(args: {
     const headerRow = sheet.addRow(headers);
     headerRow.font = { bold: true };
     const dataStartRowNumber = sheet.rowCount + 1;
+    const pendingCellIndexes: Array<{ rowNumber: number; columnIndex: number; note?: string }> = [];
 
-    for (const row of flatRows) {
+    flatRows.forEach((row, rowIndex) => {
+        const rowNumber = dataStartRowNumber + rowIndex;
         const values: Array<string | number | null> = [
             row.product_id,
             row.product_code ?? "",
@@ -147,16 +179,34 @@ export async function exportSupplierBatchExcel(args: {
         if (includeListCost) {
             values.push(row.current_list_cost);
             values.push(null);
+            if (pendingCostByProductId.has(row.product_id)) {
+                pendingCellIndexes.push({
+                    rowNumber,
+                    columnIndex: headers.indexOf(COL_PROPOSED_LIST_COST) + 1,
+                    note: pendingNote("List cost", pendingCostByProductId.get(row.product_id)),
+                });
+            }
         }
 
         for (const priceType of sortedPriceTypes) {
             const current = row.currentByPriceTypeId.get(priceType.price_type_id) ?? null;
             values.push(current);
             values.push(null);
+            const key = `${row.product_id}:${priceType.price_type_id}`;
+            if (pendingPriceByKey.has(key)) {
+                pendingCellIndexes.push({
+                    rowNumber,
+                    columnIndex: headers.indexOf(proposedColumnHeader(priceType)) + 1,
+                    note: pendingNote(
+                        `${priceType.price_type_name || `#${priceType.price_type_id}`} price`,
+                        pendingPriceByKey.get(key),
+                    ),
+                });
+            }
         }
 
         sheet.addRow(values);
-    }
+    });
 
     if (includeListCost) {
         const currentListCol = headers.indexOf(COL_CURRENT_LIST_COST) + 1;
@@ -185,6 +235,7 @@ export async function exportSupplierBatchExcel(args: {
         totalColumns: headers.length,
         dataStartRowNumber,
         proposedColumnIndexes,
+        pendingCellIndexes,
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -223,6 +274,7 @@ function parseProposedValue(raw: unknown): { value: number | null; error: string
 
     const text = String(raw).trim();
     if (!text) return { value: null, error: null };
+    if (text.toLowerCase() === PENDING_MARKER.toLowerCase()) return { value: null, error: null };
 
     const parsed = Number(text);
     if (!Number.isFinite(parsed)) {

@@ -9,6 +9,8 @@ const PROPOSED_HEADER_FILL = "FF047857";
 const PROPOSED_FILL = "FFECFDF5";
 const PROPOSED_ALT_FILL = "FFD1FAE5";
 const INSTRUCTION_FILL = "FFF8FAFC";
+const PENDING_FILL = "FFFFF3CD";
+const PENDING_FONT = "FF92400E";
 
 const thinBorder: Partial<ExcelJS.Borders> = {
     top: { style: "thin", color: { argb: BORDER_COLOR } },
@@ -22,6 +24,7 @@ export function addSupplierBatchInstructionRows(sheet: ExcelJS.Worksheet): numbe
     sheet.addRow(["Instructions"]);
     sheet.addRow(["", "Enter changes only in columns containing Proposed."]);
     sheet.addRow(["", "Leave proposed cells blank when no change is needed."]);
+    sheet.addRow(["", "Yellow Pending cells already have active requests; leave them unchanged."]);
     sheet.addRow(["", "Do not edit product identity columns, current-value columns, supplier metadata, or headers."]);
     sheet.addRow(["", "Save this file and import it through Price Change Requests."]);
     sheet.addRow([]);
@@ -54,7 +57,14 @@ function styleHeaderRow(row: ExcelJS.Row, totalColumns: number) {
 }
 
 function styleInstructionRows(sheet: ExcelJS.Worksheet, startRowNumber: number, totalColumns: number) {
-    const rows = [startRowNumber, startRowNumber + 1, startRowNumber + 2, startRowNumber + 3, startRowNumber + 4];
+    const rows = [
+        startRowNumber,
+        startRowNumber + 1,
+        startRowNumber + 2,
+        startRowNumber + 3,
+        startRowNumber + 4,
+        startRowNumber + 5,
+    ];
 
     for (const rowNumber of rows) {
         const row = sheet.getRow(rowNumber);
@@ -120,6 +130,7 @@ export function styleSupplierBatchWorksheet(args: {
     totalColumns: number;
     dataStartRowNumber: number;
     proposedColumnIndexes?: number[];
+    pendingCellIndexes?: Array<{ rowNumber: number; columnIndex: number; note?: string }>;
     productNameColumn?: number;
 }) {
     const {
@@ -129,6 +140,7 @@ export function styleSupplierBatchWorksheet(args: {
         totalColumns,
         dataStartRowNumber,
         proposedColumnIndexes = [],
+        pendingCellIndexes = [],
         productNameColumn = 4,
     } = args;
     const proposedColumnIndexSet = new Set(proposedColumnIndexes);
@@ -155,5 +167,16 @@ export function styleSupplierBatchWorksheet(args: {
             proposedColumnIndexSet,
             (rowNumber - dataStartRowNumber) % 2 === 1,
         );
+    }
+
+    for (const pendingCell of pendingCellIndexes) {
+        const cell = sheet.getRow(pendingCell.rowNumber).getCell(pendingCell.columnIndex);
+        cell.value = "Pending";
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PENDING_FILL } };
+        cell.font = { bold: true, size: 11, color: { argb: PENDING_FONT }, name: "Calibri" };
+        cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        if (pendingCell.note) {
+            cell.note = pendingCell.note;
+        }
     }
 }

@@ -21,6 +21,7 @@ type Props = {
     formatMoney: (value: number | null | undefined) => string;
     priceTypeLabel: (priceType: api.PriceTypeOption) => string;
     currentPriceFor: (product: api.ProductSearchRow, priceType: api.PriceTypeOption) => number | null;
+    unitLabelFor?: (product: api.ProductSearchRow) => string | null;
     parsePriceInput: (value: string) => { value: number | null; error: string | null };
     groupIdFor: (product: api.ProductSearchRow) => number;
     isChildVariant: (product: api.ProductSearchRow) => boolean;
@@ -42,6 +43,7 @@ export function BatchPriceGrid({
     formatMoney,
     priceTypeLabel,
     currentPriceFor,
+    unitLabelFor,
     parsePriceInput,
     groupIdFor,
     isChildVariant,
@@ -83,13 +85,17 @@ export function BatchPriceGrid({
             <div className="divide-y">
                 {products.map((product, rowIndex) => {
                     const groupId = groupIdFor(product);
+                    const unitLabel = unitLabelFor?.(product);
+                    const productDisplayName = unitLabel
+                        ? `${product.product_name} (${unitLabel})`
+                        : product.product_name;
 
                     return (
                         <div key={product.product_id} className="space-y-3 px-3 py-3">
                             <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                                 <div className="min-w-0">
-                                    <div className="truncate text-sm font-medium" title={product.product_name}>
-                                        {product.product_name}
+                                    <div className="truncate text-sm font-medium" title={productDisplayName}>
+                                        {productDisplayName}
                                     </div>
                                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                                         <span>Product #{product.product_id}</span>

@@ -59,6 +59,10 @@ function priceTypeLabel(priceType: api.PriceTypeOption) {
     return safeStr(priceType.price_type_name) || `#${priceType.price_type_id}`;
 }
 
+function unitOptionLabel(unit: api.UnitOption) {
+    return safeStr(unit.unit_name) || safeStr(unit.unit_shortcut);
+}
+
 function sortPriceTypes(priceTypes: api.PriceTypeOption[]) {
     return [...priceTypes].sort((a, b) => {
         const aSort = Number(a.sort ?? Number.MAX_SAFE_INTEGER);
@@ -125,6 +129,7 @@ export function CreatePriceChangeBatchDialog({
     const [applyParentPriceToChildren, setApplyParentPriceToChildren] = React.useState(false);
 
     const [priceTypes, setPriceTypes] = React.useState<api.PriceTypeOption[]>([]);
+    const [unitLabelMap, setUnitLabelMap] = React.useState<Map<number, string>>(new Map());
     const [products, setProducts] = React.useState<api.ProductSearchRow[]>([]);
     const [productCatalog, setProductCatalog] = React.useState<Map<number, api.ProductSearchRow>>(new Map());
     const [tierPriceMap, setTierPriceMap] = React.useState<Map<string, number | null>>(new Map());
@@ -238,15 +243,27 @@ export function CreatePriceChangeBatchDialog({
         let alive = true;
         setLoadingPriceTypes(true);
 
-        api.getPriceTypes()
-            .then((result) => {
+        Promise.all([api.getPriceTypes(), api.getLookups()])
+            .then(([priceTypesResult, lookupsResult]) => {
                 if (!alive) return;
-                setPriceTypes(sortPriceTypes(result.data ?? []));
+                setPriceTypes(sortPriceTypes(priceTypesResult.data ?? []));
+                setUnitLabelMap(
+                    new Map(
+                        lookupsResult.units
+                            .map((unit): [number, string] | null => {
+                                const id = Number(unit.unit_id);
+                                const label = unitOptionLabel(unit);
+                                return Number.isFinite(id) && id > 0 && label ? [id, label] : null;
+                            })
+                            .filter((entry): entry is [number, string] => entry !== null),
+                    ),
+                );
             })
             .catch((error: unknown) => {
                 if (!alive) return;
                 setPriceTypes([]);
-                setLoadError(error instanceof Error ? error.message : "Failed to load price types");
+                setUnitLabelMap(new Map());
+                setLoadError(error instanceof Error ? error.message : "Failed to load price types and units");
             })
             .finally(() => {
                 if (alive) setLoadingPriceTypes(false);
@@ -514,6 +531,15 @@ export function CreatePriceChangeBatchDialog({
     const currentCostFor = React.useCallback(
         (product: api.ProductSearchRow) => currentCostMap.get(product.product_id) ?? null,
         [currentCostMap],
+    );
+
+    const unitLabelFor = React.useCallback(
+        (product: api.ProductSearchRow) => {
+            const unitId = Number(product.unit_of_measurement);
+            if (!Number.isFinite(unitId) || unitId <= 0) return null;
+            return unitLabelMap.get(unitId) ?? null;
+        },
+        [unitLabelMap],
     );
 
     const setDraftCost = React.useCallback((product: api.ProductSearchRow, value: string) => {
@@ -1012,6 +1038,7 @@ export function CreatePriceChangeBatchDialog({
                                     formatMoney={formatMoney}
                                     priceTypeLabel={priceTypeLabel}
                                     currentPriceFor={currentPriceFor}
+                                    unitLabelFor={unitLabelFor}
                                     parsePriceInput={parsePriceInput}
                                     groupIdFor={groupIdFor}
                                     isChildVariant={isChildVariant}

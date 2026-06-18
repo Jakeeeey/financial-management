@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { fetchSupplierPrintMatrix } from "../../shared/supplier-batch/supplierPrintMatrix";
 import { requireSingleSupplier } from "../../shared/supplier-batch/requireSingleSupplier";
+import { productIdsFromMatrixRows } from "../../shared/supplier-batch/flattenPrintMatrix";
 import type { SupplierOption } from "../providers/pcrApi";
 import * as pcrApi from "../providers/pcrApi";
 import type { BatchImportPrefill } from "../types";
@@ -68,12 +69,21 @@ export function usePriceTypeSupplierExportImport({
         setBusy(true);
         try {
             const data = await loadSupplierExportData(supplier.id);
+            const productIds = productIdsFromMatrixRows(data.rows);
+            const [pendingPriceResult, pendingCostResult] = await Promise.all([
+                pcrApi.getPendingPriceRequestsForProducts(productIds),
+                includeListCost
+                    ? pcrApi.getPendingCostRequestsForProducts(productIds)
+                    : Promise.resolve({ data: [] }),
+            ]);
             await exportSupplierBatchExcel({
                 supplierId: supplier.id,
                 supplierName: supplier.name,
                 matrixRows: data.rows,
                 priceTypes: data.priceTypes,
                 includeListCost,
+                pendingPriceRequests: pendingPriceResult.data,
+                pendingCostRequests: pendingCostResult.data,
             });
             toast.success("Excel template downloaded.");
         } catch (error: unknown) {

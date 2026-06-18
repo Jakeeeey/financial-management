@@ -141,9 +141,9 @@ export function ListCostBatchDetailDialog({
 
     const lines = React.useMemo(() => detail?.details ?? [], [detail?.details]);
     const isPending = detail?.status === "PENDING";
+    const headerId = detail?.header_id ?? batchId ?? 0;
     const canAct = !readOnly && isPending && headerId != null && onApprove != null && onReject != null;
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
-    const headerId = detail?.header_id ?? batchId ?? 0;
 
     const handleOpenChange = React.useCallback(
         (nextOpen: boolean) => {

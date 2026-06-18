@@ -30,6 +30,7 @@ import type { PriceChangeBatchDetail, PriceChangeBatchLine } from "../types";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { getPriceChangeBatch } from "../providers/pcrApi";
+import { decisionUserLabel } from "../utils/labels";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
@@ -145,9 +146,9 @@ export function PriceChangeBatchDetailDialog({
 
     const lines = React.useMemo(() => detail?.details ?? [], [detail?.details]);
     const isPending = detail?.status === "PENDING";
+    const headerId = detail?.header_id ?? batchId ?? 0;
     const canAct = !readOnly && isPending && headerId != null && onApprove != null && onReject != null;
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
-    const headerId = detail?.header_id ?? batchId ?? 0;
 
     const handleOpenChange = React.useCallback(
         (nextOpen: boolean) => {
@@ -212,6 +213,12 @@ export function PriceChangeBatchDetailDialog({
                             <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Requested At</div>
                                 <div className="mt-1 font-medium">{safeDate(detail.requested_at)}</div>
+                            </div>
+                            <div>
+                                <div className="text-xs font-medium uppercase text-muted-foreground">Requested By</div>
+                                <div className="mt-1 font-medium">
+                                    {decisionUserLabel(detail.requested_by, detail.requested_by_name)}
+                                </div>
                             </div>
                             <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Lines</div>

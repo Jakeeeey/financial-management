@@ -25,6 +25,7 @@ const COL_PARENT_ID = "Parent ID";
 const COL_UNIT_ID = "Unit ID";
 const COL_CURRENT_LIST_COST = "Current List Cost";
 const COL_PROPOSED_LIST_COST = "Proposed List Cost";
+const PENDING_MARKER = "Pending";
 
 const IDENTITY_HEADERS = [
     COL_PRODUCT_ID,
@@ -47,6 +48,11 @@ export type ListCostImportLine = {
     proposed_cost: number;
 };
 
+export type ListCostPendingRequest = {
+    product_id: number;
+    proposed_cost: number | null;
+};
+
 export type ListCostExcelParseResult =
     | {
           ok: true;
@@ -60,13 +66,25 @@ function sanitizeFilenamePart(value: string) {
     return value.replace(/[<>:"/\\|?*]+/g, "_").trim() || "supplier";
 }
 
+function pendingNote(value: number | null | undefined) {
+    const amount = value === null || value === undefined ? "" : ` Proposed value: ${value.toLocaleString("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })}.`;
+    return `List cost already has a pending request.${amount}`;
+}
+
 export async function exportSupplierListCostExcel(args: {
     supplierId: number;
     supplierName: string;
     matrixRows: MatrixRow[];
+    pendingCostRequests?: ListCostPendingRequest[];
 }) {
-    const { supplierId, supplierName, matrixRows } = args;
+    const { supplierId, supplierName, matrixRows, pendingCostRequests = [] } = args;
     const flatRows = flattenListCostMatrixRows(matrixRows);
+    const pendingCostByProductId = new Map(
+        pendingCostRequests.map((row) => [row.product_id, row.proposed_cost] as const),
+    );
     const generatedAt = new Date();
 
     const workbook = new ExcelJS.Workbook();
@@ -84,8 +102,10 @@ export async function exportSupplierListCostExcel(args: {
     headerRow.font = { bold: true };
     const dataStartRowNumber = sheet.rowCount + 1;
     const proposedColumnIndexes = [IDENTITY_HEADERS.indexOf(COL_PROPOSED_LIST_COST) + 1];
+    const pendingCellIndexes: Array<{ rowNumber: number; columnIndex: number; note?: string }> = [];
 
-    for (const row of flatRows) {
+    flatRows.forEach((row, rowIndex) => {
+        const rowNumber = dataStartRowNumber + rowIndex;
         sheet.addRow([
             row.product_id,
             row.product_code ?? "",
@@ -97,7 +117,14 @@ export async function exportSupplierListCostExcel(args: {
             row.current_list_cost,
             null,
         ]);
-    }
+        if (pendingCostByProductId.has(row.product_id)) {
+            pendingCellIndexes.push({
+                rowNumber,
+                columnIndex: proposedColumnIndexes[0],
+                note: pendingNote(pendingCostByProductId.get(row.product_id)),
+            });
+        }
+    });
 
     const currentCol = IDENTITY_HEADERS.indexOf(COL_CURRENT_LIST_COST) + 1;
     const proposedCol = IDENTITY_HEADERS.indexOf(COL_PROPOSED_LIST_COST) + 1;
@@ -115,6 +142,7 @@ export async function exportSupplierListCostExcel(args: {
         totalColumns: IDENTITY_HEADERS.length,
         dataStartRowNumber,
         proposedColumnIndexes,
+        pendingCellIndexes,
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -153,6 +181,7 @@ function parseProposedValue(raw: unknown): { value: number | null; error: string
 
     const text = String(raw).trim();
     if (!text) return { value: null, error: null };
+    if (text.toLowerCase() === PENDING_MARKER.toLowerCase()) return { value: null, error: null };
 
     const parsed = Number(text);
     if (!Number.isFinite(parsed)) {

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
+import { productIdsFromMatrixRows } from "../../shared/supplier-batch/flattenPrintMatrix";
 import { fetchSupplierPrintMatrix } from "../../shared/supplier-batch/supplierPrintMatrix";
 import { requireSingleSupplier } from "../../shared/supplier-batch/requireSingleSupplier";
 import {
@@ -10,6 +11,7 @@ import {
     parseSupplierListCostExcelImport,
 } from "../../shared/supplier-batch/supplierListCostExcel";
 import type { SupplierOption } from "../providers/pcrApi";
+import * as pcrApi from "../providers/pcrApi";
 import type { OpenSupplierPrintArgs } from "../../shared/print/useSupplierPrintEditor";
 import type { ListCostImportPrefill } from "../types";
 
@@ -52,10 +54,14 @@ export function useListCostSupplierExportImport({ supplierIds, suppliers, onOpen
         setBusy(true);
         try {
             const data = await loadSupplierMatrix(supplier.id);
+            const pendingCostResult = await pcrApi.getPendingCostRequestsForProducts(
+                productIdsFromMatrixRows(data.rows),
+            );
             await exportSupplierListCostExcel({
                 supplierId: supplier.id,
                 supplierName: supplier.name,
                 matrixRows: data.rows,
+                pendingCostRequests: pendingCostResult.data,
             });
             toast.success("Excel template downloaded.");
         } catch (error: unknown) {

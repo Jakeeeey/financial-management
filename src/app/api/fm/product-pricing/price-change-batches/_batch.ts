@@ -42,7 +42,7 @@ export type BatchHeaderRow = {
     reference_no?: string | null;
     remarks?: string | null;
     status?: string | null;
-    requested_by?: number | string | null;
+    requested_by?: number | string | DirectusUserRelation | null;
     requested_at?: string | null;
     approved_by?: number | string | DirectusUserRelation | null;
     approved_at?: string | null;
@@ -75,7 +75,7 @@ export type BatchDetailRow = {
     current_price?: number | string | null;
     proposed_price?: number | string | null;
     status?: string | null;
-    requested_by?: number | string | null;
+    requested_by?: number | string | DirectusUserRelation | null;
     requested_at?: string | null;
 };
 
@@ -499,6 +499,13 @@ export async function getHeader(headerId: number) {
             "remarks",
             "status",
             "requested_by",
+            "requested_by.user_id",
+            "requested_by.user_fname",
+            "requested_by.user_mname",
+            "requested_by.user_lname",
+            "requested_by.suffix_name",
+            "requested_by.nickname",
+            "requested_by.user_email",
             "requested_at",
             "approved_by",
             "approved_by.user_id",
@@ -543,6 +550,13 @@ export async function getDetails(headerId: number) {
         "proposed_price",
         "status",
         "requested_by",
+        "requested_by.user_id",
+        "requested_by.user_fname",
+        "requested_by.user_mname",
+        "requested_by.user_lname",
+        "requested_by.suffix_name",
+        "requested_by.nickname",
+        "requested_by.user_email",
         "requested_at",
     ].join(",");
 
