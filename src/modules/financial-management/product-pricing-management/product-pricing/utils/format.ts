@@ -9,8 +9,8 @@ export function formatPHP(amount: number | null): string {
     return new Intl.NumberFormat("en-PH", {
         style: "currency",
         currency: "PHP",
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 4,
+        minimumFractionDigits: 3,
+        maximumFractionDigits: 3,
     }).format(amount);
 }
 
