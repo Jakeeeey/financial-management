@@ -43,8 +43,8 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 function formatPHP(n: number | null | undefined) {
     if (n == null || !Number.isFinite(Number(n))) return "—";
     return Number(n).toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        minimumFractionDigits: 3,
+        maximumFractionDigits: 3,
     });
 }
 
@@ -533,7 +533,7 @@ export default function CreateRequestDialog(props: {
                             className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                             value={proposedPrice}
                             onChange={(e) => setProposedPrice(e.target.value)}
-                            placeholder="0.00"
+                            placeholder="0.000"
                             inputMode="decimal"
                         />
                     </div>

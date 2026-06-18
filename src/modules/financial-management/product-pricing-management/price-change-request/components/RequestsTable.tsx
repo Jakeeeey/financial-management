@@ -9,10 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 
-function fmt(v: number | string | null | undefined) {
+function fmt(v: number | string | null | undefined, digits = 3) {
     const n = Number(v);
     if (!Number.isFinite(n)) return "—";
-    return n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return n.toLocaleString("en-PH", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 function safeInt(v: number | string | null | undefined, fallback = 0) {
