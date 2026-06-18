@@ -243,12 +243,24 @@ export type ProductSearchRow = {
     priceC?: number | null;
     priceD?: number | null;
     priceE?: number | null;
+    cost_per_unit?: number | null;
 };
 
 export type TierPriceRow = {
     product_id: number;
     price_type_id: number;
     price: number | null;
+};
+
+export type PendingPriceRequestLookupRow = {
+    product_id: number;
+    price_type_id: number;
+    proposed_price: number | null;
+};
+
+export type PendingCostRequestLookupRow = {
+    product_id: number;
+    proposed_cost: number | null;
 };
 
 function mapProductSearchRow(item: unknown): ProductSearchRow | null {
@@ -271,6 +283,7 @@ function mapProductSearchRow(item: unknown): ProductSearchRow | null {
         priceC: toNullableNumber(item.priceC),
         priceD: toNullableNumber(item.priceD),
         priceE: toNullableNumber(item.priceE),
+        cost_per_unit: toNullableNumber(item.cost_per_unit),
     };
 }
 
@@ -346,6 +359,7 @@ export async function searchProducts(params: {
                 priceC: toNullableNumber(item.priceC),
                 priceD: toNullableNumber(item.priceD),
                 priceE: toNullableNumber(item.priceE),
+                cost_per_unit: toNullableNumber(item.cost_per_unit),
             };
         })
         .filter((row): row is ProductSearchRow => row !== null);
@@ -476,6 +490,91 @@ export async function getPricesForProducts(productIds: number[]) {
                     };
                 })
                 .filter((row): row is TierPriceRow => row !== null);
+        }),
+    );
+
+    return { data: results.flat() };
+}
+
+function relationId(value: unknown, field: string): number | null {
+    if (isRecord(value)) return toNullableNumber(value[field]);
+    return toNullableNumber(value);
+}
+
+export async function getPendingPriceRequestsForProducts(productIds: number[]) {
+    if (productIds.length === 0) {
+        return { data: [] as PendingPriceRequestLookupRow[] };
+    }
+
+    const chunks: number[][] = [];
+    for (let i = 0; i < productIds.length; i += PRODUCT_IDS_CHUNK_SIZE) {
+        chunks.push(productIds.slice(i, i + PRODUCT_IDS_CHUNK_SIZE));
+    }
+
+    const results = await Promise.all(
+        chunks.map(async (chunk) => {
+            const sp = new URLSearchParams({
+                status: "PENDING",
+                product_ids: chunk.join(","),
+            });
+            const res = await http<{ data: unknown[] }>(
+                `/api/fm/product-pricing/price-change-requests?${sp.toString()}`,
+            );
+
+            return (res.data ?? [])
+                .map((item): PendingPriceRequestLookupRow | null => {
+                    if (!isRecord(item)) return null;
+
+                    const productId = relationId(item.product_id, "product_id");
+                    const priceTypeId = relationId(item.price_type_id, "price_type_id");
+                    if (productId === null || priceTypeId === null) return null;
+
+                    return {
+                        product_id: productId,
+                        price_type_id: priceTypeId,
+                        proposed_price: toNullableNumber(item.proposed_price),
+                    };
+                })
+                .filter((row): row is PendingPriceRequestLookupRow => row !== null);
+        }),
+    );
+
+    return { data: results.flat() };
+}
+
+export async function getPendingCostRequestsForProducts(productIds: number[]) {
+    if (productIds.length === 0) {
+        return { data: [] as PendingCostRequestLookupRow[] };
+    }
+
+    const chunks: number[][] = [];
+    for (let i = 0; i < productIds.length; i += PRODUCT_IDS_CHUNK_SIZE) {
+        chunks.push(productIds.slice(i, i + PRODUCT_IDS_CHUNK_SIZE));
+    }
+
+    const results = await Promise.all(
+        chunks.map(async (chunk) => {
+            const sp = new URLSearchParams({
+                status: "PENDING",
+                product_ids: chunk.join(","),
+            });
+            const res = await http<{ data: unknown[] }>(
+                `/api/fm/product-pricing/cost-change-requests?${sp.toString()}`,
+            );
+
+            return (res.data ?? [])
+                .map((item): PendingCostRequestLookupRow | null => {
+                    if (!isRecord(item)) return null;
+
+                    const productId = relationId(item.product_id, "product_id");
+                    if (productId === null) return null;
+
+                    return {
+                        product_id: productId,
+                        proposed_cost: toNullableNumber(item.proposed_cost),
+                    };
+                })
+                .filter((row): row is PendingCostRequestLookupRow => row !== null);
         }),
     );
 

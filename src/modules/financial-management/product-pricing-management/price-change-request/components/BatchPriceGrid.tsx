@@ -14,6 +14,7 @@ type Props = {
     products: api.ProductSearchRow[];
     priceTypes: api.PriceTypeOption[];
     draftPrices: Map<string, string>;
+    pendingValues: Map<string, number>;
     saving: boolean;
     gridNav: GridNav;
     cellKey: (productId: number, priceTypeId: number) => string;
@@ -34,6 +35,7 @@ export function BatchPriceGrid({
     products,
     priceTypes,
     draftPrices,
+    pendingValues,
     saving,
     gridNav,
     cellKey,
@@ -49,21 +51,28 @@ export function BatchPriceGrid({
     currentCostFor,
     onDraftCostChange,
 }: Props) {
+    const pendingLabel = React.useCallback(
+        (value: number) => `Pending PHP ${formatMoney(value)}`,
+        [formatMoney],
+    );
+
     const handlePasteCell = React.useCallback(
         (row: number, col: number, value: string) => {
             const product = products[row];
             if (!product) return;
 
             if (showListCost && col === 0) {
+                if (pendingValues.has(`${product.product_id}:LIST`)) return;
                 onDraftCostChange?.(product, value);
                 return;
             }
 
             const priceType = priceTypes[showListCost ? col - 1 : col];
             if (!priceType) return;
+            if (pendingValues.has(cellKey(product.product_id, priceType.price_type_id))) return;
             onDraftPriceChange(product, priceType.price_type_id, value);
         },
-        [onDraftCostChange, onDraftPriceChange, priceTypes, products, showListCost],
+        [cellKey, onDraftCostChange, onDraftPriceChange, pendingValues, priceTypes, products, showListCost],
     );
 
     return (
@@ -103,56 +112,85 @@ export function BatchPriceGrid({
                             <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
                                 {showListCost ? (
                                     <div className="min-w-0 rounded-md border bg-background p-2">
-                                        <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
-                                            <div className="truncate text-xs font-medium" title="List Cost">
-                                                List Cost
-                                            </div>
-                                            <div className="shrink-0 text-[11px] text-muted-foreground">
-                                                {formatMoney(currentCostFor?.(product) ?? null)}
-                                            </div>
-                                        </div>
-                                        <Input
-                                            inputMode="decimal"
-                                            value={draftCosts?.get(product.product_id) ?? ""}
-                                            onChange={(event) =>
-                                                onDraftCostChange?.(product, event.target.value)
-                                            }
-                                            onKeyDown={(event) => gridNav.onKeyDown(event, rowIndex, 0)}
-                                            onPaste={(event) =>
-                                                gridNav.onPaste(event, rowIndex, 0, handlePasteCell)
-                                            }
-                                            onFocus={() => gridNav.setActive(rowIndex, 0)}
-                                            ref={(el) => gridNav.register(rowIndex, 0, el)}
-                                            placeholder="Proposed"
-                                            aria-label={`Proposed list cost, row ${rowIndex + 1}`}
-                                            aria-invalid={Boolean(
-                                                (draftCosts?.get(product.product_id) ?? "").trim() &&
-                                                    parsePriceInput(
-                                                        draftCosts?.get(product.product_id) ?? "",
-                                                    ).error,
-                                            )}
-                                            disabled={saving}
-                                            className="h-8 text-right text-sm"
-                                        />
-                                        {(draftCosts?.get(product.product_id) ?? "").trim() &&
-                                        parsePriceInput(draftCosts?.get(product.product_id) ?? "").error ? (
-                                            <div className="mt-1 text-[11px] text-destructive">
-                                                {
-                                                    parsePriceInput(
-                                                        draftCosts?.get(product.product_id) ?? "",
-                                                    ).error
-                                                }
-                                            </div>
-                                        ) : null}
+                                        {(() => {
+                                            const pendingCost = pendingValues.get(`${product.product_id}:LIST`);
+                                            const hasPendingCost = pendingCost !== undefined;
+                                            const pendingHintId = `batch-list-cost-pending-${product.product_id}`;
+                                            const rawCost = draftCosts?.get(product.product_id) ?? "";
+                                            const costError =
+                                                rawCost.trim() && !hasPendingCost
+                                                    ? parsePriceInput(rawCost).error
+                                                    : null;
+
+                                            return (
+                                                <>
+                                                    <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
+                                                        <div className="truncate text-xs font-medium" title="List Cost">
+                                                            List Cost
+                                                        </div>
+                                                        <div className="shrink-0 text-[11px] text-muted-foreground">
+                                                            {formatMoney(currentCostFor?.(product) ?? null)}
+                                                        </div>
+                                                    </div>
+                                                    <Input
+                                                        inputMode="decimal"
+                                                        value={hasPendingCost ? "" : rawCost}
+                                                        onChange={(event) => {
+                                                            if (hasPendingCost) return;
+                                                            onDraftCostChange?.(product, event.target.value);
+                                                        }}
+                                                        onKeyDown={(event) => gridNav.onKeyDown(event, rowIndex, 0)}
+                                                        onPaste={(event) =>
+                                                            gridNav.onPaste(event, rowIndex, 0, handlePasteCell)
+                                                        }
+                                                        onFocus={() => gridNav.setActive(rowIndex, 0)}
+                                                        ref={(el) => gridNav.register(rowIndex, 0, el)}
+                                                        placeholder="Proposed"
+                                                        aria-label={`Proposed list cost, row ${rowIndex + 1}`}
+                                                        aria-invalid={Boolean(costError)}
+                                                        aria-describedby={hasPendingCost ? pendingHintId : undefined}
+                                                        aria-disabled={hasPendingCost ? true : undefined}
+                                                        disabled={saving}
+                                                        readOnly={hasPendingCost}
+                                                        title={
+                                                            hasPendingCost
+                                                                ? "A list cost request is pending approval for this product."
+                                                                : undefined
+                                                        }
+                                                        className={cn(
+                                                            "h-8 text-right text-sm",
+                                                            hasPendingCost ? "cursor-not-allowed opacity-60" : "",
+                                                        )}
+                                                    />
+                                                    {costError ? (
+                                                        <div className="mt-1 text-[11px] text-destructive">
+                                                            {costError}
+                                                        </div>
+                                                    ) : null}
+                                                    {hasPendingCost ? (
+                                                        <div
+                                                            id={pendingHintId}
+                                                            title={`Request: PHP ${formatMoney(pendingCost)} - pending approval`}
+                                                            className="mt-1 max-w-full truncate rounded-sm border border-amber-200/50 bg-amber-50 px-1 py-0.5 text-[11px] font-semibold leading-snug text-amber-600 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-500"
+                                                        >
+                                                            {pendingLabel(pendingCost)}
+                                                        </div>
+                                                    ) : null}
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 ) : null}
 
                                 {priceTypes.map((priceType, colIndex) => {
                                     const gridColIndex = showListCost ? colIndex + 1 : colIndex;
                                     const key = cellKey(product.product_id, priceType.price_type_id);
+                                    const pendingValue = pendingValues.get(key);
+                                    const hasPending = pendingValue !== undefined;
+                                    const pendingHintId = `batch-price-pending-${product.product_id}-${priceType.price_type_id}`;
                                     const rawValue = draftPrices.get(key) ?? "";
                                     const parsed = parsePriceInput(rawValue);
-                                    const hasError = rawValue.trim() && parsed.error;
+                                    const hasError = !hasPending && rawValue.trim() && parsed.error;
                                     const label = priceTypeLabel(priceType);
 
                                     return (
@@ -167,13 +205,15 @@ export function BatchPriceGrid({
                                             </div>
                                             <Input
                                                 inputMode="decimal"
-                                                value={rawValue}
+                                                value={hasPending ? "" : rawValue}
                                                 onChange={(event) =>
-                                                    onDraftPriceChange(
-                                                        product,
-                                                        priceType.price_type_id,
-                                                        event.target.value,
-                                                    )
+                                                    !hasPending
+                                                        ? onDraftPriceChange(
+                                                            product,
+                                                            priceType.price_type_id,
+                                                            event.target.value,
+                                                        )
+                                                        : undefined
                                                 }
                                                 onKeyDown={(event) =>
                                                     gridNav.onKeyDown(event, rowIndex, gridColIndex)
@@ -191,11 +231,31 @@ export function BatchPriceGrid({
                                                 placeholder="Proposed"
                                                 aria-label={`Proposed price, row ${rowIndex + 1}, ${label}`}
                                                 aria-invalid={Boolean(hasError)}
+                                                aria-describedby={hasPending ? pendingHintId : undefined}
+                                                aria-disabled={hasPending ? true : undefined}
                                                 disabled={saving}
-                                                className="h-8 text-right text-sm"
+                                                readOnly={hasPending}
+                                                title={
+                                                    hasPending
+                                                        ? "A price change request is pending approval for this cell."
+                                                        : undefined
+                                                }
+                                                className={cn(
+                                                    "h-8 text-right text-sm",
+                                                    hasPending ? "cursor-not-allowed opacity-60" : "",
+                                                )}
                                             />
                                             {hasError ? (
                                                 <div className="mt-1 text-[11px] text-destructive">{parsed.error}</div>
+                                            ) : null}
+                                            {hasPending ? (
+                                                <div
+                                                    id={pendingHintId}
+                                                    title={`Request: PHP ${formatMoney(pendingValue)} - pending approval`}
+                                                    className="mt-1 max-w-full truncate rounded-sm border border-amber-200/50 bg-amber-50 px-1 py-0.5 text-[11px] font-semibold leading-snug text-amber-600 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-500"
+                                                >
+                                                    {pendingLabel(pendingValue)}
+                                                </div>
                                             ) : null}
                                         </div>
                                     );

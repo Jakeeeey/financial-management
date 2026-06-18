@@ -28,6 +28,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 import type { DirtyPreviewLine, SaveAllResult, Supplier } from "../types";
+import { generateBatchReferenceNo } from "../../shared/batchReference";
 import { formatPHP } from "../utils/format";
 
 type FieldErrors = Partial<Record<"supplier_id" | "remarks", string>>;
@@ -79,7 +80,7 @@ export function PriceChangeBatchDialog({
     React.useEffect(() => {
         if (!open) return;
         setSupplierId(defaultSupplierId ? String(defaultSupplierId) : "");
-        setReferenceNo("");
+        setReferenceNo(generateBatchReferenceNo());
         setRemarks("");
         setErrors({});
     }, [defaultSupplierId, open]);
@@ -250,8 +251,8 @@ export function PriceChangeBatchDialog({
                                 <Input
                                     id="price-change-reference"
                                     value={referenceNo}
-                                    onChange={(event) => setReferenceNo(event.target.value)}
                                     placeholder="Optional supplier quote or memo reference"
+                                    readOnly
                                     disabled={submitting}
                                 />
                             </div>

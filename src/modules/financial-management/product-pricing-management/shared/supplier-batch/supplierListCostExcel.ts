@@ -4,6 +4,10 @@ import * as XLSX from "xlsx";
 
 import type { MatrixRow } from "../../product-pricing/types";
 import { flattenListCostMatrixRows, type FlatListCostProductRow } from "./flattenPrintMatrix";
+import {
+    addSupplierBatchInstructionRows,
+    styleSupplierBatchWorksheet,
+} from "./supplierBatchExcelStyles";
 
 export const LIST_COST_EXCEL_TEMPLATE_VERSION = 1;
 
@@ -73,9 +77,13 @@ export async function exportSupplierListCostExcel(args: {
     sheet.addRow([META_SUPPLIER_NAME, supplierName]);
     sheet.addRow([META_GENERATED_AT, generatedAt.toISOString()]);
     sheet.addRow([]);
+    const instructionStartRowNumber = addSupplierBatchInstructionRows(sheet);
 
+    const headerRowNumber = sheet.rowCount + 1;
     const headerRow = sheet.addRow([...IDENTITY_HEADERS]);
     headerRow.font = { bold: true };
+    const dataStartRowNumber = sheet.rowCount + 1;
+    const proposedColumnIndexes = [IDENTITY_HEADERS.indexOf(COL_PROPOSED_LIST_COST) + 1];
 
     for (const row of flatRows) {
         sheet.addRow([
@@ -100,6 +108,14 @@ export async function exportSupplierListCostExcel(args: {
         column.width = 18;
     });
     sheet.getColumn(4).width = 36;
+    styleSupplierBatchWorksheet({
+        sheet,
+        instructionStartRowNumber,
+        headerRowNumber,
+        totalColumns: IDENTITY_HEADERS.length,
+        dataStartRowNumber,
+        proposedColumnIndexes,
+    });
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {

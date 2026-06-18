@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 import * as api from "../providers/pcrApi";
+import { generateBatchReferenceNo } from "../../shared/batchReference";
 import type { BatchImportPrefill, CreateCCRPayload, CreatePriceChangeBatchPayload } from "../types";
 import { buildTierPriceMap, lookupTierPrice } from "../utils/tierPriceLookup";
 import {
@@ -92,6 +93,22 @@ function summarizeCreated(result: {
     return details.length ? ` ${details.join(", ")}.` : "";
 }
 
+function applyPendingRows(
+    map: Map<string, number>,
+    priceRows: api.PendingPriceRequestLookupRow[],
+    costRows: api.PendingCostRequestLookupRow[],
+) {
+    for (const row of priceRows) {
+        if (row.proposed_price === null) continue;
+        map.set(cellKey(row.product_id, row.price_type_id), row.proposed_price);
+    }
+
+    for (const row of costRows) {
+        if (row.proposed_cost === null) continue;
+        map.set(`${row.product_id}:LIST`, row.proposed_cost);
+    }
+}
+
 const DEFAULT_CATALOG_PAGE_SIZE = 50;
 
 export function CreatePriceChangeBatchDialog({
@@ -114,6 +131,7 @@ export function CreatePriceChangeBatchDialog({
     const [draftPrices, setDraftPrices] = React.useState<Map<string, string>>(new Map());
     const [draftCosts, setDraftCosts] = React.useState<Map<number, string>>(new Map());
     const [currentCostMap, setCurrentCostMap] = React.useState<Map<number, number | null>>(new Map());
+    const [pendingValues, setPendingValues] = React.useState<Map<string, number>>(new Map());
     const [catalogPage, setCatalogPage] = React.useState(1);
     const [catalogPageSize, setCatalogPageSize] = React.useState(DEFAULT_CATALOG_PAGE_SIZE);
     const [catalogTotal, setCatalogTotal] = React.useState(0);
@@ -132,8 +150,10 @@ export function CreatePriceChangeBatchDialog({
 
     const productCatalogRef = React.useRef(productCatalog);
     const tierPriceMapRef = React.useRef(tierPriceMap);
+    const pendingValuesRef = React.useRef(pendingValues);
     productCatalogRef.current = productCatalog;
     tierPriceMapRef.current = tierPriceMap;
+    pendingValuesRef.current = pendingValues;
 
     const resetCatalogState = React.useCallback(() => {
         setProducts([]);
@@ -142,6 +162,7 @@ export function CreatePriceChangeBatchDialog({
         setDraftPrices(new Map());
         setDraftCosts(new Map());
         setCurrentCostMap(new Map());
+        setPendingValues(new Map());
         setVariantGroupIndex(new Map());
         setCatalogPage(1);
         setCatalogPageSize(DEFAULT_CATALOG_PAGE_SIZE);
@@ -150,6 +171,26 @@ export function CreatePriceChangeBatchDialog({
         setCatalogTotalPages(0);
         setCatalogQuery("");
         setLocalCatalogQ("");
+    }, []);
+
+    const mergePendingRequests = React.useCallback(async (productIds: number[]) => {
+        const ids = Array.from(
+            new Set(
+                productIds.filter((productId) => Number.isFinite(productId) && productId > 0),
+            ),
+        );
+        if (ids.length === 0) return;
+
+        const [pendingPriceResult, pendingCostResult] = await Promise.all([
+            api.getPendingPriceRequestsForProducts(ids),
+            api.getPendingCostRequestsForProducts(ids),
+        ]);
+
+        setPendingValues((prev) => {
+            const next = new Map(prev);
+            applyPendingRows(next, pendingPriceResult.data, pendingCostResult.data);
+            return next;
+        });
     }, []);
 
     React.useEffect(() => {
@@ -164,7 +205,10 @@ export function CreatePriceChangeBatchDialog({
             setSaving(false);
             setImportedProductIds([]);
             setCatalogViewMode("catalog");
+            return;
         }
+
+        setReferenceNo(generateBatchReferenceNo());
     }, [open, resetCatalogState]);
 
     React.useEffect(() => {
@@ -172,19 +216,21 @@ export function CreatePriceChangeBatchDialog({
 
         setSupplierId(String(importPrefill.supplierId));
         setRemarks(importPrefill.remarks);
-        setReferenceNo("");
+        setReferenceNo(generateBatchReferenceNo());
         setErrors({});
         setProductCatalog(new Map(importPrefill.productCatalog));
         setTierPriceMap(new Map(importPrefill.tierPriceMap));
         setDraftPrices(new Map(importPrefill.draftPrices));
         setDraftCosts(new Map(importPrefill.draftCosts));
         setCurrentCostMap(new Map(importPrefill.currentCostMap));
+        setPendingValues(new Map());
+        void mergePendingRequests(importPrefill.importedProductIds);
         setImportedProductIds(importPrefill.importedProductIds);
         setCatalogViewMode("imported");
         setCatalogPage(1);
         setCatalogQuery("");
         setLocalCatalogQ("");
-    }, [open, importPrefill]);
+    }, [open, importPrefill, mergePendingRequests]);
 
     React.useEffect(() => {
         if (!open) return;
@@ -230,7 +276,11 @@ export function CreatePriceChangeBatchDialog({
                 if (!alive) return;
 
                 const productIds = result.data.map((row) => row.product_id);
-                const priceResult = await api.getPricesForProducts(productIds);
+                const [priceResult, pendingPriceResult, pendingCostResult] = await Promise.all([
+                    api.getPricesForProducts(productIds),
+                    api.getPendingPriceRequestsForProducts(productIds),
+                    api.getPendingCostRequestsForProducts(productIds),
+                ]);
                 if (!alive) return;
 
                 setProducts(result.data);
@@ -244,11 +294,23 @@ export function CreatePriceChangeBatchDialog({
                     }
                     return next;
                 });
+                setCurrentCostMap((prev) => {
+                    const next = new Map(prev);
+                    for (const row of result.data) {
+                        next.set(row.product_id, row.cost_per_unit ?? null);
+                    }
+                    return next;
+                });
                 setTierPriceMap((prev) => {
                     const next = new Map(prev);
                     for (const [key, value] of buildTierPriceMap(priceResult.data)) {
                         next.set(key, value);
                     }
+                    return next;
+                });
+                setPendingValues((prev) => {
+                    const next = new Map(prev);
+                    applyPendingRows(next, pendingPriceResult.data, pendingCostResult.data);
                     return next;
                 });
             })
@@ -302,9 +364,11 @@ export function CreatePriceChangeBatchDialog({
         const missing = productIds.filter((id) => !productCatalogRef.current.has(id));
         if (missing.length === 0) return;
 
-        const [rows, priceResult] = await Promise.all([
+        const [rows, priceResult, pendingPriceResult, pendingCostResult] = await Promise.all([
             api.getProductsByIds(missing),
             api.getPricesForProducts(missing),
+            api.getPendingPriceRequestsForProducts(missing),
+            api.getPendingCostRequestsForProducts(missing),
         ]);
 
         setProductCatalog((prev) => {
@@ -315,6 +379,13 @@ export function CreatePriceChangeBatchDialog({
             }
             return next;
         });
+        setCurrentCostMap((prev) => {
+            const next = new Map(prev);
+            for (const row of rows) {
+                next.set(row.product_id, row.cost_per_unit ?? null);
+            }
+            return next;
+        });
 
         setTierPriceMap((prev) => {
             const next = new Map(prev);
@@ -322,6 +393,13 @@ export function CreatePriceChangeBatchDialog({
                 next.set(key, value);
                 tierPriceMapRef.current.set(key, value);
             }
+            return next;
+        });
+
+        setPendingValues((prev) => {
+            const next = new Map(prev);
+            applyPendingRows(next, pendingPriceResult.data, pendingCostResult.data);
+            pendingValuesRef.current = next;
             return next;
         });
     }, []);
@@ -408,12 +486,14 @@ export function CreatePriceChangeBatchDialog({
         const invalidCostIds = new Set<number>();
 
         for (const [key, raw] of draftPrices) {
+            if (pendingValues.has(key)) continue;
             const result = parsePriceInput(raw);
             if (result.error) invalidPriceKeys.add(key);
             if (result.value !== null) validPriceCount += 1;
         }
 
         for (const [productId, raw] of draftCosts) {
+            if (pendingValues.has(`${productId}:LIST`)) continue;
             const result = parsePriceInput(raw);
             if (result.error) invalidCostIds.add(productId);
             if (result.value !== null) validCostCount += 1;
@@ -427,9 +507,9 @@ export function CreatePriceChangeBatchDialog({
             invalidCostIds,
             invalidKeys: invalidPriceKeys,
         };
-    }, [draftCosts, draftPrices]);
+    }, [draftCosts, draftPrices, pendingValues]);
 
-    const showListCost = draftCosts.size > 0;
+    const showListCost = true;
 
     const currentCostFor = React.useCallback(
         (product: api.ProductSearchRow) => currentCostMap.get(product.product_id) ?? null,
@@ -437,6 +517,8 @@ export function CreatePriceChangeBatchDialog({
     );
 
     const setDraftCost = React.useCallback((product: api.ProductSearchRow, value: string) => {
+        if (pendingValuesRef.current.has(`${product.product_id}:LIST`)) return;
+
         setDraftCosts((prev) => {
             const next = new Map(prev);
             if (value.trim()) next.set(product.product_id, value);
@@ -452,7 +534,9 @@ export function CreatePriceChangeBatchDialog({
 
             setDraftPrices((prev) => {
                 const next = new Map(prev);
-                const keysToUpdate = [cellKey(product.product_id, priceTypeId)];
+                const keysToUpdate = [cellKey(product.product_id, priceTypeId)].filter(
+                    (key) => !pendingValuesRef.current.has(key),
+                );
 
                 if (applyParentPriceToChildren && !isChildVariant(product)) {
                     const groupId = Number(groupIdFor(product));
@@ -461,7 +545,8 @@ export function CreatePriceChangeBatchDialog({
                         groupId,
                         product.product_id,
                     )) {
-                        keysToUpdate.push(cellKey(childId, priceTypeId));
+                        const key = cellKey(childId, priceTypeId);
+                        if (!pendingValuesRef.current.has(key)) keysToUpdate.push(key);
                     }
                 }
 
@@ -498,6 +583,7 @@ export function CreatePriceChangeBatchDialog({
         const addLine = (productId: number, priceTypeId: number, raw: string) => {
             const key = cellKey(productId, priceTypeId);
             if (coveredKeys.has(key)) return;
+            if (pendingValuesRef.current.has(key)) return;
 
             const product = catalog.get(productId);
             const priceType = priceTypesById.get(priceTypeId);
@@ -545,6 +631,8 @@ export function CreatePriceChangeBatchDialog({
         const catalog = productCatalogRef.current;
 
         for (const [productId, raw] of draftCosts) {
+            if (pendingValuesRef.current.has(`${productId}:LIST`)) continue;
+
             const parsed = parsePriceInput(raw);
             if (parsed.value === null || parsed.error) continue;
 
@@ -583,6 +671,7 @@ export function CreatePriceChangeBatchDialog({
                 const groupId = Number(groupIdFor(product));
                 for (const childId of childVariantIdsForGroup(variantGroupIndex, groupId, productId)) {
                     const childKey = cellKey(childId, priceTypeId);
+                    if (pendingValuesRef.current.has(childKey)) continue;
                     if (!next.has(childKey)) {
                         next.set(childKey, raw);
                         changed = true;
@@ -771,8 +860,8 @@ export function CreatePriceChangeBatchDialog({
                             <Input
                                 id="price-change-batch-reference"
                                 value={referenceNo}
-                                onChange={(event) => setReferenceNo(event.target.value)}
                                 placeholder="Reference number"
+                                readOnly
                                 disabled={saving}
                             />
                         </div>
@@ -916,6 +1005,7 @@ export function CreatePriceChangeBatchDialog({
                                     products={gridProducts}
                                     priceTypes={priceTypes}
                                     draftPrices={draftPrices}
+                                    pendingValues={pendingValues}
                                     saving={saving}
                                     gridNav={gridNav}
                                     cellKey={cellKey}

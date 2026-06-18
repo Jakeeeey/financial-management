@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 import * as api from "../providers/pcrApi";
+import { generateBatchReferenceNo } from "../../shared/batchReference";
 import type { ListCostImportPrefill } from "../types";
 import { isUnauthorizedError } from "../../shared/apiHttp";
 
@@ -50,6 +51,8 @@ export function CreateListCostBatchDialog({
             setSaving(false);
             return;
         }
+
+        setReferenceNo(generateBatchReferenceNo());
 
         if (importPrefill) {
             setRemarks(importPrefill.remarks);
@@ -138,7 +141,7 @@ export function CreateListCostBatchDialog({
                             <Input
                                 id="list-cost-reference-no"
                                 value={referenceNo}
-                                onChange={(event) => setReferenceNo(event.target.value)}
+                                readOnly
                                 disabled={saving}
                             />
                         </div>

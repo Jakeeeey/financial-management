@@ -29,7 +29,10 @@ import {
 import { EMPTY_PRICE_ERROR, validatePrice } from "../utils/validators";
 import { applyLoadError } from "../../shared/loadErrorState";
 import { isUnauthorizedError } from "../../shared/apiHttp";
-import type { SupplierBatchPriceChange } from "../../shared/supplier-batch/supplierBatchExcel";
+import type {
+    SupplierBatchCostChange,
+    SupplierBatchPriceChange,
+} from "../../shared/supplier-batch/supplierBatchExcel";
 
 type DirtyKey = `${number}:${ProductTierKey}`;
 type PendingKey = `${number}:${ProductTierKey}`;
@@ -768,15 +771,18 @@ export function usePricingMatrix(args: {
         bumpDirtyVersion();
     }, [bumpDirtyVersion]);
 
-    const applyImportedPriceChanges = useCallback(
-        (changes: SupplierBatchPriceChange[]): number => {
+    const applyImportedChanges = useCallback(
+        (changes: {
+            priceChanges: SupplierBatchPriceChange[];
+            costChanges: SupplierBatchCostChange[];
+        }): number => {
             const pendingUpdates: Array<{
                 key: DirtyKey;
                 value: string;
                 meta: DirtyCellMeta;
             }> = [];
 
-            for (const change of changes) {
+            for (const change of changes.priceChanges) {
                 const tier = String(change.price_type_id);
                 const key: DirtyKey = `${change.product_id}:${tier}`;
                 if (pendingMapRef.current.has(key)) continue;
@@ -794,6 +800,27 @@ export function usePricingMatrix(args: {
                         product_name: change.product_name || existing.product_name,
                         product_code: change.product_code ?? existing.product_code,
                         current_value: change.current_price ?? existing.current_value,
+                    },
+                });
+            }
+
+            for (const change of changes.costChanges) {
+                const key: DirtyKey = `${change.product_id}:LIST`;
+                if (pendingMapRef.current.has(key)) continue;
+
+                const value = clampMoney(change.proposed_cost);
+                const err = validatePrice(value);
+                if (err) continue;
+                if (moneyValuesEqual(value, change.current_cost)) continue;
+
+                const existing = snapshotDirtyCellMeta(rowsRef.current, change.product_id, "LIST");
+                pendingUpdates.push({
+                    key,
+                    value: String(value),
+                    meta: {
+                        product_name: change.product_name || existing.product_name,
+                        product_code: change.product_code ?? existing.product_code,
+                        current_value: change.current_cost ?? existing.current_value,
                     },
                 });
             }
@@ -901,7 +928,7 @@ export function usePricingMatrix(args: {
             dirtyPreviewLines,
             saveAll,
             discardAll,
-            applyImportedPriceChanges,
+            applyImportedChanges,
         }),
         [
             dirtyVersion,
@@ -910,7 +937,7 @@ export function usePricingMatrix(args: {
             dirtyPreviewLines,
             saveAll,
             discardAll,
-            applyImportedPriceChanges,
+            applyImportedChanges,
         ],
     );
 

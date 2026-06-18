@@ -10,6 +10,10 @@ import {
     type FlatSupplierProductRow,
     type PriceTypeRef,
 } from "./flattenPrintMatrix";
+import {
+    addSupplierBatchInstructionRows,
+    styleSupplierBatchWorksheet,
+} from "./supplierBatchExcelStyles";
 
 export const BATCH_EXCEL_TEMPLATE_VERSION = 1;
 export const BATCH_EXCEL_COMBINED_TEMPLATE_VERSION = 2;
@@ -109,6 +113,7 @@ export async function exportSupplierBatchExcel(args: {
     sheet.addRow([META_SUPPLIER_NAME, supplierName]);
     sheet.addRow([META_GENERATED_AT, generatedAt.toISOString()]);
     sheet.addRow([]);
+    const instructionStartRowNumber = addSupplierBatchInstructionRows(sheet);
 
     const headers = [
         ...IDENTITY_HEADERS,
@@ -118,8 +123,15 @@ export async function exportSupplierBatchExcel(args: {
             proposedColumnHeader(priceType),
         ]),
     ];
+    const proposedColumnIndexes = headers
+        .map((header, index) =>
+            header === COL_PROPOSED_LIST_COST || header.endsWith(" Proposed") ? index + 1 : null,
+        )
+        .filter((index): index is number => index !== null);
+    const headerRowNumber = sheet.rowCount + 1;
     const headerRow = sheet.addRow(headers);
     headerRow.font = { bold: true };
+    const dataStartRowNumber = sheet.rowCount + 1;
 
     for (const row of flatRows) {
         const values: Array<string | number | null> = [
@@ -166,6 +178,14 @@ export async function exportSupplierBatchExcel(args: {
         column.width = 18;
     });
     sheet.getColumn(4).width = 36;
+    styleSupplierBatchWorksheet({
+        sheet,
+        instructionStartRowNumber,
+        headerRowNumber,
+        totalColumns: headers.length,
+        dataStartRowNumber,
+        proposedColumnIndexes,
+    });
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {

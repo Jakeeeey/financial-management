@@ -1,0 +1,159 @@
+import ExcelJS from "exceljs";
+
+const BORDER_COLOR = "FFD1D5DB";
+const HEADER_FILL = "FF334155";
+const BODY_FILL = "FFF8FAFC";
+const BODY_ALT_FILL = "FFFFFFFF";
+const META_LABEL_COLOR = "FF64748B";
+const PROPOSED_HEADER_FILL = "FF047857";
+const PROPOSED_FILL = "FFECFDF5";
+const PROPOSED_ALT_FILL = "FFD1FAE5";
+const INSTRUCTION_FILL = "FFF8FAFC";
+
+const thinBorder: Partial<ExcelJS.Borders> = {
+    top: { style: "thin", color: { argb: BORDER_COLOR } },
+    right: { style: "thin", color: { argb: BORDER_COLOR } },
+    bottom: { style: "thin", color: { argb: BORDER_COLOR } },
+    left: { style: "thin", color: { argb: BORDER_COLOR } },
+};
+
+export function addSupplierBatchInstructionRows(sheet: ExcelJS.Worksheet): number {
+    const startRowNumber = sheet.rowCount + 1;
+    sheet.addRow(["Instructions"]);
+    sheet.addRow(["", "Enter changes only in columns containing Proposed."]);
+    sheet.addRow(["", "Leave proposed cells blank when no change is needed."]);
+    sheet.addRow(["", "Do not edit product identity columns, current-value columns, supplier metadata, or headers."]);
+    sheet.addRow(["", "Save this file and import it through Price Change Requests."]);
+    sheet.addRow([]);
+    return startRowNumber;
+}
+
+function styleMetaRow(row: ExcelJS.Row) {
+    const labelCell = row.getCell(1);
+    const valueCell = row.getCell(2);
+
+    labelCell.font = { size: 10, color: { argb: META_LABEL_COLOR }, name: "Calibri" };
+    labelCell.alignment = { vertical: "middle" };
+    labelCell.border = thinBorder;
+
+    valueCell.font = { bold: true, size: 10, name: "Calibri" };
+    valueCell.alignment = { vertical: "middle" };
+    valueCell.border = thinBorder;
+}
+
+function styleHeaderRow(row: ExcelJS.Row, totalColumns: number) {
+    row.height = 21.95;
+
+    for (let col = 1; col <= totalColumns; col += 1) {
+        const cell = row.getCell(col);
+        cell.font = { bold: true, size: 10, color: { argb: "FFFFFFFF" }, name: "Calibri" };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
+        cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        cell.border = thinBorder;
+    }
+}
+
+function styleInstructionRows(sheet: ExcelJS.Worksheet, startRowNumber: number, totalColumns: number) {
+    const rows = [startRowNumber, startRowNumber + 1, startRowNumber + 2, startRowNumber + 3, startRowNumber + 4];
+
+    for (const rowNumber of rows) {
+        const row = sheet.getRow(rowNumber);
+        row.height = rowNumber === startRowNumber ? 21 : 30;
+
+        if (rowNumber > startRowNumber) {
+            sheet.mergeCells(rowNumber, 2, rowNumber, 3);
+        }
+
+        for (let col = 1; col <= totalColumns; col += 1) {
+            const cell = row.getCell(col);
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: INSTRUCTION_FILL } };
+            cell.border = thinBorder;
+            cell.alignment = { vertical: "middle", wrapText: true };
+            cell.font =
+                rowNumber === startRowNumber
+                    ? { bold: true, size: 10, name: "Calibri" }
+                    : { size: 10, color: { argb: META_LABEL_COLOR }, name: "Calibri" };
+        }
+    }
+
+    sheet.getRow(startRowNumber).getCell(1).font = { bold: true, size: 11, name: "Calibri" };
+}
+
+function styleDataRow(
+    row: ExcelJS.Row,
+    totalColumns: number,
+    productNameColumn: number,
+    proposedColumnIndexes: Set<number>,
+    striped: boolean,
+) {
+    row.height = 30;
+
+    for (let col = 1; col <= totalColumns; col += 1) {
+        const cell = row.getCell(col);
+        const isProposedColumn = proposedColumnIndexes.has(col);
+        cell.font = { size: 11, name: "Calibri" };
+        cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: {
+                argb: isProposedColumn
+                    ? striped
+                        ? PROPOSED_ALT_FILL
+                        : PROPOSED_FILL
+                    : striped
+                      ? BODY_ALT_FILL
+                      : BODY_FILL,
+            },
+        };
+        cell.alignment = {
+            vertical: "middle",
+            ...(col === productNameColumn ? { wrapText: true } : {}),
+        };
+        cell.border = thinBorder;
+    }
+}
+
+export function styleSupplierBatchWorksheet(args: {
+    sheet: ExcelJS.Worksheet;
+    instructionStartRowNumber?: number;
+    headerRowNumber: number;
+    totalColumns: number;
+    dataStartRowNumber: number;
+    proposedColumnIndexes?: number[];
+    productNameColumn?: number;
+}) {
+    const {
+        sheet,
+        instructionStartRowNumber,
+        headerRowNumber,
+        totalColumns,
+        dataStartRowNumber,
+        proposedColumnIndexes = [],
+        productNameColumn = 4,
+    } = args;
+    const proposedColumnIndexSet = new Set(proposedColumnIndexes);
+
+    for (const rowNumber of [1, 2, 3, 4]) {
+        styleMetaRow(sheet.getRow(rowNumber));
+    }
+
+    if (instructionStartRowNumber) {
+        styleInstructionRows(sheet, instructionStartRowNumber, totalColumns);
+    }
+
+    styleHeaderRow(sheet.getRow(headerRowNumber), totalColumns);
+    for (const columnIndex of proposedColumnIndexSet) {
+        const cell = sheet.getRow(headerRowNumber).getCell(columnIndex);
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PROPOSED_HEADER_FILL } };
+    }
+
+    for (let rowNumber = dataStartRowNumber; rowNumber <= sheet.rowCount; rowNumber += 1) {
+        styleDataRow(
+            sheet.getRow(rowNumber),
+            totalColumns,
+            productNameColumn,
+            proposedColumnIndexSet,
+            (rowNumber - dataStartRowNumber) % 2 === 1,
+        );
+    }
+}

@@ -651,6 +651,7 @@ export default function PricingMatrixView() {
                 matrixRows: data.rows,
                 priceTypes: pt.priceTypes,
                 filenamePrefix: "product-pricing",
+                includeListCost: true,
             });
             toast.success("Excel template downloaded.");
         } catch (error: unknown) {
@@ -694,14 +695,17 @@ export default function PricingMatrixView() {
                     return;
                 }
 
-                const appliedCount = dirtySummary.applyImportedPriceChanges(parsed.priceChanges);
+                const appliedCount = dirtySummary.applyImportedChanges({
+                    priceChanges: parsed.priceChanges,
+                    costChanges: parsed.costChanges,
+                });
                 if (appliedCount === 0) {
-                    toast.message("No new proposed prices were applied.");
+                    toast.message("No new proposed price or list cost changes were applied.");
                     return;
                 }
 
                 await matrix.refresh();
-                toast.success(`Imported ${appliedCount} proposed price change${appliedCount === 1 ? "" : "s"}.`);
+                toast.success(`Imported ${appliedCount} proposed change${appliedCount === 1 ? "" : "s"}.`);
                 setBatchDialogOpen(true);
             } catch (error: unknown) {
                 toast.error(error instanceof Error ? error.message : "Failed to import Excel.");

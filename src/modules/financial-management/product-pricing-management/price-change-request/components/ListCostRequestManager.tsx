@@ -10,6 +10,7 @@ import { ApproveDialog } from "./ApproveDialog";
 import { BulkListCostActionResultDialog } from "./BulkListCostActionResultDialog";
 import { BulkListCostApprovePreview } from "./BulkListCostApprovePreview";
 import { CreateListCostBatchDialog } from "./CreateListCostBatchDialog";
+import { CreatePriceChangeBatchDialog } from "./CreatePriceChangeBatchDialog";
 import { ListCostBatchDetailDialog } from "./ListCostBatchDetailDialog";
 import { ListPriceRequestDetailDialog } from "./ListPriceRequestDetailDialog";
 import { PcrStatusTabs } from "./PcrStatusTabs";
@@ -70,6 +71,7 @@ export function ListCostRequestManager({
     const [viewingRequestId, setViewingRequestId] = React.useState<number | null>(null);
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
     const [rejectingBulk, setRejectingBulk] = React.useState<boolean>(false);
+    const [creatingBatch, setCreatingBatch] = React.useState(false);
     const [confirmingApprove, setConfirmingApprove] = React.useState<
         { type: "single"; id: number } | { type: "batch" } | null
     >(null);
@@ -181,6 +183,8 @@ export function ListCostRequestManager({
                     onImportExcelClick={listCostExportImport.handleImportExcelClick}
                     onImportExcelFile={listCostExportImport.handleImportExcelFile}
                     importFileInputRef={listCostExportImport.importFileInputRef}
+                    showNewBatch
+                    onNewBatch={() => setCreatingBatch(true)}
                 />
             </div>
 
@@ -441,6 +445,13 @@ export function ListCostRequestManager({
                 importPrefill={listCostExportImport.importPrefill}
                 onCreated={() => void inbox.refresh()}
                 onUnauthorized={onUnauthorized}
+            />
+
+            <CreatePriceChangeBatchDialog
+                open={creatingBatch}
+                onOpenChange={setCreatingBatch}
+                suppliers={suppliers}
+                onCreated={() => void inbox.refresh()}
             />
 
             <SupplierPrintEditorModals {...printModalsProps} />
