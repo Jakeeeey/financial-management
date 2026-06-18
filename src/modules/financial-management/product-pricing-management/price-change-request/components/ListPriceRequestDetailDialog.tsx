@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 import type { UnifiedApprovalRow } from "../types";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
+import { decisionUserLabel } from "../utils/labels";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
@@ -83,6 +84,10 @@ export function ListPriceRequestDetailDialog({
     const currentCost = row?.kind === "list_price" ? row.current_cost : null;
     const proposedCost = row?.kind === "list_price" ? row.proposed_cost : null;
     const rejectReasonValue = row?.kind === "list_price" ? row.reject_reason : null;
+    const approvedBy = row?.kind === "list_price" ? row.approved_by : null;
+    const approvedByName = row?.kind === "list_price" ? row.approved_by_name : null;
+    const rejectedBy = row?.kind === "list_price" ? row.rejected_by : null;
+    const rejectedByName = row?.kind === "list_price" ? row.rejected_by_name : null;
     const currentNumeric = Number(currentCost);
     const proposedNumeric = Number(proposedCost);
     const delta =
@@ -93,6 +98,7 @@ export function ListPriceRequestDetailDialog({
         delta !== null && Number.isFinite(currentNumeric) && currentNumeric !== 0
             ? (delta / currentNumeric) * 100
             : null;
+    const status = String(row?.status ?? "").toUpperCase();
     const busy = acting || submitting;
 
     const handleApprove = async () => {
@@ -149,9 +155,31 @@ export function ListPriceRequestDetailDialog({
                                 </div>
                             </div>
                             <div>
+                                <div className="text-xs font-medium uppercase text-muted-foreground">Requested By</div>
+                                <div className="mt-1 font-medium">
+                                    {decisionUserLabel(row.requested_by, row.requested_by_name)}
+                                </div>
+                            </div>
+                            <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Requested At</div>
                                 <div className="mt-1 font-medium">{safeDate(row.requested_at)}</div>
                             </div>
+                            {status === "APPROVED" ? (
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Approved By</div>
+                                    <div className="mt-1 font-medium">
+                                        {decisionUserLabel(approvedBy, approvedByName)}
+                                    </div>
+                                </div>
+                            ) : null}
+                            {status === "REJECTED" ? (
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Rejected By</div>
+                                    <div className="mt-1 font-medium">
+                                        {decisionUserLabel(rejectedBy, rejectedByName)}
+                                    </div>
+                                </div>
+                            ) : null}
                             {rejectReasonValue ? (
                                 <div className="sm:col-span-2">
                                     <div className="text-xs font-medium uppercase text-muted-foreground">Reject Reason</div>

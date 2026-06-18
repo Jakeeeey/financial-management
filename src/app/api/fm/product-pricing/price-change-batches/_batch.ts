@@ -927,8 +927,6 @@ const USER_LOOKUP_FIELDS = [
     "user_fname",
     "user_mname",
     "user_lname",
-    "suffix_name",
-    "nickname",
     "user_email",
 ].join(",");
 
@@ -937,7 +935,6 @@ function formatUserDisplayName(user: DirectusUserRow): string {
         user.user_fname,
         user.user_mname,
         user.user_lname,
-        user.suffix_name,
     ]
         .map((part) => String(part ?? "").trim())
         .filter(Boolean)
@@ -946,9 +943,6 @@ function formatUserDisplayName(user: DirectusUserRow): string {
         .trim();
 
     if (fullName) return fullName;
-
-    const nickname = String(user.nickname ?? "").trim();
-    if (nickname) return nickname;
 
     const email = String(user.user_email ?? "").trim();
     if (email) return email;

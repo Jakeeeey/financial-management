@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 import type { PriceTypeUnifiedApprovalRow } from "../types";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
-import { priceRowHasBatchLink, priceTypeLabel } from "../utils/labels";
+import { decisionUserLabel, priceRowHasBatchLink, priceTypeLabel } from "../utils/labels";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
@@ -99,6 +99,7 @@ export function PriceTypeRequestDetailDialog({
         delta !== null && Number.isFinite(currentNumeric) && currentNumeric !== 0
             ? (delta / currentNumeric) * 100
             : null;
+    const status = String(row?.status ?? "").toUpperCase();
     const busy = acting || submitting;
     const canAct = isPending && requestId != null;
 
@@ -185,6 +186,12 @@ export function PriceTypeRequestDetailDialog({
                                 <div className="mt-1 font-medium">{priceTypeLabel(row)}</div>
                             </div>
                             <div>
+                                <div className="text-xs font-medium uppercase text-muted-foreground">Requested By</div>
+                                <div className="mt-1 font-medium">
+                                    {decisionUserLabel(row.requested_by, row.requested_by_name)}
+                                </div>
+                            </div>
+                            <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Status</div>
                                 <div className="mt-1">
                                     <Badge variant="outline" className={pcrStatusBadgeClass(row.status)}>
@@ -202,6 +209,22 @@ export function PriceTypeRequestDetailDialog({
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Requested At</div>
                                 <div className="mt-1 font-medium">{safeDate(row.requested_at)}</div>
                             </div>
+                            {status === "APPROVED" ? (
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Approved By</div>
+                                    <div className="mt-1 font-medium">
+                                        {decisionUserLabel(row.approved_by, row.approved_by_name)}
+                                    </div>
+                                </div>
+                            ) : null}
+                            {status === "REJECTED" ? (
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Rejected By</div>
+                                    <div className="mt-1 font-medium">
+                                        {decisionUserLabel(row.rejected_by, row.rejected_by_name)}
+                                    </div>
+                                </div>
+                            ) : null}
                             {row.remarks ? (
                                 <div className="sm:col-span-2">
                                     <div className="text-xs font-medium uppercase text-muted-foreground">Remarks</div>

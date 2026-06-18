@@ -6,6 +6,7 @@ import {
     directusErrorResponse,
     directusHeaders,
     fetchDirectus,
+    fetchUserNamesById,
     getSupplierNamesByProductId,
     HEADERS,
     isRecord,
@@ -13,11 +14,21 @@ import {
     nowManila,
     pickId,
     resolveBatchDecisionUserNames,
+    resolveUserDisplayName,
 } from "../price-change-batches/_batch";
 
 import type { NormalizedCostBulkItem } from "../cost-change-requests/_bulk";
 
-export { decodeUserIdFromJwtCookie, directusErrorResponse, getSupplierNamesByProductId, isRecord, pickId, resolveBatchDecisionUserNames };
+export {
+    decodeUserIdFromJwtCookie,
+    directusErrorResponse,
+    fetchUserNamesById,
+    getSupplierNamesByProductId,
+    isRecord,
+    pickId,
+    resolveBatchDecisionUserNames,
+    resolveUserDisplayName,
+};
 
 export const COST_HEADERS = HEADERS;
 export const COST_DETAILS = "cost_change_requests";
@@ -29,35 +40,28 @@ type DirectusList<T> = { data?: T[] };
 const COST_BATCH_STORAGE_ERROR =
     "List cost batch storage is not configured. Confirm cost_change_requests.header_id exists and is readable/writable by the Directus token.";
 
+type DirectusUserRelation = {
+    id?: number | string | null;
+    user_id?: number | string | null;
+    user_fname?: string | null;
+    user_mname?: string | null;
+    user_lname?: string | null;
+    suffix_name?: string | null;
+    nickname?: string | null;
+    user_email?: string | null;
+};
+
 export type CostHeaderRow = {
     id?: number | string | null;
     header_id?: number | string | null;
     reference_no?: string | null;
     remarks?: string | null;
     status?: string | null;
-    requested_by?: number | string | null;
+    requested_by?: number | string | DirectusUserRelation | null;
     requested_at?: string | null;
-    approved_by?: number | string | {
-        id?: number | string | null;
-        user_id?: number | string | null;
-        user_fname?: string | null;
-        user_mname?: string | null;
-        user_lname?: string | null;
-        suffix_name?: string | null;
-        nickname?: string | null;
-        user_email?: string | null;
-    } | null;
+    approved_by?: number | string | DirectusUserRelation | null;
     approved_at?: string | null;
-    rejected_by?: number | string | {
-        id?: number | string | null;
-        user_id?: number | string | null;
-        user_fname?: string | null;
-        user_mname?: string | null;
-        user_lname?: string | null;
-        suffix_name?: string | null;
-        nickname?: string | null;
-        user_email?: string | null;
-    } | null;
+    rejected_by?: number | string | DirectusUserRelation | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
 };
@@ -249,6 +253,11 @@ export async function getCostHeader(headerId: number) {
             "remarks",
             "status",
             "requested_by",
+            "requested_by.user_id",
+            "requested_by.user_fname",
+            "requested_by.user_mname",
+            "requested_by.user_lname",
+            "requested_by.user_email",
             "requested_at",
             "approved_by",
             "approved_by.user_id",

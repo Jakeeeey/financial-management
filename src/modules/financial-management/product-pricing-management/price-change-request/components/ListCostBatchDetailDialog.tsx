@@ -30,6 +30,7 @@ import type { ListCostBatchDetail, ListCostBatchLine } from "../types";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { getListCostBatch } from "../providers/pcrApi";
+import { decisionUserLabel } from "../utils/labels";
 import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
@@ -198,6 +199,12 @@ export function ListCostBatchDetailDialog({
                                 <div>
                                     <div className="text-xs font-medium uppercase text-muted-foreground">Requested At</div>
                                     <div className="mt-1 font-medium">{safeDate(detail.requested_at)}</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Requested By</div>
+                                    <div className="mt-1 font-medium">
+                                        {decisionUserLabel(detail.requested_by, detail.requested_by_name)}
+                                    </div>
                                 </div>
                                 <div>
                                     <div className="text-xs font-medium uppercase text-muted-foreground">Products</div>

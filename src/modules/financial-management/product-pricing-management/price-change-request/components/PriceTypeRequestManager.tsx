@@ -277,8 +277,8 @@ export function PriceTypeRequestManager({
                     total={inbox.total}
                     totalLabel="requests"
                     searchLabel="Search requests"
-                    searchPlaceholder="PCR-123 or product"
-                    searchHelper="Find price type requests by PCR- number or product."
+                    searchPlaceholder="PCR-123, product, or barcode"
+                    searchHelper="Find price type requests by PCR- number, product, code, or barcode."
                     filterContext="price"
                     onRefresh={() => {
                         clearSelection();

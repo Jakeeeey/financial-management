@@ -27,7 +27,7 @@ import { useUnifiedApprovals } from "../hooks/useUnifiedApprovals";
 import type { SupplierOption } from "../providers/pcrApi";
 import { applyBulkActionResult, type BulkActionOutcome } from "../utils/applyBulkActionResult";
 import { pcrApproveButtonClass, pcrRejectButtonClass } from "../utils/pcrStatusStyles";
-import { costRequestToUnifiedRow, snapshotFromCostRow } from "../utils/labels";
+import { snapshotFromCostRow } from "../utils/labels";
 import type {
     CostChangeRequestRow,
     ListQuery,
@@ -100,7 +100,7 @@ export function ListCostRequestManager({
     const viewingRequest = React.useMemo(() => {
         if (viewingRequestId == null) return null;
         const row = inbox.rows.find((r) => r.kind === "list_price" && Number(r.request_id) === viewingRequestId);
-        return row ? costRequestToUnifiedRow(row as CostChangeRequestRow) : null;
+        return row && row.kind === "list_price" ? row : null;
     }, [inbox.rows, viewingRequestId]);
 
     const actions = usePCRActions(() => {
@@ -195,8 +195,8 @@ export function ListCostRequestManager({
                     total={inbox.total}
                     totalLabel="requests"
                     searchLabel="Search requests"
-                    searchPlaceholder="CCR-123 or product"
-                    searchHelper="Find list cost requests by CCR- number or product."
+                    searchPlaceholder="CCR-123, product, or barcode"
+                    searchHelper="Find list cost requests by CCR- number, product, code, or barcode."
                     filterContext="cost"
                     onRefresh={() => {
                         clearSelection();

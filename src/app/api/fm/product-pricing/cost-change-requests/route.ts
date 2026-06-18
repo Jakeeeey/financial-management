@@ -5,6 +5,7 @@ import { toInclusiveDateToEnd } from "../_dateFilters";
 import { fetchPendingCcrByProductIds } from "../_fetchPendingByProductIds";
 import { appendProductIdInFilter, getSupplierScopedProductIdsForSuppliers, resolveSupplierIds } from "../_supplierFilters";
 import { isCostBatchStorageSetupError } from "../cost-change-batches/_batch";
+import { fetchUserNamesById } from "../price-change-batches/_batch";
 import { createPendingCostRequests, planCostBulkCreate } from "./_bulk";
 
 export const runtime = "nodejs";
@@ -44,6 +45,7 @@ type DirectusCCRRow = {
     proposed_cost?: number | string | null;
     status?: string | null;
     requested_by?: number | string | null;
+    requested_by_name?: string | null;
     requested_at?: string | null;
     approved_by?: number | string | null;
     approved_at?: string | null;
@@ -174,6 +176,21 @@ function parseWrappedError(message: string): DirectusWrappedError | null {
     }
 }
 
+async function addRequestedByNames(rows: DirectusCCRRow[]): Promise<DirectusCCRRow[]> {
+    const namesById = await fetchUserNamesById(rows.map((row) => row.requested_by));
+
+    return rows.map((row) => {
+        const requestedBy = Number(row.requested_by);
+        return {
+            ...row,
+            requested_by_name:
+                Number.isFinite(requestedBy) && requestedBy > 0
+                    ? namesById.get(requestedBy) ?? null
+                    : null,
+        };
+    });
+}
+
 export async function GET(req: NextRequest) {
     try {
         mustBase();
@@ -236,6 +253,7 @@ export async function GET(req: NextRequest) {
                 "product_id.product_id",
                 "product_id.product_code",
                 "product_id.product_name",
+                "product_id.barcode",
                 "product_id.unit_of_measurement.unit_id",
                 "product_id.unit_of_measurement.unit_name",
                 "product_id.unit_of_measurement.unit_shortcut",
@@ -264,13 +282,22 @@ export async function GET(req: NextRequest) {
 
         if (q) {
             const parsed = parseApprovalSearchQuery(q);
-            const requestId = parsed.costRequestId ?? parsed.numericId;
+            const prefixedRequestId = parsed.numericId == null ? parsed.costRequestId : null;
 
-            if (requestId != null) {
-                addAnd("[request_id][_eq]", String(requestId));
+            if (prefixedRequestId != null) {
+                addAnd("[request_id][_eq]", String(prefixedRequestId));
             } else if (parsed.textContains) {
-                addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
-                params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+                const searchIdx = andIdx;
+                if (parsed.numericId != null) {
+                    addAnd("[_or][0][request_id][_eq]", String(parsed.numericId));
+                    params.set(`filter[_and][${searchIdx}][_or][1][product_id][product_name][_contains]`, parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][2][product_id][product_code][_contains]`, parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][3][product_id][barcode][_contains]`, parsed.textContains);
+                } else {
+                    addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][2][product_id][barcode][_contains]`, parsed.textContains);
+                }
             }
         }
 
@@ -281,8 +308,10 @@ export async function GET(req: NextRequest) {
             headers: directusHeaders(),
         });
 
+        const data = await addRequestedByNames(json.data ?? []);
+
         return NextResponse.json({
-            data: json.data ?? [],
+            data,
             meta: json.meta ?? null,
         });
     } catch (error: unknown) {

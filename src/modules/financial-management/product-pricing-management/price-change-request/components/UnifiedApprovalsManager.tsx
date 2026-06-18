@@ -433,8 +433,8 @@ export function UnifiedApprovalsManager({
                     total={feed.total}
                     totalLabel="records"
                     searchLabel="Search records"
-                    searchPlaceholder="PCB-123, CCR-456, product, reference, or remarks"
-                    searchHelper="Search by PCB-/CCR- number, product, reference, or remarks."
+                    searchPlaceholder="PCB-123, CCR-456, product, barcode, reference, or remarks"
+                    searchHelper="Search by PCB-/CCR- number, product, barcode, reference, or remarks."
                     filterContext="all"
                     onRefresh={() => {
                         clearAllSelections();

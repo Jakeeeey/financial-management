@@ -42,6 +42,14 @@ export type PriceChangeRequestRow = {
     requested_by_name?: string | null;
     requested_at: string;
 
+    approved_by?: number | string | null;
+    approved_at?: string | null;
+    approved_by_name?: string | null;
+    rejected_by?: number | string | null;
+    rejected_at?: string | null;
+    rejected_by_name?: string | null;
+    reject_reason?: string | null;
+
     header_id?:
         | number
         | {
@@ -111,11 +119,13 @@ export type CostChangeRequestRow = {
     requested_by_name?: string | null;
     requested_at: string;
 
-    approved_by?: number | null;
+    approved_by?: number | string | null;
     approved_at?: string | null;
+    approved_by_name?: string | null;
 
-    rejected_by?: number | null;
+    rejected_by?: number | string | null;
     rejected_at?: string | null;
+    rejected_by_name?: string | null;
     reject_reason?: string | null;
 };
 

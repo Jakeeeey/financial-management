@@ -74,7 +74,9 @@ type DirectusCCRRow = {
     status?: string | null;
     requested_at?: string | null;
     requested_by?: number | string | null;
-    rejected_by?: number | null;
+    approved_by?: number | string | null;
+    approved_at?: string | null;
+    rejected_by?: number | string | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
 };
@@ -123,6 +125,11 @@ type DirectusPCRRow = {
     status?: string | null;
     requested_at?: string | null;
     requested_by?: number | string | null;
+    approved_by?: number | string | null;
+    approved_at?: string | null;
+    rejected_by?: number | string | null;
+    rejected_at?: string | null;
+    reject_reason?: string | null;
     batch_header_id?: number | null;
     remarks?: string | null;
     reference_no?: string | null;
@@ -138,6 +145,12 @@ type UnifiedApprovalRow = {
     requested_at: string | null;
     requested_by?: number | null;
     requested_by_name?: string | null;
+    approved_by?: number | null;
+    approved_at?: string | null;
+    approved_by_name?: string | null;
+    rejected_by?: number | null;
+    rejected_at?: string | null;
+    rejected_by_name?: string | null;
     request_id?: number;
     product_id?: unknown;
     price_type_id?: unknown;
@@ -250,9 +263,8 @@ async function fetchUserNamesById(userIds: Array<number | null | undefined>): Pr
 
                 const displayName =
                     joinName([user.user_fname, user.user_mname, user.user_lname]) ||
-                    String(user.user_email ?? "").trim() ||
-                    `User #${id}`;
-                userNames.set(id, displayName);
+                    String(user.user_email ?? "").trim();
+                if (displayName) userNames.set(id, displayName);
             }
         }
     } catch {
@@ -294,16 +306,28 @@ async function addSuppliersToRows(rows: UnifiedApprovalRow[]): Promise<UnifiedAp
     });
 }
 
-async function addRequestedByNames(rows: UnifiedApprovalRow[]): Promise<UnifiedApprovalRow[]> {
-    const namesById = await fetchUserNamesById(rows.map((row) => row.requested_by));
+async function addActorNames(rows: UnifiedApprovalRow[]): Promise<UnifiedApprovalRow[]> {
+    const namesById = await fetchUserNamesById(
+        rows.flatMap((row) => [row.requested_by, row.approved_by, row.rejected_by]),
+    );
 
     return rows.map((row) => {
         const requestedBy = Number(row.requested_by);
+        const approvedBy = Number(row.approved_by);
+        const rejectedBy = Number(row.rejected_by);
         return {
             ...row,
             requested_by_name:
                 Number.isFinite(requestedBy) && requestedBy > 0
                     ? namesById.get(requestedBy) ?? `User #${requestedBy}`
+                    : null,
+            approved_by_name:
+                Number.isFinite(approvedBy) && approvedBy > 0
+                    ? namesById.get(approvedBy) ?? null
+                    : null,
+            rejected_by_name:
+                Number.isFinite(rejectedBy) && rejectedBy > 0
+                    ? namesById.get(rejectedBy) ?? null
                     : null,
         };
     });
@@ -521,6 +545,7 @@ async function getBatchHeaderIdsForProductSearch(text: string): Promise<number[]
         params.set("fields", "header_id");
         params.set("filter[_or][0][product_id][product_name][_contains]", q);
         params.set("filter[_or][1][product_id][product_code][_contains]", q);
+        params.set("filter[_or][2][product_id][barcode][_contains]", q);
 
         const url = `${mustBase()}/items/${DETAILS}?${params.toString()}`;
         const json = await fetchDirectus<DirectusList<BatchDetailRow>>(url, { headers: directusHeaders() });
@@ -555,13 +580,22 @@ function appendPriceFilters(params: URLSearchParams, filters: ApprovalFilters, s
 
     if (filters.q) {
         const parsed = parseApprovalSearchQuery(filters.q);
-        const requestId = parsed.priceRequestId ?? parsed.numericId;
+        const prefixedRequestId = parsed.numericId == null ? parsed.priceRequestId : null;
 
-        if (requestId != null) {
-            addAnd("[request_id][_eq]", String(requestId));
+        if (prefixedRequestId != null) {
+            addAnd("[request_id][_eq]", String(prefixedRequestId));
         } else if (parsed.textContains) {
-            addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
-            params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+            const searchIdx = andIdx;
+            if (parsed.numericId != null) {
+                addAnd("[_or][0][request_id][_eq]", String(parsed.numericId));
+                params.set(`filter[_and][${searchIdx}][_or][1][product_id][product_name][_contains]`, parsed.textContains);
+                params.set(`filter[_and][${searchIdx}][_or][2][product_id][product_code][_contains]`, parsed.textContains);
+                params.set(`filter[_and][${searchIdx}][_or][3][product_id][barcode][_contains]`, parsed.textContains);
+            } else {
+                addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
+                params.set(`filter[_and][${searchIdx}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+                params.set(`filter[_and][${searchIdx}][_or][2][product_id][barcode][_contains]`, parsed.textContains);
+            }
         }
     }
 
@@ -583,6 +617,7 @@ async function getCostHeaderIdsForProductSearch(text: string): Promise<number[]>
         params.set("fields", "header_id");
         params.set("filter[_or][0][product_id][product_name][_contains]", q);
         params.set("filter[_or][1][product_id][product_code][_contains]", q);
+        params.set("filter[_or][2][product_id][barcode][_contains]", q);
 
         const url = `${mustBase()}/items/${COST_DETAILS}?${params.toString()}`;
         const json = await fetchDirectus<DirectusList<CostDetailRow>>(url, { headers: directusHeaders() });
@@ -727,21 +762,27 @@ function appendBatchFilters(
 
     if (filters.q) {
         const parsed = parseApprovalSearchQuery(filters.q);
-        const headerId = parsed.batchHeaderId ?? parsed.numericId;
+        const prefixedHeaderId = parsed.numericId == null ? parsed.batchHeaderId : null;
 
-        if (headerId != null) {
-            addAnd("[header_id][_eq]", String(headerId));
+        if (prefixedHeaderId != null) {
+            addAnd("[header_id][_eq]", String(prefixedHeaderId));
         } else if (parsed.textContains) {
+            const searchIdx = andIdx;
             addAnd("[_or][0][reference_no][_contains]", parsed.textContains);
-            params.set(`filter[_and][${andIdx - 1}][_or][1][remarks][_contains]`, parsed.textContains);
+            params.set(`filter[_and][${searchIdx}][_or][1][remarks][_contains]`, parsed.textContains);
+            let nextOrIdx = 2;
+            if (parsed.numericId != null) {
+                params.set(`filter[_and][${searchIdx}][_or][${nextOrIdx}][header_id][_eq]`, String(parsed.numericId));
+                nextOrIdx += 1;
+            }
             if (headerIdsFromSearch && headerIdsFromSearch.length > 0) {
                 if (headerIdsFromSearch.length <= HEADER_ID_CHUNK_SIZE) {
-                    params.set(`filter[_and][${andIdx - 1}][_or][2][header_id][_in]`, headerIdsFromSearch.join(","));
+                    params.set(`filter[_and][${searchIdx}][_or][${nextOrIdx}][header_id][_in]`, headerIdsFromSearch.join(","));
                 } else {
                     for (let i = 0; i < headerIdsFromSearch.length; i += HEADER_ID_CHUNK_SIZE) {
                         const chunk = headerIdsFromSearch.slice(i, i + HEADER_ID_CHUNK_SIZE);
-                        const orIdx = 2 + Math.floor(i / HEADER_ID_CHUNK_SIZE);
-                        params.set(`filter[_and][${andIdx - 1}][_or][${orIdx}][header_id][_in]`, chunk.join(","));
+                        const orIdx = nextOrIdx + Math.floor(i / HEADER_ID_CHUNK_SIZE);
+                        params.set(`filter[_and][${searchIdx}][_or][${orIdx}][header_id][_in]`, chunk.join(","));
                     }
                 }
             }
@@ -768,21 +809,27 @@ function appendCostBatchFilters(
 
     if (filters.q) {
         const parsed = parseApprovalSearchQuery(filters.q);
-        const headerId = parsed.costRequestId ?? parsed.numericId;
+        const prefixedHeaderId = parsed.numericId == null ? parsed.costRequestId : null;
 
-        if (headerId != null) {
-            addAnd("[header_id][_eq]", String(headerId));
+        if (prefixedHeaderId != null) {
+            addAnd("[header_id][_eq]", String(prefixedHeaderId));
         } else if (parsed.textContains) {
+            const searchIdx = andIdx;
             addAnd("[_or][0][reference_no][_contains]", parsed.textContains);
-            params.set(`filter[_and][${andIdx - 1}][_or][1][remarks][_contains]`, parsed.textContains);
+            params.set(`filter[_and][${searchIdx}][_or][1][remarks][_contains]`, parsed.textContains);
+            let nextOrIdx = 2;
+            if (parsed.numericId != null) {
+                params.set(`filter[_and][${searchIdx}][_or][${nextOrIdx}][header_id][_eq]`, String(parsed.numericId));
+                nextOrIdx += 1;
+            }
             if (headerIdsFromSearch && headerIdsFromSearch.length > 0) {
                 if (headerIdsFromSearch.length <= HEADER_ID_CHUNK_SIZE) {
-                    params.set(`filter[_and][${andIdx - 1}][_or][2][header_id][_in]`, headerIdsFromSearch.join(","));
+                    params.set(`filter[_and][${searchIdx}][_or][${nextOrIdx}][header_id][_in]`, headerIdsFromSearch.join(","));
                 } else {
                     for (let i = 0; i < headerIdsFromSearch.length; i += HEADER_ID_CHUNK_SIZE) {
                         const chunk = headerIdsFromSearch.slice(i, i + HEADER_ID_CHUNK_SIZE);
-                        const orIdx = 2 + Math.floor(i / HEADER_ID_CHUNK_SIZE);
-                        params.set(`filter[_and][${andIdx - 1}][_or][${orIdx}][header_id][_in]`, chunk.join(","));
+                        const orIdx = nextOrIdx + Math.floor(i / HEADER_ID_CHUNK_SIZE);
+                        params.set(`filter[_and][${searchIdx}][_or][${orIdx}][header_id][_in]`, chunk.join(","));
                     }
                 }
             }
@@ -807,13 +854,22 @@ function appendCostFilters(params: URLSearchParams, filters: ApprovalFilters, su
 
     if (filters.q) {
         const parsed = parseApprovalSearchQuery(filters.q);
-        const requestId = parsed.costRequestId ?? parsed.numericId;
+        const prefixedRequestId = parsed.numericId == null ? parsed.costRequestId : null;
 
-        if (requestId != null) {
-            addAnd("[request_id][_eq]", String(requestId));
+        if (prefixedRequestId != null) {
+            addAnd("[request_id][_eq]", String(prefixedRequestId));
         } else if (parsed.textContains) {
-            addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
-            params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+            const searchIdx = andIdx;
+            if (parsed.numericId != null) {
+                addAnd("[_or][0][request_id][_eq]", String(parsed.numericId));
+                params.set(`filter[_and][${searchIdx}][_or][1][product_id][product_name][_contains]`, parsed.textContains);
+                params.set(`filter[_and][${searchIdx}][_or][2][product_id][product_code][_contains]`, parsed.textContains);
+                params.set(`filter[_and][${searchIdx}][_or][3][product_id][barcode][_contains]`, parsed.textContains);
+            } else {
+                addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
+                params.set(`filter[_and][${searchIdx}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+                params.set(`filter[_and][${searchIdx}][_or][2][product_id][barcode][_contains]`, parsed.textContains);
+            }
         }
     }
 
@@ -854,6 +910,11 @@ async function fetchPriceRequestsDirectPage(
             "status",
             "requested_by",
             "requested_at",
+            "approved_by",
+            "approved_at",
+            "rejected_by",
+            "rejected_at",
+            "reject_reason",
             "header_id",
             "header_id.header_id",
             "header_id.remarks",
@@ -887,6 +948,8 @@ async function fetchPriceRequestsDirectPage(
         const productName = productNameOf(row.product_id);
         const productCode = productCodeOf(row.product_id);
         const requestedBy = Number(row.requested_by);
+        const approvedBy = Number(row.approved_by);
+        const rejectedBy = Number(row.rejected_by);
 
         rows.push({
             row_key: `price:${requestId}`,
@@ -897,6 +960,10 @@ async function fetchPriceRequestsDirectPage(
             status: String(row.status ?? "PENDING"),
             requested_at: row.requested_at ?? null,
             requested_by: Number.isFinite(requestedBy) ? requestedBy : null,
+            approved_by: Number.isFinite(approvedBy) ? approvedBy : null,
+            approved_at: row.approved_at ?? null,
+            rejected_by: Number.isFinite(rejectedBy) ? rejectedBy : null,
+            rejected_at: row.rejected_at ?? null,
             request_id: requestId,
             product_id: row.product_id ?? 0,
             price_type_id: row.price_type_id ?? 0,
@@ -905,6 +972,7 @@ async function fetchPriceRequestsDirectPage(
             remarks: row.remarks ?? null,
             reference_no: row.reference_no ?? null,
             current_price: toMoney(row.current_price),
+            reject_reason: row.reject_reason ?? null,
         });
     }
 
@@ -1144,6 +1212,10 @@ async function fetchCostRequestsDirectPage(
             "status",
             "requested_by",
             "requested_at",
+            "approved_by",
+            "approved_at",
+            "rejected_by",
+            "rejected_at",
             "reject_reason",
             "product_id.product_id",
             "product_id.product_code",
@@ -1182,6 +1254,8 @@ async function fetchCostRequestsDirectPage(
         const productName = productNameOf(row.product_id);
         const productCode = productCodeOf(row.product_id);
         const requestedBy = Number(row.requested_by);
+        const approvedBy = Number(row.approved_by);
+        const rejectedBy = Number(row.rejected_by);
 
         rows.push({
             row_key: `cost:${requestId}`,
@@ -1192,6 +1266,10 @@ async function fetchCostRequestsDirectPage(
             status: String(row.status ?? "PENDING"),
             requested_at: row.requested_at ?? null,
             requested_by: Number.isFinite(requestedBy) ? requestedBy : null,
+            approved_by: Number.isFinite(approvedBy) ? approvedBy : null,
+            approved_at: row.approved_at ?? null,
+            rejected_by: Number.isFinite(rejectedBy) ? rejectedBy : null,
+            rejected_at: row.rejected_at ?? null,
             request_id: requestId,
             product_id: row.product_id ?? 0,
             current_cost: toMoney(row.current_cost),
@@ -1408,7 +1486,7 @@ export async function GET(req: NextRequest) {
             data = merged.slice(offset, offset + pageSize);
         }
 
-        let enrichedData = await addRequestedByNames(data);
+        let enrichedData = await addActorNames(data);
         enrichedData = await addSuppliersToRows(enrichedData);
 
         return NextResponse.json({
