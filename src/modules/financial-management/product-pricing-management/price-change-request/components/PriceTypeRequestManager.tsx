@@ -53,6 +53,7 @@ type Props = {
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
     onUnauthorized?: () => void;
     active?: boolean;
+    readOnly?: boolean;
 };
 
 export function PriceTypeRequestManager({
@@ -63,6 +64,7 @@ export function PriceTypeRequestManager({
     setQuery,
     onUnauthorized,
     active = true,
+    readOnly = false,
 }: Props) {
     const inbox = useUnifiedApprovals(query, setQuery, { scope: "price", enabled: active });
     const statusTab: PCRStatusFilter = inbox.query.status || "ALL";
@@ -261,7 +263,8 @@ export function PriceTypeRequestManager({
                     onImportExcelClick={priceExportImport.handleImportExcelClick}
                     onImportExcelFile={priceExportImport.handleImportExcelFile}
                     importFileInputRef={priceExportImport.importFileInputRef}
-                    showNewBatch
+                    exportOnly={readOnly}
+                    showNewBatch={!readOnly}
                     onNewBatch={() => priceExportImport.setCreatingBatch(true)}
                 />
             </div>
@@ -401,22 +404,26 @@ export function PriceTypeRequestManager({
                         }
                         setViewingRequestId(id);
                     }}
-                    onApprove={(id) => {
-                        const headerId = resolveBatchHeaderId(id);
-                        if (headerId) {
-                            setConfirmingBatchHeaderId(headerId);
-                            return;
-                        }
-                        setConfirmingOrphanApproveId(id);
-                    }}
-                    onReject={(id) => {
-                        const headerId = resolveBatchHeaderId(id);
-                        if (headerId) {
-                            setRejectingBatchHeaderId(headerId);
-                            return;
-                        }
-                        setRejectingOrphanId(id);
-                    }}
+                    {...(readOnly
+                        ? {}
+                        : {
+                              onApprove: (id) => {
+                                  const headerId = resolveBatchHeaderId(id);
+                                  if (headerId) {
+                                      setConfirmingBatchHeaderId(headerId);
+                                      return;
+                                  }
+                                  setConfirmingOrphanApproveId(id);
+                              },
+                              onReject: (id) => {
+                                  const headerId = resolveBatchHeaderId(id);
+                                  if (headerId) {
+                                      setRejectingBatchHeaderId(headerId);
+                                      return;
+                                  }
+                                  setRejectingOrphanId(id);
+                              },
+                          })}
                     meta={{ total_count: inbox.total }}
                     page={Number(inbox.query.page ?? 1)}
                     pageSize={Number(inbox.query.page_size ?? 50)}
@@ -447,26 +454,38 @@ export function PriceTypeRequestManager({
                 batchId={viewingBatchHeaderId}
                 open={viewingBatchHeaderId != null}
                 acting={inbox.loading || batchActing}
+                readOnly={readOnly}
                 onOpenChange={(open) => {
                     if (!open) setViewingBatchHeaderId(null);
                 }}
-                onApprove={approveBatch}
-                onReject={rejectBatch}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApprove: approveBatch,
+                          onReject: rejectBatch,
+                      })}
             />
 
             <PriceTypeRequestDetailDialog
                 row={viewingRequest}
                 open={viewingRequestId != null}
                 acting={inbox.loading || batchActing}
+                readOnly={readOnly}
                 onOpenChange={(open) => {
                     if (!open) setViewingRequestId(null);
                 }}
-                onApproveBatch={approveBatch}
-                onRejectBatch={rejectBatch}
-                onApproveRequest={approvePriceRequest}
-                onRejectRequest={rejectPriceRequest}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApproveBatch: approveBatch,
+                          onRejectBatch: rejectBatch,
+                          onApproveRequest: approvePriceRequest,
+                          onRejectRequest: rejectPriceRequest,
+                      })}
             />
 
+            {!readOnly ? (
+            <>
             <ApproveDialog
                 open={confirmingOrphanApproveId != null}
                 onOpenChange={() => setConfirmingOrphanApproveId(null)}
@@ -590,6 +609,8 @@ export function PriceTypeRequestManager({
                 onCreated={() => void inbox.refresh()}
                 importPrefill={priceExportImport.importPrefill}
             />
+            </>
+            ) : null}
 
             <SupplierPrintEditorModals {...printModalsProps} />
         </div>

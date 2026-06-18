@@ -56,6 +56,7 @@ type Props = {
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
     onUnauthorized?: () => void;
     active?: boolean;
+    readOnly?: boolean;
 };
 
 function resolveUnifiedSelectionKey(row: UnifiedApprovalRow): string {
@@ -79,6 +80,7 @@ export function UnifiedApprovalsManager({
     setQuery,
     onUnauthorized,
     active = true,
+    readOnly = false,
 }: Props) {
     const feed = useUnifiedApprovals(query, setQuery, { enabled: active });
     const statusTab: PCRStatusFilter = feed.query.status || "ALL";
@@ -414,7 +416,8 @@ export function UnifiedApprovalsManager({
                     onImportExcelClick={priceExportImport.handleImportExcelClick}
                     onImportExcelFile={priceExportImport.handleImportExcelFile}
                     importFileInputRef={priceExportImport.importFileInputRef}
-                    showNewBatch
+                    exportOnly={readOnly}
+                    showNewBatch={!readOnly}
                     onNewBatch={() => priceExportImport.setCreatingBatch(true)}
                 />
             </div>
@@ -569,16 +572,20 @@ export function UnifiedApprovalsManager({
                     selectedKeys={mergedSelectedKeys}
                     getSelectionKey={getUnifiedSelectionKey}
                     onReview={openRequestReview}
-                    onReject={handleTableReject}
+                    {...(readOnly
+                        ? {}
+                        : {
+                              onReject: handleTableReject,
+                              onApprove: handleTableApprove,
+                              canApproveRow: (row) => canActOnRow(row as UnifiedApprovalRow),
+                              canRejectRow: (row) => canActOnRow(row as UnifiedApprovalRow),
+                          })}
+                    canSelectRow={canSelectUnifiedRow}
+                    canReviewRow={() => true}
                     onToggleSelect={(key, checked, row) =>
                         handleToggleSelect(key, checked, row as UnifiedApprovalRow | undefined)
                     }
                     onToggleSelectAllPage={handleToggleSelectAllPage}
-                    onApprove={handleTableApprove}
-                    canSelectRow={canSelectUnifiedRow}
-                    canReviewRow={() => true}
-                    canApproveRow={(row) => canActOnRow(row as UnifiedApprovalRow)}
-                    canRejectRow={(row) => canActOnRow(row as UnifiedApprovalRow)}
                 />
             </div>
 
@@ -586,48 +593,69 @@ export function UnifiedApprovalsManager({
                 row={viewingCostRequest}
                 open={viewingCostRequestId != null}
                 acting={acting}
+                readOnly={readOnly}
                 onOpenChange={(open) => {
                     if (!open) setViewingCostRequestId(null);
                 }}
-                onApprove={costActions.approve}
-                onReject={costActions.reject}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApprove: costActions.approve,
+                          onReject: costActions.reject,
+                      })}
             />
 
             <PriceChangeBatchDetailDialog
                 batchId={viewingBatchHeaderId}
                 open={viewingBatchHeaderId != null}
                 acting={acting}
+                readOnly={readOnly}
                 onOpenChange={(open) => {
                     if (!open) setViewingBatchHeaderId(null);
                 }}
-                onApprove={feed.approveBatch}
-                onReject={feed.rejectBatch}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApprove: feed.approveBatch,
+                          onReject: feed.rejectBatch,
+                      })}
             />
 
             <ListCostBatchDetailDialog
                 batchId={viewingCostBatchHeaderId}
                 open={viewingCostBatchHeaderId != null}
                 acting={acting}
+                readOnly={readOnly}
                 onOpenChange={(open) => {
                     if (!open) setViewingCostBatchHeaderId(null);
                 }}
-                onApprove={feed.approveCostBatch}
-                onReject={feed.rejectCostBatch}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApprove: feed.approveCostBatch,
+                          onReject: feed.rejectCostBatch,
+                      })}
             />
 
             <PriceTypeRequestDetailDialog
                 row={viewingPriceRequest}
                 open={viewingPriceRequestId != null}
                 acting={acting}
+                readOnly={readOnly}
                 onOpenChange={(open) => {
                     if (!open) setViewingPriceRequestId(null);
                 }}
-                onApproveBatch={feed.approveBatch}
-                onRejectBatch={feed.rejectBatch}
-                onApproveRequest={feed.approvePriceRequest}
-                onRejectRequest={feed.rejectPriceRequest}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApproveBatch: feed.approveBatch,
+                          onRejectBatch: feed.rejectBatch,
+                          onApproveRequest: feed.approvePriceRequest,
+                          onRejectRequest: feed.rejectPriceRequest,
+                      })}
             />
 
+            {!readOnly ? (
             <CreatePriceChangeBatchDialog
                 open={priceExportImport.creatingBatch}
                 onOpenChange={(open) => {
@@ -638,7 +666,10 @@ export function UnifiedApprovalsManager({
                 onCreated={feed.refresh}
                 importPrefill={priceExportImport.importPrefill}
             />
+            ) : null}
 
+            {!readOnly ? (
+            <>
             <RejectDialog
                 open={rejectingCostId != null || rejectingBulkCost}
                 onOpenChange={(open) => {
@@ -830,6 +861,8 @@ export function UnifiedApprovalsManager({
                 result={bulkPriceActionOutcome?.result ?? null}
                 snapshots={bulkPriceActionOutcome?.snapshots ?? []}
             />
+            </>
+            ) : null}
 
             <SupplierPrintEditorModals {...printModalsProps} />
         </div>

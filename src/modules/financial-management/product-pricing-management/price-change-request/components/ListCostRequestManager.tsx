@@ -45,6 +45,7 @@ type Props = {
     setQuery: React.Dispatch<React.SetStateAction<ListQuery>>;
     onUnauthorized?: () => void;
     active?: boolean;
+    readOnly?: boolean;
 };
 
 export function ListCostRequestManager({
@@ -55,6 +56,7 @@ export function ListCostRequestManager({
     setQuery,
     onUnauthorized,
     active = true,
+    readOnly = false,
 }: Props) {
     const inbox = useUnifiedApprovals(query, setQuery, { scope: "cost", enabled: active });
 
@@ -183,7 +185,8 @@ export function ListCostRequestManager({
                     onImportExcelClick={listCostExportImport.handleImportExcelClick}
                     onImportExcelFile={listCostExportImport.handleImportExcelFile}
                     importFileInputRef={listCostExportImport.importFileInputRef}
-                    showNewBatch
+                    exportOnly={readOnly}
+                    showNewBatch={!readOnly}
                     onNewBatch={() => setCreatingBatch(true)}
                 />
             </div>
@@ -308,8 +311,12 @@ export function ListCostRequestManager({
                     hasLoadError={Boolean(inbox.error)}
                     acting={actions.acting || inbox.acting}
                     onReview={openRequestReview}
-                    onApprove={(id) => setConfirmingApprove({ type: "single", id })}
-                    onReject={(id) => setRejectingId(id)}
+                    {...(readOnly
+                        ? {}
+                        : {
+                              onApprove: (id) => setConfirmingApprove({ type: "single", id }),
+                              onReject: (id) => setRejectingId(id),
+                          })}
                     meta={{ total_count: inbox.total }}
                     page={Number(inbox.query.page ?? 1)}
                     pageSize={Number(inbox.query.page_size ?? 50)}
@@ -339,24 +346,36 @@ export function ListCostRequestManager({
                 row={viewingRequest}
                 open={viewingRequestId != null}
                 acting={actions.acting}
+                readOnly={readOnly}
                 onOpenChange={(open) => {
                     if (!open) setViewingRequestId(null);
                 }}
-                onApprove={actions.approve}
-                onReject={actions.reject}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApprove: actions.approve,
+                          onReject: actions.reject,
+                      })}
             />
 
             <ListCostBatchDetailDialog
                 batchId={viewingCostBatchHeaderId}
                 open={viewingCostBatchHeaderId != null}
                 acting={actions.acting || inbox.acting}
+                readOnly={readOnly}
                 onOpenChange={(open) => {
                     if (!open) setViewingCostBatchHeaderId(null);
                 }}
-                onApprove={inbox.approveCostBatch}
-                onReject={inbox.rejectCostBatch}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApprove: inbox.approveCostBatch,
+                          onReject: inbox.rejectCostBatch,
+                      })}
             />
 
+            {!readOnly ? (
+            <>
             <RejectDialog
                 open={rejectingId != null || rejectingBulk}
                 onOpenChange={(open) => {
@@ -453,6 +472,8 @@ export function ListCostRequestManager({
                 suppliers={suppliers}
                 onCreated={() => void inbox.refresh()}
             />
+            </>
+            ) : null}
 
             <SupplierPrintEditorModals {...printModalsProps} />
         </div>

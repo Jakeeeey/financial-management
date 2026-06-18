@@ -37,9 +37,10 @@ type Props = {
     batchId: number | null;
     open: boolean;
     acting: boolean;
+    readOnly?: boolean;
     onOpenChange: (open: boolean) => void;
-    onApprove: (headerId: number) => Promise<void> | void;
-    onReject: (headerId: number, reason: string) => Promise<void> | void;
+    onApprove?: (headerId: number) => Promise<void> | void;
+    onReject?: (headerId: number, reason: string) => Promise<void> | void;
 };
 
 function money(value: number | null | undefined) {
@@ -99,6 +100,7 @@ export function ListCostBatchDetailDialog({
     batchId,
     open,
     acting,
+    readOnly = false,
     onOpenChange,
     onApprove,
     onReject,
@@ -139,6 +141,7 @@ export function ListCostBatchDetailDialog({
 
     const lines = React.useMemo(() => detail?.details ?? [], [detail?.details]);
     const isPending = detail?.status === "PENDING";
+    const canAct = !readOnly && isPending && headerId != null && onApprove != null && onReject != null;
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
     const headerId = detail?.header_id ?? batchId ?? 0;
 
@@ -156,6 +159,7 @@ export function ListCostBatchDetailDialog({
 
     const handleApprove = React.useCallback(async () => {
         if (!headerId) return;
+        if (!headerId || !onApprove) return;
         await onApprove(headerId);
         setConfirmingAction(null);
         handleOpenChange(false);
@@ -164,6 +168,7 @@ export function ListCostBatchDetailDialog({
     const handleReject = React.useCallback(async () => {
         const reason = rejectReason.trim();
         if (!headerId || !reason) return;
+        if (!headerId || !onReject) return;
         await onReject(headerId, reason);
         setConfirmingAction(null);
         handleOpenChange(false);
@@ -282,7 +287,7 @@ export function ListCostBatchDetailDialog({
                                 </Table>
                             </div>
 
-                            {isPending && rejecting ? (
+                            {canAct && rejecting ? (
                                 <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
                                     <Label htmlFor="cost-batch-reject-reason">Reject Reason</Label>
                                     <Textarea
@@ -303,7 +308,7 @@ export function ListCostBatchDetailDialog({
                         <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={acting}>
                             Close
                         </Button>
-                        {isPending && headerId ? (
+                        {canAct ? (
                             <>
                                 {rejecting ? (
                                     <>

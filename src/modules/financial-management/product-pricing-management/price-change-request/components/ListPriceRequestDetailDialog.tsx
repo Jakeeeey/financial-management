@@ -25,9 +25,10 @@ type Props = {
     row: UnifiedApprovalRow | null;
     open: boolean;
     acting: boolean;
+    readOnly?: boolean;
     onOpenChange: (open: boolean) => void;
-    onApprove: (requestId: number) => Promise<void>;
-    onReject: (requestId: number, reason: string) => Promise<void>;
+    onApprove?: (requestId: number) => Promise<void>;
+    onReject?: (requestId: number, reason: string) => Promise<void>;
 };
 
 function money(value: number | null | undefined) {
@@ -61,6 +62,7 @@ export function ListPriceRequestDetailDialog({
     row,
     open,
     acting,
+    readOnly = false,
     onOpenChange,
     onApprove,
     onReject,
@@ -81,6 +83,7 @@ export function ListPriceRequestDetailDialog({
 
     const requestId = row?.kind === "list_price" && row.request_id ? Number(row.request_id) : null;
     const isPending = row?.status === "PENDING";
+    const canAct = !readOnly && isPending && requestId != null && onApprove != null && onReject != null;
     const currentCost = row?.kind === "list_price" ? row.current_cost : null;
     const proposedCost = row?.kind === "list_price" ? row.proposed_cost : null;
     const rejectReasonValue = row?.kind === "list_price" ? row.reject_reason : null;
@@ -102,7 +105,7 @@ export function ListPriceRequestDetailDialog({
     const busy = acting || submitting;
 
     const handleApprove = async () => {
-        if (!requestId) return;
+        if (!requestId || !onApprove) return;
         setSubmitting(true);
         try {
             await onApprove(requestId);
@@ -114,7 +117,7 @@ export function ListPriceRequestDetailDialog({
     };
 
     const handleReject = async () => {
-        if (!requestId || !rejectReason.trim()) return;
+        if (!requestId || !rejectReason.trim() || !onReject) return;
         setSubmitting(true);
         try {
             await onReject(requestId, rejectReason.trim());
@@ -230,7 +233,7 @@ export function ListPriceRequestDetailDialog({
                     <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
                         Close
                     </Button>
-                    {isPending && requestId ? (
+                    {canAct ? (
                         rejecting ? (
                             <>
                                 <Button

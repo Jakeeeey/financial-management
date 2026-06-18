@@ -28,6 +28,7 @@ import PricingFiltersBar from "./PricingFiltersBar";
 import PricingTable from "./PricingTable";
 import BulkSaveBar from "./BulkSaveBar";
 import { PriceChangeBatchDialog } from "./PriceChangeBatchDialog";
+import { CreatePriceChangeBatchDialog } from "../../price-change-request/components/CreatePriceChangeBatchDialog";
 import { SessionExpiredPanel } from "../../shared/SessionExpiredPanel";
 
 import { buildMatrixTierKeys, priceViewFilterLabel } from "../utils/pivot";
@@ -37,9 +38,11 @@ import PrintPricingDialog from "./PrintPricingDialog";
 import PrintPrepareDialog from "./PrintPrepareDialog";
 import PrintLargeJobConfirmDialog from "./PrintLargeJobConfirmDialog";
 
-import { exportSupplierBatchExcel, parseSupplierBatchExcelImport } from "../../shared/supplier-batch/supplierBatchExcel";
+import { exportSupplierBatchExcel } from "../../shared/supplier-batch/supplierBatchExcel";
+import { parseSupplierBatchExcelImport } from "../../price-change-request/utils/supplierBatchExcel";
 import { fetchSupplierPrintMatrix } from "../../shared/supplier-batch/supplierPrintMatrix";
 import { requireSingleSupplier } from "../../shared/supplier-batch/requireSingleSupplier";
+import type { BatchImportPrefill } from "../../price-change-request/types";
 
 import type {
     Brand,
@@ -461,6 +464,8 @@ export default function PricingMatrixView() {
     const [largePrintConfirmOpen, setLargePrintConfirmOpen] = React.useState(false);
     const [pendingPrintJob, setPendingPrintJob] = React.useState<PendingPrintJob | null>(null);
     const [excelBusy, setExcelBusy] = React.useState(false);
+    const [importPrefill, setImportPrefill] = React.useState<BatchImportPrefill | null>(null);
+    const [createBatchOpen, setCreateBatchOpen] = React.useState(false);
     const importFileInputRef = React.useRef<HTMLInputElement | null>(null);
     const printAbortRef = React.useRef<AbortController | null>(null);
 
@@ -695,18 +700,9 @@ export default function PricingMatrixView() {
                     return;
                 }
 
-                const appliedCount = dirtySummary.applyImportedChanges({
-                    priceChanges: parsed.priceChanges,
-                    costChanges: parsed.costChanges,
-                });
-                if (appliedCount === 0) {
-                    toast.message("No new proposed price or list cost changes were applied.");
-                    return;
-                }
-
-                await matrix.refresh();
-                toast.success(`Imported ${appliedCount} proposed change${appliedCount === 1 ? "" : "s"}.`);
-                setBatchDialogOpen(true);
+                setImportPrefill(parsed.prefill);
+                setCreateBatchOpen(true);
+                toast.success("Imported prices loaded into the new batch dialog.");
             } catch (error: unknown) {
                 toast.error(error instanceof Error ? error.message : "Failed to import Excel.");
             } finally {
@@ -714,7 +710,6 @@ export default function PricingMatrixView() {
             }
         },
         [
-            dirtySummary,
             loadSupplierExcelMatrix,
             lookups.suppliers,
             matrix,
@@ -877,6 +872,17 @@ export default function PricingMatrixView() {
                     offPageDirtyCount={dirtySummary.offPageDirtyCount}
                     previewLines={dirtySummary.dirtyPreviewLines}
                     onSubmit={(payload) => dirtySummary.saveAll(payload)}
+                />
+
+                <CreatePriceChangeBatchDialog
+                    open={createBatchOpen}
+                    onOpenChange={(open) => {
+                        setCreateBatchOpen(open);
+                        if (!open) setImportPrefill(null);
+                    }}
+                    suppliers={lookups.suppliers}
+                    onCreated={() => void matrix.refresh()}
+                    importPrefill={importPrefill}
                 />
 
                 <AlertDialog

@@ -22,7 +22,26 @@ const DEFAULT_SHARED_QUERY: ListQuery = {
     page_size: 50,
 };
 
-export default function PriceChangeRequestsView() {
+export type PriceChangeRequestsMode = "approvals" | "monitoring";
+
+type Props = {
+    returnPath?: string;
+    description?: string;
+    mode?: PriceChangeRequestsMode;
+};
+
+export default function PriceChangeRequestsView({
+    returnPath = "/fm/price-control/price-change-requests",
+    description,
+    mode = "approvals",
+}: Props) {
+    const readOnly = mode === "monitoring";
+    const resolvedDescription =
+        description ??
+        (readOnly
+            ? "Monitor price change requests in view-only mode."
+            : "Approve or reject price updates.");
+
     const {
         suppliers,
         suppliersLoading,
@@ -56,12 +75,12 @@ export default function PriceChangeRequestsView() {
     };
 
     if (sessionExpired) {
-        return <SessionExpiredPanel returnPath="/fm/price-control/price-change-requests" />;
+        return <SessionExpiredPanel returnPath={returnPath} />;
     }
 
     return (
         <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Approve or reject price updates.</p>
+            <p className="text-sm text-muted-foreground">{resolvedDescription}</p>
 
             {suppliersError ? (
                 <Alert variant="destructive">
@@ -103,6 +122,7 @@ export default function PriceChangeRequestsView() {
                             setQuery={setSharedQuery}
                             onUnauthorized={handleUnauthorized}
                             active={typeTab === "all"}
+                            readOnly={readOnly}
                         />
                     </TabsContent>
                 ) : null}
@@ -119,6 +139,7 @@ export default function PriceChangeRequestsView() {
                             setQuery={setSharedQuery}
                             onUnauthorized={handleUnauthorized}
                             active={typeTab === "price"}
+                            readOnly={readOnly}
                         />
                     </TabsContent>
                 ) : null}
@@ -135,6 +156,7 @@ export default function PriceChangeRequestsView() {
                             setQuery={setSharedQuery}
                             onUnauthorized={handleUnauthorized}
                             active={typeTab === "cost"}
+                            readOnly={readOnly}
                         />
                     </TabsContent>
                 ) : null}

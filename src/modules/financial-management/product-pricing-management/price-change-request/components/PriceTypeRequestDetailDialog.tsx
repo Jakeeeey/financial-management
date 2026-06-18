@@ -25,11 +25,12 @@ type Props = {
     row: PriceTypeUnifiedApprovalRow | null;
     open: boolean;
     acting: boolean;
+    readOnly?: boolean;
     onOpenChange: (open: boolean) => void;
-    onApproveBatch: (headerId: number) => Promise<void>;
-    onRejectBatch: (headerId: number, reason: string) => Promise<void>;
-    onApproveRequest: (requestId: number) => Promise<void>;
-    onRejectRequest: (requestId: number, reason: string) => Promise<void>;
+    onApproveBatch?: (headerId: number) => Promise<void>;
+    onRejectBatch?: (headerId: number, reason: string) => Promise<void>;
+    onApproveRequest?: (requestId: number) => Promise<void>;
+    onRejectRequest?: (requestId: number, reason: string) => Promise<void>;
 };
 
 function money(value: number | null | undefined) {
@@ -63,6 +64,7 @@ export function PriceTypeRequestDetailDialog({
     row,
     open,
     acting,
+    readOnly = false,
     onOpenChange,
     onApproveBatch,
     onRejectBatch,
@@ -101,10 +103,17 @@ export function PriceTypeRequestDetailDialog({
             : null;
     const status = String(row?.status ?? "").toUpperCase();
     const busy = acting || submitting;
-    const canAct = isPending && requestId != null;
+    const canAct =
+        !readOnly &&
+        isPending &&
+        requestId != null &&
+        onApproveBatch != null &&
+        onRejectBatch != null &&
+        onApproveRequest != null &&
+        onRejectRequest != null;
 
     const handleApprove = async () => {
-        if (!requestId) return;
+        if (!requestId || !onApproveBatch || !onApproveRequest) return;
         setSubmitting(true);
         try {
             if (isBatchLinked && headerId) {
@@ -120,7 +129,7 @@ export function PriceTypeRequestDetailDialog({
     };
 
     const handleReject = async () => {
-        if (!requestId || !rejectReason.trim()) return;
+        if (!requestId || !rejectReason.trim() || !onRejectBatch || !onRejectRequest) return;
         setSubmitting(true);
         try {
             if (isBatchLinked && headerId) {

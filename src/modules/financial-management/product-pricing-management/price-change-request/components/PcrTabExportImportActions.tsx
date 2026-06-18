@@ -15,6 +15,7 @@ type Props = {
     importFileInputRef: React.RefObject<HTMLInputElement | null>;
     showNewBatch?: boolean;
     onNewBatch?: () => void;
+    exportOnly?: boolean;
 };
 
 export function PcrTabExportImportActions({
@@ -27,6 +28,7 @@ export function PcrTabExportImportActions({
     importFileInputRef,
     showNewBatch = false,
     onNewBatch,
+    exportOnly = false,
 }: Props) {
     const pdfLabel = mode === "price" ? "Export PDF" : "Export PDF";
     const excelLabel = "Export Excel";
@@ -57,24 +59,28 @@ export function PcrTabExportImportActions({
                 )}
                 {excelLabel}
             </Button>
-            <Button
-                type="button"
-                variant="outline"
-                className="w-full sm:w-auto"
-                disabled={busy}
-                onClick={onImportExcelClick}
-            >
-                {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
-                Import Excel
-            </Button>
-            <input
-                ref={importFileInputRef}
-                type="file"
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                className="hidden"
-                onChange={(event) => void onImportExcelFile(event)}
-            />
-            {showNewBatch && onNewBatch ? (
+            {!exportOnly ? (
+                <>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full sm:w-auto"
+                        disabled={busy}
+                        onClick={onImportExcelClick}
+                    >
+                        {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
+                        Import Excel
+                    </Button>
+                    <input
+                        ref={importFileInputRef}
+                        type="file"
+                        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        className="hidden"
+                        onChange={(event) => void onImportExcelFile(event)}
+                    />
+                </>
+            ) : null}
+            {!exportOnly && showNewBatch && onNewBatch ? (
                 <Button type="button" onClick={onNewBatch} className="w-full sm:w-auto">
                     <Plus className="mr-2 h-4 w-4" />
                     New Batch
