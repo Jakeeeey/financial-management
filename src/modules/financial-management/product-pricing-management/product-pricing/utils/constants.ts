@@ -1,7 +1,8 @@
-import type { ProductTierKey } from "../types";
+import type { PriceType, ProductTierKey } from "../types";
 
-export const TIERS: ProductTierKey[] = ["LIST", "A", "B", "C", "D", "E"];
+export const DEFAULT_TIERS: ProductTierKey[] = ["LIST", "A", "B", "C", "D", "E"];
 
-export function isTierName(v: string): v is ProductTierKey {
-    return TIERS.includes(v as ProductTierKey);
+export function getDynamicTiers(priceTypes: PriceType[]): ProductTierKey[] {
+    const dynamicNames = priceTypes.map((pt) => pt.price_type_name).filter(Boolean);
+    return ["LIST", ...dynamicNames];
 }
