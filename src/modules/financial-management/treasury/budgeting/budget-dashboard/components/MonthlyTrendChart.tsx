@@ -103,7 +103,7 @@ export function MonthlyTrendChart({ data = [], onMonthClick, year }: MonthlyTren
               }}
               formatter={(value: number, name: string) => [
                 new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(value), 
-                name === "amount" ? "Allocated Budget" : "Actual Spent"
+                name
               ]}
               labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "black", marginBottom: "8px" }}
             />
