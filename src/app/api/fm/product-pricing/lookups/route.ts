@@ -43,6 +43,7 @@ type DirectusSupplier = {
     supplier_name?: string | null;
     supplier_shortcut?: string | null;
     isActive?: number | string | boolean | null;
+    nonBuy?: number | string | boolean | null;
 };
 
 type DirectusProductLookupRow = {
@@ -110,9 +111,10 @@ function parseFieldsParam(v: string | null): Set<string> | null {
 async function fetchSuppliers() {
     return fetchAllPages<DirectusSupplier>(SUPPLIERS, () => {
         const params = new URLSearchParams();
-        params.set("fields", "id,supplier_name,supplier_shortcut,isActive");
+        params.set("fields", "id,supplier_name,supplier_shortcut,isActive,nonBuy");
         params.set("sort", "supplier_name");
         params.set("filter[isActive][_eq]", "1");
+        params.set("filter[nonBuy][_eq]", "0");
         params.set("filter[supplier_type][_eq]", "TRADE");
         return params;
     });

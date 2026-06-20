@@ -87,6 +87,7 @@ export type PriceChangeBatchLine = {
     percent_change: number | null;
     status: PriceChangeBatchStatus | PCRStatus | string;
     supplier_name?: string | null;
+    unit_name?: string | null;
     effective_at?: string | null;
     application_status?: PriceChangeApplicationStatus | string | null;
     applied_at?: string | null;
@@ -162,6 +163,7 @@ export type ListCostBatchLine = {
     percent_change: number | null;
     status: ListCostBatchStatus | PCRStatus | string;
     supplier_name?: string | null;
+    unit_name?: string | null;
     effective_at?: string | null;
     application_status?: PriceChangeApplicationStatus | string | null;
     applied_at?: string | null;

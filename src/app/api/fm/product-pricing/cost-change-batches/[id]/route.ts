@@ -58,6 +58,13 @@ function userNameOf(value: unknown): string | null {
     return email || null;
 }
 
+function productUomLabel(value: unknown): string {
+    if (!isRecord(value)) return "";
+    const uom = value.unit_of_measurement;
+    if (!isRecord(uom)) return "";
+    return String(uom.unit_shortcut ?? uom.unit_name ?? "").trim();
+}
+
 function mapDetail(line: CostDetailRow) {
     const current = line.current_cost === null || line.current_cost === undefined ? null : Number(line.current_cost);
     const proposed = Number(line.proposed_cost);
@@ -73,6 +80,7 @@ function mapDetail(line: CostDetailRow) {
         proposed_cost: Number.isFinite(proposed) ? proposed : null,
         delta,
         percent_change: percentChange,
+        unit_name: productUomLabel(line.product_id),
         status: line.status ?? "PENDING",
     };
 }

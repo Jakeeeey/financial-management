@@ -236,6 +236,8 @@ export function ListCostBatchDetailDialog({
                                         <TableRow>
                                             <TableHead>Product</TableHead>
                                             <TableHead className="w-[130px]">Supplier</TableHead>
+                                            <TableHead className="w-[72px]">Unit</TableHead>
+                                            <TableHead className="w-[84px]">Type</TableHead>
                                             <TableHead className="w-[140px] text-right">Current</TableHead>
                                             <TableHead className="w-[140px] text-right">Proposed</TableHead>
                                             <TableHead className="w-[130px] text-right">Change</TableHead>
@@ -256,6 +258,10 @@ export function ListCostBatchDetailDialog({
                                                 <TableCell className="max-w-[140px] truncate" title={line.supplier_name ?? "-"}>
                                                     {line.supplier_name ?? "-"}
                                                 </TableCell>
+                                                <TableCell className="truncate" title={line.unit_name ?? "-"}>
+                                                    {line.unit_name ?? "-"}
+                                                </TableCell>
+                                                <TableCell>List Cost</TableCell>
                                                 <TableCell className="text-right">{money(line.current_cost)}</TableCell>
                                                 <TableCell className="text-right font-medium">{money(line.proposed_cost)}</TableCell>
                                                 <TableCell className={cn("text-right font-medium", diffClass(line))}>
@@ -268,14 +274,14 @@ export function ListCostBatchDetailDialog({
                                         ))}
                                         {lines.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                                                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                                                     No detail lines found.
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
                                             <TableRow>
                                                 <TableCell className="font-medium">Summary</TableCell>
-                                                <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                                                <TableCell colSpan={7} className="text-sm text-muted-foreground">
                                                     {lineSummary.lineCount} line(s) - {lineSummary.productCount} product(s)
                                                     {lineSummary.increaseCount > 0 || lineSummary.decreaseCount > 0
                                                         ? ` - ${lineSummary.increaseCount} increase(s), ${lineSummary.decreaseCount} decrease(s)`
