@@ -677,7 +677,7 @@ export function AddPayeeForm({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Address <span className="text-destructive">*</span>
+                        Street Address <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
                         <Input placeholder="Street address" {...field} />
