@@ -4,19 +4,21 @@ import * as XLSX from "xlsx";
 
 import type { MatrixRow } from "../../product-pricing/types";
 import {
-    currentColumnHeader,
+    buildUnitColumns,
     flattenPrintMatrixRows,
-    proposedColumnHeader,
     type FlatSupplierProductRow,
     type PriceTypeRef,
+    type UnitRef,
 } from "./flattenPrintMatrix";
 import {
     addSupplierBatchInstructionRows,
+    isProposedColumnHeader,
     styleSupplierBatchWorksheet,
 } from "./supplierBatchExcelStyles";
 
 export const BATCH_EXCEL_TEMPLATE_VERSION = 1;
 export const BATCH_EXCEL_COMBINED_TEMPLATE_VERSION = 2;
+export const BATCH_EXCEL_GROUPED_UOM_TEMPLATE_VERSION = 3;
 
 const META_TEMPLATE_VERSION = "Template Version";
 const META_SUPPLIER_ID = "Supplier ID";
@@ -34,6 +36,8 @@ const COL_UNIT_OF_MEASUREMENT = "Unit of Measurement";
 const COL_CURRENT_LIST_COST = "Current List Cost";
 const COL_PROPOSED_LIST_COST = "Proposed List Cost";
 const PENDING_MARKER = "Pending";
+const MAPPING_SHEET_NAME = "__TemplateMapping";
+const MAPPING_HEADERS = [COL_GROUP_ID, COL_UNIT_ID, COL_PRODUCT_ID, COL_UNIT_OF_MEASUREMENT] as const;
 
 const IDENTITY_HEADERS = [
     COL_PRODUCT_ID,
@@ -44,23 +48,6 @@ const IDENTITY_HEADERS = [
     COL_PARENT_ID,
     COL_UNIT_ID,
 ] as const;
-
-const EXPORT_IDENTITY_HEADERS = [
-    COL_PRODUCT_ID,
-    COL_PRODUCT_CODE,
-    COL_BARCODE,
-    COL_PRODUCT_NAME,
-    COL_GROUP_ID,
-    COL_PARENT_ID,
-    COL_UNIT_ID,
-    COL_UNIT_OF_MEASUREMENT,
-] as const;
-
-type UnitRef = {
-    unit_id?: number | string | null;
-    unit_name?: string | null;
-    unit_shortcut?: string | null;
-};
 
 export type SupplierBatchPriceChange = {
     product_id: number;
@@ -120,21 +107,20 @@ function pendingNote(label: string, value: number | null | undefined) {
     return `${label} already has a pending request.${amount}`;
 }
 
-function buildUnitLabelMap(units: UnitRef[] | undefined) {
-    const map = new Map<number, string>();
-    for (const unit of units ?? []) {
-        const id = Number(unit.unit_id);
-        if (!Number.isFinite(id) || id <= 0) continue;
-        const name = String(unit.unit_name ?? "").trim();
-        const shortcut = String(unit.unit_shortcut ?? "").trim();
-        map.set(id, name || shortcut || `Unit #${id}`);
-    }
-    return map;
+function priceCurrentHeader(priceType: PriceTypeRef, unitLabel: string) {
+    return `Price ${String(priceType.price_type_name ?? `#${priceType.price_type_id}`).trim()} Current (${unitLabel})`;
 }
 
-function unitLabel(unitId: number | null, unitsById: Map<number, string>) {
-    if (!unitId) return "";
-    return unitsById.get(unitId) ?? `Unit #${unitId}`;
+function priceProposedHeader(priceType: PriceTypeRef, unitLabel: string) {
+    return `Price ${String(priceType.price_type_name ?? `#${priceType.price_type_id}`).trim()} Proposed (${unitLabel})`;
+}
+
+function currentListCostHeader(unitLabel: string) {
+    return `${COL_CURRENT_LIST_COST} (${unitLabel})`;
+}
+
+function proposedListCostHeader(unitLabel: string) {
+    return `${COL_PROPOSED_LIST_COST} (${unitLabel})`;
 }
 
 export async function exportSupplierBatchExcel(args: {
@@ -160,8 +146,7 @@ export async function exportSupplierBatchExcel(args: {
         pendingCostRequests = [],
     } = args;
     const sortedPriceTypes = sortPriceTypes(priceTypes);
-    const flatRows = flattenPrintMatrixRows(matrixRows, sortedPriceTypes);
-    const unitsById = buildUnitLabelMap(units);
+    const unitColumns = buildUnitColumns(matrixRows, units);
     const pendingPriceByKey = new Map<string, number | null>(
         pendingPriceRequests.map((row) => [`${row.product_id}:${row.price_type_id}`, row.proposed_price] as const),
     );
@@ -169,9 +154,7 @@ export async function exportSupplierBatchExcel(args: {
         pendingCostRequests.map((row) => [row.product_id, row.proposed_cost] as const),
     );
     const generatedAt = new Date();
-    const templateVersion = includeListCost
-        ? BATCH_EXCEL_COMBINED_TEMPLATE_VERSION
-        : BATCH_EXCEL_TEMPLATE_VERSION;
+    const templateVersion = BATCH_EXCEL_GROUPED_UOM_TEMPLATE_VERSION;
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Price Change Batch");
@@ -184,17 +167,22 @@ export async function exportSupplierBatchExcel(args: {
     const instructionStartRowNumber = addSupplierBatchInstructionRows(sheet);
 
     const headers = [
-        ...EXPORT_IDENTITY_HEADERS,
-        ...(includeListCost ? [COL_CURRENT_LIST_COST, COL_PROPOSED_LIST_COST] : []),
-        ...sortedPriceTypes.flatMap((priceType) => [
-            currentColumnHeader(priceType),
-            proposedColumnHeader(priceType),
-        ]),
+        ...IDENTITY_HEADERS.filter((header) => header !== COL_UNIT_ID),
+        ...(includeListCost
+            ? unitColumns.flatMap((unit) => [
+                  currentListCostHeader(unit.label),
+                  proposedListCostHeader(unit.label),
+              ])
+            : []),
+        ...sortedPriceTypes.flatMap((priceType) =>
+            unitColumns.flatMap((unit) => [
+                priceCurrentHeader(priceType, unit.label),
+                priceProposedHeader(priceType, unit.label),
+            ]),
+        ),
     ];
     const proposedColumnIndexes = headers
-        .map((header, index) =>
-            header === COL_PROPOSED_LIST_COST || header.endsWith(" Proposed") ? index + 1 : null,
-        )
+        .map((header, index) => (isProposedColumnHeader(header) ? index + 1 : null))
         .filter((index): index is number => index !== null);
     const headerRowNumber = sheet.rowCount + 1;
     const headerRow = sheet.addRow(headers);
@@ -202,65 +190,79 @@ export async function exportSupplierBatchExcel(args: {
     const dataStartRowNumber = sheet.rowCount + 1;
     const pendingCellIndexes: Array<{ rowNumber: number; columnIndex: number; note?: string }> = [];
 
-    flatRows.forEach((row, rowIndex) => {
+    matrixRows.forEach((row, rowIndex) => {
         const rowNumber = dataStartRowNumber + rowIndex;
+        const display = row.display;
         const values: Array<string | number | null> = [
-            row.product_id,
-            row.product_code ?? "",
-            row.barcode ?? "",
-            row.product_name,
+            display.product_id,
+            display.product_code ?? "",
+            display.barcode ?? "",
+            display.product_name,
             row.group_id,
-            row.parent_id ?? "",
-            row.unit_id ?? "",
-            unitLabel(row.unit_id, unitsById),
+            display.parent_id ?? "",
         ];
 
         if (includeListCost) {
-            values.push(row.current_list_cost);
-            values.push(null);
-            if (pendingCostByProductId.has(row.product_id)) {
-                pendingCellIndexes.push({
-                    rowNumber,
-                    columnIndex: headers.indexOf(COL_PROPOSED_LIST_COST) + 1,
-                    note: pendingNote("List cost", pendingCostByProductId.get(row.product_id)),
-                });
+            for (const unit of unitColumns) {
+                const variant = row.variantsByUnitId[unit.unitId];
+                const productId = Number(variant?.product.product_id);
+                const listTier = variant?.tiers.LIST;
+                const current = listTier ?? variant?.product.cost_per_unit ?? null;
+                values.push(variant && current != null ? Number(current) : null);
+                values.push(null);
+                if (variant && pendingCostByProductId.has(productId)) {
+                    pendingCellIndexes.push({
+                        rowNumber,
+                        columnIndex: headers.indexOf(proposedListCostHeader(unit.label)) + 1,
+                        note: pendingNote("List cost", pendingCostByProductId.get(productId)),
+                    });
+                }
             }
         }
 
         for (const priceType of sortedPriceTypes) {
-            const current = row.currentByPriceTypeId.get(priceType.price_type_id) ?? null;
-            values.push(current);
-            values.push(null);
-            const key = `${row.product_id}:${priceType.price_type_id}`;
-            if (pendingPriceByKey.has(key)) {
-                pendingCellIndexes.push({
-                    rowNumber,
-                    columnIndex: headers.indexOf(proposedColumnHeader(priceType)) + 1,
-                    note: pendingNote(
-                        `${priceType.price_type_name || `#${priceType.price_type_id}`} price`,
-                        pendingPriceByKey.get(key),
-                    ),
-                });
+            for (const unit of unitColumns) {
+                const variant = row.variantsByUnitId[unit.unitId];
+                const productId = Number(variant?.product.product_id);
+                const current = variant?.tiers[String(priceType.price_type_id)] ?? null;
+                values.push(variant ? current : null);
+                values.push(null);
+                const key = `${productId}:${priceType.price_type_id}`;
+                if (variant && pendingPriceByKey.has(key)) {
+                    pendingCellIndexes.push({
+                        rowNumber,
+                        columnIndex: headers.indexOf(priceProposedHeader(priceType, unit.label)) + 1,
+                        note: pendingNote(
+                            `${priceType.price_type_name || `#${priceType.price_type_id}`} price`,
+                            pendingPriceByKey.get(key),
+                        ),
+                    });
+                }
             }
         }
 
         sheet.addRow(values);
     });
 
-    if (includeListCost) {
-        const currentListCol = headers.indexOf(COL_CURRENT_LIST_COST) + 1;
-        const proposedListCol = headers.indexOf(COL_PROPOSED_LIST_COST) + 1;
-        if (currentListCol > 0) sheet.getColumn(currentListCol).numFmt = "#,##0.00";
-        if (proposedListCol > 0) sheet.getColumn(proposedListCol).numFmt = "#,##0.00";
+    for (let columnIndex = 1; columnIndex <= headers.length; columnIndex += 1) {
+        if (headers[columnIndex - 1].includes("Current (") || headers[columnIndex - 1].includes("Proposed (")) {
+            sheet.getColumn(columnIndex).numFmt = "#,##0.00";
+        }
     }
 
-    for (const priceType of sortedPriceTypes) {
-        const currentHeader = currentColumnHeader(priceType);
-        const proposedHeader = proposedColumnHeader(priceType);
-        const currentCol = headers.indexOf(currentHeader) + 1;
-        const proposedCol = headers.indexOf(proposedHeader) + 1;
-        if (currentCol > 0) sheet.getColumn(currentCol).numFmt = "#,##0.00";
-        if (proposedCol > 0) sheet.getColumn(proposedCol).numFmt = "#,##0.00";
+    const mappingSheet = workbook.addWorksheet(MAPPING_SHEET_NAME, { state: "veryHidden" });
+    mappingSheet.addRow([...MAPPING_HEADERS]);
+    for (const row of matrixRows) {
+        for (const unit of unitColumns) {
+            const variant = row.variantsByUnitId[unit.unitId];
+            if (!variant) continue;
+            mappingSheet.addRow([
+                row.group_id,
+                unit.unitId,
+                variant.product.product_id,
+                unit.label,
+            ]);
+        }
     }
 
     sheet.columns.forEach((column) => {
@@ -349,6 +351,42 @@ function resolvePriceTypeFromProposedHeader(
     return null;
 }
 
+function resolveGroupedPriceHeader(header: string, priceTypes: PriceTypeRef[]) {
+    const match = /^Price (.+) Proposed \((.+)\)$/.exec(header.trim());
+    if (!match) return null;
+    const [, priceTypeLabel, unitLabel] = match;
+    const priceType = priceTypes.find((candidate) => {
+        const label = String(candidate.price_type_name ?? `#${candidate.price_type_id}`).trim();
+        return label === priceTypeLabel;
+    });
+    return priceType ? { priceType, unitLabel } : null;
+}
+
+function groupedListCostUnitLabel(header: string) {
+    const match = /^Proposed List Cost \((.+)\)$/.exec(header.trim());
+    return match?.[1] ?? null;
+}
+
+function readGroupedProductMapping(workbook: XLSX.WorkBook) {
+    const mappingSheet = workbook.Sheets[MAPPING_SHEET_NAME];
+    if (!mappingSheet) return null;
+    const mappingRows = XLSX.utils.sheet_to_json<unknown[]>(mappingSheet, {
+        header: 1,
+        defval: "",
+    }) as unknown[][];
+    const mapping = new Map<string, { productId: number; unitId: number }>();
+    for (const row of mappingRows.slice(1)) {
+        const groupId = Number(row[0]);
+        const unitId = Number(row[1]);
+        const productId = Number(row[2]);
+        const unitLabel = String(row[3] ?? "").trim();
+        if (groupId > 0 && Number.isFinite(unitId) && unitId >= 0 && productId > 0 && unitLabel) {
+            mapping.set(`${groupId}:${unitLabel}`, { productId, unitId });
+        }
+    }
+    return mapping;
+}
+
 export async function parseSupplierBatchExcelImport(args: {
     file: File;
     expectedSupplierId: number;
@@ -371,7 +409,8 @@ export async function parseSupplierBatchExcelImport(args: {
     const templateVersion = Number(readMetaValue(rows, META_TEMPLATE_VERSION));
     if (
         templateVersion !== BATCH_EXCEL_TEMPLATE_VERSION &&
-        templateVersion !== BATCH_EXCEL_COMBINED_TEMPLATE_VERSION
+        templateVersion !== BATCH_EXCEL_COMBINED_TEMPLATE_VERSION &&
+        templateVersion !== BATCH_EXCEL_GROUPED_UOM_TEMPLATE_VERSION
     ) {
         errors.push(`Unsupported template version (${String(templateVersion || "missing")}).`);
     }
@@ -396,6 +435,121 @@ export async function parseSupplierBatchExcelImport(args: {
     headerCells.forEach((header, index) => {
         if (header) headerIndex.set(header, index);
     });
+
+    if (templateVersion === BATCH_EXCEL_GROUPED_UOM_TEMPLATE_VERSION) {
+        const requiredHeaders = IDENTITY_HEADERS.filter((header) => header !== COL_UNIT_ID);
+        for (const required of requiredHeaders) {
+            if (!headerIndex.has(required)) errors.push(`Missing required column: ${required}`);
+        }
+
+        const productMapping = readGroupedProductMapping(workbook);
+        if (!productMapping) errors.push("Workbook is missing its product mapping worksheet.");
+
+        const groupedPriceColumns: Array<{
+            priceType: PriceTypeRef;
+            unitLabel: string;
+            columnIndex: number;
+        }> = [];
+        const groupedCostColumns: Array<{ unitLabel: string; columnIndex: number }> = [];
+        for (const [header, columnIndex] of headerIndex.entries()) {
+            const priceHeader = resolveGroupedPriceHeader(header, priceTypes);
+            if (priceHeader) groupedPriceColumns.push({ ...priceHeader, columnIndex });
+            const costUnitLabel = groupedListCostUnitLabel(header);
+            if (costUnitLabel) groupedCostColumns.push({ unitLabel: costUnitLabel, columnIndex });
+        }
+        if (groupedPriceColumns.length === 0 && groupedCostColumns.length === 0) {
+            errors.push("No proposed price or list cost columns were found in the workbook.");
+        }
+        if (errors.length > 0 || !productMapping) return { ok: false, errors };
+
+        const flatByProductId = new Map<number, FlatSupplierProductRow>();
+        for (const flat of flattenPrintMatrixRows(matrixRows, priceTypes)) {
+            flatByProductId.set(flat.product_id, flat);
+        }
+
+        const priceChanges: SupplierBatchPriceChange[] = [];
+        const costChanges: SupplierBatchCostChange[] = [];
+        let validProposedCount = 0;
+
+        for (let rowIndex = headerRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+            const row = rows[rowIndex];
+            if (!Array.isArray(row) || row.every((cell) => String(cell ?? "").trim() === "")) continue;
+            const groupId = Number(row[headerIndex.get(COL_GROUP_ID)!]);
+            if (!Number.isFinite(groupId) || groupId <= 0) {
+                errors.push(`Row ${rowIndex + 1}: invalid group ID.`);
+                continue;
+            }
+
+            for (const column of groupedCostColumns) {
+                const parsed = parseProposedValue(row[column.columnIndex]);
+                if (parsed.error) {
+                    errors.push(`Row ${rowIndex + 1}, ${proposedListCostHeader(column.unitLabel)}: ${parsed.error}`);
+                    continue;
+                }
+                if (parsed.value === null) continue;
+                const mappedProduct = productMapping.get(`${groupId}:${column.unitLabel}`);
+                const flat = mappedProduct ? flatByProductId.get(mappedProduct.productId) : null;
+                if (
+                    !mappedProduct ||
+                    !flat ||
+                    flat.group_id !== groupId ||
+                    Number(flat.unit_id ?? 0) !== mappedProduct.unitId
+                ) {
+                    errors.push(`Row ${rowIndex + 1}: ${column.unitLabel} is not linked to this product group.`);
+                    continue;
+                }
+                validProposedCount += 1;
+                costChanges.push({
+                    product_id: mappedProduct.productId,
+                    proposed_cost: parsed.value,
+                    product_name: flat.product_name,
+                    product_code: flat.product_code,
+                    current_cost: flat.current_list_cost,
+                });
+            }
+
+            for (const column of groupedPriceColumns) {
+                const parsed = parseProposedValue(row[column.columnIndex]);
+                if (parsed.error) {
+                    errors.push(`Row ${rowIndex + 1}, ${priceProposedHeader(column.priceType, column.unitLabel)}: ${parsed.error}`);
+                    continue;
+                }
+                if (parsed.value === null) continue;
+                const mappedProduct = productMapping.get(`${groupId}:${column.unitLabel}`);
+                const flat = mappedProduct ? flatByProductId.get(mappedProduct.productId) : null;
+                if (
+                    !mappedProduct ||
+                    !flat ||
+                    flat.group_id !== groupId ||
+                    Number(flat.unit_id ?? 0) !== mappedProduct.unitId
+                ) {
+                    errors.push(`Row ${rowIndex + 1}: ${column.unitLabel} is not linked to this product group.`);
+                    continue;
+                }
+                validProposedCount += 1;
+                priceChanges.push({
+                    product_id: mappedProduct.productId,
+                    price_type_id: column.priceType.price_type_id,
+                    proposed_price: parsed.value,
+                    product_name: flat.product_name,
+                    product_code: flat.product_code,
+                    current_price: flat.currentByPriceTypeId.get(column.priceType.price_type_id) ?? null,
+                });
+            }
+        }
+
+        if (errors.length > 0) return { ok: false, errors };
+        if (validProposedCount === 0) {
+            return { ok: false, errors: ["No valid proposed prices or list costs were found in the workbook."] };
+        }
+        return {
+            ok: true,
+            supplierId,
+            supplierName: supplierName || `Supplier #${expectedSupplierId}`,
+            priceChanges,
+            costChanges,
+        };
+    }
 
     for (const required of IDENTITY_HEADERS) {
         if (!headerIndex.has(required)) {

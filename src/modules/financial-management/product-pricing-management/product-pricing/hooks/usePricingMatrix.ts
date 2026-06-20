@@ -28,7 +28,7 @@ import {
 } from "../utils/pivot";
 import { EMPTY_PRICE_ERROR, validatePrice } from "../utils/validators";
 import { applyLoadError } from "../../shared/loadErrorState";
-import { isUnauthorizedError } from "../../shared/apiHttp";
+import { ApiHttpError, isUnauthorizedError } from "../../shared/apiHttp";
 
 type DirtyKey = `${number}:${ProductTierKey}`;
 type PendingKey = `${number}:${ProductTierKey}`;
@@ -301,6 +301,17 @@ export function usePricingMatrix(args: {
             setRows([]);
             setMeta(undefined);
             setUsedUnits([]);
+
+            if (
+                err instanceof ApiHttpError &&
+                err.status === 404 &&
+                err.message.includes("API route was not found")
+            ) {
+                toast.error(
+                    "Restart the dev server (npm run dev:clean) — the pricing matrix API route is not compiled.",
+                );
+            }
+
             applyLoadError(err, "Failed to load pricing matrix", setUnauthorized, setError);
         } finally {
             if (requestId === requestIdRef.current) {

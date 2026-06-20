@@ -18,10 +18,19 @@ export function ApproveDialog(props: {
     children?: React.ReactNode;
 }) {
     const [effectiveAt, setEffectiveAt] = React.useState("");
+    const { onConfirm } = props;
 
     React.useEffect(() => {
         if (!props.open) setEffectiveAt("");
     }, [props.open]);
+
+    const handleConfirm = React.useCallback(async () => {
+        try {
+            await onConfirm(effectiveAt || null);
+        } catch {
+            // The action hook displays the error; keep the approval dialog open.
+        }
+    }, [effectiveAt, onConfirm]);
 
     return (
         <Dialog open={props.open} onOpenChange={props.onOpenChange}>
@@ -59,7 +68,7 @@ export function ApproveDialog(props: {
                     </Button>
                     <Button
                         className={pcrApproveButtonClass}
-                        onClick={() => props.onConfirm(effectiveAt || null)}
+                        onClick={() => void handleConfirm()}
                         disabled={props.loading}
                     >
                         {props.loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

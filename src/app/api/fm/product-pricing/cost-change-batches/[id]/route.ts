@@ -12,6 +12,7 @@ import {
     isRecord,
     normalizeCostHeaderId,
     normalizeCostProductId,
+    normalizeEffectiveAt,
     pickId,
     rejectCostBatch,
     resolveBatchDecisionUserNames,
@@ -161,7 +162,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
         const action = String(body.action ?? "").trim().toLowerCase();
 
         if (action === "approve") {
-            return approveCostBatch(headerId, userId, body.effective_at);
+            return approveCostBatch(headerId, userId, normalizeEffectiveAt(body.effective_at));
         }
 
         if (action === "reject") {

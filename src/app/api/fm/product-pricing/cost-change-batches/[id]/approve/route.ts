@@ -4,6 +4,7 @@ import {
     approveCostBatch,
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
+    normalizeEffectiveAt,
 } from "../../_batch";
 
 export const runtime = "nodejs";
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
         }
 
         const body = (await req.json().catch(() => ({}))) as Partial<{ effective_at: string | null }>;
-        return approveCostBatch(headerId, userId, body.effective_at);
+        return approveCostBatch(headerId, userId, normalizeEffectiveAt(body.effective_at));
     } catch (error: unknown) {
         return directusErrorResponse(error);
     }

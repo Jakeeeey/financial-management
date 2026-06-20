@@ -74,17 +74,14 @@ export async function fetchCostRequestsByIds(requestIds: number[]): Promise<Map<
 }
 
 export async function patchProductCostField(args: { product_id: number; proposed_cost: number; userId?: number | null }) {
-    const { product_id, proposed_cost, userId } = args;
-    const url = `${mustBase()}/items/${PRODUCTS}/${product_id}`;
+    const { product_id, proposed_cost } = args;
+    const params = new URLSearchParams({ fields: "product_id,cost_per_unit" });
+    const url = `${mustBase()}/items/${PRODUCTS}/${product_id}?${params.toString()}`;
 
     await fetchDirectus<unknown>(url, {
         method: "PATCH",
         headers: directusHeaders(),
-        body: JSON.stringify({
-            cost_per_unit: proposed_cost,
-            last_updated: nowManila(),
-            ...(userId ? { updated_by: userId } : {}),
-        }),
+        body: JSON.stringify({ cost_per_unit: proposed_cost }),
     });
 }
 

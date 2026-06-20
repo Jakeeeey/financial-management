@@ -19,10 +19,14 @@ const thinBorder: Partial<ExcelJS.Borders> = {
     left: { style: "thin", color: { argb: BORDER_COLOR } },
 };
 
+export function isProposedColumnHeader(header: string): boolean {
+    return header.includes(" Proposed (") || header.startsWith("Proposed List Cost (");
+}
+
 export function addSupplierBatchInstructionRows(sheet: ExcelJS.Worksheet): number {
     const startRowNumber = sheet.rowCount + 1;
     sheet.addRow(["Instructions"]);
-    sheet.addRow(["", "Enter changes only in columns containing Proposed."]);
+    sheet.addRow(["", "Enter changes only in columns containing Proposed; the unit is shown in each price column header."]);
     sheet.addRow(["", "Leave proposed cells blank when no change is needed."]);
     sheet.addRow(["", "Yellow Pending cells already have active requests; leave them unchanged."]);
     sheet.addRow(["", "Do not edit product identity columns, current-value columns, supplier metadata, or headers."]);
@@ -45,7 +49,7 @@ function styleMetaRow(row: ExcelJS.Row) {
 }
 
 function styleHeaderRow(row: ExcelJS.Row, totalColumns: number) {
-    row.height = 21.95;
+    row.height = 36;
 
     for (let col = 1; col <= totalColumns; col += 1) {
         const cell = row.getCell(col);

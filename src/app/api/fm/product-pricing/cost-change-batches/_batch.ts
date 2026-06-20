@@ -20,6 +20,7 @@ import {
 } from "../price-change-batches/_batch";
 
 import type { NormalizedCostBulkItem } from "../cost-change-requests/_bulk";
+import { patchProductCostField } from "../cost-change-requests/_actions";
 
 export {
     decodeUserIdFromJwtCookie,
@@ -34,7 +35,6 @@ export {
 
 export const COST_HEADERS = HEADERS;
 export const COST_DETAILS = "cost_change_requests";
-export const PRODUCTS = "products";
 
 type DirectusSingle<T> = { data?: T };
 type DirectusList<T> = { data?: T[] };
@@ -346,18 +346,34 @@ export async function getCostDetails(headerId: number) {
     return json.data ?? [];
 }
 
-async function patchProductCostField(args: { productId: number; proposedCost: number; userId?: number | null }) {
-    const body: Record<string, unknown> = {
-        cost_per_unit: args.proposedCost,
-        last_updated: nowManila(),
-    };
-    if (args.userId) body.updated_by = args.userId;
+export function normalizeEffectiveAt(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    const normalized = value.trim();
+    return normalized || null;
+}
 
-    await fetchDirectus(`${mustBase()}/items/${PRODUCTS}/${args.productId}`, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify(body),
-    });
+function approvalStageError(stage: string, error: unknown) {
+    console.error(`[cost-change-batches] ${stage}`, error);
+
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("picked_quantity") && message.includes("Unknown column")) {
+        return NextResponse.json(
+            {
+                error: "Product schema is out of sync in Directus.",
+                details: "Remove the orphan products.picked_quantity field metadata, then restart Directus.",
+                setup_required: true,
+            },
+            { status: 503 },
+        );
+    }
+
+    return NextResponse.json(
+        {
+            error: `List cost approval could not be completed during ${stage}.`,
+            details: "Review the request and current product costs before retrying.",
+        },
+        { status: 502 },
+    );
 }
 
 export async function approveCostBatch(headerId: number, userId: number, effectiveAt?: string | null) {
@@ -387,35 +403,51 @@ export async function approveCostBatch(headerId: number, userId: number, effecti
     const scheduled = isFutureEffectiveAt(effectiveAt);
 
     if (!scheduled) {
-        for (const line of normalized) {
-            await patchProductCostField({ productId: line.productId, proposedCost: line.proposedCost, userId });
+        try {
+            for (const line of normalized) {
+                await patchProductCostField({
+                    product_id: line.productId,
+                    proposed_cost: line.proposedCost,
+                    userId,
+                });
+            }
+        } catch (error: unknown) {
+            return approvalStageError("product cost application", error);
         }
     }
 
     const applicationPatch = approvalApplicationPatch({ userId, effectiveAt, scheduled });
 
-    await fetchDirectus(`${mustBase()}/items/${COST_HEADERS}/${headerId}`, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({
-            status: "APPROVED",
-            approved_by: userId,
-            approved_at: nowManila(),
-            ...applicationPatch,
-        }),
-    });
+    try {
+        await fetchDirectus(`${mustBase()}/items/${COST_HEADERS}/${headerId}`, {
+            method: "PATCH",
+            headers: directusHeaders(),
+            body: JSON.stringify({
+                status: "APPROVED",
+                approved_by: userId,
+                approved_at: nowManila(),
+                ...applicationPatch,
+            }),
+        });
+    } catch (error: unknown) {
+        return approvalStageError("batch status update", error);
+    }
 
-    await Promise.all(
-        normalized
-            .filter((line) => line.requestId > 0)
-            .map((line) =>
-                fetchDirectus(`${mustBase()}/items/${COST_DETAILS}/${line.requestId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders(),
-                    body: JSON.stringify({ status: "APPROVED", ...applicationPatch }),
-                }),
-            ),
-    );
+    try {
+        await Promise.all(
+            normalized
+                .filter((line) => line.requestId > 0)
+                .map((line) =>
+                    fetchDirectus(`${mustBase()}/items/${COST_DETAILS}/${line.requestId}`, {
+                        method: "PATCH",
+                        headers: directusHeaders(),
+                        body: JSON.stringify({ status: "APPROVED", ...applicationPatch }),
+                    }),
+                ),
+        );
+    } catch (error: unknown) {
+        return approvalStageError("detail status update", error);
+    }
 
     if (!scheduled) invalidateGroupIndexCacheOnCatalogChange();
 

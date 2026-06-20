@@ -43,6 +43,14 @@ export function DecisionConfirmationDialog({
         if (!open) setEffectiveAt("");
     }, [open]);
 
+    const handleConfirm = React.useCallback(async () => {
+        try {
+            await onConfirm(isReject ? null : effectiveAt || null);
+        } catch {
+            // The action hook displays the error; keep the confirmation dialog open.
+        }
+    }, [effectiveAt, isReject, onConfirm]);
+
     return (
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
@@ -89,7 +97,7 @@ export function DecisionConfirmationDialog({
                     <Button
                         variant={isReject ? "outline" : "default"}
                         className={isReject ? pcrRejectButtonClass : pcrApproveButtonClass}
-                        onClick={() => void onConfirm(isReject ? null : effectiveAt || null)}
+                        onClick={() => void handleConfirm()}
                         disabled={loading}
                     >
                         {loading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
