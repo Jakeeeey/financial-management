@@ -21,7 +21,7 @@ function pickId(v: string | number | null | undefined | Record<string, unknown>)
 export default function ProductPrintablesView({ userName }: { userName?: string }) {
     const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
     const { categories, brands, units, suppliers, priceTypes, loading: lookupsLoading } = useLookups(filters);
-    const { matrixRows, usedUnitIds, loading: productsLoading, resetFilters } = useProductPrintables(filters, setFilters, categories, brands);
+    const { matrixRows, usedUnitIds, loading: productsLoading, resetFilters } = useProductPrintables(filters, setFilters, categories, brands, priceTypes);
     const [printOpen, setPrintOpen] = React.useState(false);
     const [isPrinting, setIsPrinting] = React.useState(false);
     const [allMatrixRows, setAllMatrixRows] = React.useState<MatrixRow[]>([]);
@@ -78,55 +78,72 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
             const json = await res.json();
             const products = json.data ?? [];
 
-            const catMap = new Map(categories.map(c => [Number(c.category_id), c.category_name]));
-            const brandMap = new Map(brands.map(b => [Number(b.brand_id), b.brand_name]));
-
-            const groups = new Map<number, ProductRow[]>();
-            const unitIds = new Set<number>();
-
-            for (const p of products) {
-                const pid = pickId(p.product_id);
-                const parentId = pickId(p.parent_id);
-                const gid = parentId || pid;
-
-                if (gid) {
-                    if (!groups.has(gid)) groups.set(gid, []);
-                    groups.get(gid)!.push(p);
-                }
-
-                const uomId = pickId(p.unit_of_measurement);
-                if (uomId) unitIds.add(uomId);
-            }
-
+            const productIds = products.map((p: ProductRow) => pickId(p.product_id)).filter((id: number | null): id is number => id !== null);
+            let priceMap = new Map<number, Record<string, number | null>>();
+            
             const assembled: MatrixRow[] = [];
-            for (const [groupId, variants] of groups.entries()) {
-                const display = variants.find(v => Number(v.product_id) === groupId) || variants[0];
-                const variantsByUnitId: Record<number, VariantCell> = {};
+            const unitIds = new Set<number>();
+            
+            if (productIds.length > 0) {
+                const { getPricesForProducts } = await import("../../product-pricing/providers/pricingApi");
+                const { pivotPrices } = await import("../../product-pricing/utils/pivot");
+                const { getDynamicTiers } = await import("../../product-pricing/utils/constants");
+                
+                const priceRes = await getPricesForProducts(productIds);
+                priceMap = pivotPrices(priceTypes, priceRes.data ?? []);
+                
+                const emptyPivot = getDynamicTiers(priceTypes).reduce((acc, tier) => {
+                    acc[tier] = null;
+                    return acc;
+                }, {} as Record<string, number | null>);
 
-                for (const v of variants) {
-                    const uomId = Number(v.unit_of_measurement);
-                    if (uomId) {
-                        variantsByUnitId[uomId] = {
-                            product: v,
-                            tiers: {
-                                ListPrice: v.cost_per_unit ? Number(v.cost_per_unit) : null,
-                                A: v.priceA ? Number(v.priceA) : null,
-                                B: v.priceB ? Number(v.priceB) : null,
-                                C: v.priceC ? Number(v.priceC) : null,
-                                D: v.priceD ? Number(v.priceD) : null,
-                                E: v.priceE ? Number(v.priceE) : null,
-                            }
-                        };
+                const catMap = new Map(categories.map(c => [Number(c.category_id), c.category_name]));
+                const brandMap = new Map(brands.map(b => [Number(b.brand_id), b.brand_name]));
+
+                const groups = new Map<number, ProductRow[]>();
+
+                for (const p of products) {
+                    const pid = pickId(p.product_id);
+                    const parentId = pickId(p.parent_id);
+                    const gid = parentId || pid;
+
+                    if (gid) {
+                        if (!groups.has(gid)) groups.set(gid, []);
+                        groups.get(gid)!.push(p);
                     }
+
+                    const uomId = pickId(p.unit_of_measurement);
+                    if (uomId) unitIds.add(uomId);
                 }
 
-                assembled.push({
-                    group_id: groupId,
-                    display,
-                    variantsByUnitId,
-                    category_name: catMap.get(Number(display.product_category)) || "—",
-                    brand_name: brandMap.get(Number(display.product_brand)) || "—",
-                });
+                for (const [groupId, variants] of groups.entries()) {
+                    const display = variants.find(v => Number(v.product_id) === groupId) || variants[0];
+                    const variantsByUnitId: Record<number, VariantCell> = {};
+
+                    for (const v of variants) {
+                        const uomId = Number(v.unit_of_measurement);
+                        if (uomId) {
+                            const pid = pickId(v.product_id);
+                            const piv = pid ? (priceMap.get(pid) ?? emptyPivot) : emptyPivot;
+
+                            variantsByUnitId[uomId] = {
+                                product: v,
+                                tiers: {
+                                    ...piv,
+                                    ListPrice: v.cost_per_unit ? Number(v.cost_per_unit) : null,
+                                }
+                            };
+                        }
+                    }
+
+                    assembled.push({
+                        group_id: groupId,
+                        display,
+                        variantsByUnitId,
+                        category_name: catMap.get(Number(display.product_category)) || "—",
+                        brand_name: brandMap.get(Number(display.product_brand)) || "—",
+                    });
+                }
             }
 
             setAllMatrixRows(assembled);

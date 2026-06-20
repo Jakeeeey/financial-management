@@ -124,11 +124,7 @@ export default function PrintablesMatrixTable({
                                 {row.display.product_name}
                             </TableCell>
                             {activePriceTypes.map((pt) => {
-                                // If synthetic List Price (ID -1), use ListPrice key
-                                // Otherwise, calculate its A-E mapping based on its position in the FULL price types list
-                                const fullIndex = priceTypes.indexOf(pt);
-                                const nonSyntheticIndex = priceTypes.slice(0, fullIndex).filter(p => p.price_type_id !== -1).length;
-                                const ptSuffix = pt.price_type_id === -1 ? "ListPrice" : (["A", "B", "C", "D", "E"][nonSyntheticIndex] || "A");
+                                const ptSuffix = pt.price_type_id === -1 ? "ListPrice" : pt.price_type_name;
                                 
                                 return (
                                     <React.Fragment key={pt.price_type_id}>
@@ -146,7 +142,7 @@ export default function PrintablesMatrixTable({
                                                 >
                                                     {price != null ? (
                                                         <span className="font-bold text-[#374151]">
-                                                            {price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                            {price.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                                                         </span>
                                                     ) : (
                                                         <span className="text-[#D1D5DB]">—</span>
