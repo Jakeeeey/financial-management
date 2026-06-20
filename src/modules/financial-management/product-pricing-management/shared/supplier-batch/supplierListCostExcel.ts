@@ -23,6 +23,7 @@ const COL_PRODUCT_NAME = "Product Name";
 const COL_GROUP_ID = "Group ID";
 const COL_PARENT_ID = "Parent ID";
 const COL_UNIT_ID = "Unit ID";
+const COL_UNIT_OF_MEASUREMENT = "Unit of Measurement";
 const COL_CURRENT_LIST_COST = "Current List Cost";
 const COL_PROPOSED_LIST_COST = "Proposed List Cost";
 const PENDING_MARKER = "Pending";
@@ -38,6 +39,25 @@ const IDENTITY_HEADERS = [
     COL_CURRENT_LIST_COST,
     COL_PROPOSED_LIST_COST,
 ] as const;
+
+const EXPORT_HEADERS = [
+    COL_PRODUCT_ID,
+    COL_PRODUCT_CODE,
+    COL_BARCODE,
+    COL_PRODUCT_NAME,
+    COL_GROUP_ID,
+    COL_PARENT_ID,
+    COL_UNIT_ID,
+    COL_UNIT_OF_MEASUREMENT,
+    COL_CURRENT_LIST_COST,
+    COL_PROPOSED_LIST_COST,
+] as const;
+
+type UnitRef = {
+    unit_id?: number | string | null;
+    unit_name?: string | null;
+    unit_shortcut?: string | null;
+};
 
 export type ListCostImportLine = {
     product_id: number;
@@ -74,14 +94,33 @@ function pendingNote(value: number | null | undefined) {
     return `List cost already has a pending request.${amount}`;
 }
 
+function buildUnitLabelMap(units: UnitRef[] | undefined) {
+    const map = new Map<number, string>();
+    for (const unit of units ?? []) {
+        const id = Number(unit.unit_id);
+        if (!Number.isFinite(id) || id <= 0) continue;
+        const name = String(unit.unit_name ?? "").trim();
+        const shortcut = String(unit.unit_shortcut ?? "").trim();
+        map.set(id, name || shortcut || `Unit #${id}`);
+    }
+    return map;
+}
+
+function unitLabel(unitId: number | null, unitsById: Map<number, string>) {
+    if (!unitId) return "";
+    return unitsById.get(unitId) ?? `Unit #${unitId}`;
+}
+
 export async function exportSupplierListCostExcel(args: {
     supplierId: number;
     supplierName: string;
     matrixRows: MatrixRow[];
+    units?: UnitRef[];
     pendingCostRequests?: ListCostPendingRequest[];
 }) {
-    const { supplierId, supplierName, matrixRows, pendingCostRequests = [] } = args;
+    const { supplierId, supplierName, matrixRows, units, pendingCostRequests = [] } = args;
     const flatRows = flattenListCostMatrixRows(matrixRows);
+    const unitsById = buildUnitLabelMap(units);
     const pendingCostByProductId = new Map(
         pendingCostRequests.map((row) => [row.product_id, row.proposed_cost] as const),
     );
@@ -98,10 +137,10 @@ export async function exportSupplierListCostExcel(args: {
     const instructionStartRowNumber = addSupplierBatchInstructionRows(sheet);
 
     const headerRowNumber = sheet.rowCount + 1;
-    const headerRow = sheet.addRow([...IDENTITY_HEADERS]);
+    const headerRow = sheet.addRow([...EXPORT_HEADERS]);
     headerRow.font = { bold: true };
     const dataStartRowNumber = sheet.rowCount + 1;
-    const proposedColumnIndexes = [IDENTITY_HEADERS.indexOf(COL_PROPOSED_LIST_COST) + 1];
+    const proposedColumnIndexes = [EXPORT_HEADERS.indexOf(COL_PROPOSED_LIST_COST) + 1];
     const pendingCellIndexes: Array<{ rowNumber: number; columnIndex: number; note?: string }> = [];
 
     flatRows.forEach((row, rowIndex) => {
@@ -114,6 +153,7 @@ export async function exportSupplierListCostExcel(args: {
             row.group_id,
             row.parent_id ?? "",
             row.unit_id ?? "",
+            unitLabel(row.unit_id, unitsById),
             row.current_list_cost,
             null,
         ]);
@@ -126,8 +166,8 @@ export async function exportSupplierListCostExcel(args: {
         }
     });
 
-    const currentCol = IDENTITY_HEADERS.indexOf(COL_CURRENT_LIST_COST) + 1;
-    const proposedCol = IDENTITY_HEADERS.indexOf(COL_PROPOSED_LIST_COST) + 1;
+    const currentCol = EXPORT_HEADERS.indexOf(COL_CURRENT_LIST_COST) + 1;
+    const proposedCol = EXPORT_HEADERS.indexOf(COL_PROPOSED_LIST_COST) + 1;
     if (currentCol > 0) sheet.getColumn(currentCol).numFmt = "#,##0.00";
     if (proposedCol > 0) sheet.getColumn(proposedCol).numFmt = "#,##0.00";
 
@@ -139,7 +179,7 @@ export async function exportSupplierListCostExcel(args: {
         sheet,
         instructionStartRowNumber,
         headerRowNumber,
-        totalColumns: IDENTITY_HEADERS.length,
+        totalColumns: EXPORT_HEADERS.length,
         dataStartRowNumber,
         proposedColumnIndexes,
         pendingCellIndexes,

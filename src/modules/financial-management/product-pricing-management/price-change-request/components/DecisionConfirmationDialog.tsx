@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { Loader2 } from "lucide-react";
 
 import {
@@ -22,7 +23,7 @@ type Props = {
     description?: string;
     rejectReason?: string;
     onOpenChange: (open: boolean) => void;
-    onConfirm: () => Promise<void> | void;
+    onConfirm: (effectiveAt?: string | null) => Promise<void> | void;
 };
 
 export function DecisionConfirmationDialog({
@@ -36,6 +37,11 @@ export function DecisionConfirmationDialog({
     onConfirm,
 }: Props) {
     const isReject = action === "reject";
+    const [effectiveAt, setEffectiveAt] = React.useState("");
+
+    React.useEffect(() => {
+        if (!open) setEffectiveAt("");
+    }, [open]);
 
     return (
         <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -57,6 +63,25 @@ export function DecisionConfirmationDialog({
                     </div>
                 ) : null}
 
+                {!isReject ? (
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium" htmlFor="price-change-effective-at">
+                            Effective Date/Time
+                        </label>
+                        <input
+                            id="price-change-effective-at"
+                            type="datetime-local"
+                            className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            value={effectiveAt}
+                            onChange={(event) => setEffectiveAt(event.target.value)}
+                            disabled={loading}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            Leave blank to apply immediately, or choose a future time to schedule the change.
+                        </p>
+                    </div>
+                ) : null}
+
                 <AlertDialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
                         Cancel
@@ -64,7 +89,7 @@ export function DecisionConfirmationDialog({
                     <Button
                         variant={isReject ? "outline" : "default"}
                         className={isReject ? pcrRejectButtonClass : pcrApproveButtonClass}
-                        onClick={() => void onConfirm()}
+                        onClick={() => void onConfirm(isReject ? null : effectiveAt || null)}
                         disabled={loading}
                     >
                         {loading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}

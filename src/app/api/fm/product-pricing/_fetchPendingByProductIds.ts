@@ -25,6 +25,7 @@ export type PendingPcrRow = {
         | null;
     proposed_price?: number | string | null;
     status?: string | null;
+    application_status?: string | null;
 };
 
 export type PendingCcrRow = {
@@ -40,7 +41,32 @@ export type PendingCcrRow = {
         | null;
     proposed_cost?: number | string | null;
     status?: string | null;
+    application_status?: string | null;
 };
+
+function applyPendingOrScheduledFilter(params: URLSearchParams, status: string) {
+    if (status !== "PENDING") {
+        if (status) params.set("filter[status][_eq]", status);
+        return;
+    }
+
+    params.set("filter[_and][0][_or][0][status][_eq]", "PENDING");
+    params.set("filter[_and][0][_or][1][_and][0][status][_eq]", "APPROVED");
+    params.set("filter[_and][0][_or][1][_and][1][application_status][_eq]", "SCHEDULED");
+}
+
+function isScheduleFieldAccessError(error: unknown) {
+    if (!(error instanceof Error) || !error.message) return false;
+
+    try {
+        const parsed: unknown = JSON.parse(error.message);
+        if (typeof parsed !== "object" || parsed === null) return false;
+        const text = JSON.stringify(parsed).toLowerCase();
+        return text.includes("application_status");
+    } catch {
+        return error.message.toLowerCase().includes("application_status");
+    }
+}
 
 export async function fetchPendingPcrByProductIds(
     productIds: number[],
@@ -54,6 +80,16 @@ export async function fetchPendingPcrByProductIds(
         "proposed_price",
         "product_id.product_id",
         "price_type_id.price_type_id",
+        "status",
+        "application_status",
+    ].join(",");
+    const legacyFields = [
+        "product_id",
+        "price_type_id",
+        "proposed_price",
+        "product_id.product_id",
+        "price_type_id.price_type_id",
+        "status",
     ].join(",");
 
     const batches = chunkArray(productIds, IN_CHUNK_SIZE);
@@ -63,14 +99,31 @@ export async function fetchPendingPcrByProductIds(
             params.set("limit", "500");
             params.set("fields", fields);
             params.set("filter[product_id][_in]", batch.join(","));
-            if (status) params.set("filter[status][_eq]", status);
+            applyPendingOrScheduledFilter(params, status);
 
             const url = `${mustBase()}/items/${PCR}?${params.toString()}`;
             const json = await fetchDirectus<{ data?: PendingPcrRow[] }>(url, {
                 headers: directusHeaders(),
             });
             return json.data ?? [];
-        }),
+        }).map((promise, index) =>
+            promise.catch(async (error: unknown) => {
+                if (!isScheduleFieldAccessError(error)) throw error;
+
+                const batch = batches[index];
+                const params = new URLSearchParams();
+                params.set("limit", "500");
+                params.set("fields", legacyFields);
+                params.set("filter[product_id][_in]", batch.join(","));
+                if (status) params.set("filter[status][_eq]", status);
+
+                const url = `${mustBase()}/items/${PCR}?${params.toString()}`;
+                const json = await fetchDirectus<{ data?: PendingPcrRow[] }>(url, {
+                    headers: directusHeaders(),
+                });
+                return json.data ?? [];
+            }),
+        ),
     );
 
     return results.flat();
@@ -82,7 +135,8 @@ export async function fetchPendingCcrByProductIds(
 ): Promise<PendingCcrRow[]> {
     if (productIds.length === 0) return [];
 
-    const fields = ["product_id", "proposed_cost", "product_id.product_id"].join(",");
+    const fields = ["product_id", "proposed_cost", "product_id.product_id", "status", "application_status"].join(",");
+    const legacyFields = ["product_id", "proposed_cost", "product_id.product_id", "status"].join(",");
 
     const batches = chunkArray(productIds, IN_CHUNK_SIZE);
     const results = await Promise.all(
@@ -91,14 +145,31 @@ export async function fetchPendingCcrByProductIds(
             params.set("limit", "500");
             params.set("fields", fields);
             params.set("filter[product_id][_in]", batch.join(","));
-            if (status) params.set("filter[status][_eq]", status);
+            applyPendingOrScheduledFilter(params, status);
 
             const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
             const json = await fetchDirectus<{ data?: PendingCcrRow[] }>(url, {
                 headers: directusHeaders(),
             });
             return json.data ?? [];
-        }),
+        }).map((promise, index) =>
+            promise.catch(async (error: unknown) => {
+                if (!isScheduleFieldAccessError(error)) throw error;
+
+                const batch = batches[index];
+                const params = new URLSearchParams();
+                params.set("limit", "500");
+                params.set("fields", legacyFields);
+                params.set("filter[product_id][_in]", batch.join(","));
+                if (status) params.set("filter[status][_eq]", status);
+
+                const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
+                const json = await fetchDirectus<{ data?: PendingCcrRow[] }>(url, {
+                    headers: directusHeaders(),
+                });
+                return json.data ?? [];
+            }),
+        ),
     );
 
     return results.flat();

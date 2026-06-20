@@ -30,6 +30,7 @@ const COL_PRODUCT_NAME = "Product Name";
 const COL_GROUP_ID = "Group ID";
 const COL_PARENT_ID = "Parent ID";
 const COL_UNIT_ID = "Unit ID";
+const COL_UNIT_OF_MEASUREMENT = "Unit of Measurement";
 const COL_CURRENT_LIST_COST = "Current List Cost";
 const COL_PROPOSED_LIST_COST = "Proposed List Cost";
 const PENDING_MARKER = "Pending";
@@ -43,6 +44,23 @@ const IDENTITY_HEADERS = [
     COL_PARENT_ID,
     COL_UNIT_ID,
 ] as const;
+
+const EXPORT_IDENTITY_HEADERS = [
+    COL_PRODUCT_ID,
+    COL_PRODUCT_CODE,
+    COL_BARCODE,
+    COL_PRODUCT_NAME,
+    COL_GROUP_ID,
+    COL_PARENT_ID,
+    COL_UNIT_ID,
+    COL_UNIT_OF_MEASUREMENT,
+] as const;
+
+type UnitRef = {
+    unit_id?: number | string | null;
+    unit_name?: string | null;
+    unit_shortcut?: string | null;
+};
 
 export type SupplierBatchPriceChange = {
     product_id: number;
@@ -102,11 +120,29 @@ function pendingNote(label: string, value: number | null | undefined) {
     return `${label} already has a pending request.${amount}`;
 }
 
+function buildUnitLabelMap(units: UnitRef[] | undefined) {
+    const map = new Map<number, string>();
+    for (const unit of units ?? []) {
+        const id = Number(unit.unit_id);
+        if (!Number.isFinite(id) || id <= 0) continue;
+        const name = String(unit.unit_name ?? "").trim();
+        const shortcut = String(unit.unit_shortcut ?? "").trim();
+        map.set(id, name || shortcut || `Unit #${id}`);
+    }
+    return map;
+}
+
+function unitLabel(unitId: number | null, unitsById: Map<number, string>) {
+    if (!unitId) return "";
+    return unitsById.get(unitId) ?? `Unit #${unitId}`;
+}
+
 export async function exportSupplierBatchExcel(args: {
     supplierId: number;
     supplierName: string;
     matrixRows: MatrixRow[];
     priceTypes: PriceTypeRef[];
+    units?: UnitRef[];
     filenamePrefix?: string;
     includeListCost?: boolean;
     pendingPriceRequests?: SupplierBatchPendingPrice[];
@@ -117,6 +153,7 @@ export async function exportSupplierBatchExcel(args: {
         supplierName,
         matrixRows,
         priceTypes,
+        units,
         filenamePrefix = "price-change-batch",
         includeListCost = false,
         pendingPriceRequests = [],
@@ -124,6 +161,7 @@ export async function exportSupplierBatchExcel(args: {
     } = args;
     const sortedPriceTypes = sortPriceTypes(priceTypes);
     const flatRows = flattenPrintMatrixRows(matrixRows, sortedPriceTypes);
+    const unitsById = buildUnitLabelMap(units);
     const pendingPriceByKey = new Map<string, number | null>(
         pendingPriceRequests.map((row) => [`${row.product_id}:${row.price_type_id}`, row.proposed_price] as const),
     );
@@ -146,7 +184,7 @@ export async function exportSupplierBatchExcel(args: {
     const instructionStartRowNumber = addSupplierBatchInstructionRows(sheet);
 
     const headers = [
-        ...IDENTITY_HEADERS,
+        ...EXPORT_IDENTITY_HEADERS,
         ...(includeListCost ? [COL_CURRENT_LIST_COST, COL_PROPOSED_LIST_COST] : []),
         ...sortedPriceTypes.flatMap((priceType) => [
             currentColumnHeader(priceType),
@@ -174,6 +212,7 @@ export async function exportSupplierBatchExcel(args: {
             row.group_id,
             row.parent_id ?? "",
             row.unit_id ?? "",
+            unitLabel(row.unit_id, unitsById),
         ];
 
         if (includeListCost) {

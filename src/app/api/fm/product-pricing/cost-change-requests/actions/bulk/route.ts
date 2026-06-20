@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
             action: BulkAction;
             request_ids: number[];
             reject_reason?: string;
+            effective_at?: string | null;
         }>;
 
         const action = body.action;
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
             if (action === "approve") {
                 queued.push({
                     request_id,
-                    run: () => approveOneCostRequest(userId, request_id, row),
+                    run: () => approveOneCostRequest(userId, request_id, row, body.effective_at),
                 });
             } else {
                 queued.push({

@@ -22,6 +22,10 @@ const PCR_FIELDS = [
     "price_type_id",
     "proposed_price",
     "status",
+    "effective_at",
+    "application_status",
+    "applied_at",
+    "applied_by",
     "requested_by",
     "header_id",
 ].join(",");
@@ -47,6 +51,10 @@ export type PcrRow = {
     price_type_id?: number | string | { price_type_id?: number | string | null } | null;
     proposed_price?: number | string | null;
     status?: string | null;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
     requested_by?: number | string | null;
     header_id?:
         | number
@@ -120,8 +128,39 @@ async function findExistingPriceId(productId: number, priceTypeId: number): Prom
     return Number.isFinite(id) && id > 0 ? id : null;
 }
 
-async function applyProposedPrice(args: {
-    userId: number;
+export function isFutureEffectiveAt(effectiveAt?: string | null): boolean {
+    if (!effectiveAt) return false;
+    const effectiveDate = new Date(effectiveAt);
+    return Number.isFinite(effectiveDate.getTime()) && effectiveDate.getTime() > Date.now();
+}
+
+export function approvalApplicationPatch(args: {
+    userId?: number | null;
+    effectiveAt?: string | null;
+    scheduled?: boolean;
+}) {
+    const now = nowManila();
+    const effectiveAt = args.effectiveAt || now;
+
+    if (args.scheduled) {
+        return {
+            effective_at: effectiveAt,
+            application_status: "SCHEDULED",
+            applied_at: null,
+            applied_by: null,
+        };
+    }
+
+    return {
+        effective_at: effectiveAt,
+        application_status: "APPLIED",
+        applied_at: now,
+        ...(args.userId ? { applied_by: args.userId } : {}),
+    };
+}
+
+export async function applyProposedPrice(args: {
+    userId?: number | null;
     productId: number;
     priceTypeId: number;
     proposedPrice: number;
@@ -137,8 +176,8 @@ async function applyProposedPrice(args: {
         product_id: productId,
         price_type_id: priceTypeId,
         price: proposedPrice,
-        updated_by: userId,
         updated_at: nowManila(),
+        ...(userId ? { updated_by: userId } : {}),
     };
 
     if (existingId) {
@@ -165,14 +204,16 @@ async function applyProposedPrice(args: {
     });
 
     if (productPatch) {
+        const productPayload = {
+            ...productPatch,
+            last_updated: nowManila(),
+            ...(userId ? { updated_by: userId } : {}),
+        };
+
         await fetchDirectus(`${mustBase()}/items/${PRODUCTS}/${productId}`, {
             method: "PATCH",
             headers: directusHeaders(),
-            body: JSON.stringify({
-                ...productPatch,
-                last_updated: nowManila(),
-                updated_by: userId,
-            }),
+            body: JSON.stringify(productPayload),
         });
     }
 
@@ -183,6 +224,7 @@ export async function approveOneOrphanPriceRequest(
     userId: number,
     request_id: number,
     row: PcrRow,
+    effectiveAt?: string | null,
 ): Promise<PcrRow> {
     if (!isOrphanPriceRequest(row)) {
         throw new Error("This request is linked to a batch. Approve the batch instead.");
@@ -204,7 +246,10 @@ export async function approveOneOrphanPriceRequest(
         throw new Error("Invalid proposed_price on request.");
     }
 
-    await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
+    const scheduled = isFutureEffectiveAt(effectiveAt);
+    if (!scheduled) {
+        await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
+    }
 
     const url = `${mustBase()}/items/${PCR}/${request_id}`;
     const updated = await fetchDirectus<DirectusSingleResponse<PcrRow>>(url, {
@@ -214,8 +259,11 @@ export async function approveOneOrphanPriceRequest(
             status: "APPROVED",
             approved_by: userId,
             approved_at: nowManila(),
+            ...approvalApplicationPatch({ userId, effectiveAt, scheduled }),
         }),
     });
+
+    if (!scheduled) invalidateGroupIndexCacheOnCatalogChange();
 
     return updated.data;
 }

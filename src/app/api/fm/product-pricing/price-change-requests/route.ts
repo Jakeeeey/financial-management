@@ -63,6 +63,15 @@ type DirectusPCRRow = {
     requested_by?: number | string | null;
     requested_by_name?: string | null;
     requested_at?: string | null;
+    approved_by?: number | string | null;
+    approved_at?: string | null;
+    rejected_by?: number | string | null;
+    rejected_at?: string | null;
+    reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
 };
 
 type DirectusListPCRResponse = {
@@ -254,6 +263,15 @@ export async function GET(req: NextRequest) {
                 "status",
                 "requested_by",
                 "requested_at",
+                "approved_by",
+                "approved_at",
+                "rejected_by",
+                "rejected_at",
+                "reject_reason",
+                "effective_at",
+                "application_status",
+                "applied_at",
+                "applied_by",
                 "header_id",
                 "header_id.header_id",
                 "header_id.remarks",

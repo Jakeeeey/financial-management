@@ -81,6 +81,7 @@ export function usePriceTypeSupplierExportImport({
                 supplierName: supplier.name,
                 matrixRows: data.rows,
                 priceTypes: data.priceTypes,
+                units: data.units,
                 includeListCost,
                 pendingPriceRequests: pendingPriceResult.data,
                 pendingCostRequests: pendingCostResult.data,

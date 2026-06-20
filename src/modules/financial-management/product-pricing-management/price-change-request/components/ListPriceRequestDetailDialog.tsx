@@ -27,7 +27,7 @@ type Props = {
     acting: boolean;
     readOnly?: boolean;
     onOpenChange: (open: boolean) => void;
-    onApprove?: (requestId: number) => Promise<void>;
+    onApprove?: (requestId: number, effectiveAt?: string | null) => Promise<void>;
     onReject?: (requestId: number, reason: string) => Promise<void>;
 };
 
@@ -104,11 +104,11 @@ export function ListPriceRequestDetailDialog({
     const status = String(row?.status ?? "").toUpperCase();
     const busy = acting || submitting;
 
-    const handleApprove = async () => {
+    const handleApprove = async (effectiveAt?: string | null) => {
         if (!requestId || !onApprove) return;
         setSubmitting(true);
         try {
-            await onApprove(requestId);
+            await onApprove(requestId, effectiveAt);
             setConfirmingAction(null);
             onOpenChange(false);
         } finally {
@@ -168,12 +168,28 @@ export function ListPriceRequestDetailDialog({
                                 <div className="mt-1 font-medium">{safeDate(row.requested_at)}</div>
                             </div>
                             {status === "APPROVED" ? (
-                                <div>
-                                    <div className="text-xs font-medium uppercase text-muted-foreground">Approved By</div>
-                                    <div className="mt-1 font-medium">
-                                        {decisionUserLabel(approvedBy, approvedByName)}
+                                <>
+                                    <div>
+                                        <div className="text-xs font-medium uppercase text-muted-foreground">Approved By</div>
+                                        <div className="mt-1 font-medium">
+                                            {decisionUserLabel(approvedBy, approvedByName)}
+                                        </div>
                                     </div>
-                                </div>
+                                    <div>
+                                        <div className="text-xs font-medium uppercase text-muted-foreground">Effective At</div>
+                                        <div className="mt-1 font-medium">{safeDate(row.effective_at)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-medium uppercase text-muted-foreground">Application Status</div>
+                                        <div className="mt-1 font-medium">{row.application_status || "-"}</div>
+                                    </div>
+                                    {row.application_status === "APPLIED" ? (
+                                        <div>
+                                            <div className="text-xs font-medium uppercase text-muted-foreground">Applied At</div>
+                                            <div className="mt-1 font-medium">{safeDate(row.applied_at)}</div>
+                                        </div>
+                                    ) : null}
+                                </>
                             ) : null}
                             {status === "REJECTED" ? (
                                 <div>

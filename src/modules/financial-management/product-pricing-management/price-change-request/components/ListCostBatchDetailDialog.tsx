@@ -39,7 +39,7 @@ type Props = {
     acting: boolean;
     readOnly?: boolean;
     onOpenChange: (open: boolean) => void;
-    onApprove?: (headerId: number) => Promise<void> | void;
+    onApprove?: (headerId: number, effectiveAt?: string | null) => Promise<void> | void;
     onReject?: (headerId: number, reason: string) => Promise<void> | void;
 };
 
@@ -157,10 +157,10 @@ export function ListCostBatchDetailDialog({
         [onOpenChange],
     );
 
-    const handleApprove = React.useCallback(async () => {
+    const handleApprove = React.useCallback(async (effectiveAt?: string | null) => {
         if (!headerId) return;
         if (!headerId || !onApprove) return;
-        await onApprove(headerId);
+        await onApprove(headerId, effectiveAt);
         setConfirmingAction(null);
         handleOpenChange(false);
     }, [handleOpenChange, headerId, onApprove]);

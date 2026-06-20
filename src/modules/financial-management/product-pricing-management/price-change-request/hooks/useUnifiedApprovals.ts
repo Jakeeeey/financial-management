@@ -58,11 +58,12 @@ export function useUnifiedApprovals(
         void refresh();
     }, [enabled, queryKey, refresh]);
 
-    const approveBatch = React.useCallback(async (headerId: number) => {
+    const approveBatch = React.useCallback(async (headerId: number, effectiveAt?: string | null) => {
         setActing(true);
         try {
-            const result = await api.approvePriceChangeBatch(headerId);
-            toast.success(`${result.affected} price change line(s) approved and applied.`);
+            const result = await api.approvePriceChangeBatch(headerId, effectiveAt);
+            const verb = result.application_status === "SCHEDULED" ? "approved and scheduled" : "approved and applied";
+            toast.success(`${result.affected} price change line(s) ${verb}.`);
             await refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to approve batch", { setUnauthorized })) {
@@ -90,11 +91,12 @@ export function useUnifiedApprovals(
         }
     }, [refresh]);
 
-    const approveCostBatch = React.useCallback(async (headerId: number) => {
+    const approveCostBatch = React.useCallback(async (headerId: number, effectiveAt?: string | null) => {
         setActing(true);
         try {
-            const result = await api.approveListCostBatch(headerId);
-            toast.success(`${result.affected} list cost line(s) approved and applied.`);
+            const result = await api.approveListCostBatch(headerId, effectiveAt);
+            const verb = result.application_status === "SCHEDULED" ? "approved and scheduled" : "approved and applied";
+            toast.success(`${result.affected} list cost line(s) ${verb}.`);
             await refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to approve list cost batch", { setUnauthorized })) {
@@ -122,11 +124,12 @@ export function useUnifiedApprovals(
         }
     }, [refresh]);
 
-    const approvePriceRequest = React.useCallback(async (requestId: number) => {
+    const approvePriceRequest = React.useCallback(async (requestId: number, effectiveAt?: string | null) => {
         setActing(true);
         try {
-            await api.actionPriceRequest({ action: "approve", request_id: requestId });
-            toast.success("Approved and applied.");
+            const result = await api.actionPriceRequest({ action: "approve", request_id: requestId, effective_at: effectiveAt });
+            const verb = result.data?.application_status === "SCHEDULED" ? "Approved and scheduled." : "Approved and applied.";
+            toast.success(verb);
             await refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to approve request", { setUnauthorized })) {

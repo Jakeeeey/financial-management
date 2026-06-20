@@ -27,9 +27,9 @@ type Props = {
     acting: boolean;
     readOnly?: boolean;
     onOpenChange: (open: boolean) => void;
-    onApproveBatch?: (headerId: number) => Promise<void>;
+    onApproveBatch?: (headerId: number, effectiveAt?: string | null) => Promise<void>;
     onRejectBatch?: (headerId: number, reason: string) => Promise<void>;
-    onApproveRequest?: (requestId: number) => Promise<void>;
+    onApproveRequest?: (requestId: number, effectiveAt?: string | null) => Promise<void>;
     onRejectRequest?: (requestId: number, reason: string) => Promise<void>;
 };
 
@@ -112,14 +112,14 @@ export function PriceTypeRequestDetailDialog({
         onApproveRequest != null &&
         onRejectRequest != null;
 
-    const handleApprove = async () => {
+    const handleApprove = async (effectiveAt?: string | null) => {
         if (!requestId || !onApproveBatch || !onApproveRequest) return;
         setSubmitting(true);
         try {
             if (isBatchLinked && headerId) {
-                await onApproveBatch(headerId);
+                await onApproveBatch(headerId, effectiveAt);
             } else {
-                await onApproveRequest(requestId);
+                await onApproveRequest(requestId, effectiveAt);
             }
             setConfirmingAction(null);
             onOpenChange(false);
@@ -219,12 +219,28 @@ export function PriceTypeRequestDetailDialog({
                                 <div className="mt-1 font-medium">{safeDate(row.requested_at)}</div>
                             </div>
                             {status === "APPROVED" ? (
-                                <div>
-                                    <div className="text-xs font-medium uppercase text-muted-foreground">Approved By</div>
-                                    <div className="mt-1 font-medium">
-                                        {decisionUserLabel(row.approved_by, row.approved_by_name)}
+                                <>
+                                    <div>
+                                        <div className="text-xs font-medium uppercase text-muted-foreground">Approved By</div>
+                                        <div className="mt-1 font-medium">
+                                            {decisionUserLabel(row.approved_by, row.approved_by_name)}
+                                        </div>
                                     </div>
-                                </div>
+                                    <div>
+                                        <div className="text-xs font-medium uppercase text-muted-foreground">Effective At</div>
+                                        <div className="mt-1 font-medium">{safeDate(row.effective_at)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-medium uppercase text-muted-foreground">Application Status</div>
+                                        <div className="mt-1 font-medium">{row.application_status || "-"}</div>
+                                    </div>
+                                    {row.application_status === "APPLIED" ? (
+                                        <div>
+                                            <div className="text-xs font-medium uppercase text-muted-foreground">Applied At</div>
+                                            <div className="mt-1 font-medium">{safeDate(row.applied_at)}</div>
+                                        </div>
+                                    ) : null}
+                                </>
                             ) : null}
                             {status === "REJECTED" ? (
                                 <div>

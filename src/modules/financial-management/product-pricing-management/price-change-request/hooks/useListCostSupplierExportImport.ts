@@ -28,11 +28,17 @@ export function useListCostSupplierExportImport({ supplierIds, suppliers, onOpen
     const importFileInputRef = React.useRef<HTMLInputElement>(null);
 
     const loadSupplierMatrix = React.useCallback(async (supplierId: number) => {
-        const matrixResult = await fetchSupplierPrintMatrix(supplierId);
+        const [matrixResult, lookupsResult] = await Promise.all([
+            fetchSupplierPrintMatrix(supplierId),
+            pcrApi.getLookups(),
+        ]);
         if (matrixResult.totalGroups === 0) {
             throw new Error("No linked products found for the selected supplier.");
         }
-        return matrixResult;
+        return {
+            ...matrixResult,
+            units: lookupsResult.units ?? [],
+        };
     }, []);
 
     const handleExportPdf = React.useCallback(() => {
@@ -61,6 +67,7 @@ export function useListCostSupplierExportImport({ supplierIds, suppliers, onOpen
                 supplierId: supplier.id,
                 supplierName: supplier.name,
                 matrixRows: data.rows,
+                units: data.units,
                 pendingCostRequests: pendingCostResult.data,
             });
             toast.success("Excel template downloaded.");

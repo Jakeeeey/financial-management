@@ -130,18 +130,18 @@ export function ListCostRequestManager({
         setViewingRequestId(id);
     }, [inbox.rows]);
 
-    const handleConfirmApprove = React.useCallback(async () => {
+    const handleConfirmApprove = React.useCallback(async (effectiveAt?: string | null) => {
         if (!confirmingApprove) return;
 
         if (confirmingApprove.type === "single") {
-            await actions.approve(confirmingApprove.id);
+            await actions.approve(confirmingApprove.id, effectiveAt);
             setConfirmingApprove(null);
             return;
         }
 
         if (selectedIds.length === 0) return;
 
-        const result = await actions.approveMany(selectedIds);
+        const result = await actions.approveMany(selectedIds, effectiveAt);
         applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
         setConfirmingApprove(null);
     }, [confirmingApprove, actions, selectedIds, selectedSnapshots, removeSelectionIds]);
@@ -416,7 +416,7 @@ export function ListCostRequestManager({
                 open={confirmingApprove != null}
                 onOpenChange={() => setConfirmingApprove(null)}
                 loading={actions.acting}
-                onConfirm={() => void handleConfirmApprove()}
+                onConfirm={(effectiveAt) => void handleConfirmApprove(effectiveAt)}
                 contentClassName={
                     confirmingApprove?.type === "batch" ? "sm:max-w-2xl" : undefined
                 }

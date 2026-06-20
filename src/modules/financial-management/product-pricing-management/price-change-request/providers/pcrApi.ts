@@ -625,24 +625,39 @@ export async function createPriceChangeBatch(payload: CreatePriceChangeBatchPayl
     });
 }
 
-export async function approvePriceChangeBatch(headerId: number) {
-    return http<{ ok: boolean; header_id: number; affected: number }>(
+type ApprovalResponse = {
+    ok: boolean;
+    header_id: number;
+    affected: number;
+    application_status?: string | null;
+    effective_at?: string | null;
+};
+
+function approvalBody(effectiveAt?: string | null) {
+    return {
+        action: "approve",
+        ...(effectiveAt ? { effective_at: effectiveAt } : {}),
+    };
+}
+
+export async function approvePriceChangeBatch(headerId: number, effectiveAt?: string | null) {
+    return http<ApprovalResponse>(
         `/api/fm/product-pricing/price-change-batches/${headerId}`,
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "approve" }),
+            body: JSON.stringify(approvalBody(effectiveAt)),
         },
     );
 }
 
-export async function approveListCostBatch(headerId: number) {
-    return http<{ ok: boolean; header_id: number; affected: number }>(
+export async function approveListCostBatch(headerId: number, effectiveAt?: string | null) {
+    return http<ApprovalResponse>(
         `/api/fm/product-pricing/cost-change-batches/${headerId}`,
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "approve" }),
+            body: JSON.stringify(approvalBody(effectiveAt)),
         },
     );
 }

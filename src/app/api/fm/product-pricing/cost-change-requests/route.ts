@@ -52,6 +52,10 @@ type DirectusCCRRow = {
     rejected_by?: number | string | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
 };
 
 type DirectusListCCRResponse = {
@@ -250,6 +254,10 @@ export async function GET(req: NextRequest) {
                 "rejected_by",
                 "rejected_at",
                 "reject_reason",
+                "effective_at",
+                "application_status",
+                "applied_at",
+                "applied_by",
                 "product_id.product_id",
                 "product_id.product_code",
                 "product_id.product_name",

@@ -79,6 +79,10 @@ type DirectusCCRRow = {
     rejected_by?: number | string | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
 };
 
 type DirectusPCRRow = {
@@ -133,6 +137,10 @@ type DirectusPCRRow = {
     batch_header_id?: number | null;
     remarks?: string | null;
     reference_no?: string | null;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
 };
 
 type UnifiedApprovalRow = {
@@ -170,6 +178,10 @@ type UnifiedApprovalRow = {
     supplier_id?: number | null;
     supplier_name?: string | null;
     supplier_names?: string[];
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | null;
 };
 
 type DirectusUserRow = {
@@ -964,6 +976,10 @@ async function fetchPriceRequestsDirectPage(
             approved_at: row.approved_at ?? null,
             rejected_by: Number.isFinite(rejectedBy) ? rejectedBy : null,
             rejected_at: row.rejected_at ?? null,
+            effective_at: row.effective_at ?? null,
+            application_status: row.application_status ?? null,
+            applied_at: row.applied_at ?? null,
+            applied_by: Number.isFinite(Number(row.applied_by)) ? Number(row.applied_by) : null,
             request_id: requestId,
             product_id: row.product_id ?? 0,
             price_type_id: row.price_type_id ?? 0,
@@ -1047,6 +1063,11 @@ async function fetchPriceBatchesPage(
             "status",
             "requested_by",
             "requested_at",
+            "approved_by",
+            "approved_at",
+            "rejected_by",
+            "rejected_at",
+            "reject_reason",
         ].join(","),
     );
 
@@ -1071,6 +1092,8 @@ async function fetchPriceBatchesPage(
         const remarks = String(row.remarks ?? "").trim();
         const proposedMin = summary?.proposedMin ?? null;
         const proposedMax = summary?.proposedMax ?? null;
+        const approvedBy = Number(row.approved_by);
+        const rejectedBy = Number(row.rejected_by);
 
         rows.push({
             row_key: `batch:${headerId}`,
@@ -1081,6 +1104,15 @@ async function fetchPriceBatchesPage(
             status: String(row.status ?? "PENDING"),
             requested_at: row.requested_at ?? null,
             requested_by: Number.isFinite(requestedBy) ? requestedBy : null,
+            approved_by: Number.isFinite(approvedBy) ? approvedBy : null,
+            approved_at: row.approved_at ?? null,
+            rejected_by: Number.isFinite(rejectedBy) ? rejectedBy : null,
+            rejected_at: row.rejected_at ?? null,
+            reject_reason: row.reject_reason ?? null,
+            effective_at: row.effective_at ?? null,
+            application_status: row.application_status ?? null,
+            applied_at: row.applied_at ?? null,
+            applied_by: Number.isFinite(Number(row.applied_by)) ? Number(row.applied_by) : null,
             request_id: headerId,
             batch_id: headerId,
             line_count: summary?.lineCount ?? 0,
@@ -1127,6 +1159,11 @@ async function fetchCostBatchesPage(
             "status",
             "requested_by",
             "requested_at",
+            "approved_by",
+            "approved_at",
+            "rejected_by",
+            "rejected_at",
+            "reject_reason",
         ].join(","),
     );
 
@@ -1156,6 +1193,8 @@ async function fetchCostBatchesPage(
         const remarks = String(row.remarks ?? "").trim();
         const proposedMin = summary?.proposedMin ?? null;
         const proposedMax = summary?.proposedMax ?? null;
+        const approvedBy = Number(row.approved_by);
+        const rejectedBy = Number(row.rejected_by);
 
         const batchSupplierInfos = (summary?.productIds ?? [])
             .flatMap((pid) => supplierByProductId.get(pid) ?? []);
@@ -1171,6 +1210,15 @@ async function fetchCostBatchesPage(
             status: String(row.status ?? "PENDING"),
             requested_at: row.requested_at ?? null,
             requested_by: Number.isFinite(requestedBy) ? requestedBy : null,
+            approved_by: Number.isFinite(approvedBy) ? approvedBy : null,
+            approved_at: row.approved_at ?? null,
+            rejected_by: Number.isFinite(rejectedBy) ? rejectedBy : null,
+            rejected_at: row.rejected_at ?? null,
+            reject_reason: row.reject_reason ?? null,
+            effective_at: row.effective_at ?? null,
+            application_status: row.application_status ?? null,
+            applied_at: row.applied_at ?? null,
+            applied_by: Number.isFinite(Number(row.applied_by)) ? Number(row.applied_by) : null,
             request_id: headerId,
             batch_id: headerId,
             line_count: summary?.lineCount ?? 0,
@@ -1270,6 +1318,10 @@ async function fetchCostRequestsDirectPage(
             approved_at: row.approved_at ?? null,
             rejected_by: Number.isFinite(rejectedBy) ? rejectedBy : null,
             rejected_at: row.rejected_at ?? null,
+            effective_at: row.effective_at ?? null,
+            application_status: row.application_status ?? null,
+            applied_at: row.applied_at ?? null,
+            applied_by: Number.isFinite(Number(row.applied_by)) ? Number(row.applied_by) : null,
             request_id: requestId,
             product_id: row.product_id ?? 0,
             current_cost: toMoney(row.current_cost),

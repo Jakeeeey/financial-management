@@ -662,6 +662,7 @@ export default function PricingMatrixView() {
                 supplierName: supplier.name,
                 matrixRows: data.rows,
                 priceTypes: pt.priceTypes,
+                units: lookups.units,
                 filenamePrefix: "product-pricing",
                 includeListCost: true,
                 pendingPriceRequests: pendingPriceResult.data,
@@ -673,7 +674,7 @@ export default function PricingMatrixView() {
         } finally {
             setExcelBusy(false);
         }
-    }, [loadSupplierExcelMatrix, lookups.suppliers, matrix.filters.supplier_ids, pt.priceTypes]);
+    }, [loadSupplierExcelMatrix, lookups.suppliers, lookups.units, matrix.filters.supplier_ids, pt.priceTypes]);
 
     const handleImportExcelClick = React.useCallback(() => {
         if (!requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers)) return;

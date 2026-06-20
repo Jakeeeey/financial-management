@@ -113,11 +113,12 @@ export function PriceTypeRequestManager({
         return row ? (row as PriceTypeUnifiedApprovalRow) : null;
     }, [inbox.rows, viewingRequestId]);
 
-    const approveBatch = React.useCallback(async (headerId: number) => {
+    const approveBatch = React.useCallback(async (headerId: number, effectiveAt?: string | null) => {
         setBatchActing(true);
         try {
-            const result = await pcrApi.approvePriceChangeBatch(headerId);
-            toast.success(`${result.affected} price change line(s) approved and applied.`);
+            const result = await pcrApi.approvePriceChangeBatch(headerId, effectiveAt);
+            const verb = result.application_status === "SCHEDULED" ? "approved and scheduled" : "approved and applied";
+            toast.success(`${result.affected} price change line(s) ${verb}.`);
             await inbox.refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to approve batch", { onUnauthorized })) {
@@ -145,11 +146,17 @@ export function PriceTypeRequestManager({
         }
     }, [inbox, onUnauthorized]);
 
-    const approvePriceRequest = React.useCallback(async (requestId: number) => {
+    const approvePriceRequest = React.useCallback(async (requestId: number, effectiveAt?: string | null) => {
         setBatchActing(true);
         try {
-            await pcrApi.actionPriceRequest({ action: "approve", request_id: requestId });
-            toast.success("Approved and applied.");
+            const result = await pcrApi.actionPriceRequest({
+                action: "approve",
+                request_id: requestId,
+                effective_at: effectiveAt,
+            });
+            const message =
+                result.data?.application_status === "SCHEDULED" ? "Approved and scheduled." : "Approved and applied.";
+            toast.success(message);
             await inbox.refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to approve request", { onUnauthorized })) {
@@ -190,13 +197,14 @@ export function PriceTypeRequestManager({
         [inbox.rows],
     );
 
-    const handleConfirmBulkApprove = React.useCallback(async () => {
+    const handleConfirmBulkApprove = React.useCallback(async (effectiveAt?: string | null) => {
         if (selectedSnapshots.length === 0) return;
         try {
             const result = await approveManyPriceRequestsHybrid(
                 selectedSnapshots,
                 approveBatch,
                 approvePriceRequest,
+                effectiveAt,
             );
             applyBulkActionResult(result, selectedSnapshots, removeSelectionIds, setBulkActionOutcome);
         } catch (error: unknown) {
@@ -492,9 +500,9 @@ export function PriceTypeRequestManager({
                 loading={inbox.loading || batchActing}
                 title="Approve Price Type Request"
                 description="Approve this price type request and apply the proposed price?"
-                onConfirm={async () => {
+                onConfirm={async (effectiveAt) => {
                     if (confirmingOrphanApproveId == null) return;
-                    await approvePriceRequest(confirmingOrphanApproveId);
+                    await approvePriceRequest(confirmingOrphanApproveId, effectiveAt);
                     setConfirmingOrphanApproveId(null);
                 }}
             />
@@ -519,9 +527,9 @@ export function PriceTypeRequestManager({
                 loading={inbox.loading || batchActing}
                 title="Approve Price Change Batch"
                 description="Approve entire price change batch? All pending lines in this batch will be approved and applied."
-                onConfirm={async () => {
+                onConfirm={async (effectiveAt) => {
                     if (confirmingBatchHeaderId == null) return;
-                    await approveBatch(confirmingBatchHeaderId);
+                    await approveBatch(confirmingBatchHeaderId, effectiveAt);
                     setConfirmingBatchHeaderId(null);
                 }}
             />
@@ -549,7 +557,7 @@ export function PriceTypeRequestManager({
                 description={`You are about to approve ${selectedSnapshots.length} price type request(s)${
                     selectedBatchCount > 0 ? ` across ${selectedBatchCount} batch(es)` : ""
                 }${selectedOrphanCount > 0 ? `, including ${selectedOrphanCount} standalone request(s)` : ""}.`}
-                onConfirm={() => void handleConfirmBulkApprove()}
+                onConfirm={(effectiveAt) => void handleConfirmBulkApprove(effectiveAt)}
             >
                 <div className="space-y-2">
                     {offPageSelectedCount > 0 ? (

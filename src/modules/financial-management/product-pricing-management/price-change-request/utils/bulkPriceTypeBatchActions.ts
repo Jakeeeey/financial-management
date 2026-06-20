@@ -62,7 +62,8 @@ export function orphanPriceSnapshotCount(snapshots: PriceTypeSelectionSnapshot[]
 
 async function approveManyOrphanRequests(
     snapshots: PriceTypeSelectionSnapshot[],
-    approveRequest: (requestId: number) => Promise<void>,
+    approveRequest: (requestId: number, effectiveAt?: string | null) => Promise<void>,
+    effectiveAt?: string | null,
 ): Promise<BulkActionResult> {
     if (snapshots.length === 0) return emptyBulkResult("approve");
 
@@ -72,7 +73,7 @@ async function approveManyOrphanRequests(
 
     const settled = await Promise.allSettled(
         snapshots.map(async (snapshot) => {
-            await approveRequest(snapshot.request_id);
+            await approveRequest(snapshot.request_id, effectiveAt);
             return snapshot.request_id;
         }),
     );
@@ -135,7 +136,8 @@ async function rejectManyOrphanRequests(
 
 export async function approveManyBatches(
     snapshots: PriceTypeSelectionSnapshot[],
-    approveBatch: (headerId: number) => Promise<void>,
+    approveBatch: (headerId: number, effectiveAt?: string | null) => Promise<void>,
+    effectiveAt?: string | null,
 ): Promise<BulkActionResult> {
     const groups = groupSnapshotsByBatch(snapshots);
     if (groups.size === 0) return emptyBulkResult("approve");
@@ -147,7 +149,7 @@ export async function approveManyBatches(
     for (const [headerId, batchSnapshots] of groups) {
         const requestIds = batchSnapshots.map((item) => item.request_id);
         try {
-            await approveBatch(headerId);
+            await approveBatch(headerId, effectiveAt);
             successIds.push(...requestIds);
         } catch (error: unknown) {
             if (isUnauthorizedError(error)) throw error;
@@ -194,8 +196,9 @@ export async function rejectManyBatches(
 
 export async function approveManyPriceRequestsHybrid(
     snapshots: PriceTypeSelectionSnapshot[],
-    approveBatch: (headerId: number) => Promise<void>,
-    approveRequest: (requestId: number) => Promise<void>,
+    approveBatch: (headerId: number, effectiveAt?: string | null) => Promise<void>,
+    approveRequest: (requestId: number, effectiveAt?: string | null) => Promise<void>,
+    effectiveAt?: string | null,
 ): Promise<BulkActionResult> {
     if (snapshots.length === 0) return emptyBulkResult("approve");
 
@@ -203,10 +206,10 @@ export async function approveManyPriceRequestsHybrid(
     const parts: BulkActionResult[] = [];
 
     if (batched.length > 0) {
-        parts.push(await approveManyBatches(batched, approveBatch));
+        parts.push(await approveManyBatches(batched, approveBatch, effectiveAt));
     }
     if (orphans.length > 0) {
-        parts.push(await approveManyOrphanRequests(orphans, approveRequest));
+        parts.push(await approveManyOrphanRequests(orphans, approveRequest, effectiveAt));
     }
 
     return mergeBulkResults("approve", parts);

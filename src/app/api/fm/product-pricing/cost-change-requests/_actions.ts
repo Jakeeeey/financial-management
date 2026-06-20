@@ -5,20 +5,26 @@ import {
     mustBase,
     nowManila,
 } from "../price-change-batches/_batch";
+import { approvalApplicationPatch, isFutureEffectiveAt } from "../price-change-requests/_actions";
 import { chunkArray, IN_CHUNK_SIZE } from "../_directusPaging";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 
 export const CCR = "cost_change_requests";
 const PRODUCTS = "products";
 
-const CCR_FIELDS = "request_id,product_id,current_cost,proposed_cost,status,requested_by";
+const CCR_FIELDS = "request_id,product_id,current_cost,proposed_cost,status,effective_at,application_status,applied_at,applied_by,requested_by";
 
 export type CcrRow = {
     request_id?: number | string | null;
+    header_id?: number | string | { header_id?: number | string | null; id?: number | string | null } | null;
     product_id?: number | string | null;
     current_cost?: number | string | null;
     proposed_cost?: number | string | null;
     status?: string | null;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
     requested_by?: number | string | null;
 };
 
@@ -67,14 +73,18 @@ export async function fetchCostRequestsByIds(requestIds: number[]): Promise<Map<
     return byId;
 }
 
-async function patchProductCostField(args: { product_id: number; proposed_cost: number }) {
-    const { product_id, proposed_cost } = args;
+export async function patchProductCostField(args: { product_id: number; proposed_cost: number; userId?: number | null }) {
+    const { product_id, proposed_cost, userId } = args;
     const url = `${mustBase()}/items/${PRODUCTS}/${product_id}`;
 
     await fetchDirectus<unknown>(url, {
         method: "PATCH",
         headers: directusHeaders(),
-        body: JSON.stringify({ cost_per_unit: proposed_cost }),
+        body: JSON.stringify({
+            cost_per_unit: proposed_cost,
+            last_updated: nowManila(),
+            ...(userId ? { updated_by: userId } : {}),
+        }),
     });
 }
 
@@ -82,6 +92,7 @@ export async function approveOneCostRequest(
     userId: number,
     request_id: number,
     row: CcrRow,
+    effectiveAt?: string | null,
 ): Promise<CcrRow> {
     const product_id = Number(row.product_id);
     const proposed_cost = Number(row.proposed_cost);
@@ -94,7 +105,10 @@ export async function approveOneCostRequest(
         throw new Error("Invalid proposed_cost on request.");
     }
 
-    await patchProductCostField({ product_id, proposed_cost });
+    const scheduled = isFutureEffectiveAt(effectiveAt);
+    if (!scheduled) {
+        await patchProductCostField({ product_id, proposed_cost, userId });
+    }
 
     const url = `${mustBase()}/items/${CCR}/${request_id}`;
     const updated = await fetchDirectus<DirectusSingleResponse<CcrRow>>(url, {
@@ -104,10 +118,11 @@ export async function approveOneCostRequest(
             status: "APPROVED",
             approved_by: userId,
             approved_at: nowManila(),
+            ...approvalApplicationPatch({ userId, effectiveAt, scheduled }),
         }),
     });
 
-    invalidateGroupIndexCacheOnCatalogChange();
+    if (!scheduled) invalidateGroupIndexCacheOnCatalogChange();
 
     return updated.data;
 }

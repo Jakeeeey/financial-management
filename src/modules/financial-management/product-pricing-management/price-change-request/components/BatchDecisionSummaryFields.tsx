@@ -11,6 +11,9 @@ type BatchDecisionSummary = {
     rejected_at?: string | null;
     rejected_by_name?: string | null;
     reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
 };
 
 function safeDate(value: string | null | undefined) {
@@ -36,6 +39,20 @@ export function BatchDecisionSummaryFields({ detail }: { detail: BatchDecisionSu
                     <div className="text-xs font-medium uppercase text-muted-foreground">Approved At</div>
                     <div className="mt-1 font-medium">{safeDate(detail.approved_at)}</div>
                 </div>
+                <div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Effective At</div>
+                    <div className="mt-1 font-medium">{safeDate(detail.effective_at)}</div>
+                </div>
+                <div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">Application Status</div>
+                    <div className="mt-1 font-medium">{detail.application_status || "-"}</div>
+                </div>
+                {detail.application_status === "APPLIED" ? (
+                    <div>
+                        <div className="text-xs font-medium uppercase text-muted-foreground">Applied At</div>
+                        <div className="mt-1 font-medium">{safeDate(detail.applied_at)}</div>
+                    </div>
+                ) : null}
             </>
         );
     }

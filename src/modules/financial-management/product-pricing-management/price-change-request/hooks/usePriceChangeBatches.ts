@@ -42,11 +42,12 @@ export function usePriceChangeBatches(
         void refresh();
     }, [refresh]);
 
-    const approve = React.useCallback(async (headerId: number) => {
+    const approve = React.useCallback(async (headerId: number, effectiveAt?: string | null) => {
         setActing(true);
         try {
-            const result = await api.approvePriceChangeBatch(headerId);
-            toast.success(`${result.affected} price change line(s) approved and applied.`);
+            const result = await api.approvePriceChangeBatch(headerId, effectiveAt);
+            const verb = result.application_status === "SCHEDULED" ? "approved and scheduled" : "approved and applied";
+            toast.success(`${result.affected} price change line(s) ${verb}.`);
             await refresh();
         } catch (error: unknown) {
             toast.error(getErrorMessage(error, "Failed to approve batch"));

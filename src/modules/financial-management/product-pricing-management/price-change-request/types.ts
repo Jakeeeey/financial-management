@@ -1,4 +1,5 @@
 export type PCRStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+export type PriceChangeApplicationStatus = "SCHEDULED" | "APPLIED" | "CANCELLED";
 
 export type PCRStatusFilter = PCRStatus | "ALL";
 
@@ -49,6 +50,11 @@ export type PriceChangeRequestRow = {
     rejected_at?: string | null;
     rejected_by_name?: string | null;
     reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: PriceChangeApplicationStatus | string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
+    applied_by_name?: string | null;
 
     header_id?:
         | number
@@ -81,6 +87,10 @@ export type PriceChangeBatchLine = {
     percent_change: number | null;
     status: PriceChangeBatchStatus | PCRStatus | string;
     supplier_name?: string | null;
+    effective_at?: string | null;
+    application_status?: PriceChangeApplicationStatus | string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
 };
 
 export type PriceChangeBatchHeader = {
@@ -101,6 +111,11 @@ export type PriceChangeBatchHeader = {
     rejected_at?: string | null;
     rejected_by_name?: string | null;
     reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: PriceChangeApplicationStatus | string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
+    applied_by_name?: string | null;
     line_count?: number;
 };
 
@@ -127,6 +142,11 @@ export type CostChangeRequestRow = {
     rejected_at?: string | null;
     rejected_by_name?: string | null;
     reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: PriceChangeApplicationStatus | string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
+    applied_by_name?: string | null;
 };
 
 export type ListCostBatchStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
@@ -142,6 +162,10 @@ export type ListCostBatchLine = {
     percent_change: number | null;
     status: ListCostBatchStatus | PCRStatus | string;
     supplier_name?: string | null;
+    effective_at?: string | null;
+    application_status?: PriceChangeApplicationStatus | string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
 };
 
 export type ListCostBatchHeader = {
@@ -160,6 +184,11 @@ export type ListCostBatchHeader = {
     rejected_at?: string | null;
     rejected_by_name?: string | null;
     reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: PriceChangeApplicationStatus | string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
+    applied_by_name?: string | null;
     line_count?: number;
 };
 
@@ -213,6 +242,9 @@ export type UnifiedApprovalRow =
           supplier_id?: number | null;
           supplier_name?: string | null;
           supplier_names?: string[];
+          effective_at?: string | null;
+          application_status?: PriceChangeApplicationStatus | string | null;
+          applied_at?: string | null;
       }
     | {
           row_key: string;
@@ -236,6 +268,9 @@ export type UnifiedApprovalRow =
           supplier_id?: number | null;
           supplier_name?: string | null;
           supplier_names?: string[];
+          effective_at?: string | null;
+          application_status?: PriceChangeApplicationStatus | string | null;
+          applied_at?: string | null;
       }
     | ItemUnifiedApprovalRow;
 
@@ -319,17 +354,17 @@ export type CreateCCRPayload = {
 };
 
 export type ActionPayload =
-    | { action: "approve"; request_id: number }
+    | { action: "approve"; request_id: number; effective_at?: string | null }
     | { action: "cancel"; request_id: number }
     | { action: "reject"; request_id: number; reject_reason: string };
 
 export type PriceActionPayload =
-    | { action: "approve"; request_id: number }
+    | { action: "approve"; request_id: number; effective_at?: string | null }
     | { action: "cancel"; request_id: number }
     | { action: "reject"; request_id: number; reject_reason: string };
 
 export type BulkCostActionPayload =
-    | { action: "approve"; request_ids: number[] }
+    | { action: "approve"; request_ids: number[]; effective_at?: string | null }
     | { action: "reject"; request_ids: number[]; reject_reason: string };
 
 export type BulkCostActionResponse = Pick<

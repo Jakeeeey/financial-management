@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 import {
+    approvalApplicationPatch,
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
     directusHeaders,
@@ -10,6 +11,7 @@ import {
     getSupplierNamesByProductId,
     HEADERS,
     isRecord,
+    isFutureEffectiveAt,
     mustBase,
     nowManila,
     pickId,
@@ -64,6 +66,10 @@ export type CostHeaderRow = {
     rejected_by?: number | string | DirectusUserRelation | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | DirectusUserRelation | null;
 };
 
 export type CostDetailRow = {
@@ -84,6 +90,10 @@ export type CostDetailRow = {
     requested_by?: number | string | null;
     requested_at?: string | null;
     reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
 };
 
 export function normalizeCostHeaderId(header: CostHeaderRow): number {
@@ -159,6 +169,10 @@ export function mapCostBatchHeaderResponse(row: CostHeaderRow, lineCount = 0) {
         rejected_by: row.rejected_by ?? null,
         rejected_at: row.rejected_at ?? null,
         reject_reason: row.reject_reason ?? null,
+        effective_at: row.effective_at ?? null,
+        application_status: row.application_status ?? null,
+        applied_at: row.applied_at ?? null,
+        applied_by: row.applied_by ?? null,
         line_count: lineCount,
     };
 }
@@ -278,6 +292,17 @@ export async function getCostHeader(headerId: number) {
             "rejected_by.user_email",
             "rejected_at",
             "reject_reason",
+            "effective_at",
+            "application_status",
+            "applied_at",
+            "applied_by",
+            "applied_by.user_id",
+            "applied_by.user_fname",
+            "applied_by.user_mname",
+            "applied_by.user_lname",
+            "applied_by.suffix_name",
+            "applied_by.nickname",
+            "applied_by.user_email",
         ].join(","),
     );
 
@@ -309,6 +334,10 @@ export async function getCostDetails(headerId: number) {
             "requested_by",
             "requested_at",
             "reject_reason",
+            "effective_at",
+            "application_status",
+            "applied_at",
+            "applied_by",
         ].join(","),
     );
 
@@ -317,15 +346,21 @@ export async function getCostDetails(headerId: number) {
     return json.data ?? [];
 }
 
-async function patchProductCostField(args: { productId: number; proposedCost: number }) {
+async function patchProductCostField(args: { productId: number; proposedCost: number; userId?: number | null }) {
+    const body: Record<string, unknown> = {
+        cost_per_unit: args.proposedCost,
+        last_updated: nowManila(),
+    };
+    if (args.userId) body.updated_by = args.userId;
+
     await fetchDirectus(`${mustBase()}/items/${PRODUCTS}/${args.productId}`, {
         method: "PATCH",
         headers: directusHeaders(),
-        body: JSON.stringify({ cost_per_unit: args.proposedCost }),
+        body: JSON.stringify(body),
     });
 }
 
-export async function approveCostBatch(headerId: number, userId: number) {
+export async function approveCostBatch(headerId: number, userId: number, effectiveAt?: string | null) {
     const header = await getCostHeader(headerId);
     if (!header) return NextResponse.json({ error: "Cost batch not found" }, { status: 404 });
     if (String(header.status ?? "") !== "PENDING") {
@@ -349,9 +384,15 @@ export async function approveCostBatch(headerId: number, userId: number) {
         }
     }
 
-    for (const line of normalized) {
-        await patchProductCostField({ productId: line.productId, proposedCost: line.proposedCost });
+    const scheduled = isFutureEffectiveAt(effectiveAt);
+
+    if (!scheduled) {
+        for (const line of normalized) {
+            await patchProductCostField({ productId: line.productId, proposedCost: line.proposedCost, userId });
+        }
     }
+
+    const applicationPatch = approvalApplicationPatch({ userId, effectiveAt, scheduled });
 
     await fetchDirectus(`${mustBase()}/items/${COST_HEADERS}/${headerId}`, {
         method: "PATCH",
@@ -360,6 +401,7 @@ export async function approveCostBatch(headerId: number, userId: number) {
             status: "APPROVED",
             approved_by: userId,
             approved_at: nowManila(),
+            ...applicationPatch,
         }),
     });
 
@@ -370,14 +412,20 @@ export async function approveCostBatch(headerId: number, userId: number) {
                 fetchDirectus(`${mustBase()}/items/${COST_DETAILS}/${line.requestId}`, {
                     method: "PATCH",
                     headers: directusHeaders(),
-                    body: JSON.stringify({ status: "APPROVED" }),
+                    body: JSON.stringify({ status: "APPROVED", ...applicationPatch }),
                 }),
             ),
     );
 
-    invalidateGroupIndexCacheOnCatalogChange();
+    if (!scheduled) invalidateGroupIndexCacheOnCatalogChange();
 
-    return NextResponse.json({ ok: true, header_id: headerId, affected: normalized.length });
+    return NextResponse.json({
+        ok: true,
+        header_id: headerId,
+        affected: normalized.length,
+        application_status: scheduled ? "SCHEDULED" : "APPLIED",
+        effective_at: applicationPatch.effective_at,
+    });
 }
 
 export async function rejectCostBatch(headerId: number, userId: number, rejectReason: string) {

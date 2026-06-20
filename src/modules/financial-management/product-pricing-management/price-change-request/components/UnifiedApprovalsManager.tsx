@@ -180,18 +180,18 @@ export function UnifiedApprovalsManager({
         [selectedCostKeys, selectedPriceKeys],
     );
 
-    const handleConfirmCostApprove = React.useCallback(async () => {
+    const handleConfirmCostApprove = React.useCallback(async (effectiveAt?: string | null) => {
         if (!confirmingCostApprove) return;
 
         if (confirmingCostApprove.type === "single") {
-            await costActions.approve(confirmingCostApprove.id);
+            await costActions.approve(confirmingCostApprove.id, effectiveAt);
             setConfirmingCostApprove(null);
             return;
         }
 
         if (selectedCostIds.length === 0) return;
 
-        const result = await costActions.approveMany(selectedCostIds);
+        const result = await costActions.approveMany(selectedCostIds, effectiveAt);
         applyBulkActionResult(
             result,
             selectedCostSnapshots,
@@ -201,13 +201,14 @@ export function UnifiedApprovalsManager({
         setConfirmingCostApprove(null);
     }, [confirmingCostApprove, costActions, selectedCostIds, selectedCostSnapshots, removeCostSelectionIds]);
 
-    const handleConfirmBulkPriceApprove = React.useCallback(async () => {
+    const handleConfirmBulkPriceApprove = React.useCallback(async (effectiveAt?: string | null) => {
         if (selectedPriceSnapshots.length === 0) return;
         try {
             const result = await approveManyPriceRequestsHybrid(
                 selectedPriceSnapshots,
                 feed.approveBatch,
                 feed.approvePriceRequest,
+                effectiveAt,
             );
             applyBulkActionResult(
                 result,
@@ -764,7 +765,7 @@ export function UnifiedApprovalsManager({
                 open={confirmingCostApprove != null}
                 onOpenChange={() => setConfirmingCostApprove(null)}
                 loading={acting}
-                onConfirm={() => void handleConfirmCostApprove()}
+                onConfirm={(effectiveAt) => void handleConfirmCostApprove(effectiveAt)}
                 contentClassName={
                     confirmingCostApprove?.type === "batch" ? "sm:max-w-2xl" : undefined
                 }
@@ -803,7 +804,7 @@ export function UnifiedApprovalsManager({
                 description={`You are about to approve ${selectedPriceSnapshots.length} price type request(s)${
                     selectedBatchCount > 0 ? ` across ${selectedBatchCount} batch(es)` : ""
                 }${selectedOrphanPriceCount > 0 ? `, including ${selectedOrphanPriceCount} standalone request(s)` : ""}.`}
-                onConfirm={() => void handleConfirmBulkPriceApprove()}
+                onConfirm={(effectiveAt) => void handleConfirmBulkPriceApprove(effectiveAt)}
             >
                 <div className="space-y-2">
                     {offPageSelectedPriceCount > 0 ? (
@@ -824,9 +825,9 @@ export function UnifiedApprovalsManager({
                 loading={acting}
                 title="Approve Price Type Request"
                 description="Approve this price type request and apply the proposed price?"
-                onConfirm={async () => {
+                onConfirm={async (effectiveAt) => {
                     if (confirmingOrphanPriceApproveId == null) return;
-                    await feed.approvePriceRequest(confirmingOrphanPriceApproveId);
+                    await feed.approvePriceRequest(confirmingOrphanPriceApproveId, effectiveAt);
                     setConfirmingOrphanPriceApproveId(null);
                 }}
             />
@@ -837,9 +838,9 @@ export function UnifiedApprovalsManager({
                 loading={acting}
                 title="Approve Price Change Batch"
                 description="Approve entire price change batch? All pending lines in this batch will be approved and applied."
-                onConfirm={async () => {
+                onConfirm={async (effectiveAt) => {
                     if (confirmingPriceBatchHeaderId == null) return;
-                    await feed.approveBatch(confirmingPriceBatchHeaderId);
+                    await feed.approveBatch(confirmingPriceBatchHeaderId, effectiveAt);
                     setConfirmingPriceBatchHeaderId(null);
                 }}
             />

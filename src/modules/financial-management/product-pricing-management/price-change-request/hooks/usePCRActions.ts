@@ -29,11 +29,12 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
     const [acting, setActing] = React.useState(false);
 
     const approve = React.useCallback(
-        async (request_id: number) => {
+        async (request_id: number, effective_at?: string | null) => {
             setActing(true);
             try {
-                await api.actionCostRequest({ action: "approve", request_id });
-                toast.success("Approved and applied.");
+                const result = await api.actionCostRequest({ action: "approve", request_id, effective_at });
+                const verb = result.data?.application_status === "SCHEDULED" ? "Approved and scheduled." : "Approved and applied.";
+                toast.success(verb);
                 onDone?.();
             } catch (error: unknown) {
                 applyActionError(error, "Failed to approve", { onUnauthorized });
@@ -45,7 +46,7 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
     );
 
     const approveMany = React.useCallback(
-        async (requestIds: number[]): Promise<BulkActionResult> => {
+        async (requestIds: number[], effective_at?: string | null): Promise<BulkActionResult> => {
             const uniqueIds = Array.from(new Set(requestIds)).filter((id) => Number.isFinite(id));
 
             if (uniqueIds.length === 0) {
@@ -58,6 +59,7 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
                 const response = await api.actionCostRequestsBulk({
                     action: "approve",
                     request_ids: uniqueIds,
+                    effective_at,
                 });
 
                 const result: BulkActionResult = {

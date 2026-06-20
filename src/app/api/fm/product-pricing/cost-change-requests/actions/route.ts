@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
             action: "approve" | "reject" | "cancel";
             request_id: number;
             reject_reason?: string;
+            effective_at?: string | null;
         }>;
 
         const action = body.action;
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ data });
         }
 
-        const data = await approveOneCostRequest(userId, request_id, ccr);
+        const data = await approveOneCostRequest(userId, request_id, ccr, body.effective_at);
         return NextResponse.json({ data });
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);

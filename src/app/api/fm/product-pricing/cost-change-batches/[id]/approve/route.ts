@@ -24,7 +24,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
             return NextResponse.json({ error: "Invalid cost batch id" }, { status: 400 });
         }
 
-        return approveCostBatch(headerId, userId);
+        const body = (await req.json().catch(() => ({}))) as Partial<{ effective_at: string | null }>;
+        return approveCostBatch(headerId, userId, body.effective_at);
     } catch (error: unknown) {
         return directusErrorResponse(error);
     }

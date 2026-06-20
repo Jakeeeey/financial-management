@@ -120,11 +120,19 @@ export async function GET(req: NextRequest, context: RouteContext) {
                 rejected_at: header.rejected_at ?? null,
                 rejected_by_name,
                 reject_reason: header.reject_reason ?? null,
+                effective_at: header.effective_at ?? null,
+                application_status: header.application_status ?? null,
+                applied_at: header.applied_at ?? null,
+                applied_by: header.applied_by ?? null,
                 details: details.map((line) => {
                     const pid = normalizeCostProductId(line);
                     return {
                         ...mapDetail(line),
                         supplier_name: supplierByProductId.get(pid) ?? null,
+                        effective_at: line.effective_at ?? null,
+                        application_status: line.application_status ?? null,
+                        applied_at: line.applied_at ?? null,
+                        applied_by: line.applied_by ?? null,
                     };
                 }),
             },
@@ -148,11 +156,12 @@ export async function POST(req: NextRequest, context: RouteContext) {
         const body = (await req.json().catch(() => ({}))) as Partial<{
             action: string;
             reject_reason: string;
+            effective_at: string | null;
         }>;
         const action = String(body.action ?? "").trim().toLowerCase();
 
         if (action === "approve") {
-            return approveCostBatch(headerId, userId);
+            return approveCostBatch(headerId, userId, body.effective_at);
         }
 
         if (action === "reject") {
