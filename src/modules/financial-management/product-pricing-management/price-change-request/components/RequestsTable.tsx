@@ -9,7 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { approvalTypeBadgeClass, approvalTypeLabel, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import {
+    approvalTypeBadgeClass,
+    approvalTypeLabel,
+    displayPcrStatus,
+    pcrStatusBadgeClass,
+} from "../utils/pcrStatusStyles";
 
 function fmt(v: number | string | null | undefined) {
     const n = Number(v);
@@ -353,6 +358,7 @@ export default function RequestsTable(props: Props) {
                             const id = approvalActionId(r);
                             const selectionKey = resolveSelectionKey(r);
                             const isPending = r.status === "PENDING";
+                            const displayStatus = displayPcrStatus(r.status, r.application_status);
                             const isSelected = selectedKeySet.has(selectionKey);
                             const canSelect = props.canSelectRow?.(r) ?? true;
                             const canReview = props.canReviewRow?.(r) ?? true;
@@ -393,8 +399,8 @@ export default function RequestsTable(props: Props) {
                                     <TableCell className="px-2 text-right">{totalProductsText(r)}</TableCell>
                                     <TableCell className="px-2 text-right font-semibold">{proposedText(r)}</TableCell>
                                     <TableCell className="px-2">
-                                        <Badge variant="outline" className={`${pcrStatusBadgeClass(r.status)} max-w-full truncate px-2 text-[11px]`}>
-                                            {r.status}
+                                        <Badge variant="outline" className={`${pcrStatusBadgeClass(displayStatus)} max-w-full truncate px-2 text-[11px]`}>
+                                            {displayStatus}
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="px-2">
@@ -536,6 +542,7 @@ export default function RequestsTable(props: Props) {
                         const id = Number(r.request_id);
                         const selectionKey = resolveSelectionKey(r);
                         const isPending = r.status === "PENDING";
+                        const displayStatus = displayPcrStatus(r.status, r.application_status);
                         const isSelected = selectedKeySet.has(selectionKey);
                         const rowType = "cost";
                         const canSelect = props.canSelectRow?.(r) ?? true;
@@ -606,12 +613,12 @@ export default function RequestsTable(props: Props) {
                                             return null;
                                         })()}
                                     </div>
-                                </TableCell>
-                                <TableCell className="px-2">
-                                    <Badge variant="outline" className={`${pcrStatusBadgeClass(r.status)} max-w-full truncate px-2 text-[11px]`}>
-                                        {r.status}
-                                    </Badge>
-                                </TableCell>
+                                    </TableCell>
+                                    <TableCell className="px-2">
+                                        <Badge variant="outline" className={`${pcrStatusBadgeClass(displayStatus)} max-w-full truncate px-2 text-[11px]`}>
+                                            {displayStatus}
+                                        </Badge>
+                                    </TableCell>
                                 <TableCell className="px-2">
                                     <div className="min-w-0 text-xs leading-tight">
                                         <div className="truncate">{requestedAt.date}</div>

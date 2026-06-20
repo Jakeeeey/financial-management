@@ -22,6 +22,8 @@ type Props = {
     loading?: boolean;
     description?: string;
     rejectReason?: string;
+    hideEffectiveAt?: boolean;
+    confirmLabel?: string;
     onOpenChange: (open: boolean) => void;
     onConfirm: (effectiveAt?: string | null) => Promise<void> | void;
 };
@@ -33,6 +35,8 @@ export function DecisionConfirmationDialog({
     loading,
     description,
     rejectReason,
+    hideEffectiveAt = false,
+    confirmLabel,
     onOpenChange,
     onConfirm,
 }: Props) {
@@ -71,7 +75,7 @@ export function DecisionConfirmationDialog({
                     </div>
                 ) : null}
 
-                {!isReject ? (
+                {!isReject && !hideEffectiveAt ? (
                     <div className="space-y-2">
                         <label className="text-sm font-medium" htmlFor="price-change-effective-at">
                             Effective Date/Time
@@ -101,7 +105,7 @@ export function DecisionConfirmationDialog({
                         disabled={loading}
                     >
                         {loading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                        {isReject ? "Reject" : "Approve"}
+                        {confirmLabel ?? (isReject ? "Reject" : "Approve")}
                     </Button>
                 </AlertDialogFooter>
             </AlertDialogContent>

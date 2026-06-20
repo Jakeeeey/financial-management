@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import type { PriceType, PricingFilters, ProductTierKey, Unit } from "../types";
+import type { PendingCellRequest, PriceType, PricingFilters, ProductTierKey, Unit } from "../types";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -71,7 +71,7 @@ type PricingMatrixLike = {
     setPageSize: (pageSize: number) => void;
 
     getCellValue: (productId: number, tier: ProductTierKey, base: number | null) => number | string | null;
-    getPendingValue: (productId: number, tier: ProductTierKey) => number | null;
+    getPendingRequest: (productId: number, tier: ProductTierKey) => PendingCellRequest | null;
     isDirty: (productId: number, tier: ProductTierKey) => boolean;
     getError: (productId: number, tier: ProductTierKey) => string | null | undefined;
     setCell: (productId: number, tier: ProductTierKey, raw: unknown) => void;
@@ -177,7 +177,7 @@ function LoadingProductBlockBody({ rowCount }: { rowCount: number }) {
 
 type CellRenderProps = {
     value: number | string | null;
-    pendingValue: number | null;
+    pendingRequest: PendingCellRequest | null;
     dirty: boolean;
     error: string | null;
     onChange: (raw: string) => void;
@@ -200,7 +200,7 @@ function cellPropsFor(
 
     return {
         value: matrix.getCellValue(variantProductId, tier, base),
-        pendingValue: matrix.getPendingValue(variantProductId, tier),
+        pendingRequest: matrix.getPendingRequest(variantProductId, tier),
         dirty: matrix.isDirty(variantProductId, tier),
         error: toErrorString(matrix.getError(variantProductId, tier)),
         onChange: getSetCellHandler(variantProductId, tier),
@@ -263,7 +263,7 @@ const CardPriceCell = React.memo(function CardPriceCell(props: {
             </div>
             <PriceCell
                 value={cell.value}
-                pendingValue={cell.pendingValue}
+                pendingRequest={cell.pendingRequest}
                 dirty={cell.dirty}
                 error={cell.error}
                 onChange={cell.onChange}
@@ -275,7 +275,7 @@ const CardPriceCell = React.memo(function CardPriceCell(props: {
 const ProductBlockPriceCell = React.memo(function ProductBlockPriceCell(
     props: CellRenderProps & { variant: MatrixVariant | undefined },
 ) {
-    const { variant, value, pendingValue, dirty, error, onChange } = props;
+    const { variant, value, pendingRequest, dirty, error, onChange } = props;
 
     if (!variant) {
         return (
@@ -294,7 +294,7 @@ const ProductBlockPriceCell = React.memo(function ProductBlockPriceCell(
         <div className="min-w-[128px]">
             <PriceCell
                 value={value}
-                pendingValue={pendingValue}
+                pendingRequest={pendingRequest}
                 dirty={dirty}
                 error={error}
                 onChange={onChange}
@@ -385,7 +385,7 @@ function ProductBlockPriceTable(props: {
                                                 <ProductBlockPriceCell
                                                     variant={variant}
                                                     value={null}
-                                                    pendingValue={null}
+                                                    pendingRequest={null}
                                                     dirty={false}
                                                     error={null}
                                                     onChange={() => {}}
@@ -475,7 +475,7 @@ const ProductGroupCardRow = React.memo(function ProductGroupCardRow(props: {
                                     cell={
                                         cell ?? {
                                             value: null,
-                                            pendingValue: null,
+                                            pendingRequest: null,
                                             dirty: false,
                                             error: null,
                                             onChange: () => {},
@@ -496,7 +496,7 @@ const ProductGroupCardRow = React.memo(function ProductGroupCardRow(props: {
                             priceTypes={matrix.priceTypes}
                             cell={{
                                 value: null,
-                                pendingValue: null,
+                                pendingRequest: null,
                                 dirty: false,
                                 error: null,
                                 onChange: () => {},

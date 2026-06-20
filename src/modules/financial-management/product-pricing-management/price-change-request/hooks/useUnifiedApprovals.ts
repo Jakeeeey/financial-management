@@ -157,6 +157,45 @@ export function useUnifiedApprovals(
         }
     }, [refresh]);
 
+    const applyScheduledNow = React.useCallback(async (kind: api.ScheduledOverrideKind, id: number) => {
+        setActing(true);
+        try {
+            const result = await api.overrideScheduledPriceChange({ kind, id, action: "apply_now" });
+            const count = result.affected ?? 1;
+            toast.success(`${count} scheduled change(s) applied.`);
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to apply scheduled change", { setUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
+    const rejectScheduled = React.useCallback(async (kind: api.ScheduledOverrideKind, id: number, reason: string) => {
+        setActing(true);
+        try {
+            const result = await api.overrideScheduledPriceChange({
+                kind,
+                id,
+                action: "reject_schedule",
+                reject_reason: reason,
+            });
+            const count = result.affected ?? 1;
+            toast.success(`${count} scheduled change(s) rejected.`);
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to reject scheduled change", { setUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
     return {
         query,
         setQuery,
@@ -173,5 +212,7 @@ export function useUnifiedApprovals(
         rejectCostBatch,
         approvePriceRequest,
         rejectPriceRequest,
+        applyScheduledNow,
+        rejectScheduled,
     };
 }

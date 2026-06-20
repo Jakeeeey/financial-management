@@ -16,6 +16,7 @@ import type {
     SaveAllResult,
     DirtyPreviewLine,
     DirtyCellMeta,
+    PendingCellRequest,
 } from "../types";
 import * as api from "../providers/pricingApi";
 import { clampMoney, moneyValuesEqual, toNumberOrNull } from "../utils/format";
@@ -98,7 +99,7 @@ export function usePricingMatrix(args: {
     const [dirtyVersion, setDirtyVersion] = useState(0);
     const bumpDirtyVersion = useCallback(() => setDirtyVersion((v) => v + 1), []);
 
-    const [pendingMap, setPendingMap] = useState<Map<PendingKey, number>>(new Map());
+    const [pendingMap, setPendingMap] = useState<Map<PendingKey, PendingCellRequest>>(new Map());
     const rowsRef = useRef(rows);
     rowsRef.current = rows;
     const pendingMapRef = useRef(pendingMap);
@@ -196,7 +197,7 @@ export function usePricingMatrix(args: {
             const pendingCostRes = { data: res.pending_cost_requests ?? [] };
 
             setPendingMap((prev) => {
-                const nextPending = new Map<PendingKey, number>();
+                const nextPending = new Map<PendingKey, PendingCellRequest>();
 
                 for (const [key, value] of prev) {
                     const pid = Number(String(key).split(":")[0]);
@@ -211,7 +212,12 @@ export function usePricingMatrix(args: {
                     const pid = toNumberOrNull(typeof pidRaw === "object" ? pidRaw?.product_id : pidRaw);
                     const ptid = toNumberOrNull(typeof ptidRaw === "object" ? ptidRaw?.price_type_id : ptidRaw);
                     if (pid !== null && ptid !== null) {
-                        nextPending.set(`${pid}:${String(ptid)}`, toNumberOrNull(pcr.proposed_price) ?? 0);
+                        nextPending.set(`${pid}:${String(ptid)}`, {
+                            proposedValue: toNumberOrNull(pcr.proposed_price) ?? 0,
+                            status: pcr.status ?? null,
+                            applicationStatus: pcr.application_status ?? null,
+                            effectiveAt: pcr.effective_at ?? null,
+                        });
                     }
                 }
 
@@ -219,7 +225,12 @@ export function usePricingMatrix(args: {
                     const pidRaw = ccr.product_id;
                     const pid = toNumberOrNull(typeof pidRaw === "object" ? pidRaw?.product_id : pidRaw);
                     if (pid !== null) {
-                        nextPending.set(`${pid}:LIST`, toNumberOrNull(ccr.proposed_cost) ?? 0);
+                        nextPending.set(`${pid}:LIST`, {
+                            proposedValue: toNumberOrNull(ccr.proposed_cost) ?? 0,
+                            status: ccr.status ?? null,
+                            applicationStatus: ccr.application_status ?? null,
+                            effectiveAt: ccr.effective_at ?? null,
+                        });
                     }
                 }
 
@@ -430,7 +441,7 @@ export function usePricingMatrix(args: {
         return dirtyErrorsRef.current.get(`${productId}:${tier}` as DirtyKey) ?? null;
     }, []);
 
-    const getPendingValue = useCallback((productId: number, tier: ProductTierKey) => {
+    const getPendingRequest = useCallback((productId: number, tier: ProductTierKey) => {
         return pendingMap.get(`${productId}:${tier}` as PendingKey) ?? null;
     }, [pendingMap]);
 
@@ -806,7 +817,7 @@ export function usePricingMatrix(args: {
 
             setCell,
             getCellValue,
-            getPendingValue,
+            getPendingRequest,
             isDirty,
             getError,
 
@@ -831,7 +842,7 @@ export function usePricingMatrix(args: {
             setPageSize,
             setCell,
             getCellValue,
-            getPendingValue,
+            getPendingRequest,
             isDirty,
             getError,
             refresh,

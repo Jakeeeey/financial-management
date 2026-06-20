@@ -200,6 +200,32 @@ type ApprovalFilters = {
     dateTo: string;
 };
 
+function appendDisplayStatusFilter(params: URLSearchParams, andIdx: number, status: string): number {
+    const normalized = status.trim().toUpperCase();
+    if (!normalized) return andIdx;
+
+    const addAnd = (suffix: string, value: string) => {
+        params.set(`filter[_and][${andIdx}]${suffix}`, value);
+        andIdx += 1;
+    };
+
+    if (normalized === "SCHEDULED") {
+        addAnd("[status][_eq]", "APPROVED");
+        addAnd("[application_status][_eq]", "SCHEDULED");
+        return andIdx;
+    }
+
+    if (normalized === "APPROVED") {
+        addAnd("[status][_eq]", "APPROVED");
+        params.set(`filter[_and][${andIdx}][_or][0][application_status][_neq]`, "SCHEDULED");
+        params.set(`filter[_and][${andIdx}][_or][1][application_status][_null]`, "true");
+        return andIdx + 1;
+    }
+
+    addAnd("[status][_eq]", normalized);
+    return andIdx;
+}
+
 function norm(value: string | null) {
     const text = String(value ?? "").trim();
     if (!text || text === "undefined" || text === "null") return "";
@@ -582,7 +608,7 @@ function appendPriceFilters(params: URLSearchParams, filters: ApprovalFilters, s
         andIdx += 1;
     };
 
-    if (filters.status) addAnd("[status][_eq]", filters.status);
+    andIdx = appendDisplayStatusFilter(params, andIdx, filters.status);
     if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
     if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
 
@@ -768,7 +794,7 @@ function appendBatchFilters(
     };
 
     andIdx = appendChunkedHeaderIds(params, andIdx, priceHeaderIds);
-    if (filters.status) addAnd("[status][_eq]", filters.status);
+    andIdx = appendDisplayStatusFilter(params, andIdx, filters.status);
     if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
     if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
 
@@ -815,7 +841,7 @@ function appendCostBatchFilters(
     };
 
     andIdx = appendChunkedHeaderIds(params, andIdx, costHeaderIds);
-    if (filters.status) addAnd("[status][_eq]", filters.status);
+    andIdx = appendDisplayStatusFilter(params, andIdx, filters.status);
     if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
     if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
 
@@ -856,7 +882,7 @@ function appendCostFilters(params: URLSearchParams, filters: ApprovalFilters, su
         andIdx += 1;
     };
 
-    if (filters.status) addAnd("[status][_eq]", filters.status);
+    andIdx = appendDisplayStatusFilter(params, andIdx, filters.status);
     if (filters.dateFrom) addAnd("[requested_at][_gte]", filters.dateFrom);
     if (filters.dateTo) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(filters.dateTo));
 
@@ -927,6 +953,10 @@ async function fetchPriceRequestsDirectPage(
             "rejected_by",
             "rejected_at",
             "reject_reason",
+            "effective_at",
+            "application_status",
+            "applied_at",
+            "applied_by",
             "header_id",
             "header_id.header_id",
             "header_id.remarks",
@@ -1068,6 +1098,10 @@ async function fetchPriceBatchesPage(
             "rejected_by",
             "rejected_at",
             "reject_reason",
+            "effective_at",
+            "application_status",
+            "applied_at",
+            "applied_by",
         ].join(","),
     );
 
@@ -1164,6 +1198,10 @@ async function fetchCostBatchesPage(
             "rejected_by",
             "rejected_at",
             "reject_reason",
+            "effective_at",
+            "application_status",
+            "applied_at",
+            "applied_by",
         ].join(","),
     );
 
@@ -1265,6 +1303,10 @@ async function fetchCostRequestsDirectPage(
             "rejected_by",
             "rejected_at",
             "reject_reason",
+            "effective_at",
+            "application_status",
+            "applied_at",
+            "applied_by",
             "product_id.product_id",
             "product_id.product_code",
             "product_id.product_name",

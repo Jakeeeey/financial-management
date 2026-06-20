@@ -31,7 +31,7 @@ import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { getListCostBatch } from "../providers/pcrApi";
 import { decisionUserLabel } from "../utils/labels";
-import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import { displayPcrStatus, pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
     batchId: number | null;
@@ -41,6 +41,8 @@ type Props = {
     onOpenChange: (open: boolean) => void;
     onApprove?: (headerId: number, effectiveAt?: string | null) => Promise<void> | void;
     onReject?: (headerId: number, reason: string) => Promise<void> | void;
+    onApplyScheduledNow?: (headerId: number) => Promise<void> | void;
+    onRejectScheduled?: (headerId: number, reason: string) => Promise<void> | void;
 };
 
 function money(value: number | null | undefined) {
@@ -104,12 +106,14 @@ export function ListCostBatchDetailDialog({
     onOpenChange,
     onApprove,
     onReject,
+    onApplyScheduledNow,
+    onRejectScheduled,
 }: Props) {
     const [detail, setDetail] = React.useState<ListCostBatchDetail | null>(null);
     const [loading, setLoading] = React.useState(false);
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
-    const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | null>(null);
+    const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | "apply_now" | "reject_schedule" | null>(null);
 
     React.useEffect(() => {
         let cancelled = false;
@@ -143,6 +147,19 @@ export function ListCostBatchDetailDialog({
     const isPending = detail?.status === "PENDING";
     const headerId = detail?.header_id ?? batchId ?? 0;
     const canAct = !readOnly && isPending && headerId != null && onApprove != null && onReject != null;
+    const effectiveTime = new Date(detail?.effective_at ?? "").getTime();
+    const isScheduledBeforeEffective =
+        detail?.status === "APPROVED" &&
+        detail?.application_status === "SCHEDULED" &&
+        Number.isFinite(effectiveTime) &&
+        effectiveTime > Date.now();
+    const canOverrideScheduled =
+        !readOnly &&
+        isScheduledBeforeEffective &&
+        headerId > 0 &&
+        onApplyScheduledNow != null &&
+        onRejectScheduled != null;
+    const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status) : "";
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
 
     const handleOpenChange = React.useCallback(
@@ -174,6 +191,21 @@ export function ListCostBatchDetailDialog({
         handleOpenChange(false);
     }, [handleOpenChange, headerId, onReject, rejectReason]);
 
+    const handleApplyScheduledNow = React.useCallback(async () => {
+        if (!headerId || !onApplyScheduledNow) return;
+        await onApplyScheduledNow(headerId);
+        setConfirmingAction(null);
+        handleOpenChange(false);
+    }, [handleOpenChange, headerId, onApplyScheduledNow]);
+
+    const handleRejectScheduled = React.useCallback(async () => {
+        const reason = rejectReason.trim();
+        if (!headerId || !reason || !onRejectScheduled) return;
+        await onRejectScheduled(headerId, reason);
+        setConfirmingAction(null);
+        handleOpenChange(false);
+    }, [handleOpenChange, headerId, onRejectScheduled, rejectReason]);
+
     return (
         <>
             <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -196,8 +228,8 @@ export function ListCostBatchDetailDialog({
                                 <div>
                                     <div className="text-xs font-medium uppercase text-muted-foreground">Status</div>
                                     <div className="mt-1">
-                                        <Badge variant="outline" className={pcrStatusBadgeClass(detail.status)}>
-                                            {detail.status}
+                                        <Badge variant="outline" className={pcrStatusBadgeClass(String(displayStatus))}>
+                                            {displayStatus}
                                         </Badge>
                                     </div>
                                 </div>
@@ -293,7 +325,7 @@ export function ListCostBatchDetailDialog({
                                 </Table>
                             </div>
 
-                            {canAct && rejecting ? (
+                            {(canAct || canOverrideScheduled) && rejecting ? (
                                 <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
                                     <Label htmlFor="cost-batch-reject-reason">Reject Reason</Label>
                                     <Textarea
@@ -356,25 +388,81 @@ export function ListCostBatchDetailDialog({
                                 </Button>
                             </>
                         ) : null}
+                        {!canAct && canOverrideScheduled ? (
+                            <>
+                                {rejecting ? (
+                                    <>
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                                setRejecting(false);
+                                                setRejectReason("");
+                                            }}
+                                            disabled={acting}
+                                        >
+                                            Cancel Reject
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            className={pcrRejectButtonClass}
+                                            onClick={() => setConfirmingAction("reject_schedule")}
+                                            disabled={acting || !rejectReason.trim()}
+                                        >
+                                            Reject Scheduled Change
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <Button
+                                        variant="outline"
+                                        className={pcrRejectButtonClass}
+                                        onClick={() => setRejecting(true)}
+                                        disabled={acting}
+                                    >
+                                        Reject Scheduled Change
+                                    </Button>
+                                )}
+                                <Button
+                                    className={pcrApproveButtonClass}
+                                    onClick={() => setConfirmingAction("apply_now")}
+                                    disabled={acting}
+                                >
+                                    Apply Now
+                                </Button>
+                            </>
+                        ) : null}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
             <DecisionConfirmationDialog
                 open={confirmingAction != null}
-                action={confirmingAction ?? "approve"}
+                action={confirmingAction === "reject" || confirmingAction === "reject_schedule" ? "reject" : "approve"}
                 recordLabel={headerId ? `CCR-${headerId}` : "List Cost Request"}
                 loading={acting}
                 description={
-                    confirmingAction === "reject"
+                    confirmingAction === "apply_now"
+                        ? `Apply ${headerId ? `CCR-${headerId}` : "this list cost request"} now? This will immediately apply the scheduled list cost changes.`
+                        : confirmingAction === "reject_schedule"
+                            ? `Reject ${headerId ? `CCR-${headerId}` : "this list cost request"}? This will cancel the scheduled list cost changes before they take effect.`
+                            : confirmingAction === "reject"
                         ? `Reject ${headerId ? `CCR-${headerId}` : "this list cost request"}? This will reject all detail lines in the request.`
                         : `Approve ${headerId ? `CCR-${headerId}` : "this list cost request"}? This will approve and apply all detail lines in the request.`
                 }
-                rejectReason={confirmingAction === "reject" ? rejectReason.trim() : undefined}
+                rejectReason={confirmingAction === "reject" || confirmingAction === "reject_schedule" ? rejectReason.trim() : undefined}
+                hideEffectiveAt={confirmingAction === "apply_now"}
+                confirmLabel={confirmingAction === "apply_now" ? "Apply Now" : confirmingAction === "reject_schedule" ? "Reject Scheduled Change" : undefined}
                 onOpenChange={(nextOpen) => {
                     if (!nextOpen) setConfirmingAction(null);
                 }}
-                onConfirm={confirmingAction === "reject" ? handleReject : handleApprove}
+                onConfirm={
+                    confirmingAction === "reject"
+                        ? handleReject
+                        : confirmingAction === "reject_schedule"
+                            ? handleRejectScheduled
+                            : confirmingAction === "apply_now"
+                                ? handleApplyScheduledNow
+                                : handleApprove
+                }
             />
         </>
     );

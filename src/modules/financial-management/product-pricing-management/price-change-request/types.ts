@@ -1,7 +1,8 @@
 export type PCRStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 export type PriceChangeApplicationStatus = "SCHEDULED" | "APPLIED" | "CANCELLED";
+export type PCRDisplayStatus = PCRStatus | "SCHEDULED";
 
-export type PCRStatusFilter = PCRStatus | "ALL";
+export type PCRStatusFilter = PCRDisplayStatus | "ALL";
 
 export type ApprovalKind = "price_batch" | "cost_batch" | "price_type" | "list_price";
 

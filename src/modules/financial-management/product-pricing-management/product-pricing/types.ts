@@ -118,6 +118,8 @@ export type PriceChangeRequest = {
     price_type_id: number | { price_type_id: number };
     proposed_price: number;
     status: string;
+    application_status?: string | null;
+    effective_at?: string | null;
 };
 
 export type PriceChangeBatchLineInput = {
@@ -171,5 +173,14 @@ export type CostChangeRequest = {
     proposed_cost: number;
     current_cost: number | null;
     status: string;
+    application_status?: string | null;
+    effective_at?: string | null;
+};
+
+export type PendingCellRequest = {
+    proposedValue: number;
+    status?: string | null;
+    applicationStatus?: string | null;
+    effectiveAt?: string | null;
 };
 

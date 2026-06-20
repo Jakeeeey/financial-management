@@ -158,6 +158,32 @@ function norm(v: string | null) {
     return s;
 }
 
+function appendDisplayStatusFilter(params: URLSearchParams, andIdx: number, status: string): number {
+    const normalized = status.trim().toUpperCase();
+    if (!normalized) return andIdx;
+
+    const addAnd = (suffix: string, value: string) => {
+        params.set(`filter[_and][${andIdx}]${suffix}`, value);
+        andIdx += 1;
+    };
+
+    if (normalized === "SCHEDULED") {
+        addAnd("[status][_eq]", "APPROVED");
+        addAnd("[application_status][_eq]", "SCHEDULED");
+        return andIdx;
+    }
+
+    if (normalized === "APPROVED") {
+        addAnd("[status][_eq]", "APPROVED");
+        params.set(`filter[_and][${andIdx}][_or][0][application_status][_neq]`, "SCHEDULED");
+        params.set(`filter[_and][${andIdx}][_or][1][application_status][_null]`, "true");
+        return andIdx + 1;
+    }
+
+    addAnd("[status][_eq]", normalized);
+    return andIdx;
+}
+
 function unwrapErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
@@ -297,7 +323,7 @@ export async function GET(req: NextRequest) {
             andIdx += 1;
         };
 
-        if (status) addAnd("[status][_eq]", status);
+        andIdx = appendDisplayStatusFilter(params, andIdx, status);
         if (product_id) addAnd("[product_id][_eq]", product_id);
         if (price_type_id) addAnd("[price_type_id][_eq]", price_type_id);
         if (requested_by) addAnd("[requested_by][_eq]", requested_by);

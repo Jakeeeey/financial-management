@@ -355,6 +355,8 @@ export function ListCostRequestManager({
                     : {
                           onApprove: actions.approve,
                           onReject: actions.reject,
+                          onApplyScheduledNow: actions.applyScheduledNow,
+                          onRejectScheduled: actions.rejectScheduled,
                       })}
             />
 
@@ -371,6 +373,9 @@ export function ListCostRequestManager({
                     : {
                           onApprove: inbox.approveCostBatch,
                           onReject: inbox.rejectCostBatch,
+                          onApplyScheduledNow: (headerId: number) => inbox.applyScheduledNow("cost_batch", headerId),
+                          onRejectScheduled: (headerId: number, reason: string) =>
+                              inbox.rejectScheduled("cost_batch", headerId, reason),
                       })}
             />
 

@@ -633,11 +633,35 @@ type ApprovalResponse = {
     effective_at?: string | null;
 };
 
+export type ScheduledOverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch";
+export type ScheduledOverrideAction = "apply_now" | "reject_schedule";
+
+export type ScheduledOverrideResponse = {
+    ok: boolean;
+    kind: ScheduledOverrideKind;
+    action: ScheduledOverrideAction;
+    id: number;
+    affected?: number;
+};
+
 function approvalBody(effectiveAt?: string | null) {
     return {
         action: "approve",
         ...(effectiveAt ? { effective_at: effectiveAt } : {}),
     };
+}
+
+export async function overrideScheduledPriceChange(payload: {
+    kind: ScheduledOverrideKind;
+    id: number;
+    action: ScheduledOverrideAction;
+    reject_reason?: string;
+}) {
+    return http<ScheduledOverrideResponse>(`/api/fm/product-pricing/scheduled-price-changes/override`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
 }
 
 export async function approvePriceChangeBatch(headerId: number, effectiveAt?: string | null) {

@@ -32,13 +32,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type OverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch";
-type OverrideAction = "reschedule" | "apply_now" | "cancel_schedule";
+type OverrideAction = "reschedule" | "apply_now" | "cancel_schedule" | "reject_schedule";
 
 type OverrideBody = Partial<{
     kind: OverrideKind;
     id: number;
     action: OverrideAction;
     effective_at: string | null;
+    reject_reason: string | null;
 }>;
 
 type ScheduledPriceRow = {
@@ -66,6 +67,20 @@ function isScheduledApproved(row: { status?: string | null; application_status?:
     return String(row?.status ?? "") === "APPROVED" && String(row?.application_status ?? "") === "SCHEDULED";
 }
 
+function isFutureScheduledApproved(
+    row: { status?: string | null; application_status?: string | null; effective_at?: string | null } | null,
+) {
+    if (!isScheduledApproved(row)) return false;
+    const time = new Date(row?.effective_at ?? "").getTime();
+    return Number.isFinite(time) && time > Date.now();
+}
+
+function requireRejectReason(value?: string | null) {
+    const reason = String(value ?? "").trim();
+    if (!reason) throw new Error("reject_reason is required.");
+    return reason;
+}
+
 async function patchRows(collection: string, ids: number[], patch: Record<string, unknown>) {
     await Promise.all(
         ids
@@ -87,6 +102,16 @@ async function rescheduleRequest(collection: string, id: number, effectiveAt?: s
 
 async function cancelScheduledRequest(collection: string, id: number) {
     await patchRows(collection, [id], { application_status: "CANCELLED" });
+}
+
+async function rejectScheduledRequest(collection: string, id: number, userId: number, rejectReason: string) {
+    await patchRows(collection, [id], {
+        status: "REJECTED",
+        application_status: "CANCELLED",
+        rejected_by: userId,
+        rejected_at: nowManila(),
+        reject_reason: rejectReason,
+    });
 }
 
 async function applyPriceRequestNow(row: ScheduledPriceRow, userId: number) {
@@ -170,6 +195,17 @@ async function patchBatchSchedule(collection: string, headerId: number, patch: R
     return ids.length;
 }
 
+async function rejectScheduledBatch(collection: string, headerId: number, userId: number, rejectReason: string) {
+    const now = nowManila();
+    return patchBatchSchedule(collection, headerId, {
+        status: "REJECTED",
+        application_status: "CANCELLED",
+        rejected_by: userId,
+        rejected_at: now,
+        reject_reason: rejectReason,
+    });
+}
+
 export async function POST(req: NextRequest) {
     try {
         const userId = decodeUserIdFromJwtCookie(req);
@@ -183,7 +219,7 @@ export async function POST(req: NextRequest) {
         if (!kind || !["price_request", "price_batch", "cost_request", "cost_batch"].includes(kind)) {
             return NextResponse.json({ error: "Unsupported kind" }, { status: 400 });
         }
-        if (!action || !["reschedule", "apply_now", "cancel_schedule"].includes(action)) {
+        if (!action || !["reschedule", "apply_now", "cancel_schedule", "reject_schedule"].includes(action)) {
             return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
         }
         if (!Number.isFinite(id) || id <= 0) {
@@ -192,29 +228,31 @@ export async function POST(req: NextRequest) {
 
         if (kind === "price_request") {
             const row = await getPriceRequest(id);
-            if (!row || !isScheduledApproved(row)) {
+            if (!row || !isFutureScheduledApproved(row)) {
                 return NextResponse.json({ error: "Only scheduled approved price requests can be overridden." }, { status: 400 });
             }
             if (action === "reschedule") await rescheduleRequest(PRICE_DETAILS, id, body.effective_at);
             if (action === "cancel_schedule") await cancelScheduledRequest(PRICE_DETAILS, id);
+            if (action === "reject_schedule") await rejectScheduledRequest(PRICE_DETAILS, id, userId, requireRejectReason(body.reject_reason));
             if (action === "apply_now") await applyPriceRequestNow(row, userId);
             return NextResponse.json({ ok: true, kind, action, id });
         }
 
         if (kind === "cost_request") {
             const row = await getCostRequest(id);
-            if (!row || !isScheduledApproved(row)) {
+            if (!row || !isFutureScheduledApproved(row)) {
                 return NextResponse.json({ error: "Only scheduled approved cost requests can be overridden." }, { status: 400 });
             }
             if (action === "reschedule") await rescheduleRequest(CCR, id, body.effective_at);
             if (action === "cancel_schedule") await cancelScheduledRequest(CCR, id);
+            if (action === "reject_schedule") await rejectScheduledRequest(CCR, id, userId, requireRejectReason(body.reject_reason));
             if (action === "apply_now") await applyCostRequestNow(row, userId);
             return NextResponse.json({ ok: true, kind, action, id });
         }
 
         if (kind === "price_batch") {
             const header = await getHeader(id);
-            if (!isScheduledApproved(header)) {
+            if (!isFutureScheduledApproved(header)) {
                 return NextResponse.json({ error: "Only scheduled approved price batches can be overridden." }, { status: 400 });
             }
             if (action === "reschedule") {
@@ -229,12 +267,16 @@ export async function POST(req: NextRequest) {
                 const affected = await patchBatchSchedule(PRICE_DETAILS, id, { application_status: "CANCELLED" });
                 return NextResponse.json({ ok: true, kind, action, id, affected });
             }
+            if (action === "reject_schedule") {
+                const affected = await rejectScheduledBatch(PRICE_DETAILS, id, userId, requireRejectReason(body.reject_reason));
+                return NextResponse.json({ ok: true, kind, action, id, affected });
+            }
             const affected = await applyPriceBatchNow(id, userId);
             return NextResponse.json({ ok: true, kind, action, id, affected });
         }
 
         const header = await getCostHeader(id);
-        if (!isScheduledApproved(header)) {
+        if (!isFutureScheduledApproved(header)) {
             return NextResponse.json({ error: "Only scheduled approved cost batches can be overridden." }, { status: 400 });
         }
         if (action === "reschedule") {
@@ -249,10 +291,14 @@ export async function POST(req: NextRequest) {
             const affected = await patchBatchSchedule(COST_DETAILS, id, { application_status: "CANCELLED" });
             return NextResponse.json({ ok: true, kind, action, id, affected });
         }
+        if (action === "reject_schedule") {
+            const affected = await rejectScheduledBatch(COST_DETAILS, id, userId, requireRejectReason(body.reject_reason));
+            return NextResponse.json({ ok: true, kind, action, id, affected });
+        }
         const affected = await applyCostBatchNow(id, userId);
         return NextResponse.json({ ok: true, kind, action, id, affected });
     } catch (error: unknown) {
-        if (error instanceof Error && error.message.includes("effective_at")) {
+        if (error instanceof Error && (error.message.includes("effective_at") || error.message.includes("reject_reason"))) {
             return NextResponse.json({ error: error.message }, { status: 400 });
         }
         return directusErrorResponse(error);

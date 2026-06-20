@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import type { UnifiedApprovalRow } from "../types";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { decisionUserLabel } from "../utils/labels";
-import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import { displayPcrStatus, pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
     row: UnifiedApprovalRow | null;
@@ -29,6 +29,8 @@ type Props = {
     onOpenChange: (open: boolean) => void;
     onApprove?: (requestId: number, effectiveAt?: string | null) => Promise<void>;
     onReject?: (requestId: number, reason: string) => Promise<void>;
+    onApplyScheduledNow?: (requestId: number) => Promise<void>;
+    onRejectScheduled?: (requestId: number, reason: string) => Promise<void>;
 };
 
 function money(value: number | null | undefined) {
@@ -66,10 +68,12 @@ export function ListPriceRequestDetailDialog({
     onOpenChange,
     onApprove,
     onReject,
+    onApplyScheduledNow,
+    onRejectScheduled,
 }: Props) {
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
-    const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | null>(null);
+    const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | "apply_now" | "reject_schedule" | null>(null);
     const [submitting, setSubmitting] = React.useState(false);
 
     React.useEffect(() => {
@@ -102,7 +106,20 @@ export function ListPriceRequestDetailDialog({
             ? (delta / currentNumeric) * 100
             : null;
     const status = String(row?.status ?? "").toUpperCase();
+    const displayStatus = row ? displayPcrStatus(row.status, row.application_status) : "";
+    const effectiveTime = new Date(row?.effective_at ?? "").getTime();
+    const isScheduledBeforeEffective =
+        status === "APPROVED" &&
+        row?.application_status === "SCHEDULED" &&
+        Number.isFinite(effectiveTime) &&
+        effectiveTime > Date.now();
     const busy = acting || submitting;
+    const canOverrideScheduled =
+        !readOnly &&
+        isScheduledBeforeEffective &&
+        requestId != null &&
+        onApplyScheduledNow != null &&
+        onRejectScheduled != null;
 
     const handleApprove = async (effectiveAt?: string | null) => {
         if (!requestId || !onApprove) return;
@@ -121,6 +138,30 @@ export function ListPriceRequestDetailDialog({
         setSubmitting(true);
         try {
             await onReject(requestId, rejectReason.trim());
+            setConfirmingAction(null);
+            onOpenChange(false);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleApplyScheduledNow = async () => {
+        if (!requestId || !onApplyScheduledNow) return;
+        setSubmitting(true);
+        try {
+            await onApplyScheduledNow(requestId);
+            setConfirmingAction(null);
+            onOpenChange(false);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleRejectScheduled = async () => {
+        if (!requestId || !rejectReason.trim() || !onRejectScheduled) return;
+        setSubmitting(true);
+        try {
+            await onRejectScheduled(requestId, rejectReason.trim());
             setConfirmingAction(null);
             onOpenChange(false);
         } finally {
@@ -152,8 +193,8 @@ export function ListPriceRequestDetailDialog({
                             <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Status</div>
                                 <div className="mt-1">
-                                    <Badge variant="outline" className={pcrStatusBadgeClass(row.status)}>
-                                        {row.status}
+                                    <Badge variant="outline" className={pcrStatusBadgeClass(String(displayStatus))}>
+                                        {displayStatus}
                                     </Badge>
                                 </div>
                             </div>
@@ -290,20 +331,78 @@ export function ListPriceRequestDetailDialog({
                             </>
                         )
                     ) : null}
+                    {!canAct && canOverrideScheduled ? (
+                        rejecting ? (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setRejecting(false);
+                                        setRejectReason("");
+                                    }}
+                                    disabled={busy}
+                                >
+                                    Cancel Reject
+                                </Button>
+                                <Button
+                                    variant="destructive"
+                                    onClick={() => setConfirmingAction("reject_schedule")}
+                                    disabled={busy || !rejectReason.trim()}
+                                >
+                                    Reject Scheduled Change
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    className={pcrRejectButtonClass}
+                                    onClick={() => setRejecting(true)}
+                                    disabled={busy}
+                                >
+                                    Reject Scheduled Change
+                                </Button>
+                                <Button
+                                    className={pcrApproveButtonClass}
+                                    onClick={() => setConfirmingAction("apply_now")}
+                                    disabled={busy}
+                                >
+                                    Apply Now
+                                </Button>
+                            </>
+                        )
+                    ) : null}
                 </DialogFooter>
             </DialogContent>
         </Dialog>
 
             <DecisionConfirmationDialog
                 open={confirmingAction != null}
-                action={confirmingAction ?? "approve"}
+                action={confirmingAction === "reject" || confirmingAction === "reject_schedule" ? "reject" : "approve"}
                 recordLabel={row?.record_label ?? "List Cost Request"}
                 loading={busy}
-                rejectReason={confirmingAction === "reject" ? rejectReason.trim() : undefined}
+                description={
+                    confirmingAction === "apply_now"
+                        ? `Apply ${row?.record_label ?? "this list cost request"} now? This will immediately apply the scheduled list cost change.`
+                        : confirmingAction === "reject_schedule"
+                            ? `Reject ${row?.record_label ?? "this list cost request"}? This will cancel the scheduled list cost change before it takes effect.`
+                            : undefined
+                }
+                rejectReason={confirmingAction === "reject" || confirmingAction === "reject_schedule" ? rejectReason.trim() : undefined}
+                hideEffectiveAt={confirmingAction === "apply_now"}
+                confirmLabel={confirmingAction === "apply_now" ? "Apply Now" : confirmingAction === "reject_schedule" ? "Reject Scheduled Change" : undefined}
                 onOpenChange={(nextOpen) => {
                     if (!nextOpen) setConfirmingAction(null);
                 }}
-                onConfirm={confirmingAction === "reject" ? handleReject : handleApprove}
+                onConfirm={
+                    confirmingAction === "reject"
+                        ? handleReject
+                        : confirmingAction === "reject_schedule"
+                            ? handleRejectScheduled
+                            : confirmingAction === "apply_now"
+                                ? handleApplyScheduledNow
+                                : handleApprove
+                }
             />
         </>
     );

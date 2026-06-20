@@ -16,7 +16,12 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { ListMeta, PriceChangeBatchHeader } from "../types";
-import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import {
+    displayPcrStatus,
+    pcrApproveButtonClass,
+    pcrRejectButtonClass,
+    pcrStatusBadgeClass,
+} from "../utils/pcrStatusStyles";
 
 function numberText(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
@@ -100,6 +105,7 @@ export function PriceChangeBatchesTable({
                     ) : (
                         rows.map((row) => {
                             const isPending = row.status === "PENDING";
+                            const displayStatus = displayPcrStatus(row.status, row.application_status);
                             const headerId = Number(row.header_id || row.id);
 
                             return (
@@ -116,8 +122,8 @@ export function PriceChangeBatchesTable({
                                     </TableCell>
                                     <TableCell className="text-right">{numberText(row.line_count ?? 0)}</TableCell>
                                     <TableCell>
-                                        <Badge variant="outline" className={pcrStatusBadgeClass(row.status)}>
-                                            {row.status}
+                                        <Badge variant="outline" className={pcrStatusBadgeClass(displayStatus)}>
+                                            {displayStatus}
                                         </Badge>
                                     </TableCell>
                                     <TableCell>{safeDate(row.requested_at)}</TableCell>

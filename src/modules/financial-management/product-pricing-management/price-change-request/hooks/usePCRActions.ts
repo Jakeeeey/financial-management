@@ -138,6 +138,49 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
         [onDone, onUnauthorized],
     );
 
+    const applyScheduledNow = React.useCallback(
+        async (request_id: number) => {
+            setActing(true);
+            try {
+                await api.overrideScheduledPriceChange({
+                    kind: "cost_request",
+                    id: request_id,
+                    action: "apply_now",
+                });
+                toast.success("Scheduled list cost change applied.");
+                onDone?.();
+            } catch (error: unknown) {
+                applyActionError(error, "Failed to apply scheduled change", { onUnauthorized });
+                throw error;
+            } finally {
+                setActing(false);
+            }
+        },
+        [onDone, onUnauthorized],
+    );
+
+    const rejectScheduled = React.useCallback(
+        async (request_id: number, reject_reason: string) => {
+            setActing(true);
+            try {
+                await api.overrideScheduledPriceChange({
+                    kind: "cost_request",
+                    id: request_id,
+                    action: "reject_schedule",
+                    reject_reason,
+                });
+                toast.success("Scheduled list cost change rejected.");
+                onDone?.();
+            } catch (error: unknown) {
+                applyActionError(error, "Failed to reject scheduled change", { onUnauthorized });
+                throw error;
+            } finally {
+                setActing(false);
+            }
+        },
+        [onDone, onUnauthorized],
+    );
+
     const rejectMany = React.useCallback(
         async (requestIds: number[], reject_reason: string): Promise<BulkActionResult> => {
             const uniqueIds = Array.from(new Set(requestIds)).filter((id) => Number.isFinite(id));
@@ -199,5 +242,5 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
         [onDone, onUnauthorized],
     );
 
-    return { acting, approve, approveMany, cancel, reject, rejectMany };
+    return { acting, approve, approveMany, cancel, reject, applyScheduledNow, rejectScheduled, rejectMany };
 }

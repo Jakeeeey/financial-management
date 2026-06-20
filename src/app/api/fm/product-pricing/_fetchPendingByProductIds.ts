@@ -25,6 +25,7 @@ export type PendingPcrRow = {
         | null;
     proposed_price?: number | string | null;
     status?: string | null;
+    effective_at?: string | null;
     application_status?: string | null;
 };
 
@@ -41,6 +42,7 @@ export type PendingCcrRow = {
         | null;
     proposed_cost?: number | string | null;
     status?: string | null;
+    effective_at?: string | null;
     application_status?: string | null;
 };
 
@@ -62,9 +64,10 @@ function isScheduleFieldAccessError(error: unknown) {
         const parsed: unknown = JSON.parse(error.message);
         if (typeof parsed !== "object" || parsed === null) return false;
         const text = JSON.stringify(parsed).toLowerCase();
-        return text.includes("application_status");
+        return text.includes("application_status") || text.includes("effective_at");
     } catch {
-        return error.message.toLowerCase().includes("application_status");
+        const text = error.message.toLowerCase();
+        return text.includes("application_status") || text.includes("effective_at");
     }
 }
 
@@ -81,6 +84,7 @@ export async function fetchPendingPcrByProductIds(
         "product_id.product_id",
         "price_type_id.price_type_id",
         "status",
+        "effective_at",
         "application_status",
     ].join(",");
     const legacyFields = [
@@ -135,7 +139,7 @@ export async function fetchPendingCcrByProductIds(
 ): Promise<PendingCcrRow[]> {
     if (productIds.length === 0) return [];
 
-    const fields = ["product_id", "proposed_cost", "product_id.product_id", "status", "application_status"].join(",");
+    const fields = ["product_id", "proposed_cost", "product_id.product_id", "status", "effective_at", "application_status"].join(",");
     const legacyFields = ["product_id", "proposed_cost", "product_id.product_id", "status"].join(",");
 
     const batches = chunkArray(productIds, IN_CHUNK_SIZE);

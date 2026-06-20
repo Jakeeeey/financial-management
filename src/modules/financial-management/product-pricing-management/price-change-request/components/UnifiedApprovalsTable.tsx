@@ -17,7 +17,12 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { ListMeta, UnifiedApprovalRow } from "../types";
-import { pcrApproveButtonClass, pcrRejectButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
+import {
+    displayPcrStatus,
+    pcrApproveButtonClass,
+    pcrRejectButtonClass,
+    pcrStatusBadgeClass,
+} from "../utils/pcrStatusStyles";
 
 function safeDate(value: string | null | undefined) {
     if (!value) return "-";
@@ -139,6 +144,7 @@ export function UnifiedApprovalsTable({
                     ) : (
                         rows.map((row) => {
                             const isPending = row.status === "PENDING";
+                            const displayStatus = displayPcrStatus(row.status, row.application_status);
                             const isBatch = row.kind === "price_batch";
                             const requestId = row.kind === "list_price" && row.request_id ? Number(row.request_id) : null;
                             const batchId = row.kind === "price_batch" && row.batch_id ? Number(row.batch_id) : null;
@@ -183,8 +189,8 @@ export function UnifiedApprovalsTable({
                                         ) : null}
                                     </TableCell>
                                     <TableCell>
-                                        <Badge variant="outline" className={pcrStatusBadgeClass(row.status)}>
-                                            {row.status}
+                                        <Badge variant="outline" className={pcrStatusBadgeClass(displayStatus)}>
+                                            {displayStatus}
                                         </Badge>
                                     </TableCell>
                                     <TableCell>{safeDate(row.requested_at)}</TableCell>

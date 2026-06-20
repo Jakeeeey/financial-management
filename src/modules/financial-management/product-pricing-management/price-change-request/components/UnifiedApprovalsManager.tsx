@@ -603,6 +603,8 @@ export function UnifiedApprovalsManager({
                     : {
                           onApprove: costActions.approve,
                           onReject: costActions.reject,
+                          onApplyScheduledNow: costActions.applyScheduledNow,
+                          onRejectScheduled: costActions.rejectScheduled,
                       })}
             />
 
@@ -619,6 +621,9 @@ export function UnifiedApprovalsManager({
                     : {
                           onApprove: feed.approveBatch,
                           onReject: feed.rejectBatch,
+                          onApplyScheduledNow: (headerId: number) => feed.applyScheduledNow("price_batch", headerId),
+                          onRejectScheduled: (headerId: number, reason: string) =>
+                              feed.rejectScheduled("price_batch", headerId, reason),
                       })}
             />
 
@@ -635,6 +640,9 @@ export function UnifiedApprovalsManager({
                     : {
                           onApprove: feed.approveCostBatch,
                           onReject: feed.rejectCostBatch,
+                          onApplyScheduledNow: (headerId: number) => feed.applyScheduledNow("cost_batch", headerId),
+                          onRejectScheduled: (headerId: number, reason: string) =>
+                              feed.rejectScheduled("cost_batch", headerId, reason),
                       })}
             />
 
@@ -653,6 +661,8 @@ export function UnifiedApprovalsManager({
                           onRejectBatch: feed.rejectBatch,
                           onApproveRequest: feed.approvePriceRequest,
                           onRejectRequest: feed.rejectPriceRequest,
+                          onApplyScheduledNow: (kind, id) => feed.applyScheduledNow(kind, id),
+                          onRejectScheduled: (kind, id, reason) => feed.rejectScheduled(kind, id, reason),
                       })}
             />
 

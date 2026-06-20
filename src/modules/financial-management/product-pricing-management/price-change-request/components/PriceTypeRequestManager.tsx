@@ -471,6 +471,9 @@ export function PriceTypeRequestManager({
                     : {
                           onApprove: approveBatch,
                           onReject: rejectBatch,
+                          onApplyScheduledNow: (headerId: number) => inbox.applyScheduledNow("price_batch", headerId),
+                          onRejectScheduled: (headerId: number, reason: string) =>
+                              inbox.rejectScheduled("price_batch", headerId, reason),
                       })}
             />
 
@@ -489,6 +492,8 @@ export function PriceTypeRequestManager({
                           onRejectBatch: rejectBatch,
                           onApproveRequest: approvePriceRequest,
                           onRejectRequest: rejectPriceRequest,
+                          onApplyScheduledNow: (kind, id) => inbox.applyScheduledNow(kind, id),
+                          onRejectScheduled: (kind, id, reason) => inbox.rejectScheduled(kind, id, reason),
                       })}
             />
 
