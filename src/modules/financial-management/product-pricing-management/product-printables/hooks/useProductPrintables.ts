@@ -2,7 +2,6 @@
 "use client";
 
 import * as React from "react";
-import { toast } from "sonner";
 import type { ProductRow, FilterState, MatrixRow, VariantCell, Category, Brand, PriceType } from "../types";
 import { getPricesForProducts } from "../../product-pricing/providers/pricingApi";
 import { emptyPivot, pivotPrices } from "../../product-pricing/utils/pivot";
@@ -35,15 +34,20 @@ export function useProductPrintables(
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>,
     categories: Category[] = EMPTY_CATEGORIES,
     brands: Brand[] = EMPTY_BRANDS,
-    priceTypes: PriceType[] = EMPTY_PRICE_TYPES
+    priceTypes: PriceType[] = EMPTY_PRICE_TYPES,
+    enabled = true,
 ) {
-    const [loading, setLoading] = React.useState(false);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState<string | null>(null);
     const [matrixRows, setMatrixRows] = React.useState<MatrixRow[]>([]);
     const [usedUnitIds, setUsedUnitIds] = React.useState<Set<number>>(new Set());
 
 
     const refresh = React.useCallback(async () => {
+        if (!enabled) return;
+
         setLoading(true);
+        setError(null);
         try {
             const sp = new URLSearchParams();
             if (filters.q) sp.set("q", filters.q);
@@ -126,18 +130,27 @@ export function useProductPrintables(
                 return prev.total_pages === totalPages ? prev : { ...prev, total_pages: totalPages };
             });
         } catch (error: unknown) {
-            toast.error(error instanceof Error ? error.message : "Failed to load products");
+            setError(error instanceof Error ? error.message : "Failed to load products");
+            setMatrixRows([]);
+            setUsedUnitIds(new Set());
+            setFilters(prev => prev.total_pages === 0 ? prev : { ...prev, total_pages: 0 });
         } finally {
             setLoading(false);
         }
-    }, [categories, brands, priceTypes, setFilters, filters.active_only, filters.brand_ids, filters.category_ids, filters.page, filters.q, filters.supplier_ids, filters.supplier_scope, filters.unit_ids]);
+    }, [categories, brands, enabled, priceTypes, setFilters, filters.active_only, filters.brand_ids, filters.category_ids, filters.page, filters.q, filters.supplier_ids, filters.supplier_scope, filters.unit_ids]);
 
     React.useEffect(() => {
-        refresh();
-    }, [refresh]);
+        if (!enabled) {
+            setLoading(true);
+            return;
+        }
+
+        void refresh();
+    }, [enabled, refresh]);
 
     return {
         loading,
+        error,
         matrixRows,
         usedUnitIds,
         filters,

@@ -7,6 +7,7 @@ import {
     getCostRequest,
     rejectOneCostRequest,
 } from "../_actions";
+import { isInvalidProposedCostError } from "../_costValidation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,8 +73,12 @@ export async function POST(req: NextRequest) {
         const data = await approveOneCostRequest(userId, request_id, ccr, body.effective_at);
         return NextResponse.json({ data });
     } catch (error: unknown) {
+        if (isInvalidProposedCostError(error)) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+
         const message = error instanceof Error ? error.message : String(error);
-        if (message === "Invalid product_id on request." || message === "Invalid proposed_cost on request.") {
+        if (message === "Invalid product_id on request.") {
             return NextResponse.json({ error: message }, { status: 400 });
         }
 

@@ -19,6 +19,10 @@ import {
 
 import type { NormalizedCostBulkItem } from "../cost-change-requests/_bulk";
 import { patchProductCostField } from "../cost-change-requests/_actions";
+import {
+    assertValidProposedCost,
+    isInvalidProposedCostError,
+} from "../cost-change-requests/_costValidation";
 
 export {
     decodeUserIdFromJwtCookie,
@@ -194,6 +198,14 @@ export async function createPendingCostBatch(args: {
         return { created: 0, headerId: 0, headerRow: null as CostHeaderRow | null, detailRows: [] as CostDetailRow[] };
     }
 
+    const validatedItems = itemsToCreate.map((item, index) => ({
+        ...item,
+        proposed_cost: assertValidProposedCost(
+            item.proposed_cost,
+            `items[${index}].proposed_cost`,
+        ),
+    }));
+
     await assertCostBatchStorageReady();
 
     const requestedAt = nowManila();
@@ -214,7 +226,7 @@ export async function createPendingCostBatch(args: {
     const headerId = header.data ? normalizeCostHeaderId(header.data) : 0;
     if (!headerId) throw new Error("Cost change header was created without an id");
 
-    const detailPayload = itemsToCreate.map((item) => ({
+    const detailPayload = validatedItems.map((item) => ({
         header_id: headerId,
         product_id: item.product_id,
         current_cost: item.current_cost,
@@ -381,12 +393,21 @@ export async function approveCostBatch(headerId: number, userId: number, effecti
     const normalized = details.map((line) => ({
         requestId: pickId(line.request_id) ?? 0,
         productId: normalizeCostProductId(line),
-        proposedCost: Number(line.proposed_cost),
+        proposedCost: line.proposed_cost,
     }));
 
     for (const line of normalized) {
-        if (!line.productId || !Number.isFinite(line.proposedCost)) {
+        if (!line.productId) {
             return NextResponse.json({ error: "Cost batch contains an invalid detail line." }, { status: 400 });
+        }
+
+        try {
+            line.proposedCost = assertValidProposedCost(line.proposedCost);
+        } catch (error: unknown) {
+            if (isInvalidProposedCostError(error)) {
+                return NextResponse.json({ error: error.message }, { status: 400 });
+            }
+            throw error;
         }
     }
 

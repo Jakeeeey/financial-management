@@ -7,6 +7,10 @@ import { appendProductIdInFilter, getSupplierScopedProductIdsForSuppliers, resol
 import { isCostBatchStorageSetupError } from "../cost-change-batches/_batch";
 import { fetchUserNamesById } from "../price-change-batches/_batch";
 import { createPendingCostRequests, planCostBulkCreate } from "./_bulk";
+import {
+    assertValidProposedCost,
+    isInvalidProposedCostError,
+} from "./_costValidation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -385,15 +389,12 @@ export async function POST(req: NextRequest) {
         }>;
 
         const product_id = Number(body.product_id);
-        const proposed_cost = Number(body.proposed_cost);
         const current_cost = body.current_cost !== undefined ? Number(body.current_cost) : null;
 
         if (!Number.isFinite(product_id) || product_id <= 0) {
             return NextResponse.json({ error: "product_id is required" }, { status: 400 });
         }
-        if (!Number.isFinite(proposed_cost)) {
-            return NextResponse.json({ error: "proposed_cost is required" }, { status: 400 });
-        }
+        const proposed_cost = assertValidProposedCost(body.proposed_cost);
 
         const plan = await planCostBulkCreate([{ product_id, current_cost, proposed_cost }]);
         if (plan.itemsToCreate.length === 0) {
@@ -424,6 +425,10 @@ export async function POST(req: NextRequest) {
             { status: 201 },
         );
     } catch (error: unknown) {
+        if (isInvalidProposedCostError(error)) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+
         const message = unwrapErrorMessage(error);
         const wrapped = parseWrappedError(message);
 

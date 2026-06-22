@@ -4,6 +4,7 @@ import {
     mustBase,
 } from "../price-change-batches/_batch";
 import { createPendingCostBatch } from "../cost-change-batches/_batch";
+import { assertValidProposedCost } from "./_costValidation";
 
 export const CCR = "cost_change_requests";
 
@@ -75,13 +76,15 @@ export function normalizeCostBulkItems(rawItems: CostBulkItemInput[]): {
     const normalizedItems: NormalizedCostBulkItem[] = [];
     let skippedDuplicates = 0;
 
-    for (const item of rawItems) {
+    for (const [index, item] of rawItems.entries()) {
         const productId = Number(item.product_id);
-        const proposedCost = Number(item.proposed_cost);
         const currentCost = item.current_cost !== undefined ? Number(item.current_cost) : null;
+        const proposedCost = assertValidProposedCost(
+            item.proposed_cost,
+            `items[${index}].proposed_cost`,
+        );
 
         if (!Number.isFinite(productId) || productId <= 0) continue;
-        if (!Number.isFinite(proposedCost)) continue;
 
         if (seen.has(productId)) {
             skippedDuplicates += 1;

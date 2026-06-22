@@ -7,6 +7,7 @@ import {
     createPendingCostRequests,
     planCostBulkCreate,
 } from "../_bulk";
+import { isInvalidProposedCostError } from "../_costValidation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,6 +92,10 @@ export async function POST(req: NextRequest) {
             { status: 201 },
         );
     } catch (error: unknown) {
+        if (isInvalidProposedCostError(error)) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+
         const message = error instanceof Error ? error.message : String(error);
         if (isCostBatchStorageSetupError(error)) {
             return costBatchStorageSetupResponse(message);

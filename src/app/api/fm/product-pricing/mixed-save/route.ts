@@ -16,6 +16,7 @@ import {
     planCostBulkCreate,
 } from "../cost-change-requests/_bulk";
 import { isCostBatchStorageSetupError } from "../cost-change-batches/_batch";
+import { isInvalidProposedCostError } from "../cost-change-requests/_costValidation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -257,6 +258,10 @@ export async function POST(req: NextRequest) {
             { status: 201 },
         );
     } catch (error: unknown) {
+        if (isInvalidProposedCostError(error)) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+
         if (isCostBatchStorageSetupError(error)) {
             return costBatchStorageSetupResponse(error.message);
         }

@@ -54,12 +54,20 @@ function buildPrintFilterParams(filters: FilterState): PrintFilterParams {
 export default function ProductPrintablesView({ userName }: { userName?: string }) {
     const [filters, setFilters] = React.useState<FilterState>(defaultFilters);
     const { categories, brands, units, suppliers, priceTypes, loading: lookupsLoading } = useLookups(filters);
-    const { matrixRows, usedUnitIds, loading: productsLoading, resetFilters } = useProductPrintables(
+    const {
+        matrixRows,
+        usedUnitIds,
+        loading: productsLoading,
+        error: productsError,
+        refresh: refreshProducts,
+        resetFilters,
+    } = useProductPrintables(
         filters,
         setFilters,
         categories,
         brands,
         priceTypes,
+        !lookupsLoading,
     );
     const [isPrinting, setIsPrinting] = React.useState(false);
     const [printPrepareOpen, setPrintPrepareOpen] = React.useState(false);
@@ -375,7 +383,9 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
 
             <PrintablesMatrixTable
                 rows={matrixRows}
-                loading={productsLoading}
+                loading={lookupsLoading || productsLoading}
+                error={productsError}
+                onRetry={() => void refreshProducts()}
                 priceTypes={priceTypes}
                 units={units}
                 usedUnitIds={usedUnitIds}
@@ -383,7 +393,7 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
             />
 
             {/* Pagination Controls */}
-            {filters.total_pages > 1 && (
+            {!lookupsLoading && !productsLoading && !productsError && matrixRows.length > 0 && filters.total_pages > 1 && (
                 <div className="flex items-center justify-between px-2 py-4 bg-muted/20 rounded-2xl border border-border/50">
                     <div className="text-sm text-muted-foreground">
                         Page <span className="font-bold text-foreground">{filters.page}</span> of <span className="font-bold text-foreground">{filters.total_pages}</span>

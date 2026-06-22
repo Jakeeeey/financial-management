@@ -8,6 +8,7 @@ import {
 import { chunkArray, IN_CHUNK_SIZE } from "../_directusPaging";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 import { executeClaimedApplication, stageStandaloneApproval } from "../_applicationEngine";
+import { assertValidProposedCost } from "./_costValidation";
 
 export const CCR = "cost_change_requests";
 const PRODUCTS = "products";
@@ -78,7 +79,8 @@ export async function fetchCostRequestsByIds(requestIds: number[]): Promise<Map<
 }
 
 export async function patchProductCostField(args: { product_id: number; proposed_cost: number; userId?: number | null }) {
-    const { product_id, proposed_cost } = args;
+    const { product_id } = args;
+    const proposed_cost = assertValidProposedCost(args.proposed_cost);
     const params = new URLSearchParams({ fields: "product_id,cost_per_unit" });
     const url = `${mustBase()}/items/${PRODUCTS}/${product_id}?${params.toString()}`;
 
@@ -96,14 +98,10 @@ export async function approveOneCostRequest(
     effectiveAt?: string | null,
 ): Promise<CcrRow> {
     const product_id = Number(row.product_id);
-    const proposed_cost = Number(row.proposed_cost);
+    const proposed_cost = assertValidProposedCost(row.proposed_cost);
 
     if (!Number.isFinite(product_id) || product_id <= 0) {
         throw new Error("Invalid product_id on request.");
-    }
-
-    if (!Number.isFinite(proposed_cost)) {
-        throw new Error("Invalid proposed_cost on request.");
     }
 
     const staged = await stageStandaloneApproval<CcrRow>({
