@@ -26,6 +26,11 @@ export interface RawInvoiceRow {
   appliedDebitMemos?: number;
   unpostedCollectionAmount?: number;
   salesType?: number | null;       // FK → operation.id
+  dispatchDate?: string | null;
+  paymentStatus?: string | null;
+  transactionStatus?: string | null;
+  cluster?: string;
+  salesmanCode?: string | null;
   // Fallback aliases
   id?: string;
   invoice_number?: string;
@@ -61,6 +66,12 @@ export interface Invoice {
   unpostedCollectionAmount: number;
   isPosted: boolean;
   salesType: number | null;          // FK → operation.id
+  deliveryDate: string;
+  arStatus: 'Due' | 'Overdue' | '—';
+  salesmanCode: string;
+  paymentStatus: string;
+  transactionStatus: string;
+  cluster: string;
 }
 
 export interface AgingBucket {
@@ -91,6 +102,9 @@ export interface ARMetrics {
   realOutstanding: number;
   overdueInvoices: Invoice[];
   avgOverdue: number;
+  unpostedAllocationsActive?: number;
+  unpostedAllocationsPaid?: number;
+  unpostedUnallocated?: number;
 }
 
 export interface OperationBreakdown {
@@ -104,4 +118,8 @@ export interface OperationBreakdown {
 export interface ARApiResponse {
   rows: RawInvoiceRow[];
   operationData: OperationBreakdown[];
+  totalUnpostedPool?: number;
+  unpostedAllocationsActive?: number;
+  unpostedAllocationsPaid?: number;
+  unpostedUnallocated?: number;
 }
