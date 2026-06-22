@@ -76,6 +76,12 @@ export function transformInvoices(data: RawInvoiceRow[]): {
     salesmanMap[salesman] = (salesmanMap[salesman] || 0) + outstanding;
     customerMap[customer] = (customerMap[customer] || 0) + outstanding;
 
+    const arStatus: Invoice['arStatus'] = isOverdue
+      ? 'Overdue'
+      : (row.dispatchDate ? 'Due' : '—');
+    const paymentStatus = String(row.paymentStatus || 'Unpaid');
+    const transactionStatus = String(row.transactionStatus || 'NULL');
+
     return {
       id:           String(row.invoiceId ?? row.id ?? row.invoiceNo ?? ''),
       invoiceNo:    String(row.invoiceNo ?? row.invoice_number ?? '—'),
@@ -101,6 +107,12 @@ export function transformInvoices(data: RawInvoiceRow[]): {
       unpostedCollectionAmount: Number(row.unpostedCollectionAmount ?? 0),
       isPosted:           parseBit(row.isPosted),
       salesType:          row.salesType != null ? Number(row.salesType) : null,
+      deliveryDate:       row.dispatchDate ? String(row.dispatchDate) : '',
+      arStatus,
+      paymentStatus,
+      transactionStatus,
+      cluster:            String(row.cluster ?? 'Unassigned'),
+      salesmanCode:       String(row.salesmanCode ?? '—'),
     };
   });
 

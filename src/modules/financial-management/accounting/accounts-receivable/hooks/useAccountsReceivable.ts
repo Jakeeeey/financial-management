@@ -73,6 +73,9 @@ export function useAccountsReceivable(): UseARResult {
         const metrics      = deriveMetrics(invoices);
         metrics.totalUnposted = totalUnpostedPool;
         metrics.realOutstanding = Math.max(0, metrics.totalOutstanding - totalUnpostedPool);
+        metrics.unpostedAllocationsActive = result.unpostedAllocationsActive || 0;
+        metrics.unpostedAllocationsPaid = result.unpostedAllocationsPaid || 0;
+        metrics.unpostedUnallocated = result.unpostedUnallocated || 0;
 
         const customerData = mapToSortedArray(customerMap, 10);
         const salesmanData = Object.entries(salesmanMap)

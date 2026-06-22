@@ -22,14 +22,17 @@ interface SalesInvoiceRow {
   sales_type: number | null;   // FK → operation.id
   salesman_id: number | null;
   branch_id: { branch_name: string } | null;
+  dispatch_date: string | null;
+  payment_status: string | null;
+  transaction_status: string | null;
 }
 
 interface PaymentRow    { invoice_id: number; paid_amount: number | null; }
 interface ReturnRow     { invoice_no: number; amount: number | null; }
 interface MemoRow       { invoice_id: number; amount: number | null; memo_id: { type: number | null; status: string | null } | null; }
 interface UnfulfilledRow{ sales_invoice_id: number; variance_amount: number | null; }
-interface CustomerRow   { customer_code: string; customer_name: string; }
-interface SalesmanRow   { id: number; salesman_name: string; division_id: number | null; }
+interface CustomerRow   { customer_code: string; customer_name: string; province?: string | null; city?: string | null; brgy?: string | null; }
+interface SalesmanRow   { id: number; salesman_name: string; division_id: number | null; salesman_code?: string | null; }
 interface DivisionRow   { division_id: number; division_name: string; }
 interface OperationRow  { id: number; operation_name: string; operation_code: string | null; }
 interface CollectionRow {
@@ -109,6 +112,7 @@ export async function GET() {
       'invoice_id', 'invoice_no', 'order_id', 'customer_code',
       'invoice_date', 'due_date', 'gross_amount', 'discount_amount',
       'isPosted', 'sales_type', 'salesman_id', 'branch_id.branch_name',
+      'dispatch_date', 'payment_status', 'transaction_status'
     ].join(',');
 
     const invoiceFilter =
@@ -149,6 +153,8 @@ export async function GET() {
       divisions,
       operations,
       unpostedInvoiceAllocs,
+      clusters,
+      areas,
     ] = await Promise.all([
       fetchAllChunked<PaymentRow>(
         `${DIRECTUS_URL}/items/sales_invoice_payments?limit=-1&fields=invoice_id,paid_amount`,
@@ -171,12 +177,12 @@ export async function GET() {
         invoiceIds
       ),
       fetchAllChunked<CustomerRow>(
-        `${DIRECTUS_URL}/items/customer?limit=-1&fields=customer_code,customer_name`,
+        `${DIRECTUS_URL}/items/customer?limit=-1&fields=customer_code,customer_name,province,city,brgy`,
         'customer_code',
         customerCodes
       ),
       fetchAllChunked<SalesmanRow>(
-        `${DIRECTUS_URL}/items/salesman?limit=-1&fields=id,salesman_name,division_id`,
+        `${DIRECTUS_URL}/items/salesman?limit=-1&fields=id,salesman_name,division_id,salesman_code`,
         'id',
         salesmanIds
       ),
@@ -191,20 +197,81 @@ export async function GET() {
         'collection_id',
         unpostedPouchIds
       ).catch(() => []),
+      fetchAll<{ id: number; cluster_name: string }>(
+        `${DIRECTUS_URL}/items/cluster?limit=-1&fields=id,cluster_name`
+      ).catch(() => []),
+      fetchAll<{ id: number; cluster_id: number; province: string | null; city: string | null; baranggay: string | null }>(
+        `${DIRECTUS_URL}/items/area_per_cluster?limit=-1&fields=id,cluster_id,province,city,baranggay`
+      ).catch(() => []),
     ]);
 
     // ── Lookup maps ───────────────────────────────────────────────────────
     const customerMap = new Map<string, string>(customers.map(c => [c.customer_code, c.customer_name]));
     const divisionMap = new Map<number, string>(divisions.map(d => [d.division_id, d.division_name]));
-    const salesmanMap = new Map<number, { name: string; division: string }>(
+    const salesmanMap = new Map<number, { name: string; division: string; code: string }>(
       salesmen.map(s => [s.id, {
         name:     s.salesman_name,
         division: s.division_id ? (divisionMap.get(s.division_id) || '—') : '—',
+        code:     s.salesman_code || '—',
       }])
     );
     const operationMap = new Map<number, { name: string; code: string | null }>(
       operations.map(op => [op.id, { name: op.operation_name, code: op.operation_code }])
     );
+
+    // Matching logic for Area Per Cluster
+    function findClusterForCustomer(
+      prov: string | null | undefined,
+      cit: string | null | undefined,
+      brg: string | null | undefined,
+      areasList: { cluster_id: number; province: string | null; city: string | null; baranggay: string | null }[]
+    ): number | null {
+      const p = prov?.trim().toUpperCase() || '';
+      const c = cit?.trim().toUpperCase() || '';
+      const b = brg?.trim().toUpperCase() || '';
+
+      if (!p) return null;
+
+      let bestMatch: { cluster_id: number; score: number } | null = null;
+
+      for (const area of areasList) {
+        const ap = area.province?.trim().toUpperCase() || '';
+        const ac = area.city?.trim().toUpperCase() || '';
+        const ab = area.baranggay?.trim().toUpperCase() || '';
+
+        // Province must match if specified
+        if (ap && ap !== p) continue;
+
+        let score = 0;
+        if (ap) score += 1;
+
+        // City must match if specified
+        if (ac) {
+          if (ac !== c) continue;
+          score += 2;
+        }
+
+        // Barangay must match if specified
+        if (ab) {
+          if (ab !== b) continue;
+          score += 4;
+        }
+
+        if (!bestMatch || score > bestMatch.score) {
+          bestMatch = { cluster_id: area.cluster_id, score };
+        }
+      }
+
+      return bestMatch ? bestMatch.cluster_id : null;
+    }
+
+    const clusterNameMap = new Map<number, string>(clusters.map(cl => [cl.id, cl.cluster_name]));
+    const customerClusterMap = new Map<string, string>();
+    for (const cust of customers) {
+      const cId = findClusterForCustomer(cust.province, cust.city, cust.brgy, areas);
+      const cName = cId ? (clusterNameMap.get(cId) || 'Unassigned') : 'Unassigned';
+      customerClusterMap.set(cust.customer_code, cName);
+    }
 
     // ── Aggregation maps ──────────────────────────────────────────────────
     const paymentAgg = new Map<number, number>();
@@ -291,6 +358,9 @@ export async function GET() {
         customerCode:       inv.customer_code || '',
         invoiceDate:        inv.invoice_date,
         calculatedDueDate:  inv.due_date,
+        dispatchDate:       inv.dispatch_date,
+        paymentStatus:      inv.payment_status || 'Unpaid',
+        transactionStatus:  inv.transaction_status || 'NULL',
         grossAmount,
         discountAmount,
         netReceivable,
@@ -304,9 +374,11 @@ export async function GET() {
         daysOverdue,          // negative = future, 0 = today, positive = overdue
         branch:   inv.branch_id?.branch_name || 'Unknown',
         salesman: sm?.name     || 'Unknown',
+        salesmanCode: sm?.code || '—',
         division: sm?.division || '—',
         salesType: inv.sales_type ?? null,
         isPosted: false,      // always false — posted are excluded above
+        cluster: customerClusterMap.get(inv.customer_code || '') || 'Unassigned',
       });
     }
 
@@ -336,6 +408,19 @@ export async function GET() {
     // Calculate option B: Total Unposted Collections Pool
     const totalUnpostedPool = unpostedCollections.reduce((sum, c) => sum + (Number(c.totalAmount) || 0), 0);
 
+    // Calculate unposted allocations breakdown
+    const activeInvoiceIds = new Set(invoices.map(i => i.invoice_id));
+    let unpostedAllocationsActive = 0;
+    let unpostedAllocationsPaid = 0;
+    for (const alloc of unpostedInvoiceAllocs) {
+      if (activeInvoiceIds.has(alloc.invoice_id)) {
+        unpostedAllocationsActive += Number(alloc.amount) || 0;
+      } else {
+        unpostedAllocationsPaid += Number(alloc.amount) || 0;
+      }
+    }
+    const unpostedUnallocated = Math.max(0, totalUnpostedPool - (unpostedAllocationsActive + unpostedAllocationsPaid));
+
     // Group unposted collections by salesman name
     const salesmanUnpostedRecord: Record<string, number> = {};
     for (const c of unpostedCollections) {
@@ -350,6 +435,9 @@ export async function GET() {
       rows, 
       operationData, 
       totalUnpostedPool, 
+      unpostedAllocationsActive,
+      unpostedAllocationsPaid,
+      unpostedUnallocated,
       salesmanUnposted: salesmanUnpostedRecord 
     });
   } catch (err: unknown) {

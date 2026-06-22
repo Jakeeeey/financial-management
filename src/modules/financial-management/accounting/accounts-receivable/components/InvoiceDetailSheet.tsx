@@ -336,10 +336,10 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
                                 </div>
                                 <div className="space-y-1">
                                     <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
-                                        <Building2 className="w-3.5 h-3.5 text-primary/70" /> Branch
+                                        <Building2 className="w-3.5 h-3.5 text-primary/70" /> Cluster
                                     </span>
                                     <p className="text-xs font-bold text-foreground truncate">
-                                        {data?.header?.branch_id?.branch_name || invoice.branch}
+                                        {invoice.cluster || 'Unassigned'}
                                     </p>
                                 </div>
                                 <div className="space-y-1">
@@ -347,7 +347,7 @@ export function InvoiceDetailSheet({ invoice, open, onOpenChange }: InvoiceDetai
                                         <Briefcase className="w-3.5 h-3.5 text-primary/70" /> Salesman
                                     </span>
                                     <p className="text-xs font-bold text-foreground truncate">
-                                        {data?.header?.salesman_id?.salesman_name || invoice.salesman}
+                                        {data?.header?.salesman_id?.salesman_name || invoice.salesman} {invoice.salesmanCode && invoice.salesmanCode !== '—' ? `(${invoice.salesmanCode})` : ''}
                                     </p>
                                 </div>
                             </div>
