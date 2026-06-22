@@ -40,6 +40,10 @@ import PrintPrepareDialog from "./PrintPrepareDialog";
 import PrintLargeJobConfirmDialog from "./PrintLargeJobConfirmDialog";
 
 import { exportSupplierBatchExcel } from "../../shared/supplier-batch/supplierBatchExcel";
+import {
+    ExcelExportOptionsDialog,
+    type ExcelExportColumnMode,
+} from "../../shared/supplier-batch/ExcelExportOptionsDialog";
 import { parseSupplierBatchExcelImport } from "../../price-change-request/utils/supplierBatchExcel";
 import { productIdsFromMatrixRows } from "../../shared/supplier-batch/flattenPrintMatrix";
 import { fetchSupplierPrintMatrix } from "../../shared/supplier-batch/supplierPrintMatrix";
@@ -466,6 +470,7 @@ export default function PricingMatrixView() {
     const [largePrintConfirmOpen, setLargePrintConfirmOpen] = React.useState(false);
     const [pendingPrintJob, setPendingPrintJob] = React.useState<PendingPrintJob | null>(null);
     const [excelBusy, setExcelBusy] = React.useState(false);
+    const [excelOptionsOpen, setExcelOptionsOpen] = React.useState(false);
     const [importPrefill, setImportPrefill] = React.useState<BatchImportPrefill | null>(null);
     const [createBatchOpen, setCreateBatchOpen] = React.useState(false);
     const importFileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -645,18 +650,21 @@ export default function PricingMatrixView() {
         return matrixResult;
     }, []);
 
-    const handleExportExcel = React.useCallback(async () => {
+    const handleExportExcel = React.useCallback(async (mode: ExcelExportColumnMode) => {
         const supplier = requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers);
         if (!supplier) return;
 
+        const includeProposedColumns = mode === "with-proposed";
         setExcelBusy(true);
         try {
             const data = await loadSupplierExcelMatrix(supplier.id);
-            const productIds = productIdsFromMatrixRows(data.rows);
-            const [pendingPriceResult, pendingCostResult] = await Promise.all([
-                pcrApi.getPendingPriceRequestsForProducts(productIds),
-                pcrApi.getPendingCostRequestsForProducts(productIds),
-            ]);
+            const productIds = includeProposedColumns ? productIdsFromMatrixRows(data.rows) : [];
+            const [pendingPriceResult, pendingCostResult] = includeProposedColumns
+                ? await Promise.all([
+                      pcrApi.getPendingPriceRequestsForProducts(productIds),
+                      pcrApi.getPendingCostRequestsForProducts(productIds),
+                  ])
+                : [{ data: [] }, { data: [] }];
             await exportSupplierBatchExcel({
                 supplierId: supplier.id,
                 supplierName: supplier.name,
@@ -665,6 +673,7 @@ export default function PricingMatrixView() {
                 units: lookups.units,
                 filenamePrefix: "product-pricing",
                 includeListCost: true,
+                includeProposedColumns,
                 pendingPriceRequests: pendingPriceResult.data,
                 pendingCostRequests: pendingCostResult.data,
             });
@@ -675,6 +684,11 @@ export default function PricingMatrixView() {
             setExcelBusy(false);
         }
     }, [loadSupplierExcelMatrix, lookups.suppliers, lookups.units, matrix.filters.supplier_ids, pt.priceTypes]);
+
+    const openExcelOptions = React.useCallback(() => {
+        if (!requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers)) return;
+        setExcelOptionsOpen(true);
+    }, [lookups.suppliers, matrix.filters.supplier_ids]);
 
     const handleImportExcelClick = React.useCallback(() => {
         if (!requireSingleSupplier(matrix.filters.supplier_ids, lookups.suppliers)) return;
@@ -802,7 +816,7 @@ export default function PricingMatrixView() {
                         onDiscard={requestDiscard}
                         onRefresh={requestRefresh}
                         onPrint={openPrint}
-                        onExportExcel={() => void handleExportExcel()}
+                        onExportExcel={openExcelOptions}
                         onImportExcel={handleImportExcelClick}
                         loading={actionBarLoading}
                     />
@@ -869,6 +883,16 @@ export default function PricingMatrixView() {
                     supplierNames={printSupplierNames}
                     pdfSaveAsName={printPdfSaveAsName}
                     blocksPerPage={DEFAULT_TABLE_BLOCKS_PER_PAGE}
+                />
+
+                <ExcelExportOptionsDialog
+                    open={excelOptionsOpen}
+                    onOpenChange={setExcelOptionsOpen}
+                    busy={excelBusy}
+                    onConfirm={(mode) => {
+                        setExcelOptionsOpen(false);
+                        void handleExportExcel(mode);
+                    }}
                 />
 
                 <PriceChangeBatchDialog

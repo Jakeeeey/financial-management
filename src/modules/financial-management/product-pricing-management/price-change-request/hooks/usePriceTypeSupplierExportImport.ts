@@ -11,6 +11,7 @@ import * as pcrApi from "../providers/pcrApi";
 import type { BatchImportPrefill } from "../types";
 import type { OpenSupplierPrintArgs } from "../../shared/print/useSupplierPrintEditor";
 import { exportSupplierBatchExcel, parseSupplierBatchExcelImport } from "../utils/supplierBatchExcel";
+import type { ExcelExportColumnMode } from "../../shared/supplier-batch/ExcelExportOptionsDialog";
 
 type Args = {
     supplierIds: number[] | undefined;
@@ -26,6 +27,7 @@ export function usePriceTypeSupplierExportImport({
     onOpenPrintEditor,
 }: Args) {
     const [busy, setBusy] = React.useState(false);
+    const [excelOptionsOpen, setExcelOptionsOpen] = React.useState(false);
     const [importPrefill, setImportPrefill] = React.useState<BatchImportPrefill | null>(null);
     const [creatingBatch, setCreatingBatch] = React.useState(false);
     const importFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -62,20 +64,29 @@ export function usePriceTypeSupplierExportImport({
         });
     }, [includeListCost, onOpenPrintEditor, supplierIds, suppliers]);
 
-    const handleExportExcel = React.useCallback(async () => {
+    const handleExportExcel = React.useCallback(() => {
+        if (!requireSingleSupplier(supplierIds, suppliers)) return;
+        setExcelOptionsOpen(true);
+    }, [supplierIds, suppliers]);
+
+    const confirmExportExcel = React.useCallback(async (mode: ExcelExportColumnMode) => {
         const supplier = requireSingleSupplier(supplierIds, suppliers);
         if (!supplier) return;
 
+        const includeProposedColumns = mode === "with-proposed";
+        setExcelOptionsOpen(false);
         setBusy(true);
         try {
             const data = await loadSupplierExportData(supplier.id);
-            const productIds = productIdsFromMatrixRows(data.rows);
-            const [pendingPriceResult, pendingCostResult] = await Promise.all([
-                pcrApi.getPendingPriceRequestsForProducts(productIds),
-                includeListCost
-                    ? pcrApi.getPendingCostRequestsForProducts(productIds)
-                    : Promise.resolve({ data: [] }),
-            ]);
+            const productIds = includeProposedColumns ? productIdsFromMatrixRows(data.rows) : [];
+            const [pendingPriceResult, pendingCostResult] = includeProposedColumns
+                ? await Promise.all([
+                      pcrApi.getPendingPriceRequestsForProducts(productIds),
+                      includeListCost
+                          ? pcrApi.getPendingCostRequestsForProducts(productIds)
+                          : Promise.resolve({ data: [] }),
+                  ])
+                : [{ data: [] }, { data: [] }];
             await exportSupplierBatchExcel({
                 supplierId: supplier.id,
                 supplierName: supplier.name,
@@ -83,6 +94,7 @@ export function usePriceTypeSupplierExportImport({
                 priceTypes: data.priceTypes,
                 units: data.units,
                 includeListCost,
+                includeProposedColumns,
                 pendingPriceRequests: pendingPriceResult.data,
                 pendingCostRequests: pendingCostResult.data,
             });
@@ -146,6 +158,8 @@ export function usePriceTypeSupplierExportImport({
 
     return {
         busy,
+        excelOptionsOpen,
+        setExcelOptionsOpen,
         importPrefill,
         creatingBatch,
         setCreatingBatch,
@@ -153,6 +167,7 @@ export function usePriceTypeSupplierExportImport({
         importFileInputRef,
         handleExportPdf,
         handleExportExcel,
+        confirmExportExcel,
         handleImportExcelClick,
         handleImportExcelFile,
     };

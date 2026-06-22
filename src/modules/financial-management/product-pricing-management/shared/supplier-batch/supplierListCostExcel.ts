@@ -97,9 +97,17 @@ export async function exportSupplierListCostExcel(args: {
     supplierName: string;
     matrixRows: MatrixRow[];
     units?: UnitRef[];
+    includeProposedColumns?: boolean;
     pendingCostRequests?: ListCostPendingRequest[];
 }) {
-    const { supplierId, supplierName, matrixRows, units, pendingCostRequests = [] } = args;
+    const {
+        supplierId,
+        supplierName,
+        matrixRows,
+        units,
+        includeProposedColumns = true,
+        pendingCostRequests = [],
+    } = args;
     const unitColumns = buildUnitColumns(matrixRows, units);
     const pendingCostByProductId = new Map(
         pendingCostRequests.map((row) => [row.product_id, row.proposed_cost] as const),
@@ -114,16 +122,17 @@ export async function exportSupplierListCostExcel(args: {
     sheet.addRow([META_SUPPLIER_NAME, supplierName]);
     sheet.addRow([META_GENERATED_AT, generatedAt.toISOString()]);
     sheet.addRow([]);
-    const instructionStartRowNumber = addSupplierBatchInstructionRows(sheet);
+    const instructionStartRowNumber = addSupplierBatchInstructionRows(sheet, { includeProposedColumns });
 
     const headers = [
         ...IDENTITY_HEADERS.filter(
             (header) => header !== COL_UNIT_ID && header !== COL_CURRENT_LIST_COST && header !== COL_PROPOSED_LIST_COST,
         ),
-        ...unitColumns.flatMap((unit) => [
-            currentListCostHeader(unit.label),
-            proposedListCostHeader(unit.label),
-        ]),
+        ...unitColumns.flatMap((unit) =>
+            includeProposedColumns
+                ? [currentListCostHeader(unit.label), proposedListCostHeader(unit.label)]
+                : [currentListCostHeader(unit.label)],
+        ),
     ];
     const headerRowNumber = sheet.rowCount + 1;
     const headerRow = sheet.addRow(headers);
@@ -150,8 +159,9 @@ export async function exportSupplierListCostExcel(args: {
             const productId = Number(variant?.product.product_id);
             const listTier = variant?.tiers.LIST;
             const current = listTier ?? variant?.product.cost_per_unit ?? null;
-            values.push(variant && current != null ? Number(current) : null, null);
-            if (variant && pendingCostByProductId.has(productId)) {
+            values.push(variant && current != null ? Number(current) : null);
+            if (includeProposedColumns) values.push(null);
+            if (includeProposedColumns && variant && pendingCostByProductId.has(productId)) {
                 pendingCellIndexes.push({
                     rowNumber,
                     columnIndex: headers.indexOf(proposedListCostHeader(unit.label)) + 1,

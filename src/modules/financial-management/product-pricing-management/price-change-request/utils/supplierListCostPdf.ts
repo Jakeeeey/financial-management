@@ -4,12 +4,31 @@ import autoTable from "jspdf-autotable";
 import type { MatrixRow } from "../../product-pricing/types";
 import { flattenListCostMatrixRows } from "../../shared/supplier-batch/flattenPrintMatrix";
 
-function formatMoney(value: number | null | undefined): string {
+function formatAmount(value: number | null | undefined): string {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "";
     return Number(value).toLocaleString("en-PH", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     });
+}
+
+function formatMoneyCell(value: number | null | undefined): string {
+    const amount = formatAmount(value);
+    return amount ? `   ${amount}` : "";
+}
+
+function drawPesoSymbol(doc: jsPDF, x: number, y: number, fontSize: number) {
+    const previousDrawColor = doc.getDrawColor();
+    doc.text("P", x, y);
+    const pWidth = doc.getTextWidth("P");
+    const lineY1 = y - fontSize * 0.53;
+    const lineY2 = y - fontSize * 0.39;
+    const overhang = Math.max(0.45, fontSize * 0.12);
+    doc.setDrawColor(doc.getTextColor());
+    doc.setLineWidth(Math.max(0.25, fontSize * 0.055));
+    doc.line(x - overhang, lineY1, x + pWidth + overhang, lineY1);
+    doc.line(x - overhang, lineY2, x + pWidth + overhang, lineY2);
+    doc.setDrawColor(previousDrawColor);
 }
 
 export function exportSupplierListCostPdf(args: {
@@ -46,12 +65,19 @@ export function exportSupplierListCostPdf(args: {
             row.barcode ?? "",
             row.product_name,
             row.unit_id != null ? String(row.unit_id) : "",
-            formatMoney(row.current_list_cost),
+            formatMoneyCell(row.current_list_cost),
             "",
         ]),
         styles: { fontSize: 7, cellPadding: 3 },
         headStyles: { fillColor: [30, 41, 59], textColor: 255 },
         margin: { left: margin, right: margin },
+        didDrawCell: (data) => {
+            if (data.section !== "body" || data.column.index !== 4 || !data.cell.raw) return;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7);
+            doc.setTextColor(20);
+            drawPesoSymbol(doc, data.cell.x + 3, data.cell.y + data.cell.height / 2 + 2.5, 7);
+        },
     });
 
     doc.save(`list-cost-${supplierName.replace(/[<>:"/\\|?*]+/g, "_").trim() || "supplier"}.pdf`);

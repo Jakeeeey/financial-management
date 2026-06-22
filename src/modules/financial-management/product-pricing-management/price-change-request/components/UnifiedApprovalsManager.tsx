@@ -27,6 +27,7 @@ import { usePCRActions } from "../hooks/usePCRActions";
 import { usePriceTypeSupplierExportImport } from "../hooks/usePriceTypeSupplierExportImport";
 import { SupplierPrintEditorModals } from "../../shared/print/SupplierPrintEditorModals";
 import { useSupplierPrintEditor } from "../../shared/print/useSupplierPrintEditor";
+import { ExcelExportOptionsDialog } from "../../shared/supplier-batch/ExcelExportOptionsDialog";
 import { pcrApproveButtonClass, pcrRejectButtonClass } from "../utils/pcrStatusStyles";
 import { useUnifiedApprovals } from "../hooks/useUnifiedApprovals";
 import { isUnauthorizedError } from "../../shared/apiHttp";
@@ -878,6 +879,13 @@ export function UnifiedApprovalsManager({
             />
             </>
             ) : null}
+
+            <ExcelExportOptionsDialog
+                open={priceExportImport.excelOptionsOpen}
+                onOpenChange={priceExportImport.setExcelOptionsOpen}
+                busy={priceExportImport.busy}
+                onConfirm={(mode) => void priceExportImport.confirmExportExcel(mode)}
+            />
 
             <SupplierPrintEditorModals {...printModalsProps} />
         </div>

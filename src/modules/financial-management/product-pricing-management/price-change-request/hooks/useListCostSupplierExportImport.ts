@@ -14,6 +14,7 @@ import type { SupplierOption } from "../providers/pcrApi";
 import * as pcrApi from "../providers/pcrApi";
 import type { OpenSupplierPrintArgs } from "../../shared/print/useSupplierPrintEditor";
 import type { ListCostImportPrefill } from "../types";
+import type { ExcelExportColumnMode } from "../../shared/supplier-batch/ExcelExportOptionsDialog";
 
 type Args = {
     supplierIds: number[] | undefined;
@@ -23,6 +24,7 @@ type Args = {
 
 export function useListCostSupplierExportImport({ supplierIds, suppliers, onOpenPrintEditor }: Args) {
     const [busy, setBusy] = React.useState(false);
+    const [excelOptionsOpen, setExcelOptionsOpen] = React.useState(false);
     const [importPrefill, setImportPrefill] = React.useState<ListCostImportPrefill | null>(null);
     const [reviewOpen, setReviewOpen] = React.useState(false);
     const importFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -53,21 +55,29 @@ export function useListCostSupplierExportImport({ supplierIds, suppliers, onOpen
         });
     }, [onOpenPrintEditor, supplierIds, suppliers]);
 
-    const handleExportExcel = React.useCallback(async () => {
+    const handleExportExcel = React.useCallback(() => {
+        if (!requireSingleSupplier(supplierIds, suppliers)) return;
+        setExcelOptionsOpen(true);
+    }, [supplierIds, suppliers]);
+
+    const confirmExportExcel = React.useCallback(async (mode: ExcelExportColumnMode) => {
         const supplier = requireSingleSupplier(supplierIds, suppliers);
         if (!supplier) return;
 
+        const includeProposedColumns = mode === "with-proposed";
+        setExcelOptionsOpen(false);
         setBusy(true);
         try {
             const data = await loadSupplierMatrix(supplier.id);
-            const pendingCostResult = await pcrApi.getPendingCostRequestsForProducts(
-                productIdsFromMatrixRows(data.rows),
-            );
+            const pendingCostResult = includeProposedColumns
+                ? await pcrApi.getPendingCostRequestsForProducts(productIdsFromMatrixRows(data.rows))
+                : { data: [] };
             await exportSupplierListCostExcel({
                 supplierId: supplier.id,
                 supplierName: supplier.name,
                 matrixRows: data.rows,
                 units: data.units,
+                includeProposedColumns,
                 pendingCostRequests: pendingCostResult.data,
             });
             toast.success("Excel template downloaded.");
@@ -134,6 +144,8 @@ export function useListCostSupplierExportImport({ supplierIds, suppliers, onOpen
 
     return {
         busy,
+        excelOptionsOpen,
+        setExcelOptionsOpen,
         importPrefill,
         reviewOpen,
         setReviewOpen,
@@ -141,6 +153,7 @@ export function useListCostSupplierExportImport({ supplierIds, suppliers, onOpen
         importFileInputRef,
         handleExportPdf,
         handleExportExcel,
+        confirmExportExcel,
         handleImportExcelClick,
         handleImportExcelFile,
     };

@@ -5,7 +5,6 @@ import type { MatrixRow, Unit, PriceType } from "../types";
 import { buildMatrixTierKeys, tierLabelForTierKey } from "./pivot";
 import {
     DEFAULT_TABLE_BLOCKS_PER_PAGE,
-    formatPrintMoney,
     getPrintPageMetrics,
     printTextValue,
     type PrintLayoutOptions,
@@ -27,6 +26,7 @@ type Options = PrintLayoutOptions & {
 const DEFAULT_TITLE = "Product Pricing Matrix Report";
 const DENSE_PRODUCT_HEADER_LINE_HEIGHT = 10;
 const DENSE_PRODUCT_HEADER_GAP_BEFORE_TABLE = 3;
+const MIN_PRICE_FONT_SIZE = 4;
 
 function denseProductHeaderBlockHeight(): number {
     return DENSE_PRODUCT_HEADER_LINE_HEIGHT + DENSE_PRODUCT_HEADER_GAP_BEFORE_TABLE;
@@ -399,15 +399,131 @@ function splitCellLines(doc: jsPDF, text: string, width: number, maxLines: numbe
     return clipped;
 }
 
-function tierCellText(row: MatrixRow, tier: string, units: Unit[]): string {
-    const lines = units
-        .map((unit) => {
-            const price = row.variantsByUnitId[Number(unit.unit_id)]?.tiers?.[tier];
-            return price != null ? `${unitLabel(unit, `Unit ${unit.unit_id}`)}: ${formatPrintMoney(price)}` : null;
-        })
-        .filter((line): line is string => line != null);
+function formatPdfAmount(v: unknown): string {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "";
+    return n.toLocaleString("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 4,
+    });
+}
 
-    return lines.length > 0 ? lines.join("\n") : "-";
+type TierPriceLine = {
+    prefix: string;
+    amount: string | null;
+};
+
+function tierCellLines(row: MatrixRow, tier: string, units: Unit[]): TierPriceLine[] {
+    const lines = units
+        .map((unit): TierPriceLine | null => {
+            const price = row.variantsByUnitId[Number(unit.unit_id)]?.tiers?.[tier];
+            return price != null
+                ? { prefix: `${unitLabel(unit, `Unit ${unit.unit_id}`)}: `, amount: formatPdfAmount(price) }
+                : null;
+        })
+        .filter((line): line is TierPriceLine => line != null);
+
+    return lines.length > 0 ? lines : [{ prefix: "-", amount: null }];
+}
+
+type FittedTextOptions = {
+    align?: "left" | "center" | "right";
+    baseline?: "alphabetic" | "bottom" | "middle" | "top" | "hanging" | "ideographic";
+};
+
+function fittedFontSize(doc: jsPDF, text: string, maxWidth: number, baseFontSize: number) {
+    const width = Math.max(4, maxWidth);
+    for (let size = baseFontSize; size >= MIN_PRICE_FONT_SIZE; size -= 0.25) {
+        doc.setFontSize(size);
+        if (doc.getTextWidth(text) <= width) return size;
+    }
+    return MIN_PRICE_FONT_SIZE;
+}
+
+function drawPesoSymbol(doc: jsPDF, x: number, y: number, fontSize: number, options?: FittedTextOptions) {
+    const previousDrawColor = doc.getDrawColor();
+    doc.text("P", x, y, options);
+    const pWidth = doc.getTextWidth("P");
+    const lineY1 = y - fontSize * 0.53;
+    const lineY2 = y - fontSize * 0.39;
+    const overhang = Math.max(0.45, fontSize * 0.12);
+    doc.setDrawColor(doc.getTextColor());
+    doc.setLineWidth(Math.max(0.25, fontSize * 0.055));
+    doc.line(x - overhang, lineY1, x + pWidth + overhang, lineY1);
+    doc.line(x - overhang, lineY2, x + pWidth + overhang, lineY2);
+    doc.setDrawColor(previousDrawColor);
+}
+
+function drawFittedText(
+    doc: jsPDF,
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    baseFontSize: number,
+    options?: FittedTextOptions,
+) {
+    const size = fittedFontSize(doc, text, maxWidth, baseFontSize);
+    doc.setFontSize(size);
+    doc.text(text, x, y, options);
+    doc.setFontSize(baseFontSize);
+}
+
+function fittedMoneyFontSize(
+    doc: jsPDF,
+    prefix: string,
+    amount: string,
+    maxWidth: number,
+    baseFontSize: number,
+) {
+    const width = Math.max(4, maxWidth);
+    for (let size = baseFontSize; size >= MIN_PRICE_FONT_SIZE; size -= 0.25) {
+        doc.setFontSize(size);
+        const symbolWidth = doc.getTextWidth("P") + 1.5;
+        if (doc.getTextWidth(prefix) + symbolWidth + doc.getTextWidth(amount) <= width) return size;
+    }
+    return MIN_PRICE_FONT_SIZE;
+}
+
+function drawFittedMoneyLine(
+    doc: jsPDF,
+    line: TierPriceLine,
+    x: number,
+    y: number,
+    maxWidth: number,
+    baseFontSize: number,
+) {
+    if (line.amount == null) {
+        drawFittedText(doc, line.prefix, x, y, maxWidth, baseFontSize);
+        return;
+    }
+
+    const size = fittedMoneyFontSize(doc, line.prefix, line.amount, maxWidth, baseFontSize);
+    doc.setFontSize(size);
+    doc.text(line.prefix, x, y);
+    const symbolX = x + doc.getTextWidth(line.prefix);
+    drawPesoSymbol(doc, symbolX, y, size);
+    doc.text(line.amount, symbolX + doc.getTextWidth("P") + 1.5, y);
+    doc.setFontSize(baseFontSize);
+}
+
+function drawFittedMoney(
+    doc: jsPDF,
+    amount: string,
+    rightX: number,
+    y: number,
+    maxWidth: number,
+    baseFontSize: number,
+    options?: FittedTextOptions,
+) {
+    const size = fittedMoneyFontSize(doc, "", amount, maxWidth, baseFontSize);
+    doc.setFontSize(size);
+    const symbolWidth = doc.getTextWidth("P") + 1.5;
+    const amountWidth = doc.getTextWidth(amount);
+    const leftX = rightX - symbolWidth - amountWidth;
+    drawPesoSymbol(doc, leftX, y, size, options?.baseline ? { baseline: options.baseline } : undefined);
+    doc.text(amount, leftX + symbolWidth, y, options?.baseline ? { baseline: options.baseline } : undefined);
+    doc.setFontSize(baseFontSize);
 }
 
 function renderPricingSpreadsheetPdf(
@@ -499,8 +615,11 @@ function renderPricingSpreadsheetPdf(
     rows.forEach((row) => {
         const units = rowUnits(row, args.usedUnits);
         const cellLines = columns.map((column) => {
-            const raw = column.kind === "tier" ? tierCellText(row, column.tier, units) : column.value(row);
-            return splitCellLines(doc, raw, column.width, maxLinesPerCell);
+            if (column.kind === "tier") {
+                const tierLines = tierCellLines(row, column.tier, units);
+                return tierLines.length > maxLinesPerCell ? tierLines.slice(0, maxLinesPerCell) : tierLines;
+            }
+            return splitCellLines(doc, column.value(row), column.width, maxLinesPerCell);
         });
         const rowHeight = Math.max(minRowHeight, Math.max(...cellLines.map((lines) => lines.length)) * lineHeight + 8);
 
@@ -526,7 +645,20 @@ function renderPricingSpreadsheetPdf(
             } else {
                 doc.setTextColor(30);
             }
-            doc.text(lines, x + 4, y + 6 + args.fontSize);
+            if (column.kind === "tier") {
+                (lines as TierPriceLine[]).forEach((line, lineIndex) => {
+                    drawFittedMoneyLine(
+                        doc,
+                        line,
+                        x + 4,
+                        y + 6 + args.fontSize + lineIndex * lineHeight,
+                        column.width - 8,
+                        args.fontSize,
+                    );
+                });
+            } else {
+                doc.text(lines as string[], x + 4, y + 6 + args.fontSize);
+            }
             x += column.width;
         });
 
@@ -888,12 +1020,19 @@ function renderPricingProductBlocksPdf(
                 const cellX = tableX + tierColumnWidth + index * unitColumnWidth;
                 const variant = row.variantsByUnitId[Number(unit.unit_id)];
                 const price = variant?.tiers?.[tier];
-                doc.text(
-                    price != null ? formatPrintMoney(price) : "-",
-                    cellX + unitColumnWidth - 4,
-                    rowTextY,
-                    { align: "right", ...(rowTextOptions ?? {}) },
-                );
+                if (price != null) {
+                    drawFittedMoney(
+                        doc,
+                        formatPdfAmount(price),
+                        cellX + unitColumnWidth - 4,
+                        rowTextY,
+                        unitColumnWidth - 8,
+                        args.fontSize,
+                        rowTextOptions ?? undefined,
+                    );
+                } else {
+                    doc.text("-", cellX + unitColumnWidth - 4, rowTextY, { align: "right", ...(rowTextOptions ?? {}) });
+                }
                 doc.setDrawColor(225, 225, 225);
                 doc.line(cellX, rowY, cellX, rowY + rowHeight);
             });

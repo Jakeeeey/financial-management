@@ -23,14 +23,26 @@ export function isProposedColumnHeader(header: string): boolean {
     return header.includes(" Proposed (") || header.startsWith("Proposed List Cost (");
 }
 
-export function addSupplierBatchInstructionRows(sheet: ExcelJS.Worksheet): number {
+export function addSupplierBatchInstructionRows(
+    sheet: ExcelJS.Worksheet,
+    options: { includeProposedColumns?: boolean } = {},
+): number {
+    const includeProposedColumns = options.includeProposedColumns ?? true;
     const startRowNumber = sheet.rowCount + 1;
     sheet.addRow(["Instructions"]);
-    sheet.addRow(["", "Enter changes only in columns containing Proposed; the unit is shown in each price column header."]);
-    sheet.addRow(["", "Leave proposed cells blank when no change is needed."]);
-    sheet.addRow(["", "Yellow Pending cells already have active requests; leave them unchanged."]);
-    sheet.addRow(["", "Do not edit product identity columns, current-value columns, supplier metadata, or headers."]);
-    sheet.addRow(["", "Save this file and import it through Price Change Requests."]);
+    if (includeProposedColumns) {
+        sheet.addRow(["", "Enter changes only in columns containing Proposed; the unit is shown in each price column header."]);
+        sheet.addRow(["", "Leave proposed cells blank when no change is needed."]);
+        sheet.addRow(["", "Yellow Pending cells already have active requests; leave them unchanged."]);
+        sheet.addRow(["", "Do not edit product identity columns, current-value columns, supplier metadata, or headers."]);
+        sheet.addRow(["", "Save this file and import it through Price Change Requests."]);
+    } else {
+        sheet.addRow(["", "This reference export shows current values only; proposed-change columns are not included."]);
+        sheet.addRow(["", "Use this file for review or sharing, not for importing changes."]);
+        sheet.addRow(["", "To submit changes, export again with Proposed columns and edit only those cells."]);
+        sheet.addRow(["", "Do not edit product identity columns, current-value columns, supplier metadata, or headers."]);
+        sheet.addRow(["", "No pending-change markers are shown in this reference export."]);
+    }
     sheet.addRow([]);
     return startRowNumber;
 }

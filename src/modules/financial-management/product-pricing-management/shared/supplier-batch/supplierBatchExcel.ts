@@ -131,6 +131,7 @@ export async function exportSupplierBatchExcel(args: {
     units?: UnitRef[];
     filenamePrefix?: string;
     includeListCost?: boolean;
+    includeProposedColumns?: boolean;
     pendingPriceRequests?: SupplierBatchPendingPrice[];
     pendingCostRequests?: SupplierBatchPendingCost[];
 }) {
@@ -142,6 +143,7 @@ export async function exportSupplierBatchExcel(args: {
         units,
         filenamePrefix = "price-change-batch",
         includeListCost = false,
+        includeProposedColumns = true,
         pendingPriceRequests = [],
         pendingCostRequests = [],
     } = args;
@@ -164,21 +166,23 @@ export async function exportSupplierBatchExcel(args: {
     sheet.addRow([META_SUPPLIER_NAME, supplierName]);
     sheet.addRow([META_GENERATED_AT, generatedAt.toISOString()]);
     sheet.addRow([]);
-    const instructionStartRowNumber = addSupplierBatchInstructionRows(sheet);
+    const instructionStartRowNumber = addSupplierBatchInstructionRows(sheet, { includeProposedColumns });
 
     const headers = [
         ...IDENTITY_HEADERS.filter((header) => header !== COL_UNIT_ID),
         ...(includeListCost
-            ? unitColumns.flatMap((unit) => [
-                  currentListCostHeader(unit.label),
-                  proposedListCostHeader(unit.label),
-              ])
+            ? unitColumns.flatMap((unit) =>
+                  includeProposedColumns
+                      ? [currentListCostHeader(unit.label), proposedListCostHeader(unit.label)]
+                      : [currentListCostHeader(unit.label)],
+              )
             : []),
         ...sortedPriceTypes.flatMap((priceType) =>
-            unitColumns.flatMap((unit) => [
-                priceCurrentHeader(priceType, unit.label),
-                priceProposedHeader(priceType, unit.label),
-            ]),
+            unitColumns.flatMap((unit) =>
+                includeProposedColumns
+                    ? [priceCurrentHeader(priceType, unit.label), priceProposedHeader(priceType, unit.label)]
+                    : [priceCurrentHeader(priceType, unit.label)],
+            ),
         ),
     ];
     const proposedColumnIndexes = headers
@@ -209,8 +213,8 @@ export async function exportSupplierBatchExcel(args: {
                 const listTier = variant?.tiers.LIST;
                 const current = listTier ?? variant?.product.cost_per_unit ?? null;
                 values.push(variant && current != null ? Number(current) : null);
-                values.push(null);
-                if (variant && pendingCostByProductId.has(productId)) {
+                if (includeProposedColumns) values.push(null);
+                if (includeProposedColumns && variant && pendingCostByProductId.has(productId)) {
                     pendingCellIndexes.push({
                         rowNumber,
                         columnIndex: headers.indexOf(proposedListCostHeader(unit.label)) + 1,
@@ -226,9 +230,9 @@ export async function exportSupplierBatchExcel(args: {
                 const productId = Number(variant?.product.product_id);
                 const current = variant?.tiers[String(priceType.price_type_id)] ?? null;
                 values.push(variant ? current : null);
-                values.push(null);
+                if (includeProposedColumns) values.push(null);
                 const key = `${productId}:${priceType.price_type_id}`;
-                if (variant && pendingPriceByKey.has(key)) {
+                if (includeProposedColumns && variant && pendingPriceByKey.has(key)) {
                     pendingCellIndexes.push({
                         rowNumber,
                         columnIndex: headers.indexOf(priceProposedHeader(priceType, unit.label)) + 1,

@@ -23,6 +23,7 @@ import { useListCostBulkSelection } from "../hooks/useListCostBulkSelection";
 import { useListCostSupplierExportImport } from "../hooks/useListCostSupplierExportImport";
 import { SupplierPrintEditorModals } from "../../shared/print/SupplierPrintEditorModals";
 import { useSupplierPrintEditor } from "../../shared/print/useSupplierPrintEditor";
+import { ExcelExportOptionsDialog } from "../../shared/supplier-batch/ExcelExportOptionsDialog";
 import { usePCRActions } from "../hooks/usePCRActions";
 import { useUnifiedApprovals } from "../hooks/useUnifiedApprovals";
 import type { SupplierOption } from "../providers/pcrApi";
@@ -481,6 +482,13 @@ export function ListCostRequestManager({
             />
             </>
             ) : null}
+
+            <ExcelExportOptionsDialog
+                open={listCostExportImport.excelOptionsOpen}
+                onOpenChange={listCostExportImport.setExcelOptionsOpen}
+                busy={listCostExportImport.busy}
+                onConfirm={(mode) => void listCostExportImport.confirmExportExcel(mode)}
+            />
 
             <SupplierPrintEditorModals {...printModalsProps} />
         </div>

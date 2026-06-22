@@ -25,6 +25,7 @@ import { useRequestBulkSelection } from "../hooks/useRequestBulkSelection";
 import { usePriceTypeSupplierExportImport } from "../hooks/usePriceTypeSupplierExportImport";
 import { SupplierPrintEditorModals } from "../../shared/print/SupplierPrintEditorModals";
 import { useSupplierPrintEditor } from "../../shared/print/useSupplierPrintEditor";
+import { ExcelExportOptionsDialog } from "../../shared/supplier-batch/ExcelExportOptionsDialog";
 import { useUnifiedApprovals } from "../hooks/useUnifiedApprovals";
 import type { SupplierOption } from "../providers/pcrApi";
 import * as pcrApi from "../providers/pcrApi";
@@ -626,6 +627,13 @@ export function PriceTypeRequestManager({
             />
             </>
             ) : null}
+
+            <ExcelExportOptionsDialog
+                open={priceExportImport.excelOptionsOpen}
+                onOpenChange={priceExportImport.setExcelOptionsOpen}
+                busy={priceExportImport.busy}
+                onConfirm={(mode) => void priceExportImport.confirmExportExcel(mode)}
+            />
 
             <SupplierPrintEditorModals {...printModalsProps} />
         </div>
