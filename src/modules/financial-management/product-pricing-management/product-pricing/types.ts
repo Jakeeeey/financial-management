@@ -45,7 +45,7 @@ export type ProductRow = {
     cost_per_unit: number | null;
 };
 
-export type ProductTierKey = "A" | "B" | "C" | "D" | "E" | "LIST";
+export type ProductTierKey = string;
 
 export type PriceRow = {
     id: number;
