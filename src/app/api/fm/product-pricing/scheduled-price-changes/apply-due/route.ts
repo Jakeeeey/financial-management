@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../../_productGroupIndexCache";
 import {
     DETAILS as PRICE_DETAILS,
-    HEADERS,
     directusErrorResponse,
     directusHeaders,
     fetchDirectus,
@@ -23,11 +22,21 @@ import {
     type CcrRow,
 } from "../../cost-change-requests/_actions";
 import { COST_DETAILS } from "../../cost-change-batches/_batch";
+import {
+    executeClaimedApplication,
+    refreshBatchApplicationStatus,
+    staleApplicationCutoff,
+} from "../../_applicationEngine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type DirectusList<T> = { data?: T[] };
+type DirectusList<T> = {
+    data?: T[];
+    meta?: { filter_count?: number | string } | null;
+};
+
+const DUE_PAGE_SIZE = 500;
 
 type ApplyFailure = {
     request_id: number;
@@ -38,6 +47,7 @@ type ScheduledSummary = {
     scanned: number;
     applied: number;
     failed: number;
+    skipped: number;
     failures: ApplyFailure[];
 };
 
@@ -68,173 +78,175 @@ function assertSchedulerToken(req: NextRequest) {
 }
 
 async function fetchDuePriceRequests(now: string) {
-    const params = new URLSearchParams();
-    params.set("limit", "-1");
-    params.set(
-        "fields",
-        [
-            "request_id",
-            "header_id",
-            "product_id",
-            "price_type_id",
-            "proposed_price",
-            "status",
-            "application_status",
-            "effective_at",
-        ].join(","),
-    );
-    params.set("filter[status][_eq]", "APPROVED");
-    params.set("filter[application_status][_eq]", "SCHEDULED");
-    params.set("filter[effective_at][_lte]", now);
-    params.set("sort", "effective_at,request_id");
+    const all: PcrRow[] = [];
+    let offset = 0;
 
-    const url = `${mustBase()}/items/${PRICE_DETAILS}?${params.toString()}`;
-    const json = await fetchDirectus<DirectusList<PcrRow>>(url, { headers: directusHeaders() });
-    return json.data ?? [];
+    while (true) {
+        const params = new URLSearchParams();
+        params.set("limit", String(DUE_PAGE_SIZE));
+        params.set("offset", String(offset));
+        params.set(
+            "fields",
+            [
+                "request_id",
+                "header_id",
+                "product_id",
+                "price_type_id",
+                "proposed_price",
+                "status",
+                "application_status",
+                "effective_at",
+                "application_lock_id",
+                "application_started_at",
+                "application_attempts",
+                "application_error",
+            ].join(","),
+        );
+        params.set("filter[_and][0][status][_eq]", "APPROVED");
+        params.set("filter[_and][1][_or][0][_and][0][application_status][_eq]", "SCHEDULED");
+        params.set("filter[_and][1][_or][0][_and][1][effective_at][_lte]", now);
+        params.set("filter[_and][1][_or][1][_and][0][application_status][_eq]", "APPLYING");
+        params.set("filter[_and][1][_or][1][_and][1][application_started_at][_lte]", staleApplicationCutoff());
+        params.set("sort", "effective_at,request_id");
+
+        const url = `${mustBase()}/items/${PRICE_DETAILS}?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<PcrRow>>(url, { headers: directusHeaders() });
+        const rows = json.data ?? [];
+        all.push(...rows);
+
+        if (rows.length < DUE_PAGE_SIZE) break;
+        offset += DUE_PAGE_SIZE;
+    }
+
+    return all;
 }
 
 async function fetchDueCostRequests(now: string) {
-    const params = new URLSearchParams();
-    params.set("limit", "-1");
-    params.set(
-        "fields",
-        [
-            "request_id",
-            "header_id",
-            "product_id",
-            "proposed_cost",
-            "status",
-            "application_status",
-            "effective_at",
-        ].join(","),
-    );
-    params.set("filter[status][_eq]", "APPROVED");
-    params.set("filter[application_status][_eq]", "SCHEDULED");
-    params.set("filter[effective_at][_lte]", now);
-    params.set("sort", "effective_at,request_id");
+    const all: CcrRow[] = [];
+    let offset = 0;
 
-    const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
-    const json = await fetchDirectus<DirectusList<CcrRow>>(url, { headers: directusHeaders() });
-    return json.data ?? [];
+    while (true) {
+        const params = new URLSearchParams();
+        params.set("limit", String(DUE_PAGE_SIZE));
+        params.set("offset", String(offset));
+        params.set(
+            "fields",
+            [
+                "request_id",
+                "header_id",
+                "product_id",
+                "proposed_cost",
+                "status",
+                "application_status",
+                "effective_at",
+                "application_lock_id",
+                "application_started_at",
+                "application_attempts",
+                "application_error",
+            ].join(","),
+        );
+        params.set("filter[_and][0][status][_eq]", "APPROVED");
+        params.set("filter[_and][1][_or][0][_and][0][application_status][_eq]", "SCHEDULED");
+        params.set("filter[_and][1][_or][0][_and][1][effective_at][_lte]", now);
+        params.set("filter[_and][1][_or][1][_and][0][application_status][_eq]", "APPLYING");
+        params.set("filter[_and][1][_or][1][_and][1][application_started_at][_lte]", staleApplicationCutoff());
+        params.set("sort", "effective_at,request_id");
+
+        const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<CcrRow>>(url, { headers: directusHeaders() });
+        const rows = json.data ?? [];
+        all.push(...rows);
+
+        if (rows.length < DUE_PAGE_SIZE) break;
+        offset += DUE_PAGE_SIZE;
+    }
+
+    return all;
 }
 
-async function scheduledDetailCount(collection: string, headerId: number) {
-    const params = new URLSearchParams();
-    params.set("limit", "1");
-    params.set("aggregate[count]", "*");
-    params.set("filter[header_id][_eq]", String(headerId));
-    params.set("filter[status][_eq]", "APPROVED");
-    params.set("filter[application_status][_eq]", "SCHEDULED");
-
-    const url = `${mustBase()}/items/${collection}?${params.toString()}`;
-    const json = await fetchDirectus<DirectusList<{ count?: { "*"?: number | string } }>>(url, {
-        headers: directusHeaders(),
-    });
-    const count = Number(json.data?.[0]?.count?.["*"] ?? 0);
-    return Number.isFinite(count) ? count : 0;
-}
-
-async function markHeaderAppliedIfDone(collection: string, headerId: number, appliedAt: string, userId: number | null) {
-    if (headerId <= 0) return;
-    const remaining = await scheduledDetailCount(collection, headerId);
-    if (remaining > 0) return;
-
-    await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({
-            application_status: "APPLIED",
-            applied_at: appliedAt,
-            ...(userId ? { applied_by: userId } : {}),
-        }),
-    });
-}
-
-async function applyDuePriceRequests(rows: PcrRow[], appliedAt: string, userId: number | null): Promise<ScheduledSummary> {
+async function applyDuePriceRequests(rows: PcrRow[], userId: number | null): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     const headerIds = new Set<number>();
     let applied = 0;
+    let skipped = 0;
 
     for (const row of rows) {
         const requestId = pickId(row.request_id) ?? 0;
-        try {
-            const productId = normalizeProductId(row);
-            const priceTypeId = normalizePriceTypeId(row);
-            const proposedPrice = Number(row.proposed_price);
-            if (!requestId || !productId || !priceTypeId || !Number.isFinite(proposedPrice)) {
-                throw new Error("Scheduled price request has invalid product, price type, or proposed price.");
-            }
-
-            await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
-            await fetchDirectus(`${mustBase()}/items/${PRICE_DETAILS}/${requestId}`, {
-                method: "PATCH",
-                headers: directusHeaders(),
-                body: JSON.stringify({
-                    application_status: "APPLIED",
-                    applied_at: appliedAt,
-                    ...(userId ? { applied_by: userId } : {}),
-                }),
-            });
-
-            const headerId = pickId(row.header_id);
-            if (headerId) headerIds.add(headerId);
+        const headerId = pickId(row.header_id);
+        if (headerId) headerIds.add(headerId);
+        const outcome = await executeClaimedApplication({
+            collection: PRICE_DETAILS,
+            row,
+            userId,
+            apply: async (claimed) => {
+                const productId = normalizeProductId(claimed);
+                const priceTypeId = normalizePriceTypeId(claimed);
+                const proposedPrice = Number(claimed.proposed_price);
+                if (!requestId || !productId || !priceTypeId || !Number.isFinite(proposedPrice)) {
+                    throw new Error("Scheduled price request has invalid product, price type, or proposed price.");
+                }
+                await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
+            },
+        });
+        if (outcome.state === "applied") {
             applied += 1;
-        } catch (error: unknown) {
+        } else if (outcome.state === "failed") {
             failures.push({
                 request_id: requestId,
-                message: error instanceof Error ? error.message : String(error),
+                message: outcome.error ?? "Application failed.",
             });
+        } else {
+            skipped += 1;
         }
     }
 
     for (const headerId of headerIds) {
-        await markHeaderAppliedIfDone(PRICE_DETAILS, headerId, appliedAt, userId);
+        await refreshBatchApplicationStatus({ detailCollection: PRICE_DETAILS, headerId, userId });
     }
 
-    return { scanned: rows.length, applied, failed: failures.length, failures };
+    return { scanned: rows.length, applied, failed: failures.length, skipped, failures };
 }
 
-async function applyDueCostRequests(rows: CcrRow[], appliedAt: string, userId: number | null): Promise<ScheduledSummary> {
+async function applyDueCostRequests(rows: CcrRow[], userId: number | null): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     const headerIds = new Set<number>();
     let applied = 0;
+    let skipped = 0;
 
     for (const row of rows) {
         const requestId = pickId(row.request_id) ?? 0;
-        try {
-            const product_id = Number(row.product_id);
-            const proposed_cost = Number(row.proposed_cost);
-            if (!requestId || !Number.isFinite(product_id) || product_id <= 0 || !Number.isFinite(proposed_cost)) {
-                throw new Error("Scheduled cost request has invalid product or proposed cost.");
-            }
-
-            await patchProductCostField({ product_id, proposed_cost, userId });
-            await fetchDirectus(`${mustBase()}/items/${COST_DETAILS}/${requestId}`, {
-                method: "PATCH",
-                headers: directusHeaders(),
-                body: JSON.stringify({
-                    application_status: "APPLIED",
-                    applied_at: appliedAt,
-                    ...(userId ? { applied_by: userId } : {}),
-                }),
-            });
-
-            const headerId = pickId(row.header_id);
-            if (headerId) headerIds.add(headerId);
+        const headerId = pickId(row.header_id);
+        if (headerId) headerIds.add(headerId);
+        const outcome = await executeClaimedApplication({
+            collection: COST_DETAILS,
+            row,
+            userId,
+            apply: async (claimed) => {
+                const product_id = Number(claimed.product_id);
+                const proposed_cost = Number(claimed.proposed_cost);
+                if (!requestId || !Number.isFinite(product_id) || product_id <= 0 || !Number.isFinite(proposed_cost)) {
+                    throw new Error("Scheduled cost request has invalid product or proposed cost.");
+                }
+                await patchProductCostField({ product_id, proposed_cost, userId });
+            },
+        });
+        if (outcome.state === "applied") {
             applied += 1;
-        } catch (error: unknown) {
+        } else if (outcome.state === "failed") {
             failures.push({
                 request_id: requestId,
-                message: error instanceof Error ? error.message : String(error),
+                message: outcome.error ?? "Application failed.",
             });
+        } else {
+            skipped += 1;
         }
     }
 
     for (const headerId of headerIds) {
-        await markHeaderAppliedIfDone(COST_DETAILS, headerId, appliedAt, userId);
+        await refreshBatchApplicationStatus({ detailCollection: COST_DETAILS, headerId, userId });
     }
 
-    return { scanned: rows.length, applied, failed: failures.length, failures };
+    return { scanned: rows.length, applied, failed: failures.length, skipped, failures };
 }
 
 export async function POST(req: NextRequest) {
@@ -246,8 +258,8 @@ export async function POST(req: NextRequest) {
         const userId = schedulerUserId();
         const [priceRows, costRows] = await Promise.all([fetchDuePriceRequests(now), fetchDueCostRequests(now)]);
         const [price, cost] = await Promise.all([
-            applyDuePriceRequests(priceRows, now, userId),
-            applyDueCostRequests(costRows, now, userId),
+            applyDuePriceRequests(priceRows, userId),
+            applyDueCostRequests(costRows, userId),
         ]);
 
         if (price.applied > 0 || cost.applied > 0) {

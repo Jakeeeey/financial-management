@@ -1,8 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-    type LegacyPriceTypeRow,
-    resolveLegacyProductsPatch,
-} from "../_legacyProductPriceSync";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 
 export const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -48,6 +44,10 @@ export type BatchHeaderRow = {
     approved_at?: string | null;
     effective_at?: string | null;
     application_status?: string | null;
+    application_lock_id?: string | null;
+    application_started_at?: string | null;
+    application_attempts?: number | string | null;
+    application_error?: string | null;
     applied_at?: string | null;
     applied_by?: number | string | DirectusUserRelation | null;
     rejected_by?: number | string | DirectusUserRelation | null;
@@ -81,22 +81,14 @@ export type BatchDetailRow = {
     status?: string | null;
     effective_at?: string | null;
     application_status?: string | null;
+    application_lock_id?: string | null;
+    application_started_at?: string | null;
+    application_attempts?: number | string | null;
+    application_error?: string | null;
     applied_at?: string | null;
     applied_by?: number | string | DirectusUserRelation | null;
     requested_by?: number | string | DirectusUserRelation | null;
     requested_at?: string | null;
-};
-
-type PriceTypeRow = {
-    price_type_id?: number | string | null;
-    price_type_name?: string | null;
-    sort?: number | string | null;
-};
-
-type ExistingPriceRow = {
-    id?: number | string | null;
-    product_id?: number | string | null;
-    price_type_id?: number | string | null;
 };
 
 type DirectusSingle<T> = { data?: T };
@@ -563,6 +555,9 @@ export async function getHeader(headerId: number) {
             "approved_at",
             "effective_at",
             "application_status",
+            "application_started_at",
+            "application_attempts",
+            "application_error",
             "applied_at",
             "applied_by",
             "applied_by.user_id",
@@ -610,6 +605,10 @@ export async function getDetails(headerId: number) {
         "status",
         "effective_at",
         "application_status",
+        "application_lock_id",
+        "application_started_at",
+        "application_attempts",
+        "application_error",
         "applied_at",
         "applied_by",
         "applied_by.user_id",
@@ -670,57 +669,6 @@ export async function cancelPendingBatch(headerId: number, userId: number, reaso
                 }),
             ),
     );
-}
-
-async function loadPriceTypeCatalog(): Promise<LegacyPriceTypeRow[]> {
-    const rows = await fetchAllPagesLocal<PriceTypeRow>(PRICE_TYPES, () => {
-        const params = new URLSearchParams();
-        params.set("fields", "price_type_id,price_type_name,sort");
-        params.set("sort", "sort,price_type_id");
-        return params;
-    });
-
-    const catalog: LegacyPriceTypeRow[] = [];
-    for (const row of rows) {
-        const id = Number(row.price_type_id);
-        const name = String(row.price_type_name ?? "").trim();
-        if (Number.isFinite(id) && id > 0 && name) {
-            catalog.push({
-                price_type_id: id,
-                price_type_name: name,
-                sort: row.sort,
-            });
-        }
-    }
-    return catalog;
-}
-
-async function fetchExistingPrices(productIds: number[], priceTypeIds: number[]) {
-    if (!productIds.length || !priceTypeIds.length) return new Map<string, number>();
-
-    const map = new Map<string, number>();
-    const productChunks = chunkArray(productIds, IN_CHUNK_SIZE);
-
-    for (const productChunk of productChunks) {
-        const rows = await fetchAllPagesLocal<ExistingPriceRow>(PRICES, () => {
-            const params = new URLSearchParams();
-            params.set("fields", "id,product_id,price_type_id");
-            params.set("filter[product_id][_in]", productChunk.join(","));
-            params.set("filter[price_type_id][_in]", priceTypeIds.join(","));
-            return params;
-        });
-
-        for (const row of rows) {
-            const productId = Number(row.product_id);
-            const priceTypeId = Number(row.price_type_id);
-            const id = Number(row.id);
-            if (Number.isFinite(productId) && Number.isFinite(priceTypeId) && Number.isFinite(id) && id > 0) {
-                map.set(`${productId}:${priceTypeId}`, id);
-            }
-        }
-    }
-
-    return map;
 }
 
 export async function rejectPriceChangeBatch(headerId: number, userId: number, rejectReason: string) {
@@ -787,98 +735,50 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
         }
     }
 
-    const scheduled = isFutureEffectiveAt(effectiveAt);
+    const { executeClaimedApplication, refreshBatchApplicationStatus, stageBatchApproval } =
+        await import("../_applicationEngine");
+    const staged = await stageBatchApproval({ detailCollection: DETAILS, headerId, userId, effectiveAt });
+    if (!staged) {
+        return NextResponse.json({ error: "Batch approval was already claimed or is no longer pending." }, { status: 409 });
+    }
 
-    if (!scheduled) {
-        const productIds = Array.from(new Set(normalizedDetails.map((line) => line.productId)));
-        const priceTypeIds = Array.from(new Set(normalizedDetails.map((line) => line.priceTypeId)));
-        const [existingPrices, priceTypeCatalog] = await Promise.all([
-            fetchExistingPrices(productIds, priceTypeIds),
-            loadPriceTypeCatalog(),
-        ]);
-
-        for (const line of normalizedDetails) {
-            const key = `${line.productId}:${line.priceTypeId}`;
-            const existingId = existingPrices.get(key);
-            const payload = {
-                status: "draft",
-                product_id: line.productId,
-                price_type_id: line.priceTypeId,
-                price: line.proposedPrice,
-                updated_by: userId,
-                updated_at: nowManila(),
-            };
-
-            if (existingId) {
-                await fetchDirectus(`${mustBase()}/items/${PRICES}/${existingId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders(),
-                    body: JSON.stringify(payload),
-                });
-            } else {
-                await fetchDirectus(`${mustBase()}/items/${PRICES}`, {
-                    method: "POST",
-                    headers: directusHeaders(),
-                    body: JSON.stringify({ ...payload, created_by: userId }),
-                });
-            }
-
-            const priceTypeName =
-                priceTypeCatalog.find((row) => row.price_type_id === line.priceTypeId)?.price_type_name ?? "";
-            const productPatch = resolveLegacyProductsPatch({
-                priceTypeId: line.priceTypeId,
-                priceTypeName,
-                price: line.proposedPrice,
-                catalog: priceTypeCatalog,
+    let applied = 0;
+    let failed = 0;
+    if (!staged.scheduled) {
+        const { applyProposedPrice } = await import("../price-change-requests/_actions");
+        const stagedDetails = await getDetails(headerId);
+        for (const row of stagedDetails) {
+            const outcome = await executeClaimedApplication({
+                collection: DETAILS,
+                row,
+                userId,
+                apply: async (claimed) => {
+                    const productId = normalizeProductId(claimed);
+                    const priceTypeId = normalizePriceTypeId(claimed);
+                    const proposedPrice = Number(claimed.proposed_price);
+                    if (!productId || !priceTypeId || !Number.isFinite(proposedPrice)) {
+                        throw new Error("Batch contains an invalid detail line.");
+                    }
+                    await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
+                },
             });
-            if (productPatch) {
-                await fetchDirectus(`${mustBase()}/items/${PRODUCTS}/${line.productId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders(),
-                    body: JSON.stringify({
-                        ...productPatch,
-                        last_updated: nowManila(),
-                        updated_by: userId,
-                    }),
-                });
-            }
+            if (outcome.state === "applied") applied += 1;
+            if (outcome.state === "failed") failed += 1;
         }
     }
 
-    const applicationPatch = approvalApplicationPatch({ userId, effectiveAt, scheduled });
-
-    await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({
-            status: "APPROVED",
-            approved_by: userId,
-            approved_at: nowManila(),
-            ...applicationPatch,
-        }),
-    });
-
-    await Promise.all(
-        normalizedDetails
-            .filter((line) => line.requestId > 0)
-            .map((line) =>
-                fetchDirectus(`${mustBase()}/items/${DETAILS}/${line.requestId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders(),
-                    body: JSON.stringify({ status: "APPROVED", ...applicationPatch }),
-                }),
-            ),
-    );
-
-    if (!scheduled) invalidateGroupIndexCacheOnCatalogChange();
+    const applicationStatus = await refreshBatchApplicationStatus({ detailCollection: DETAILS, headerId, userId });
+    if (applied > 0) invalidateGroupIndexCacheOnCatalogChange();
 
     return NextResponse.json({
         ok: true,
         header_id: headerId,
         affected: normalizedDetails.length,
-        application_status: scheduled ? "SCHEDULED" : "APPLIED",
-        effective_at: applicationPatch.effective_at,
-    });
+        applied,
+        failed,
+        application_status: applicationStatus ?? "SCHEDULED",
+        effective_at: staged.effectiveAt,
+    }, { status: failed > 0 ? 202 : 200 });
 }
 
 type DirectusProductRow = {

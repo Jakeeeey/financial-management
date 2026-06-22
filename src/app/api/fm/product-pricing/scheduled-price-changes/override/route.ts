@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { invalidateGroupIndexCacheOnCatalogChange } from "../../_productGroupIndexCache";
+import {
+    executeClaimedApplication,
+    refreshBatchApplicationStatus,
+    resetFailedApplication,
+    resetFailedBatchHeader,
+    type ApplicationRow,
+} from "../../_applicationEngine";
 import {
     DETAILS as PRICE_DETAILS,
     HEADERS,
@@ -10,29 +18,20 @@ import {
     getDetails,
     getHeader,
     mustBase,
+    normalizePriceTypeId,
+    normalizeProductId,
     nowManila,
     pickId,
 } from "../../price-change-batches/_batch";
-import {
-    applyProposedPrice,
-    getPriceRequest,
-} from "../../price-change-requests/_actions";
-import {
-    CCR,
-    getCostRequest,
-    patchProductCostField,
-} from "../../cost-change-requests/_actions";
-import {
-    COST_DETAILS,
-    getCostDetails,
-    getCostHeader,
-} from "../../cost-change-batches/_batch";
+import { applyProposedPrice, getPriceRequest, type PcrRow } from "../../price-change-requests/_actions";
+import { CCR, getCostRequest, patchProductCostField, type CcrRow } from "../../cost-change-requests/_actions";
+import { COST_DETAILS, getCostDetails, getCostHeader } from "../../cost-change-batches/_batch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type OverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch";
-type OverrideAction = "reschedule" | "apply_now" | "cancel_schedule" | "reject_schedule";
+type OverrideAction = "reschedule" | "apply_now" | "cancel_schedule" | "reject_schedule" | "retry_application";
 
 type OverrideBody = Partial<{
     kind: OverrideKind;
@@ -42,17 +41,9 @@ type OverrideBody = Partial<{
     reject_reason: string | null;
 }>;
 
-type ScheduledPriceRow = {
-    request_id?: unknown;
-    product_id?: unknown;
-    price_type_id?: unknown;
-    proposed_price?: unknown;
-};
-
-type ScheduledCostRow = {
-    request_id?: unknown;
-    product_id?: unknown;
-    proposed_cost?: unknown;
+type BatchApplyFailure = {
+    request_id: number;
+    message: string;
 };
 
 function assertFutureDate(value?: string | null) {
@@ -63,8 +54,12 @@ function assertFutureDate(value?: string | null) {
     }
 }
 
+function applicationStatus(row: { application_status?: string | null } | null) {
+    return String(row?.application_status ?? "").toUpperCase();
+}
+
 function isScheduledApproved(row: { status?: string | null; application_status?: string | null } | null) {
-    return String(row?.status ?? "") === "APPROVED" && String(row?.application_status ?? "") === "SCHEDULED";
+    return String(row?.status ?? "") === "APPROVED" && applicationStatus(row) === "SCHEDULED";
 }
 
 function isFutureScheduledApproved(
@@ -81,17 +76,36 @@ function requireRejectReason(value?: string | null) {
     return reason;
 }
 
+function failedApplyResponse(args: {
+    kind: OverrideKind;
+    action: OverrideAction;
+    id: number;
+    message: string;
+    status: 409 | 502;
+    extra?: Record<string, unknown>;
+}) {
+    return NextResponse.json(
+        {
+            ok: false,
+            kind: args.kind,
+            action: args.action,
+            id: args.id,
+            error: args.message,
+            ...args.extra,
+        },
+        { status: args.status },
+    );
+}
+
 async function patchRows(collection: string, ids: number[], patch: Record<string, unknown>) {
     await Promise.all(
-        ids
-            .filter((id) => id > 0)
-            .map((id) =>
-                fetchDirectus(`${mustBase()}/items/${collection}/${id}`, {
-                    method: "PATCH",
-                    headers: directusHeaders(),
-                    body: JSON.stringify(patch),
-                }),
-            ),
+        ids.filter((id) => id > 0).map((id) =>
+            fetchDirectus(`${mustBase()}/items/${collection}/${id}`, {
+                method: "PATCH",
+                headers: directusHeaders(),
+                body: JSON.stringify(patch),
+            }),
+        ),
     );
 }
 
@@ -114,77 +128,99 @@ async function rejectScheduledRequest(collection: string, id: number, userId: nu
     });
 }
 
-async function applyPriceRequestNow(row: ScheduledPriceRow, userId: number) {
-    const requestId = pickId(row.request_id) ?? 0;
-    const productId = pickId(row.product_id) ?? 0;
-    const priceTypeId = pickId(row.price_type_id) ?? 0;
-    const proposedPrice = Number(row.proposed_price);
-    if (!requestId || !productId || !priceTypeId || !Number.isFinite(proposedPrice)) {
-        throw new Error("Scheduled price request has invalid product, price type, or proposed price.");
-    }
-
-    const now = nowManila();
-    await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
-    await patchRows(PRICE_DETAILS, [requestId], {
-        application_status: "APPLIED",
-        applied_at: now,
-        applied_by: userId,
-        effective_at: now,
+async function applyPriceNow(row: PcrRow, userId: number, effectiveAt = nowManila()) {
+    return executeClaimedApplication({
+        collection: PRICE_DETAILS,
+        row,
+        userId,
+        effectiveAt,
+        apply: async (claimed) => {
+            const productId = normalizeProductId(claimed);
+            const priceTypeId = normalizePriceTypeId(claimed);
+            const proposedPrice = Number(claimed.proposed_price);
+            if (!productId || !priceTypeId || !Number.isFinite(proposedPrice)) {
+                throw new Error("Scheduled price request has invalid product, price type, or proposed price.");
+            }
+            await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
+        },
     });
 }
 
-async function applyCostRequestNow(row: ScheduledCostRow, userId: number) {
-    const requestId = pickId(row.request_id) ?? 0;
-    const product_id = pickId(row.product_id) ?? 0;
-    const proposed_cost = Number(row.proposed_cost);
-    if (!requestId || !Number.isFinite(product_id) || product_id <= 0 || !Number.isFinite(proposed_cost)) {
-        throw new Error("Scheduled cost request has invalid product or proposed cost.");
-    }
-
-    const now = nowManila();
-    await patchProductCostField({ product_id, proposed_cost, userId });
-    await patchRows(CCR, [requestId], {
-        application_status: "APPLIED",
-        applied_at: now,
-        applied_by: userId,
-        effective_at: now,
+async function applyCostNow(row: CcrRow, userId: number, effectiveAt = nowManila()) {
+    return executeClaimedApplication({
+        collection: CCR,
+        row,
+        userId,
+        effectiveAt,
+        apply: async (claimed) => {
+            const product_id = pickId(claimed.product_id) ?? 0;
+            const proposed_cost = Number(claimed.proposed_cost);
+            if (!product_id || !Number.isFinite(proposed_cost)) {
+                throw new Error("Scheduled cost request has invalid product or proposed cost.");
+            }
+            await patchProductCostField({ product_id, proposed_cost, userId });
+        },
     });
 }
 
-async function applyPriceBatchNow(headerId: number, userId: number) {
+async function prepareRetry<T extends ApplicationRow>(collection: string, row: T) {
+    const id = pickId(row.request_id) ?? 0;
+    if (!id || applicationStatus(row) !== "FAILED") return row;
+    return ((await resetFailedApplication(collection, id, nowManila())) as T | null) ?? row;
+}
+
+async function applyPriceBatchNow(headerId: number, userId: number, retryFailed: boolean) {
+    if (retryFailed && !(await resetFailedBatchHeader(headerId))) {
+        return { affected: 0, applied: 0, failed: 0, skipped: 1, failures: [] as BatchApplyFailure[], application_status: null };
+    }
     const details = await getDetails(headerId);
-    const scheduledDetails = details.filter(isScheduledApproved);
-    for (const row of scheduledDetails) {
-        await applyPriceRequestNow(row, userId);
+    const failures: BatchApplyFailure[] = [];
+    let applied = 0;
+    let failed = 0;
+    let skipped = 0;
+    for (const original of details) {
+        if (!["SCHEDULED", ...(retryFailed ? ["FAILED"] : [])].includes(applicationStatus(original))) continue;
+        const row = retryFailed ? await prepareRetry(PRICE_DETAILS, original) : original;
+        const outcome = await applyPriceNow(row as PcrRow, userId);
+        if (outcome.state === "applied") applied += 1;
+        if (outcome.state === "failed") {
+            failed += 1;
+            failures.push({
+                request_id: pickId(original.request_id) ?? 0,
+                message: outcome.error ?? "Application failed.",
+            });
+        }
+        if (outcome.state === "skipped") skipped += 1;
     }
-
-    const now = nowManila();
-    await patchRows(HEADERS, [headerId], {
-        application_status: "APPLIED",
-        applied_at: now,
-        applied_by: userId,
-        effective_at: now,
-    });
-
-    return scheduledDetails.length;
+    const status = await refreshBatchApplicationStatus({ detailCollection: PRICE_DETAILS, headerId, userId });
+    return { affected: applied + failed + skipped, applied, failed, skipped, failures, application_status: status };
 }
 
-async function applyCostBatchNow(headerId: number, userId: number) {
-    const details = await getCostDetails(headerId);
-    const scheduledDetails = details.filter(isScheduledApproved);
-    for (const row of scheduledDetails) {
-        await applyCostRequestNow(row, userId);
+async function applyCostBatchNow(headerId: number, userId: number, retryFailed: boolean) {
+    if (retryFailed && !(await resetFailedBatchHeader(headerId))) {
+        return { affected: 0, applied: 0, failed: 0, skipped: 1, failures: [] as BatchApplyFailure[], application_status: null };
     }
-
-    const now = nowManila();
-    await patchRows(HEADERS, [headerId], {
-        application_status: "APPLIED",
-        applied_at: now,
-        applied_by: userId,
-        effective_at: now,
-    });
-
-    return scheduledDetails.length;
+    const details = await getCostDetails(headerId);
+    const failures: BatchApplyFailure[] = [];
+    let applied = 0;
+    let failed = 0;
+    let skipped = 0;
+    for (const original of details) {
+        if (!["SCHEDULED", ...(retryFailed ? ["FAILED"] : [])].includes(applicationStatus(original))) continue;
+        const row = retryFailed ? await prepareRetry(COST_DETAILS, original) : original;
+        const outcome = await applyCostNow(row as CcrRow, userId);
+        if (outcome.state === "applied") applied += 1;
+        if (outcome.state === "failed") {
+            failed += 1;
+            failures.push({
+                request_id: pickId(original.request_id) ?? 0,
+                message: outcome.error ?? "Application failed.",
+            });
+        }
+        if (outcome.state === "skipped") skipped += 1;
+    }
+    const status = await refreshBatchApplicationStatus({ detailCollection: COST_DETAILS, headerId, userId });
+    return { affected: applied + failed + skipped, applied, failed, skipped, failures, application_status: status };
 }
 
 async function patchBatchSchedule(collection: string, headerId: number, patch: Record<string, unknown>) {
@@ -196,12 +232,11 @@ async function patchBatchSchedule(collection: string, headerId: number, patch: R
 }
 
 async function rejectScheduledBatch(collection: string, headerId: number, userId: number, rejectReason: string) {
-    const now = nowManila();
     return patchBatchSchedule(collection, headerId, {
         status: "REJECTED",
         application_status: "CANCELLED",
         rejected_by: userId,
-        rejected_at: now,
+        rejected_at: nowManila(),
         reject_reason: rejectReason,
     });
 }
@@ -219,84 +254,126 @@ export async function POST(req: NextRequest) {
         if (!kind || !["price_request", "price_batch", "cost_request", "cost_batch"].includes(kind)) {
             return NextResponse.json({ error: "Unsupported kind" }, { status: 400 });
         }
-        if (!action || !["reschedule", "apply_now", "cancel_schedule", "reject_schedule"].includes(action)) {
+        if (!action || !["reschedule", "apply_now", "cancel_schedule", "reject_schedule", "retry_application"].includes(action)) {
             return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
         }
-        if (!Number.isFinite(id) || id <= 0) {
-            return NextResponse.json({ error: "id is required" }, { status: 400 });
-        }
+        if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
+        const retry = action === "retry_application";
         if (kind === "price_request") {
-            const row = await getPriceRequest(id);
-            if (!row || !isFutureScheduledApproved(row)) {
-                return NextResponse.json({ error: "Only scheduled approved price requests can be overridden." }, { status: 400 });
-            }
+            let row = await getPriceRequest(id);
+            const valid = retry ? applicationStatus(row) === "FAILED" : isFutureScheduledApproved(row);
+            if (!row || !valid) return NextResponse.json({ error: "Request is not available for this override." }, { status: 400 });
             if (action === "reschedule") await rescheduleRequest(PRICE_DETAILS, id, body.effective_at);
             if (action === "cancel_schedule") await cancelScheduledRequest(PRICE_DETAILS, id);
             if (action === "reject_schedule") await rejectScheduledRequest(PRICE_DETAILS, id, userId, requireRejectReason(body.reject_reason));
-            if (action === "apply_now") await applyPriceRequestNow(row, userId);
+            if (retry) row = (await prepareRetry(PRICE_DETAILS, row)) as PcrRow;
+            if (action === "apply_now" || retry) {
+                const outcome = await applyPriceNow(row, userId);
+                if (outcome.state === "applied") invalidateGroupIndexCacheOnCatalogChange();
+                if (outcome.state === "failed") {
+                    return failedApplyResponse({
+                        kind,
+                        action,
+                        id,
+                        status: 502,
+                        message: outcome.error ?? "Scheduled price change application failed.",
+                        extra: { outcome },
+                    });
+                }
+                if (outcome.state === "skipped") {
+                    return failedApplyResponse({
+                        kind,
+                        action,
+                        id,
+                        status: 409,
+                        message: "Scheduled price change was already changed or claimed by another process.",
+                        extra: { outcome },
+                    });
+                }
+                return NextResponse.json({ ok: true, kind, action, id, outcome });
+            }
             return NextResponse.json({ ok: true, kind, action, id });
         }
 
         if (kind === "cost_request") {
-            const row = await getCostRequest(id);
-            if (!row || !isFutureScheduledApproved(row)) {
-                return NextResponse.json({ error: "Only scheduled approved cost requests can be overridden." }, { status: 400 });
-            }
+            let row = await getCostRequest(id);
+            const valid = retry ? applicationStatus(row) === "FAILED" : isFutureScheduledApproved(row);
+            if (!row || !valid) return NextResponse.json({ error: "Request is not available for this override." }, { status: 400 });
             if (action === "reschedule") await rescheduleRequest(CCR, id, body.effective_at);
             if (action === "cancel_schedule") await cancelScheduledRequest(CCR, id);
             if (action === "reject_schedule") await rejectScheduledRequest(CCR, id, userId, requireRejectReason(body.reject_reason));
-            if (action === "apply_now") await applyCostRequestNow(row, userId);
+            if (retry) row = (await prepareRetry(CCR, row)) as CcrRow;
+            if (action === "apply_now" || retry) {
+                const outcome = await applyCostNow(row, userId);
+                if (outcome.state === "applied") invalidateGroupIndexCacheOnCatalogChange();
+                if (outcome.state === "failed") {
+                    return failedApplyResponse({
+                        kind,
+                        action,
+                        id,
+                        status: 502,
+                        message: outcome.error ?? "Scheduled list cost change application failed.",
+                        extra: { outcome },
+                    });
+                }
+                if (outcome.state === "skipped") {
+                    return failedApplyResponse({
+                        kind,
+                        action,
+                        id,
+                        status: 409,
+                        message: "Scheduled list cost change was already changed or claimed by another process.",
+                        extra: { outcome },
+                    });
+                }
+                return NextResponse.json({ ok: true, kind, action, id, outcome });
+            }
             return NextResponse.json({ ok: true, kind, action, id });
         }
 
-        if (kind === "price_batch") {
-            const header = await getHeader(id);
-            if (!isFutureScheduledApproved(header)) {
-                return NextResponse.json({ error: "Only scheduled approved price batches can be overridden." }, { status: 400 });
-            }
-            if (action === "reschedule") {
-                assertFutureDate(body.effective_at);
-                const affected = await patchBatchSchedule(PRICE_DETAILS, id, {
-                    effective_at: body.effective_at,
-                    application_status: "SCHEDULED",
-                });
-                return NextResponse.json({ ok: true, kind, action, id, affected });
-            }
-            if (action === "cancel_schedule") {
-                const affected = await patchBatchSchedule(PRICE_DETAILS, id, { application_status: "CANCELLED" });
-                return NextResponse.json({ ok: true, kind, action, id, affected });
-            }
-            if (action === "reject_schedule") {
-                const affected = await rejectScheduledBatch(PRICE_DETAILS, id, userId, requireRejectReason(body.reject_reason));
-                return NextResponse.json({ ok: true, kind, action, id, affected });
-            }
-            const affected = await applyPriceBatchNow(id, userId);
-            return NextResponse.json({ ok: true, kind, action, id, affected });
-        }
-
-        const header = await getCostHeader(id);
-        if (!isFutureScheduledApproved(header)) {
-            return NextResponse.json({ error: "Only scheduled approved cost batches can be overridden." }, { status: 400 });
-        }
+        const header = kind === "price_batch" ? await getHeader(id) : await getCostHeader(id);
+        const valid = retry ? applicationStatus(header) === "FAILED" : isFutureScheduledApproved(header);
+        if (!header || !valid) return NextResponse.json({ error: "Batch is not available for this override." }, { status: 400 });
+        const collection = kind === "price_batch" ? PRICE_DETAILS : COST_DETAILS;
         if (action === "reschedule") {
             assertFutureDate(body.effective_at);
-            const affected = await patchBatchSchedule(COST_DETAILS, id, {
-                effective_at: body.effective_at,
-                application_status: "SCHEDULED",
-            });
+            const affected = await patchBatchSchedule(collection, id, { effective_at: body.effective_at, application_status: "SCHEDULED" });
             return NextResponse.json({ ok: true, kind, action, id, affected });
         }
         if (action === "cancel_schedule") {
-            const affected = await patchBatchSchedule(COST_DETAILS, id, { application_status: "CANCELLED" });
+            const affected = await patchBatchSchedule(collection, id, { application_status: "CANCELLED" });
             return NextResponse.json({ ok: true, kind, action, id, affected });
         }
         if (action === "reject_schedule") {
-            const affected = await rejectScheduledBatch(COST_DETAILS, id, userId, requireRejectReason(body.reject_reason));
+            const affected = await rejectScheduledBatch(collection, id, userId, requireRejectReason(body.reject_reason));
             return NextResponse.json({ ok: true, kind, action, id, affected });
         }
-        const affected = await applyCostBatchNow(id, userId);
-        return NextResponse.json({ ok: true, kind, action, id, affected });
+        const result = kind === "price_batch"
+            ? await applyPriceBatchNow(id, userId, retry)
+            : await applyCostBatchNow(id, userId, retry);
+        if (result.applied > 0) invalidateGroupIndexCacheOnCatalogChange();
+        if (result.failed > 0) {
+            return failedApplyResponse({
+                kind,
+                action,
+                id,
+                status: 502,
+                message: `${result.failed} scheduled change(s) failed to apply.`,
+                extra: result,
+            });
+        }
+        if (result.skipped > 0 || result.affected === 0) {
+            return failedApplyResponse({
+                kind,
+                action,
+                id,
+                status: 409,
+                message: "Scheduled batch was already changed or claimed by another process.",
+                extra: result,
+            });
+        }
+        return NextResponse.json({ ok: true, kind, action, id, ...result });
     } catch (error: unknown) {
         if (error instanceof Error && (error.message.includes("effective_at") || error.message.includes("reject_reason"))) {
             return NextResponse.json({ error: error.message }, { status: 400 });

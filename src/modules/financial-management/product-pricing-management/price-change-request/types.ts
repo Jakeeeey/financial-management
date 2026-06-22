@@ -1,6 +1,6 @@
 export type PCRStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
-export type PriceChangeApplicationStatus = "SCHEDULED" | "APPLIED" | "CANCELLED";
-export type PCRDisplayStatus = PCRStatus | "SCHEDULED";
+export type PriceChangeApplicationStatus = "SCHEDULED" | "APPLYING" | "APPLIED" | "FAILED" | "CANCELLED";
+export type PCRDisplayStatus = PCRStatus | "SCHEDULED" | "APPLYING" | "FAILED";
 
 export type PCRStatusFilter = PCRDisplayStatus | "ALL";
 

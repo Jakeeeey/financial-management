@@ -181,6 +181,28 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
         [onDone, onUnauthorized],
     );
 
+    const retryApplication = React.useCallback(
+        async (request_id: number) => {
+            setActing(true);
+            try {
+                const result = await api.overrideScheduledPriceChange({
+                    kind: "cost_request",
+                    id: request_id,
+                    action: "retry_application",
+                });
+                const count = result.affected ?? 1;
+                toast.success(`${count} failed change(s) retried.`);
+                onDone?.();
+            } catch (error: unknown) {
+                applyActionError(error, "Failed to retry application", { onUnauthorized });
+                throw error;
+            } finally {
+                setActing(false);
+            }
+        },
+        [onDone, onUnauthorized],
+    );
+
     const rejectMany = React.useCallback(
         async (requestIds: number[], reject_reason: string): Promise<BulkActionResult> => {
             const uniqueIds = Array.from(new Set(requestIds)).filter((id) => Number.isFinite(id));
@@ -242,5 +264,5 @@ export function usePCRActions(onDone?: () => void, onUnauthorized?: () => void) 
         [onDone, onUnauthorized],
     );
 
-    return { acting, approve, approveMany, cancel, reject, applyScheduledNow, rejectScheduled, rejectMany };
+    return { acting, approve, approveMany, cancel, reject, applyScheduledNow, rejectScheduled, retryApplication, rejectMany };
 }

@@ -31,6 +31,7 @@ type Props = {
     onReject?: (requestId: number, reason: string) => Promise<void>;
     onApplyScheduledNow?: (requestId: number) => Promise<void>;
     onRejectScheduled?: (requestId: number, reason: string) => Promise<void>;
+    onRetryApplication?: (requestId: number) => Promise<void>;
 };
 
 function money(value: number | null | undefined) {
@@ -70,6 +71,7 @@ export function ListPriceRequestDetailDialog({
     onReject,
     onApplyScheduledNow,
     onRejectScheduled,
+    onRetryApplication,
 }: Props) {
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
@@ -120,6 +122,8 @@ export function ListPriceRequestDetailDialog({
         requestId != null &&
         onApplyScheduledNow != null &&
         onRejectScheduled != null;
+    const canRetryApplication =
+        !readOnly && row?.application_status === "FAILED" && requestId != null && onRetryApplication != null;
 
     const handleApprove = async (effectiveAt?: string | null) => {
         if (!requestId || !onApprove) return;
@@ -163,6 +167,17 @@ export function ListPriceRequestDetailDialog({
         try {
             await onRejectScheduled(requestId, rejectReason.trim());
             setConfirmingAction(null);
+            onOpenChange(false);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleRetryApplication = async () => {
+        if (!requestId || !onRetryApplication) return;
+        setSubmitting(true);
+        try {
+            await onRetryApplication(requestId);
             onOpenChange(false);
         } finally {
             setSubmitting(false);
@@ -371,6 +386,11 @@ export function ListPriceRequestDetailDialog({
                                 </Button>
                             </>
                         )
+                    ) : null}
+                    {!canAct && canRetryApplication ? (
+                        <Button className={pcrApproveButtonClass} onClick={handleRetryApplication} disabled={busy}>
+                            Retry Application
+                        </Button>
                     ) : null}
                 </DialogFooter>
             </DialogContent>

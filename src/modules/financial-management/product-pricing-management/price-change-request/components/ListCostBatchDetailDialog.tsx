@@ -43,6 +43,7 @@ type Props = {
     onReject?: (headerId: number, reason: string) => Promise<void> | void;
     onApplyScheduledNow?: (headerId: number) => Promise<void> | void;
     onRejectScheduled?: (headerId: number, reason: string) => Promise<void> | void;
+    onRetryApplication?: (headerId: number) => Promise<void> | void;
 };
 
 function money(value: number | null | undefined) {
@@ -108,6 +109,7 @@ export function ListCostBatchDetailDialog({
     onReject,
     onApplyScheduledNow,
     onRejectScheduled,
+    onRetryApplication,
 }: Props) {
     const [detail, setDetail] = React.useState<ListCostBatchDetail | null>(null);
     const [loading, setLoading] = React.useState(false);
@@ -159,6 +161,8 @@ export function ListCostBatchDetailDialog({
         headerId > 0 &&
         onApplyScheduledNow != null &&
         onRejectScheduled != null;
+    const canRetryApplication =
+        !readOnly && detail?.application_status === "FAILED" && headerId > 0 && onRetryApplication != null;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status) : "";
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
 
@@ -205,6 +209,12 @@ export function ListCostBatchDetailDialog({
         setConfirmingAction(null);
         handleOpenChange(false);
     }, [handleOpenChange, headerId, onRejectScheduled, rejectReason]);
+
+    const handleRetryApplication = React.useCallback(async () => {
+        if (!headerId || !onRetryApplication) return;
+        await onRetryApplication(headerId);
+        handleOpenChange(false);
+    }, [handleOpenChange, headerId, onRetryApplication]);
 
     return (
         <>
@@ -388,7 +398,7 @@ export function ListCostBatchDetailDialog({
                                 </Button>
                             </>
                         ) : null}
-                        {!canAct && canOverrideScheduled ? (
+                    {!canAct && canOverrideScheduled ? (
                             <>
                                 {rejecting ? (
                                     <>
@@ -429,7 +439,12 @@ export function ListCostBatchDetailDialog({
                                     Apply Now
                                 </Button>
                             </>
-                        ) : null}
+                    ) : null}
+                    {!canAct && canRetryApplication ? (
+                        <Button className={pcrApproveButtonClass} onClick={handleRetryApplication} disabled={acting}>
+                            Retry Application
+                        </Button>
+                    ) : null}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

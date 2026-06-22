@@ -474,6 +474,7 @@ export function PriceTypeRequestManager({
                           onApplyScheduledNow: (headerId: number) => inbox.applyScheduledNow("price_batch", headerId),
                           onRejectScheduled: (headerId: number, reason: string) =>
                               inbox.rejectScheduled("price_batch", headerId, reason),
+                          onRetryApplication: (headerId: number) => inbox.retryApplication("price_batch", headerId),
                       })}
             />
 
@@ -494,6 +495,7 @@ export function PriceTypeRequestManager({
                           onRejectRequest: rejectPriceRequest,
                           onApplyScheduledNow: (kind, id) => inbox.applyScheduledNow(kind, id),
                           onRejectScheduled: (kind, id, reason) => inbox.rejectScheduled(kind, id, reason),
+                          onRetryApplication: (kind, id) => inbox.retryApplication(kind, id),
                       })}
             />
 

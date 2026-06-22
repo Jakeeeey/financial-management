@@ -19,6 +19,8 @@ const STATUS_TABS: Array<{ value: StatusTabValue; label: string }> = [
     { value: "PENDING", label: "Pending" },
     { value: "APPROVED", label: "Approved" },
     { value: "SCHEDULED", label: "Scheduled" },
+    { value: "APPLYING", label: "Applying" },
+    { value: "FAILED", label: "Failed" },
     { value: "REJECTED", label: "Rejected" },
 ];
 
@@ -37,7 +39,7 @@ export function PcrStatusTabs({ value, onValueChange, className }: Props) {
                         className={
                             tab.value === "ALL"
                                 ? "data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-sm"
-                                : pcrStatusTabTriggerClass(tab.value as "PENDING" | "APPROVED" | "SCHEDULED" | "REJECTED")
+                                : pcrStatusTabTriggerClass(tab.value as Exclude<StatusTabValue, "ALL" | "CANCELLED">)
                         }
                     >
                         {tab.label}

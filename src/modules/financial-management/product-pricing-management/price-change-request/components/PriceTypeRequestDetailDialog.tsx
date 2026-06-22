@@ -33,6 +33,7 @@ type Props = {
     onRejectRequest?: (requestId: number, reason: string) => Promise<void>;
     onApplyScheduledNow?: (kind: "price_request" | "price_batch", id: number) => Promise<void>;
     onRejectScheduled?: (kind: "price_request" | "price_batch", id: number, reason: string) => Promise<void>;
+    onRetryApplication?: (kind: "price_request" | "price_batch", id: number) => Promise<void>;
 };
 
 function money(value: number | null | undefined) {
@@ -74,6 +75,7 @@ export function PriceTypeRequestDetailDialog({
     onRejectRequest,
     onApplyScheduledNow,
     onRejectScheduled,
+    onRetryApplication,
 }: Props) {
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
@@ -130,6 +132,8 @@ export function PriceTypeRequestDetailDialog({
         scheduledId != null &&
         onApplyScheduledNow != null &&
         onRejectScheduled != null;
+    const canRetryApplication =
+        !readOnly && row?.application_status === "FAILED" && scheduledId != null && onRetryApplication != null;
 
     const handleApprove = async (effectiveAt?: string | null) => {
         if (!requestId || !onApproveBatch || !onApproveRequest) return;
@@ -181,6 +185,17 @@ export function PriceTypeRequestDetailDialog({
         try {
             await onRejectScheduled(scheduledKind, scheduledId, rejectReason.trim());
             setConfirmingAction(null);
+            onOpenChange(false);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleRetryApplication = async () => {
+        if (!scheduledId || !onRetryApplication) return;
+        setSubmitting(true);
+        try {
+            await onRetryApplication(scheduledKind, scheduledId);
             onOpenChange(false);
         } finally {
             setSubmitting(false);
@@ -434,6 +449,11 @@ export function PriceTypeRequestDetailDialog({
                                 </Button>
                             </>
                         )
+                    ) : null}
+                    {!canAct && canRetryApplication ? (
+                        <Button className={pcrApproveButtonClass} onClick={handleRetryApplication} disabled={busy}>
+                            Retry Application
+                        </Button>
                     ) : null}
                 </DialogFooter>
             </DialogContent>

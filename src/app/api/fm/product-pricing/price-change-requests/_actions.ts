@@ -1,5 +1,6 @@
 import { resolveLegacyProductsPatch } from "../_legacyProductPriceSync";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
+import { executeClaimedApplication, stageStandaloneApproval } from "../_applicationEngine";
 import { resolveHeaderMeta } from "../_pcrHeaderMeta";
 import {
     DETAILS,
@@ -26,6 +27,10 @@ const PCR_FIELDS = [
     "application_status",
     "applied_at",
     "applied_by",
+    "application_lock_id",
+    "application_started_at",
+    "application_attempts",
+    "application_error",
     "requested_by",
     "header_id",
 ].join(",");
@@ -55,6 +60,10 @@ export type PcrRow = {
     application_status?: string | null;
     applied_at?: string | null;
     applied_by?: number | string | null;
+    application_lock_id?: string | null;
+    application_started_at?: string | null;
+    application_attempts?: number | string | null;
+    application_error?: string | null;
     requested_by?: number | string | null;
     header_id?:
         | number
@@ -246,26 +255,26 @@ export async function approveOneOrphanPriceRequest(
         throw new Error("Invalid proposed_price on request.");
     }
 
-    const scheduled = isFutureEffectiveAt(effectiveAt);
-    if (!scheduled) {
-        await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
+    const staged = await stageStandaloneApproval<PcrRow>({
+        collection: PCR,
+        id: request_id,
+        userId,
+        effectiveAt,
+        fields: PCR_FIELDS,
+    });
+    if (!staged) throw new Error("Request is no longer pending or is already being processed.");
+
+    if (!staged.scheduled) {
+        const outcome = await executeClaimedApplication({
+            collection: PCR,
+            row: staged.row,
+            userId,
+            apply: async () => applyProposedPrice({ userId, productId, priceTypeId, proposedPrice }),
+        });
+        if (outcome.state === "applied") invalidateGroupIndexCacheOnCatalogChange();
     }
 
-    const url = `${mustBase()}/items/${PCR}/${request_id}`;
-    const updated = await fetchDirectus<DirectusSingleResponse<PcrRow>>(url, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({
-            status: "APPROVED",
-            approved_by: userId,
-            approved_at: nowManila(),
-            ...approvalApplicationPatch({ userId, effectiveAt, scheduled }),
-        }),
-    });
-
-    if (!scheduled) invalidateGroupIndexCacheOnCatalogChange();
-
-    return updated.data;
+    return (await getPriceRequest(request_id)) ?? staged.row;
 }
 
 export async function rejectOneOrphanPriceRequest(

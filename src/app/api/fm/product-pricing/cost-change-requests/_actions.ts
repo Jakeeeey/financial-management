@@ -5,14 +5,14 @@ import {
     mustBase,
     nowManila,
 } from "../price-change-batches/_batch";
-import { approvalApplicationPatch, isFutureEffectiveAt } from "../price-change-requests/_actions";
 import { chunkArray, IN_CHUNK_SIZE } from "../_directusPaging";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
+import { executeClaimedApplication, stageStandaloneApproval } from "../_applicationEngine";
 
 export const CCR = "cost_change_requests";
 const PRODUCTS = "products";
 
-const CCR_FIELDS = "request_id,product_id,current_cost,proposed_cost,status,effective_at,application_status,applied_at,applied_by,requested_by";
+const CCR_FIELDS = "request_id,product_id,current_cost,proposed_cost,status,effective_at,application_status,applied_at,applied_by,application_lock_id,application_started_at,application_attempts,application_error,requested_by";
 
 export type CcrRow = {
     request_id?: number | string | null;
@@ -25,6 +25,10 @@ export type CcrRow = {
     application_status?: string | null;
     applied_at?: string | null;
     applied_by?: number | string | null;
+    application_lock_id?: string | null;
+    application_started_at?: string | null;
+    application_attempts?: number | string | null;
+    application_error?: string | null;
     requested_by?: number | string | null;
 };
 
@@ -102,26 +106,26 @@ export async function approveOneCostRequest(
         throw new Error("Invalid proposed_cost on request.");
     }
 
-    const scheduled = isFutureEffectiveAt(effectiveAt);
-    if (!scheduled) {
-        await patchProductCostField({ product_id, proposed_cost, userId });
+    const staged = await stageStandaloneApproval<CcrRow>({
+        collection: CCR,
+        id: request_id,
+        userId,
+        effectiveAt,
+        fields: CCR_FIELDS,
+    });
+    if (!staged) throw new Error("Request is no longer pending or is already being processed.");
+
+    if (!staged.scheduled) {
+        const outcome = await executeClaimedApplication({
+            collection: CCR,
+            row: staged.row,
+            userId,
+            apply: async () => patchProductCostField({ product_id, proposed_cost, userId }),
+        });
+        if (outcome.state === "applied") invalidateGroupIndexCacheOnCatalogChange();
     }
 
-    const url = `${mustBase()}/items/${CCR}/${request_id}`;
-    const updated = await fetchDirectus<DirectusSingleResponse<CcrRow>>(url, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({
-            status: "APPROVED",
-            approved_by: userId,
-            approved_at: nowManila(),
-            ...approvalApplicationPatch({ userId, effectiveAt, scheduled }),
-        }),
-    });
-
-    if (!scheduled) invalidateGroupIndexCacheOnCatalogChange();
-
-    return updated.data;
+    return (await getCostRequest(request_id)) ?? staged.row;
 }
 
 export async function rejectOneCostRequest(

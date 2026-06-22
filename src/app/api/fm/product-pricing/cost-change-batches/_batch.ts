@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 import {
-    approvalApplicationPatch,
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
     directusHeaders,
@@ -11,7 +10,6 @@ import {
     getSupplierNamesByProductId,
     HEADERS,
     isRecord,
-    isFutureEffectiveAt,
     mustBase,
     nowManila,
     pickId,
@@ -68,6 +66,10 @@ export type CostHeaderRow = {
     reject_reason?: string | null;
     effective_at?: string | null;
     application_status?: string | null;
+    application_lock_id?: string | null;
+    application_started_at?: string | null;
+    application_attempts?: number | string | null;
+    application_error?: string | null;
     applied_at?: string | null;
     applied_by?: number | string | DirectusUserRelation | null;
 };
@@ -92,6 +94,10 @@ export type CostDetailRow = {
     reject_reason?: string | null;
     effective_at?: string | null;
     application_status?: string | null;
+    application_lock_id?: string | null;
+    application_started_at?: string | null;
+    application_attempts?: number | string | null;
+    application_error?: string | null;
     applied_at?: string | null;
     applied_by?: number | string | null;
 };
@@ -294,6 +300,10 @@ export async function getCostHeader(headerId: number) {
             "reject_reason",
             "effective_at",
             "application_status",
+            "application_lock_id",
+            "application_started_at",
+            "application_attempts",
+            "application_error",
             "applied_at",
             "applied_by",
             "applied_by.user_id",
@@ -336,6 +346,10 @@ export async function getCostDetails(headerId: number) {
             "reject_reason",
             "effective_at",
             "application_status",
+            "application_lock_id",
+            "application_started_at",
+            "application_attempts",
+            "application_error",
             "applied_at",
             "applied_by",
         ].join(","),
@@ -350,30 +364,6 @@ export function normalizeEffectiveAt(value: unknown): string | null {
     if (typeof value !== "string") return null;
     const normalized = value.trim();
     return normalized || null;
-}
-
-function approvalStageError(stage: string, error: unknown) {
-    console.error(`[cost-change-batches] ${stage}`, error);
-
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("picked_quantity") && message.includes("Unknown column")) {
-        return NextResponse.json(
-            {
-                error: "Product schema is out of sync in Directus.",
-                details: "Remove the orphan products.picked_quantity field metadata, then restart Directus.",
-                setup_required: true,
-            },
-            { status: 503 },
-        );
-    }
-
-    return NextResponse.json(
-        {
-            error: `List cost approval could not be completed during ${stage}.`,
-            details: "Review the request and current product costs before retrying.",
-        },
-        { status: 502 },
-    );
 }
 
 export async function approveCostBatch(headerId: number, userId: number, effectiveAt?: string | null) {
@@ -400,64 +390,52 @@ export async function approveCostBatch(headerId: number, userId: number, effecti
         }
     }
 
-    const scheduled = isFutureEffectiveAt(effectiveAt);
+    const { executeClaimedApplication, refreshBatchApplicationStatus, stageBatchApproval } =
+        await import("../_applicationEngine");
+    const staged = await stageBatchApproval({ detailCollection: COST_DETAILS, headerId, userId, effectiveAt });
+    if (!staged) {
+        return NextResponse.json({ error: "Cost batch approval was already claimed or is no longer pending." }, { status: 409 });
+    }
 
-    if (!scheduled) {
-        try {
-            for (const line of normalized) {
-                await patchProductCostField({
-                    product_id: line.productId,
-                    proposed_cost: line.proposedCost,
-                    userId,
-                });
-            }
-        } catch (error: unknown) {
-            return approvalStageError("product cost application", error);
+    let applied = 0;
+    let failed = 0;
+    if (!staged.scheduled) {
+        const stagedDetails = await getCostDetails(headerId);
+        for (const row of stagedDetails) {
+            const outcome = await executeClaimedApplication({
+                collection: COST_DETAILS,
+                row,
+                userId,
+                apply: async (claimed) => {
+                    const product_id = normalizeCostProductId(claimed);
+                    const proposed_cost = Number(claimed.proposed_cost);
+                    if (!product_id || !Number.isFinite(proposed_cost)) {
+                        throw new Error("Cost batch contains an invalid detail line.");
+                    }
+                    await patchProductCostField({ product_id, proposed_cost, userId });
+                },
+            });
+            if (outcome.state === "applied") applied += 1;
+            if (outcome.state === "failed") failed += 1;
         }
     }
 
-    const applicationPatch = approvalApplicationPatch({ userId, effectiveAt, scheduled });
-
-    try {
-        await fetchDirectus(`${mustBase()}/items/${COST_HEADERS}/${headerId}`, {
-            method: "PATCH",
-            headers: directusHeaders(),
-            body: JSON.stringify({
-                status: "APPROVED",
-                approved_by: userId,
-                approved_at: nowManila(),
-                ...applicationPatch,
-            }),
-        });
-    } catch (error: unknown) {
-        return approvalStageError("batch status update", error);
-    }
-
-    try {
-        await Promise.all(
-            normalized
-                .filter((line) => line.requestId > 0)
-                .map((line) =>
-                    fetchDirectus(`${mustBase()}/items/${COST_DETAILS}/${line.requestId}`, {
-                        method: "PATCH",
-                        headers: directusHeaders(),
-                        body: JSON.stringify({ status: "APPROVED", ...applicationPatch }),
-                    }),
-                ),
-        );
-    } catch (error: unknown) {
-        return approvalStageError("detail status update", error);
-    }
-
-    if (!scheduled) invalidateGroupIndexCacheOnCatalogChange();
+    const applicationStatus = await refreshBatchApplicationStatus({
+        detailCollection: COST_DETAILS,
+        headerId,
+        userId,
+    });
+    if (applied > 0) invalidateGroupIndexCacheOnCatalogChange();
 
     return NextResponse.json({
         ok: true,
         header_id: headerId,
         affected: normalized.length,
-        application_status: scheduled ? "SCHEDULED" : "APPLIED",
-        effective_at: applicationPatch.effective_at,
-    });
+        applied,
+        failed,
+        application_status: applicationStatus ?? "SCHEDULED",
+        effective_at: staged.effectiveAt,
+    }, { status: failed > 0 ? 202 : 200 });
 }
 
 export async function rejectCostBatch(headerId: number, userId: number, rejectReason: string) {

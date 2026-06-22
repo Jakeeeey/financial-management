@@ -634,7 +634,7 @@ type ApprovalResponse = {
 };
 
 export type ScheduledOverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch";
-export type ScheduledOverrideAction = "apply_now" | "reject_schedule";
+export type ScheduledOverrideAction = "apply_now" | "reject_schedule" | "retry_application";
 
 export type ScheduledOverrideResponse = {
     ok: boolean;

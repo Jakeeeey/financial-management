@@ -357,6 +357,7 @@ export function ListCostRequestManager({
                           onReject: actions.reject,
                           onApplyScheduledNow: actions.applyScheduledNow,
                           onRejectScheduled: actions.rejectScheduled,
+                          onRetryApplication: actions.retryApplication,
                       })}
             />
 
@@ -376,6 +377,7 @@ export function ListCostRequestManager({
                           onApplyScheduledNow: (headerId: number) => inbox.applyScheduledNow("cost_batch", headerId),
                           onRejectScheduled: (headerId: number, reason: string) =>
                               inbox.rejectScheduled("cost_batch", headerId, reason),
+                          onRetryApplication: (headerId: number) => inbox.retryApplication("cost_batch", headerId),
                       })}
             />
 

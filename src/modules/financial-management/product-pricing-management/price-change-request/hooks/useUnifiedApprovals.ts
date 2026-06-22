@@ -196,6 +196,21 @@ export function useUnifiedApprovals(
         }
     }, [refresh]);
 
+    const retryApplication = React.useCallback(async (kind: api.ScheduledOverrideKind, id: number) => {
+        setActing(true);
+        try {
+            const result = await api.overrideScheduledPriceChange({ kind, id, action: "retry_application" });
+            const count = result.affected ?? 1;
+            toast.success(`${count} failed change(s) retried.`);
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to retry application", { setUnauthorized })) throw error;
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
     return {
         query,
         setQuery,
@@ -214,5 +229,6 @@ export function useUnifiedApprovals(
         rejectPriceRequest,
         applyScheduledNow,
         rejectScheduled,
+        retryApplication,
     };
 }

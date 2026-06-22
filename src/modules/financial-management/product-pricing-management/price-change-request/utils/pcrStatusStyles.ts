@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 import type { ApprovalKind, ApprovalTypeFilter, PCRDisplayStatus } from "../types";
 
-const STATUS_VALUES: PCRDisplayStatus[] = ["PENDING", "APPROVED", "SCHEDULED", "REJECTED", "CANCELLED"];
+const STATUS_VALUES: PCRDisplayStatus[] = ["PENDING", "APPROVED", "SCHEDULED", "APPLYING", "FAILED", "REJECTED", "CANCELLED"];
 
 export const pcrApproveButtonClass =
     "bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-500/20 dark:bg-emerald-600 dark:hover:bg-emerald-700 dark:focus-visible:ring-emerald-500/40";
@@ -18,7 +18,9 @@ export function normalizePcrStatus(status: string): PCRDisplayStatus | null {
 export function displayPcrStatus(status: string, applicationStatus?: string | null): PCRDisplayStatus | string {
     const normalized = status.trim().toUpperCase();
     const normalizedApplicationStatus = String(applicationStatus ?? "").trim().toUpperCase();
-    if (normalized === "APPROVED" && normalizedApplicationStatus === "SCHEDULED") return "SCHEDULED";
+    if (normalized === "APPROVED" && ["SCHEDULED", "APPLYING", "FAILED"].includes(normalizedApplicationStatus)) {
+        return normalizedApplicationStatus;
+    }
     return normalizePcrStatus(normalized) ?? normalized;
 }
 
@@ -32,6 +34,10 @@ export function pcrStatusBadgeClass(status: string): string {
             return "border-emerald-200 bg-emerald-100 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200";
         case "SCHEDULED":
             return "border-sky-200 bg-sky-100 text-sky-900 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200";
+        case "APPLYING":
+            return "border-blue-200 bg-blue-100 text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200";
+        case "FAILED":
+            return "border-orange-200 bg-orange-100 text-orange-900 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200";
         case "REJECTED":
             return "border-red-200 bg-red-100 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-200";
         case "CANCELLED":
@@ -41,7 +47,7 @@ export function pcrStatusBadgeClass(status: string): string {
     }
 }
 
-export function pcrStatusTabTriggerClass(status: "PENDING" | "APPROVED" | "SCHEDULED" | "REJECTED"): string {
+export function pcrStatusTabTriggerClass(status: Exclude<PCRDisplayStatus, "CANCELLED">): string {
     switch (status) {
         case "PENDING":
             return cn(
@@ -57,6 +63,16 @@ export function pcrStatusTabTriggerClass(status: "PENDING" | "APPROVED" | "SCHED
             return cn(
                 "text-sky-800 dark:text-sky-300",
                 "data-[state=active]:bg-sky-600 data-[state=active]:text-white data-[state=active]:shadow-sm",
+            );
+        case "APPLYING":
+            return cn(
+                "text-blue-800 dark:text-blue-300",
+                "data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm",
+            );
+        case "FAILED":
+            return cn(
+                "text-orange-800 dark:text-orange-300",
+                "data-[state=active]:bg-orange-600 data-[state=active]:text-white data-[state=active]:shadow-sm",
             );
         case "REJECTED":
             return cn(
