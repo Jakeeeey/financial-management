@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { decodeUserIdFromJwtCookie, directusErrorResponse, mustBase } from "../../price-change-batches/_batch";
+import {
+    decodeUserIdFromJwtCookie,
+    directusErrorResponse,
+    isPriceSnapshotConflictError,
+    mustBase,
+} from "../../price-change-batches/_batch";
 import {
     approveOneOrphanPriceRequest,
     cancelOnePriceRequest,
@@ -85,6 +90,17 @@ export async function POST(req: NextRequest) {
             const data = await approveOneOrphanPriceRequest(userId, request_id, pcr, body.effective_at);
             return NextResponse.json({ data });
         } catch (error: unknown) {
+            if (isPriceSnapshotConflictError(error)) {
+                return NextResponse.json(
+                    {
+                        error: error.message,
+                        code: "price_snapshot_conflict",
+                        conflicts: [error.conflict],
+                    },
+                    { status: 409 },
+                );
+            }
+
             const message = error instanceof Error ? error.message : String(error);
             if (
                 message.includes("linked to a batch") ||

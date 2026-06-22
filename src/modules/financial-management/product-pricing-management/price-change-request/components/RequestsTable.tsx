@@ -16,15 +16,23 @@ import {
     pcrStatusBadgeClass,
 } from "../utils/pcrStatusStyles";
 
-function fmt(v: number | string | null | undefined) {
+function fmt(v: number | string | null | undefined, maximumFractionDigits = 2) {
     const n = Number(v);
     if (!Number.isFinite(n)) return "—";
     return new Intl.NumberFormat("en-PH", {
         style: "currency",
         currency: "PHP",
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits,
     }).format(n);
+}
+
+function fmtPrice(v: number | string | null | undefined) {
+    return fmt(v, 4);
+}
+
+function fmtCost(v: number | string | null | undefined) {
+    return fmt(v, 2);
 }
 
 function requestedAtParts(value: string | null | undefined) {
@@ -133,8 +141,8 @@ function proposedText(row: ApprovalRecordRow) {
         const max = Number(batch.proposed_max);
         const hasMin = Number.isFinite(min);
         const hasMax = Number.isFinite(max);
-        if (hasMin && hasMax) return min === max ? fmt(min) : `${fmt(min)} - ${fmt(max)}`;
-        return fmt(batch.proposed_price);
+        if (hasMin && hasMax) return min === max ? fmtPrice(min) : `${fmtPrice(min)} - ${fmtPrice(max)}`;
+        return fmtPrice(batch.proposed_price);
     }
     if (kind === "cost_batch") {
         const batch = row as Extract<UnifiedApprovalRow, { kind: "cost_batch" }>;
@@ -142,11 +150,11 @@ function proposedText(row: ApprovalRecordRow) {
         const max = Number(batch.proposed_max);
         const hasMin = Number.isFinite(min);
         const hasMax = Number.isFinite(max);
-        if (hasMin && hasMax) return min === max ? fmt(min) : `${fmt(min)} - ${fmt(max)}`;
-        return fmt(batch.proposed_cost);
+        if (hasMin && hasMax) return min === max ? fmtCost(min) : `${fmtCost(min)} - ${fmtCost(max)}`;
+        return fmtCost(batch.proposed_cost);
     }
-    if (kind === "list_price") return fmt((row as CostChangeRequestRow).proposed_cost);
-    return fmt((row as PriceChangeRequestRow).proposed_price);
+    if (kind === "list_price") return fmtCost((row as CostChangeRequestRow).proposed_cost);
+    return fmtPrice((row as PriceChangeRequestRow).proposed_price);
 }
 
 type LoadingTableBodyProps = {

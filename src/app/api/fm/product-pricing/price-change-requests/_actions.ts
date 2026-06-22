@@ -2,11 +2,13 @@ import { resolveLegacyProductsPatch } from "../_legacyProductPriceSync";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 import { executeClaimedApplication, stageStandaloneApproval } from "../_applicationEngine";
 import { resolveHeaderMeta } from "../_pcrHeaderMeta";
+import { assertValidPriceValue, isValidPriceValue } from "../_pricePrecision";
 import {
     DETAILS,
     PRODUCTS,
     PRICES,
     PRICE_TYPES,
+    assertPriceSnapshotCurrent,
     directusHeaders,
     fetchDirectus,
     isRecord,
@@ -21,6 +23,7 @@ const PCR_FIELDS = [
     "request_id",
     "product_id",
     "price_type_id",
+    "current_price",
     "proposed_price",
     "status",
     "effective_at",
@@ -54,6 +57,7 @@ export type PcrRow = {
     request_id?: number | string | null;
     product_id?: number | string | { product_id?: number | string | null } | null;
     price_type_id?: number | string | { price_type_id?: number | string | null } | null;
+    current_price?: number | string | null;
     proposed_price?: number | string | null;
     status?: string | null;
     effective_at?: string | null;
@@ -172,9 +176,17 @@ export async function applyProposedPrice(args: {
     userId?: number | null;
     productId: number;
     priceTypeId: number;
+    currentPrice: unknown;
     proposedPrice: number;
 }) {
-    const { userId, productId, priceTypeId, proposedPrice } = args;
+    const { userId, productId, priceTypeId, currentPrice, proposedPrice } = args;
+    const validProposedPrice = assertValidPriceValue(proposedPrice, "proposed_price");
+    await assertPriceSnapshotCurrent({
+        product_id: productId,
+        price_type_id: priceTypeId,
+        current_price: currentPrice,
+    });
+
     const [existingId, priceTypeCatalog] = await Promise.all([
         findExistingPriceId(productId, priceTypeId),
         loadPriceTypeCatalog(),
@@ -184,7 +196,7 @@ export async function applyProposedPrice(args: {
         status: "draft",
         product_id: productId,
         price_type_id: priceTypeId,
-        price: proposedPrice,
+        price: validProposedPrice,
         updated_at: nowManila(),
         ...(userId ? { updated_by: userId } : {}),
     };
@@ -208,7 +220,7 @@ export async function applyProposedPrice(args: {
     const productPatch = resolveLegacyProductsPatch({
         priceTypeId,
         priceTypeName,
-        price: proposedPrice,
+        price: validProposedPrice,
         catalog: priceTypeCatalog,
     });
 
@@ -251,9 +263,16 @@ export async function approveOneOrphanPriceRequest(
         throw new Error("Invalid price_type_id on request.");
     }
 
-    if (!Number.isFinite(proposedPrice)) {
+    if (!isValidPriceValue(proposedPrice)) {
         throw new Error("Invalid proposed_price on request.");
     }
+
+    await assertPriceSnapshotCurrent({
+        request_id,
+        product_id: productId,
+        price_type_id: priceTypeId,
+        current_price: row.current_price,
+    });
 
     const staged = await stageStandaloneApproval<PcrRow>({
         collection: PCR,
@@ -269,7 +288,14 @@ export async function approveOneOrphanPriceRequest(
             collection: PCR,
             row: staged.row,
             userId,
-            apply: async () => applyProposedPrice({ userId, productId, priceTypeId, proposedPrice }),
+            claimFields: ["current_price"],
+            apply: async (claimed) => applyProposedPrice({
+                userId,
+                productId,
+                priceTypeId,
+                currentPrice: claimed.current_price,
+                proposedPrice,
+            }),
         });
         if (outcome.state === "applied") invalidateGroupIndexCacheOnCatalogChange();
     }

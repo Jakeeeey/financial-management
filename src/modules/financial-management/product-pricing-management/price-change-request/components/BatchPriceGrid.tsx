@@ -10,6 +10,7 @@ import { useEditableGridNavigation } from "./useEditableGridNavigation";
 
 type GridNav = ReturnType<typeof useEditableGridNavigation>;
 type CardTone = "neutral" | "pending" | "increase" | "decrease";
+type DecimalParser = (value: string) => { value: number | null; error: string | null };
 
 type Props = {
     products: api.ProductSearchRow[];
@@ -20,10 +21,12 @@ type Props = {
     gridNav: GridNav;
     cellKey: (productId: number, priceTypeId: number) => string;
     formatMoney: (value: number | null | undefined) => string;
+    formatCostMoney?: (value: number | null | undefined) => string;
     priceTypeLabel: (priceType: api.PriceTypeOption) => string;
     currentPriceFor: (product: api.ProductSearchRow, priceType: api.PriceTypeOption) => number | null;
     unitLabelFor?: (product: api.ProductSearchRow) => string | null;
-    parsePriceInput: (value: string) => { value: number | null; error: string | null };
+    parsePriceInput: DecimalParser;
+    parseCostInput?: DecimalParser;
     groupIdFor: (product: api.ProductSearchRow) => number;
     isChildVariant: (product: api.ProductSearchRow) => boolean;
     onDraftPriceChange: (product: api.ProductSearchRow, priceTypeId: number, value: string) => void;
@@ -42,10 +45,12 @@ export function BatchPriceGrid({
     gridNav,
     cellKey,
     formatMoney,
+    formatCostMoney = formatMoney,
     priceTypeLabel,
     currentPriceFor,
     unitLabelFor,
     parsePriceInput,
+    parseCostInput = parsePriceInput,
     groupIdFor,
     isChildVariant,
     onDraftPriceChange,
@@ -79,11 +84,16 @@ export function BatchPriceGrid({
     );
 
     const cardToneFor = React.useCallback(
-        (args: { hasPending: boolean; rawValue: string; currentValue: number | null | undefined }): CardTone => {
+        (args: {
+            hasPending: boolean;
+            rawValue: string;
+            currentValue: number | null | undefined;
+            parseInput?: DecimalParser;
+        }): CardTone => {
             if (args.hasPending) return "pending";
             if (!args.rawValue.trim()) return "neutral";
 
-            const parsed = parsePriceInput(args.rawValue);
+            const parsed = (args.parseInput ?? parsePriceInput)(args.rawValue);
             if (parsed.error || parsed.value === null) return "neutral";
 
             const currentValue = Number(args.currentValue);
@@ -155,13 +165,14 @@ export function BatchPriceGrid({
                                             const rawCost = draftCosts?.get(product.product_id) ?? "";
                                             const costError =
                                                 rawCost.trim() && !hasPendingCost
-                                                    ? parsePriceInput(rawCost).error
+                                                    ? parseCostInput(rawCost).error
                                                     : null;
                                             const currentCost = currentCostFor?.(product) ?? null;
                                             const tone = cardToneFor({
                                                 hasPending: hasPendingCost,
                                                 rawValue: rawCost,
                                                 currentValue: currentCost,
+                                                parseInput: parseCostInput,
                                             });
 
                                             return (
@@ -171,7 +182,7 @@ export function BatchPriceGrid({
                                                             List Cost
                                                         </div>
                                                         <div className="shrink-0 text-[11px] text-muted-foreground">
-                                                            {formatMoney(currentCost)}
+                                                            {formatCostMoney(currentCost)}
                                                         </div>
                                                     </div>
                                                     <Input
@@ -212,10 +223,10 @@ export function BatchPriceGrid({
                                                     {hasPendingCost ? (
                                                         <div
                                                             id={pendingHintId}
-                                                            title={`Request: PHP ${formatMoney(pendingCost)} - pending approval`}
+                                                            title={`Request: PHP ${formatCostMoney(pendingCost)} - pending approval`}
                                                             className="mt-1 max-w-full truncate rounded-sm border border-amber-200/50 bg-amber-50 px-1 py-0.5 text-[11px] font-semibold leading-snug text-amber-600 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-500"
                                                         >
-                                                            {pendingLabel(pendingCost)}
+                                                            {`Pending PHP ${formatCostMoney(pendingCost)}`}
                                                         </div>
                                                     ) : null}
                                                 </div>

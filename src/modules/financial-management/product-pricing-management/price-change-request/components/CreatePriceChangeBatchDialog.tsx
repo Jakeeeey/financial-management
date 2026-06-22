@@ -18,6 +18,13 @@ import { generateBatchReferenceNo } from "../../shared/batchReference";
 import type { BatchImportPrefill, CreateCCRPayload, CreatePriceChangeBatchPayload } from "../types";
 import { buildTierPriceMap, lookupTierPrice } from "../utils/tierPriceLookup";
 import {
+    COST_MAX_DECIMAL_PLACES,
+    PRICE_MAX_DECIMAL_PLACES,
+    formatCostNumber,
+    formatPriceNumber,
+    parseDecimalInput,
+} from "../../shared/pricePrecision";
+import {
     buildVariantGroupIndex,
     childVariantIdsForGroup,
     groupIdFor,
@@ -48,11 +55,11 @@ function supplierText(supplier: api.SupplierOption): string {
 }
 
 function formatMoney(value: number | null | undefined) {
-    if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
-    return Number(value).toLocaleString("en-PH", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    });
+    return formatPriceNumber(value);
+}
+
+function formatCostMoney(value: number | null | undefined) {
+    return formatCostNumber(value);
 }
 
 function priceTypeLabel(priceType: api.PriceTypeOption) {
@@ -76,14 +83,11 @@ function cellKey(productId: number, priceTypeId: number) {
 }
 
 function parsePriceInput(value: string) {
-    const trimmed = value.trim();
-    if (!trimmed) return { value: null, error: null };
+    return parseDecimalInput(value, PRICE_MAX_DECIMAL_PLACES);
+}
 
-    const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed)) return { value: null, error: "Invalid price" };
-    if (parsed < 0) return { value: null, error: "Must be 0 or higher" };
-
-    return { value: parsed, error: null };
+function parseCostInput(value: string) {
+    return parseDecimalInput(value, COST_MAX_DECIMAL_PLACES);
 }
 
 function summarizeCreated(result: {
@@ -511,7 +515,7 @@ export function CreatePriceChangeBatchDialog({
 
         for (const [productId, raw] of draftCosts) {
             if (pendingValues.has(`${productId}:LIST`)) continue;
-            const result = parsePriceInput(raw);
+            const result = parseCostInput(raw);
             if (result.error) invalidCostIds.add(productId);
             if (result.value !== null) validCostCount += 1;
         }
@@ -659,7 +663,7 @@ export function CreatePriceChangeBatchDialog({
         for (const [productId, raw] of draftCosts) {
             if (pendingValuesRef.current.has(`${productId}:LIST`)) continue;
 
-            const parsed = parsePriceInput(raw);
+            const parsed = parseCostInput(raw);
             if (parsed.value === null || parsed.error) continue;
 
             const product = catalog.get(productId);
@@ -1036,10 +1040,12 @@ export function CreatePriceChangeBatchDialog({
                                     gridNav={gridNav}
                                     cellKey={cellKey}
                                     formatMoney={formatMoney}
+                                    formatCostMoney={formatCostMoney}
                                     priceTypeLabel={priceTypeLabel}
                                     currentPriceFor={currentPriceFor}
                                     unitLabelFor={unitLabelFor}
                                     parsePriceInput={parsePriceInput}
+                                    parseCostInput={parseCostInput}
                                     groupIdFor={groupIdFor}
                                     isChildVariant={isChildVariant}
                                     onDraftPriceChange={setDraftPrice}

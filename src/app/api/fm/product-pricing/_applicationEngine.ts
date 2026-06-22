@@ -5,6 +5,7 @@ import {
     directusHeaders,
     fetchDirectus,
     isFutureEffectiveAt,
+    isPriceSnapshotConflictError,
     mustBase,
     nowManila,
     pickId,
@@ -18,6 +19,7 @@ export type ApplicationStatus = "SCHEDULED" | "APPLYING" | "APPLIED" | "FAILED" 
 export type ApplicationRow = {
     request_id?: unknown;
     header_id?: unknown;
+    current_price?: unknown;
     status?: string | null;
     effective_at?: string | null;
     application_status?: string | null;
@@ -254,6 +256,7 @@ export async function executeClaimedApplication<T extends ApplicationRow>(args: 
     row: T;
     userId: number | null;
     effectiveAt?: string;
+    claimFields?: string[];
     apply: (claimed: T) => Promise<void>;
 }): Promise<ApplicationOutcome<T>> {
     const id = requestId(args.row);
@@ -278,6 +281,7 @@ export async function executeClaimedApplication<T extends ApplicationRow>(args: 
         "application_started_at",
         "application_attempts",
         "application_error",
+        ...(args.claimFields ?? []),
     ].join(",");
 
     const claimedRows = await patchFiltered<T>(
@@ -321,8 +325,12 @@ export async function executeClaimedApplication<T extends ApplicationRow>(args: 
         return { state: "applied", row: finalized[0] };
     } catch (error: unknown) {
         const errorMessage = sanitizedError(error);
-        const attempts = Math.max(0, Number(claimed.application_attempts ?? 0)) + 1;
-        const nextStatus: ApplicationStatus = attempts >= APPLICATION_MAX_FAILURES ? "FAILED" : "SCHEDULED";
+        const terminalFailure = isPriceSnapshotConflictError(error);
+        const attempts = terminalFailure
+            ? APPLICATION_MAX_FAILURES
+            : Math.max(0, Number(claimed.application_attempts ?? 0)) + 1;
+        const nextStatus: ApplicationStatus =
+            terminalFailure || attempts >= APPLICATION_MAX_FAILURES ? "FAILED" : "SCHEDULED";
         await patchFiltered<T>(
             args.collection,
             {

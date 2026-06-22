@@ -382,10 +382,11 @@ export function usePricingMatrix(args: {
             return;
         }
 
-        const value = clampMoney(toNumberOrNull(rawString.trim()));
-        const err = validatePrice(value);
+        const parsedValue = toNumberOrNull(rawString.trim());
+        const err = validatePrice(parsedValue, rawString.trim());
+        const value = err ? parsedValue : clampMoney(parsedValue);
 
-        if (moneyValuesEqual(value, meta.current_value)) {
+        if (!err && moneyValuesEqual(value, meta.current_value)) {
             setDirty((prev) => {
                 const next = new Map(prev);
                 next.delete(key);

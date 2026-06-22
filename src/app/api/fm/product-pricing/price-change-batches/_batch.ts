@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
+import {
+    assertValidPriceValue,
+    isInvalidPriceValueError,
+    isValidPriceValue,
+} from "../_pricePrecision";
 
 export const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -283,6 +288,10 @@ export function parseWrappedError(message: string): DirectusWrappedError | null 
 }
 
 export function directusErrorResponse(error: unknown) {
+    if (isInvalidPriceValueError(error)) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     const wrapped = parseWrappedError(message);
 
@@ -341,6 +350,118 @@ export type BatchCreatePlan = {
 
 function batchLineKey(productId: number, priceTypeId: number) {
     return `${productId}:${priceTypeId}`;
+}
+
+type LivePriceRow = {
+    product_id?: number | string | null;
+    price_type_id?: number | string | null;
+    price?: number | string | null;
+};
+
+export type PriceSnapshotConflict = {
+    request_id: number;
+    product_id: number;
+    price_type_id: number;
+    snapshot_price: number | null;
+    live_price: number | null;
+    reason: "invalid_snapshot" | "stale_snapshot";
+};
+
+export class PriceSnapshotConflictError extends Error {
+    constructor(public readonly conflict: PriceSnapshotConflict) {
+        super(
+            `Price changed after submission for product ${conflict.product_id}, price type ${conflict.price_type_id}.`,
+        );
+        this.name = "PriceSnapshotConflictError";
+    }
+}
+
+export function isPriceSnapshotConflictError(error: unknown): error is PriceSnapshotConflictError {
+    return error instanceof PriceSnapshotConflictError;
+}
+
+function parseSnapshotPrice(value: unknown): { valid: boolean; value: number | null } {
+    if (value === null || value === undefined) return { valid: true, value: null };
+    const parsed = Number(value);
+    return Number.isFinite(parsed)
+        ? { valid: true, value: parsed }
+        : { valid: false, value: null };
+}
+
+function snapshotPricesMatch(snapshot: number | null, live: number | null): boolean {
+    if (snapshot === null || live === null) return snapshot === live;
+    return Math.abs(snapshot - live) <= 1e-9;
+}
+
+export async function fetchLivePriceSnapshots(
+    keys: Array<{ product_id: number; price_type_id: number }>,
+): Promise<Map<string, number | null>> {
+    const productIds = Array.from(new Set(keys.map((key) => key.product_id).filter((id) => id > 0)));
+    const priceTypeIds = Array.from(new Set(keys.map((key) => key.price_type_id).filter((id) => id > 0)));
+    const snapshots = new Map<string, number | null>();
+
+    if (productIds.length === 0 || priceTypeIds.length === 0) return snapshots;
+
+    for (const productChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
+        const rows = await fetchAllPagesLocal<LivePriceRow>(PRICES, () => {
+            const params = new URLSearchParams();
+            params.set("fields", "product_id,price_type_id,price");
+            params.set("filter[product_id][_in]", productChunk.join(","));
+            params.set("filter[price_type_id][_in]", priceTypeIds.join(","));
+            return params;
+        });
+
+        for (const row of rows) {
+            const productId = pickId(row.product_id) ?? 0;
+            const priceTypeId = pickId(row.price_type_id) ?? 0;
+            if (!productId || !priceTypeId) continue;
+            snapshots.set(
+                batchLineKey(productId, priceTypeId),
+                parseSnapshotPrice(row.price).value,
+            );
+        }
+    }
+
+    return snapshots;
+}
+
+export async function findPriceSnapshotConflicts(
+    lines: Array<{
+        request_id?: number;
+        product_id: number;
+        price_type_id: number;
+        current_price: unknown;
+    }>,
+): Promise<PriceSnapshotConflict[]> {
+    const liveSnapshots = await fetchLivePriceSnapshots(lines);
+    const conflicts: PriceSnapshotConflict[] = [];
+
+    for (const line of lines) {
+        const stored = parseSnapshotPrice(line.current_price);
+        const live = liveSnapshots.get(batchLineKey(line.product_id, line.price_type_id)) ?? null;
+        if (!stored.valid || !snapshotPricesMatch(stored.value, live)) {
+            conflicts.push({
+                request_id: line.request_id ?? 0,
+                product_id: line.product_id,
+                price_type_id: line.price_type_id,
+                snapshot_price: stored.value,
+                live_price: live,
+                reason: stored.valid ? "stale_snapshot" : "invalid_snapshot",
+            });
+        }
+    }
+
+    return conflicts;
+}
+
+export async function assertPriceSnapshotCurrent(args: {
+    request_id?: number;
+    product_id: number;
+    price_type_id: number;
+    current_price: unknown;
+}) {
+    const conflicts = await findPriceSnapshotConflicts([args]);
+    if (conflicts[0]) throw new PriceSnapshotConflictError(conflicts[0]);
 }
 
 function supplierIdOf(value: unknown): number | null {
@@ -427,13 +548,11 @@ export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]
     for (const line of rawLines) {
         const productId = Number(line.product_id);
         const priceTypeId = Number(line.price_type_id);
-        const currentPrice =
-            line.current_price === null || line.current_price === undefined ? null : Number(line.current_price);
-        const proposedPrice = Number(line.proposed_price);
 
         if (!Number.isFinite(productId) || productId <= 0) continue;
         if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) continue;
-        if (!Number.isFinite(proposedPrice) || proposedPrice < 0) continue;
+
+        const proposedPrice = assertValidPriceValue(line.proposed_price, "proposed_price");
 
         const key = batchLineKey(productId, priceTypeId);
         if (seen.has(key)) {
@@ -445,7 +564,7 @@ export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]
         normalizedLines.push({
             product_id: productId,
             price_type_id: priceTypeId,
-            current_price: Number.isFinite(currentPrice) ? currentPrice : null,
+            current_price: null,
             proposed_price: proposedPrice,
         });
     }
@@ -476,6 +595,12 @@ export async function createPendingPriceBatch(args: {
         throw new Error("linesToCreate must be non-empty");
     }
 
+    const liveSnapshots = await fetchLivePriceSnapshots(linesToCreate);
+    const snapshottedLines = linesToCreate.map((line) => ({
+        ...line,
+        current_price: liveSnapshots.get(batchLineKey(line.product_id, line.price_type_id)) ?? null,
+    }));
+
     const headerPayload = {
         supplier_id: supplierId,
         reference_no: referenceNo || null,
@@ -496,7 +621,7 @@ export async function createPendingPriceBatch(args: {
         throw new Error("Batch header was created without an id");
     }
 
-    const detailPayload = linesToCreate.map((line) => ({
+    const detailPayload = snapshottedLines.map((line) => ({
         header_id: headerId,
         product_id: line.product_id,
         price_type_id: line.price_type_id,
@@ -726,13 +851,33 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
         requestId: pickId(line.request_id) ?? 0,
         productId: normalizeProductId(line),
         priceTypeId: normalizePriceTypeId(line),
+        currentPrice: line.current_price,
         proposedPrice: Number(line.proposed_price),
     }));
 
     for (const line of normalizedDetails) {
-        if (!line.productId || !line.priceTypeId || !Number.isFinite(line.proposedPrice)) {
+        if (!line.productId || !line.priceTypeId || !isValidPriceValue(line.proposedPrice)) {
             return NextResponse.json({ error: "Batch contains an invalid detail line." }, { status: 400 });
         }
+    }
+
+    const conflicts = await findPriceSnapshotConflicts(
+        normalizedDetails.map((line) => ({
+            request_id: line.requestId,
+            product_id: line.productId,
+            price_type_id: line.priceTypeId,
+            current_price: line.currentPrice,
+        })),
+    );
+    if (conflicts.length > 0) {
+        return NextResponse.json(
+            {
+                error: "Batch contains prices that changed after submission.",
+                code: "price_snapshot_conflict",
+                conflicts,
+            },
+            { status: 409 },
+        );
     }
 
     const { executeClaimedApplication, refreshBatchApplicationStatus, stageBatchApproval } =
@@ -752,14 +897,21 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
                 collection: DETAILS,
                 row,
                 userId,
+                claimFields: ["current_price"],
                 apply: async (claimed) => {
                     const productId = normalizeProductId(claimed);
                     const priceTypeId = normalizePriceTypeId(claimed);
-                    const proposedPrice = Number(claimed.proposed_price);
-                    if (!productId || !priceTypeId || !Number.isFinite(proposedPrice)) {
+                    if (!productId || !priceTypeId) {
                         throw new Error("Batch contains an invalid detail line.");
                     }
-                    await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
+                    const proposedPrice = assertValidPriceValue(claimed.proposed_price, "proposed_price");
+                    await applyProposedPrice({
+                        userId,
+                        productId,
+                        priceTypeId,
+                        currentPrice: claimed.current_price,
+                        proposedPrice,
+                    });
                 },
             });
             if (outcome.state === "applied") applied += 1;

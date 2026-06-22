@@ -15,6 +15,11 @@ import {
     isProposedColumnHeader,
     styleSupplierBatchWorksheet,
 } from "./supplierBatchExcelStyles";
+import {
+    COST_MAX_DECIMAL_PLACES,
+    PRICE_MAX_DECIMAL_PLACES,
+    hasAtMostDecimalPlaces,
+} from "../pricePrecision";
 
 export const BATCH_EXCEL_TEMPLATE_VERSION = 1;
 export const BATCH_EXCEL_COMBINED_TEMPLATE_VERSION = 2;
@@ -99,10 +104,10 @@ function sanitizeFilenamePart(value: string) {
     return value.replace(/[<>:"/\\|?*]+/g, "_").trim() || "supplier";
 }
 
-function pendingNote(label: string, value: number | null | undefined) {
+function pendingNote(label: string, value: number | null | undefined, maxDecimalPlaces = COST_MAX_DECIMAL_PLACES) {
     const amount = value === null || value === undefined ? "" : ` Proposed value: ${value.toLocaleString("en-PH", {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: maxDecimalPlaces,
     })}.`;
     return `${label} already has a pending request.${amount}`;
 }
@@ -239,6 +244,7 @@ export async function exportSupplierBatchExcel(args: {
                         note: pendingNote(
                             `${priceType.price_type_name || `#${priceType.price_type_id}`} price`,
                             pendingPriceByKey.get(key),
+                            PRICE_MAX_DECIMAL_PLACES,
                         ),
                     });
                 }
@@ -250,7 +256,8 @@ export async function exportSupplierBatchExcel(args: {
 
     for (let columnIndex = 1; columnIndex <= headers.length; columnIndex += 1) {
         if (headers[columnIndex - 1].includes("Current (") || headers[columnIndex - 1].includes("Proposed (")) {
-            sheet.getColumn(columnIndex).numFmt = "#,##0.00";
+            const header = headers[columnIndex - 1];
+            sheet.getColumn(columnIndex).numFmt = header.includes("List Cost (") ? "#,##0.00" : "#,##0.00##";
         }
     }
 
@@ -312,7 +319,10 @@ function findHeaderRowIndex(rows: unknown[][]): number {
     return -1;
 }
 
-function parseProposedValue(raw: unknown): { value: number | null; error: string | null } {
+function parseProposedValue(
+    raw: unknown,
+    maxDecimalPlaces = COST_MAX_DECIMAL_PLACES,
+): { value: number | null; error: string | null } {
     if (raw === null || raw === undefined || raw === "") {
         return { value: null, error: null };
     }
@@ -327,6 +337,9 @@ function parseProposedValue(raw: unknown): { value: number | null; error: string
     }
     if (parsed < 0) {
         return { value: null, error: "Must be 0 or higher" };
+    }
+    if (!hasAtMostDecimalPlaces(text, maxDecimalPlaces)) {
+        return { value: null, error: `Use at most ${maxDecimalPlaces} decimal places` };
     }
 
     return { value: parsed, error: null };
@@ -513,7 +526,7 @@ export async function parseSupplierBatchExcelImport(args: {
             }
 
             for (const column of groupedPriceColumns) {
-                const parsed = parseProposedValue(row[column.columnIndex]);
+                const parsed = parseProposedValue(row[column.columnIndex], PRICE_MAX_DECIMAL_PLACES);
                 if (parsed.error) {
                     errors.push(`Row ${rowIndex + 1}, ${priceProposedHeader(column.priceType, column.unitLabel)}: ${parsed.error}`);
                     continue;
@@ -626,7 +639,7 @@ export async function parseSupplierBatchExcelImport(args: {
         }
 
         for (const { priceType, columnIndex } of proposedColumns) {
-            const parsed = parseProposedValue(row[columnIndex]);
+            const parsed = parseProposedValue(row[columnIndex], PRICE_MAX_DECIMAL_PLACES);
             if (parsed.error) {
                 errors.push(
                     `Row ${rowIndex + 1}, ${priceType.price_type_name ?? priceType.price_type_id}: ${parsed.error}`,

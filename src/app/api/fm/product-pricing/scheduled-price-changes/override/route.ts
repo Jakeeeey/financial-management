@@ -134,6 +134,7 @@ async function applyPriceNow(row: PcrRow, userId: number, effectiveAt = nowManil
         row,
         userId,
         effectiveAt,
+        claimFields: ["current_price"],
         apply: async (claimed) => {
             const productId = normalizeProductId(claimed);
             const priceTypeId = normalizePriceTypeId(claimed);
@@ -141,7 +142,13 @@ async function applyPriceNow(row: PcrRow, userId: number, effectiveAt = nowManil
             if (!productId || !priceTypeId || !Number.isFinite(proposedPrice)) {
                 throw new Error("Scheduled price request has invalid product, price type, or proposed price.");
             }
-            await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
+            await applyProposedPrice({
+                userId,
+                productId,
+                priceTypeId,
+                currentPrice: claimed.current_price,
+                proposedPrice,
+            });
         },
     });
 }

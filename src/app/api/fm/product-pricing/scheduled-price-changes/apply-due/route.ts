@@ -92,6 +92,7 @@ async function fetchDuePriceRequests(now: string) {
                 "header_id",
                 "product_id",
                 "price_type_id",
+                "current_price",
                 "proposed_price",
                 "status",
                 "application_status",
@@ -178,6 +179,7 @@ async function applyDuePriceRequests(rows: PcrRow[], userId: number | null): Pro
             collection: PRICE_DETAILS,
             row,
             userId,
+            claimFields: ["current_price"],
             apply: async (claimed) => {
                 const productId = normalizeProductId(claimed);
                 const priceTypeId = normalizePriceTypeId(claimed);
@@ -185,7 +187,13 @@ async function applyDuePriceRequests(rows: PcrRow[], userId: number | null): Pro
                 if (!requestId || !productId || !priceTypeId || !Number.isFinite(proposedPrice)) {
                     throw new Error("Scheduled price request has invalid product, price type, or proposed price.");
                 }
-                await applyProposedPrice({ userId, productId, priceTypeId, proposedPrice });
+                await applyProposedPrice({
+                    userId,
+                    productId,
+                    priceTypeId,
+                    currentPrice: claimed.current_price,
+                    proposedPrice,
+                });
             },
         });
         if (outcome.state === "applied") {

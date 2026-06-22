@@ -3,6 +3,7 @@ import {
     type LegacyPriceTypeRow,
     resolveLegacyProductsPatch,
 } from "../_legacyProductPriceSync";
+import { assertValidPriceValue, isInvalidPriceValueError } from "../_pricePrecision";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 import { batchAsyncOps, CHUNK_SIZE } from "../_supplierFilters";
 
@@ -111,15 +112,7 @@ export async function POST(req: NextRequest) {
             }
 
             if (line.price !== null && line.price !== undefined) {
-                const price = Number(line.price);
-
-                if (!Number.isFinite(price)) {
-                    return NextResponse.json({ error: "Invalid price value" }, { status: 400 });
-                }
-
-                if (price < 0) {
-                    return NextResponse.json({ error: "Price cannot be negative" }, { status: 400 });
-                }
+                assertValidPriceValue(line.price, "price");
             }
         }
 
@@ -197,7 +190,9 @@ export async function POST(req: NextRequest) {
                 status: (line.status ?? "draft").trim() || "draft",
                 product_id: pid,
                 price_type_id: ptid,
-                price: line.price === null || line.price === undefined ? null : Number(line.price),
+                price: line.price === null || line.price === undefined
+                    ? null
+                    : assertValidPriceValue(line.price, "price"),
                 updated_by: userId,
             };
 
@@ -262,6 +257,10 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ ok: true, affected });
     } catch (error: unknown) {
+        if (isInvalidPriceValueError(error)) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+
         return NextResponse.json(
             {
                 error: "Unexpected error",
