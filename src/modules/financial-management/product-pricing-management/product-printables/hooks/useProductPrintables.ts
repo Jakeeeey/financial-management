@@ -105,7 +105,7 @@ export function useProductPrintables(
                         product: v,
                         tiers: {
                             ...piv,
-                            ListPrice: v.cost_per_unit ? Number(v.cost_per_unit) : null,
+                            LIST: v.cost_per_unit ? Number(v.cost_per_unit) : null,
                         }
                     };
                 }

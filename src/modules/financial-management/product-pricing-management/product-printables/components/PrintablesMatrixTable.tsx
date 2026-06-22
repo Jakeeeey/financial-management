@@ -124,7 +124,7 @@ export default function PrintablesMatrixTable({
                                 {row.display.product_name}
                             </TableCell>
                             {activePriceTypes.map((pt) => {
-                                const ptSuffix = pt.price_type_id === -1 ? "ListPrice" : pt.price_type_name;
+                                const ptSuffix = pt.price_type_id === -1 ? "LIST" : String(pt.price_type_id);
                                 
                                 return (
                                     <React.Fragment key={pt.price_type_id}>

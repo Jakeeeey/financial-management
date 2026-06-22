@@ -204,7 +204,7 @@ export async function getPrintMatrixPage(
     );
 }
 
-export async function getPricesForProducts(productIds: number[]) {
+export async function getPricesForProducts(productIds: number[], init?: RequestInit) {
     if (productIds.length === 0) {
         return { data: [] as PriceRow[] };
     }
@@ -218,7 +218,10 @@ export async function getPricesForProducts(productIds: number[]) {
     const results = await Promise.all(
         chunks.map(async (chunk) => {
             const sp = new URLSearchParams({ product_ids: chunk.join(",") });
-            return http<{ data: PriceRow[] }>(`/api/fm/product-pricing/prices?${sp.toString()}`);
+            return http<{ data: PriceRow[] }>(
+                `/api/fm/product-pricing/prices?${sp.toString()}`,
+                init,
+            );
         }),
     );
 

@@ -41,7 +41,7 @@ type PdfCell = {
 const TIERS = ["A", "B", "C", "D", "E"] as const;
 
 const groupColors: Record<string, [number, number, number]> = {
-    ListPrice: [243, 244, 246], // gray-100
+    LIST: [243, 244, 246], // gray-100
     A: [240, 249, 255], // sky-50
     B: [236, 253, 245], // emerald-50
     C: [245, 243, 255], // violet-50
@@ -50,7 +50,7 @@ const groupColors: Record<string, [number, number, number]> = {
 };
 
 const groupTextColors: Record<string, [number, number, number]> = {
-    ListPrice: [75, 85, 99], // gray-600
+    LIST: [75, 85, 99], // gray-600
     A: [3, 105, 161],  // sky-700
     B: [4, 120, 87],   // emerald-700
     C: [109, 40, 217], // violet-700
@@ -170,22 +170,19 @@ export async function generateProductMatrixPdf(rows: MatrixRow[], options: Matri
     const allPriceTypes = priceTypes || [];
 
     // Determine active tiers based on selection
-    // Map -1 to "ListPrice" and others to A-E based on their position among non-synthetic types
+    // Map -1 to "LIST" and others to their numeric price type ID
     const activeTiers = allPriceTypes.length > 0
         ? allPriceTypes
             .filter(pt => selectedPriceTypeIds.length === 0 || selectedPriceTypeIds.includes(String(pt.price_type_id)))
             .map(pt => {
                 if (pt.price_type_id === -1) {
-                    return { key: "ListPrice" as const, label: pt.price_type_name };
+                    return { key: "LIST" as const, label: pt.price_type_name };
                 }
-                const nonSynthetic = allPriceTypes.filter(p => p.price_type_id !== -1);
-                const idx = nonSynthetic.findIndex(p => p.price_type_id === pt.price_type_id);
                 return {
-                    key: (TIERS[idx] || "A") as typeof TIERS[number],
+                    key: String(pt.price_type_id),
                     label: pt.price_type_name
                 };
             })
-            .filter(t => t.key != null)
         : TIERS.map((key, i) => ({
             key,
             label: allPriceTypes?.[i]?.price_type_name || `PRICE TYPE ${key}`

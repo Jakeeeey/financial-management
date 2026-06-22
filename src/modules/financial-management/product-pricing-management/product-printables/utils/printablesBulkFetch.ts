@@ -1,4 +1,6 @@
-import type { Brand, Category, FilterState, MatrixRow, ProductRow, VariantCell } from "../types";
+import type { Brand, Category, FilterState, MatrixRow, PriceType, ProductRow, VariantCell } from "../types";
+import { getPricesForProducts } from "../../product-pricing/providers/pricingApi";
+import { emptyPivot, pivotPrices } from "../../product-pricing/utils/pivot";
 
 export const PRINTABLES_EXPORT_PAGE_SIZE = 250;
 
@@ -156,12 +158,80 @@ export function assembleMatrixRowsFromProducts(
             variantsByUnitId[uomId] = {
                 product: variant,
                 tiers: {
-                    ListPrice: variant.cost_per_unit ? Number(variant.cost_per_unit) : null,
+                    LIST: variant.cost_per_unit ? Number(variant.cost_per_unit) : null,
                     A: variant.priceA ? Number(variant.priceA) : null,
                     B: variant.priceB ? Number(variant.priceB) : null,
                     C: variant.priceC ? Number(variant.priceC) : null,
                     D: variant.priceD ? Number(variant.priceD) : null,
                     E: variant.priceE ? Number(variant.priceE) : null,
+                },
+            };
+        }
+
+        matrixRows.push({
+            group_id: groupId,
+            display,
+            variantsByUnitId,
+            category_name: catMap.get(Number(display.product_category)) || "—",
+            brand_name: brandMap.get(Number(display.product_brand)) || "—",
+        });
+    }
+
+    return { matrixRows, usedUnitIds: unitIds };
+}
+
+export async function assembleMatrixRowsWithPrices(
+    products: ProductRow[],
+    categories: Category[],
+    brands: Brand[],
+    priceTypes: PriceType[],
+    init?: { signal?: AbortSignal },
+): Promise<{ matrixRows: MatrixRow[]; usedUnitIds: Set<number> }> {
+    const catMap = new Map(categories.map((c) => [Number(c.category_id), c.category_name]));
+    const brandMap = new Map(brands.map((b) => [Number(b.brand_id), b.brand_name]));
+
+    const productIds = products
+        .map((p) => pickId(p.product_id))
+        .filter((id): id is number => id !== null);
+
+    let priceMap = new Map<number, Record<string, number | null>>();
+    if (productIds.length > 0) {
+        const priceRes = await getPricesForProducts(productIds, { signal: init?.signal });
+        priceMap = pivotPrices(priceTypes, priceRes.data ?? []);
+    }
+
+    const emptyTierValues = emptyPivot(priceTypes);
+    const groups = new Map<number, ProductRow[]>();
+    const unitIds = new Set<number>();
+
+    for (const product of products) {
+        const groupId = pickId(product.parent_id) ?? pickId(product.product_id);
+        if (groupId === null) continue;
+
+        if (!groups.has(groupId)) groups.set(groupId, []);
+        groups.get(groupId)!.push(product);
+
+        const uomId = pickId(product.unit_of_measurement);
+        if (uomId) unitIds.add(uomId);
+    }
+
+    const matrixRows: MatrixRow[] = [];
+    for (const [groupId, variants] of groups.entries()) {
+        const display = variants.find((v) => pickId(v.product_id) === groupId) || variants[0];
+        const variantsByUnitId: Record<number, VariantCell> = {};
+
+        for (const variant of variants) {
+            const uomId = Number(variant.unit_of_measurement);
+            if (!Number.isFinite(uomId)) continue;
+
+            const pid = pickId(variant.product_id);
+            const piv = pid ? (priceMap.get(pid) ?? emptyTierValues) : emptyTierValues;
+
+            variantsByUnitId[uomId] = {
+                product: variant,
+                tiers: {
+            ...piv,
+            LIST: variant.cost_per_unit ? Number(variant.cost_per_unit) : null,
                 },
             };
         }

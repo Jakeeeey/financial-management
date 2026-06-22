@@ -21,6 +21,7 @@ type ProductRow = {
     product_id: number;
     parent_id: number | null;
     product_code: string | null;
+    barcode: string | null;
     product_name: string | null;
     product_category: number | string | null;
     product_brand: number | string | null;
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
         const activeOnly = searchParams.get("active_only") === "1";
 
         const fields = [
-            "product_id", "parent_id", "product_code", "product_name",
+            "product_id", "parent_id", "product_code", "barcode", "product_name",
             "isActive", "product_category", "product_brand", "unit_of_measurement",
             "price_per_unit", "priceA", "priceB", "priceC", "priceD", "priceE", "cost_per_unit"
         ].join(",");
