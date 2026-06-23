@@ -2,11 +2,9 @@
 "use client";
 
 import * as React from "react";
-import { toast } from "sonner";
-import type { ProductRow, FilterState, MatrixRow, VariantCell, Category, Brand, PriceType, ProductTierKey } from "../types";
+import type { ProductRow, FilterState, MatrixRow, VariantCell, Category, Brand, PriceType } from "../types";
 import { getPricesForProducts } from "../../product-pricing/providers/pricingApi";
-import { pivotPrices } from "../../product-pricing/utils/pivot";
-import { getDynamicTiers } from "../../product-pricing/utils/constants";
+import { emptyPivot, pivotPrices } from "../../product-pricing/utils/pivot";
 
 export const defaultFilters: FilterState = {
     q: "",
@@ -21,6 +19,10 @@ export const defaultFilters: FilterState = {
     total_pages: 0,
 };
 
+const EMPTY_CATEGORIES: Category[] = [];
+const EMPTY_BRANDS: Brand[] = [];
+const EMPTY_PRICE_TYPES: PriceType[] = [];
+
 function pickId(v: string | number | null | undefined | Record<string, unknown>): number | null {
     if (v === null || v === undefined) return null;
     const n = Number((v as Record<string, unknown>)?.product_id ?? (v as Record<string, unknown>)?.id ?? v);
@@ -30,17 +32,22 @@ function pickId(v: string | number | null | undefined | Record<string, unknown>)
 export function useProductPrintables(
     filters: FilterState,
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>,
-    categories: Category[] = [],
-    brands: Brand[] = [],
-    priceTypes: PriceType[] = []
+    categories: Category[] = EMPTY_CATEGORIES,
+    brands: Brand[] = EMPTY_BRANDS,
+    priceTypes: PriceType[] = EMPTY_PRICE_TYPES,
+    enabled = true,
 ) {
-    const [loading, setLoading] = React.useState(false);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState<string | null>(null);
     const [matrixRows, setMatrixRows] = React.useState<MatrixRow[]>([]);
     const [usedUnitIds, setUsedUnitIds] = React.useState<Set<number>>(new Set());
 
 
     const refresh = React.useCallback(async () => {
+        if (!enabled) return;
+
         setLoading(true);
+        setError(null);
         try {
             const sp = new URLSearchParams();
             if (filters.q) sp.set("q", filters.q);
@@ -67,10 +74,7 @@ export function useProductPrintables(
                 priceMap = pivotPrices(priceTypes, priceRes.data ?? []);
             }
 
-            const emptyPivot = getDynamicTiers(priceTypes).reduce((acc, tier) => {
-                acc[tier] = null;
-                return acc;
-            }, {} as Record<ProductTierKey, number | null>);
+            const emptyTierValues = emptyPivot(priceTypes);
 
             const catMap = new Map(categories.map(c => [Number(c.category_id), c.category_name]));
             const brandMap = new Map(brands.map(b => [Number(b.brand_id), b.brand_name]));
@@ -99,13 +103,13 @@ export function useProductPrintables(
                     if (!Number.isFinite(uomId)) continue;
                     
                     const pid = pickId(v.product_id);
-                    const piv = pid ? (priceMap.get(pid) ?? emptyPivot) : emptyPivot;
+                    const piv = pid ? (priceMap.get(pid) ?? emptyTierValues) : emptyTierValues;
 
                     variantsByUnitId[uomId] = {
                         product: v,
                         tiers: {
                             ...piv,
-                            ListPrice: v.cost_per_unit ? Number(v.cost_per_unit) : null,
+                            LIST: v.cost_per_unit ? Number(v.cost_per_unit) : null,
                         }
                     };
                 }
@@ -121,20 +125,32 @@ export function useProductPrintables(
 
             setMatrixRows(assembled);
             setUsedUnitIds(unitIds);
-            setFilters(prev => ({ ...prev, total_pages: meta.total_pages }));
+            setFilters(prev => {
+                const totalPages = Number(meta.total_pages ?? 0);
+                return prev.total_pages === totalPages ? prev : { ...prev, total_pages: totalPages };
+            });
         } catch (error: unknown) {
-            toast.error(error instanceof Error ? error.message : "Failed to load products");
+            setError(error instanceof Error ? error.message : "Failed to load products");
+            setMatrixRows([]);
+            setUsedUnitIds(new Set());
+            setFilters(prev => prev.total_pages === 0 ? prev : { ...prev, total_pages: 0 });
         } finally {
             setLoading(false);
         }
-    }, [categories, brands, priceTypes, setFilters, filters.active_only, filters.brand_ids, filters.category_ids, filters.page, filters.q, filters.supplier_ids, filters.supplier_scope, filters.unit_ids]);
+    }, [categories, brands, enabled, priceTypes, setFilters, filters.active_only, filters.brand_ids, filters.category_ids, filters.page, filters.q, filters.supplier_ids, filters.supplier_scope, filters.unit_ids]);
 
     React.useEffect(() => {
-        refresh();
-    }, [refresh]);
+        if (!enabled) {
+            setLoading(true);
+            return;
+        }
+
+        void refresh();
+    }, [enabled, refresh]);
 
     return {
         loading,
+        error,
         matrixRows,
         usedUnitIds,
         filters,

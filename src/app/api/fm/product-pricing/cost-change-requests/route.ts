@@ -1,12 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { parseApprovalSearchQuery } from "../_approvalSearch";
+import { toInclusiveDateToEnd } from "../_dateFilters";
+import { appendDisplayStatusFilter } from "../_approvalStatusPolicy";
+import { fetchPendingCcrByProductIds } from "../_fetchPendingByProductIds";
+import { appendProductIdInFilter, getSupplierScopedProductIdsForSuppliers, resolveSupplierIds } from "../_supplierFilters";
+import { isCostBatchStorageSetupError } from "../cost-change-batches/_batch";
+import { fetchUserNamesById } from "../price-change-batches/_batch";
+import { createPendingCostRequests, planCostBulkCreate } from "./_bulk";
+import {
+    assertValidProposedCost,
+    isInvalidProposedCostError,
+} from "./_costValidation";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const CCR = "cost_change_requests";
-const PRODUCT_PER_SUPPLIER = "product_per_supplier";
+
+function costBatchStorageSetupResponse(details: string) {
+    return NextResponse.json(
+        {
+            error: "List cost batch storage is not configured.",
+            details,
+            setup_required: true,
+        },
+        { status: 503 },
+    );
+}
 
 type DirectusMeta = {
     total_count?: number;
@@ -27,16 +50,17 @@ type DirectusCCRRow = {
     proposed_cost?: number | string | null;
     status?: string | null;
     requested_by?: number | string | null;
+    requested_by_name?: string | null;
     requested_at?: string | null;
     approved_by?: number | string | null;
     approved_at?: string | null;
     rejected_by?: number | string | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
-};
-
-type DirectusCreateCCRResponse = {
-    data: DirectusCCRRow;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
 };
 
 type DirectusListCCRResponse = {
@@ -45,10 +69,6 @@ type DirectusListCCRResponse = {
 };
 
 
-
-type DirectusSupplierProductRow = {
-    product_id?: number | string | { product_id?: number | string | null } | null;
-};
 
 type JwtPayload = {
     sub?: string | number | null;
@@ -133,10 +153,13 @@ function unwrapErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function nowManila(): string {
-    return new Date()
-        .toLocaleString("sv-SE", { timeZone: "Asia/Manila" })
-        .replace(" ", "T");
+function parseProductIdsParam(raw: string | null): number[] | null {
+    if (raw === null) return null;
+    const ids = raw
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0);
+    return ids;
 }
 
 function parseWrappedError(message: string): DirectusWrappedError | null {
@@ -162,28 +185,19 @@ function parseWrappedError(message: string): DirectusWrappedError | null {
     }
 }
 
-async function getSupplierProductIds(supplierId: string): Promise<number[]> {
-    const sp = new URLSearchParams();
-    sp.set("limit", "-1");
-    sp.set("fields", "product_id,product_id.product_id");
-    sp.set("filter[supplier_id][_eq]", supplierId);
+async function addRequestedByNames(rows: DirectusCCRRow[]): Promise<DirectusCCRRow[]> {
+    const namesById = await fetchUserNamesById(rows.map((row) => row.requested_by));
 
-    const url = `${mustBase()}/items/${PRODUCT_PER_SUPPLIER}?${sp.toString()}`;
-    const res = await fetchDirectus<{ data?: DirectusSupplierProductRow[] }>(url, { headers: directusHeaders() });
-
-    const ids: number[] = [];
-    for (const row of res.data ?? []) {
-        let n: number | null = null;
-        if (typeof row.product_id === "number") {
-            n = row.product_id;
-        } else if (isRecord(row.product_id) && typeof row.product_id.product_id === "number") {
-            n = row.product_id.product_id;
-        }
-        if (n !== null && Number.isFinite(n) && n > 0) {
-            ids.push(n);
-        }
-    }
-    return Array.from(new Set(ids));
+    return rows.map((row) => {
+        const requestedBy = Number(row.requested_by);
+        return {
+            ...row,
+            requested_by_name:
+                Number.isFinite(requestedBy) && requestedBy > 0
+                    ? namesById.get(requestedBy) ?? null
+                    : null,
+        };
+    });
 }
 
 export async function GET(req: NextRequest) {
@@ -198,15 +212,26 @@ export async function GET(req: NextRequest) {
         const q = norm(searchParams.get("q"));
         const product_id = norm(searchParams.get("product_id"));
         const requested_by = norm(searchParams.get("requested_by"));
-        const supplier_id = norm(searchParams.get("supplier_id"));
+        const supplier_ids = resolveSupplierIds(searchParams);
         const date_from = norm(searchParams.get("date_from"));
         const date_to = norm(searchParams.get("date_to"));
+        const productIds = parseProductIdsParam(searchParams.get("product_ids"));
 
+        if (productIds !== null) {
+            if (productIds.length === 0) {
+                return NextResponse.json({ data: [] });
+            }
+
+            const data = await fetchPendingCcrByProductIds(productIds, status);
+            return NextResponse.json({ data });
+        }
+
+        const limit = norm(searchParams.get("limit"));
+        const useAllRows = limit === "-1";
         const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-        const rawLimit = searchParams.get("limit");
 
         const params = new URLSearchParams();
-        if (rawLimit === "-1") {
+        if (useAllRows) {
             params.set("limit", "-1");
             params.set("offset", "0");
         } else {
@@ -215,7 +240,6 @@ export async function GET(req: NextRequest) {
             params.set("limit", String(page_size));
             params.set("offset", String(offset));
         }
-
         params.set("meta", "total_count");
         params.set("sort", "-requested_at");
 
@@ -223,6 +247,7 @@ export async function GET(req: NextRequest) {
             "fields",
             [
                 "request_id",
+                "header_id",
                 "product_id",
                 "current_cost",
                 "proposed_cost",
@@ -234,9 +259,14 @@ export async function GET(req: NextRequest) {
                 "rejected_by",
                 "rejected_at",
                 "reject_reason",
+                "effective_at",
+                "application_status",
+                "applied_at",
+                "applied_by",
                 "product_id.product_id",
                 "product_id.product_code",
                 "product_id.product_name",
+                "product_id.barcode",
                 "product_id.unit_of_measurement.unit_id",
                 "product_id.unit_of_measurement.unit_name",
                 "product_id.unit_of_measurement.unit_shortcut",
@@ -249,37 +279,60 @@ export async function GET(req: NextRequest) {
             andIdx += 1;
         };
 
-        if (status) addAnd("[status][_eq]", status);
+        andIdx = appendDisplayStatusFilter(params, andIdx, status);
         if (product_id) addAnd("[product_id][_eq]", product_id);
         if (requested_by) addAnd("[requested_by][_eq]", requested_by);
         if (date_from) addAnd("[requested_at][_gte]", date_from);
-        if (date_to) addAnd("[requested_at][_lte]", date_to);
+        if (date_to) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(date_to));
 
-        if (supplier_id) {
-            const supplierProductIds = await getSupplierProductIds(supplier_id);
+        if (supplier_ids.length > 0) {
+            const supplierProductIds = await getSupplierScopedProductIdsForSuppliers(supplier_ids);
             if (supplierProductIds.length === 0) {
                 return NextResponse.json({ data: [], meta: { total_count: 0 } });
             }
-            addAnd("[product_id][_in]", supplierProductIds.join(","));
+            andIdx = appendProductIdInFilter(params, andIdx, supplierProductIds);
         }
 
         if (q) {
-            addAnd("[_or][0][product_id][product_name][_contains]", q);
-            params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, q);
-            params.set(`filter[_and][${andIdx - 1}][_or][2][request_id][_eq]`, q);
+            const parsed = parseApprovalSearchQuery(q);
+            const prefixedRequestId = parsed.numericId == null ? parsed.costRequestId : null;
+
+            if (prefixedRequestId != null) {
+                addAnd("[request_id][_eq]", String(prefixedRequestId));
+            } else if (parsed.textContains) {
+                const searchIdx = andIdx;
+                if (parsed.numericId != null) {
+                    addAnd("[_or][0][request_id][_eq]", String(parsed.numericId));
+                    params.set(`filter[_and][${searchIdx}][_or][1][product_id][product_name][_contains]`, parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][2][product_id][product_code][_contains]`, parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][3][product_id][barcode][_contains]`, parsed.textContains);
+                } else {
+                    addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][2][product_id][barcode][_contains]`, parsed.textContains);
+                }
+            }
         }
+
+        addAnd("[header_id][_null]", "true");
 
         const url = `${mustBase()}/items/${CCR}?${params.toString()}`;
         const json = await fetchDirectus<DirectusListCCRResponse>(url, {
             headers: directusHeaders(),
         });
 
+        const data = await addRequestedByNames(json.data ?? []);
+
         return NextResponse.json({
-            data: json.data ?? [],
+            data,
             meta: json.meta ?? null,
         });
     } catch (error: unknown) {
         const message = unwrapErrorMessage(error);
+        if (isCostBatchStorageSetupError(error)) {
+            return costBatchStorageSetupResponse(message);
+        }
+
         const wrapped = parseWrappedError(message);
 
         if (wrapped) {
@@ -311,34 +364,46 @@ export async function POST(req: NextRequest) {
         }>;
 
         const product_id = Number(body.product_id);
-        const proposed_cost = Number(body.proposed_cost);
         const current_cost = body.current_cost !== undefined ? Number(body.current_cost) : null;
 
         if (!Number.isFinite(product_id) || product_id <= 0) {
             return NextResponse.json({ error: "product_id is required" }, { status: 400 });
         }
-        if (!Number.isFinite(proposed_cost)) {
-            return NextResponse.json({ error: "proposed_cost is required" }, { status: 400 });
+        const proposed_cost = assertValidProposedCost(body.proposed_cost);
+
+        const plan = await planCostBulkCreate([{ product_id, current_cost, proposed_cost }]);
+        if (plan.itemsToCreate.length === 0) {
+            return NextResponse.json(
+                {
+                    created: 0,
+                    skipped_duplicates: plan.skippedDuplicates,
+                    skipped_existing_pending: plan.skippedExistingPending,
+                },
+                { status: 200 },
+            );
         }
 
-        // Removed duplicate pending request check to allow creating new ones
-
-        const createUrl = `${mustBase()}/items/${CCR}`;
-        const created = await fetchDirectus<DirectusCreateCCRResponse>(createUrl, {
-            method: "POST",
-            headers: directusHeaders(),
-            body: JSON.stringify({
-                product_id,
-                current_cost,
-                proposed_cost,
-                status: "PENDING",
-                requested_by: userId,
-                requested_at: nowManila(),
-            }),
+        const created = await createPendingCostRequests({
+            userId,
+            itemsToCreate: plan.itemsToCreate,
+            remarks: "List cost change request",
         });
 
-        return NextResponse.json({ data: created.data }, { status: 201 });
+        return NextResponse.json(
+            {
+                created: created.created,
+                header_id: created.headerId,
+                data: created.detailRows[0] ?? null,
+                skipped_duplicates: plan.skippedDuplicates,
+                skipped_existing_pending: plan.skippedExistingPending,
+            },
+            { status: 201 },
+        );
     } catch (error: unknown) {
+        if (isInvalidProposedCostError(error)) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+
         const message = unwrapErrorMessage(error);
         const wrapped = parseWrappedError(message);
 

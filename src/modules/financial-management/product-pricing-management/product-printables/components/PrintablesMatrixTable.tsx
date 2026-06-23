@@ -11,11 +11,16 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { AlertCircle, RefreshCw } from "lucide-react";
 
 type Props = {
     rows: MatrixRow[];
     loading: boolean;
+    error?: string | null;
+    onRetry?: () => void;
     priceTypes: PriceType[];
     units: Unit[];
     usedUnitIds: Set<number>;
@@ -25,12 +30,64 @@ type Props = {
 export default function PrintablesMatrixTable({ 
     rows, 
     loading, 
+    error,
+    onRetry,
     priceTypes, 
     units, 
     usedUnitIds,
     selectedPriceTypeIds = []
 }: Props) {
-    if (loading) return <div className="p-8 text-center text-muted-foreground animate-pulse">Loading spreadsheet matrix...</div>;
+    if (loading) {
+        return (
+            <div className="overflow-hidden rounded-xl border border-[#D1D5DB]">
+                <div className="min-w-[900px]">
+                    <div className="grid grid-cols-[100px_100px_180px_repeat(6,minmax(70px,1fr))] gap-px border-b bg-[#D1D5DB]">
+                        {Array.from({ length: 9 }).map((_, index) => (
+                            <div key={`header-${index}`} className="bg-[#F9FAFB] p-3">
+                                <Skeleton className="h-4 w-full" />
+                            </div>
+                        ))}
+                    </div>
+                    {Array.from({ length: 8 }).map((_, rowIndex) => (
+                        <div
+                            key={`row-${rowIndex}`}
+                            className="grid grid-cols-[100px_100px_180px_repeat(6,minmax(70px,1fr))] gap-px border-b bg-[#E5E7EB] last:border-b-0"
+                        >
+                            {Array.from({ length: 9 }).map((_, columnIndex) => (
+                                <div key={`cell-${columnIndex}`} className="bg-background p-3">
+                                    <Skeleton
+                                        className={cn(
+                                            "h-4",
+                                            columnIndex === 2 ? "w-4/5" : columnIndex < 3 ? "w-3/5" : "ml-auto w-2/3",
+                                        )}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
+                <AlertCircle className="h-6 w-6 text-destructive" />
+                <div>
+                    <p className="text-sm font-medium">Unable to load products</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+                </div>
+                {onRetry ? (
+                    <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Retry
+                    </Button>
+                ) : null}
+            </div>
+        );
+    }
+
     if (rows.length === 0) return <div className="p-8 text-center text-muted-foreground">No products found.</div>;
 
     const visibleUnits = units.filter(u => usedUnitIds.has(Number(u.unit_id)));
@@ -124,7 +181,7 @@ export default function PrintablesMatrixTable({
                                 {row.display.product_name}
                             </TableCell>
                             {activePriceTypes.map((pt) => {
-                                const ptSuffix = pt.price_type_id === -1 ? "ListPrice" : pt.price_type_name;
+                                const ptSuffix = pt.price_type_id === -1 ? "LIST" : String(pt.price_type_id);
                                 
                                 return (
                                     <React.Fragment key={pt.price_type_id}>

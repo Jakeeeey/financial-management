@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { Brand, Category, PricingFilters, Supplier, Unit } from "../types";
 import * as api from "../providers/pricingApi";
+import { applyLoadError } from "../../shared/loadErrorState";
 
 function safeStr(v: unknown): string {
     const s = String(v ?? "").trim();
@@ -26,6 +27,8 @@ export function useLookups(filters?: Partial<PricingFilters>) {
     const [units, setUnits] = React.useState<Unit[]>([]);
     const [suppliers, setSuppliers] = React.useState<Supplier[]>([]);
     const [error, setError] = React.useState<string | null>(null);
+    const [unauthorized, setUnauthorized] = React.useState(false);
+    const requestIdRef = React.useRef(0);
 
     const supplierIds = React.useMemo(() => getIds(filters, "supplier_ids"), [filters]);
     const categoryIds = React.useMemo(() => getIds(filters, "category_ids"), [filters]);
@@ -39,7 +42,7 @@ export function useLookups(filters?: Partial<PricingFilters>) {
         safeStr(filters?.supplier_scope) === "LINKED_ONLY" ? "LINKED_ONLY" : "ALL";
 
     React.useEffect(() => {
-        let mounted = true;
+        const requestId = ++requestIdRef.current;
 
         (async () => {
             try {
@@ -53,24 +56,23 @@ export function useLookups(filters?: Partial<PricingFilters>) {
                     brand_id: brandIds[0] ?? "",
                 });
 
-                if (!mounted) return;
+                if (requestId !== requestIdRef.current) return;
 
                 setCategories(res.data.categories ?? []);
                 setBrands(res.data.brands ?? []);
                 setUnits(res.data.units ?? []);
                 setSuppliers(res.data.suppliers ?? []);
+                setUnauthorized(false);
             } catch (error: unknown) {
-                if (!mounted) return;
-                setError(error instanceof Error ? error.message : "Failed to load lookups");
+                if (requestId !== requestIdRef.current) return;
+                applyLoadError(error, "Failed to load lookups", setUnauthorized, setError);
             } finally {
-                if (mounted) setLoading(false);
+                if (requestId === requestIdRef.current) {
+                    setLoading(false);
+                }
             }
         })();
-
-        return () => {
-            mounted = false;
-        };
     }, [supplierIdsKey, supplierScope, categoryIds, brandIds, categoryIdsKey, brandIdsKey]);
 
-    return { loading, error, categories, brands, units, suppliers };
+    return { loading, error, unauthorized, categories, brands, units, suppliers };
 }

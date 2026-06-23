@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import type { PriceType, PricingFilters, ProductTierKey, Unit } from "../types";
+import type { PendingCellRequest, PriceType, PricingFilters, ProductTierKey, Unit } from "../types";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,80 +14,16 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LayoutGrid, Table2 } from "lucide-react";
 
 import PriceCell from "./PriceCell";
-
-const PTable = React.forwardRef<
-    HTMLTableElement,
-    React.TableHTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-    <table
-        ref={ref}
-        className={cn("w-full caption-bottom text-sm", className)}
-        {...props}
-    />
-));
-PTable.displayName = "PTable";
-
-const PTableHeader = React.forwardRef<
-    HTMLTableSectionElement,
-    React.HTMLAttributes<HTMLTableSectionElement>
->(({ className, ...props }, ref) => (
-    <thead ref={ref} className={cn("[&_tr]:border-b", className)} {...props} />
-));
-PTableHeader.displayName = "PTableHeader";
-
-const PTableBody = React.forwardRef<
-    HTMLTableSectionElement,
-    React.HTMLAttributes<HTMLTableSectionElement>
->(({ className, ...props }, ref) => (
-    <tbody
-        ref={ref}
-        className={cn("[&_tr:last-child]:border-0", className)}
-        {...props}
-    />
-));
-PTableBody.displayName = "PTableBody";
-
-const PTableRow = React.forwardRef<
-    HTMLTableRowElement,
-    React.HTMLAttributes<HTMLTableRowElement>
->(({ className, ...props }, ref) => (
-    <tr
-        ref={ref}
-        className={cn("border-b transition-colors", className)}
-        {...props}
-    />
-));
-PTableRow.displayName = "PTableRow";
-
-const PTableHead = React.forwardRef<
-    HTMLTableCellElement,
-    React.ThHTMLAttributes<HTMLTableCellElement>
->(({ className, ...props }, ref) => (
-    <th
-        ref={ref}
-        className={cn(
-            "px-3 py-2 text-left align-middle font-medium text-muted-foreground",
-            className
-        )}
-        {...props}
-    />
-));
-PTableHead.displayName = "PTableHead";
-
-const PTableCell = React.forwardRef<
-    HTMLTableCellElement,
-    React.TdHTMLAttributes<HTMLTableCellElement>
->(({ className, ...props }, ref) => (
-    <td
-        ref={ref}
-        className={cn("px-3 py-2 align-middle", className)}
-        {...props}
-    />
-));
-PTableCell.displayName = "PTableCell";
+import VirtualizedProductGroupList from "./VirtualizedProductGroupList";
+import { isListTierKey, priceViewFilterLabel, resolveVisibleTierKeys, tierLabelForTierKey } from "../utils/pivot";
+import {
+    estimateProductGroupBlockHeight,
+    estimateProductGroupCardHeight,
+} from "../utils/estimateProductGroupHeight";
+import { useCardsColumnsPerRow } from "../hooks/useCardsColumnsPerRow";
 
 type VariantProduct = {
     product_id: number | string | null | undefined;
@@ -123,8 +59,10 @@ type PricingMatrixLike = {
     usedUnits?: Unit[];
     rows?: MatrixRow[];
     meta?: MatrixMeta;
+    dirtyVersion?: number;
 
     loading?: boolean;
+    error?: string | null;
 
     page?: number;
     pageSize?: number;
@@ -133,7 +71,7 @@ type PricingMatrixLike = {
     setPageSize: (pageSize: number) => void;
 
     getCellValue: (productId: number, tier: ProductTierKey, base: number | null) => number | string | null;
-    getPendingValue: (productId: number, tier: ProductTierKey) => number | null;
+    getPendingRequest: (productId: number, tier: ProductTierKey) => PendingCellRequest | null;
     isDirty: (productId: number, tier: ProductTierKey) => boolean;
     getError: (productId: number, tier: ProductTierKey) => string | null | undefined;
     setCell: (productId: number, tier: ProductTierKey, raw: unknown) => void;
@@ -142,10 +80,13 @@ type PricingMatrixLike = {
 };
 type Props = {
     matrix: PricingMatrixLike;
+    dirtyVersion?: number;
 };
 
+type ViewMode = "table" | "cards";
+
 function unitLabel(u: Unit) {
-    return String(u.unit_shortcut ?? u.unit_name ?? "—").trim() || "—";
+    return String(u.unit_shortcut ?? u.unit_name ?? "-").trim() || "-";
 }
 
 const TIER_STYLES = [
@@ -158,19 +99,18 @@ const TIER_STYLES = [
     { head: "bg-fuchsia-50 text-fuchsia-800 dark:bg-fuchsia-950 dark:text-fuchsia-200", cell: "bg-fuchsia-50/30 hover:bg-fuchsia-100/50 dark:bg-fuchsia-950/20", border: "border-fuchsia-100 dark:border-fuchsia-900" },
 ] as const;
 
-function tierStyle(tierIndex: number) {
-    if (tierIndex === 0) return TIER_STYLES[0];
-    const dynamicIndex = 1 + ((tierIndex - 1) % (TIER_STYLES.length - 1));
-    return TIER_STYLES[dynamicIndex] ?? TIER_STYLES[0];
+function tierStyleFor(tier: ProductTierKey, tiers: ProductTierKey[]) {
+    const index = tiers.indexOf(tier);
+    return TIER_STYLES[index >= 0 ? index % TIER_STYLES.length : 0];
+}
+
+function tierHeaderLabel(tier: ProductTierKey, priceTypes: PriceType[]) {
+    return tierLabelForTierKey(tier, priceTypes);
 }
 
 function toNum(v: unknown, fallback: number) {
     const n = typeof v === "number" ? v : Number(v);
     return Number.isFinite(n) ? n : fallback;
-}
-
-function clamp(n: number, min: number, max: number) {
-    return Math.max(min, Math.min(max, n));
 }
 
 function toNullableNumber(v: unknown): number | null {
@@ -198,78 +138,526 @@ function toErrorString(err: unknown): string | null {
     }
 }
 
-const LEFT_COL_WIDTHS = [100, 100, 450] as const;
-const LEFT_TABLE_WIDTH = LEFT_COL_WIDTHS.reduce((a, b) => a + b, 0);
-const PRICE_COL_WIDTH = 140;
+const VIEW_MODE_STORAGE_KEY = "product-pricing:view-mode";
 
-const HEAD_ROW_H = 40;
-const SUBHEAD_ROW_H = 36;
-const BODY_ROW_H = 80;
-
-function LoadingLeftBody({ rowCount }: { rowCount: number }) {
+function LoadingCardBody({ rowCount }: { rowCount: number }) {
     return (
-        <>
+        <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: rowCount }).map((_, i) => (
-                <PTableRow key={`lsk-${i}`} className="hover:bg-transparent">
-                    <PTableCell className="h-[80px] w-[100px]"><Skeleton className="h-4 w-[80px]" /></PTableCell>
-                    <PTableCell className="h-[80px] w-[100px]"><Skeleton className="h-4 w-[80px]" /></PTableCell>
-                    <PTableCell className="h-[80px] w-[450px]">
-                        <Skeleton className="mb-1.5 h-4 w-[260px]" />
-                        <Skeleton className="h-3 w-[160px]" />
-                    </PTableCell>
-                </PTableRow>
+                <div key={`csk-${i}`} className="rounded-lg border bg-background p-3">
+                    <Skeleton className="mb-2 h-4 w-3/4" />
+                    <Skeleton className="mb-3 h-3 w-1/2" />
+                    <div className="grid grid-cols-2 gap-2">
+                        <Skeleton className="h-14 rounded-md" />
+                        <Skeleton className="h-14 rounded-md" />
+                    </div>
+                </div>
             ))}
-        </>
+        </div>
     );
 }
 
-function LoadingRightBody({ rowCount, priceCols }: { rowCount: number; priceCols: number }) {
+function LoadingProductBlockBody({ rowCount }: { rowCount: number }) {
     return (
-        <>
+        <div className="grid gap-3 p-3">
             {Array.from({ length: rowCount }).map((_, i) => (
-                <PTableRow key={`rsk-${i}`} className="hover:bg-transparent">
-                    {Array.from({ length: priceCols }).map((__, j) => (
-                        <PTableCell key={`rskc-${i}-${j}`} className="h-[80px] border-l align-top">
-                            <Skeleton className="h-8 w-full rounded-md" />
-                            <Skeleton className="mt-2 h-3 w-[56px]" />
-                        </PTableCell>
+                <div key={`pbsk-${i}`} className="rounded-lg border bg-background p-3">
+                    <Skeleton className="mb-2 h-4 w-3/4" />
+                    <Skeleton className="mb-3 h-3 w-1/2" />
+                    <div className="space-y-1.5">
+                        <Skeleton className="h-8 rounded-md" />
+                        <Skeleton className="h-8 rounded-md" />
+                        <Skeleton className="h-8 rounded-md" />
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+type CellRenderProps = {
+    value: number | string | null;
+    pendingRequest: PendingCellRequest | null;
+    dirty: boolean;
+    error: string | null;
+    onChange: (raw: string) => void;
+};
+
+type SetCellHandler = (productId: number, tier: ProductTierKey) => (raw: string) => void;
+
+function cellPropsFor(
+    matrix: PricingMatrixLike,
+    getSetCellHandler: SetCellHandler,
+    variant: MatrixVariant | undefined,
+    tier: ProductTierKey,
+): CellRenderProps | null {
+    if (!variant) return null;
+
+    const variantProductId = Number(variant.product.product_id);
+    if (!Number.isFinite(variantProductId) || variantProductId <= 0) return null;
+
+    const base = toNullableNumber(variant.tiers?.[tier]);
+
+    return {
+        value: matrix.getCellValue(variantProductId, tier, base),
+        pendingRequest: matrix.getPendingRequest(variantProductId, tier),
+        dirty: matrix.isDirty(variantProductId, tier),
+        error: toErrorString(matrix.getError(variantProductId, tier)),
+        onChange: getSetCellHandler(variantProductId, tier),
+    };
+}
+
+function ProductMetaPills({ row, display }: { row: MatrixRow; display: NonNullable<MatrixRow["display"]> }) {
+    return (
+        <div className="flex flex-wrap items-center gap-1 text-[10px] leading-none text-muted-foreground/80">
+            <span className="max-w-[130px] truncate rounded bg-muted/50 px-1.5 py-1">{row.brand_name ?? "No brand"}</span>
+            <span className="max-w-[130px] truncate rounded bg-muted/50 px-1.5 py-1">{row.category_name ?? "No category"}</span>
+            <span className="max-w-[120px] truncate rounded bg-muted/50 px-1.5 py-1">Code: {display.product_code ?? "-"}</span>
+            <span className="max-w-[150px] truncate rounded bg-muted/50 px-1.5 py-1">Barcode: {display.barcode ?? "-"}</span>
+        </div>
+    );
+}
+
+const CardPriceCell = React.memo(function CardPriceCell(props: {
+    row: MatrixRow;
+    tier: ProductTierKey;
+    unit: Unit | null;
+    tiers: ProductTierKey[];
+    priceTypes: PriceType[];
+    cell: CellRenderProps;
+}) {
+    const { row, tier, unit, tiers, priceTypes, cell } = props;
+    const st = tierStyleFor(tier, tiers);
+    const tierText = tierHeaderLabel(tier, priceTypes);
+    const unitText = unit ? unitLabel(unit) : "UOM";
+    const uomId = unit ? Number(unit.unit_id) : 0;
+    const variant = unit ? row.variantsByUnitId?.[String(uomId)] : undefined;
+
+    if (!unit || !variant) {
+        return (
+            <div className={cn("rounded-md border p-2 text-xs text-muted-foreground", st.border, st.cell)}>
+                <div className="mb-1 truncate font-medium text-foreground/70">
+                    {tierText} / {unitText}
+                </div>
+                <div className="flex h-7 items-center">-</div>
+            </div>
+        );
+    }
+
+    const variantProductId = Number(variant.product.product_id);
+    if (!Number.isFinite(variantProductId) || variantProductId <= 0) {
+        return (
+            <div className={cn("rounded-md border p-2 text-xs text-muted-foreground", st.border, st.cell)}>
+                <div className="mb-1 truncate font-medium text-foreground/70">
+                    {tierText} / {unitText}
+                </div>
+                <div className="flex h-7 items-center">-</div>
+            </div>
+        );
+    }
+
+    return (
+        <div className={cn("min-w-0 rounded-md border bg-background p-2", st.border)}>
+            <div className="mb-1 truncate text-[11px] font-semibold text-foreground/75">
+                {tierText} / {unitText}
+            </div>
+            <PriceCell
+                value={cell.value}
+                pendingRequest={cell.pendingRequest}
+                dirty={cell.dirty}
+                error={cell.error}
+                onChange={cell.onChange}
+            />
+        </div>
+    );
+});
+
+const ProductBlockPriceCell = React.memo(function ProductBlockPriceCell(
+    props: CellRenderProps & { variant: MatrixVariant | undefined },
+) {
+    const { variant, value, pendingRequest, dirty, error, onChange } = props;
+
+    if (!variant) {
+        return (
+            <div className="flex min-h-9 items-center justify-end text-xs text-muted-foreground">-</div>
+        );
+    }
+
+    const variantProductId = Number(variant.product.product_id);
+    if (!Number.isFinite(variantProductId) || variantProductId <= 0) {
+        return (
+            <div className="flex min-h-9 items-center justify-end text-xs text-muted-foreground">-</div>
+        );
+    }
+
+    return (
+        <div className="min-w-[128px]">
+            <PriceCell
+                value={value}
+                pendingRequest={pendingRequest}
+                dirty={dirty}
+                error={error}
+                onChange={onChange}
+            />
+        </div>
+    );
+});
+
+function ProductBlockPriceTable(props: {
+    matrix: PricingMatrixLike;
+    row: MatrixRow;
+    tiers: ProductTierKey[];
+    usedUnits: Unit[];
+    getSetCellHandler: SetCellHandler;
+}) {
+    const { matrix, row, tiers, usedUnits, getSetCellHandler } = props;
+    const variantsByUnitId = row.variantsByUnitId ?? {};
+    const fallbackUnits = Object.keys(variantsByUnitId)
+        .map((unitId) => ({
+            unit_id: Number(unitId),
+            unit_name: `Unit ${unitId}`,
+            unit_shortcut: `U${unitId}`,
+        }))
+        .filter((unit) => Number.isFinite(unit.unit_id) && unit.unit_id > 0);
+    const printableUnits = usedUnits.length > 0 ? usedUnits : fallbackUnits;
+
+    if (printableUnits.length === 0) {
+        return (
+            <div className="rounded-md border bg-muted/20 px-3 py-4 text-center text-sm text-muted-foreground">
+                No unit prices available for this product.
+            </div>
+        );
+    }
+
+    const tableMinWidth = Math.max(420, 136 * printableUnits.length + 150);
+
+    return (
+        <div className="overflow-x-auto rounded-md border">
+            <table className="w-full border-collapse table-fixed text-xs" style={{ minWidth: tableMinWidth }}>
+                <colgroup>
+                    <col style={{ width: 150 }} />
+                    {printableUnits.map((unit) => (
+                        <col key={`col-${String(unit.unit_id)}`} style={{ width: 136 }} />
                     ))}
-                </PTableRow>
-            ))}
-        </>
+                </colgroup>
+                <thead>
+                    <tr className="border-b bg-muted/40">
+                        <th className="px-3 py-2 text-left font-semibold text-foreground/80">Price Type</th>
+                        {printableUnits.map((unit) => (
+                            <th
+                                key={`head-${String(unit.unit_id)}`}
+                                className="border-l px-3 py-2 text-left font-semibold text-foreground/80"
+                            >
+                                {unitLabel(unit)}
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {tiers.map((tier) => {
+                        const st = tierStyleFor(tier, tiers);
+
+                        return (
+                            <tr key={`tier-${String(tier)}`} className={cn("border-b last:border-b-0", st.cell)}>
+                                <th
+                                    className={cn(
+                                        "px-3 py-2 text-left align-middle text-xs font-semibold",
+                                        st.head,
+                                        st.border,
+                                    )}
+                                >
+                                    <span className="block truncate">
+                                        {tierHeaderLabel(tier, matrix.priceTypes)}
+                                    </span>
+                                </th>
+                                {printableUnits.map((unit) => {
+                                    const variant = variantsByUnitId[String(Number(unit.unit_id))];
+                                    const cell = cellPropsFor(matrix, getSetCellHandler, variant, tier);
+
+                                    return (
+                                        <td
+                                            key={`${String(tier)}-${String(unit.unit_id)}`}
+                                            className={cn("border-l px-2 py-2 align-top", st.border)}
+                                        >
+                                            {cell ? (
+                                                <ProductBlockPriceCell variant={variant} {...cell} />
+                                            ) : (
+                                                <ProductBlockPriceCell
+                                                    variant={variant}
+                                                    value={null}
+                                                    pendingRequest={null}
+                                                    dirty={false}
+                                                    error={null}
+                                                    onChange={() => {}}
+                                                />
+                                            )}
+                                        </td>
+                                    );
+                                })}
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
     );
 }
 
-export default function PricingTable({ matrix }: Props) {
+const ProductGroupBlockRow = React.memo(function ProductGroupBlockRow(props: {
+    matrix: PricingMatrixLike;
+    row: MatrixRow;
+    tiers: ProductTierKey[];
+    usedUnits: Unit[];
+    getSetCellHandler: SetCellHandler;
+}) {
+    const { matrix, row, tiers, usedUnits, getSetCellHandler } = props;
+    const display = row.display ?? {};
+    const groupKey = String(row.group_id);
+
+    return (
+        <article key={`C-${groupKey}`} className="rounded-lg border bg-background p-3 shadow-sm">
+            <div className="space-y-1.5">
+                <div className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
+                    {display.product_name ?? "-"}
+                </div>
+                <ProductMetaPills row={row} display={display} />
+            </div>
+
+            <div className="mt-3">
+                <ProductBlockPriceTable
+                    matrix={matrix}
+                    row={row}
+                    tiers={tiers}
+                    usedUnits={usedUnits}
+                    getSetCellHandler={getSetCellHandler}
+                />
+            </div>
+        </article>
+    );
+});
+
+const ProductGroupCardRow = React.memo(function ProductGroupCardRow(props: {
+    matrix: PricingMatrixLike;
+    row: MatrixRow;
+    tiers: ProductTierKey[];
+    usedUnits: Unit[];
+    getSetCellHandler: SetCellHandler;
+}) {
+    const { matrix, row, tiers, usedUnits, getSetCellHandler } = props;
+    const display = row.display ?? {};
+    const groupKey = String(row.group_id);
+
+    return (
+        <article key={`C-${groupKey}`} className="rounded-lg border bg-background p-3 shadow-sm">
+            <div className="space-y-1.5">
+                <div className="line-clamp-2 text-sm font-semibold leading-tight text-foreground">
+                    {display.product_name ?? "-"}
+                </div>
+                <ProductMetaPills row={row} display={display} />
+            </div>
+
+            <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                {tiers.flatMap((tier) => {
+                    if (usedUnits.length > 0) {
+                        return usedUnits.map((unit) => {
+                            const uomId = Number(unit.unit_id);
+                            const variant = row.variantsByUnitId?.[String(uomId)];
+                            const cell = cellPropsFor(matrix, getSetCellHandler, variant, tier);
+
+                            return (
+                                <CardPriceCell
+                                    key={`${groupKey}-${String(tier)}-${String(unit.unit_id)}`}
+                                    row={row}
+                                    tier={tier}
+                                    unit={unit}
+                                    tiers={matrix.TIERS}
+                                    priceTypes={matrix.priceTypes}
+                                    cell={
+                                        cell ?? {
+                                            value: null,
+                                            pendingRequest: null,
+                                            dirty: false,
+                                            error: null,
+                                            onChange: () => {},
+                                        }
+                                    }
+                                />
+                            );
+                        });
+                    }
+
+                    return [
+                        <CardPriceCell
+                            key={`${groupKey}-${String(tier)}-none`}
+                            row={row}
+                            tier={tier}
+                            unit={null}
+                            tiers={matrix.TIERS}
+                            priceTypes={matrix.priceTypes}
+                            cell={{
+                                value: null,
+                                pendingRequest: null,
+                                dirty: false,
+                                error: null,
+                                onChange: () => {},
+                            }}
+                        />,
+                    ];
+                })}
+            </div>
+        </article>
+    );
+});
+
+function PricingProductBlocks(props: {
+    matrix: PricingMatrixLike;
+    rows: MatrixRow[];
+    tiers: ProductTierKey[];
+    usedUnits: Unit[];
+    loading: boolean;
+    totalGroups: number;
+    getSetCellHandler: SetCellHandler;
+    listKey: string;
+}) {
+    const { matrix, rows, tiers, usedUnits, loading, totalGroups, getSetCellHandler, listKey } = props;
+    const hasLoadError = Boolean(matrix.error);
+
+    if (loading && rows.length === 0) {
+        return <LoadingProductBlockBody rowCount={6} />;
+    }
+
+    if (!loading && totalGroups === 0 && !hasLoadError) {
+        return <div className="p-8 text-center text-sm text-muted-foreground">No products found.</div>;
+    }
+
+    return (
+        <VirtualizedProductGroupList
+            rows={rows}
+            listKey={listKey}
+            loading={loading}
+            itemClassName="px-3 pb-3"
+            getItemKey={(row) => String(row.group_id)}
+            estimateItemSize={() => estimateProductGroupBlockHeight(tiers.length)}
+            renderItem={(row) => (
+                <ProductGroupBlockRow
+                    matrix={matrix}
+                    row={row}
+                    tiers={tiers}
+                    usedUnits={usedUnits}
+                    getSetCellHandler={getSetCellHandler}
+                />
+            )}
+        />
+    );
+}
+
+function PricingCards(props: {
+    matrix: PricingMatrixLike;
+    rows: MatrixRow[];
+    tiers: ProductTierKey[];
+    usedUnits: Unit[];
+    loading: boolean;
+    totalGroups: number;
+    getSetCellHandler: SetCellHandler;
+    listKey: string;
+}) {
+    const { matrix, rows, tiers, usedUnits, loading, totalGroups, getSetCellHandler, listKey } = props;
+    const columnsPerRow = useCardsColumnsPerRow();
+    const hasLoadError = Boolean(matrix.error);
+
+    if (loading && rows.length === 0) {
+        return <LoadingCardBody rowCount={6} />;
+    }
+
+    if (!loading && totalGroups === 0 && !hasLoadError) {
+        return <div className="p-8 text-center text-sm text-muted-foreground">No products found.</div>;
+    }
+
+    return (
+        <VirtualizedProductGroupList
+            rows={rows}
+            listKey={`${listKey}:${columnsPerRow}`}
+            loading={loading}
+            columnsPerRow={columnsPerRow}
+            itemClassName="px-3 pb-3"
+            getItemKey={(row) => String(row.group_id)}
+            estimateItemSize={(row) =>
+                estimateProductGroupCardHeight({
+                    tierCount: tiers.length,
+                    usedUnits,
+                    row,
+                })
+            }
+            renderRow={(chunk) => (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {chunk.map((row) => (
+                        <ProductGroupCardRow
+                            key={String(row.group_id)}
+                            matrix={matrix}
+                            row={row}
+                            tiers={tiers}
+                            usedUnits={usedUnits}
+                            getSetCellHandler={getSetCellHandler}
+                        />
+                    ))}
+                    {Array.from({ length: Math.max(0, columnsPerRow - chunk.length) }).map((_, i) => (
+                        <div key={`pad-${i}`} aria-hidden className="min-w-0" />
+                    ))}
+                </div>
+            )}
+        />
+    );
+}
+
+export default function PricingTable({ matrix, dirtyVersion = 0 }: Props) {
     const usedUnits: Unit[] = Array.isArray(matrix.usedUnits) ? matrix.usedUnits : [];
-    const uomCount = Math.max(1, usedUnits.length);
 
-    const tiers = React.useMemo(() => {
-        const selectedIds = matrix.filters.price_type_ids;
-        const showList = matrix.filters.show_list_price;
+    const tiers = React.useMemo(
+        (): ProductTierKey[] =>
+            resolveVisibleTierKeys({
+                priceView: matrix.filters.price_view,
+                priceTypeIds: matrix.filters.price_type_ids,
+                priceTypes: matrix.priceTypes,
+                showListPrice: matrix.filters.show_list_price,
+                allTierKeys: matrix.TIERS,
+            }),
+        [
+            matrix.TIERS,
+            matrix.filters.price_view,
+            matrix.filters.price_type_ids,
+            matrix.filters.show_list_price,
+            matrix.priceTypes,
+        ],
+    );
 
-        // If nothing is specifically selected, show everything (Default)
-        if (selectedIds.length === 0 && !showList) {
-            return [...matrix.TIERS];
-        }
-
-        // Otherwise show only what is selected
-        const selectedNames = matrix.priceTypes
-            .filter((pt) => selectedIds.includes(pt.price_type_id))
-            .map((pt) => pt.price_type_name);
-
-        return matrix.TIERS.filter((t) => {
-            if (t === "LIST") return showList;
-            return selectedNames.includes(t);
-        });
-    }, [matrix.TIERS, matrix.filters.show_list_price, matrix.filters.price_type_ids, matrix.priceTypes]);
-
-    const rows: MatrixRow[] = Array.isArray(matrix.rows) ? matrix.rows : [];
+    const rows = React.useMemo<MatrixRow[]>(
+        () => Array.isArray(matrix.rows) ? matrix.rows : [],
+        [matrix.rows],
+    );
     const meta: MatrixMeta = matrix.meta ?? {};
     const loading = Boolean(matrix.loading);
 
     const page = toNum(meta.page ?? matrix.page ?? 1, 1);
     const pageSize = toNum(meta.pageSize ?? matrix.pageSize ?? 50, 50);
+
+    const setCellHandlersRef = React.useRef(new Map<string, (raw: string) => void>());
+
+    React.useEffect(() => {
+        setCellHandlersRef.current.clear();
+    }, [matrix.setCell, page, pageSize]);
+
+    const getSetCellHandler = React.useCallback<SetCellHandler>(
+        (productId, tier) => {
+            const key = `${productId}:${tier}`;
+            let handler = setCellHandlersRef.current.get(key);
+            if (!handler) {
+                handler = (raw: string) => matrix.setCell(productId, tier, raw);
+                setCellHandlersRef.current.set(key, handler);
+            }
+            return handler;
+        },
+        [matrix],
+    );
 
     const totalGroups = toNum(meta.total ?? 0, 0);
     const totalVariants = toNum(meta.totalVariants ?? 0, 0);
@@ -282,127 +670,66 @@ export default function PricingTable({ matrix }: Props) {
     const canPrev = !loading && page > 1 && totalGroups > 0;
     const canNext = !loading && page < totalPages && totalGroups > 0;
 
-    const headCellBase = "whitespace-nowrap border-b text-[12px] font-semibold text-foreground/80 p-0";
-    const subHeadCellBase = "whitespace-nowrap border-b text-[11px] font-medium text-foreground/70 p-0";
-
-    const [hoverKey, setHoverKey] = React.useState<string | null>(null);
-
-    const priceScrollRef = React.useRef<HTMLDivElement | null>(null);
-    const trackRef = React.useRef<HTMLDivElement | null>(null);
-
-    const [metrics, setMetrics] = React.useState({
-        scrollLeft: 0,
-        scrollWidth: 1,
-        clientWidth: 1,
-        trackWidth: 1,
-    });
-
-    const readMetrics = React.useCallback(() => {
-        const sc = priceScrollRef.current;
-        const tr = trackRef.current;
-        if (!sc || !tr) return;
-
-        setMetrics({
-            scrollLeft: sc.scrollLeft,
-            scrollWidth: Math.max(1, sc.scrollWidth),
-            clientWidth: Math.max(1, sc.clientWidth),
-            trackWidth: Math.max(1, tr.clientWidth),
-        });
-    }, []);
+    const [viewMode, setViewMode] = React.useState<ViewMode>("table");
 
     React.useEffect(() => {
-        readMetrics();
+        try {
+            const saved = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+            if (saved === "table" || saved === "cards") {
+                setViewMode(saved);
+            }
+        } catch {
+            setViewMode("table");
+        }
+    }, []);
 
-        const sc = priceScrollRef.current;
-        const tr = trackRef.current;
-        if (!sc || !tr) return;
+    const setManualViewMode = React.useCallback((next: ViewMode) => {
+        setViewMode(next);
+        try {
+            window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
+        } catch {
+            // Ignore storage errors; the in-session view switch still works.
+        }
+    }, []);
 
-        const onResize = () => readMetrics();
-        window.addEventListener("resize", onResize);
+    const focusedPriceTiers = tiers.filter((tier) => !isListTierKey(tier));
+    const priceViewLabel =
+        matrix.filters.price_view === "ALL"
+            ? "All Prices"
+            : priceViewFilterLabel({
+                priceView: matrix.filters.price_view,
+                priceTypeIds: matrix.filters.price_type_ids,
+                priceTypes: matrix.priceTypes,
+                showListPrice: matrix.filters.show_list_price,
+            });
+    const priceViewHelp =
+        matrix.filters.price_view === "ALL"
+            ? "Showing every price type grouped by product."
+            : matrix.filters.price_view === "LIST"
+                ? "Focused editing for list cost. Clear the price view filter to show every tier."
+                : focusedPriceTiers.length > 1
+                    ? `Showing selected price columns: ${priceViewLabel}. Clear the price view filter to show every tier.`
+                    : `Focused editing for ${priceViewLabel}. Clear the price view filter to show every tier.`;
 
-        const ro = new ResizeObserver(() => readMetrics());
-        ro.observe(sc);
-        ro.observe(tr);
-
-        return () => {
-            window.removeEventListener("resize", onResize);
-            ro.disconnect();
-        };
-    }, [readMetrics, tiers.length, usedUnits.length, rows.length]);
-
-    const onPriceScroll = React.useCallback(() => {
-        readMetrics();
-    }, [readMetrics]);
-
-    const maxScrollLeft = Math.max(0, metrics.scrollWidth - metrics.clientWidth);
-    const thumbWidth = Math.max(
-        36,
-        Math.floor((metrics.clientWidth / metrics.scrollWidth) * metrics.trackWidth)
+    const listKey = React.useMemo(
+        () =>
+            JSON.stringify({
+                viewMode,
+                page,
+                pageSize,
+                tierCount: tiers.length,
+                rowCount: rows.length,
+                firstGroupId: rows[0]?.group_id ?? null,
+            }),
+        [viewMode, page, pageSize, tiers.length, rows],
     );
-    const thumbMaxX = Math.max(0, metrics.trackWidth - thumbWidth);
-    const thumbX =
-        maxScrollLeft <= 0 ? 0 : Math.floor((metrics.scrollLeft / maxScrollLeft) * thumbMaxX);
-
-    const setScrollLeft = React.useCallback(
-        (next: number) => {
-            const sc = priceScrollRef.current;
-            if (!sc) return;
-            sc.scrollLeft = clamp(next, 0, maxScrollLeft);
-        },
-        [maxScrollLeft]
-    );
-
-    const onTrackClick = React.useCallback(
-        (e: React.MouseEvent<HTMLDivElement>) => {
-            const tr = trackRef.current;
-            if (!tr) return;
-
-            const rect = tr.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const targetThumbX = clamp(x - thumbWidth / 2, 0, thumbMaxX);
-            const ratio = thumbMaxX <= 0 ? 0 : targetThumbX / thumbMaxX;
-            setScrollLeft(ratio * maxScrollLeft);
-        },
-        [maxScrollLeft, setScrollLeft, thumbMaxX, thumbWidth]
-    );
-
-    const draggingRef = React.useRef<{ startX: number; startScrollLeft: number }>({
-        startX: 0,
-        startScrollLeft: 0,
-    });
-
-    const onThumbMouseDown = React.useCallback(
-        (e: React.MouseEvent<HTMLDivElement>) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            draggingRef.current = { startX: e.clientX, startScrollLeft: metrics.scrollLeft };
-
-            const onMove = (ev: MouseEvent) => {
-                const dx = ev.clientX - draggingRef.current.startX;
-                const ratio = thumbMaxX <= 0 ? 0 : dx / thumbMaxX;
-                setScrollLeft(draggingRef.current.startScrollLeft + ratio * maxScrollLeft);
-            };
-
-            const onUp = () => {
-                window.removeEventListener("mousemove", onMove);
-                window.removeEventListener("mouseup", onUp);
-            };
-
-            window.addEventListener("mousemove", onMove);
-            window.addEventListener("mouseup", onUp);
-        },
-        [maxScrollLeft, metrics.scrollLeft, setScrollLeft, thumbMaxX]
-    );
-
-    const priceCols = tiers.length * uomCount;
 
     return (
-        <div className="relative z-0 flex min-h-0 min-w-0 flex-col rounded-2xl border bg-background shadow-sm">
+        <div
+            className="relative z-0 flex min-h-0 min-w-0 flex-col rounded-2xl border bg-background shadow-sm"
+            data-dirty-version={dirtyVersion}
+        >
             <style>{`
-        .pmx-table { border-collapse: separate !important; border-spacing: 0 !important; }
-        .pmx-price-x::-webkit-scrollbar { height: 0px; }
-        .pmx-price-x::-webkit-scrollbar-thumb { background: transparent; }
         .pmx-loading-row { opacity: 0.5; pointer-events: none; transition: opacity 0.2s ease; }
       `}</style>
 
@@ -414,335 +741,64 @@ export default function PricingTable({ matrix }: Props) {
                 </div>
             )}
 
-            <div className="relative min-h-0 flex-1">
-                <div className="flex min-w-0">
-                    {/* LEFT */}
-                    <div className="shrink-0 border-r bg-background" style={{ width: LEFT_TABLE_WIDTH }}>
-                        <div className="sticky top-0 z-40 overflow-hidden bg-background border-b shadow-md">
-                            <PTable className="pmx-table table-fixed" style={{ width: LEFT_TABLE_WIDTH }}>
-                                <colgroup>
-                                    <col style={{ width: LEFT_COL_WIDTHS[0] }} />
-                                    <col style={{ width: LEFT_COL_WIDTHS[1] }} />
-                                    <col style={{ width: LEFT_COL_WIDTHS[2] }} />
-                                </colgroup>
-
-                                <PTableHeader>
-                                    <PTableRow style={{ height: HEAD_ROW_H }}>
-                                        <PTableHead className={headCellBase}>
-                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Brand</div>
-                                        </PTableHead>
-                                        <PTableHead className={headCellBase}>
-                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Category</div>
-                                        </PTableHead>
-                                        <PTableHead className={cn(headCellBase, "border-r")}>
-                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center px-3">Product</div>
-                                        </PTableHead>
-                                    </PTableRow>
-
-                                    <PTableRow style={{ height: SUBHEAD_ROW_H }}>
-                                        {Array.from({ length: 3 }).map((_, i) => (
-                                            <PTableHead
-                                                key={`left-sp-${i}`}
-                                                className={cn(subHeadCellBase, i === 2 ? "border-r" : "")}
-                                            >
-                                                <div style={{ height: SUBHEAD_ROW_H }} className="px-3">
-                                                    <span className="sr-only">Spacer</span>
-                                                </div>
-                                            </PTableHead>
-                                        ))}
-                                    </PTableRow>
-                                </PTableHeader>
-                            </PTable>
-                        </div>
-
-                        <PTable className="pmx-table table-fixed" style={{ width: LEFT_TABLE_WIDTH }}>
-                            <colgroup>
-                                <col style={{ width: LEFT_COL_WIDTHS[0] }} />
-                                <col style={{ width: LEFT_COL_WIDTHS[1] }} />
-                                <col style={{ width: LEFT_COL_WIDTHS[2] }} />
-                            </colgroup>
-
-                            <PTableBody className={cn(loading && rows.length > 0 && "pmx-loading-row")}>
-                                {loading && rows.length === 0 ? <LoadingLeftBody rowCount={10} /> : null}
-
-                                {rows.map((r) => {
-                                        const display = r.display ?? {};
-                                        const groupKey = String(r.group_id);
-                                        const hovered = hoverKey === groupKey;
-
-                                        return (
-                                            <PTableRow
-                                                key={`L-${groupKey}`}
-                                                className={cn(hovered ? "bg-muted/30" : "hover:bg-muted/30")}
-                                                style={{ height: BODY_ROW_H }}
-                                                onMouseEnter={() => setHoverKey(groupKey)}
-                                                onMouseLeave={() => setHoverKey(null)}
-                                            >
-                                                <PTableCell className="p-0 border-b overflow-hidden" style={{ width: LEFT_COL_WIDTHS[0], height: BODY_ROW_H }}>
-                                                    <div style={{ height: BODY_ROW_H }} className="flex items-center px-3 truncate text-[13px] text-muted-foreground">
-                                                        {r.brand_name ?? "—"}
-                                                    </div>
-                                                </PTableCell>
-                                                <PTableCell className="p-0 border-b overflow-hidden" style={{ width: LEFT_COL_WIDTHS[1], height: BODY_ROW_H }}>
-                                                    <div style={{ height: BODY_ROW_H }} className="flex items-center px-3 truncate text-[13px] text-muted-foreground">
-                                                        {r.category_name ?? "—"}
-                                                    </div>
-                                                </PTableCell>
-                                                <PTableCell className="p-0 border-b" style={{ width: LEFT_COL_WIDTHS[2], height: BODY_ROW_H }}>
-                                                    <div style={{ height: BODY_ROW_H }} className="flex flex-col justify-center gap-1.5 px-3">
-                                                        <span className="text-[13px] font-semibold leading-tight text-foreground/90 whitespace-normal">
-                                                            {display.product_name ?? "—"}
-                                                        </span>
-                                                        <div className="flex items-center gap-2 text-[11px] leading-none text-muted-foreground/80">
-                                                            <span className="flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 border border-muted-foreground/10 truncate">
-                                                                Code: <span className="font-medium text-foreground/80">{display.product_code ?? "—"}</span>
-                                                            </span>
-                                                            <span className="flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 border border-muted-foreground/10 truncate">
-                                                                Barcode: <span className="font-medium text-foreground/80">{display.barcode ?? "—"}</span>
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </PTableCell>
-                                            </PTableRow>
-                                        );
-                                    })}
-
-                                {!loading && totalGroups === 0 ? (
-                                    <PTableRow>
-                                        <PTableCell colSpan={3} className="py-10 text-center text-muted-foreground">
-                                            No products found.
-                                        </PTableCell>
-                                    </PTableRow>
-                                ) : null}
-                            </PTableBody>
-                        </PTable>
-                    </div>
-
-                    {/* RIGHT */}
-                    <div className="min-w-0 flex-1">
-                        <div className="sticky top-0 z-40 bg-background border-b shadow-md">
-                            <div className="overflow-hidden border-b">
-                                <div
-                                    className="w-max"
-                                    style={{ transform: `translateX(${-metrics.scrollLeft}px)` }}
-                                >
-                                    <PTable className="pmx-table w-max table-fixed border-t-0">
-                                        <colgroup>
-                                            {tiers.map((_, ti) =>
-                                                Array.from({ length: uomCount }).map((__, ui) => (
-                                                    <col key={`hcol-${ti}-${ui}`} style={{ width: PRICE_COL_WIDTH }} />
-                                                ))
-                                            )}
-                                        </colgroup>
-
-                                        <PTableHeader>
-                                            <PTableRow style={{ height: HEAD_ROW_H }}>
-                                                {tiers.map((t, ti) => {
-                                                    const st = tierStyle(ti);
-                                                    return (
-                                                        <PTableHead
-                                                            key={`htier-${String(t)}`}
-                                                            className={cn(
-                                                                headCellBase,
-                                                                st.head,
-                                                                st.border,
-                                                                "text-center uppercase tracking-wide",
-                                                                ti === 0 ? "" : "border-l"
-                                                            )}
-                                                            colSpan={uomCount}
-                                                        >
-                                                            <div style={{ height: HEAD_ROW_H }} className="flex items-center justify-center">
-                                                                {t === "LIST" ? "List Price" : t}
-                                                            </div>
-                                                        </PTableHead>
-                                                    );
-                                                })}
-                                            </PTableRow>
-
-                                            <PTableRow style={{ height: SUBHEAD_ROW_H }}>
-                                                {tiers.map((t, ti) => {
-                                                    const st = tierStyle(ti);
-
-                                                    if (!usedUnits.length) {
-                                                        return (
-                                                            <PTableHead
-                                                                key={`huom-${String(t)}-none`}
-                                                                className={cn(
-                                                                    subHeadCellBase,
-                                                                    st.head,
-                                                                    st.border,
-                                                                    "text-center",
-                                                                    ti === 0 ? "" : "border-l"
-                                                                )}
-                                                            >
-                                                                <div style={{ height: SUBHEAD_ROW_H }} className="flex items-center justify-center">UOM</div>
-                                                            </PTableHead>
-                                                        );
-                                                    }
-
-                                                    return usedUnits.map((u, uIndex) => (
-                                                        <PTableHead
-                                                            key={`huom-${String(t)}-${String(u.unit_id)}`}
-                                                            className={cn(
-                                                                subHeadCellBase,
-                                                                st.head,
-                                                                st.border,
-                                                                "text-center",
-                                                                ti === 0 && uIndex === 0 ? "" : "border-l"
-                                                            )}
-                                                        >
-                                                            <div style={{ height: SUBHEAD_ROW_H }} className="flex items-center justify-center">{unitLabel(u)}</div>
-                                                        </PTableHead>
-                                                    ));
-                                                })}
-                                            </PTableRow>
-                                        </PTableHeader>
-                                    </PTable>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            ref={priceScrollRef}
-                            onScroll={onPriceScroll}
-                            className="pmx-price-x relative overflow-x-auto overflow-y-hidden"
-                        >                            <div className="w-max min-w-full">
-                                <PTable className="pmx-table w-max table-fixed">
-                                    <colgroup>
-                                        {tiers.map((_, ti) =>
-                                            Array.from({ length: uomCount }).map((__, ui) => (
-                                                <col key={`bcol-${ti}-${ui}`} style={{ width: PRICE_COL_WIDTH }} />
-                                            ))
-                                        )}
-                                    </colgroup>
-
-                                    <PTableBody className={cn(loading && rows.length > 0 && "pmx-loading-row")}>
-                                        {loading && rows.length === 0 ? <LoadingRightBody rowCount={10} priceCols={priceCols} /> : null}
-
-                                        {rows.map((r) => {
-                                                const groupKey = String(r.group_id);
-                                                const hovered = hoverKey === groupKey;
-
-                                                return (
-                                                    <PTableRow
-                                                        key={`R-${groupKey}`}
-                                                        className={cn(hovered ? "bg-muted/30" : "hover:bg-muted/30")}
-                                                        style={{ height: BODY_ROW_H }}
-                                                        onMouseEnter={() => setHoverKey(groupKey)}
-                                                        onMouseLeave={() => setHoverKey(null)}
-                                                    >
-                                                        {tiers.map((tier, ti) => {
-                                                            const st = tierStyle(ti);
-
-                                                            if (!usedUnits.length) {
-                                                                return (
-                                                                    <PTableCell
-                                                                        key={`${groupKey}-${String(tier)}-none`}
-                                                                        className={cn("p-0 text-center border-b text-muted-foreground", st.cell, st.border, ti === 0 ? "" : "border-l")}
-                                                                        style={{ height: BODY_ROW_H, width: PRICE_COL_WIDTH }}
-                                                                    >
-                                                                        <div style={{ height: BODY_ROW_H }} className="flex items-center justify-center">—</div>
-                                                                    </PTableCell>
-                                                                );
-                                                            }
-
-                                                            return usedUnits.map((u, uIndex) => {
-                                                                const uomId = Number(u.unit_id);
-                                                                const byUnit = r.variantsByUnitId ?? {};
-                                                                const variant = byUnit[String(uomId)];
-                                                                const borderL = ti === 0 && uIndex === 0 ? "" : "border-l";
-
-                                                                if (!variant) {
-                                                                    return (
-                                                                        <PTableCell
-                                                                            key={`${groupKey}-${String(tier)}-${String(uomId)}-na`}
-                                                                            className={cn("p-0 text-center border-b text-muted-foreground", st.cell, st.border, borderL)}
-                                                                            style={{ height: BODY_ROW_H, width: PRICE_COL_WIDTH }}
-                                                                        >
-                                                                            <div style={{ height: BODY_ROW_H }} className="flex items-center justify-center">—</div>
-                                                                        </PTableCell>
-                                                                    );
-                                                                }
-
-                                                                const variantProductId = Number(variant.product.product_id);
-                                                                if (!Number.isFinite(variantProductId) || variantProductId <= 0) {
-                                                                    return (
-                                                                        <PTableCell
-                                                                            key={`${groupKey}-${String(tier)}-${String(uomId)}-bad`}
-                                                                            className={cn("p-0 text-center border-b text-muted-foreground", st.cell, st.border, borderL)}
-                                                                            style={{ height: BODY_ROW_H, width: PRICE_COL_WIDTH }}
-                                                                        >
-                                                                            <div style={{ height: BODY_ROW_H }} className="flex items-center justify-center">—</div>
-                                                                        </PTableCell>
-                                                                    );
-                                                                }
-
-                                                                const base = toNullableNumber(variant.tiers?.[tier]);
-                                                                const val = matrix.getCellValue(variantProductId, tier, base);
-                                                                const pending = matrix.getPendingValue(variantProductId, tier);
-                                                                const dirty = matrix.isDirty(variantProductId, tier);
-                                                                const err = toErrorString(matrix.getError(variantProductId, tier));
-
-                                                                return (
-                                                                    <PTableCell
-                                                                        key={`${groupKey}-${String(tier)}-${String(uomId)}`}
-                                                                        className={cn("p-0 border-b", st.cell, st.border, borderL)}
-                                                                        style={{ height: BODY_ROW_H, width: PRICE_COL_WIDTH }}
-                                                                    >
-                                                                        <div style={{ height: BODY_ROW_H }} className="flex items-center justify-center px-3">
-                                                                            <div className="w-full">
-                                                                                <PriceCell
-                                                                                    value={val}
-                                                                                    pendingValue={pending}
-                                                                                    dirty={dirty}
-                                                                                    error={err}
-                                                                                    onChange={(raw) => matrix.setCell(variantProductId, tier, raw)}
-                                                                                />
-                                                                            </div>
-                                                                        </div>
-                                                                    </PTableCell>
-                                                                );
-                                                            });
-                                                        })}
-                                                    </PTableRow>
-                                                );
-                                            })}
-                                    </PTableBody>
-                                </PTable>
-                            </div>
-                        </div>
-
-                        <div className="border-t bg-background/60 px-3 py-2">
-                            <div
-                                ref={trackRef}
-                                onMouseDown={onTrackClick}
-                                className={cn(
-                                    "relative h-3 w-full rounded-full bg-muted/70 ring-1 ring-border/60",
-                                    maxScrollLeft <= 0 ? "opacity-40" : "opacity-100"
-                                )}
-                            >
-                                <div
-                                    role="slider"
-                                    aria-label="Horizontal scroll"
-                                    aria-valuemin={0}
-                                    aria-valuemax={maxScrollLeft}
-                                    aria-valuenow={metrics.scrollLeft}
-                                    tabIndex={0}
-                                    onMouseDown={onThumbMouseDown}
-                                    className={cn(
-                                        "absolute top-0 h-3 rounded-full",
-                                        "bg-foreground/30 hover:bg-foreground/40 active:bg-foreground/50",
-                                        "cursor-grab active:cursor-grabbing"
-                                    )}
-                                    style={{ width: `${thumbWidth}px`, transform: `translateX(${thumbX}px)` }}
-                                />
-                            </div>
-                        </div>
-                    </div>
+            <div className="flex shrink-0 flex-col gap-2 border-b bg-muted/20 px-3 py-2 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                    <div className="text-sm font-semibold text-foreground">{priceViewLabel}</div>
+                    <div className="text-xs text-muted-foreground">{priceViewHelp}</div>
+                </div>
+                <div className="inline-flex w-fit items-center rounded-md border bg-background p-1">
+                    <Button
+                        type="button"
+                        variant={viewMode === "table" ? "secondary" : "ghost"}
+                        size="sm"
+                        className="h-8 gap-1.5 px-2"
+                        onClick={() => setManualViewMode("table")}
+                        title="Table view"
+                    >
+                        <Table2 className="h-4 w-4" />
+                        <span>Table</span>
+                    </Button>
+                    <Button
+                        type="button"
+                        variant={viewMode === "cards" ? "secondary" : "ghost"}
+                        size="sm"
+                        className="h-8 gap-1.5 px-2"
+                        onClick={() => setManualViewMode("cards")}
+                        title="Card view"
+                    >
+                        <LayoutGrid className="h-4 w-4" />
+                        <span>Cards</span>
+                    </Button>
                 </div>
             </div>
 
-            <div className="flex flex-col gap-2 border-t bg-background/60 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-h-0 flex-1 flex-col">
+                {viewMode === "table" ? (
+                    <PricingProductBlocks
+                        matrix={matrix}
+                        rows={rows}
+                        tiers={tiers}
+                        usedUnits={usedUnits}
+                        loading={loading}
+                        totalGroups={totalGroups}
+                        getSetCellHandler={getSetCellHandler}
+                        listKey={listKey}
+                    />
+                ) : (
+                    <PricingCards
+                        matrix={matrix}
+                        rows={rows}
+                        tiers={tiers}
+                        usedUnits={usedUnits}
+                        loading={loading}
+                        totalGroups={totalGroups}
+                        getSetCellHandler={getSetCellHandler}
+                        listKey={listKey}
+                    />
+                )}
+            </div>
+
+            <div className="flex shrink-0 flex-col gap-2 border-t bg-background/60 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     {loading ? (
                         <>
@@ -753,13 +809,13 @@ export default function PricingTable({ matrix }: Props) {
                         <>
                             <span>
                                 Showing{" "}
-                                <span className="font-medium text-foreground">{totalGroups === 0 ? 0 : startIndex + 1}</span> –{" "}
+                                <span className="font-medium text-foreground">{totalGroups === 0 ? 0 : startIndex + 1}</span> -{" "}
                                 <span className="font-medium text-foreground">{endIndex}</span> of{" "}
                                 <span className="font-medium text-foreground">{totalGroups}</span> groups
                             </span>
                             {totalVariants > 0 ? (
                                 <>
-                                    <span className="hidden sm:inline">•</span>
+                                    <span className="hidden sm:inline">|</span>
                                     <span>
                                         <span className="font-medium text-foreground">{totalVariants}</span> variants
                                     </span>
