@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { parseApprovalSearchQuery } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
+import { appendDisplayStatusFilter } from "../_approvalStatusPolicy";
 import { fetchPendingCcrByProductIds } from "../_fetchPendingByProductIds";
 import { appendProductIdInFilter, getSupplierScopedProductIdsForSuppliers, resolveSupplierIds } from "../_supplierFilters";
 import { isCostBatchStorageSetupError } from "../cost-change-batches/_batch";
@@ -146,32 +147,6 @@ function norm(v: string | null) {
     const s = String(v ?? "").trim();
     if (!s || s === "undefined" || s === "null") return "";
     return s;
-}
-
-function appendDisplayStatusFilter(params: URLSearchParams, andIdx: number, status: string): number {
-    const normalized = status.trim().toUpperCase();
-    if (!normalized) return andIdx;
-
-    const addAnd = (suffix: string, value: string) => {
-        params.set(`filter[_and][${andIdx}]${suffix}`, value);
-        andIdx += 1;
-    };
-
-    if (["SCHEDULED", "APPLYING", "FAILED"].includes(normalized)) {
-        addAnd("[status][_eq]", "APPROVED");
-        addAnd("[application_status][_eq]", normalized);
-        return andIdx;
-    }
-
-    if (normalized === "APPROVED") {
-        addAnd("[status][_eq]", "APPROVED");
-        params.set(`filter[_and][${andIdx}][_or][0][application_status][_nin]`, "SCHEDULED,APPLYING,FAILED");
-        params.set(`filter[_and][${andIdx}][_or][1][application_status][_null]`, "true");
-        return andIdx + 1;
-    }
-
-    addAnd("[status][_eq]", normalized);
-    return andIdx;
 }
 
 function unwrapErrorMessage(error: unknown): string {
