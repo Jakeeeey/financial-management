@@ -19,7 +19,7 @@ export async function GET() {
         const headers = getHeaders();
 
         // 1. Fetch salesmen
-        const salesmenUrl = `${DIRECTUS_URL}/items/salesman?limit=-1&sort=salesman_name&filter[isActive][_eq]=1&fields=id,salesman_code,salesman_name,operation.id,operation.operation_name,price_type`;
+        const salesmenUrl = `${DIRECTUS_URL}/items/salesman?limit=-1&sort=salesman_name&fields=id,salesman_code,salesman_name,operation.id,operation.operation_name,price_type`;
         // 2. Fetch customers (querying raw payment_term ID field)
         const customersUrl = `${DIRECTUS_URL}/items/customer?limit=-1&sort=customer_name&filter[isActive][_eq]=1&fields=id,customer_code,customer_name,payment_term`;
         // 3. Fetch invoice types
