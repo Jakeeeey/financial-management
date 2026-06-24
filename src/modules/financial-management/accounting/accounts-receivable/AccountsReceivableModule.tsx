@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useMemo } from 'react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
+import { useState, useMemo, useCallback, useDeferredValue } from 'react';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -15,13 +13,29 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useAccountsReceivable } from './hooks/useAccountsReceivable';
-import { AgingChart } from './components/AgingChart';
-import { SalesmanChart } from './components/SalesmanChart';
 import { InvoiceTable } from './components/InvoiceTable';
-import { DrilldownChart } from './components/DrilldownChart';
-import { InvoiceDetailSheet } from './components/InvoiceDetailSheet';
-import type { Invoice } from './types';
-import { deriveMetrics, deriveAgingData, formatPeso, generateAIInsights } from './utils';
+import type { Invoice, ARTableFilters } from './types';
+import { formatPeso, generateAIInsights } from './utils';
+
+const ChartSkeleton = () => <Skeleton className="h-48 w-full rounded-lg" />;
+const DrilldownSkeleton = () => <Skeleton className="h-64 w-full rounded-lg" />;
+
+const AgingChart = dynamic(
+  () => import('./components/AgingChart').then((m) => m.AgingChart),
+  { ssr: false, loading: () => <ChartSkeleton /> },
+);
+const SalesmanChart = dynamic(
+  () => import('./components/SalesmanChart').then((m) => m.SalesmanChart),
+  { ssr: false, loading: () => <ChartSkeleton /> },
+);
+const DrilldownChart = dynamic(
+  () => import('./components/DrilldownChart').then((m) => m.DrilldownChart),
+  { ssr: false, loading: () => <DrilldownSkeleton /> },
+);
+const InvoiceDetailSheet = dynamic(
+  () => import('./components/InvoiceDetailSheet').then((m) => m.InvoiceDetailSheet),
+  { ssr: false },
+);
 
 // ── Compact stat pill ────────────────────────────────────────────────────────
 function Stat({
@@ -109,10 +123,6 @@ function Stat({
 }
 
 export default function AccountsReceivableModule() {
-  const { loading, error, invoices, agingData, salesmanData, metrics, operationData } =
-      useAccountsReceivable();
-
-  const [page, setPage]         = useState(1);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo]     = useState('');
   const [customer, setCustomer] = useState('');
@@ -125,124 +135,67 @@ export default function AccountsReceivableModule() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAIInsights, setShowAIInsights] = useState(false);
 
-  // ── Filter option lists ────────────────────────────────────────────────────
-  const customerOptions = useMemo(
-      () => Array.from(new Set(invoices.map((inv) => inv.customer))).sort(),
-      [invoices]
-  );
-  const clusterOptions = useMemo(
-      () => Array.from(new Set(invoices.map((inv) => inv.cluster).filter((c) => c && c !== 'Unassigned'))).sort(),
-      [invoices]
-  );
-  const salesmanOptions = useMemo(
-      () => Array.from(new Set(invoices.map((inv) => inv.salesman).filter((s) => s && s !== 'Unknown'))).sort(),
-      [invoices]
-  );
-  const divisionOptions = useMemo(
-      () => Array.from(new Set(invoices.map((inv) => inv.division).filter((d) => d && d !== '—'))).sort(),
-      [invoices]
-  );
-  const operationOptions = useMemo(
-      () => operationData.map((op) => ({ value: String(op.id), label: op.name })),
-      [operationData]
-  );
+  const deferredSearch = useDeferredValue(searchQuery);
 
-  const filteredInvoices = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return invoices.filter((inv) => {
-      const invDate = inv.invoiceDate ? inv.invoiceDate.split(' ')[0] : '';
-      if (dateFrom && invDate && invDate < dateFrom) return false;
-      if (dateTo   && invDate && invDate > dateTo)   return false;
-      if (customer && inv.customer !== customer) return false;
-      if (cluster  && inv.cluster  !== cluster)  return false;
-      if (salesman && inv.salesman !== salesman)  return false;
-      if (division && inv.division !== division)  return false;
-      if (operation && String(inv.salesType) !== String(operation)) return false;
-      if (q) {
-        const matchesInvoice = inv.invoiceNo.toLowerCase().includes(q);
-        const matchesCustomer = inv.customer.toLowerCase().includes(q);
-        if (!matchesInvoice && !matchesCustomer) return false;
-      }
-      return true;
-    });
-  }, [invoices, dateFrom, dateTo, customer, cluster, salesman, division, operation, searchQuery]);
+  const activeFilters: ARTableFilters = useMemo(() => ({
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    customer: customer || undefined,
+    cluster: cluster || undefined,
+    salesman: salesman || undefined,
+    division: division || undefined,
+    operation: operation || undefined,
+    search: deferredSearch || undefined,
+  }), [dateFrom, dateTo, customer, cluster, salesman, division, operation, deferredSearch]);
+
+  const {
+    loading,
+    tableLoading,
+    error,
+    invoices,
+    agingData,
+    salesmanData,
+    metrics,
+    operationData,
+    filterOptions,
+    customerGroups,
+    tablePage,
+    tableTotalPages,
+    totalInvoices,
+    filteredCount,
+    totalGroups,
+    tableSort,
+    setTablePage,
+    onTableSortChange,
+  } = useAccountsReceivable(activeFilters);
 
   const isFiltered = !!(dateFrom || dateTo || customer || cluster || salesman || division || operation || searchQuery);
 
-  // ── Derived display data ───────────────────────────────────────────────────
-  const filteredSalesmanMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    filteredInvoices.forEach((inv) => {
-      map[inv.salesman] = (map[inv.salesman] || 0) + inv.outstanding;
-    });
-    return map;
-  }, [filteredInvoices]);
-
-  const filteredMetrics = useMemo(
-      () => isFiltered ? deriveMetrics(filteredInvoices) : metrics,
-      [filteredInvoices, isFiltered, metrics]
-  );
-
-  const displaySalesmanData = useMemo(() => {
-    if (!isFiltered) return salesmanData;
-    return Object.entries(filteredSalesmanMap)
-        .map(([name, value]) => {
-          const original = salesmanData.find(s => s.name === name);
-          return {
-            name,
-            value,
-            unposted: original?.unposted ?? 0
-          };
-        })
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 6);
-  }, [filteredSalesmanMap, isFiltered, salesmanData]);
-
-  const displayInvoices  = isFiltered ? filteredInvoices : invoices;
-  const displayAgingData = useMemo(
-      () => isFiltered ? deriveAgingData(filteredInvoices) : agingData,
-      [filteredInvoices, isFiltered, agingData]
-  );
-
   const aiInsights = useMemo(() => {
-    return generateAIInsights(displayInvoices, filteredMetrics);
-  }, [displayInvoices, filteredMetrics]);
+    return generateAIInsights(invoices, metrics);
+  }, [invoices, metrics]);
 
-  // ── Exact per-operation data when filtered (uses real salesType on Invoice) ─
-  const displayOperationData = useMemo(() => {
-    if (!isFiltered) return operationData;
-    const agg = new Map<number | null, { name: string; code: string | null; totalOutstanding: number; count: number }>();
-    for (const inv of filteredInvoices) {
-      const key = inv.salesType;
-      if (!agg.has(key)) {
-        const op = operationData.find((o) => o.id === key);
-        agg.set(key, {
-          name:             op?.name ?? 'Unknown',
-          code:             op?.code ?? null,
-          totalOutstanding: 0,
-          count:            0,
-        });
-      }
-      const e = agg.get(key)!;
-      e.totalOutstanding += inv.outstanding;
-      e.count += 1;
-    }
-    return Array.from(agg.entries())
-        .map(([id, v]) => ({ id: id as number | null, ...v }))
-        .sort((a, b) => b.totalOutstanding - a.totalOutstanding);
-  }, [isFiltered, filteredInvoices, operationData]);
-
-  const { totalReceivable, totalOutstanding, totalUnposted, realOutstanding, overdueInvoices, avgOverdue } = filteredMetrics;
+  const { totalReceivable, totalOutstanding, totalUnposted, realOutstanding, avgOverdue, overdueCount } = metrics;
 
   const clearFilters = () => {
-    setDateFrom(''); setDateTo(''); setCustomer(''); setCluster(''); setSalesman(''); setDivision(''); setOperation(''); setSearchQuery(''); setPage(1);
+    setDateFrom(''); setDateTo(''); setCustomer(''); setCluster(''); setSalesman(''); setDivision(''); setOperation(''); setSearchQuery(''); setTablePage(1);
   };
 
-  // ── PDF export ─────────────────────────────────────────────────────────────
-  const exportToPDF = () => {
-    const doc   = new jsPDF({ orientation: 'landscape', format: 'a3' });
+  const handleRowClick = useCallback((inv: Invoice) => {
+    setSelectedInvoice(inv);
+    setIsDetailOpen(true);
+  }, []);
+
+  // ── PDF export (lazy-loaded) ─────────────────────────────────────────────
+  const exportToPDF = async () => {
+    const [{ default: jsPDF }, autoTableModule] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
+    const autoTable = autoTableModule.default;
+    const doc = new jsPDF({ orientation: 'landscape', format: 'a3' });
     const pageW = doc.internal.pageSize.getWidth();
-    const total = filteredMetrics.totalOutstanding;
+    const total = metrics.totalOutstanding;
     const formattedTotal = `PHP ${total.toLocaleString('en-PH', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -269,7 +222,7 @@ export default function AccountsReceivableModule() {
         `From: ${dateFrom || 'N/A'}   To: ${dateTo || 'N/A'}   Customer: ${customer || 'All'}   Cluster: ${cluster || 'All'}   Salesman: ${salesman || 'All'}   Division: ${division || 'All'}`;
     doc.text(filterInfo, 10, 26);
     doc.text(
-        `Exported: ${new Date().toLocaleString('en-PH')}   Total Records: ${displayInvoices.length}`,
+        `Exported: ${new Date().toLocaleString('en-PH')}   Total Records: ${invoices.length}`,
         10, 31
     );
     doc.setTextColor(0);
@@ -300,7 +253,7 @@ export default function AccountsReceivableModule() {
         'inv #', 'Customer', 'Salesman', 'Division', 'SCode', 'Inv. Date', 'Del Date', 'Due Date',
         'Net Receivable', 'Paid', 'Outstanding', 'Overdue', 'AR Status', 'Payment Status', 'Transaction Status',
       ]],
-      body: displayInvoices.map((inv) => [
+      body: invoices.map((inv) => [
         inv.invoiceNo,
         inv.customer,
         inv.salesman,
@@ -339,9 +292,10 @@ export default function AccountsReceivableModule() {
     doc.save(`ar-export-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  // ── Excel export ───────────────────────────────────────────────────────────
-  const exportToExcel = () => {
-    const excelData = displayInvoices.map((inv) => ({
+  // ── Excel export (lazy-loaded) ───────────────────────────────────────────
+  const exportToExcel = async () => {
+    const XLSX = await import('xlsx');
+    const excelData = invoices.map((inv) => ({
       'inv #': inv.invoiceNo,
       'Customer': inv.customer,
       'Salesman': inv.salesman,
@@ -372,7 +326,7 @@ export default function AccountsReceivableModule() {
       'Due Date': '',
       'Net Receivable': '',
       'Paid': '',
-      'Outstanding': filteredMetrics.totalOutstanding,
+      'Outstanding': metrics.totalOutstanding,
       'Overdue': '',
       'AR Status': '',
       'Payment Status': '',
@@ -421,7 +375,7 @@ export default function AccountsReceivableModule() {
               Unpaid · excl. posted &amp; fully paid
               {isFiltered && (
                   <span className="ml-2 font-semibold text-foreground">
-                {displayInvoices.length}/{invoices.length} shown
+                {filteredCount}/{totalInvoices} shown
               </span>
               )}
             </p>
@@ -533,7 +487,7 @@ export default function AccountsReceivableModule() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
             <Input
               value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+              onChange={(e) => { setSearchQuery(e.target.value); setTablePage(1); }}
               placeholder="Search Customer / Invoice..."
               className="h-7 pl-8 text-[10px] focus-visible:ring-1 bg-background border-border/60"
             />
@@ -568,7 +522,7 @@ export default function AccountsReceivableModule() {
                   }
                   setDateFrom(fromDate);
                   setDateTo(toDate);
-                  setPage(1);
+                  setTablePage(1);
               }}
           >
             <SelectTrigger className="h-7 w-[95px] text-[10px] bg-background border border-border/60">
@@ -588,7 +542,7 @@ export default function AccountsReceivableModule() {
             <Input
                 type="date"
                 value={dateFrom}
-                onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+                onChange={(e) => { setDateFrom(e.target.value); setTablePage(1); }}
                 className="h-auto border-0 p-0 text-[10px] focus-visible:ring-0 shadow-none w-[96px] bg-transparent"
             />
           </div>
@@ -598,63 +552,63 @@ export default function AccountsReceivableModule() {
             <Input
                 type="date"
                 value={dateTo}
-                onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+                onChange={(e) => { setDateTo(e.target.value); setTablePage(1); }}
                 className="h-auto border-0 p-0 text-[10px] focus-visible:ring-0 shadow-none w-[96px] bg-transparent"
             />
           </div>
 
           <SearchableSelect
               value={customer}
-              onValueChange={(val) => { setCustomer(val); setPage(1); }}
+              onValueChange={(val) => { setCustomer(val); setTablePage(1); }}
               placeholder="All Customers"
               className="h-7 w-[160px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
               options={[
                 { value: '', label: 'All Customers' },
-                ...customerOptions.map((name) => ({ value: name, label: name })),
+                ...filterOptions.customers.map((name) => ({ value: name, label: name })),
               ]}
           />
 
           <SearchableSelect
               value={cluster}
-              onValueChange={(val) => { setCluster(val); setPage(1); }}
+              onValueChange={(val) => { setCluster(val); setTablePage(1); }}
               placeholder="All Clusters"
               className="h-7 w-[130px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
               options={[
                 { value: '', label: 'All Clusters' },
-                ...clusterOptions.map((name) => ({ value: name, label: name })),
+                ...filterOptions.clusters.map((name) => ({ value: name, label: name })),
               ]}
           />
 
           <SearchableSelect
               value={salesman}
-              onValueChange={(val) => { setSalesman(val); setPage(1); }}
+              onValueChange={(val) => { setSalesman(val); setTablePage(1); }}
               placeholder="All Salesmen"
               className="h-7 w-[150px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
               options={[
                 { value: '', label: 'All Salesmen' },
-                ...salesmanOptions.map((name) => ({ value: name, label: name })),
+                ...filterOptions.salesmen.map((name) => ({ value: name, label: name })),
               ]}
           />
 
           <SearchableSelect
               value={division}
-              onValueChange={(val) => { setDivision(val); setPage(1); }}
+              onValueChange={(val) => { setDivision(val); setTablePage(1); }}
               placeholder="All Divisions"
               className="h-7 w-[150px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
               options={[
                 { value: '', label: 'All Divisions' },
-                ...divisionOptions.map((name) => ({ value: name, label: name })),
+                ...filterOptions.divisions.map((name) => ({ value: name, label: name })),
               ]}
           />
 
           <SearchableSelect
               value={operation}
-              onValueChange={(val) => { setOperation(val); setPage(1); }}
+              onValueChange={(val) => { setOperation(val); setTablePage(1); }}
               placeholder="All Operations"
               className="h-7 w-[150px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
               options={[
                 { value: '', label: 'All Operations' },
-                ...operationOptions,
+                ...filterOptions.operations,
               ]}
           />
 
@@ -671,7 +625,7 @@ export default function AccountsReceivableModule() {
           <Stat
               label="Total Receivable"
               value={formatPeso(totalReceivable)}
-              sub={`${displayInvoices.length} invoices`}
+              sub={`${filteredCount} invoices`}
               icon={<PhilippinePeso className="h-3.5 w-3.5" />}
               type="receivable"
           />
@@ -693,63 +647,70 @@ export default function AccountsReceivableModule() {
                   <div className="font-bold text-sm border-b border-border pb-1.5 flex items-center justify-between">
                     <span>Reconciliation Summary</span>
                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wide">
-                      Unposted Pool
+                      {isFiltered ? 'Filtered Scope' : 'Unposted Pool'}
                     </span>
                   </div>
-                  
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    The total cash/checks collected across the system in unposted pouches is <strong>{formatPeso(metrics.totalUnposted || 51257911.32)}</strong>.
-                  </p>
 
-                  <div className="space-y-2 pt-1">
-                    <div className="flex justify-between items-center text-[11px]">
-                      <span className="text-muted-foreground font-semibold">Total Pool Value:</span>
-                      <span className="font-bold">{formatPeso(metrics.totalUnposted || 51257911.32)}</span>
-                    </div>
-
-                    <div className="space-y-2 pl-2 border-l-2 border-border/80">
-                      <div className="space-y-0.5">
-                        <div className="flex justify-between items-center text-[10px]">
-                          <span className="text-muted-foreground font-medium">1. Unallocated Advances:</span>
-                          <span className="font-semibold">{formatPeso(metrics.unpostedUnallocated ?? 41384595.26)}</span>
-                        </div>
-                        <p className="text-[9px] text-muted-foreground/75 leading-tight">
-                          Deposits or advance payments not yet allocated to any specific invoice.
-                        </p>
-                      </div>
-
-                      <div className="space-y-0.5">
-                        <div className="flex justify-between items-center text-[10px]">
-                          <span className="text-muted-foreground font-medium">2. Paid/Posted Invoices:</span>
-                          <span className="font-semibold">{formatPeso(metrics.unpostedAllocationsPaid ?? 7630881.61)}</span>
-                        </div>
-                        <p className="text-[9px] text-muted-foreground/75 leading-tight">
-                          Allocations to invoices that are already settled and excluded from this active outstanding AR grid.
-                        </p>
-                      </div>
-
-                      <div className="space-y-0.5">
-                        <div className="flex justify-between items-center text-[10px]">
-                          <span className="text-purple-600 dark:text-purple-400 font-semibold">3. Outstanding AR Allocations:</span>
-                          <span className="font-bold text-purple-600 dark:text-purple-400">{formatPeso(metrics.unpostedAllocationsActive ?? 2242434.45)}</span>
-                        </div>
-                        <p className="text-[9px] text-muted-foreground/75 leading-tight">
-                          Active allocations applied directly to outstanding unpaid invoices.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {isFiltered && (
-                    <div className="bg-muted/50 p-2 rounded-lg space-y-1 text-[10px] border border-muted-foreground/10">
-                      <div className="flex justify-between items-center font-bold">
-                        <span className="text-foreground">Current Active Filters:</span>
-                        <span className="text-purple-600 dark:text-purple-400">{formatPeso(totalUnposted)}</span>
-                      </div>
-                      <p className="text-[9px] text-muted-foreground/90 leading-tight">
-                        Only the active allocations (Category 3) matching your current division/salesman filters are summarized here.
+                  {isFiltered ? (
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        Unposted allocations tied to the invoices matching your current filters total <strong>{formatPeso(totalUnposted)}</strong>.
                       </p>
+                      <div className="bg-muted/50 p-2 rounded-lg space-y-1 text-[10px] border border-muted-foreground/10">
+                        <div className="flex justify-between items-center font-bold">
+                          <span className="text-foreground">Outstanding AR Allocations (filtered):</span>
+                          <span className="text-purple-600 dark:text-purple-400">{formatPeso(metrics.unpostedAllocationsActive ?? totalUnposted)}</span>
+                        </div>
+                        <p className="text-[9px] text-muted-foreground/90 leading-tight">
+                          Active unposted allocations applied to the filtered outstanding invoices only.
+                        </p>
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        The total cash/checks collected across the system in unposted pouches is <strong>{formatPeso(metrics.totalUnposted)}</strong>.
+                      </p>
+
+                      <div className="space-y-2 pt-1">
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-muted-foreground font-semibold">Total Pool Value:</span>
+                          <span className="font-bold">{formatPeso(metrics.totalUnposted)}</span>
+                        </div>
+
+                        <div className="space-y-2 pl-2 border-l-2 border-border/80">
+                          <div className="space-y-0.5">
+                            <div className="flex justify-between items-center text-[10px]">
+                              <span className="text-muted-foreground font-medium">1. Unallocated Advances:</span>
+                              <span className="font-semibold">{formatPeso(metrics.unpostedUnallocated ?? 0)}</span>
+                            </div>
+                            <p className="text-[9px] text-muted-foreground/75 leading-tight">
+                              Deposits or advance payments not yet allocated to any specific invoice.
+                            </p>
+                          </div>
+
+                          <div className="space-y-0.5">
+                            <div className="flex justify-between items-center text-[10px]">
+                              <span className="text-muted-foreground font-medium">2. Paid/Posted Invoices:</span>
+                              <span className="font-semibold">{formatPeso(metrics.unpostedAllocationsPaid ?? 0)}</span>
+                            </div>
+                            <p className="text-[9px] text-muted-foreground/75 leading-tight">
+                              Allocations to invoices that are already settled and excluded from this active outstanding AR grid.
+                            </p>
+                          </div>
+
+                          <div className="space-y-0.5">
+                            <div className="flex justify-between items-center text-[10px]">
+                              <span className="text-purple-600 dark:text-purple-400 font-semibold">3. Outstanding AR Allocations:</span>
+                              <span className="font-bold text-purple-600 dark:text-purple-400">{formatPeso(metrics.unpostedAllocationsActive ?? 0)}</span>
+                            </div>
+                            <p className="text-[9px] text-muted-foreground/75 leading-tight">
+                              Active allocations applied directly to outstanding unpaid invoices.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               }
@@ -764,7 +725,7 @@ export default function AccountsReceivableModule() {
           <Stat
               label="Avg Days Overdue"
               value={`${avgOverdue}d`}
-              sub={`across ${overdueInvoices.length} invoices`}
+              sub={`across ${overdueCount ?? 0} invoices`}
               icon={<Clock className="h-3.5 w-3.5" />}
               type="overdue"
           />
@@ -772,26 +733,29 @@ export default function AccountsReceivableModule() {
 
         {/* ── Charts Row 1: Aging + Salesman ── */}
         <div className="grid gap-2 md:grid-cols-2 min-w-0 w-full">
-          <AgingChart data={displayAgingData} isFiltered={isFiltered} />
-          <SalesmanChart data={displaySalesmanData} isFiltered={isFiltered} />
+          <AgingChart data={agingData} isFiltered={isFiltered} />
+          <SalesmanChart data={salesmanData} isFiltered={isFiltered} />
         </div>
 
-        {/* ── Drill-down: Operation → Division → Salesman → Customer ── */}
         <DrilldownChart
-            operationData={displayOperationData}
-            invoices={displayInvoices}
+            operationData={operationData}
+            invoices={invoices}
             isFiltered={isFiltered}
         />
 
-        {/* ── Table ── */}
         <InvoiceTable
-            invoices={displayInvoices}
-            page={page}
-            setPage={setPage}
-            onRowClick={(inv) => {
-              setSelectedInvoice(inv);
-              setIsDetailOpen(true);
-            }}
+            serverMode
+            customerGroups={customerGroups}
+            page={tablePage}
+            setPage={setTablePage}
+            totalPages={tableTotalPages}
+            totalInvoiceCount={filteredCount}
+            totalGroupCount={totalGroups}
+            tableLoading={tableLoading}
+            sortKey={tableSort.sortKey}
+            sortOrder={tableSort.sortOrder}
+            onSortChange={onTableSortChange}
+            onRowClick={handleRowClick}
         />
 
         <InvoiceDetailSheet

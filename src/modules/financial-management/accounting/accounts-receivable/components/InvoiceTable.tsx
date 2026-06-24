@@ -1,9 +1,9 @@
 // src/modules/financial-management/accounting/accounts-receivable/components/InvoiceTable.tsx
 
-import React, { useMemo, useState, Fragment } from 'react';
+import React, { useMemo, useState, Fragment, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Input } from '@/components/ui/input';
 import {
   Pagination, PaginationContent, PaginationItem,
   PaginationLink, PaginationPrevious, PaginationNext, PaginationEllipsis,
@@ -15,10 +15,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, ChevronDown, ChevronUp, ChevronRight, ChevronsUpDown, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, ChevronsUpDown, X } from 'lucide-react';
 import { cn } from "@/lib/utils";
-import { formatPeso, formatDate, getPageNumbers } from '../utils';
-import type { Invoice } from '../types';
+import { formatPeso, formatDate, getPageNumbers, mapARRowToInvoice, sortCustomerGroups } from '../utils';
+import type { Invoice, CustomerGroup } from '../types';
 
 const PAGE_SIZE = 10;
 
@@ -134,42 +134,231 @@ function SortableHeader<T>({
 }
 
 interface InvoiceTableProps {
-  invoices: Invoice[];
+  invoices?: Invoice[];
+  customerGroups?: CustomerGroup[];
+  serverMode?: boolean;
   page:     number;
   setPage:  (p: number | ((prev: number) => number)) => void;
+  totalPages?: number;
+  totalInvoiceCount?: number;
+  totalGroupCount?: number;
+  tableLoading?: boolean;
+  sortKey?: keyof Invoice | null;
+  sortOrder?: 'asc' | 'desc' | null;
+  onSortChange?: (key: keyof Invoice | null, order: 'asc' | 'desc' | null) => void;
   onRowClick?: (invoice: Invoice) => void;
 }
 
-export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTableProps) {
-  const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<keyof Invoice | null>(null);
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
+const VIRTUALIZE_THRESHOLD = 15;
+const INVOICE_ROW_HEIGHT = 44;
+const MAX_VIRTUAL_LIST_HEIGHT = 320;
+
+const INVOICE_TABLE_COL_WIDTHS = [
+  '8%', '10%', '8%', '6%', '6%', '6%', '6%', '6%',
+  '7%', '6%', '7%', '5%', '6%', '6%', '7%',
+] as const;
+
+function InvoiceTableColGroup() {
+  return (
+    <colgroup>
+      {INVOICE_TABLE_COL_WIDTHS.map((width, i) => (
+        <col key={i} style={{ width }} />
+      ))}
+    </colgroup>
+  );
+}
+
+function VirtualInvoiceRows({
+  invoices,
+  onRowClick,
+}: {
+  invoices: Invoice[];
+  onRowClick?: (invoice: Invoice) => void;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: invoices.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => INVOICE_ROW_HEIGHT,
+    overscan: 5,
+  });
+
+  if (invoices.length <= VIRTUALIZE_THRESHOLD) {
+    return (
+      <>
+        {invoices.map((inv, idx) => (
+          <InvoiceChildRow
+            key={`${inv.invoiceNo}-${idx}`}
+            inv={inv}
+            isLast={idx === invoices.length - 1}
+            onRowClick={onRowClick}
+          />
+        ))}
+      </>
+    );
+  }
+
+  const listHeight = Math.min(
+    invoices.length * INVOICE_ROW_HEIGHT,
+    MAX_VIRTUAL_LIST_HEIGHT,
+  );
+
+  return (
+    <TableRow className="hover:bg-transparent border-0">
+      <TableCell colSpan={15} className="p-0">
+        <div
+          ref={parentRef}
+          className="overflow-auto"
+          style={{ height: listHeight }}
+        >
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const inv = invoices[virtualRow.index];
+              return (
+                <div
+                  key={virtualRow.key}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <table className="w-full table-fixed">
+                    <InvoiceTableColGroup />
+                    <tbody>
+                      <InvoiceChildRow inv={inv} isLast={virtualRow.index === invoices.length - 1} onRowClick={onRowClick} asTableRow />
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function InvoiceChildRow({
+  inv,
+  isLast,
+  onRowClick,
+  asTableRow = false,
+}: {
+  inv: Invoice;
+  isLast: boolean;
+  onRowClick?: (invoice: Invoice) => void;
+  asTableRow?: boolean;
+}) {
+  const row = (
+    <>
+      <TableCell className="py-2 pl-8 relative">
+        {isLast ? (
+          <div className="absolute left-5 top-0 h-[22px] w-px bg-border/80 dark:bg-border/45" />
+        ) : (
+          <div className="absolute left-5 top-0 bottom-0 w-px bg-border/80 dark:bg-border/45" />
+        )}
+        <div className="absolute left-5 top-[22px] w-3 h-px bg-border/80 dark:bg-border/45" />
+        <div className="flex flex-col gap-0.5 min-w-0 pl-2.5">
+          <span className="font-bold text-primary/95 text-xs truncate block w-full" title={inv.invoiceNo}>{inv.invoiceNo}</span>
+          {inv.isPosted ? (
+            <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8px] font-semibold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/15 uppercase">Posted</span>
+          ) : (
+            <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8px] font-semibold tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/15 uppercase">Draft</span>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="py-2 text-muted-foreground/45 text-[10px] italic">└─ detail</TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.salesman}>{inv.salesman || <span className="text-muted-foreground/30">—</span>}</span></TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.division}>{inv.division || <span className="text-muted-foreground/30">—</span>}</span></TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.salesmanCode}>{inv.salesmanCode || <span className="text-muted-foreground/30">—</span>}</span></TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground whitespace-nowrap block">{formatDate(inv.invoiceDate)}</span></TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground whitespace-nowrap block">{formatDate(inv.deliveryDate)}</span></TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground whitespace-nowrap block">{formatDate(inv.due)}</span></TableCell>
+      <TableCell className="py-2 text-right"><span className="text-xs font-medium text-muted-foreground/90">{formatPeso(inv.netReceivable)}</span></TableCell>
+      <TableCell className="py-2 text-right"><span className="text-xs font-medium text-muted-foreground/90">{formatPeso(inv.totalPaid)}</span></TableCell>
+      <TableCell className="py-2 text-right font-semibold tabular-nums text-foreground/90">{formatPeso(inv.outstanding)}</TableCell>
+      <TableCell className="py-2 text-center">
+        {inv.overdue !== null && inv.overdue >= 0 ? (
+          <span className={`text-xs ${inv.overdue > 30 ? 'font-semibold' : ''}`} style={{ color: agingColor(inv.overdue) }}>{inv.overdue}d</span>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="py-2"><StatusPill status={inv.arStatus} /></TableCell>
+      <TableCell className="py-2"><StatusPill status={inv.paymentStatus} /></TableCell>
+      <TableCell className="py-2 pr-4"><StatusPill status={inv.transactionStatus} /></TableCell>
+    </>
+  );
+
+  if (asTableRow) {
+    return (
+      <TableRow className="border-b border-border/20 hover:bg-muted/15 cursor-pointer bg-card/45 transition-colors active:bg-muted/25" onClick={() => onRowClick?.(inv)}>
+        {row}
+      </TableRow>
+    );
+  }
+
+  return (
+    <TableRow className="border-b border-border/20 hover:bg-muted/15 cursor-pointer bg-card/45 transition-colors active:bg-muted/25" onClick={() => onRowClick?.(inv)}>
+      {row}
+    </TableRow>
+  );
+}
+
+export function InvoiceTable({
+  invoices = [],
+  customerGroups: serverGroups,
+  serverMode = false,
+  page,
+  setPage,
+  totalPages: serverTotalPages,
+  totalInvoiceCount,
+  totalGroupCount,
+  tableLoading = false,
+  sortKey: controlledSortKey,
+  sortOrder: controlledSortOrder,
+  onSortChange,
+  onRowClick,
+}: InvoiceTableProps) {
+  const [localSortKey, setLocalSortKey] = useState<keyof Invoice | null>(null);
+  const [localSortOrder, setLocalSortOrder] = useState<'asc' | 'desc' | null>(null);
   const [expandedCustomers, setExpandedCustomers] = useState<Record<string, boolean>>({});
 
+  const isControlledSort = serverMode && onSortChange != null;
+  const sortKey = isControlledSort ? (controlledSortKey ?? null) : localSortKey;
+  const sortOrder = isControlledSort ? (controlledSortOrder ?? null) : localSortOrder;
+
   const handleSort = (key: keyof Invoice, order: 'asc' | 'desc' | null) => {
-    setSortKey(key);
-    setSortOrder(order);
+    if (isControlledSort) {
+      onSortChange!(key, order);
+    } else {
+      setLocalSortKey(key);
+      setLocalSortOrder(order);
+    }
   };
 
-  const q = search.trim().toLowerCase();
-  const filtered = q
-    ? invoices.filter((inv) =>
-        inv.invoiceNo.toLowerCase().includes(q)   ||
-        inv.customer.toLowerCase().includes(q)    ||
-        inv.salesman.toLowerCase().includes(q)    ||
-        inv.division.toLowerCase().includes(q)    ||
-        inv.customerCode.toLowerCase().includes(q) ||
-        inv.invoiceDate.toLowerCase().includes(q) ||
-        inv.deliveryDate.toLowerCase().includes(q) ||
-        inv.due.toLowerCase().includes(q)         ||
-        inv.arStatus.toLowerCase().includes(q)    ||
-        inv.paymentStatus.toLowerCase().includes(q) ||
-        inv.transactionStatus.toLowerCase().includes(q) ||
-        inv.cluster.toLowerCase().includes(q)
-      )
-    : invoices;
+  const mappedServerGroups = useMemo(() => {
+    if (!serverGroups) return [];
+    return serverGroups.map((g) => ({
+      customerName: g.customerName,
+      customerCode: g.customerCode,
+      netReceivable: g.netReceivable,
+      totalPaid: g.totalPaid,
+      outstanding: g.outstanding,
+      maxOverdue: g.maxOverdue,
+      invoices: g.invoices.map(mapARRowToInvoice),
+    }));
+  }, [serverGroups]);
+
+  const filtered = serverMode ? [] : invoices;
 
   const customerGroups = useMemo(() => {
+    if (serverMode) return mappedServerGroups;
+
     const groupsMap: Record<string, Invoice[]> = {};
     filtered.forEach((inv) => {
       const name = inv.customer || '—';
@@ -181,7 +370,7 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
       const netReceivable = invs.reduce((sum, inv) => sum + inv.netReceivable, 0);
       const totalPaid = invs.reduce((sum, inv) => sum + inv.totalPaid, 0);
       const outstanding = invs.reduce((sum, inv) => sum + inv.outstanding, 0);
-      
+
       let maxOverdue: number | null = null;
       invs.forEach((inv) => {
         if (inv.overdue !== null && inv.overdue >= 0) {
@@ -191,26 +380,6 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
         }
       });
 
-      // Sort the child invoices inside the group
-      const sortedInvoices = [...invs];
-      if (sortKey && sortOrder) {
-        sortedInvoices.sort((a, b) => {
-          let aVal = a[sortKey];
-          let bVal = b[sortKey];
-          if (aVal == null) aVal = '';
-          if (bVal == null) bVal = '';
-
-          if (typeof aVal === 'string' && typeof bVal === 'string') {
-            const compare = aVal.localeCompare(bVal);
-            return sortOrder === 'asc' ? compare : -compare;
-          }
-          if (typeof aVal === 'number' && typeof bVal === 'number') {
-            return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
-          }
-          return 0;
-        });
-      }
-
       return {
         customerName: name,
         customerCode: invs[0]?.customerCode || '—',
@@ -218,70 +387,18 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
         totalPaid,
         outstanding,
         maxOverdue,
-        invoices: sortedInvoices,
+        invoices: invs,
       };
     });
 
-    // Sort customer groups
-    if (sortKey && sortOrder) {
-      groups.sort((a, b) => {
-        let aVal: string | number | null = '';
-        let bVal: string | number | null = '';
+    return sortCustomerGroups(groups, { sortKey, sortOrder });
+  }, [serverMode, mappedServerGroups, filtered, sortKey, sortOrder]);
 
-        if (sortKey === 'customer') {
-          aVal = a.customerName;
-          bVal = b.customerName;
-        } else if (sortKey === 'netReceivable') {
-          aVal = a.netReceivable;
-          bVal = b.netReceivable;
-        } else if (sortKey === 'totalPaid') {
-          aVal = a.totalPaid;
-          bVal = b.totalPaid;
-        } else if (sortKey === 'outstanding') {
-          aVal = a.outstanding;
-          bVal = b.outstanding;
-        } else if (sortKey === 'overdue') {
-          aVal = a.maxOverdue ?? -1;
-          bVal = b.maxOverdue ?? -1;
-        } else {
-          // If sorting by invoice-specific fields, sort the groups by their first child invoice's value
-          const aChild = a.invoices[0];
-          const bChild = b.invoices[0];
-          if (aChild && bChild) {
-            let aChildVal = aChild[sortKey];
-            let bChildVal = bChild[sortKey];
-            if (aChildVal == null) aChildVal = '';
-            if (bChildVal == null) bChildVal = '';
-            if (typeof aChildVal === 'string' && typeof bChildVal === 'string') {
-              return sortOrder === 'asc' ? aChildVal.localeCompare(bChildVal) : bChildVal.localeCompare(aChildVal);
-            }
-            if (typeof aChildVal === 'number' && typeof bChildVal === 'number') {
-              return sortOrder === 'asc' ? aChildVal - bChildVal : bChildVal - aChildVal;
-            }
-          }
-          return 0;
-        }
-
-        if (typeof aVal === 'string' && typeof bVal === 'string') {
-          const compare = aVal.localeCompare(bVal);
-          return sortOrder === 'asc' ? compare : -compare;
-        }
-        if (typeof aVal === 'number' && typeof bVal === 'number') {
-          return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
-        }
-        return 0;
-      });
-    } else {
-      // Default alphabetical sort
-      groups.sort((a, b) => a.customerName.localeCompare(b.customerName));
-    }
-
-    return groups;
-  }, [filtered, sortKey, sortOrder]);
-
-  const totalPages  = Math.ceil(customerGroups.length / PAGE_SIZE);
+  const totalPages  = serverMode ? (serverTotalPages ?? 1) : Math.ceil(customerGroups.length / PAGE_SIZE);
   const safePage    = Math.min(page, totalPages || 1);
-  const pagedGroups = customerGroups.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pagedGroups = serverMode ? customerGroups : customerGroups.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const displayInvoiceCount = serverMode ? (totalInvoiceCount ?? 0) : filtered.length;
+  const displayGroupCount = serverMode ? (totalGroupCount ?? customerGroups.length) : customerGroups.length;
   const pageNumbers = getPageNumbers(safePage, totalPages);
 
   const isAllExpanded = pagedGroups.length > 0 && pagedGroups.every(g => expandedCustomers[g.customerName] !== false);
@@ -301,16 +418,7 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
     <Card className="dark:bg-zinc-950 border-border overflow-hidden w-full">
       <CardHeader className="bg-muted/30 border-b border-border/50 flex flex-row items-center justify-between gap-4">
         <CardTitle className="text-sm font-bold uppercase shrink-0">Invoice Details</CardTitle>
-        <div className="flex items-center gap-2 max-w-sm w-full">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-            <Input
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Search invoice, customer, salesman, scode, cluster, status…"
-              className="h-8 pl-8 text-xs focus-visible:ring-1"
-            />
-          </div>
+        <div className="flex items-center gap-2 max-w-sm w-full justify-end">
           <button
             type="button"
             onClick={toggleAll}
@@ -320,13 +428,16 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
           </button>
         </div>
         <span className="text-xs text-muted-foreground shrink-0">
-          {filtered.length} invoice{filtered.length !== 1 ? 's' : ''} ({customerGroups.length} customer{customerGroups.length !== 1 ? 's' : ''}) &mdash; page {safePage} of {totalPages || 1}
+          {tableLoading ? 'Loading…' : (
+            <>{displayInvoiceCount} invoice{displayInvoiceCount !== 1 ? 's' : ''} ({displayGroupCount} customer{displayGroupCount !== 1 ? 's' : ''}) &mdash; page {safePage} of {totalPages || 1}</>
+          )}
         </span>
       </CardHeader>
 
       <CardContent className="p-0">
         <div className="max-h-[600px] overflow-auto relative w-full">
           <Table className="w-full table-fixed">
+            <InvoiceTableColGroup />
             <TableHeader className="sticky top-0 bg-background dark:bg-zinc-950 z-20 shadow-sm">
               <TableRow className="bg-muted/50 hover:bg-muted/50">
               <TableHead className="py-3 pl-4 w-[8%] whitespace-nowrap"><SortableHeader<Invoice> label="inv #" sortKey="invoiceNo" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
@@ -351,7 +462,7 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
             {pagedGroups.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={15} className="text-center py-10 text-muted-foreground text-sm">
-                  {q ? `No results for "${search}".` : 'No invoices found.'}
+                  {tableLoading ? 'Loading invoices…' : 'No invoices found.'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -434,120 +545,12 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
                     </TableRow>
 
                     {/* Child Invoice Rows */}
-                    {isExpanded &&
-                      group.invoices.map((inv, idx) => {
-                        const isLast = idx === group.invoices.length - 1;
-                        return (
-                          <TableRow
-                            key={`${inv.invoiceNo}-${idx}`}
-                            className="border-b border-border/20 hover:bg-muted/15 cursor-pointer bg-card/45 transition-colors active:bg-muted/25"
-                            onClick={() => onRowClick?.(inv)}
-                          >
-                            <TableCell className="py-2 pl-8 relative">
-                              {/* vertical tree connector line */}
-                              {isLast ? (
-                                <div className="absolute left-5 top-0 h-[22px] w-px bg-border/80 dark:bg-border/45" />
-                              ) : (
-                                <div className="absolute left-5 top-0 bottom-0 w-px bg-border/80 dark:bg-border/45" />
-                              )}
-                              {/* horizontal tree connector line */}
-                              <div className="absolute left-5 top-[22px] w-3 h-px bg-border/80 dark:bg-border/45" />
-                              
-                              <div className="flex flex-col gap-0.5 min-w-0 pl-2.5">
-                                <span className="font-bold text-primary/95 text-xs truncate block w-full" title={inv.invoiceNo}>
-                                  {inv.invoiceNo}
-                                </span>
-                                {inv.isPosted ? (
-                                  <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8px] font-semibold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/15 uppercase">
-                                    Posted
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8px] font-semibold tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/15 uppercase">
-                                    Draft
-                                  </span>
-                                )}
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="py-2 text-muted-foreground/45 text-[10px] italic">
-                              └─ detail
-                            </TableCell>
-
-                            <TableCell className="py-2">
-                              <span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.salesman}>
-                                {inv.salesman || <span className="text-muted-foreground/30">—</span>}
-                              </span>
-                            </TableCell>
-
-                            <TableCell className="py-2">
-                              <span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.division}>
-                                {inv.division || <span className="text-muted-foreground/30">—</span>}
-                              </span>
-                            </TableCell>
-
-                            <TableCell className="py-2">
-                              <span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.salesmanCode}>
-                                {inv.salesmanCode || <span className="text-muted-foreground/30">—</span>}
-                              </span>
-                            </TableCell>
-
-                            <TableCell className="py-2">
-                              <span className="text-[11px] text-muted-foreground whitespace-nowrap block">
-                                {formatDate(inv.invoiceDate)}
-                              </span>
-                            </TableCell>
-
-                            <TableCell className="py-2">
-                              <span className="text-[11px] text-muted-foreground whitespace-nowrap block">
-                                {formatDate(inv.deliveryDate)}
-                              </span>
-                            </TableCell>
-
-                            <TableCell className="py-2">
-                              <span className="text-[11px] text-muted-foreground whitespace-nowrap block">
-                                {formatDate(inv.due)}
-                              </span>
-                            </TableCell>
-
-                            <TableCell className="py-2 text-right">
-                              <span className="text-xs font-medium text-muted-foreground/90">{formatPeso(inv.netReceivable)}</span>
-                            </TableCell>
-
-                            <TableCell className="py-2 text-right">
-                              <span className="text-xs font-medium text-muted-foreground/90">{formatPeso(inv.totalPaid)}</span>
-                            </TableCell>
-
-                            <TableCell className="py-2 text-right font-semibold tabular-nums text-foreground/90">
-                              {formatPeso(inv.outstanding)}
-                            </TableCell>
-
-                            <TableCell className="py-2 text-center">
-                              {inv.overdue !== null && inv.overdue >= 0 ? (
-                                <span
-                                  className={`text-xs ${inv.overdue > 30 ? 'font-semibold' : ''}`}
-                                  style={{ color: agingColor(inv.overdue) }}
-                                >
-                                  {inv.overdue}d
-                                </span>
-                              ) : (
-                                <span className="text-[11px] text-muted-foreground">—</span>
-                              )}
-                            </TableCell>
-
-                            <TableCell className="py-2">
-                              <StatusPill status={inv.arStatus} />
-                            </TableCell>
-
-                            <TableCell className="py-2">
-                              <StatusPill status={inv.paymentStatus} />
-                            </TableCell>
-
-                            <TableCell className="py-2 pr-4">
-                              <StatusPill status={inv.transactionStatus} />
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                    {isExpanded && (
+                      <VirtualInvoiceRows
+                        invoices={group.invoices}
+                        onRowClick={onRowClick}
+                      />
+                    )}
                   </Fragment>
                 );
               })
