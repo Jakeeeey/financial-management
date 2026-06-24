@@ -31,10 +31,8 @@ export function UserSelect({ users, loading, onSelect }: UserSelectProps) {
 
   const visibleUsers = users.filter((u) => {
     const name = `${u.firstName || u.user_fname || ""} ${u.lastName || u.user_lname || ""}`.trim().toLowerCase();
-    const dept = (u.department_name || "").toLowerCase();
-    const term = query.toLowerCase();
-    return name.includes(term) || dept.includes(term);
-  });
+    return name.includes(query.toLowerCase());
+  }).slice(0, 50);
 
   return (
     <Popover
@@ -80,28 +78,17 @@ export function UserSelect({ users, loading, onSelect }: UserSelectProps) {
                 return (
                   <CommandItem
                     key={id}
-                    value={name}
+                    value={id}
                     onSelect={() => {
                       setSelectedValue(id);
-                      onSelect(u);
                       setOpen(false);
-                      setQuery("");
+                      onSelect(u);
                     }}
                   >
                     <Check
-                      className={cn(
-                        "mr-2 h-4 w-4 flex-shrink-0",
-                        "opacity-0"
-                      )}
+                      className={cn("mr-2 h-4 w-4", selectedValue === id ? "opacity-100" : "opacity-0")}
                     />
-                    <div className="flex flex-col">
-                      <span>{name}</span>
-                      {u.department_name && (
-                        <span className="text-xs text-muted-foreground">
-                          {u.department_name}
-                        </span>
-                      )}
-                    </div>
+                    {name}
                   </CommandItem>
                 );
               })}
