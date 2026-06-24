@@ -84,7 +84,7 @@ export function transformAPRows(raw: RawAPRow[]): APRecord[] {
     const amountPayable      = Number(row.totalPayable       ?? 0);
     const amountPaid         = Number(row.totalPaid          ?? 0);
     const outstandingBalance = Number(row.outstandingBalance ?? Math.max(0, amountPayable - amountPaid));
-    const division           = String(row.divisionName       ?? row.division ?? '—');
+    const division           = String(row.divisionName       ?? '—');
     const invoiceDate        = String(row.transactionDate    ?? '');
     const dueDate            = String(row.dueDate            ?? '');
 

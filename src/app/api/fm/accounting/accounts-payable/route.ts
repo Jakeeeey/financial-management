@@ -14,51 +14,25 @@ interface DirectusDisbursement {
   doc_no: string | null;
   transaction_type: number | null;
   payee: number | null;
-  remarks: string | null;
   total_amount: number | null;
   paid_amount: number | null;
-  encoder_id: number | null;
-  approver_id: number | null;
-  date_updated: string | null;
-  date_created: string | null;
-  isPosted: unknown;
   transaction_date: string | null;
-  date_approved: string | null;
-  date_posted: string | null;
   division_id: number | null;
-  department_id: number | null;
-  fund_source_id: number | null;
-  supporting_documents_url: string | null;
-  status: string | null;
-  is_deleted: unknown;
 }
 
 interface DirectusDisbursementPayable {
-  id: number;
   disbursement_id: number | null;
-  division_id: number | null;
   reference_no: string | null;
   date: string | null;
-  coa_id: number | null;
   amount: number | null;
-  remarks: string | null;
-  date_created: string | null;
 }
 
 interface DirectusDisbursementPayment {
-  id: number;
-  coa_id: number | null;
-  bank_id: number | null;
-  check_no: string | null;
-  date: string | null;
   amount: number | null;
-  remarks: string | null;
-  date_created: string | null;
   disbursement_id: number | null;
 }
 
 interface DirectusSupplier   { id: number; supplier_name: string; }
-interface DirectusUser       { user_id: number; user_fname: string; user_mname: string | null; user_lname: string; }
 interface DirectusDivision   { division_id: number; division_name: string; }
 
 // The transaction_type table has a single text column named `transaction_type`
@@ -66,17 +40,6 @@ interface DirectusDivision   { division_id: number; division_name: string; }
 interface DirectusTransType  { id: number; transaction_type: string | null; }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function parseBit(val: unknown): boolean {
-  if (val === null || val === undefined) return false;
-  if (typeof val === "boolean") return val;
-  if (typeof val === "number") return val === 1;
-  if (typeof val === "object" && val !== null) {
-    const obj = val as Record<string, unknown>;
-    if (obj.type === "Buffer" && Array.isArray(obj.data)) return obj.data[0] === 1;
-  }
-  return val === "1" || val === 1;
-}
-
 function asNumber(val: unknown, fallback = 0): number {
   if (val === null || val === undefined || val === "") return fallback;
   const n = Number(val);
@@ -128,14 +91,6 @@ async function fetchAllChunked<T>(
   return results.flat();
 }
 
-function fullName(u: DirectusUser | undefined): string {
-  if (!u) return "\u2014";
-  const parts = [u.user_fname, u.user_mname, u.user_lname]
-    .filter((p): p is string => !!p && p.trim().length > 0)
-    .map(p => p.trim());
-  return parts.length > 0 ? parts.join(" ") : `User #${u.user_id}`;
-}
-
 /**
  * Classify a disbursement as Trade or Non-Trade based on the
  * transaction type's `transaction_type` name. We do an exact
@@ -176,47 +131,47 @@ export async function GET(request: NextRequest) {
     "doc_no",
     "transaction_type",
     "payee",
-    "remarks",
     "total_amount",
     "paid_amount",
-    "encoder_id",
-    "approver_id",
-    "date_updated",
-    "date_created",
-    "isPosted",
     "transaction_date",
-    "date_approved",
-    "date_posted",
     "division_id",
-    "department_id",
-    "fund_source_id",
-    "supporting_documents_url",
-    "status",
-    "is_deleted",
   ].join(",");
 
   try {
-    // Pull a generous page; if there are more we'll paginate below.
     const PAGE_SIZE = 500;
     const MAX_PAGES = 20; // safety cap = 10,000 rows
-
-    let page = 1;
-    let allDisbursements: DirectusDisbursement[] = [];
-    while (page <= MAX_PAGES) {
+    const fetchDisbursementPage = async (page: number, includeCount = false) => {
       const params = new URLSearchParams();
       dateFilterParts.forEach(p => params.append(p.split("=")[0], p.split("=").slice(1).join("=")));
       params.set("limit", String(PAGE_SIZE));
       params.set("offset", String((page - 1) * PAGE_SIZE));
-      params.set("sort", "-date_created");
+      params.set("sort", "-date_created,-id");
       params.set("fields", DISBURSEMENT_FIELDS);
+      if (includeCount) params.set("meta", "filter_count");
 
-      const batch = await fetchAll<DirectusDisbursement>(
+      return directusGet<{
+        data?: DirectusDisbursement[];
+        meta?: { filter_count?: number | string };
+      }>(
         `/items/disbursement?${params.toString()}`
       );
-      allDisbursements = allDisbursements.concat(batch);
-      if (batch.length < PAGE_SIZE) break;
-      page++;
-    }
+    };
+
+    const firstPage = await fetchDisbursementPage(1, true);
+    const firstBatch = firstPage.data ?? [];
+    const filterCount = asNumber(firstPage.meta?.filter_count, firstBatch.length);
+    const pageCount = Math.min(MAX_PAGES, Math.max(1, Math.ceil(filterCount / PAGE_SIZE)));
+    const remainingPages = pageCount > 1
+      ? await Promise.all(
+          Array.from({ length: pageCount - 1 }, (_, index) =>
+            fetchDisbursementPage(index + 2)
+          )
+        )
+      : [];
+    const allDisbursements = [
+      ...firstBatch,
+      ...remainingPages.flatMap((result) => result.data ?? []),
+    ];
 
     if (allDisbursements.length === 0) {
       return NextResponse.json({ ok: true, rows: [] });
@@ -225,10 +180,6 @@ export async function GET(request: NextRequest) {
     const disbIds        = allDisbursements.map(d => d.id);
     const supplierIds    = Array.from(new Set(allDisbursements.map(d => d.payee).filter((v): v is number => typeof v === "number")));
     const transTypeIds   = Array.from(new Set(allDisbursements.map(d => d.transaction_type).filter((v): v is number => typeof v === "number")));
-    const userIds        = Array.from(new Set(
-      allDisbursements.flatMap(d => [d.encoder_id, d.approver_id])
-        .filter((v): v is number => typeof v === "number")
-    ));
     const divisionIds    = Array.from(new Set(
       allDisbursements.map(d => d.division_id)
         .filter((v): v is number => typeof v === "number")
@@ -239,17 +190,16 @@ export async function GET(request: NextRequest) {
       payables,
       payments,
       suppliers,
-      users,
       divisions,
       transactionTypes,
     ] = await Promise.all([
       fetchAllChunked<DirectusDisbursementPayable>(
-        `/items/disbursement_payables?limit=-1&fields=id,disbursement_id,division_id,reference_no,date,coa_id,amount,remarks,date_created`,
+        `/items/disbursement_payables?limit=-1&fields=disbursement_id,reference_no,date,amount`,
         "disbursement_id",
         disbIds
       ).catch(() => [] as DirectusDisbursementPayable[]),
       fetchAllChunked<DirectusDisbursementPayment>(
-        `/items/disbursement_payments?limit=-1&fields=id,coa_id,bank_id,check_no,date,amount,remarks,date_created,disbursement_id`,
+        `/items/disbursement_payments?limit=-1&fields=disbursement_id,amount`,
         "disbursement_id",
         disbIds
       ).catch(() => [] as DirectusDisbursementPayment[]),
@@ -258,11 +208,6 @@ export async function GET(request: NextRequest) {
         "id",
         supplierIds
       ).catch(() => [] as DirectusSupplier[]),
-      fetchAllChunked<DirectusUser>(
-        `/items/user?limit=-1&fields=user_id,user_fname,user_mname,user_lname`,
-        "user_id",
-        userIds
-      ).catch(() => [] as DirectusUser[]),
       fetchAllChunked<DirectusDivision>(
         `/items/division?limit=-1&fields=division_id,division_name`,
         "division_id",
@@ -277,7 +222,6 @@ export async function GET(request: NextRequest) {
 
     // Lookup maps
     const supplierMap   = new Map<number, string>(suppliers.map(s => [s.id, s.supplier_name]));
-    const userMap       = new Map<number, DirectusUser>(users.map(u => [u.user_id, u]));
     const divisionMap   = new Map<number, string>(divisions.map(d => [d.division_id, d.division_name]));
     const transTypeMap  = new Map<number, DirectusTransType>(transactionTypes.map(t => [t.id, t]));
 
@@ -307,8 +251,6 @@ export async function GET(request: NextRequest) {
     // Build the AP rows
     const rows = allDisbursements.map(d => {
       const supplierName = supplierMap.get(d.payee || -1) || (d.payee ? `Supplier #${d.payee}` : "\u2014");
-      const encoder      = d.encoder_id ? userMap.get(d.encoder_id) : undefined;
-      const approver     = d.approver_id ? userMap.get(d.approver_id) : undefined;
       const divisionName = d.division_id ? divisionMap.get(d.division_id) || `Division #${d.division_id}` : null;
       const transType    = d.transaction_type ? transTypeMap.get(d.transaction_type) : undefined;
       const transTypeName = transType?.transaction_type || (d.transaction_type ? `Type #${d.transaction_type}` : null);
@@ -316,40 +258,21 @@ export async function GET(request: NextRequest) {
       const payablesRow = payableAggByDisb.get(d.id);
       const totalPayable = asNumber(d.total_amount) || payablesRow?.total || 0;
       const totalPaid    = asNumber(d.paid_amount) || paidAggByDisb.get(d.id) || 0;
-      const totalRefunded = 0;
       const outstandingBalance = Math.max(0, totalPayable - totalPaid);
 
       return {
         disbursementId: d.id,
         docNo: d.doc_no || `DISB-${d.id}`,
-        supplierId: d.payee,
         supplierName,
-        transactionTypeId: d.transaction_type,
         transactionTypeName: transTypeName,
         apCategory: classifyApCategory(transTypeName),
         transactionDate: d.transaction_date,
         dueDate: payablesRow?.earliestDate || d.transaction_date,
-        dateCreated: d.date_created,
-        datePosted: d.date_posted,
-        dateApproved: d.date_approved,
         referenceNo: payablesRow?.referenceNo || d.doc_no || "",
-        remarks: d.remarks,
-        divisionId: d.division_id,
         divisionName,
-        departmentId: d.department_id,
-        encoderId: d.encoder_id,
-        encoderName: encoder ? fullName(encoder) : null,
-        approverId: d.approver_id,
-        approverName: approver ? fullName(approver) : null,
-        status: d.status,
-        isPosted: parseBit(d.isPosted) ? 1 : 0,
-        isDeleted: parseBit(d.is_deleted) ? 1 : 0,
         totalPayable,
         totalPaid,
-        totalRefunded,
         outstandingBalance,
-        fundSourceId: d.fund_source_id,
-        supportingDocumentsUrl: d.supporting_documents_url,
       };
     });
 

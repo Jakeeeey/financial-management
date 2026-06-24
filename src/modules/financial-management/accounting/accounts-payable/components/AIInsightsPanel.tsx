@@ -23,6 +23,24 @@ interface APInsight {
   generatedAt: string;
 }
 interface APIResponse { success: boolean; data?: APInsight; message?: string; }
+interface APInsightSummary {
+  recordCount: number;
+  totalPayable: number;
+  totalPaid: number;
+  totalOutstanding: number;
+  overdueCount: number;
+  totalOverdue: number;
+  categories: Array<{
+    category: "Trade" | "Non-Trade";
+    count: number;
+    payable: number;
+    paid: number;
+    outstanding: number;
+    overdue: number;
+  }>;
+  aging: AgingRow[];
+  topSuppliers: Array<{ name: string; outstanding: number }>;
+}
 
 const HEALTH: Record<HealthStatus, { label: string; chip: string; dot: string; }> = {
   healthy:  { label: "Healthy",  chip: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30", dot: "bg-emerald-500" },
@@ -77,14 +95,65 @@ export function AIInsightsPanel({ records }: AIInsightsPanelProps) {
   const [error,     setError]     = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
 
-  const payload = useMemo(() => ({
-    records: records.map(r => ({
-      id: Number(r.id), refNo: r.refNo, supplier: r.supplier, invoiceNo: r.invoiceNo,
-      division: r.division, invoiceDate: r.invoiceDate, dueDate: r.dueDate,
-      amountPayable: r.amountPayable, amountPaid: r.amountPaid, outstandingBalance: r.outstandingBalance,
-      aging: r.aging, status: r.status, apCategory: r.apCategory, transactionTypeName: r.transactionTypeName,
-    })),
-  }), [records]);
+  const payload = useMemo(() => {
+    const summary: APInsightSummary = {
+      recordCount: records.length,
+      totalPayable: 0,
+      totalPaid: 0,
+      totalOutstanding: 0,
+      overdueCount: 0,
+      totalOverdue: 0,
+      categories: [
+        { category: "Trade", count: 0, payable: 0, paid: 0, outstanding: 0, overdue: 0 },
+        { category: "Non-Trade", count: 0, payable: 0, paid: 0, outstanding: 0, overdue: 0 },
+      ],
+      aging: [
+        { bucket: "0-30", outstanding: 0, note: "Not yet due or due within 30 days" },
+        { bucket: "31-60", outstanding: 0, note: "Mildly past due" },
+        { bucket: "61-90", outstanding: 0, note: "Significantly past due" },
+        { bucket: "91+", outstanding: 0, note: "Critical - escalate payments" },
+      ],
+      topSuppliers: [],
+    };
+    const categoryMap = new Map(summary.categories.map((item) => [item.category, item]));
+    const supplierTotals = new Map<string, number>();
+
+    for (const record of records) {
+      summary.totalPayable += record.amountPayable;
+      summary.totalPaid += record.amountPaid;
+      summary.totalOutstanding += record.outstandingBalance;
+      const isOverdue = record.aging !== null && record.aging >= 0 && record.outstandingBalance > 0;
+      if (isOverdue) {
+        summary.overdueCount += 1;
+        summary.totalOverdue += record.outstandingBalance;
+      }
+
+      const category = categoryMap.get(record.apCategory);
+      if (category) {
+        category.count += 1;
+        category.payable += record.amountPayable;
+        category.paid += record.amountPaid;
+        category.outstanding += record.outstandingBalance;
+        if (isOverdue) category.overdue += 1;
+      }
+
+      if (record.outstandingBalance > 0) {
+        supplierTotals.set(
+          record.supplier,
+          (supplierTotals.get(record.supplier) ?? 0) + record.outstandingBalance,
+        );
+        const aging = record.aging ?? -1;
+        const bucketIndex = aging <= 30 ? 0 : aging <= 60 ? 1 : aging <= 90 ? 2 : 3;
+        summary.aging[bucketIndex].outstanding += record.outstandingBalance;
+      }
+    }
+
+    summary.topSuppliers = Array.from(supplierTotals, ([name, outstanding]) => ({ name, outstanding }))
+      .sort((a, b) => b.outstanding - a.outstanding)
+      .slice(0, 5);
+
+    return { summary };
+  }, [records]);
 
   const fetchInsight = useCallback(async () => {
     if (records.length === 0) { setInsight(null); setError("No records to analyze."); return; }
