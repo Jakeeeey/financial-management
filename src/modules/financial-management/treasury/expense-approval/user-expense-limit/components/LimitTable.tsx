@@ -192,7 +192,7 @@ export function LimitTable({ limits, loading, error, onEdit }: LimitTableProps) 
                   </TableCell>
                 </TableRow>
               ) : (
-                paged.map((l, i) => {
+                paged.map(l => {
                   const displayLimits = l.limits || l.pending_limits;
                   const total = sumLimits(displayLimits);
                   const allCeilings = getAllCeilings(l);

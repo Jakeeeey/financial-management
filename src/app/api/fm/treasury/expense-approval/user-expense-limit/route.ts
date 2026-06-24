@@ -121,14 +121,39 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // ── Chart of Accounts list ────────────────────────────────────────────────
+  interface CoaRow {
+  coa_id: number;
+  account_title: string;
+  gl_code: string;
+}
+
+interface LimitRow {
+  coa_id: number | null;
+  expense_limit: string;
+  created_at: string;
+  created_by: number | null;
+  updated_at: string | null;
+  updated_by: number | null;
+  user_id: number;
+}
+
+interface PendingRequestRow {
+  coa_id: number;
+  expense_limit: string;
+  user_id: number;
+  remarks: string | null;
+  created_at: string;
+  created_by: number | null;
+}
+
+// ── Chart of Accounts list ────────────────────────────────────────────────
   if (action === "coas") {
     try {
       const res = await fetch(`${DIRECTUS_URL}/items/chart_of_accounts?fields=coa_id,account_title,gl_code&limit=-1&sort=account_title`, {
         headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
         cache: "no-store",
       });
-      const json = await res.json() as { data?: any[] };
+      const json = await res.json() as { data?: CoaRow[] };
       return NextResponse.json({ data: json.data ?? [] });
     } catch (err) {
       console.error("[UEL COAs]", err instanceof Error ? err.message : String(err));
@@ -156,9 +181,9 @@ export async function GET(request: NextRequest) {
       ),
     ]);
 
-    const limitsJson = await limitsRes.json() as { data?: Record<string, any>[] };
+    const limitsJson = await limitsRes.json() as { data?: LimitRow[] };
     const usersJson  = await usersRes.json()  as { data?: DirectusUser[] };
-    const requestsJson = await requestsRes.json() as { data?: Record<string, any>[] };
+    const requestsJson = await requestsRes.json() as { data?: PendingRequestRow[] };
 
     const userMap = Object.fromEntries(
       (usersJson.data ?? []).map(u => [u.user_id, u])
@@ -195,7 +220,7 @@ export async function GET(request: NextRequest) {
 
       const userPendingRows = (requestsJson.data ?? []).filter(r => r.user_id === userId);
       const pending_limits: Record<number, string> = {};
-      let hasPending = userPendingRows.length > 0;
+      const hasPending = userPendingRows.length > 0;
       userPendingRows.forEach(r => {
         const coaId = r.coa_id || 0;
         pending_limits[coaId] = r.expense_limit;

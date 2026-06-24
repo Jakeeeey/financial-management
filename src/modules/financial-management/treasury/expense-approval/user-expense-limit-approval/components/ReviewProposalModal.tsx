@@ -5,7 +5,6 @@
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input }  from "@/components/ui/input";
-import { Label }  from "@/components/ui/label";
 import { X, Check, Ban, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useProcessLimitProposal } from "../hooks/useUserExpenseLimitApproval";

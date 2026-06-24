@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input }  from "@/components/ui/input";
 import { Label }  from "@/components/ui/label";
@@ -111,17 +111,26 @@ export function EditLimitModal({ limit, onClose, onSuccess }: EditLimitModalProp
   const { coas, loading: coasLoading } = useCoas();
 
   const defaultCoaIds = useMemo(() => new Set(BUDGET_COAS.map(c => c.id)), []);
-  const activeOrPendingLimits = limit.pending_limits || limit.limits || {};
+  const activeOrPendingLimits = useMemo(() => limit.pending_limits || limit.limits || {}, [limit.pending_limits, limit.limits]);
 
-  const [customCoas, setCustomCoas] = useState<Coa[]>([]);
-  const [hasInitializedCustoms, setHasInitializedCustoms] = useState(false);
+  const [customCoaIds, setCustomCoaIds] = useState<Set<number>>(() => {
+    const ids = new Set<number>();
+    Object.keys(activeOrPendingLimits).forEach(idStr => {
+      const id = Number(idStr);
+      if (!defaultCoaIds.has(id)) {
+        ids.add(id);
+      }
+    });
+    return ids;
+  });
+
   const [limitsState, setLimitsState] = useState<Record<number, string>>(() => {
     const init: Record<number, string> = {};
     // Pre-fill defaults
     BUDGET_COAS.forEach(coa => {
       init[coa.id] = activeOrPendingLimits[coa.id] || "";
     });
-    // Pre-fill customs (temporarily just value, will resolve details once coas load)
+    // Pre-fill customs
     Object.entries(activeOrPendingLimits).forEach(([coaIdStr, val]) => {
       const coaId = Number(coaIdStr);
       if (!defaultCoaIds.has(coaId)) {
@@ -132,38 +141,37 @@ export function EditLimitModal({ limit, onClose, onSuccess }: EditLimitModalProp
   });
 
   // Resolve custom COAs from the loaded database list
-  useEffect(() => {
-    if (!coasLoading && coas.length > 0 && !hasInitializedCustoms) {
-      const customIds = Object.keys(activeOrPendingLimits)
-        .map(Number)
-        .filter(id => !defaultCoaIds.has(id));
-      
-      const resolved = customIds
-        .map(id => coas.find(c => c.coa_id === id))
-        .filter(Boolean) as Coa[];
-      
-      setCustomCoas(resolved);
-      setHasInitializedCustoms(true);
-    }
-  }, [coas, coasLoading, activeOrPendingLimits, defaultCoaIds, hasInitializedCustoms]);
+  const customCoas = useMemo(() => {
+    return Array.from(customCoaIds)
+      .map(id => coas.find(c => c.coa_id === id))
+      .filter(Boolean) as Coa[];
+  }, [customCoaIds, coas]);
 
   const excludeCoaIds = useMemo(() => {
     const ids = new Set(BUDGET_COAS.map(c => c.id));
-    customCoas.forEach(c => ids.add(c.coa_id));
+    customCoaIds.forEach(id => ids.add(id));
     return ids;
-  }, [customCoas]);
+  }, [customCoaIds]);
 
   const handleLimitChange = (coaId: number, val: string) => {
     setLimitsState(prev => ({ ...prev, [coaId]: val }));
   };
 
   const handleAddCustomCoa = (coa: Coa) => {
-    setCustomCoas(prev => [...prev, coa]);
+    setCustomCoaIds(prev => {
+      const next = new Set(prev);
+      next.add(coa.coa_id);
+      return next;
+    });
     setLimitsState(prev => ({ ...prev, [coa.coa_id]: "" }));
   };
 
   const handleRemoveCustomCoa = (coaId: number) => {
-    setCustomCoas(prev => prev.filter(c => c.coa_id !== coaId));
+    setCustomCoaIds(prev => {
+      const next = new Set(prev);
+      next.delete(coaId);
+      return next;
+    });
     setLimitsState(prev => {
       const copy = { ...prev };
       delete copy[coaId];

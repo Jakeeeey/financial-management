@@ -24,7 +24,7 @@ export function usePendingLimits() {
         const obj = json as Record<string, unknown>;
         throw new Error(String(obj?.message ?? `HTTP ${res.status}`));
       }
-      const data = (json as Record<string, any>).data ?? [];
+      const data = (json as { data?: PendingLimitApproval[] }).data ?? [];
       setPendingList(data);
       toast.success('Pending requests loaded successfully', { id: toastId });
     } catch (e) {

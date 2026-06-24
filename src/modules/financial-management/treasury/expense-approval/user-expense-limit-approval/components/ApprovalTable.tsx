@@ -3,13 +3,13 @@
 "use client";
 
 import * as React from "react";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Eye, ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
+import { Eye, ChevronDown, ChevronUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Pagination, PaginationContent, PaginationItem, PaginationLink,
@@ -128,7 +128,7 @@ export function ApprovalTable({ pendingList, loading, error, onReview }: Approva
                   </TableCell>
                 </TableRow>
               ) : (
-                paged.map((p, i) => {
+                paged.map(p => {
                   const total = sumLimits(p.limits);
                   const allCeilings = getAllCeilings(p);
                   const isExpanded = expandedUserId === p.user_id;

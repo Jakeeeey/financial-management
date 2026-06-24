@@ -33,6 +33,22 @@ interface DirectusUser {
   user_department: RawDepartmentField;
 }
 
+interface PendingRequestRow {
+  id: number;
+  user_id: number;
+  coa_id: number;
+  expense_limit: string;
+  remarks: string | null;
+  created_by: number | null;
+  created_at: string;
+}
+
+interface ExistingCeilingRow {
+  id: number;
+  coa_id: number | null;
+  expense_limit: string;
+}
+
 function fullName(u: DirectusUser | undefined): string {
   if (!u) return "—";
   const name = [u.user_fname, u.user_lname].filter(Boolean).join(" ");
@@ -49,7 +65,7 @@ function parseDeptId(raw: RawDepartmentField): number | undefined {
   return undefined;
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const cookieStore = await cookies();
   const token       = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
@@ -67,7 +83,7 @@ export async function GET(request: NextRequest) {
       fetchDepartments(),
     ]);
 
-    const requestsJson = await requestsRes.json() as { data?: Record<string, any>[] };
+    const requestsJson = await requestsRes.json() as { data?: PendingRequestRow[] };
     const usersJson    = await usersRes.json() as { data?: DirectusUser[] };
 
     const userMap = Object.fromEntries((usersJson.data ?? []).map(u => [u.user_id, u]));
@@ -146,8 +162,8 @@ export async function POST(request: NextRequest) {
   const currentUserId = decodeJwtUserId(token);
 
   try {
-    const body = await request.json() as { user_id?: number; action?: "approve" | "reject"; limits?: Record<number, number>; remarks?: string };
-    const { user_id, action, limits, remarks } = body;
+    const body = await request.json() as { user_id?: number; action?: "approve" | "reject"; limits?: Record<number, number> };
+    const { user_id, action, limits } = body;
 
     if (!user_id || !action || !["approve", "reject"].includes(action)) {
       return NextResponse.json({ ok: false, message: "user_id, action (approve/reject) are required." }, { status: 400 });
@@ -158,7 +174,7 @@ export async function POST(request: NextRequest) {
       `${DIRECTUS_URL}/items/user_expense_ceiling_request?filter[user_id][_eq]=${user_id}&filter[status][_eq]=Pending&limit=-1`,
       { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
     );
-    const pendingJson = await pendingRes.json() as { data?: Record<string, any>[] };
+    const pendingJson = await pendingRes.json() as { data?: PendingRequestRow[] };
     const pendingRows = pendingJson.data || [];
 
     if (pendingRows.length === 0) {
@@ -187,7 +203,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!updateRequestRes.ok) {
-      const json = await updateRequestRes.json() as Record<string, any>;
+      const json = await updateRequestRes.json() as { errors?: { message: string }[] };
       return NextResponse.json({ ok: false, message: json?.errors?.[0]?.message || "Failed to update request status." }, { status: updateRequestRes.status });
     }
 
@@ -197,7 +213,7 @@ export async function POST(request: NextRequest) {
         `${DIRECTUS_URL}/items/user_expense_ceiling?filter[user_id][_eq]=${user_id}&limit=-1`,
         { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
       );
-      const existingCeilingsJson = await existingCeilingsRes.json() as { data?: Record<string, any>[] };
+      const existingCeilingsJson = await existingCeilingsRes.json() as { data?: ExistingCeilingRow[] };
       const existingCeilings = existingCeilingsJson.data || [];
       const existingMap = Object.fromEntries(existingCeilings.map(c => [c.coa_id || 0, c.id]));
 
