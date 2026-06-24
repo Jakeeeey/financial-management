@@ -13,56 +13,18 @@ export type APCategory = "Trade" | "Non-Trade";
  * everything it needs to build KPIs, charts, and the table.
  */
 export interface RawAPRow {
-  // Identity
   disbursementId?:  number;
   docNo?:           string;
-
-  // Payee / supplier
-  supplierId?:      number;
   supplierName?:    string;
-
-  // Transaction type classification
-  transactionTypeId?:   number | null;
   transactionTypeName?: string | null;
   apCategory?:          APCategory;
-
-  // Dates
   transactionDate?: string;
   dueDate?:         string;
-  dateCreated?:     string;
-  datePosted?:      string | null;
-  dateApproved?:    string | null;
-
-  // Reference / metadata
   referenceNo?:     string | null;
-  remarks?:         string | null;
-
-  // Org / people
-  divisionId?:      number | null;
   divisionName?:    string | null;
-  departmentId?:    number | null;
-  encoderId?:       number | null;
-  encoderName?:     string | null;
-  approverId?:      number | null;
-  approverName?:    string | null;
-
-  // Status
-  status?:          string | null;
-  isPosted?:        number;
-  isDeleted?:       number;
-
-  // Money
   totalPayable?:    number;
   totalPaid?:       number;
-  totalRefunded?:   number;
   outstandingBalance?: number;
-
-  // Forensic
-  fundSourceId?:          number | null;
-  supportingDocumentsUrl?: string | null;
-
-  // Allow passthrough fields from the BFF (forward-compat)
-  [key: string]:    unknown;
 }
 
 export type APStatus =

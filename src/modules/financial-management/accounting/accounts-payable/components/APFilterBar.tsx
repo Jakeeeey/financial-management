@@ -2,6 +2,7 @@
 
 // components/APFilterBar.tsx — Polished date / supplier / status filter row.
 
+import { useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +30,11 @@ export function APFilterBar({
   supplierOptions, isFiltered, clearFilters, setPage,
   STATUS_OPTIONS,
 }: APFilterBarProps) {
+  const supplierSelectOptions = useMemo(() => [
+    { value: '', label: 'All Suppliers' },
+    ...supplierOptions.map((name) => ({ value: name, label: name })),
+  ], [supplierOptions]);
+
   return (
     <div className="flex flex-wrap items-center gap-2 w-full min-w-0 rounded-lg border border-border bg-card/50 px-3 py-2">
       <div className="flex items-center gap-1.5 pr-2 border-r border-border/60 text-muted-foreground">
@@ -61,10 +67,7 @@ export function APFilterBar({
         onValueChange={(val) => { setSupplier(val); setPage(1); }}
         placeholder="All Suppliers"
         className="h-8 w-[200px] text-xs !block text-left truncate relative pr-8 [&_svg]:absolute [&_svg]:right-3 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
-        options={[
-          { value: '', label: 'All Suppliers' },
-          ...supplierOptions.map((name) => ({ value: name, label: name })),
-        ]}
+        options={supplierSelectOptions}
       />
 
       <Select
