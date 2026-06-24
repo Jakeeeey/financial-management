@@ -4,7 +4,7 @@
 import * as React from "react";
 import { useProductPrintables, defaultFilters } from "../hooks/useProductPrintables";
 import { useLookups } from "../hooks/useLookups";
-import type { FilterState, PriceType, Unit } from "../types";
+import type { FilterState, PriceType, Supplier, Unit } from "../types";
 import PrintablesFiltersBar from "./PrintablesFiltersBar";
 import PrintablesMatrixTable from "./PrintablesMatrixTable";
 import PrintPrepareDialog from "../../shared/print/PrintPrepareDialog";
@@ -22,11 +22,8 @@ import {
     PRINT_CONFIRM_PRODUCT_THRESHOLD,
     PRINT_GROUP_CHUNK_SIZE,
 } from "../../shared/print/printConstants";
+import { sanitizePdfFilenamePart } from "../../shared/print/pdfFileNames";
 import { exportProductPrintablesExcel } from "../utils/productPrintablesExcel";
-import {
-    ExcelExportOptionsDialog,
-    type ExcelExportColumnMode,
-} from "../../shared/supplier-batch/ExcelExportOptionsDialog";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, FileDown, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
@@ -37,6 +34,9 @@ type PendingPrintJob = {
     groupIds: number[];
     filtersText: string;
     supplierNames: string[];
+    priceTypes: PriceType[];
+    tiers: string[];
+    pdfSaveAsName: string;
 };
 
 function buildPrintFilterParams(filters: FilterState): PrintFilterParams {
@@ -46,7 +46,7 @@ function buildPrintFilterParams(filters: FilterState): PrintFilterParams {
         brand_ids: filters.brand_ids.length ? filters.brand_ids.join(",") : undefined,
         unit_ids: filters.unit_ids.length ? filters.unit_ids.join(",") : undefined,
         supplier_ids: filters.supplier_ids.length ? filters.supplier_ids.join(",") : undefined,
-        supplier_scope: filters.supplier_scope,
+        supplier_scope: filters.supplier_ids.length ? "LINKED_ONLY" : filters.supplier_scope,
         active_only: filters.active_only ? "1" : "0",
     };
 }
@@ -74,7 +74,6 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
     const [printPrepareProgress, setPrintPrepareProgress] = React.useState({ done: 0, total: 0 });
     const [currentUser, setCurrentUser] = React.useState<string>(userName || "System User");
     const printAbortRef = React.useRef<AbortController | null>(null);
-    const [excelOptionsOpen, setExcelOptionsOpen] = React.useState(false);
     const [largePrintConfirmOpen, setLargePrintConfirmOpen] = React.useState(false);
     const [pendingPrintJob, setPendingPrintJob] = React.useState<PendingPrintJob | null>(null);
     const [printOpen, setPrintOpen] = React.useState(false);
@@ -86,6 +85,7 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
     const [printFiltersText, setPrintFiltersText] = React.useState("");
     const [printGeneratedAt, setPrintGeneratedAt] = React.useState("");
     const [printSupplierNames, setPrintSupplierNames] = React.useState<string[]>([]);
+    const [printPdfSaveAsName, setPrintPdfSaveAsName] = React.useState("");
 
     React.useEffect(() => {
         if (userName) {
@@ -123,12 +123,51 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
             parts.push("Units: All Units");
         }
 
-        parts.push(`Supplier Scope: ${filters.supplier_scope === "LINKED_ONLY" ? "Linked Only" : "All"}`);
+        parts.push(`Supplier Scope: ${filters.supplier_ids.length || filters.supplier_scope === "LINKED_ONLY" ? "Linked Only" : "All"}`);
         parts.push(`Products: ${filters.active_only ? "Active Only" : "Active and Inactive"}`);
-        parts.push("Prices: All Configured Price Types");
+        if (filters.price_type_ids.length) {
+            const names = filters.price_type_ids
+                .map(id => priceTypes.find(priceType => String(priceType.price_type_id) === String(id))?.price_type_name)
+                .filter(Boolean);
+            parts.push(`Prices: ${names.length ? names.join(", ") : "Selected Price Types"}`);
+        } else {
+            parts.push("Prices: All Configured Price Types");
+        }
         
         return parts.join("\n");
-    }, [filters, categories, brands, suppliers, units]);
+    }, [filters, categories, brands, suppliers, units, priceTypes]);
+
+    const exportPriceTypes = React.useMemo(() => {
+        const configured = priceTypes.filter(priceType => priceType.price_type_id !== -1);
+        if (filters.price_type_ids.length === 0) return configured;
+        return configured.filter(priceType =>
+            filters.price_type_ids.includes(String(priceType.price_type_id)),
+        );
+    }, [filters.price_type_ids, priceTypes]);
+
+    const exportIncludesListCost =
+        filters.price_type_ids.length === 0 || filters.price_type_ids.includes("-1");
+
+    const exportTiers = React.useMemo(() => {
+        const tiers = buildMatrixTierKeys(exportPriceTypes);
+        return exportIncludesListCost ? tiers : tiers.filter(tier => tier !== "LIST");
+    }, [exportIncludesListCost, exportPriceTypes]);
+
+    const resolveExportSupplier = React.useCallback((): Supplier | null | undefined => {
+        if (filters.supplier_ids.length > 1) {
+            toast.error("Select only one supplier before exporting a supplier masterlist.");
+            return undefined;
+        }
+        if (filters.supplier_ids.length === 0) return null;
+
+        const supplierId = filters.supplier_ids[0];
+        const supplier = suppliers.find(item => String(item.id) === String(supplierId));
+        if (!supplier) {
+            toast.error("The selected supplier could not be found.");
+            return undefined;
+        }
+        return supplier;
+    }, [filters.supplier_ids, suppliers]);
 
     const cancelPrintPrepare = React.useCallback(() => {
         printAbortRef.current?.abort();
@@ -197,17 +236,17 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
                 String(a.display.product_name ?? "").localeCompare(String(b.display.product_name ?? "")),
             );
 
-            const configuredPriceTypes = priceTypes.filter(priceType => priceType.price_type_id !== -1);
             const now = new Date();
 
             setPrintRows(enriched);
-            setPrintPriceTypes(configuredPriceTypes);
+            setPrintPriceTypes(job.priceTypes);
             setPrintUnits(units);
-            setPrintTiers(buildMatrixTierKeys(configuredPriceTypes));
+            setPrintTiers(job.tiers);
             setPrintUsedUnitIds(usedUnitIds);
             setPrintFiltersText(job.filtersText);
             setPrintGeneratedAt(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
             setPrintSupplierNames(job.supplierNames);
+            setPrintPdfSaveAsName(job.pdfSaveAsName);
             setPrintOpen(true);
         } catch (error: unknown) {
             if (signal.aborted) return;
@@ -220,7 +259,7 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
             setPrintPrepareProgress({ done: 0, total: 0 });
             setIsPrinting(false);
         }
-    }, [brands, categories, priceTypes, units]);
+    }, [brands, categories, units]);
 
     const confirmLargePrint = React.useCallback(() => {
         const job = pendingPrintJob;
@@ -232,6 +271,9 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
     }, [continuePrintPreparation, pendingPrintJob]);
 
     const handleExportPdf = React.useCallback(async () => {
+        const supplier = resolveExportSupplier();
+        if (supplier === undefined) return;
+
         setIsPrinting(true);
         try {
             const printParams = buildPrintFilterParams(filters);
@@ -242,15 +284,20 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
                 return;
             }
 
-            const supplierNames = filters.supplier_ids
-                .map(id => suppliers.find(supplier => String(supplier.id) === String(id))?.supplier_name)
-                .filter((name): name is string => Boolean(name));
+            const stamp = new Date().toISOString().split("T")[0];
+            const supplierNames = supplier ? [supplier.supplier_name] : [];
+            const supplierSuffix = supplier
+                ? `_${sanitizePdfFilenamePart(supplier.supplier_name)}`
+                : "";
             const job: PendingPrintJob = {
                 printParams,
                 totalGroups: meta.totalGroups,
                 groupIds,
                 filtersText: filterSummary,
                 supplierNames,
+                priceTypes: exportPriceTypes,
+                tiers: exportTiers,
+                pdfSaveAsName: `Masterlist${supplierSuffix}_${stamp}.pdf`,
             };
 
             if (meta.totalGroups > PRINT_CONFIRM_PRODUCT_THRESHOLD) {
@@ -265,24 +312,23 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
         } finally {
             setIsPrinting(false);
         }
-    }, [continuePrintPreparation, filterSummary, filters, suppliers]);
+    }, [continuePrintPreparation, exportPriceTypes, exportTiers, filterSummary, filters, resolveExportSupplier]);
 
-    const handleExportExcelClick = () => {
-        setExcelOptionsOpen(true);
-    };
+    const handleExportExcel = async () => {
+        const supplier = resolveExportSupplier();
+        if (supplier === undefined) return;
 
-    const handleExportExcelWithOptions = async (mode: ExcelExportColumnMode) => {
-        setExcelOptionsOpen(false);
-        const result = await prepareExportData();
+        const result = await prepareExportData(exportPriceTypes);
         if (!result) return;
         try {
             await exportProductPrintablesExcel({
                 matrixRows: result.matrixRows,
-                priceTypes,
+                priceTypes: exportPriceTypes,
                 units,
                 filterSummary,
                 userName: currentUser,
-                includeProposedColumns: mode === "with-proposed",
+                supplierName: supplier?.supplier_name,
+                includeListCost: exportIncludesListCost,
             });
             toast.success("Excel report downloaded.");
         } catch (error: unknown) {
@@ -291,7 +337,7 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
         }
     };
 
-    const prepareExportData = async () => {
+    const prepareExportData = async (selectedPriceTypes: PriceType[]) => {
         const controller = new AbortController();
         printAbortRef.current = controller;
         setIsPrinting(true);
@@ -306,7 +352,7 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
                 products,
                 categories,
                 brands,
-                priceTypes,
+                selectedPriceTypes,
                 { signal: controller.signal },
             );
 
@@ -359,7 +405,7 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
                         {isPrinting ? "Preparing..." : "Export PDF"}
                     </Button>
                     <Button
-                        onClick={handleExportExcelClick}
+                        onClick={handleExportExcel}
                         disabled={productsLoading || lookupsLoading || isPrinting}
                         variant="outline"
                         className="rounded-xl px-6 gap-2"
@@ -454,14 +500,8 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
                 supplierNames={printSupplierNames}
                 pdfTitle="Product Printables Masterlist"
                 blocksPerPage={4}
-                pdfSaveAsName={`Masterlist_Export_${new Date().toISOString().split("T")[0]}.pdf`}
+                pdfSaveAsName={printPdfSaveAsName}
                 defaultFontSize={5}
-            />
-
-            <ExcelExportOptionsDialog
-                open={excelOptionsOpen}
-                onOpenChange={setExcelOptionsOpen}
-                onConfirm={handleExportExcelWithOptions}
             />
         </div>
     );
