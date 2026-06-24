@@ -9,6 +9,7 @@ export function hasActiveARFilters(f: ARTableFilters): boolean {
     f.salesman ||
     f.division ||
     f.operation ||
+    f.agingRange ||
     f.search?.trim()
   );
 }
@@ -22,6 +23,7 @@ export function arFiltersEqual(a: ARTableFilters, b: ARTableFilters): boolean {
     a.salesman === b.salesman &&
     a.division === b.division &&
     a.operation === b.operation &&
+    a.agingRange === b.agingRange &&
     (a.search?.trim() ?? '') === (b.search?.trim() ?? '')
   );
 }

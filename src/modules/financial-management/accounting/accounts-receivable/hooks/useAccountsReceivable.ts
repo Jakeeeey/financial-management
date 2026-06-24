@@ -63,6 +63,7 @@ function summaryToMetrics(summary: ARSummaryResponse): ARMetrics {
     overdueInvoices: [],
     overdueCount: summary.metrics.overdueCount,
     avgOverdue: summary.metrics.avgOverdue,
+    totalPendingCancellation: summary.metrics.totalPendingCancellation,
     unpostedAllocationsActive: summary.unpostedAllocationsActive,
     unpostedAllocationsPaid: summary.unpostedAllocationsPaid,
     unpostedUnallocated: summary.unpostedUnallocated,
@@ -163,6 +164,10 @@ export function useAccountsReceivable(
       return null;
     }
     setCustomerGroups(data.customerGroups);
+    if (data.page !== pageRef.current) {
+      pageRef.current = data.page;
+      setTablePage(data.page);
+    }
     setTableTotalPages(data.totalPages);
     setFilteredCount(data.filteredCount);
     setTotalGroups(data.totalGroups);
@@ -291,7 +296,9 @@ export function useAccountsReceivable(
   }, [beginTableRequest, fetchTable]);
 
   const onTableSortChange = useCallback((sortKey: keyof Invoice | null, sortOrder: 'asc' | 'desc' | null) => {
-    const next: ARTableSort = { sortKey, sortOrder };
+    const next: ARTableSort = sortKey && sortOrder
+      ? { sortKey, sortOrder }
+      : DEFAULT_TABLE_SORT;
     setTableSort(next);
     sortRef.current = next;
     pageRef.current = 1;

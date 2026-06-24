@@ -26,13 +26,14 @@ function parseFilters(searchParams: URLSearchParams): ARTableFilters {
     salesman: searchParams.get('salesman') || undefined,
     division: searchParams.get('division') || undefined,
     operation: searchParams.get('operation') || undefined,
+    agingRange: searchParams.get('agingRange') || undefined,
     search: searchParams.get('search') || undefined,
   };
 }
 
 function hasActiveFilters(filters: ARTableFilters): boolean {
   return !!(filters.dateFrom || filters.dateTo || filters.customer || filters.cluster ||
-    filters.salesman || filters.division || filters.operation || filters.search);
+    filters.salesman || filters.division || filters.operation || filters.agingRange || filters.search);
 }
 
 function filterOperationData(payload: ARFullPayload, filteredRows: ARRow[]) {
@@ -91,6 +92,9 @@ function deriveFilteredMetrics(filteredRows: ARRow[]) {
   const totalReceivable = filteredRows.reduce((s, r) => s + r.netReceivable, 0);
   const totalOutstanding = filteredRows.reduce((s, r) => s + r.outstandingBalance, 0);
   const overdue = filteredRows.filter(r => r.daysOverdue !== null && r.daysOverdue >= 0 && r.outstandingBalance > 0);
+  const totalPendingCancellation = filteredRows
+    .filter(r => r.transactionStatus === 'Cancellation Requested')
+    .reduce((sum, row) => sum + row.outstandingBalance, 0);
   const scoped = deriveScopedUnpostedMetrics(filteredRows);
   return {
     totalReceivable,
@@ -102,6 +106,7 @@ function deriveFilteredMetrics(filteredRows: ARRow[]) {
       : 0,
     overdueCount: overdue.length,
     invoiceCount: filteredRows.length,
+    totalPendingCancellation,
     unpostedAllocationsActive: scoped.unpostedAllocationsActive,
     unpostedAllocationsPaid: scoped.unpostedAllocationsPaid,
     unpostedUnallocated: scoped.unpostedUnallocated,

@@ -106,6 +106,7 @@ export interface ARMetrics {
   unpostedAllocationsActive?: number;
   unpostedAllocationsPaid?: number;
   unpostedUnallocated?: number;
+  totalPendingCancellation?: number;
 }
 
 export interface OperationBreakdown {
@@ -132,6 +133,7 @@ export interface ARMetricsSummary {
   avgOverdue: number;
   overdueCount: number;
   invoiceCount: number;
+  totalPendingCancellation: number;
   unpostedAllocationsActive?: number;
   unpostedAllocationsPaid?: number;
   unpostedUnallocated?: number;
@@ -145,6 +147,7 @@ export interface ARTableFilters {
   salesman?: string;
   division?: string;
   operation?: string;
+  agingRange?: string;
   search?: string;
 }
 

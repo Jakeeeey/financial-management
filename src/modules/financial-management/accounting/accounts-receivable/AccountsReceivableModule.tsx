@@ -134,6 +134,7 @@ export default function AccountsReceivableModule() {
   const [operation, setOperation] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAIInsights, setShowAIInsights] = useState(false);
+  const [agingRange, setAgingRange] = useState('');
 
   const deferredSearch = useDeferredValue(searchQuery);
 
@@ -145,8 +146,9 @@ export default function AccountsReceivableModule() {
     salesman: salesman || undefined,
     division: division || undefined,
     operation: operation || undefined,
+    agingRange: agingRange || undefined,
     search: deferredSearch || undefined,
-  }), [dateFrom, dateTo, customer, cluster, salesman, division, operation, deferredSearch]);
+  }), [dateFrom, dateTo, customer, cluster, salesman, division, operation, agingRange, deferredSearch]);
 
   const {
     loading,
@@ -169,16 +171,24 @@ export default function AccountsReceivableModule() {
     onTableSortChange,
   } = useAccountsReceivable(activeFilters);
 
-  const isFiltered = !!(dateFrom || dateTo || customer || cluster || salesman || division || operation || searchQuery);
+  const isFiltered = !!(dateFrom || dateTo || customer || cluster || salesman || division || operation || agingRange || searchQuery);
 
   const aiInsights = useMemo(() => {
     return generateAIInsights(invoices, metrics);
   }, [invoices, metrics]);
 
-  const { totalReceivable, totalOutstanding, totalUnposted, realOutstanding, avgOverdue, overdueCount } = metrics;
+  const {
+    totalReceivable,
+    totalOutstanding,
+    totalUnposted,
+    realOutstanding,
+    avgOverdue,
+    overdueCount,
+    totalPendingCancellation,
+  } = metrics;
 
   const clearFilters = () => {
-    setDateFrom(''); setDateTo(''); setCustomer(''); setCluster(''); setSalesman(''); setDivision(''); setOperation(''); setSearchQuery(''); setTablePage(1);
+    setDateFrom(''); setDateTo(''); setCustomer(''); setCluster(''); setSalesman(''); setDivision(''); setOperation(''); setAgingRange(''); setSearchQuery('');
   };
 
   const handleRowClick = useCallback((inv: Invoice) => {
@@ -487,7 +497,7 @@ export default function AccountsReceivableModule() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
             <Input
               value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setTablePage(1); }}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search Customer / Invoice..."
               className="h-7 pl-8 text-[10px] focus-visible:ring-1 bg-background border-border/60"
             />
@@ -522,7 +532,6 @@ export default function AccountsReceivableModule() {
                   }
                   setDateFrom(fromDate);
                   setDateTo(toDate);
-                  setTablePage(1);
               }}
           >
             <SelectTrigger className="h-7 w-[95px] text-[10px] bg-background border border-border/60">
@@ -542,7 +551,7 @@ export default function AccountsReceivableModule() {
             <Input
                 type="date"
                 value={dateFrom}
-                onChange={(e) => { setDateFrom(e.target.value); setTablePage(1); }}
+                onChange={(e) => setDateFrom(e.target.value)}
                 className="h-auto border-0 p-0 text-[10px] focus-visible:ring-0 shadow-none w-[96px] bg-transparent"
             />
           </div>
@@ -552,14 +561,14 @@ export default function AccountsReceivableModule() {
             <Input
                 type="date"
                 value={dateTo}
-                onChange={(e) => { setDateTo(e.target.value); setTablePage(1); }}
+                onChange={(e) => setDateTo(e.target.value)}
                 className="h-auto border-0 p-0 text-[10px] focus-visible:ring-0 shadow-none w-[96px] bg-transparent"
             />
           </div>
 
           <SearchableSelect
               value={customer}
-              onValueChange={(val) => { setCustomer(val); setTablePage(1); }}
+              onValueChange={setCustomer}
               placeholder="All Customers"
               className="h-7 w-[160px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
               options={[
@@ -570,7 +579,7 @@ export default function AccountsReceivableModule() {
 
           <SearchableSelect
               value={cluster}
-              onValueChange={(val) => { setCluster(val); setTablePage(1); }}
+              onValueChange={setCluster}
               placeholder="All Clusters"
               className="h-7 w-[130px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
               options={[
@@ -581,7 +590,7 @@ export default function AccountsReceivableModule() {
 
           <SearchableSelect
               value={salesman}
-              onValueChange={(val) => { setSalesman(val); setTablePage(1); }}
+              onValueChange={setSalesman}
               placeholder="All Salesmen"
               className="h-7 w-[150px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
               options={[
@@ -592,7 +601,7 @@ export default function AccountsReceivableModule() {
 
           <SearchableSelect
               value={division}
-              onValueChange={(val) => { setDivision(val); setTablePage(1); }}
+              onValueChange={setDivision}
               placeholder="All Divisions"
               className="h-7 w-[150px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
               options={[
@@ -603,7 +612,7 @@ export default function AccountsReceivableModule() {
 
           <SearchableSelect
               value={operation}
-              onValueChange={(val) => { setOperation(val); setTablePage(1); }}
+              onValueChange={setOperation}
               placeholder="All Operations"
               className="h-7 w-[150px] text-[10px] !block text-left truncate relative pr-7 [&_svg]:absolute [&_svg]:right-2.5 [&_svg]:top-1/2 [&_svg]:-translate-y-1/2"
               options={[
@@ -611,6 +620,15 @@ export default function AccountsReceivableModule() {
                 ...filterOptions.operations,
               ]}
           />
+
+          {agingRange && (
+              <span className="inline-flex items-center gap-1 rounded border border-blue-500/20 bg-blue-500/10 px-2.5 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                Aging: {agingRange}
+                <button onClick={() => setAgingRange('')} className="ml-1 cursor-pointer hover:text-rose-500">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+          )}
 
           {isFiltered && (
               <Button variant="ghost" size="sm" onClick={clearFilters}
@@ -632,7 +650,9 @@ export default function AccountsReceivableModule() {
           <Stat
               label="Outstanding (Ledger)"
               value={formatPeso(totalOutstanding)}
-              sub={`${((totalOutstanding / (totalReceivable || 1)) * 100).toFixed(1)}% of receivable`}
+              sub={totalPendingCancellation
+                ? `Pending cancellation: ${formatPeso(totalPendingCancellation)}`
+                : `${((totalOutstanding / (totalReceivable || 1)) * 100).toFixed(1)}% of receivable`}
               icon={<AlertCircle className="h-3.5 w-3.5" />}
               type="outstanding"
           />
@@ -733,8 +753,18 @@ export default function AccountsReceivableModule() {
 
         {/* ── Charts Row 1: Aging + Salesman ── */}
         <div className="grid gap-2 md:grid-cols-2 min-w-0 w-full">
-          <AgingChart data={agingData} isFiltered={isFiltered} />
-          <SalesmanChart data={salesmanData} isFiltered={isFiltered} />
+          <AgingChart
+              data={agingData}
+              isFiltered={isFiltered}
+              selectedRange={agingRange}
+              onRangeSelect={setAgingRange}
+          />
+          <SalesmanChart
+              data={salesmanData}
+              isFiltered={isFiltered}
+              selectedSalesman={salesman}
+              onSalesmanSelect={setSalesman}
+          />
         </div>
 
         <DrilldownChart

@@ -78,6 +78,7 @@ export interface ARMetricsSummary {
   avgOverdue: number;
   overdueCount: number;
   invoiceCount: number;
+  totalPendingCancellation: number;
   unpostedAllocationsActive: number;
   unpostedAllocationsPaid: number;
   unpostedUnallocated: number;
@@ -113,6 +114,7 @@ export interface ARTableFilters {
   salesman?: string;
   division?: string;
   operation?: string;
+  agingRange?: string;
   search?: string;
 }
 
@@ -304,6 +306,9 @@ function deriveMetricsFromRows(
   const totalReceivable = rows.reduce((s, r) => s + r.netReceivable, 0);
   const totalOutstanding = rows.reduce((s, r) => s + r.outstandingBalance, 0);
   const overdue = rows.filter(r => r.daysOverdue !== null && r.daysOverdue >= 0 && r.outstandingBalance > 0);
+  const totalPendingCancellation = rows
+    .filter(r => r.transactionStatus === 'Cancellation Requested')
+    .reduce((sum, row) => sum + row.outstandingBalance, 0);
   const avgOverdue = overdue.length > 0
     ? Math.round(overdue.reduce((s, r) => s + (r.daysOverdue ?? 0), 0) / overdue.length)
     : 0;
@@ -316,6 +321,7 @@ function deriveMetricsFromRows(
     avgOverdue,
     overdueCount: overdue.length,
     invoiceCount: rows.length,
+    totalPendingCancellation,
     unpostedAllocationsActive: pool.unpostedAllocationsActive,
     unpostedAllocationsPaid: pool.unpostedAllocationsPaid,
     unpostedUnallocated: pool.unpostedUnallocated,
@@ -354,6 +360,14 @@ export function applyARFilters(rows: ARRow[], filters: ARTableFilters): ARRow[] 
     if (filters.salesman && row.salesman !== filters.salesman) return false;
     if (filters.division && row.division !== filters.division) return false;
     if (filters.operation && String(row.salesType) !== String(filters.operation)) return false;
+    if (filters.agingRange) {
+      const overdueDays = row.daysOverdue;
+      if (overdueDays === null || overdueDays < 0) return false;
+      if (filters.agingRange === '0-30 Days' && overdueDays > 30) return false;
+      if (filters.agingRange === '31-60 Days' && (overdueDays <= 30 || overdueDays > 60)) return false;
+      if (filters.agingRange === '61-90 Days' && (overdueDays <= 60 || overdueDays > 90)) return false;
+      if (filters.agingRange === '90+ Days' && overdueDays <= 90) return false;
+    }
     if (q) {
       const match =
         row.invoiceNo.toLowerCase().includes(q) ||
@@ -571,6 +585,7 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
   const rows: ARRow[] = [];
   for (const inv of invoices) {
     if (parseBit(inv.isPosted)) continue;
+    if ((inv.transaction_status || '').trim().toUpperCase() === 'CANCELLED') continue;
 
     const grossAmount = Number(inv.gross_amount) || 0;
     const discountAmount = Number(inv.discount_amount) || 0;

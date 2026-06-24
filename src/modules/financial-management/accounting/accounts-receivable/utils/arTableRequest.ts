@@ -31,7 +31,8 @@ export function matchesTableResponse(
   ctx: TableRequestContext,
   data: ARTableResponse,
 ): boolean {
-  if (data.page !== ctx.page) return false;
+  const isServerClampedPage = data.page === data.totalPages && data.page < ctx.page;
+  if (data.page !== ctx.page && !isServerClampedPage) return false;
   if (data.sortKey !== undefined && data.sortKey !== ctx.sort.sortKey) return false;
   if (data.sortOrder !== undefined && data.sortOrder !== ctx.sort.sortOrder) return false;
   return true;
