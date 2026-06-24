@@ -29,7 +29,7 @@ function Stat({
 }: {
   label: string;
   value: React.ReactNode;
-  sub?: string;
+  sub?: React.ReactNode;
   icon?: React.ReactNode;
   type?: 'normal' | 'receivable' | 'outstanding' | 'unposted' | 'exposure' | 'overdue';
   explanation?: React.ReactNode;
@@ -124,6 +124,7 @@ export default function AccountsReceivableModule() {
   const [operation, setOperation] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAIInsights, setShowAIInsights] = useState(false);
+  const [agingRange, setAgingRange] = useState('');
 
   // ── Filter option lists ────────────────────────────────────────────────────
   const customerOptions = useMemo(
@@ -158,6 +159,14 @@ export default function AccountsReceivableModule() {
       if (salesman && inv.salesman !== salesman)  return false;
       if (division && inv.division !== division)  return false;
       if (operation && String(inv.salesType) !== String(operation)) return false;
+      if (agingRange) {
+        if (inv.overdue === null || inv.overdue < 0) return false;
+        const overdueDays = inv.overdue;
+        if (agingRange === '0-30 Days' && overdueDays > 30) return false;
+        if (agingRange === '31-60 Days' && (overdueDays <= 30 || overdueDays > 60)) return false;
+        if (agingRange === '61-90 Days' && (overdueDays <= 60 || overdueDays > 90)) return false;
+        if (agingRange === '90+ Days' && overdueDays <= 90) return false;
+      }
       if (q) {
         const matchesInvoice = inv.invoiceNo.toLowerCase().includes(q);
         const matchesCustomer = inv.customer.toLowerCase().includes(q);
@@ -165,9 +174,9 @@ export default function AccountsReceivableModule() {
       }
       return true;
     });
-  }, [invoices, dateFrom, dateTo, customer, cluster, salesman, division, operation, searchQuery]);
+  }, [invoices, dateFrom, dateTo, customer, cluster, salesman, division, operation, searchQuery, agingRange]);
 
-  const isFiltered = !!(dateFrom || dateTo || customer || cluster || salesman || division || operation || searchQuery);
+  const isFiltered = !!(dateFrom || dateTo || customer || cluster || salesman || division || operation || searchQuery || agingRange);
 
   // ── Derived display data ───────────────────────────────────────────────────
   const filteredSalesmanMap = useMemo(() => {
@@ -232,10 +241,10 @@ export default function AccountsReceivableModule() {
         .sort((a, b) => b.totalOutstanding - a.totalOutstanding);
   }, [isFiltered, filteredInvoices, operationData]);
 
-  const { totalReceivable, totalOutstanding, totalUnposted, realOutstanding, overdueInvoices, avgOverdue } = filteredMetrics;
+  const { totalReceivable, totalOutstanding, totalUnposted, realOutstanding, overdueInvoices, avgOverdue, totalPendingCancellation } = filteredMetrics;
 
   const clearFilters = () => {
-    setDateFrom(''); setDateTo(''); setCustomer(''); setCluster(''); setSalesman(''); setDivision(''); setOperation(''); setSearchQuery(''); setPage(1);
+    setDateFrom(''); setDateTo(''); setCustomer(''); setCluster(''); setSalesman(''); setDivision(''); setOperation(''); setSearchQuery(''); setAgingRange(''); setPage(1);
   };
 
   // ── PDF export ─────────────────────────────────────────────────────────────
@@ -280,41 +289,37 @@ export default function AccountsReceivableModule() {
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
       columnStyles: {
-        0:  { cellWidth: 20 },
-        1:  { cellWidth: 38 },
-        2:  { cellWidth: 32 },
-        3:  { cellWidth: 20 },
-        4:  { cellWidth: 20 },
+        0:  { cellWidth: 22 },
+        1:  { cellWidth: 42 },
+        2:  { cellWidth: 42 },
+        3:  { cellWidth: 22 },
+        4:  { cellWidth: 24 },
         5:  { cellWidth: 24 },
         6:  { cellWidth: 24 },
-        7:  { cellWidth: 24 },
-        8:  { cellWidth: 28 },
-        9:  { cellWidth: 20 },
-        10: { cellWidth: 30 },
-        11: { cellWidth: 14 },
-        12: { cellWidth: 20 },
-        13: { cellWidth: 22 },
-        14: { cellWidth: 22 },
+        7:  { cellWidth: 28 },
+        8:  { cellWidth: 24 },
+        9:  { cellWidth: 30 },
+        10: { cellWidth: 16 },
+        11: { cellWidth: 22 },
+        12: { cellWidth: 24 },
       },
       head: [[
-        'inv #', 'Customer', 'Salesman', 'Division', 'SCode', 'Inv. Date', 'Del Date', 'Due Date',
-        'Net Receivable', 'Paid', 'Outstanding', 'Overdue', 'AR Status', 'Payment Status', 'Transaction Status',
+        'inv #', 'Customer', 'Salesperson', 'Division', 'Inv. Date', 'Del Date', 'Due Date',
+        'Net Receivable', 'Paid', 'Outstanding', 'Overdue', 'AR Status', 'Transaction Status',
       ]],
       body: displayInvoices.map((inv) => [
         inv.invoiceNo,
         inv.customer,
-        inv.salesman,
+        `${inv.salesman} (${inv.salesmanCode})`,
         inv.division,
-        inv.salesmanCode,
         (inv.invoiceDate ?? '').split('T')[0],
         (inv.deliveryDate ?? '').split('T')[0],
         (inv.due ?? '').split('T')[0],
         inv.netReceivable?.toLocaleString('en-PH', { minimumFractionDigits: 2 }) ?? '',
         inv.totalPaid?.toLocaleString('en-PH', { minimumFractionDigits: 2 }) ?? '',
         inv.outstanding?.toLocaleString('en-PH', { minimumFractionDigits: 2 }) ?? '',
-        inv.overdue !== null && inv.overdue >= 0 ? inv.overdue : '—',
+        inv.overdue !== null && inv.overdue >= 0 ? `${inv.overdue}d` : '—',
         inv.arStatus,
-        inv.paymentStatus,
         inv.transactionStatus,
       ]),
       margin: { left: 10, right: 10 },
@@ -344,18 +349,16 @@ export default function AccountsReceivableModule() {
     const excelData = displayInvoices.map((inv) => ({
       'inv #': inv.invoiceNo,
       'Customer': inv.customer,
-      'Salesman': inv.salesman,
+      'Salesperson': `${inv.salesman} (${inv.salesmanCode})`,
       'Division': inv.division,
-      'SCode': inv.salesmanCode,
       'Inv. Date': inv.invoiceDate ? inv.invoiceDate.split('T')[0] : '',
       'Del Date': inv.deliveryDate ? inv.deliveryDate.split('T')[0] : '',
       'Due Date': inv.due ? inv.due.split('T')[0] : '',
       'Net Receivable': inv.netReceivable,
       'Paid': inv.totalPaid,
       'Outstanding': inv.outstanding,
-      'Overdue': inv.overdue !== null && inv.overdue >= 0 ? inv.overdue : '—',
+      'Overdue': inv.overdue !== null && inv.overdue >= 0 ? `${inv.overdue}d` : '—',
       'AR Status': inv.arStatus,
-      'Payment Status': inv.paymentStatus,
       'Transaction Status': inv.transactionStatus,
     }));
 
@@ -364,9 +367,8 @@ export default function AccountsReceivableModule() {
     const totalRow = {
       'inv #': 'TOTAL',
       'Customer': '',
-      'Salesman': '',
+      'Salesperson': '',
       'Division': '',
-      'SCode': '',
       'Inv. Date': '',
       'Del Date': '',
       'Due Date': '',
@@ -375,7 +377,6 @@ export default function AccountsReceivableModule() {
       'Outstanding': filteredMetrics.totalOutstanding,
       'Overdue': '',
       'AR Status': '',
-      'Payment Status': '',
       'Transaction Status': '',
     };
 
@@ -658,6 +659,15 @@ export default function AccountsReceivableModule() {
               ]}
           />
 
+          {agingRange && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-[10px] font-bold text-blue-600 dark:text-blue-400">
+              Aging: {agingRange}
+              <button onClick={() => { setAgingRange(''); setPage(1); }} className="hover:text-rose-500 ml-1 cursor-pointer">
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
+
           {isFiltered && (
               <Button variant="ghost" size="sm" onClick={clearFilters}
                       className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground gap-1">
@@ -674,13 +684,51 @@ export default function AccountsReceivableModule() {
               sub={`${displayInvoices.length} invoices`}
               icon={<PhilippinePeso className="h-3.5 w-3.5" />}
               type="receivable"
+              explanation={
+                <div className="space-y-1.5 p-1 text-xs">
+                  <p className="font-bold text-blue-600">Total Receivable</p>
+                  <p className="text-muted-foreground leading-relaxed">
+                    The total initial billing value of all active draft invoices, computed as:
+                    <span className="block font-mono bg-muted p-1 rounded mt-1 text-[10px]">
+                      Gross Amount - Discount Amount
+                    </span>
+                  </p>
+                </div>
+              }
           />
           <Stat
               label="Outstanding (Ledger)"
               value={formatPeso(totalOutstanding)}
-              sub={`${((totalOutstanding / (totalReceivable || 1)) * 100).toFixed(1)}% of receivable`}
+              sub={
+                totalPendingCancellation && totalPendingCancellation > 0 ? (
+                  <span className="text-amber-600 dark:text-amber-400 font-bold animate-pulse">
+                    ⚠️ Pend. Cancel: {formatPeso(totalPendingCancellation)}
+                  </span>
+                ) : (
+                  `${((totalOutstanding / (totalReceivable || 1)) * 100).toFixed(1)}% of receivable`
+                )
+              }
               icon={<AlertCircle className="h-3.5 w-3.5" />}
               type="outstanding"
+              explanation={
+                <div className="space-y-2 p-1 text-xs">
+                  <p className="font-bold text-amber-600">Outstanding Ledger Balance</p>
+                  <p className="text-muted-foreground leading-relaxed">
+                    The total unpaid portion of invoices currently active on the general ledger, computed as:
+                    <span className="block font-mono bg-muted p-1 rounded my-1 text-[10px]">
+                      Receivable - Returns - Credit Memos + Debit Memos - Unfulfilled - Paid
+                    </span>
+                  </p>
+                  {totalPendingCancellation && totalPendingCancellation > 0 ? (
+                    <div className="border-t border-border/60 pt-2 mt-1 bg-amber-500/[0.03] p-1.5 rounded border border-amber-500/10">
+                      <p className="font-bold text-amber-700 dark:text-amber-500 text-[11px]">Pending Cancellation Alert</p>
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
+                        Invoices totaling <strong>{formatPeso(totalPendingCancellation)}</strong> have cancellation requests pending Admin approval.
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              }
           />
           <Stat
               label="Unposted Collections"
@@ -760,6 +808,17 @@ export default function AccountsReceivableModule() {
               sub="Net outstanding balance"
               icon={<AlertCircle className="h-3.5 w-3.5 text-emerald-500" />}
               type="exposure"
+              explanation={
+                <div className="space-y-1.5 p-1 text-xs">
+                  <p className="font-bold text-emerald-600">Real AR Exposure</p>
+                  <p className="text-muted-foreground leading-relaxed">
+                    The true remaining credit risk exposure, calculated as the Ledger Outstanding balance minus payments/collections already received but not yet posted:
+                    <span className="block font-mono bg-muted p-1 rounded mt-1 text-[10px]">
+                      Outstanding (Ledger) - Unposted Collections
+                    </span>
+                  </p>
+                </div>
+              }
           />
           <Stat
               label="Avg Days Overdue"
@@ -767,13 +826,31 @@ export default function AccountsReceivableModule() {
               sub={`across ${overdueInvoices.length} invoices`}
               icon={<Clock className="h-3.5 w-3.5" />}
               type="overdue"
+              explanation={
+                <div className="space-y-1.5 p-1 text-xs">
+                  <p className="font-bold text-rose-600">Average Days Overdue</p>
+                  <p className="text-muted-foreground leading-relaxed">
+                    The average age of overdue invoices, computed as the total overdue days divided by the number of outstanding invoices past their due dates.
+                  </p>
+                </div>
+              }
           />
         </div>
 
         {/* ── Charts Row 1: Aging + Salesman ── */}
         <div className="grid gap-2 md:grid-cols-2 min-w-0 w-full">
-          <AgingChart data={displayAgingData} isFiltered={isFiltered} />
-          <SalesmanChart data={displaySalesmanData} isFiltered={isFiltered} />
+          <AgingChart 
+            data={displayAgingData} 
+            isFiltered={isFiltered} 
+            selectedRange={agingRange}
+            onRangeSelect={(range) => { setAgingRange(range); setPage(1); }}
+          />
+          <SalesmanChart 
+            data={displaySalesmanData} 
+            isFiltered={isFiltered} 
+            selectedSalesman={salesman}
+            onSalesmanSelect={(sm) => { setSalesman(sm); setPage(1); }}
+          />
         </div>
 
         {/* ── Drill-down: Operation → Division → Salesman → Customer ── */}
