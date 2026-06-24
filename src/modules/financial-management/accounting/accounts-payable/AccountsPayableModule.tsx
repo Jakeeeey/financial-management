@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useMemo } from 'react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -12,9 +11,6 @@ import {
 } from 'lucide-react';
 import { useAccountsPayable } from './hooks/useAccountsPayable';
 import { MetricCard } from './components/MetricCard';
-import { APAgingChart } from './components/APAgingChart';
-import { APSupplierChart } from './components/APSupplierChart';
-import { APStatusPieChart } from './components/APStatusPieChart';
 import { APTable } from './components/APTable';
 import { CategorySplitHeader } from './components/CategorySplitHeader';
 import { APFilterBar } from './components/APFilterBar';
@@ -29,6 +25,23 @@ const STATUS_OPTIONS: APStatus[] = [
   'Paid', 'Unpaid', 'Partially Paid', 'Unpaid | Overdue', 'Partially Paid | Overdue',
 ];
 type TabValue = 'all' | APCategory;
+
+const ChartSkeleton = () => (
+  <Skeleton className="h-[300px] w-full rounded-lg" />
+);
+
+const APAgingChart = dynamic(
+  () => import('./components/APAgingChart').then((module) => module.APAgingChart),
+  { ssr: false, loading: () => <ChartSkeleton /> },
+);
+const APSupplierChart = dynamic(
+  () => import('./components/APSupplierChart').then((module) => module.APSupplierChart),
+  { ssr: false, loading: () => <ChartSkeleton /> },
+);
+const APStatusPieChart = dynamic(
+  () => import('./components/APStatusPieChart').then((module) => module.APStatusPieChart),
+  { ssr: false, loading: () => <ChartSkeleton /> },
+);
 
 export default function AccountsPayableModule() {
   const { loading, error, records } = useAccountsPayable();
@@ -88,7 +101,11 @@ export default function AccountsPayableModule() {
     setDateFrom(''); setDateTo(''); setSupplier(''); setStatus(''); setPage(1);
   };
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
     const doc = new jsPDF({ orientation: 'landscape' });
     const pageW = doc.internal.pageSize.getWidth();
     const total = displayMetrics.totalPayable;
