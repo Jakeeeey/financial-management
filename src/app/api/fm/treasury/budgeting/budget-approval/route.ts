@@ -10,6 +10,8 @@ const AUTH_HEADERS = {
   Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
 };
 
+const ALLOWED_APPROVAL_STATUSES = new Set(["Approved", "Rejected"]);
+
 // Helper to get user ID from JWT cookie
 async function getUserId() {
   const cookieStore = await cookies();
@@ -109,24 +111,42 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ message: "No IDs provided for update" }, { status: 400 });
     }
 
+    const newStatus = isBulk ? body.data?.status : body.status;
+    const remarks = isBulk ? (body.data?.remarks || body.remarks) : body.remarks;
+    const action = isBulk ? (body.data?.action || body.action) : body.action;
+
+    if (!ALLOWED_APPROVAL_STATUSES.has(newStatus)) {
+      return NextResponse.json({ message: "Only Approved or Rejected status updates are allowed in Budget Approval." }, { status: 400 });
+    }
+
     // 1. Fetch current status/amount for audit trail before updating
     const filter = `filter[id][_in]=${idsToUpdate.join(",")}`;
     const oldRes = await fetch(`${API_BASE_URL}/items/budget?${filter}&fields=id,status,amount`, {
       headers: AUTH_HEADERS
     });
+
+    if (!oldRes.ok) {
+      const error = await oldRes.json().catch(() => ({ message: "Unable to verify budget status before approval action." }));
+      return NextResponse.json(error, { status: oldRes.status });
+    }
     
     const oldDataMap: Record<string, { status?: string; amount?: number | string }> = {};
-    if (oldRes.ok) {
-      const oldResult = await oldRes.json();
-      const list = Array.isArray(oldResult.data) ? oldResult.data : [oldResult.data];
-      list.forEach((item: { id?: string | number; status?: string; amount?: number | string }) => { if (item) oldDataMap[String(item.id)] = item; });
+    const oldResult = await oldRes.json();
+    const list = Array.isArray(oldResult.data) ? oldResult.data : [oldResult.data];
+    list.forEach((item: { id?: string | number; status?: string; amount?: number | string }) => { if (item) oldDataMap[String(item.id)] = item; });
+
+    const missingIds = idsToUpdate.filter((bId: string | number) => !oldDataMap[String(bId)]);
+    if (missingIds.length > 0) {
+      return NextResponse.json({ message: `Budget(s) not found: ${missingIds.join(", ")}` }, { status: 404 });
+    }
+
+    const nonPendingIds = idsToUpdate.filter((bId: string | number) => oldDataMap[String(bId)]?.status !== "Pending");
+    if (nonPendingIds.length > 0) {
+      return NextResponse.json({ message: "Only Pending budgets can be approved or rejected." }, { status: 409 });
     }
 
     // 2. PRE-LOGGING (Strict Flow): Create audit logs FIRST
     const createdLogIds: number[] = [];
-    const newStatus = isBulk ? body.data.status : body.status;
-    const remarks = isBulk ? (body.data.remarks || body.remarks) : body.remarks;
-    const action = isBulk ? (body.data.action || body.action) : body.action;
 
     for (const bId of idsToUpdate) {
       const oldItem = oldDataMap[String(bId)];
@@ -146,7 +166,22 @@ export async function PATCH(req: Request) {
         remarks: remarks || null,
         performed_by: userId,
       });
-      if (logId) createdLogIds.push(logId);
+      if (!logId) {
+        if (createdLogIds.length > 0) {
+          try {
+            await fetch(`${API_BASE_URL}/items/budget_audit_trail`, {
+              method: "DELETE",
+              headers: AUTH_HEADERS,
+              body: JSON.stringify(createdLogIds),
+            });
+          } catch (rollbackErr) {
+            console.error("Rollback failed to delete audit logs after audit creation failure:", rollbackErr);
+          }
+        }
+
+        return NextResponse.json({ message: "Audit log creation failed. Budget status was not changed." }, { status: 502 });
+      }
+      createdLogIds.push(logId);
     }
 
     // 3. Perform the update
@@ -155,9 +190,10 @@ export async function PATCH(req: Request) {
 
     const payload = isBulk ? {
       keys: body.keys,
-      data: { ...body.data, updated_by: userId }
+      data: { status: newStatus, updated_by: userId }
     } : {
-      ...body, updated_by: userId
+      status: newStatus,
+      updated_by: userId
     };
 
     const res = await fetch(targetUrl, {

@@ -30,7 +30,7 @@ export function usePayees() {
         params.set("search", search.trim());
       }
 
-      const url = `/api/payee-registration/payees${params.toString() ? `?${params.toString()}` : ""}`;
+      const url = `/api/fm/payee-registration/payees${params.toString() ? `?${params.toString()}` : ""}`;
       const response = await fetch(url);
 
       if (!response.ok) {

@@ -1,9 +1,9 @@
 "use client";
 
-import {useState, useEffect, useCallback} from "react";
-import {UnpaidInvoice, SettlementAllocation, PaymentHistory} from "../../types";
-import {fetchProvider} from "../../providers/fetchProvider";
-import {toast} from "sonner";
+import { useState, useEffect, useCallback } from "react";
+import { UnpaidInvoice, SettlementAllocation, PaymentHistory, UserDto } from "../../types";
+import { fetchProvider } from "../../providers/fetchProvider";
+import { toast } from "sonner";
 
 export interface RawCashBucket {
     detailId?: number;
@@ -43,6 +43,8 @@ export interface RawAllocation {
 export interface RawTreasuryPouch {
     docNo?: string;
     isPosted?: boolean;
+    collectedBy?: number;
+    crNo?: string;
     collectionDate?: string;
     salesmanId?: number;
     cashBuckets?: RawCashBucket[];
@@ -91,12 +93,25 @@ export interface DispatchPlan {
     vehicleName: string;
 }
 
+export interface PendingEditPayload {
+    amount?: number;
+    referenceNo?: string;
+    findingId?: number;
+    balanceTypeId?: number;
+    remarks?: string;
+}
+
 export function useSettlement(pouchId: string | number) {
     const [isLoading, setIsLoading] = useState(true);
     const [wallet, setWallet] = useState<WalletItem[]>([]);
     const [credits, setCredits] = useState<WalletItem[]>([]);
     const [salesmanName, setSalesmanName] = useState("Loading...");
     const [salesmanId, setSalesmanId] = useState<number | null>(null);
+
+    const [collectedBy, setCollectedBy] = useState<number | null>(null);
+    const [collectedByName, setCollectedByName] = useState<string>("Encoder/System");
+    const [crNo, setCrNo] = useState<string>("");
+
     const [docNo, setDocNo] = useState<string>(pouchId.toString());
     const [isPosted, setIsPosted] = useState<boolean>(false);
     const [collectionDate, setCollectionDate] = useState<string>("");
@@ -105,25 +120,39 @@ export function useSettlement(pouchId: string | number) {
     const [findings, setFindings] = useState<GeneralFinding[]>([]);
 
     const [isLoadingRoute, setIsLoadingRoute] = useState(false);
-
     const [dispatchPlans, setDispatchPlans] = useState<DispatchPlan[]>([]);
     const [isLoadingPlans, setIsLoadingPlans] = useState(false);
     const [dispatchDate, setDispatchDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [isLoadingCredits, setIsLoadingCredits] = useState(false);
+    const [pendingDeletions, setPendingDeletions] = useState<{ id: string; dbId: number; type: "EWT" | "ADJUSTMENT" }[]>([]);
+    const [pendingEdits, setPendingEdits] = useState<Record<string, { type: "EWT" | "ADJUSTMENT"; dbId: number; payload: PendingEditPayload }>>({});
 
     const fetchData = useCallback(async () => {
         if (!pouchId) return;
         setIsLoading(true);
         try {
+            setPendingEdits({});
+            setPendingDeletions([]);
             setAllocations([]);
             setCartInvoices([]);
             setWallet([]);
             setCredits([]);
 
-            const pouch = await fetchProvider.get<RawTreasuryPouch>(`/api/fm/treasury/collections/${pouchId}`);
+            // 🚀 Strictly typing the users array
+            const [pouch, salesmen, fetchedFindings, fetchedUsers] = await Promise.all([
+                fetchProvider.get<RawTreasuryPouch>(`/api/fm/treasury/collections/${pouchId}`),
+                fetchProvider.get<RawSalesman[]>("/api/fm/treasury/salesmen"),
+                fetchProvider.get<GeneralFinding[]>("/api/fm/treasury/collections/findings").catch(() => []),
+                fetchProvider.get<UserDto[]>("/api/fm/treasury/users").catch(() => [])
+            ]);
+
             if (!pouch) return;
 
             setDocNo(pouch.docNo || pouchId.toString());
             setIsPosted(pouch.isPosted === true);
+            setCollectedBy(pouch.collectedBy || null);
+            setCrNo(pouch.crNo || "");
+
             if (pouch.collectionDate) {
                 const cDate = pouch.collectionDate.split('T')[0];
                 setCollectionDate(cDate);
@@ -132,15 +161,13 @@ export function useSettlement(pouchId: string | number) {
 
             const currentSalesmanId = pouch.salesmanId || null;
             setSalesmanId(currentSalesmanId);
-
-            const salesmen = await fetchProvider.get<RawSalesman[]>("/api/fm/treasury/salesmen");
             setSalesmanName(salesmen?.find(s => s.id === currentSalesmanId)?.salesmanName || `Owner ID: ${currentSalesmanId}`);
+            setFindings(fetchedFindings || []);
 
-            try {
-                const fetchedFindings = await fetchProvider.get<GeneralFinding[]>("/api/fm/treasury/collections/findings");
-                setFindings(fetchedFindings || []);
-            } catch (e) {
-                console.warn("Could not load findings", e);
+            // 🚀 Strictly typing the user iteration
+            if (pouch.collectedBy && fetchedUsers) {
+                const u = fetchedUsers.find((user: UserDto) => user.id === pouch.collectedBy);
+                if (u) setCollectedByName(`${u.firstName || ''} ${u.lastName || ''}`.trim());
             }
 
             let totalCash = 0;
@@ -175,7 +202,7 @@ export function useSettlement(pouchId: string | number) {
                 } else if (wType === "ADJUSTMENT") {
                     newWallet.push({
                         id: uniqueId, type: "ADJUSTMENT", label: b.referenceNo || 'Adjustment', originalAmount: safeAmount,
-                        customerName: b.referenceNo, balanceTypeId: b.balanceTypeId || 1, dbId: b.detailId, findingId: b.findingId, invoiceId: b.invoiceId
+                        customerName: b.customerName, balanceTypeId: b.balanceTypeId || 1, dbId: b.detailId, findingId: b.findingId, invoiceId: b.invoiceId
                     });
                 } else {
                     newWallet.push({
@@ -242,12 +269,11 @@ export function useSettlement(pouchId: string | number) {
     useEffect(() => {
         const fetchCreditsByCustomers = async () => {
             const uniqueCustomers = Array.from(new Set(cartInvoices.map(inv => inv.customerName).filter(Boolean)));
-
             if (uniqueCustomers.length === 0) return;
 
+            setIsLoadingCredits(true);
             try {
                 const namesQuery = encodeURIComponent(uniqueCustomers.join(','));
-
                 const [memos, returns] = await Promise.all([
                     fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/memos/available?customerNames=${namesQuery}`),
                     fetchProvider.get<RawMemoOrReturn[]>(`/api/fm/treasury/returns/available?customerNames=${namesQuery}`)
@@ -255,7 +281,6 @@ export function useSettlement(pouchId: string | number) {
 
                 setCredits(prev => {
                     const newCredits = [...prev];
-
                     memos?.forEach(m => {
                         const remainingMemoAmount = (m.amount || 0) - (m.appliedAmount || 0);
                         const id = `memo-${m.id}`;
@@ -263,21 +288,20 @@ export function useSettlement(pouchId: string | number) {
                             newCredits.push({ id, dbId: m.id, type: "MEMO", label: `Memo: ${m.memoNumber}`, originalAmount: remainingMemoAmount, customerName: m.customerName });
                         }
                     });
-
                     returns?.forEach(r => {
                         const id = `return-${r.id}`;
                         if (!r.isApplied && !newCredits.some(c => c.id === id)) {
                             newCredits.push({ id, dbId: r.id, type: "RETURN", label: `Return: ${r.returnNumber}`, originalAmount: r.totalAmount || 0, customerName: r.customerName });
                         }
                     });
-
                     return newCredits;
                 });
             } catch (err) {
                 console.error("Failed to fetch credits dynamically for linked customers", err);
+            } finally {
+                setIsLoadingCredits(false);
             }
         };
-
         fetchCreditsByCustomers();
     }, [cartInvoices]);
 
@@ -290,7 +314,6 @@ export function useSettlement(pouchId: string | number) {
             .finally(() => setIsLoadingPlans(false));
     }, [salesmanId, dispatchDate]);
 
-    // 🚀 THE FIX: Now safely searches using a String document number!
     const fetchAndInjectExternalCredit = async (documentNo: string, type: "MEMO" | "RETURN") => {
         try {
             const safeDocNo = encodeURIComponent(documentNo.trim());
@@ -336,24 +359,24 @@ export function useSettlement(pouchId: string | number) {
                 toast.error("Database ID missing. Cannot update.");
                 return;
             }
+            const payload = item.type === "EWT" ? {
+                amount: updatedFields.originalAmount !== undefined ? updatedFields.originalAmount : item.originalAmount,
+                referenceNo: updatedFields.customerName !== undefined ? updatedFields.customerName : item.customerName
+            } : {
+                findingId: updatedFields.findingId !== undefined ? updatedFields.findingId : item.findingId,
+                amount: updatedFields.originalAmount !== undefined ? updatedFields.originalAmount : item.originalAmount,
+                balanceTypeId: updatedFields.balanceTypeId !== undefined ? updatedFields.balanceTypeId : item.balanceTypeId,
+                remarks: updatedFields.customerName !== undefined ? updatedFields.customerName : item.customerName
+            };
 
-            try {
-                const endpoint = item.type === "EWT" ? `/api/fm/treasury/ewts/${dbId}` : `/api/fm/treasury/adjustments/${dbId}`;
-                const payload = item.type === "EWT" ? {
-                    amount: updatedFields.originalAmount,
-                    referenceNo: updatedFields.customerName
-                } : {
-                    findingId: updatedFields.findingId,
-                    amount: updatedFields.originalAmount,
-                    balanceTypeId: updatedFields.balanceTypeId,
-                    remarks: updatedFields.customerName
-                };
-                await fetchProvider.put(endpoint, payload);
-            } catch (e) {
-                console.error("Update failed", e);
-                toast.error("Failed to update record in database. Ensure PUT endpoints exist.");
-                return;
-            }
+            setPendingEdits(prev => ({
+                ...prev,
+                [itemId]: {
+                    type: item.type as "ADJUSTMENT" | "EWT",
+                    dbId,
+                    payload
+                }
+            }));
         }
 
         setWallet(prev => prev.map(w => w.id === itemId ? {...w, ...updatedFields} : w));
@@ -372,21 +395,23 @@ export function useSettlement(pouchId: string | number) {
         if (!item) return;
 
         if (!item.isLocal && (type === "ADJUSTMENT" || type === "EWT")) {
-            if (!silent && !confirm("This will permanently delete the record from the database. Continue?")) return;
+            if (!silent && !confirm("Are you sure you want to delete this record? This deletion will be committed once you save the settlement session.")) return;
             const dbId = item.dbId;
             if (!dbId) {
                 if (!silent) toast.error("Database ID missing. Cannot delete.");
                 return;
             }
 
-            try {
-                const endpoint = type === "EWT" ? `/api/fm/treasury/ewts/${dbId}` : `/api/fm/treasury/adjustments/${dbId}`;
-                await fetchProvider.delete(endpoint);
-            } catch (e) {
-                console.error("Delete failed", e);
-                if (!silent) toast.error("Failed to delete record from database.");
-                return;
-            }
+            setPendingEdits(prev => {
+                const copy = { ...prev };
+                delete copy[itemId];
+                return copy;
+            });
+
+            setPendingDeletions(prev => [
+                ...prev,
+                { id: itemId, dbId, type: type as "EWT" | "ADJUSTMENT" }
+            ]);
         }
 
         setWallet(prev => prev.filter(w => w.id !== itemId));
@@ -395,13 +420,18 @@ export function useSettlement(pouchId: string | number) {
 
     const addToCart = (invoice: Partial<UnpaidInvoice>) => {
         const safeId = invoice.id || (invoice as unknown as { invoiceId: number }).invoiceId;
-        if (safeId && !cartInvoices.some(inv => inv.id === safeId)) {
-            setCartInvoices(prev => [...prev, {
+        if (!safeId) return;
+
+        setCartInvoices(prev => {
+            if (prev.some(inv => Number(inv.id) === Number(safeId))) {
+                return prev;
+            }
+            return [...prev, {
                 ...invoice,
                 originalAmount: invoice.originalAmount || 0,
                 id: safeId
-            } as UnpaidInvoice]);
-        }
+            } as UnpaidInvoice];
+        });
     };
 
     const removeFromCart = async (invoiceId: number) => {
@@ -434,22 +464,27 @@ export function useSettlement(pouchId: string | number) {
         setIsLoadingRoute(true);
         try {
             const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/dispatch-plan-invoices?planId=${planId}`);
-            const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === (inv.id || (inv as unknown as {
-                invoiceId: number
-            }).invoiceId)));
-
-            if (cleanResults.length > 0) {
-                setCartInvoices(prev => [
-                    ...prev,
-                    ...cleanResults.map(inv => ({
-                        ...inv,
-                        originalAmount: inv.originalAmount || 0,
-                        id: inv.id || (inv as unknown as { invoiceId: number }).invoiceId
-                    }))
-                ]);
-            } else {
+            if (!data || data.length === 0) {
                 toast.info("No additional pending invoices found for this specific Dispatch Plan.");
+                return;
             }
+
+            setCartInvoices(prev => {
+                const newInvoices = data.filter(inv => {
+                    const safeId = inv.id || (inv as unknown as { invoiceId: number }).invoiceId;
+                    return !prev.some(cartInv => Number(cartInv.id) === Number(safeId));
+                }).map(inv => ({
+                    ...inv,
+                    originalAmount: inv.originalAmount || 0,
+                    id: inv.id || (inv as unknown as { invoiceId: number }).invoiceId
+                }));
+
+                if (newInvoices.length === 0) {
+                    toast.info("No additional pending invoices found for this specific Dispatch Plan.");
+                    return prev;
+                }
+                return [...prev, ...newInvoices];
+            });
         } catch (err) {
             console.error("Failed to load dispatch plan invoices", err);
             toast.error("Failed to fetch dispatch data.");
@@ -463,18 +498,27 @@ export function useSettlement(pouchId: string | number) {
         setIsLoadingRoute(true);
         try {
             const data = await fetchProvider.get<UnpaidInvoice[]>(`/api/fm/treasury/collections/route-invoices?salesmanId=${salesmanId}&date=${collectionDate}`);
-            const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === (inv.id || (inv as unknown as {
-                invoiceId: number
-            }).invoiceId)));
-            if (cleanResults.length > 0) {
-                setCartInvoices(prev => [...prev, ...cleanResults.map(inv => ({
+            if (!data || data.length === 0) {
+                toast.info("No additional pending invoices found for this route on or before " + collectionDate);
+                return;
+            }
+
+            setCartInvoices(prev => {
+                const newInvoices = data.filter(inv => {
+                    const safeId = inv.id || (inv as unknown as { invoiceId: number }).invoiceId;
+                    return !prev.some(cartInv => Number(cartInv.id) === Number(safeId));
+                }).map(inv => ({
                     ...inv,
                     originalAmount: inv.originalAmount || 0,
                     id: inv.id || (inv as unknown as { invoiceId: number }).invoiceId
-                }))]);
-            } else {
-                toast.info("No additional pending invoices found for this route on or before " + collectionDate);
-            }
+                }));
+
+                if (newInvoices.length === 0) {
+                    toast.info("No additional pending invoices found for this route on or before " + collectionDate);
+                    return prev;
+                }
+                return [...prev, ...newInvoices];
+            });
         } catch (err) {
             console.error("Failed to load route invoices", err);
         } finally {
@@ -482,8 +526,8 @@ export function useSettlement(pouchId: string | number) {
         }
     };
 
-    const getUsedAmount = (sourceId: string) => allocations.filter(a => a.sourceTempId === sourceId).reduce((sum, a) => sum + a.amountApplied, 0);
-    const getInvoiceApplied = (invoiceId: number) => allocations.filter(a => a.invoiceId === invoiceId).reduce((sum, a) => sum + a.amountApplied, 0);
+    const getUsedAmount = (sourceId: string) => Math.round(allocations.filter(a => a.sourceTempId === sourceId).reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
+    const getInvoiceApplied = (invoiceId: number) => Math.round(allocations.filter(a => a.invoiceId === invoiceId).reduce((sum, a) => sum + a.amountApplied, 0) * 100) / 100;
 
     const handleAllocate = (invoiceId: number, sourceId: string, amountInput: number) => {
         setAllocations(prev => {
@@ -582,6 +626,26 @@ export function useSettlement(pouchId: string | number) {
 
     const submitSettlement = async (): Promise<boolean> => {
         try {
+            // 1. Process all pending edits in database
+            for (const [, editInfo] of Object.entries(pendingEdits)) {
+                const endpoint = editInfo.type === "EWT"
+                    ? `/api/fm/treasury/ewts/${editInfo.dbId}`
+                    : `/api/fm/treasury/adjustments/${editInfo.dbId}`;
+                await fetchProvider.put(endpoint, editInfo.payload);
+            }
+
+            // 2. Process all pending deletions in database
+            for (const delInfo of pendingDeletions) {
+                const endpoint = delInfo.type === "EWT"
+                    ? `/api/fm/treasury/ewts/${delInfo.dbId}`
+                    : `/api/fm/treasury/adjustments/${delInfo.dbId}`;
+                await fetchProvider.delete(endpoint);
+            }
+
+            // Clear the queues since DB changes succeeded
+            setPendingEdits({});
+            setPendingDeletions([]);
+
             const newAdjustments = wallet.filter(w => w.type === "ADJUSTMENT" && w.isLocal).map(w => ({
                 findingId: w.findingId || w.dbId, amount: w.originalAmount, balanceTypeId: w.balanceTypeId || 1,
                 remarks: w.customerName || "Session Variance", invoiceId: allocations.find(a => a.sourceTempId === w.id)?.invoiceId || null, tempId: w.id
@@ -610,23 +674,30 @@ export function useSettlement(pouchId: string | number) {
                 }
             });
 
-            const payload = {newAdjustments, newEwts, allocations: persistentAllocations};
-            await fetchProvider.post(`/api/fm/treasury/collections/${pouchId}/allocate`, payload);
+            const payload = {
+                collectedBy: collectedBy || undefined,
+                crNo: crNo || undefined,
+                newAdjustments,
+                newEwts,
+                allocations: persistentAllocations
+            };
 
+            await fetchProvider.post(`/api/fm/treasury/collections/${pouchId}/allocate`, payload);
             toast.success("Settlement successfully committed to the ledger!");
             await fetchData();
             return true;
         } catch (err) {
-            toast.error("Failed to secure settlement to ledger. See console for details.");
+            toast.error("Failed to secure settlement to ledger.");
             console.error(err);
             return false;
         }
     };
 
     return {
-        isLoading, wallet, credits, cartInvoices, allocations, salesmanName, salesmanId, findings, docNo, isPosted,
+        isLoading, wallet, credits, cartInvoices, allocations, setAllocations, salesmanName, salesmanId, findings, docNo, isPosted,
         isLoadingRoute, addToCart, removeFromCart, clearCart, loadRouteInvoices, fetchAndInjectExternalCredit,
         getUsedAmount, getInvoiceApplied, handleAllocate, createAdjustment, createEwt, submitSettlement,
-        deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate
+        deleteWalletItem, editWalletItem, dispatchPlans, isLoadingPlans, loadDispatchPlanInvoices, dispatchDate, setDispatchDate,
+        collectedByName, isLoadingCredits, collectionDate
     };
 }

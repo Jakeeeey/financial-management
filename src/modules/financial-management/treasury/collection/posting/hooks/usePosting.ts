@@ -12,6 +12,7 @@ export interface PostingQueueItem {
     collectionDate: string;
     pouchAmount: number;
     totalAppliedAmount: number;
+    creditAppliedAmount: number; // 🚀 ADDED: Fetching the Memo total
     adjustmentDebit: number;
     adjustmentCredit: number;
 }
@@ -25,11 +26,11 @@ interface RawQueueItem {
     collectionDate?: string;
     pouchAmount?: number;
     totalAppliedAmount?: number;
+    creditAppliedAmount?: number; // 🚀 ADDED
     adjustmentDebit?: number;
     adjustmentCredit?: number;
 }
 
-// 🚀 FIXED: Now perfectly matches the Spring Boot CashieringRequestDto!
 export interface TreasuryPouchDetail extends PostingQueueItem {
     remarks?: string;
     cashBuckets?: {
@@ -80,6 +81,7 @@ export function usePosting() {
                 collectionDate: item.collectionDate?.split('T')[0] || "N/A",
                 pouchAmount: item.pouchAmount || 0,
                 totalAppliedAmount: item.totalAppliedAmount || 0,
+                creditAppliedAmount: item.creditAppliedAmount || 0, // 🚀 ADDED MAPPING
                 adjustmentDebit: item.adjustmentDebit || 0,
                 adjustmentCredit: item.adjustmentCredit || 0
             }));

@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { parseApprovalSearchQuery } from "../_approvalSearch";
+import { toInclusiveDateToEnd } from "../_dateFilters";
+import { appendDisplayStatusFilter } from "../_approvalStatusPolicy";
+import { fetchPendingPcrByProductIds } from "../_fetchPendingByProductIds";
+import { appendProductIdInFilter, getSupplierScopedProductIdsForSuppliers, resolveSupplierIds } from "../_supplierFilters";
+import { enrichPcrRows } from "../_pcrHeaderMeta";
+import { fetchUserNamesById } from "../price-change-batches/_batch";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const PCR = "price_change_requests";
-const PRODUCT_PER_SUPPLIER = "product_per_supplier";
+const DEPRECATED_PRICE_REQUEST_MESSAGE =
+    "Item-level price change requests are deprecated. Use price change batches instead.";
 
 type DirectusMeta = {
     total_count?: number;
@@ -20,6 +29,18 @@ type DirectusUomRef = {
 
 type DirectusPCRRow = {
     request_id?: number | string | null;
+    header_id?:
+        | number
+        | string
+        | {
+        header_id?: number | string | null;
+        id?: number | string | null;
+        remarks?: string | null;
+        reference_no?: string | null;
+        status?: string | null;
+    }
+        | null;
+    current_price?: number | string | null;
     product_id?:
         | number
         | string
@@ -41,29 +62,22 @@ type DirectusPCRRow = {
     proposed_price?: number | string | null;
     status?: string | null;
     requested_by?: number | string | null;
+    requested_by_name?: string | null;
     requested_at?: string | null;
     approved_by?: number | string | null;
     approved_at?: string | null;
     rejected_by?: number | string | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
-};
-
-type DirectusCreatePCRResponse = {
-    data: DirectusPCRRow;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
 };
 
 type DirectusListPCRResponse = {
     data: DirectusPCRRow[];
     meta?: DirectusMeta;
-};
-
-type DirectusDupResponse = {
-    data: Array<{ request_id?: number | string | null }>;
-};
-
-type DirectusSupplierProductRow = {
-    product_id?: number | string | { product_id?: number | string | null } | null;
 };
 
 type JwtPayload = {
@@ -149,10 +163,13 @@ function unwrapErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function nowManila(): string {
-    return new Date()
-        .toLocaleString("sv-SE", { timeZone: "Asia/Manila" })
-        .replace(" ", "T");
+function parseProductIdsParam(raw: string | null): number[] | null {
+    if (raw === null) return null;
+    const ids = raw
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0);
+    return ids;
 }
 
 function parseWrappedError(message: string): DirectusWrappedError | null {
@@ -178,28 +195,19 @@ function parseWrappedError(message: string): DirectusWrappedError | null {
     }
 }
 
-async function getSupplierProductIds(supplierId: string): Promise<number[]> {
-    const sp = new URLSearchParams();
-    sp.set("limit", "-1");
-    sp.set("fields", "product_id,product_id.product_id");
-    sp.set("filter[supplier_id][_eq]", supplierId);
+async function addRequestedByNames(rows: DirectusPCRRow[]): Promise<DirectusPCRRow[]> {
+    const namesById = await fetchUserNamesById(rows.map((row) => row.requested_by));
 
-    const url = `${mustBase()}/items/${PRODUCT_PER_SUPPLIER}?${sp.toString()}`;
-    const res = await fetchDirectus<{ data?: DirectusSupplierProductRow[] }>(url, { headers: directusHeaders() });
-
-    const ids: number[] = [];
-    for (const row of res.data ?? []) {
-        let n: number | null = null;
-        if (typeof row.product_id === "number") {
-            n = row.product_id;
-        } else if (isRecord(row.product_id) && typeof row.product_id.product_id === "number") {
-            n = row.product_id.product_id;
-        }
-        if (n !== null && Number.isFinite(n) && n > 0) {
-            ids.push(n);
-        }
-    }
-    return Array.from(new Set(ids));
+    return rows.map((row) => {
+        const requestedBy = Number(row.requested_by);
+        return {
+            ...row,
+            requested_by_name:
+                Number.isFinite(requestedBy) && requestedBy > 0
+                    ? namesById.get(requestedBy) ?? null
+                    : null,
+        };
+    });
 }
 
 export async function GET(req: NextRequest) {
@@ -215,17 +223,34 @@ export async function GET(req: NextRequest) {
         const product_id = norm(searchParams.get("product_id"));
         const price_type_id = norm(searchParams.get("price_type_id"));
         const requested_by = norm(searchParams.get("requested_by"));
-        const supplier_id = norm(searchParams.get("supplier_id"));
+        const supplier_ids = resolveSupplierIds(searchParams);
         const date_from = norm(searchParams.get("date_from"));
         const date_to = norm(searchParams.get("date_to"));
+        const productIds = parseProductIdsParam(searchParams.get("product_ids"));
 
+        if (productIds !== null) {
+            if (productIds.length === 0) {
+                return NextResponse.json({ data: [] });
+            }
+
+            const data = await fetchPendingPcrByProductIds(productIds, status);
+            return NextResponse.json({ data });
+        }
+
+        const limit = norm(searchParams.get("limit"));
+        const useAllRows = limit === "-1";
         const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-        const page_size = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
-        const offset = (page - 1) * page_size;
 
         const params = new URLSearchParams();
-        params.set("limit", String(page_size));
-        params.set("offset", String(offset));
+        if (useAllRows) {
+            params.set("limit", "-1");
+            params.set("offset", "0");
+        } else {
+            const page_size = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
+            const offset = (page - 1) * page_size;
+            params.set("limit", String(page_size));
+            params.set("offset", String(offset));
+        }
         params.set("meta", "total_count");
         params.set("sort", "-requested_at");
 
@@ -244,12 +269,24 @@ export async function GET(req: NextRequest) {
                 "rejected_by",
                 "rejected_at",
                 "reject_reason",
+                "effective_at",
+                "application_status",
+                "applied_at",
+                "applied_by",
+                "header_id",
+                "header_id.header_id",
+                "header_id.remarks",
+                "header_id.reference_no",
+                "header_id.status",
+                "current_price",
                 "product_id.product_id",
                 "product_id.product_code",
                 "product_id.product_name",
+                "product_id.barcode",
                 "product_id.unit_of_measurement.unit_id",
                 "product_id.unit_of_measurement.unit_name",
                 "product_id.unit_of_measurement.unit_shortcut",
+                "product_id.cost_per_unit",
                 "price_type_id.price_type_id",
                 "price_type_id.price_type_name",
             ].join(","),
@@ -261,25 +298,40 @@ export async function GET(req: NextRequest) {
             andIdx += 1;
         };
 
-        if (status) addAnd("[status][_eq]", status);
+        andIdx = appendDisplayStatusFilter(params, andIdx, status);
         if (product_id) addAnd("[product_id][_eq]", product_id);
         if (price_type_id) addAnd("[price_type_id][_eq]", price_type_id);
         if (requested_by) addAnd("[requested_by][_eq]", requested_by);
         if (date_from) addAnd("[requested_at][_gte]", date_from);
-        if (date_to) addAnd("[requested_at][_lte]", date_to);
+        if (date_to) addAnd("[requested_at][_lte]", toInclusiveDateToEnd(date_to));
 
-        if (supplier_id) {
-            const supplierProductIds = await getSupplierProductIds(supplier_id);
+        if (supplier_ids.length > 0) {
+            const supplierProductIds = await getSupplierScopedProductIdsForSuppliers(supplier_ids);
             if (supplierProductIds.length === 0) {
                 return NextResponse.json({ data: [], meta: { total_count: 0 } });
             }
-            addAnd("[product_id][_in]", supplierProductIds.join(","));
+            andIdx = appendProductIdInFilter(params, andIdx, supplierProductIds);
         }
 
         if (q) {
-            addAnd("[_or][0][product_id][product_name][_contains]", q);
-            params.set(`filter[_and][${andIdx - 1}][_or][1][product_id][product_code][_contains]`, q);
-            params.set(`filter[_and][${andIdx - 1}][_or][2][request_id][_eq]`, q);
+            const parsed = parseApprovalSearchQuery(q);
+            const prefixedRequestId = parsed.numericId == null ? parsed.priceRequestId : null;
+
+            if (prefixedRequestId != null) {
+                addAnd("[request_id][_eq]", String(prefixedRequestId));
+            } else if (parsed.textContains) {
+                const searchIdx = andIdx;
+                if (parsed.numericId != null) {
+                    addAnd("[_or][0][request_id][_eq]", String(parsed.numericId));
+                    params.set(`filter[_and][${searchIdx}][_or][1][product_id][product_name][_contains]`, parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][2][product_id][product_code][_contains]`, parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][3][product_id][barcode][_contains]`, parsed.textContains);
+                } else {
+                    addAnd("[_or][0][product_id][product_name][_contains]", parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][1][product_id][product_code][_contains]`, parsed.textContains);
+                    params.set(`filter[_and][${searchIdx}][_or][2][product_id][barcode][_contains]`, parsed.textContains);
+                }
+            }
         }
 
         const url = `${mustBase()}/items/${PCR}?${params.toString()}`;
@@ -287,8 +339,10 @@ export async function GET(req: NextRequest) {
             headers: directusHeaders(),
         });
 
+        const data = await addRequestedByNames(await enrichPcrRows(json.data ?? []));
+
         return NextResponse.json({
-            data: json.data ?? [],
+            data,
             meta: json.meta ?? null,
         });
     } catch (error: unknown) {
@@ -313,62 +367,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
     try {
-        mustBase();
         const userId = decodeUserIdFromJwtCookie(req);
         if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-        const body = (await req.json()) as Partial<{
-            product_id: number;
-            price_type_id: number;
-            proposed_price: number;
-        }>;
-
-        const product_id = Number(body.product_id);
-        const price_type_id = Number(body.price_type_id);
-        const proposed_price = Number(body.proposed_price);
-
-        if (!Number.isFinite(product_id) || product_id <= 0) {
-            return NextResponse.json({ error: "product_id is required" }, { status: 400 });
-        }
-        if (!Number.isFinite(price_type_id) || price_type_id <= 0) {
-            return NextResponse.json({ error: "price_type_id is required" }, { status: 400 });
-        }
-        if (!Number.isFinite(proposed_price)) {
-            return NextResponse.json({ error: "proposed_price is required" }, { status: 400 });
-        }
-
-        const dupParams = new URLSearchParams();
-        dupParams.set("limit", "1");
-        dupParams.set("fields", "request_id");
-        dupParams.set("filter[_and][0][product_id][_eq]", String(product_id));
-        dupParams.set("filter[_and][1][price_type_id][_eq]", String(price_type_id));
-        dupParams.set("filter[_and][2][status][_eq]", "PENDING");
-
-        const dupUrl = `${mustBase()}/items/${PCR}?${dupParams.toString()}`;
-        const dup = await fetchDirectus<DirectusDupResponse>(dupUrl, { headers: directusHeaders() });
-
-        if ((dup.data ?? []).length > 0) {
-            return NextResponse.json(
-                { error: "A PENDING request already exists for this product and price type." },
-                { status: 400 },
-            );
-        }
-
-        const createUrl = `${mustBase()}/items/${PCR}`;
-        const created = await fetchDirectus<DirectusCreatePCRResponse>(createUrl, {
-            method: "POST",
-            headers: directusHeaders(),
-            body: JSON.stringify({
-                product_id,
-                price_type_id,
-                proposed_price,
-                status: "PENDING",
-                requested_by: userId,
-                requested_at: nowManila(),
-            }),
-        });
-
-        return NextResponse.json({ data: created.data }, { status: 201 });
+        return NextResponse.json({ error: DEPRECATED_PRICE_REQUEST_MESSAGE }, { status: 410 });
     } catch (error: unknown) {
         const message = unwrapErrorMessage(error);
         const wrapped = parseWrappedError(message);

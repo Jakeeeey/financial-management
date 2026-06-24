@@ -31,6 +31,12 @@ interface RawAttachmentRecord {
   file_size?: string | number;
 }
 
+interface AttachmentCreateResponse {
+  data?: {
+    id?: string | number;
+  };
+}
+
 interface RawAuditLogRecord {
   id?: string | number;
   budget_id?: RawBudgetRecord | string | number | null;
@@ -275,7 +281,18 @@ export const budgetService = {
     const budget = result?.data as Budget;
 
     if (budget?.id && attachments && attachments.length > 0) {
-      await this.uploadAttachments(budget.id, attachments);
+      try {
+        await this.uploadAttachments(budget.id, attachments);
+      } catch (error) {
+        try {
+          await this.deleteBudget(budget.id);
+        } catch (rollbackError) {
+          console.error("Failed to roll back budget after attachment upload failure:", rollbackError);
+        }
+
+        console.error("Attachment upload failed after budget creation:", error);
+        throw new Error("Budget was not created because attachment upload failed. Please try again.");
+      }
     }
 
     return budget;
@@ -330,13 +347,36 @@ export const budgetService = {
     } as BudgetAttachment));
   },
 
+  async deleteDirectusFile(fileId: string): Promise<void> {
+    const url = `${PROXY_BASE_URL}/files?id=${encodeURIComponent(fileId)}`;
+    await fetchProxy(url, { method: "DELETE" });
+  },
+
+  async cleanupUploadedAttachments(attachmentIds: Array<string | number>, directusFileIds: string[]): Promise<void> {
+    const cleanupResults = await Promise.allSettled([
+      ...attachmentIds.map((id) => this.deleteAttachment(id)),
+      ...directusFileIds.map((id) => this.deleteDirectusFile(id)),
+    ]);
+
+    for (const result of cleanupResults) {
+      if (result.status === "rejected") {
+        console.error("Attachment cleanup failed:", result.reason);
+      }
+    }
+  },
+
   async uploadAttachments(budgetId: string | number, files: File[]): Promise<void> {
+    const createdAttachmentIds: Array<string | number> = [];
+    const orphanDirectusFileIds = new Set<string>();
+
     try {
       const result = await fetchProxy<{ data: Array<{ id: string }> }>(`${PROXY_BASE_URL}/folders?filter[name][_eq]=budget_attachments`);
       const folders = result?.data;
       const folderId = folders?.[0]?.id;
 
-      if (!folderId) return;
+      if (!folderId) {
+        throw new Error("Budget attachments folder was not found.");
+      }
 
       for (const file of files) {
         const formData = new FormData();
@@ -349,25 +389,38 @@ export const budgetService = {
         });
         const uploadedFile = uploadResult?.data;
 
-        if (uploadedFile?.id) {
-          const truncatedType = file.type.length > 50 
-            ? file.type.substring(0, 47) + "..." 
-            : file.type;
-
-          await fetchProxy(`${PROXY_BASE_URL}/budget_attachments`, {
-            method: "POST",
-            body: JSON.stringify({
-              budget_id: budgetId,
-              directus_id: uploadedFile.id,
-              file_name: file.name,
-              file_type: truncatedType,
-              file_size: file.size,
-            }),
-          });
+        if (!uploadedFile?.id) {
+          throw new Error(`Directus did not return a file ID for ${file.name}.`);
         }
+
+        orphanDirectusFileIds.add(uploadedFile.id);
+
+        const truncatedType = file.type.length > 50 
+          ? file.type.substring(0, 47) + "..." 
+          : file.type;
+
+        const attachmentResult = await fetchProxy<AttachmentCreateResponse>(`${PROXY_BASE_URL}/budget_attachments`, {
+          method: "POST",
+          body: JSON.stringify({
+            budget_id: budgetId,
+            directus_id: uploadedFile.id,
+            file_name: file.name,
+            file_type: truncatedType,
+            file_size: file.size,
+          }),
+        });
+        const attachmentId = attachmentResult?.data?.id;
+
+        if (!attachmentId) {
+          throw new Error(`Attachment record was not created for ${file.name}.`);
+        }
+
+        createdAttachmentIds.push(attachmentId);
+        orphanDirectusFileIds.delete(uploadedFile.id);
       }
     } catch (error) {
-      console.error("Error uploading attachments:", error);
+      await this.cleanupUploadedAttachments(createdAttachmentIds, Array.from(orphanDirectusFileIds));
+      throw error instanceof Error ? error : new Error(String(error));
     }
   },
 
@@ -376,7 +429,7 @@ export const budgetService = {
     await fetchProxy(url, { method: "DELETE" });
   },
 
-  async getUsedCoaIds(year: number, monthName: string, divisionId: number, departmentId: number): Promise<number[]> {
+  async getUsedCoaIds(year: number, monthName: string, divisionId: number, departmentId: number, excludeId?: string): Promise<number[]> {
     if (!year || !monthName || !divisionId || !departmentId) return [];
 
     const query = new URLSearchParams({
@@ -388,6 +441,10 @@ export const budgetService = {
       fields: "coa_id",
       limit: "-1",
     });
+
+    if (excludeId) {
+      query.append("filter[id][_neq]", excludeId);
+    }
 
     const url = `${PROXY_BASE_URL}/budget?${query.toString()}`;
     const result = await fetchProxy<{ data: Array<{ coa_id?: { coa_id?: number; id?: number } | number | null }> }>(url);

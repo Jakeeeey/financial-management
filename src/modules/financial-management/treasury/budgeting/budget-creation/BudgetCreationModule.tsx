@@ -3,10 +3,10 @@
 "use client";
 
 import React from "react";
-import { Plus, Send, Trash2, RefreshCw, History, FileChartColumn, PlusCircle, LayoutDashboard } from "lucide-react";
+import { Send, Trash2, RefreshCw, PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -27,15 +27,13 @@ import { CreateBudgetModal } from "./components/CreateBudgetModal";
 
 function CreateBudgetContent() {
     const {
-        openModal,
         isModalOpen,
         quickSubmit,
         quickDelete,
         selectedIds,
         clearSelection,
-        clearFilters,
         filters,
-        budgets = [],
+        kpiTotals,
     } = useCreateBudgetContext();
 
     const isRejectedTab = filters.status === "Rejected";
@@ -57,86 +55,33 @@ function CreateBudgetContent() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Link href="/fm/treasury/budgeting/budget-dashboard">
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-9 px-3 text-xs gap-1.5 border-primary/20 hover:bg-primary/5 hover:text-primary active:scale-95 transition-transform rounded-xl"
-                        >
-                            <LayoutDashboard className="h-3.5 w-3.5" />
-                            Dashboard
-                        </Button>
-                    </Link>
-                    <Link href="/fm/treasury/budgeting/budget-history">
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-9 px-3 text-xs gap-1.5 border-primary/20 hover:bg-primary/5 hover:text-primary active:scale-95 transition-transform rounded-xl"
-                        >
-                            <History className="h-3.5 w-3.5" />
-                            History
-                        </Button>
-                    </Link>
-                    <Link href="/fm/treasury/budgeting/budget-reports">
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-9 px-3 text-xs gap-1.5 border-primary/20 hover:bg-primary/5 hover:text-primary active:scale-95 transition-transform rounded-xl"
-                        >
-                            <FileChartColumn className="h-3.5 w-3.5" />
-                            Reports
-                        </Button>
-                    </Link>
-                    <Link href="/fm/treasury/budgeting/budget-audit-trail">
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-9 px-3 text-xs gap-1.5 border-primary/20 hover:bg-primary/5 hover:text-primary active:scale-95 transition-transform rounded-xl"
-                        >
-                            <History className="h-3.5 w-3.5" />
-                            Audit Trail
-                        </Button>
-                    </Link>
-                    <Button
-                        size="sm"
-                        onClick={openModal}
-                        className="h-9 px-4 text-xs gap-2 font-bold rounded-xl shadow-sm active:scale-95 transition-transform"
-                    >
-                        <Plus className="h-4 w-4" />
-                        Create Budget
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={clearFilters}
-                        title="Reset Filters"
-                        className="h-9 w-9 p-0 rounded-xl border-border/50 active:scale-95 transition-transform"
-                    >
-                        <RefreshCw className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                </div>
             </div>
  
              {/* Stats Overview */}
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                  <StatsCard 
                      label="Draft Amount" 
-                     value={budgets.filter(b => b.status === "Draft").reduce((sum, b) => sum + b.amount, 0)}
+                     value={kpiTotals.draft}
                      icon={<PlusCircle className="h-4 w-4 text-slate-500" />}
                      color="slate"
                  />
                  <StatsCard 
                      label="Pending Approval" 
-                     value={budgets.filter(b => b.status === "Pending").reduce((sum, b) => sum + b.amount, 0)}
+                     value={kpiTotals.pending}
                      icon={<Send className="h-4 w-4 text-amber-500" />}
                      color="amber"
                  />
                  <StatsCard 
                      label="Total Approved" 
-                     value={budgets.filter(b => b.status === "Approved").reduce((sum, b) => sum + b.amount, 0)}
+                     value={kpiTotals.approved}
                      icon={<RefreshCw className="h-4 w-4 text-emerald-500" />}
                      color="emerald"
+                 />
+                 <StatsCard
+                     label="Total Rejected"
+                     value={kpiTotals.rejected}
+                     icon={<Trash2 className="h-4 w-4 text-rose-500" />}
+                     color="rose"
                  />
              </div>
 
@@ -230,8 +175,9 @@ function CreateBudgetContent() {
             )}
 
             {/* Month & Lifecycle Tabs */}
-            <div className="rounded-2xl border border-border/50 bg-card shadow-sm px-4 py-3 space-y-4">
+            <div className="flex flex-col gap-5 rounded-2xl border border-border/50 bg-card px-4 py-4 shadow-sm">
                 <MonthTabs />
+                <Separator />
                 <LifecycleTabs />
             </div>
 
@@ -251,6 +197,7 @@ function StatsCard({ label, value, icon, color }: { label: string; value: number
         slate: "bg-slate-500/10 text-slate-700 border-slate-500/20",
         amber: "bg-amber-500/10 text-amber-700 border-amber-500/20",
         emerald: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20",
+        rose: "bg-rose-500/10 text-rose-700 border-rose-500/20",
     };
 
     return (

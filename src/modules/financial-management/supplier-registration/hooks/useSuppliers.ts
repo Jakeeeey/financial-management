@@ -35,7 +35,7 @@ export function useSuppliers() {
         params.set("search", search.trim());
       }
 
-      const url = `/api/supplier-registration/suppliers${params.toString() ? `?${params.toString()}` : ""}`;
+      const url = `/api/fm/supplier-registration/suppliers${params.toString() ? `?${params.toString()}` : ""}`;
       const response = await fetch(url);
 
       if (!response.ok) {

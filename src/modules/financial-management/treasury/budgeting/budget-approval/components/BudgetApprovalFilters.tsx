@@ -1,22 +1,101 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Search, X } from "lucide-react";
+import { Check, ChevronDown, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useBudgetApprovalContext } from "../providers/BudgetApprovalProvider";
 import { budgetApprovalService } from "../services/budgetService";
 import type { Division, Department } from "../types";
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 import { YEAR_OPTIONS } from "../utils";
+
+type FilterSelectOption = { value: string; label: string };
+
+function SearchableFilterSelect({
+  value,
+  onChange,
+  placeholder,
+  options,
+  disabled,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  options: FilterSelectOption[];
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedLabel = options.find((option) => option.value === value)?.label;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className={cn(
+            "h-9 justify-between rounded-lg border-border/40 bg-background px-3 text-xs font-medium shadow-none hover:bg-background",
+            !selectedLabel && "text-muted-foreground",
+            disabled && "cursor-not-allowed opacity-50",
+            className
+          )}
+        >
+          <span className="truncate">{selectedLabel || placeholder}</span>
+          <ChevronDown className="ml-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[--radix-popover-trigger-width] p-0">
+        <Command>
+          <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} className="h-9 text-xs" />
+          <CommandList className="max-h-[240px]">
+            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandGroup>
+              {options.map((option) => (
+                <CommandItem
+                  key={option.value}
+                  value={`${option.label} ${option.value}`}
+                  onSelect={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  className="text-xs font-medium"
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-3.5 w-3.5",
+                      value === option.value ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  <span className="truncate">{option.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function BudgetApprovalFilters() {
   const { filters, updateFilter, clearFilters, hasFilters } = useBudgetApprovalContext();
@@ -38,7 +117,7 @@ export function BudgetApprovalFilters() {
 
   useEffect(() => {
     const loadDepts = async () => {
-      if (!filters.division_id) {
+      if (!filters.division_id || filters.division_id === "all") {
         setDepartments([]);
         return;
       }
@@ -51,6 +130,22 @@ export function BudgetApprovalFilters() {
     };
     loadDepts();
   }, [filters.division_id]);
+
+  const divisionOptions: FilterSelectOption[] = [
+    { value: "all", label: "All Divisions" },
+    ...divisions.map((div) => ({
+      value: String(div.division_id),
+      label: div.division_name,
+    })),
+  ];
+
+  const departmentOptions: FilterSelectOption[] = [
+    { value: "all", label: "All Depts." },
+    ...departments.map((dept) => ({
+      value: String(dept.department_id),
+      label: dept.department_name,
+    })),
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -67,61 +162,35 @@ export function BudgetApprovalFilters() {
       </div>
 
       {/* Year Filter */}
-      <Select
+      <SearchableFilterSelect
         value={filters.year}
-        onValueChange={(val) => updateFilter("year", val)}
-      >
-        <SelectTrigger className="h-9 w-[100px] rounded-lg border-border/40 bg-background text-xs font-medium">
-          <SelectValue placeholder="Year" />
-        </SelectTrigger>
-        <SelectContent className="rounded-lg border-border/40 shadow-xl">
-          {YEAR_OPTIONS.map((y) => (
-            <SelectItem key={`year-${y.value}`} value={y.value} className="text-xs font-medium">
-              {y.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        onChange={(val) => updateFilter("year", val)}
+        placeholder="Year"
+        options={YEAR_OPTIONS}
+        className="w-[100px]"
+      />
 
       {/* Division Filter */}
-      <Select
+      <SearchableFilterSelect
         value={filters.division_id}
-        onValueChange={(val) => {
+        onChange={(val) => {
           updateFilter("division_id", val);
           updateFilter("department_id", "all");
         }}
-      >
-        <SelectTrigger className="h-9 w-[160px] rounded-lg border-border/40 bg-background text-xs font-medium">
-          <SelectValue placeholder="All Divisions" />
-        </SelectTrigger>
-        <SelectContent className="rounded-lg border-border/40 shadow-xl">
-           <SelectItem value="all" className="text-xs font-medium">All Divisions</SelectItem>
-          {divisions.map((div) => (
-            <SelectItem key={`div-${div.division_id}`} value={String(div.division_id)} className="text-xs font-medium">
-              {div.division_name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        placeholder="All Divisions"
+        options={divisionOptions}
+        className="w-[160px]"
+      />
 
       {/* Department Filter */}
-      <Select
+      <SearchableFilterSelect
         value={filters.department_id}
-        onValueChange={(val) => updateFilter("department_id", val)}
+        onChange={(val) => updateFilter("department_id", val)}
         disabled={!filters.division_id || filters.division_id === "all"}
-      >
-        <SelectTrigger className="h-9 w-[160px] rounded-lg border-border/40 bg-background text-xs font-medium text-left">
-          <SelectValue placeholder="All Depts." />
-        </SelectTrigger>
-        <SelectContent className="rounded-lg border-border/40 shadow-xl">
-           <SelectItem value="all" className="text-xs font-medium">All Depts.</SelectItem>
-          {departments.map((dept) => (
-            <SelectItem key={`dept-${dept.department_id}`} value={String(dept.department_id)} className="text-xs font-medium">
-              {dept.department_name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        placeholder="All Depts."
+        options={departmentOptions}
+        className="w-[160px]"
+      />
 
       {hasFilters && (
         <Button
@@ -136,22 +205,6 @@ export function BudgetApprovalFilters() {
       )}
     </div>
 
-      {/* Active Filter Tags (Optional Enhancement) */}
-      {hasFilters && (
-         <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mr-1">Active Filters:</span>
-            {filters.status && (
-               <Badge variant="secondary" className="h-5 px-2 text-[8px] font-black uppercase tracking-tighter bg-primary/10 text-primary border-none">
-                  Status: {filters.status}
-               </Badge>
-            )}
-            {filters.division_id && (
-               <Badge variant="secondary" className="h-5 px-2 text-[8px] font-black uppercase tracking-tighter bg-primary/10 text-primary border-none">
-                  Division: {divisions.find(d => String(d.division_id) === filters.division_id)?.division_name}
-               </Badge>
-            )}
-         </div>
-      )}
     </div>
   );
 }

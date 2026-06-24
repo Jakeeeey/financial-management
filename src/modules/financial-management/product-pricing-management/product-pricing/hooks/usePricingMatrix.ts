@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useCallback, useState, useEffect } from "react";
+import { useMemo, useCallback, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import type {
@@ -11,12 +11,25 @@ import type {
     ProductRow,
     VariantCell,
     PriceType,
+    PriceChangeBatchLineInput,
+    SavePriceChangeBatchInput,
+    SaveAllResult,
+    DirtyPreviewLine,
+    DirtyCellMeta,
+    PendingCellRequest,
 } from "../types";
 import * as api from "../providers/pricingApi";
-import { TIERS } from "../utils/constants";
-import { clampMoney, toNumberOrNull } from "../utils/format";
-import { pivotPrices, buildTierIdMap } from "../utils/pivot";
-import { validatePrice } from "../utils/validators";
+import { clampMoney, moneyValuesEqual, toNumberOrNull } from "../utils/format";
+import {
+    buildMatrixTierKeys,
+    emptyPivot,
+    isListTierKey,
+    pivotPrices,
+    tierLabelForTierKey,
+} from "../utils/pivot";
+import { EMPTY_PRICE_ERROR, validatePrice } from "../utils/validators";
+import { applyLoadError } from "../../shared/loadErrorState";
+import { ApiHttpError, isUnauthorizedError } from "../../shared/apiHttp";
 
 type DirtyKey = `${number}:${ProductTierKey}`;
 type PendingKey = `${number}:${ProductTierKey}`;
@@ -35,15 +48,6 @@ type MatrixProductRow = ProductRow & {
     __group_id?: number | null;
 };
 
-const EMPTY_PIVOT: Record<ProductTierKey, number | null> = {
-    A: null,
-    B: null,
-    C: null,
-    D: null,
-    E: null,
-    LIST: null,
-};
-
 const defaultFilters: PricingFilters = {
     q: "",
     category_ids: [],
@@ -53,6 +57,7 @@ const defaultFilters: PricingFilters = {
     supplier_scope: "ALL",
     active_only: true,
     missing_tier: false,
+    price_view: "ALL",
     price_type_ids: [],
     show_list_price: false,
 };
@@ -67,24 +72,40 @@ export function usePricingMatrix(args: {
 }) {
     const { categoriesById, brandsById, unitsById, unitsList = [], priceTypes } = args;
 
-    const tierIdMap = useMemo(() => buildTierIdMap(priceTypes), [priceTypes]);
+    const matrixTierKeys = useMemo(() => buildMatrixTierKeys(priceTypes), [priceTypes]);
+    const emptyPivotForTypes = useMemo(() => emptyPivot(priceTypes), [priceTypes]);
 
     const [filters, setFilters] = useState<PricingFilters>(defaultFilters);
 
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(50);
 
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [unauthorized, setUnauthorized] = useState(false);
     const [rows, setRows] = useState<MatrixRow[]>([]);
     const [meta, setMeta] = useState<ProductsMeta>(undefined);
     const [usedUnits, setUsedUnits] = useState<Unit[]>([]);
+    const requestIdRef = useRef(0);
 
     const [dirty, setDirty] = useState<Map<DirtyKey, string>>(new Map());
     const [dirtyErrors, setDirtyErrors] = useState<Map<DirtyKey, string>>(new Map());
+    const [dirtyMeta, setDirtyMeta] = useState<Map<DirtyKey, DirtyCellMeta>>(new Map());
+    const dirtyRef = useRef(dirty);
+    dirtyRef.current = dirty;
+    const dirtyErrorsRef = useRef(dirtyErrors);
+    dirtyErrorsRef.current = dirtyErrors;
 
-    const [pendingMap, setPendingMap] = useState<Map<PendingKey, number>>(new Map());
+    const [dirtyVersion, setDirtyVersion] = useState(0);
+    const bumpDirtyVersion = useCallback(() => setDirtyVersion((v) => v + 1), []);
 
-    const filtersKey = useMemo(
+    const [pendingMap, setPendingMap] = useState<Map<PendingKey, PendingCellRequest>>(new Map());
+    const rowsRef = useRef(rows);
+    rowsRef.current = rows;
+    const pendingMapRef = useRef(pendingMap);
+    pendingMapRef.current = pendingMap;
+
+    const serverFiltersKey = useMemo(
         () =>
             JSON.stringify({
                 q: filters.q,
@@ -95,8 +116,6 @@ export function usePricingMatrix(args: {
                 brand_ids: filters.brand_ids ?? [],
                 unit_ids: filters.unit_ids ?? [],
                 supplier_ids: filters.supplier_ids ?? [],
-                price_type_ids: filters.price_type_ids ?? [],
-                show_list_price: filters.show_list_price,
             }),
         [
             filters.q,
@@ -107,20 +126,23 @@ export function usePricingMatrix(args: {
             filters.brand_ids,
             filters.unit_ids,
             filters.supplier_ids,
-            filters.price_type_ids,
-            filters.show_list_price,
         ],
     );
 
     useEffect(() => {
         setPage(1);
-    }, [filtersKey]);
+    }, [serverFiltersKey]);
 
     const refresh = useCallback(async () => {
+        const requestId = ++requestIdRef.current;
         setLoading(true);
 
         try {
-            const res = await api.getProducts({
+            const dirtyProductIds = [...dirtyRef.current.keys()]
+                .map((key) => Number(String(key).split(":")[0]))
+                .filter((id) => Number.isFinite(id) && id > 0);
+
+            const res = await api.getMatrixPage({
                 q: filters.q || undefined,
                 category_ids: filters.category_ids.length ? filters.category_ids.join(",") : undefined,
                 brand_ids: filters.brand_ids.length ? filters.brand_ids.join(",") : undefined,
@@ -131,6 +153,8 @@ export function usePricingMatrix(args: {
                 missing_tier: filters.missing_tier ? "1" : "0",
                 page: String(page),
                 page_size: String(pageSize),
+                pending_product_ids:
+                    dirtyProductIds.length > 0 ? dirtyProductIds.join(",") : undefined,
             });
 
             const products: MatrixProductRow[] = (res.data ?? []) as MatrixProductRow[];
@@ -164,42 +188,54 @@ export function usePricingMatrix(args: {
                 .map((p) => toNumberOrNull(p.product_id))
                 .filter((id): id is number => id !== null);
 
-            const priceRes = await api.getPricesForProducts(productIds);
-            const priceMap = pivotPrices(priceTypes, priceRes.data ?? []);
+            const dirtyProductIdSet = new Set(dirtyProductIds);
+            const pageProductIdSet = new Set(productIds);
 
-            // Fetch pending requests
-            const [pendingPriceRes, pendingCostRes] = await Promise.all([
-                api.getPendingPriceRequests(),
-                api.getPendingCostRequests()
-            ]);
+            const priceMap = pivotPrices(priceTypes, res.prices ?? []);
 
-            const nextPending = new Map<PendingKey, number>();
+            const pendingPriceRes = { data: res.pending_price_requests ?? [] };
+            const pendingCostRes = { data: res.pending_cost_requests ?? [] };
 
-            // Map price change requests
-            for (const pcr of pendingPriceRes.data ?? []) {
-                const pidRaw = pcr.product_id;
-                const ptidRaw = pcr.price_type_id;
-                const pid = toNumberOrNull(typeof pidRaw === "object" ? pidRaw?.product_id : pidRaw);
-                const ptid = toNumberOrNull(typeof ptidRaw === "object" ? ptidRaw?.price_type_id : ptidRaw);
-                if (pid !== null && ptid !== null) {
-                    // Reverse map ptid to tier key
-                    const tierKey = Array.from(tierIdMap.entries()).find(([, id]) => id === ptid)?.[0];
-                    if (tierKey) {
-                        nextPending.set(`${pid}:${tierKey}`, toNumberOrNull(pcr.proposed_price) ?? 0);
+            setPendingMap((prev) => {
+                const nextPending = new Map<PendingKey, PendingCellRequest>();
+
+                for (const [key, value] of prev) {
+                    const pid = Number(String(key).split(":")[0]);
+                    if (!pageProductIdSet.has(pid) && dirtyProductIdSet.has(pid)) {
+                        nextPending.set(key, value);
                     }
                 }
-            }
 
-            // Map cost change requests
-            for (const ccr of pendingCostRes.data ?? []) {
-                const pidRaw = ccr.product_id;
-                const pid = toNumberOrNull(typeof pidRaw === "object" ? pidRaw?.product_id : pidRaw);
-                if (pid !== null) {
-                    nextPending.set(`${pid}:LIST`, toNumberOrNull(ccr.proposed_cost) ?? 0);
+                for (const pcr of pendingPriceRes.data ?? []) {
+                    const pidRaw = pcr.product_id;
+                    const ptidRaw = pcr.price_type_id;
+                    const pid = toNumberOrNull(typeof pidRaw === "object" ? pidRaw?.product_id : pidRaw);
+                    const ptid = toNumberOrNull(typeof ptidRaw === "object" ? ptidRaw?.price_type_id : ptidRaw);
+                    if (pid !== null && ptid !== null) {
+                        nextPending.set(`${pid}:${String(ptid)}`, {
+                            proposedValue: toNumberOrNull(pcr.proposed_price) ?? 0,
+                            status: pcr.status ?? null,
+                            applicationStatus: pcr.application_status ?? null,
+                            effectiveAt: pcr.effective_at ?? null,
+                        });
+                    }
                 }
-            }
 
-            setPendingMap(nextPending);
+                for (const ccr of pendingCostRes.data ?? []) {
+                    const pidRaw = ccr.product_id;
+                    const pid = toNumberOrNull(typeof pidRaw === "object" ? pidRaw?.product_id : pidRaw);
+                    if (pid !== null) {
+                        nextPending.set(`${pid}:LIST`, {
+                            proposedValue: toNumberOrNull(ccr.proposed_cost) ?? 0,
+                            status: ccr.status ?? null,
+                            applicationStatus: ccr.application_status ?? null,
+                            effectiveAt: ccr.effective_at ?? null,
+                        });
+                    }
+                }
+
+                return nextPending;
+            });
 
             const groups = new Map<number, MatrixProductRow[]>();
             for (const p of products) {
@@ -243,7 +279,8 @@ export function usePricingMatrix(args: {
                     if (uomId === null || uomId <= 0) continue;
 
                     const productId = toNumberOrNull(v.product_id);
-                    const piv = productId !== null ? priceMap.get(productId) ?? EMPTY_PIVOT : EMPTY_PIVOT;
+                    const piv =
+                        productId !== null ? priceMap.get(productId) ?? emptyPivotForTypes : emptyPivotForTypes;
 
                     variantsByUnitId[uomId] = {
                         product: v,
@@ -264,24 +301,110 @@ export function usePricingMatrix(args: {
                 String(a.display.product_name ?? "").localeCompare(String(b.display.product_name ?? "")),
             );
 
+            if (requestId !== requestIdRef.current) return;
+
             setRows(assembled);
+            setError(null);
+            setUnauthorized(false);
+        } catch (err: unknown) {
+            if (requestId !== requestIdRef.current) return;
+
+            setRows([]);
+            setMeta(undefined);
+            setUsedUnits([]);
+
+            if (
+                err instanceof ApiHttpError &&
+                err.status === 404 &&
+                err.message.includes("API route was not found")
+            ) {
+                toast.error(
+                    "Restart the dev server (npm run dev:clean) — the pricing matrix API route is not compiled.",
+                );
+            }
+
+            applyLoadError(err, "Failed to load pricing matrix", setUnauthorized, setError);
         } finally {
-            setLoading(false);
+            if (requestId === requestIdRef.current) {
+                setLoading(false);
+            }
         }
-    }, [filters, page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes, tierIdMap]);
+    }, [page, pageSize, categoriesById, brandsById, unitsById, unitsList, priceTypes, emptyPivotForTypes, filters]);
 
     useEffect(() => {
-        refresh().catch((error: unknown) => {
-            const message = error instanceof Error ? error.message : "Failed to load pricing matrix";
-            toast.error(message);
-        });
+        void refresh();
     }, [refresh]);
 
     const setCell = useCallback((productId: number, tier: ProductTierKey, raw: unknown) => {
         const key: DirtyKey = `${productId}:${tier}`;
+        if (pendingMapRef.current.has(key)) return;
+
         const rawString = String(raw ?? "");
-        const value = clampMoney(toNumberOrNull(rawString));
-        const err = validatePrice(value);
+        const meta = snapshotDirtyCellMeta(rowsRef.current, productId, tier);
+
+        if (!rawString.trim()) {
+            if (meta.current_value === null) {
+                setDirty((prev) => {
+                    const next = new Map(prev);
+                    next.delete(key);
+                    return next;
+                });
+                setDirtyErrors((prev) => {
+                    const next = new Map(prev);
+                    next.delete(key);
+                    return next;
+                });
+                setDirtyMeta((prev) => {
+                    const next = new Map(prev);
+                    next.delete(key);
+                    return next;
+                });
+                bumpDirtyVersion();
+                return;
+            }
+
+            setDirty((prev) => {
+                const next = new Map(prev);
+                next.set(key, "");
+                return next;
+            });
+            setDirtyErrors((prev) => {
+                const next = new Map(prev);
+                next.set(key, EMPTY_PRICE_ERROR);
+                return next;
+            });
+            setDirtyMeta((prev) => {
+                const next = new Map(prev);
+                next.set(key, meta);
+                return next;
+            });
+            bumpDirtyVersion();
+            return;
+        }
+
+        const parsedValue = toNumberOrNull(rawString.trim());
+        const err = validatePrice(parsedValue, rawString.trim());
+        const value = err ? parsedValue : clampMoney(parsedValue);
+
+        if (!err && moneyValuesEqual(value, meta.current_value)) {
+            setDirty((prev) => {
+                const next = new Map(prev);
+                next.delete(key);
+                return next;
+            });
+            setDirtyErrors((prev) => {
+                const next = new Map(prev);
+                next.delete(key);
+                return next;
+            });
+            setDirtyMeta((prev) => {
+                const next = new Map(prev);
+                next.delete(key);
+                return next;
+            });
+            bumpDirtyVersion();
+            return;
+        }
 
         setDirty((prev) => {
             const next = new Map(prev);
@@ -295,252 +418,587 @@ export function usePricingMatrix(args: {
             else next.delete(key);
             return next;
         });
-    }, []);
+
+        setDirtyMeta((prev) => {
+            const next = new Map(prev);
+            next.set(key, meta);
+            return next;
+        });
+        bumpDirtyVersion();
+    }, [bumpDirtyVersion]);
 
     const getCellValue = useCallback((productId: number, tier: ProductTierKey, base: number | null) => {
         const key: DirtyKey = `${productId}:${tier}`;
-        if (dirty.has(key)) return dirty.get(key) ?? "";
+        const d = dirtyRef.current;
+        if (d.has(key)) return d.get(key) ?? "";
         return base;
-    }, [dirty]);
+    }, []);
 
     const isDirty = useCallback((productId: number, tier: ProductTierKey) => {
-        return dirty.has(`${productId}:${tier}` as DirtyKey);
-    }, [dirty]);
+        return dirtyRef.current.has(`${productId}:${tier}` as DirtyKey);
+    }, []);
 
     const getError = useCallback((productId: number, tier: ProductTierKey) => {
-        return dirtyErrors.get(`${productId}:${tier}` as DirtyKey) ?? null;
-    }, [dirtyErrors]);
+        return dirtyErrorsRef.current.get(`${productId}:${tier}` as DirtyKey) ?? null;
+    }, []);
 
-    const getPendingValue = useCallback((productId: number, tier: ProductTierKey) => {
+    const getPendingRequest = useCallback((productId: number, tier: ProductTierKey) => {
         return pendingMap.get(`${productId}:${tier}` as PendingKey) ?? null;
     }, [pendingMap]);
 
-    const saveAll = useCallback(async () => {
+    const dirtyCounts = useMemo(() => {
+        let price = 0;
+        let cost = 0;
+
+        for (const key of dirty.keys()) {
+            const tier = key.slice(key.indexOf(":") + 1);
+            if (isListTierKey(tier)) cost += 1;
+            else price += 1;
+        }
+
+        return { price, cost };
+    }, [dirty]);
+
+    const visibleProductIds = useMemo(() => {
+        const ids = new Set<number>();
+        for (const row of rows) {
+            for (const variant of Object.values(row.variantsByUnitId)) {
+                const productId = toNumberOrNull(variant.product.product_id);
+                if (productId !== null) ids.add(productId);
+            }
+        }
+        return ids;
+    }, [rows]);
+
+    const offPageDirtyCount = useMemo(() => {
+        let count = 0;
+        for (const key of dirty.keys()) {
+            const productId = Number(key.split(":")[0]);
+            if (!Number.isFinite(productId) || !visibleProductIds.has(productId)) {
+                count += 1;
+            }
+        }
+        return count;
+    }, [dirty, visibleProductIds]);
+
+    const findCurrentPrice = useCallback((productId: number, tier: ProductTierKey) => {
+        for (const row of rows) {
+            for (const v of Object.values(row.variantsByUnitId)) {
+                const pid = toNumberOrNull(v.product.product_id);
+                if (pid === productId) {
+                    return toNumberOrNull(v.tiers[tier]);
+                }
+            }
+        }
+        return null;
+    }, [rows]);
+
+    const dirtyPreviewLines = useMemo((): DirtyPreviewLine[] => {
+        const lines: DirtyPreviewLine[] = [];
+
+        for (const [k, price] of dirty.entries()) {
+            const productId = Number(k.slice(0, k.indexOf(":")));
+            const tier = k.slice(k.indexOf(":") + 1);
+            const meta = dirtyMeta.get(k);
+            const product = findProductInRows(rows, productId);
+            const product_name = meta?.product_name ?? product?.product_name ?? `Product #${productId}`;
+            const product_code = meta?.product_code ?? product?.product_code ?? null;
+
+            if (!price.trim()) {
+                const validation_error = dirtyErrors.get(k) ?? EMPTY_PRICE_ERROR;
+
+                if (isListTierKey(tier)) {
+                    const current_cost =
+                        meta?.current_value ??
+                        (product ? toNumberOrNull(product.cost_per_unit) : null);
+
+                    lines.push({
+                        product_id: productId,
+                        product_name,
+                        product_code,
+                        tier_label: "List Cost",
+                        kind: "cost",
+                        current_value: current_cost,
+                        proposed_value: null,
+                        validation_error,
+                    });
+                    continue;
+                }
+
+                const priceTypeId = Number(tier);
+                if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) continue;
+
+                lines.push({
+                    product_id: productId,
+                    product_name,
+                    product_code,
+                    tier_label: tierLabelForTierKey(tier, priceTypes),
+                    kind: "price",
+                    current_value: meta?.current_value ?? findCurrentPrice(productId, tier),
+                    proposed_value: null,
+                    validation_error,
+                });
+                continue;
+            }
+
+            const proposed = parseDirtyProposedValue(price);
+            if (proposed === null || proposed === 0) continue;
+
+            if (isListTierKey(tier)) {
+                const current_cost =
+                    meta?.current_value ??
+                    (product ? toNumberOrNull(product.cost_per_unit) : null);
+
+                lines.push({
+                    product_id: productId,
+                    product_name,
+                    product_code,
+                    tier_label: "List Cost",
+                    kind: "cost",
+                    current_value: current_cost,
+                    proposed_value: proposed,
+                });
+                continue;
+            }
+
+            const priceTypeId = Number(tier);
+            if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) continue;
+
+            lines.push({
+                product_id: productId,
+                product_name,
+                product_code,
+                tier_label: tierLabelForTierKey(tier, priceTypes),
+                kind: "price",
+                current_value: meta?.current_value ?? findCurrentPrice(productId, tier),
+                proposed_value: proposed,
+            });
+        }
+
+        return lines.sort((a, b) => {
+            const nameCompare = a.product_name.localeCompare(b.product_name);
+            if (nameCompare !== 0) return nameCompare;
+            if (a.kind !== b.kind) return a.kind === "price" ? -1 : 1;
+            return a.tier_label.localeCompare(b.tier_label);
+        });
+    }, [dirty, dirtyErrors, dirtyMeta, findCurrentPrice, priceTypes, rows]);
+
+    const saveAll = useCallback(async (batch?: SavePriceChangeBatchInput): Promise<SaveAllResult> => {
         if (dirtyErrors.size > 0) {
             toast.error("Please fix validation errors before submitting.");
-            return;
+            return { success: false, reason: "validation" };
         }
 
-        if (dirty.size === 0) {
+        const hasDirty = dirty.size > 0;
+        if (!hasDirty) {
             toast.message("No changes to submit.");
-            return;
+            return { success: false, reason: "no_changes" };
         }
 
-        const pcrItems: { product_id: number; price_type_id: number; proposed_price: number }[] = [];
+        const pcrItems: PriceChangeBatchLineInput[] = [];
         const costPcrItems: { product_id: number; proposed_cost: number; current_cost: number | null }[] = [];
 
         for (const [k, price] of dirty.entries()) {
-            const [pidStr, tier] = k.split(":") as [string, ProductTierKey];
-            const productId = Number(pidStr);
+            const proposed = parseDirtyProposedValue(price);
+            if (proposed === null || proposed === 0) continue;
 
-            if (tier === "LIST") {
-                // Find original cost from rows state
-                let current_cost: number | null = null;
-                rows_loop: for (const row of rows) {
-                    for (const v of Object.values(row.variantsByUnitId)) {
-                        const pid = toNumberOrNull(v.product.product_id);
-                        if (pid === productId) {
-                            current_cost = toNumberOrNull(v.product.cost_per_unit);
-                            break rows_loop;
+            const productId = Number(k.slice(0, k.indexOf(":")));
+            const tier = k.slice(k.indexOf(":") + 1);
+
+            const meta = dirtyMeta.get(k);
+
+            if (isListTierKey(tier)) {
+                let current_cost = meta?.current_value ?? null;
+                if (current_cost === null) {
+                    rows_loop: for (const row of rows) {
+                        for (const v of Object.values(row.variantsByUnitId)) {
+                            const pid = toNumberOrNull(v.product.product_id);
+                            if (pid === productId) {
+                                current_cost = toNumberOrNull(v.product.cost_per_unit);
+                                break rows_loop;
+                            }
                         }
                     }
                 }
 
-                const proposed = Number(price);
-                if (Number.isFinite(proposed)) {
-                    costPcrItems.push({
-                        product_id: productId,
-                        proposed_cost: proposed,
-                        current_cost,
-                    });
-                }
+                costPcrItems.push({
+                    product_id: productId,
+                    proposed_cost: proposed,
+                    current_cost,
+                });
                 continue;
             }
 
-            const priceTypeId = tierIdMap.get(tier);
-            if (!priceTypeId) continue;
-
-            const proposed = Number(price);
-            if (!Number.isFinite(proposed)) continue;
+            const priceTypeId = Number(tier);
+            if (!Number.isFinite(priceTypeId) || priceTypeId <= 0) continue;
 
             pcrItems.push({
                 product_id: productId,
                 price_type_id: priceTypeId,
+                current_price: meta?.current_value ?? findCurrentPrice(productId, tier),
                 proposed_price: proposed,
             });
         }
 
         if (pcrItems.length === 0 && costPcrItems.length === 0) {
             toast.error("No valid changes to submit.");
-            return;
+            return { success: false, reason: "no_valid_lines" };
+        }
+
+        if (pcrItems.length > 0 && (!batch?.supplier_id || !batch.remarks.trim())) {
+            toast.error("Supplier and batch remarks are required for price change batches.");
+            return { success: false, reason: "missing_batch_fields" };
         }
 
         try {
-            const promises: Promise<unknown>[] = [];
+            type CreateResult = {
+                created?: number;
+                skipped_existing_pending?: number;
+                skipped_duplicates?: number;
+            };
 
-            if (pcrItems.length > 0) {
-                promises.push(api.createPriceChangeRequests(pcrItems));
-            }
+            const isMixedSave = pcrItems.length > 0 && costPcrItems.length > 0;
 
-            if (costPcrItems.length > 0) {
-                promises.push(api.createCostChangeRequests(costPcrItems));
-            }
-
-            const results = await Promise.all(promises);
-
-            let totalCreated = 0;
-            let totalSkippedPending = 0;
-            let totalSkippedDuplicates = 0;
-
-            // Result of pcrItems (always results[0] if present)
-            if (pcrItems.length > 0) {
-                const res = results[0] as {
-                    created?: number;
-                    skipped_existing_pending?: number;
-                    skipped_duplicates?: number;
-                };
-                totalCreated += res.created ?? 0;
-                totalSkippedPending += res.skipped_existing_pending ?? 0;
-                totalSkippedDuplicates += res.skipped_duplicates ?? 0;
-            }
-
-            // Result of costPcrItems — index shifts if pcrItems also ran
-            if (costPcrItems.length > 0) {
-                const costResultIndex = pcrItems.length > 0 ? 1 : 0;
-                const res = results[costResultIndex] as {
-                    created?: number;
-                    skipped_existing_pending?: number;
-                    skipped_duplicates?: number;
-                };
-                totalCreated += res.created ?? 0;
-                totalSkippedPending += res.skipped_existing_pending ?? 0;
-                totalSkippedDuplicates += res.skipped_duplicates ?? 0;
-            }
-
-            setDirty(new Map());
-            setDirtyErrors(new Map());
-            await refresh();
-
-            // All items were blocked by existing pending requests
-            if (totalCreated === 0 && totalSkippedPending > 0) {
-                toast.warning(
-                    `${totalSkippedPending} item(s) already have a PENDING request and were skipped. ` +
-                    `Please approve or reject the existing request(s) in Price Change Requests before re-submitting.`,
-                    { duration: 8000 }
-                );
-                return;
-            }
-
-            // Some created, some skipped
-            if (totalCreated > 0 && totalSkippedPending > 0) {
-                toast.success(
-                    `${totalCreated} request(s) submitted. ` +
-                    `${totalSkippedPending} skipped (already pending — resolve them in Price Change Requests first).`,
-                    { duration: 6000 }
-                );
-                return;
-            }
-
-            // All skipped as duplicates (same batch)
-            if (totalCreated === 0 && totalSkippedDuplicates > 0) {
-                toast.message("No new changes — all entries were duplicates in the same batch.");
-                return;
-            }
-
-            toast.success(`${totalCreated} price change request(s) submitted successfully.`);
-        } catch (error: unknown) {
-            // Try to extract a human-readable Directus error body from the thrown message
-            let displayMessage = "Failed to save changes";
-            if (error instanceof Error) {
+            if (isMixedSave) {
                 try {
-                    const parsed = JSON.parse(error.message) as Record<string, unknown>;
-                    const body = parsed.directus_body ?? parsed.body ?? parsed.details ?? parsed.error;
-                    if (typeof body === "string" && body.trim()) {
-                        // Try to parse the inner Directus error JSON
-                        try {
-                            const inner = JSON.parse(body) as Record<string, unknown>;
-                            const innerErrors = inner.errors;
-                            if (Array.isArray(innerErrors) && innerErrors.length > 0) {
-                                const first = innerErrors[0] as Record<string, unknown>;
-                                displayMessage = String(first.message ?? body);
-                            } else {
-                                displayMessage = body;
-                            }
-                        } catch {
-                            displayMessage = body;
-                        }
-                    } else {
-                        displayMessage = error.message;
+                    const mixedRes = await api.saveMixedPricingChanges({
+                        batch: batch!,
+                        price_lines: pcrItems,
+                        cost_items: costPcrItems,
+                    });
+
+                    if ((mixedRes.created ?? 0) === 0) {
+                        toast.message("No new price change requests were created.");
+                        return { success: false, reason: "nothing_created" };
                     }
-                } catch {
-                    displayMessage = error.message;
+
+                    setDirty(new Map());
+                    setDirtyErrors(new Map());
+                    setDirtyMeta(new Map());
+                    bumpDirtyVersion();
+                    await refresh();
+
+                    const skippedMessages = buildSkippedMessages(
+                        (mixedRes.price.skipped_existing_pending ?? 0) +
+                            (mixedRes.cost.skipped_existing_pending ?? 0),
+                        (mixedRes.price.skipped_duplicates ?? 0) +
+                            (mixedRes.cost.skipped_duplicates ?? 0),
+                    );
+
+                    toast.success(
+                        `${mixedRes.created} price change request(s) submitted successfully.${
+                            skippedMessages ? ` ${skippedMessages}` : ""
+                        }`,
+                    );
+                    return { success: true, created: mixedRes.created };
+                } catch (error: unknown) {
+                    const parsed = parseMixedSaveError(error);
+                    if (parsed.code === "mixed_save_preflight_failed") {
+                        toast.error(formatMixedPreflightMessage(parsed));
+                        return { success: false, reason: "mixed_preflight_failed" };
+                    }
+                    if (parsed.code === "mixed_save_rolled_back") {
+                        toast.error(
+                            "Save failed and was rolled back. No price batch or list cost requests were created.",
+                        );
+                        return { success: false, reason: "mixed_save_rolled_back" };
+                    }
+                    throw error;
                 }
             }
-            toast.error(displayMessage);
+
+            let priceCreated = 0;
+            let costCreated = 0;
+            let totalSkippedDuplicates = 0;
+            let totalSkippedExistingPending = 0;
+
+            if (pcrItems.length > 0) {
+                const priceRes = (await api.createPriceChangeBatch(batch!, pcrItems)) as CreateResult;
+                priceCreated = priceRes.created ?? 0;
+                totalSkippedDuplicates += priceRes.skipped_duplicates ?? 0;
+                totalSkippedExistingPending += priceRes.skipped_existing_pending ?? 0;
+
+                if (priceCreated === 0) {
+                    if (totalSkippedExistingPending > 0) {
+                        toast.message(
+                            "No new price requests were created because these items already have pending requests.",
+                        );
+                    } else if (totalSkippedDuplicates > 0) {
+                        toast.message("No new changes - all entries were duplicates.");
+                    } else {
+                        toast.message("No new price requests were created.");
+                    }
+                    return { success: false, reason: "nothing_created" };
+                }
+            }
+
+            if (costPcrItems.length > 0) {
+                const costRes = (await api.createCostChangeRequests(costPcrItems)) as CreateResult;
+                costCreated = costRes.created ?? 0;
+                totalSkippedDuplicates += costRes.skipped_duplicates ?? 0;
+                totalSkippedExistingPending += costRes.skipped_existing_pending ?? 0;
+            }
+
+            const totalCreated = priceCreated + costCreated;
+
+            if (totalCreated > 0) {
+                setDirty(new Map());
+                setDirtyErrors(new Map());
+                setDirtyMeta(new Map());
+                bumpDirtyVersion();
+                await refresh();
+
+                const skippedMessages = buildSkippedMessages(
+                    totalSkippedExistingPending,
+                    totalSkippedDuplicates,
+                );
+
+                toast.success(
+                    `${totalCreated} price change request(s) submitted successfully.${
+                        skippedMessages ? ` ${skippedMessages}` : ""
+                    }`,
+                );
+                return { success: true, created: totalCreated };
+            }
+
+            if (totalSkippedExistingPending > 0) {
+                toast.message("No new price requests were created because these items already have pending requests.");
+                return { success: false, reason: "nothing_created" };
+            }
+
+            if (totalSkippedDuplicates > 0) {
+                toast.message("No new changes - all entries were duplicates.");
+                return { success: false, reason: "nothing_created" };
+            }
+
+            toast.message("No new price requests were created.");
+            return { success: false, reason: "nothing_created" };
+        } catch (error: unknown) {
+            if (isUnauthorizedError(error)) {
+                setUnauthorized(true);
+                return { success: false, reason: "api_error" };
+            }
+            toast.error(formatSaveErrorMessage(error));
+            return { success: false, reason: "api_error" };
         }
-    }, [dirty, dirtyErrors, tierIdMap, refresh, rows]);
+    }, [dirty, dirtyErrors, dirtyMeta, refresh, rows, findCurrentPrice, bumpDirtyVersion]);
 
     const discardAll = useCallback(() => {
         setDirty(new Map());
         setDirtyErrors(new Map());
-    }, []);
+        setDirtyMeta(new Map());
+        bumpDirtyVersion();
+    }, [bumpDirtyVersion]);
 
     const resetFilters = useCallback(() => {
         setFilters(defaultFilters);
         setPage(1);
     }, []);
 
-    return useMemo(() => ({
-        TIERS,
-        loading,
-        rows,
-        meta,
-        usedUnits,
-        priceTypes,
+    const matrix = useMemo(
+        () => ({
+            TIERS: matrixTierKeys,
+            loading,
+            error,
+            unauthorized,
+            rows,
+            meta,
+            usedUnits,
+            priceTypes,
+            dirtyVersion,
 
-        filters,
-        setFilters,
-        resetFilters,
+            filters,
+            setFilters,
+            resetFilters,
 
-        page,
-        setPage,
-        pageSize,
-        setPageSize,
+            page,
+            setPage,
+            pageSize,
+            setPageSize,
 
-        setCell,
-        getCellValue,
-        getPendingValue,
-        isDirty,
-        getError,
+            setCell,
+            getCellValue,
+            getPendingRequest,
+            isDirty,
+            getError,
 
-        dirtyCount: dirty.size,
-        saveAll,
-        discardAll,
+            refresh,
+        }),
+        [
+            matrixTierKeys,
+            loading,
+            error,
+            unauthorized,
+            rows,
+            meta,
+            usedUnits,
+            priceTypes,
+            dirtyVersion,
+            filters,
+            setFilters,
+            resetFilters,
+            page,
+            setPage,
+            pageSize,
+            setPageSize,
+            setCell,
+            getCellValue,
+            getPendingRequest,
+            isDirty,
+            getError,
+            refresh,
+        ],
+    );
 
-        refresh,
-    }), [
-        loading,
-        rows,
-        meta,
-        usedUnits,
-        priceTypes,
-        filters,
-        setFilters,
-        resetFilters,
-        page,
-        setPage,
-        pageSize,
-        setPageSize,
-        setCell,
-        getCellValue,
-        getPendingValue,
-        isDirty,
-        getError,
-        dirty,
-        saveAll,
-        discardAll,
-        refresh,
-    ]);
+    const dirtySummary = useMemo(
+        () => ({
+            dirtyVersion,
+            dirtyCount: dirtyCounts.price + dirtyCounts.cost,
+            priceDirtyCount: dirtyCounts.price,
+            costDirtyCount: dirtyCounts.cost,
+            offPageDirtyCount,
+            dirtyPreviewLines,
+            saveAll,
+            discardAll,
+        }),
+        [
+            dirtyVersion,
+            dirtyCounts,
+            offPageDirtyCount,
+            dirtyPreviewLines,
+            saveAll,
+            discardAll,
+        ],
+    );
+
+    return { matrix, dirtySummary };
+}
+
+function parseDirtyProposedValue(raw: string): number | null {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    return toNumberOrNull(trimmed);
+}
+
+function formatSaveErrorMessage(error: unknown): string {
+    const displayMessage = "Failed to save changes";
+    if (!(error instanceof Error)) return displayMessage;
+
+    try {
+        const parsed = JSON.parse(error.message) as Record<string, unknown>;
+        const body = parsed.directus_body ?? parsed.body ?? parsed.details ?? parsed.error;
+        if (typeof body === "string" && body.trim()) {
+            try {
+                const inner = JSON.parse(body) as Record<string, unknown>;
+                const innerErrors = inner.errors;
+                if (Array.isArray(innerErrors) && innerErrors.length > 0) {
+                    const first = innerErrors[0] as Record<string, unknown>;
+                    return String(first.message ?? body);
+                }
+                return body;
+            } catch {
+                return body;
+            }
+        }
+        return error.message;
+    } catch {
+        return error.message;
+    }
+}
+
+function buildSkippedMessages(skippedPending: number, skippedDuplicates: number): string {
+    const parts: string[] = [];
+    if (skippedPending > 0) parts.push(`${skippedPending} already pending`);
+    if (skippedDuplicates > 0) parts.push(`${skippedDuplicates} duplicate(s) skipped`);
+    return parts.length ? `${parts.join(", ")}.` : "";
+}
+
+type MixedSaveErrorPayload = {
+    code?: string;
+    price?: { would_create?: number; skipped_existing_pending?: number };
+    cost?: { would_create?: number; skipped_existing_pending?: number };
+};
+
+function parseMixedSaveError(error: unknown): MixedSaveErrorPayload {
+    if (!(error instanceof Error)) return {};
+
+    try {
+        const parsed = JSON.parse(error.message) as Record<string, unknown>;
+        return {
+            code: typeof parsed.code === "string" ? parsed.code : undefined,
+            price: parsed.price as MixedSaveErrorPayload["price"],
+            cost: parsed.cost as MixedSaveErrorPayload["cost"],
+        };
+    } catch {
+        return {};
+    }
+}
+
+function formatMixedPreflightMessage(payload: MixedSaveErrorPayload): string {
+    const reasons: string[] = [];
+
+    if ((payload.price?.would_create ?? 1) === 0) {
+        if ((payload.price?.skipped_existing_pending ?? 0) > 0) {
+            reasons.push("price changes are already pending");
+        } else {
+            reasons.push("no valid price lines to create");
+        }
+    }
+
+    if ((payload.cost?.would_create ?? 1) === 0) {
+        if ((payload.cost?.skipped_existing_pending ?? 0) > 0) {
+            reasons.push("list cost changes are already pending");
+        } else {
+            reasons.push("no valid list cost lines to create");
+        }
+    }
+
+    if (reasons.length === 0) {
+        return "Cannot save mixed changes: both price and list cost must be valid to submit together.";
+    }
+
+    return `Cannot save mixed changes: ${reasons.join(" and ")}. No requests were created.`;
+}
+
+function snapshotDirtyCellMeta(
+    rows: MatrixRow[],
+    productId: number,
+    tier: ProductTierKey,
+): DirtyCellMeta {
+    const product = findProductInRows(rows, productId);
+    let current_value: number | null = null;
+
+    if (isListTierKey(tier)) {
+        current_value = product ? toNumberOrNull(product.cost_per_unit) : null;
+    } else {
+        for (const row of rows) {
+            for (const variant of Object.values(row.variantsByUnitId)) {
+                const pid = toNumberOrNull(variant.product.product_id);
+                if (pid === productId) {
+                    current_value = toNumberOrNull(variant.tiers[tier]);
+                    break;
+                }
+            }
+            if (current_value !== null) break;
+        }
+    }
+
+    return {
+        product_name: product?.product_name ?? `Product #${productId}`,
+        product_code: product?.product_code ?? null,
+        current_value,
+    };
+}
+
+function findProductInRows(rows: MatrixRow[], productId: number): ProductRow | null {
+    for (const row of rows) {
+        for (const variant of Object.values(row.variantsByUnitId)) {
+            if (toNumberOrNull(variant.product.product_id) === productId) {
+                return variant.product;
+            }
+        }
+    }
+    return null;
 }
 
 function unitLabel(u: Unit) {
