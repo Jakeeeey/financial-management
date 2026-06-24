@@ -168,11 +168,12 @@ export async function GET(request: NextRequest) {
 
     if (view === 'table') {
       const tableSort = parseARTableSort(searchParams);
-      const groups = sortCustomerGroups(buildCustomerGroups(filtered), tableSort);
-      const totalGroups = groups.length;
+      const { groups, truncated } = buildCustomerGroups(filtered);
+      const sorted = sortCustomerGroups(groups, tableSort);
+      const totalGroups = sorted.length;
       const totalPages = Math.ceil(totalGroups / pageSize) || 1;
       const safePage = Math.min(page, totalPages);
-      const pagedGroups = groups.slice((safePage - 1) * pageSize, safePage * pageSize);
+      const pagedGroups = sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
 
       return NextResponse.json({
         view: 'table',
@@ -185,6 +186,7 @@ export async function GET(request: NextRequest) {
         filteredCount: filtered.length,
         sortKey: tableSort.sortKey,
         sortOrder: tableSort.sortOrder,
+        truncated,
       }, { headers: cacheHeaders });
     }
 

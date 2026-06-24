@@ -207,4 +207,5 @@ export interface ARTableResponse {
   filteredCount: number;
   sortKey?: keyof Invoice | null;
   sortOrder?: 'asc' | 'desc' | null;
+  truncated?: boolean;
 }

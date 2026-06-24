@@ -161,6 +161,7 @@ export default function AccountsReceivableModule() {
     operationData,
     filterOptions,
     customerGroups,
+    truncated,
     tablePage,
     tableTotalPages,
     totalInvoices,
@@ -782,6 +783,7 @@ export default function AccountsReceivableModule() {
             totalInvoiceCount={filteredCount}
             totalGroupCount={totalGroups}
             tableLoading={tableLoading}
+            truncated={truncated}
             sortKey={tableSort.sortKey}
             sortOrder={tableSort.sortOrder}
             onSortChange={onTableSortChange}

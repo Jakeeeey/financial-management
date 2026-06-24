@@ -38,6 +38,7 @@ interface UseARResult {
   totalInvoices: number;
   filteredCount: number;
   totalGroups: number;
+  truncated: boolean;
   tableSort: ARTableSort;
   setTablePage: (page: number | ((prev: number) => number)) => void;
   onTableSortChange: (sortKey: keyof Invoice | null, sortOrder: 'asc' | 'desc' | null) => void;
@@ -102,6 +103,7 @@ export function useAccountsReceivable(
   const [totalInvoices, setTotalInvoices] = useState(0);
   const [filteredCount, setFilteredCount] = useState(0);
   const [totalGroups, setTotalGroups] = useState(0);
+  const [truncated, setTruncated] = useState(false);
   const [tableSort, setTableSort] = useState<ARTableSort>(DEFAULT_TABLE_SORT);
 
   const filtersRef = useRef(activeFilters);
@@ -171,6 +173,7 @@ export function useAccountsReceivable(
     setTableTotalPages(data.totalPages);
     setFilteredCount(data.filteredCount);
     setTotalGroups(data.totalGroups);
+    setTruncated(data.truncated ?? false);
     return data;
   }, []);
 
@@ -335,6 +338,7 @@ export function useAccountsReceivable(
     totalInvoices,
     filteredCount,
     totalGroups,
+    truncated,
     tableSort,
     setTablePage: handleSetTablePage,
     onTableSortChange,

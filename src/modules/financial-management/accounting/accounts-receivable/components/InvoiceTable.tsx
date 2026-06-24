@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/incompatible-library */
 // src/modules/financial-management/accounting/accounts-receivable/components/InvoiceTable.tsx
 
 import React, { useMemo, useState, Fragment, useRef } from 'react';
@@ -143,6 +144,7 @@ interface InvoiceTableProps {
   totalInvoiceCount?: number;
   totalGroupCount?: number;
   tableLoading?: boolean;
+  truncated?: boolean;
   sortKey?: keyof Invoice | null;
   sortOrder?: 'asc' | 'desc' | null;
   onSortChange?: (key: keyof Invoice | null, order: 'asc' | 'desc' | null) => void;
@@ -175,6 +177,8 @@ function VirtualInvoiceRows({
   invoices: Invoice[];
   onRowClick?: (invoice: Invoice) => void;
 }) {
+  "use no memo";
+
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: invoices.length,
@@ -319,6 +323,7 @@ export function InvoiceTable({
   totalInvoiceCount,
   totalGroupCount,
   tableLoading = false,
+  truncated = false,
   sortKey: controlledSortKey,
   sortOrder: controlledSortOrder,
   onSortChange,
@@ -354,7 +359,7 @@ export function InvoiceTable({
     }));
   }, [serverGroups]);
 
-  const filtered = serverMode ? [] : invoices;
+  const filtered = useMemo(() => serverMode ? [] as Invoice[] : invoices, [serverMode, invoices]);
 
   const customerGroups = useMemo(() => {
     if (serverMode) return mappedServerGroups;
@@ -433,6 +438,12 @@ export function InvoiceTable({
           )}
         </span>
       </CardHeader>
+
+      {truncated ? (
+        <div className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800">
+          Data truncated — showing partial results. Narrow the date range or use supplier/customer filters to see all records.
+        </div>
+      ) : null}
 
       <CardContent className="p-0">
         <div className="max-h-[600px] overflow-auto relative w-full">
