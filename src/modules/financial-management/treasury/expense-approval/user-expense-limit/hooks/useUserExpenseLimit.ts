@@ -1,10 +1,10 @@
-// src/modules/user-expense-limit/hooks/useUserExpenseLimit.ts
+// src/modules/financial-management/treasury/budgeting/user-expense-limit/hooks/useUserExpenseLimit.ts
 
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import type { UserExpenseLimit, User, CreateLimitPayload, UpdateLimitPayload, Department, LimitFilters } from "../types";
+import type { UserExpenseLimit, User, CreateLimitPayload, UpdateLimitPayload, Department, LimitFilters, Coa } from "../types";
 import { API_BASE } from "../utils";
 
 function extractList<T>(json: unknown): T[] {
@@ -27,7 +27,6 @@ export function useUserExpenseLimits() {
   const [error,     setError]     = useState<string | null>(null);
   const [filters,   setFilters]   = useState<LimitFilters>(DEFAULT_FILTERS);
 
-  // Only re-fetch from API when department_id changes — NOT on search
   const load = useCallback(async (departmentId: string) => {
     setLoading(true);
     setError(null);
@@ -55,17 +54,15 @@ export function useUserExpenseLimits() {
 
   useEffect(() => {
     load(filters.department_id);
-  }, [filters.department_id, load]); // only re-fetch on department change
+  }, [filters.department_id, load]);
 
-  // Apply search locally in memory — no loading, no fetch, instant
   const limits = useMemo(() => {
     const term = filters.search.trim().toLowerCase();
     if (!term) return allLimits;
     return allLimits.filter(l =>
       (l.user_name       ?? "").toLowerCase().includes(term) ||
       (l.user_email      ?? "").toLowerCase().includes(term) ||
-      (l.user_department ?? "").toLowerCase().includes(term) ||
-      l.expense_limit.toString().includes(term)
+      (l.user_department ?? "").toLowerCase().includes(term)
     );
   }, [allLimits, filters.search]);
 
@@ -116,7 +113,7 @@ export function useUsersWithoutLimit() {
   return { users, loading };
 }
 
-// ─── Create ───────────────────────────────────────────────────────────────────
+// ─── Create (Submits proposal) ────────────────────────────────────────────────
 export function useCreateLimit() {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState<string | null>(null);
@@ -133,7 +130,7 @@ export function useCreateLimit() {
       const json: unknown = await res.json();
       const obj           = json as Record<string, unknown>;
       if (!res.ok) throw new Error(String(obj?.message ?? `HTTP ${res.status}`));
-      return { success: true, message: String(obj.message ?? "Expense limit created.") };
+      return { success: true, message: String(obj.message ?? "Expense limit proposal submitted.") };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unknown error";
       setError(msg);
@@ -146,24 +143,29 @@ export function useCreateLimit() {
   return { submit, loading, error };
 }
 
-// ─── Update ───────────────────────────────────────────────────────────────────
+// ─── Update (Submits proposal for edit) ───────────────────────────────────────
 export function useUpdateLimit() {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState<string | null>(null);
 
-  const submit = async (id: number, payload: UpdateLimitPayload) => {
+  const submit = async (userId: number, payload: UpdateLimitPayload) => {
     setLoading(true);
     setError(null);
     try {
-      const res           = await fetch(`${API_BASE}/${id}`, {
-        method:  "PATCH",
+      // Edits are also submitted to POST as a pending proposal
+      const res           = await fetch(API_BASE, {
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(payload),
+        body:    JSON.stringify({
+          user_id: userId,
+          limits: payload.limits,
+          remarks: payload.remarks
+        }),
       });
       const json: unknown = await res.json();
       const obj           = json as Record<string, unknown>;
       if (!res.ok) throw new Error(String(obj?.message ?? `HTTP ${res.status}`));
-      return { success: true, message: String(obj.message ?? "Expense limit updated.") };
+      return { success: true, message: String(obj.message ?? "Expense limit update proposal submitted.") };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unknown error";
       setError(msg);
@@ -203,4 +205,33 @@ export function useDepartments() {
   }, []);
 
   return { departments, loading };
+}
+
+// ─── Fetch Chart of Accounts ──────────────────────────────────────────────────
+export function useCoas() {
+  const [coas,    setCoas]    = useState<Coa[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      setLoading(true);
+      try {
+        const r             = await fetch(`${API_BASE}?action=coas`);
+        const json: unknown = await r.json();
+        if (!cancelled) {
+          const list = Array.isArray(json)
+            ? json as Coa[]
+            : (json as Record<string, unknown>)?.data as Coa[] ?? [];
+          setCoas(list);
+        }
+      } catch { /* silent */ } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, []);
+
+  return { coas, loading };
 }

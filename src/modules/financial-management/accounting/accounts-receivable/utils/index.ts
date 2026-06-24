@@ -143,6 +143,10 @@ export function deriveMetrics(invoices: Invoice[]): ARMetrics {
   const totalUnposted    = invoices.reduce((sum, inv) => sum + (inv.unpostedCollectionAmount || 0), 0);
   const realOutstanding  = Math.max(0, totalOutstanding - totalUnposted);
 
+  const totalPendingCancellation = invoices
+    .filter((inv) => inv.transactionStatus === 'Cancellation Requested')
+    .reduce((sum, inv) => sum + inv.outstanding, 0);
+
   // Include due-today (overdue === 0) in overdue set
   const overdueInvoices = invoices.filter(
     (inv) => inv.overdue !== null && inv.overdue >= 0 && inv.outstanding > 0
@@ -154,7 +158,15 @@ export function deriveMetrics(invoices: Invoice[]): ARMetrics {
         )
       : 0;
 
-  return { totalReceivable, totalOutstanding, totalUnposted, realOutstanding, overdueInvoices, avgOverdue };
+  return {
+    totalReceivable,
+    totalOutstanding,
+    totalUnposted,
+    realOutstanding,
+    overdueInvoices,
+    avgOverdue,
+    totalPendingCancellation,
+  };
 }
 
 export function mapToSortedArray(map: Record<string, number>, limit = 8): NamedAmount[] {

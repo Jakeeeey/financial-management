@@ -321,6 +321,9 @@ export async function GET() {
       // Double-check: skip any posted invoices that leaked through the filter
       if (parseBit(inv.isPosted)) continue;
 
+      // Skip cancelled invoices
+      if (inv.transaction_status === 'Cancelled' || inv.transaction_status === 'CANCELLED') continue;
+
       const grossAmount       = Number(inv.gross_amount)    || 0;
       const discountAmount    = Number(inv.discount_amount) || 0;
       const netReceivable     = grossAmount - discountAmount;

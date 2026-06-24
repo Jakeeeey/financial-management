@@ -105,6 +105,7 @@ export interface ARMetrics {
   unpostedAllocationsActive?: number;
   unpostedAllocationsPaid?: number;
   unpostedUnallocated?: number;
+  totalPendingCancellation?: number;
 }
 
 export interface OperationBreakdown {
