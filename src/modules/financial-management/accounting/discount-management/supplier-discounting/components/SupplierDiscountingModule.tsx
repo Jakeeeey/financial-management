@@ -99,7 +99,7 @@ function discountFilterQuery(value: string): {
 function ProductIdentity({ product }: { product: SupplierDiscountProduct }) {
   return (
     <div className="min-w-0">
-      <div className="truncate font-medium">{product.productName}</div>
+      <div className="whitespace-normal break-words font-medium">{product.productName}</div>
       <div className="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground">
         {product.productCode ? <span>{product.productCode}</span> : null}
         {product.barcode ? <span>{product.barcode}</span> : null}
