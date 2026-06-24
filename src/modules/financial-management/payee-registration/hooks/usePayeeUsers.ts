@@ -16,7 +16,7 @@ export interface PayeeUser {
   user_contact?: string;
   contactNumber?: string;
   user_department?: number;
-  department?: number | any;
+  department?: number | { department_name?: string; [key: string]: unknown };
   user_department_name?: string;
   department_name?: string;
 }
@@ -43,7 +43,7 @@ export function usePayeeUsers() {
         if (!cancelled) {
           const rawUsers: PayeeUser[] = Array.isArray(usersJson) ? usersJson : (usersJson?.data ?? []);
           const payees: Payee[] = payeesJson?.data ?? [];
-          const departments: any[] = Array.isArray(deptsJson) ? deptsJson : (deptsJson?.data ?? []);
+          const departments: { department_id?: number | string; department_name?: string }[] = Array.isArray(deptsJson) ? deptsJson : (deptsJson?.data ?? []);
 
           // Create department lookup map
           const deptMap = new Map<number, string>();

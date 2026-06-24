@@ -82,6 +82,7 @@ export function UserSelect({ users, loading, onSelect }: UserSelectProps) {
                     key={id}
                     value={name}
                     onSelect={() => {
+                      setSelectedValue(id);
                       onSelect(u);
                       setOpen(false);
                       setQuery("");
