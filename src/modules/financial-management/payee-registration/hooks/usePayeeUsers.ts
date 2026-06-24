@@ -15,6 +15,10 @@ export interface PayeeUser {
   tinNumber?: string;
   user_contact?: string;
   contactNumber?: string;
+  user_department?: number;
+  department?: number | any;
+  user_department_name?: string;
+  department_name?: string;
 }
 
 export function usePayeeUsers() {
@@ -26,17 +30,28 @@ export function usePayeeUsers() {
     const run = async () => {
       setLoading(true);
       try {
-        const [usersRes, payeesRes] = await Promise.all([
+        const [usersRes, payeesRes, deptsRes] = await Promise.all([
           fetch("/api/fm/treasury/users?sort=firstName"),
-          fetch("/api/fm/payee-registration/payees")
+          fetch("/api/fm/payee-registration/payees"),
+          fetch("/api/fm/treasury/expense-approval/user-expense-limit?action=departments")
         ]);
 
         const usersJson = await usersRes.json();
         const payeesJson = payeesRes.ok ? await payeesRes.json() : { data: [] };
+        const deptsJson = deptsRes.ok ? await deptsRes.json() : [];
 
         if (!cancelled) {
           const rawUsers: PayeeUser[] = Array.isArray(usersJson) ? usersJson : (usersJson?.data ?? []);
           const payees: Payee[] = payeesJson?.data ?? [];
+          const departments: any[] = Array.isArray(deptsJson) ? deptsJson : (deptsJson?.data ?? []);
+
+          // Create department lookup map
+          const deptMap = new Map<number, string>();
+          departments.forEach(d => {
+            if (d.department_id && d.department_name) {
+              deptMap.set(Number(d.department_id), d.department_name);
+            }
+          });
 
           const existingNames = new Set(payees.map(p => (p.supplier_name || "").toLowerCase().trim()).filter(Boolean));
           const existingEmails = new Set(payees.map(p => (p.email_address || "").toLowerCase().trim()).filter(Boolean));
@@ -50,6 +65,18 @@ export function usePayeeUsers() {
             if (name && existingNames.has(name)) return false;
             if (email && email !== "n/a" && existingEmails.has(email)) return false;
             if (tin && existingTins.has(tin)) return false;
+
+            // Map department name
+            if (u.department && typeof u.department === "object" && u.department.department_name) {
+               u.department_name = u.department.department_name;
+            } else if (u.user_department_name) {
+               u.department_name = u.user_department_name;
+            } else {
+               const deptId = u.user_department || u.department;
+               if (deptId && !isNaN(Number(deptId))) {
+                 u.department_name = deptMap.get(Number(deptId)) || "";
+               }
+            }
 
             return true;
           });
