@@ -19,6 +19,7 @@ interface DirectusSalesInvoice {
   discount_amount: number | null;
   payment_status: string | null;
   isPosted: unknown;
+  transaction_status: string | null;
 }
 
 interface DirectusCustomer {
@@ -132,6 +133,7 @@ export async function GET(request: NextRequest) {
     "discount_amount",
     "payment_status",
     "isPosted",
+    "transaction_status",
   ].join(",");
 
   const CANDIDATE_LIMIT = 200;
@@ -306,6 +308,8 @@ export async function GET(request: NextRequest) {
       .filter(row => {
         // Double-check: skip any posted invoices that leaked through
         if (parseBit(row.inv.isPosted)) return false;
+        // Skip cancelled invoices
+        if (row.inv.transaction_status === 'Cancelled' || row.inv.transaction_status === 'CANCELLED') return false;
         // JPA filter: (invoiceNo LIKE %q% OR customer.customerName LIKE %q%)
         if (lowerQuery) {
           const matchesInvoice  = (row.inv.invoice_no || "").toLowerCase().includes(lowerQuery);
