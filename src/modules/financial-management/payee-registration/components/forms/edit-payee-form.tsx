@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, ChevronsUpDown } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface EditPayeeFormProps {
