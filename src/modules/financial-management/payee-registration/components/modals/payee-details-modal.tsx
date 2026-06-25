@@ -20,11 +20,6 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { formatDate } from "@/modules/financial-management/supplier-registration/utils/utils";
-import { useState } from "react";
-import { usePayeeProducts } from "../../hooks/usePayeeProducts";
-import { ManagePayeeProductsModal } from "./manage-payee-products-modal";
-import { Package } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -39,8 +34,6 @@ export function PayeeDetailsModal({
   open,
   onClose,
 }: PayeeDetailsModalProps) {
-  const [manageProductsOpen, setManageProductsOpen] = useState(false);
-  const { products, isLoading: productsLoading } = usePayeeProducts(payee?.id || null);
 
   if (!payee) return null;
 
@@ -159,30 +152,6 @@ export function PayeeDetailsModal({
           </div>
 
           <Separator className="col-span-full" />
-
-          {/* Product Catalog Section */}
-          <div className="col-span-full bg-muted/20 p-4 rounded-lg border border-dashed flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                <Package className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold">Product Catalog</p>
-                <p className="text-xs text-muted-foreground">
-                  {productsLoading
-                    ? "Loading..."
-                    : `${products.length} products assigned`}
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setManageProductsOpen(true)}
-            >
-              Manage Products
-            </Button>
-          </div>
         </div>
 
         {payee.notes_or_comments && (
@@ -195,13 +164,6 @@ export function PayeeDetailsModal({
           </div>
         )}
       </DialogContent>
-
-      <ManagePayeeProductsModal
-        payeeId={payee.id!}
-        payeeName={payee.supplier_name}
-        open={manageProductsOpen}
-        onClose={() => setManageProductsOpen(false)}
-      />
     </Dialog>
   );
 }
