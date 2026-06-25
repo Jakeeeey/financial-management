@@ -13,6 +13,7 @@ const SupplierTypeSchema = z.preprocess((value) => {
  */
 export const PayeeSchema = z.object({
   id: z.number().optional(),
+  user_id: z.number().nullable().optional(),
   supplier_name: z
     .string()
     .min(2, "Payee name must be at least 2 characters")
