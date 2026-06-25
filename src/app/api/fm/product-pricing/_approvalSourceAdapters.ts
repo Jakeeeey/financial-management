@@ -865,7 +865,7 @@ async function fetchPriceRequestsDirectPage(
     limit: number,
     supplierProductIds?: number[],
 ): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
-    const params = createApprovalListParams({ offset, limit, fields:
+    const params = createApprovalListParams({ offset, limit, sort: "-requested_at,-request_id", fields:
         [
             "request_id",
             "header_id",
@@ -1001,8 +1001,7 @@ export async function fetchPriceBatchesPage(
         return { rows: [], total: 0 };
     }
 
-    const params = createApprovalListParams({ offset, limit, fields:
-        [
+    const params = createApprovalListParams({ offset, limit, sort: "-requested_at,-header_id", fields: [
             "header_id",
             "supplier_id",
             "supplier_id.id",
@@ -1098,8 +1097,7 @@ export async function fetchCostBatchesPage(
         return { rows: [], total: 0 };
     }
 
-    const params = createApprovalListParams({ offset, limit, fields:
-        [
+    const params = createApprovalListParams({ offset, limit, sort: "-requested_at,-header_id", fields: [
             "header_id",
             "reference_no",
             "remarks",
@@ -1195,7 +1193,7 @@ async function fetchCostRequestsDirectPage(
     limit: number,
     supplierProductIds?: number[],
 ): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
-    const params = createApprovalListParams({ offset, limit, fields:
+    const params = createApprovalListParams({ offset, limit, sort: "-requested_at,-request_id", fields:
         [
             "request_id",
             "product_id",
