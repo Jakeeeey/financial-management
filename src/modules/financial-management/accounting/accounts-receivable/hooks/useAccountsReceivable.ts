@@ -132,10 +132,10 @@ export function useAccountsReceivable(
     };
   }, []);
 
-  const fetchSummary = useCallback(async (f: ARTableFilters, epoch: number) => {
+  const fetchSummary = useCallback(async (f: ARTableFilters, epoch: number, signal?: AbortSignal) => {
     const qs = buildARQueryParams(f);
     const url = `/api/fm/accounting/accounts-receivable?view=summary${qs ? `&${qs}` : ''}`;
-    const res = await fetch(url, { credentials: 'include' });
+    const res = await fetch(url, { credentials: 'include', signal });
     if (!res.ok) throw new Error(`Summary request failed: ${res.status}`);
     const data: ARSummaryResponse = await res.json();
     if (epoch !== requestEpochRef.current) return null;
@@ -177,10 +177,10 @@ export function useAccountsReceivable(
     return data;
   }, []);
 
-  const fetchDrilldownInvoices = useCallback(async (f: ARTableFilters, epoch: number) => {
+  const fetchDrilldownInvoices = useCallback(async (f: ARTableFilters, epoch: number, signal?: AbortSignal) => {
     const qs = buildARQueryParams(f);
     const url = `/api/fm/accounting/accounts-receivable?view=full${qs ? `&${qs}` : ''}`;
-    const res = await fetch(url, { credentials: 'include' });
+    const res = await fetch(url, { credentials: 'include', signal });
     if (!res.ok) return;
     const data = await res.json();
     if (epoch !== requestEpochRef.current) return;
@@ -215,6 +215,7 @@ export function useAccountsReceivable(
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     const isFirstFetch = !hasFetchedRef.current;
     const debounceMs = isFirstFetch ? 0 : 300;
     let toastId: string | number | undefined;
@@ -236,14 +237,14 @@ export function useAccountsReceivable(
 
       try {
         await Promise.all([
-          fetchSummary(f, epoch),
-          fetchTable(tableCtx, tableAbortRef.current?.signal),
-          isFirstFetch ? Promise.resolve() : fetchDrilldownInvoices(f, epoch),
+          fetchSummary(f, epoch, controller.signal),
+          fetchTable(tableCtx, controller.signal),
+          isFirstFetch ? Promise.resolve() : fetchDrilldownInvoices(f, epoch, controller.signal),
         ]);
         if (cancelled || epoch !== requestEpochRef.current) return;
 
         if (isFirstFetch) {
-          fetchDrilldownInvoices(f, epoch);
+          fetchDrilldownInvoices(f, epoch, controller.signal).catch(() => {});
         }
         setError(null);
         if (isFirstFetch && toastId !== undefined) {
@@ -273,6 +274,8 @@ export function useAccountsReceivable(
     return () => {
       cancelled = true;
       clearTimeout(handle);
+      controller.abort();
+      if (toastId !== undefined) toast.dismiss(toastId);
     };
   }, [activeFilters, beginTableRequest, fetchSummary, fetchTable, fetchDrilldownInvoices]);
 
