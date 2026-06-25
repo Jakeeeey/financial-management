@@ -381,15 +381,17 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         </div>
 
                         {/* Dynamic Edit Button */}
-                        {(disbursement.status === "Draft" || disbursement.status === "Approved") && onEdit && (
+                        {(disbursement.status === "Draft" || disbursement.status === "Approved" || disbursement.status === "Returned for Revision") && onEdit && (
                             <Button variant="outline" onClick={() => onEdit(disbursement)} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-6 text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/30">
                                 <Pencil className="w-4 h-4 sm:mr-2" />
-                                <span className="hidden sm:inline">{disbursement.status === "Draft" ? "Edit Draft" : "Add/Edit Checks"}</span>
+                                <span className="hidden sm:inline">
+                                    {disbursement.status === "Approved" ? "Add/Edit Checks" : "Edit Voucher"}
+                                </span>
                             </Button>
                         )}
 
                         {/* Revert Tool */}
-                        {disbursement.status !== "Draft" && disbursement.status !== "Posted" && (
+                        {disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" && (
                             <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
                             </Button>
@@ -398,7 +400,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
 
                     {/* RIGHT SIDE: Dynamic Primary Action Pipeline */}
                     <div className="flex gap-2">
-                        {disbursement.status === "Draft" && (
+                        {(disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && (
                             <Button onClick={() => handleAction("Submitted")} disabled={loading} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
                                 {isAutoApprove ? "Submit & Auto-Approve" : "Submit for Approval"}

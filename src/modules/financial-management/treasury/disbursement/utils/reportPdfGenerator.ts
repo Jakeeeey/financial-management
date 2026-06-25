@@ -27,10 +27,11 @@ export const generateReportPDF = (
     doc.setFontSize(20);
     doc.text("MEN2 MARKETING", 15, 16);
 
+    const typeLabel = filters.transactionType === "1" ? "TRADE" : filters.transactionType === "2" ? "NON-TRADE" : "ALL";
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.setTextColor(200, 200, 200);
-    doc.text("TREASURY OUTFLOWS REPORT", 15, 23);
+    doc.text(`TREASURY OUTFLOWS REPORT (${typeLabel})`, 15, 23);
 
     // Date Generated & Filters info
     const nowStr = format(new Date(), "yyyy-MM-dd HH:mm:ss");
@@ -39,6 +40,9 @@ export const generateReportPDF = (
     const startStr = filters.startDate ? format(new Date(filters.startDate), "MMM dd, yyyy") : "All Time";
     const endStr = filters.endDate ? format(new Date(filters.endDate), "MMM dd, yyyy") : "Present";
     doc.text(`Period: ${startStr} - ${endStr}`, 220, 23);
+    
+    const typeHeaderLabel = filters.transactionType === "1" ? "Trade Only" : filters.transactionType === "2" ? "Non-Trade Only" : "All Types";
+    doc.text(`Type: ${typeHeaderLabel}`, 220, 30);
 
     // --- KPI Cards ---
     let startY = 50;
@@ -291,5 +295,6 @@ export const generateReportPDF = (
     });
 
     // Save document
-    doc.save(`treasury-outflows-report-${format(new Date(), "yyyyMMdd-HHmmss")}.pdf`);
+    const fileTypeSuffix = filters.transactionType === "1" ? "trade-" : filters.transactionType === "2" ? "non-trade-" : "";
+    doc.save(`treasury-outflows-${fileTypeSuffix}report-${format(new Date(), "yyyyMMdd-HHmmss")}.pdf`);
 };

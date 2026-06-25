@@ -92,7 +92,8 @@ export async function GET(req: NextRequest) {
     const transactionType = url.searchParams.get("transactionType");
     const encoderId = url.searchParams.get("encoderId");
     const coaId = url.searchParams.get("coaId");
-    const amount = url.searchParams.get("amount");
+    const minAmount = url.searchParams.get("minAmount");
+    const maxAmount = url.searchParams.get("maxAmount");
     const remarks = url.searchParams.get("remarks");
 
     try {
@@ -115,29 +116,54 @@ export async function GET(req: NextRequest) {
         const filterAnd: Record<string, unknown>[] = [];
         if (startDate) filterAnd.push({ transaction_date: { _gte: startDate } });
         if (endDate) filterAnd.push({ transaction_date: { _lte: endDate } });
+        
         if (status && status !== "ALL") {
-            filterAnd.push({ status: { _eq: status } });
-        }
-        if (payeeId) filterAnd.push({ payee: { _eq: Number(payeeId) } });
-        if (transactionType && transactionType !== "ALL") {
-            const typeNum = Number(transactionType);
-            if (!isNaN(typeNum)) {
-                filterAnd.push({ transaction_type: { _eq: typeNum } });
+            const list = status.split(",").map(s => s.trim()).filter(Boolean);
+            if (list.length > 0) {
+                filterAnd.push({ status: { _in: list } });
             }
         }
-        if (encoderId) filterAnd.push({ encoder_id: { _eq: Number(encoderId) } });
-        if (amount) filterAnd.push({ total_amount: { _eq: Number(amount) } });
-        if (remarks && remarks.trim() !== "") {
-            filterAnd.push({ remarks: { _contains: remarks } });
+        if (payeeId && payeeId !== "ALL" && payeeId !== "") {
+            const ids = payeeId.split(",").map(Number).filter(n => !isNaN(n));
+            if (ids.length > 0) {
+                filterAnd.push({ payee: { _in: ids } });
+            }
         }
+        if (transactionType && transactionType !== "ALL" && transactionType !== "") {
+            const ids = transactionType.split(",").map(Number).filter(n => !isNaN(n));
+            if (ids.length > 0) {
+                filterAnd.push({ transaction_type: { _in: ids } });
+            }
+        }
+        if (encoderId && encoderId !== "ALL" && encoderId !== "") {
+            const ids = encoderId.split(",").map(Number).filter(n => !isNaN(n));
+            if (ids.length > 0) {
+                filterAnd.push({ encoder_id: { _in: ids } });
+            }
+        }
+        
+        if (minAmount) filterAnd.push({ total_amount: { _gte: Number(minAmount) } });
+        if (maxAmount) filterAnd.push({ total_amount: { _lte: Number(maxAmount) } });
 
-        if (coaId) {
+        if (remarks && remarks.trim() !== "") {
             filterAnd.push({
                 _or: [
-                    { payables: { coa_id: { _eq: Number(coaId) } } },
-                    { payments: { coa_id: { _eq: Number(coaId) } } }
+                    { remarks: { _contains: remarks } },
+                    { payables: { remarks: { _contains: remarks } } }
                 ]
             });
+        }
+
+        if (coaId && coaId !== "ALL" && coaId !== "") {
+            const ids = coaId.split(",").map(Number).filter(n => !isNaN(n));
+            if (ids.length > 0) {
+                filterAnd.push({
+                    _or: [
+                        { payables: { coa_id: { _in: ids } } },
+                        { payments: { coa_id: { _in: ids } } }
+                    ]
+                });
+            }
         }
 
         const queryParams = new URLSearchParams({

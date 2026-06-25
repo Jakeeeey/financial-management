@@ -129,7 +129,7 @@ function SearchableDropdown<T extends string | number>({
 }
 
 const isPaymentCOA = (c: COADto) => {
-    if (c.isPayment || c.isPaymentDuplicate) return true;
+    if (c.isPayment) return true;
     const title = (c.accountTitle || "").toLowerCase();
     return title.includes("petty cash") || title.includes("revolving fund") || title.includes("revolving funds");
 };
@@ -327,6 +327,7 @@ export function DisbursementCreateSheet({
                         {
                             id: createdPayeeId,
                             supplier_name: createdPayee?.supplier_name || "New Payee",
+                            supplier_type: payeeSupplierType,
                             isActive: true,
                         },
                     ],

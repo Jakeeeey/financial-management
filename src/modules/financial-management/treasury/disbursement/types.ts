@@ -19,6 +19,8 @@ export interface PaymentLine {
     date: string;
     amount: number;
     remarks?: string;
+    releasedDate?: string;
+    releasedBy?: string | number;
 }
 
 export interface Disbursement {
@@ -31,7 +33,7 @@ export interface Disbursement {
     totalAmount: number;
     paidAmount: number;
 
-    // 🚀 NEW: Financial Header Aggregates
+    // Financial Header Aggregates
     totalDebit?: number;
     totalCredit?: number;
     balance?: number;
@@ -42,12 +44,17 @@ export interface Disbursement {
     encoderId?: number;
     approverId?: number;
     postedById?: number;
+    submittedById?: number;
+    releasedById?: number;
 
     isPosted: number;
     transactionDate?: string;
     dateCreated?: string;
+    dateSubmitted?: string;
     dateApproved?: string;
+    dateReleased?: string;
     datePosted?: string;
+    
     divisionId?: number;
     departmentId?: number;
     divisionName?: string;
@@ -89,6 +96,7 @@ export interface SupplierDto {
     id: number;
     supplier_name: string;
     supplier_shortcut?: string;
+    supplier_type: "TRADE" | "NON-TRADE";
     isActive: boolean;
 }
 
@@ -106,7 +114,6 @@ export interface COADto {
     accountTitle: string;
     accountType?: number | null;
     isPayment?: boolean;
-    isPaymentDuplicate?: boolean;
 }
 
 export interface BankAccountDto {
@@ -137,7 +144,6 @@ export interface MemoDto {
     account_title: string;
 }
 
-// Add to your existing types.ts in the disbursement module
 export interface DepartmentExpense {
     departmentId: number;
     departmentName: string;
@@ -163,6 +169,7 @@ export interface VoucherSummary {
     bankNames: string;
     expenseAccountsHit: string;
     supportingDocumentsUrl?: string;
+    remarks?: string;
 }
 
 export interface DisbursementDashboardData {
@@ -170,7 +177,6 @@ export interface DisbursementDashboardData {
     totalPaid: number;
     totalUnpaidPayables: number;
     divisionExpenses: DivisionExpense[];
-    coaExpenses?: CoaExpense[];
     paymentCoaExpenses: CoaExpense[];
     payableCoaExpenses: CoaExpense[];
     vouchers: VoucherSummary[];
@@ -180,12 +186,13 @@ export interface DisbursementDashboardData {
 export interface DashboardFilters {
     startDate?: string;
     endDate?: string;
-    status?: string;
-    payeeId?: number | "";
-    transactionType?: number | ""; // 🚀 NEW
-    encoderId?: number | "";
-    coaId?: number | "";
-    amount?: number | "";
+    status?: string; // Comma-separated list e.g., "Draft,Submitted"
+    payeeId?: string; // Comma-separated list e.g., "1,2"
+    transactionType?: string; // Comma-separated list e.g., "1,2"
+    encoderId?: string; // Comma-separated list e.g., "1,2"
+    coaId?: string; // Comma-separated list e.g., "1,2"
+    minAmount?: number | "";
+    maxAmount?: number | "";
     remarks?: string;
 }
 
