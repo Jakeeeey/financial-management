@@ -219,7 +219,7 @@ export function ListCostBatchDetailDialog({
     return (
         <>
             <Dialog open={open} onOpenChange={handleOpenChange}>
-                <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-4xl">
+                <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-6xl">
                     <DialogHeader>
                         <DialogTitle>List Cost Request {headerId ? `CCR-${headerId}` : ""}</DialogTitle>
                         <DialogDescription>
@@ -272,7 +272,7 @@ export function ListCostBatchDetailDialog({
                                 <BatchDecisionSummaryFields detail={detail} />
                             </div>
 
-                            <div className="rounded-md border">
+                            <div className="rounded-md border overflow-x-auto">
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
