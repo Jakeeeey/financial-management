@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { DisbursementDashboardData, DashboardFilters } from "../types";
 import { toast } from "sonner";
+import { format } from "date-fns";
 
 export async function generateReportExcel(data: DisbursementDashboardData | null, filters: DashboardFilters) {
     if (!data || !data.vouchers || data.vouchers.length === 0) {
@@ -24,7 +25,8 @@ export async function generateReportExcel(data: DisbursementDashboardData | null
         const totalCols = 9;
 
         // 1. BRANDING TITLE BANNER
-        const titleRow = worksheet.addRow(["DISBURSEMENT ANALYSIS REPORT"]);
+        const typeLabel = filters.transactionType === "1" ? "TRADE" : filters.transactionType === "2" ? "NON-TRADE" : "ALL";
+        const titleRow = worksheet.addRow([`DISBURSEMENT ANALYSIS REPORT (${typeLabel})`]);
         titleRow.height = 35;
         worksheet.mergeCells(1, 1, 1, totalCols);
         titleRow.font = { bold: true, size: 16, color: { argb: "FFFFFFFF" } };
@@ -40,10 +42,13 @@ export async function generateReportExcel(data: DisbursementDashboardData | null
         // 2. FILTERS / METADATA INFO
         worksheet.addRow([]);
         const rangeText = `Date Range: ${filters.startDate || "N/A"} to ${filters.endDate || "N/A"}`;
+        const typeHeaderLabel = filters.transactionType === "1" ? "Trade" : filters.transactionType === "2" ? "Non-Trade" : "All";
+        const typeText = `Voucher Type: ${typeHeaderLabel}`;
         const generatedText = `Generated On: ${new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })}`;
         
-        const filterRow = worksheet.addRow([rangeText, "", "", "", "", "", "", generatedText]);
-        worksheet.mergeCells(filterRow.number, 1, filterRow.number, 4);
+        const filterRow = worksheet.addRow([rangeText, "", typeText, "", "", "", "", generatedText]);
+        worksheet.mergeCells(filterRow.number, 1, filterRow.number, 2);
+        worksheet.mergeCells(filterRow.number, 3, filterRow.number, 4);
         worksheet.mergeCells(filterRow.number, 8, filterRow.number, 9);
         filterRow.font = { bold: true, size: 10, color: { argb: "FF4B5563" } };
         
@@ -183,8 +188,9 @@ export async function generateReportExcel(data: DisbursementDashboardData | null
         worksheet.getColumn(9).width = 35; // expenseAccountsHit
 
         const buffer = await workbook.xlsx.writeBuffer();
-        const dateSuffix = new Date().toISOString().split("T")[0];
-        saveAs(new Blob([buffer]), `Disbursements_Report_${dateSuffix}.xlsx`);
+        const dateSuffix = format(new Date(), "yyyyMMdd-HHmmss");
+        const fileTypeSuffix = filters.transactionType === "1" ? "Trade_" : filters.transactionType === "2" ? "NonTrade_" : "";
+        saveAs(new Blob([buffer]), `Disbursements_${fileTypeSuffix}Report_${dateSuffix}.xlsx`);
         toast.success("Excel report exported successfully");
     } catch (err: unknown) {
         console.error("Failed to generate excel report", err);

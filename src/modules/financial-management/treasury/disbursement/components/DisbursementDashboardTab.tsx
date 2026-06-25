@@ -350,7 +350,7 @@ export function DisbursementDashboardTab() {
                     )}>
                         <div className="space-y-1.5">
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Trans Type</label>
-                            <Select value={filters.transactionType?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, transactionType: val === "ALL" ? "" : Number(val) })}>
+                            <Select value={filters.transactionType?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, transactionType: val === "ALL" ? "" : val })}>
                                 <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="ALL" className="text-xs font-bold uppercase">All Types</SelectItem>
@@ -379,7 +379,7 @@ export function DisbursementDashboardTab() {
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Encoder</label>
                             <SearchableSelect
                                 value={filters.encoderId?.toString() || "ALL"}
-                                onValueChange={(val) => setFilters({ ...filters, encoderId: val === "ALL" ? "" : Number(val) })}
+                                onValueChange={(val) => setFilters({ ...filters, encoderId: val === "ALL" ? "" : val })}
                                 options={[
                                     { value: "ALL", label: "All Encoders" },
                                     ...activeEncoders.map(u => ({ value: u.id.toString(), label: u.name }))
@@ -393,7 +393,7 @@ export function DisbursementDashboardTab() {
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Supplier / Payee</label>
                             <SearchableSelect
                                 value={filters.payeeId?.toString() || "ALL"}
-                                onValueChange={(val) => setFilters({ ...filters, payeeId: val === "ALL" ? "" : Number(val) })}
+                                onValueChange={(val) => setFilters({ ...filters, payeeId: val === "ALL" ? "" : val })}
                                 options={[
                                     { value: "ALL", label: "All Payees" },
                                     ...payees.map(p => ({ value: p.id.toString(), label: p.name }))
@@ -407,7 +407,7 @@ export function DisbursementDashboardTab() {
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">GL COA</label>
                             <SearchableSelect
                                 value={filters.coaId?.toString() || "ALL"}
-                                onValueChange={(val) => setFilters({ ...filters, coaId: val === "ALL" ? "" : Number(val) })}
+                                onValueChange={(val) => setFilters({ ...filters, coaId: val === "ALL" ? "" : val })}
                                 options={[
                                     { value: "ALL", label: "All COAs" },
                                     ...coas.map(c => ({ value: c.coaId.toString(), label: `${c.glCode} - ${c.accountTitle}` }))
@@ -423,8 +423,8 @@ export function DisbursementDashboardTab() {
                                 type="number"
                                 placeholder="Min"
                                 className="h-10 text-xs font-bold bg-background shadow-sm border-border/50"
-                                value={filters.amount || ""}
-                                onChange={(e) => setFilters({ ...filters, amount: e.target.value === "" ? "" : Number(e.target.value) })}
+                                value={filters.minAmount || ""}
+                                onChange={(e) => setFilters({ ...filters, minAmount: e.target.value === "" ? "" : Number(e.target.value) })}
                             />
                         </div>
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl } from "../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap } from "../route";
 
 export const runtime = "nodejs";
 
@@ -40,8 +40,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
         const currentDis = (await currentRes.json()).data;
 
-        if (currentDis.status !== "Draft" && currentDis.status !== "Approved") {
-            return NextResponse.json({ message: "Only Draft or Approved disbursements can be edited." }, { status: 400 });
+        // Immutability Enforcement Check
+        if (Number(currentDis.isPosted) === 1) {
+            return NextResponse.json({ message: "Cannot modify a transaction that is already Posted to the GL. This record is immutable." }, { status: 400 });
+        }
+
+        if (currentDis.status !== "Draft" && currentDis.status !== "Approved" && currentDis.status !== "Returned for Revision") {
+            return NextResponse.json({ message: "Only Draft, Approved, or Returned for Revision disbursements can be edited." }, { status: 400 });
         }
 
         // 2. Fetch existing payables & payments to clear them (matching Spring Boot's behavior)
@@ -125,15 +130,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             },
             body: JSON.stringify(headerPayload),
         });
-
         if (!updateRes.ok) throw new Error(await updateRes.text());
-        const updatedDis = (await updateRes.json()).data;
+        await updateRes.json();
 
         // 5b. Batch insert new line items
         const payableLines = (body.payables || [])
             .filter((line: PayableInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== ""))
             .map((line: PayableInput) => ({
                 disbursement_id: id,
+                division_id: line.divisionId ? Number(line.divisionId) : null,
                 reference_no: line.referenceNo || "",
                 date: line.date,
                 coa_id: line.coaId ? Number(line.coaId) : null,
@@ -150,7 +155,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 check_no: line.checkNo || "",
                 date: line.date,
                 amount: Number(line.amount) || 0,
-                remarks: line.remarks || ""
+                remarks: line.remarks || "",
+                released_by: line.releasedBy ? Number(line.releasedBy) : null,
+                date_released: line.releasedDate || null
             }));
 
         const lineRes = await Promise.all([
@@ -176,13 +183,117 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             }
         }
 
-        // 6. Fetch full line items structure and map back to response DTO format
+        // 6. Fetch full line items structure, user maps, coa maps and map back to response DTO format
         const lineItems = await getLineItems([id]);
         const userMap = await getUserMap(token);
+        const coaMap = await getCoaMap();
+
+        // 7. Get fresh, fully-populated header details to normalize and return
+        const fields = [
+            "id",
+            "doc_no",
+            "transaction_type",
+            "payee.id",
+            "payee.supplier_name",
+            "remarks",
+            "total_amount",
+            "paid_amount",
+            "encoder_id",
+            "submitted_by",
+            "approver_id",
+            "released_by",
+            "posted_by",
+            "isPosted",
+            "transaction_date",
+            "date_created",
+            "date_submitted",
+            "date_approved",
+            "date_released",
+            "date_posted",
+            "division_id.division_id",
+            "division_id.division_name",
+            "department_id.department_id",
+            "department_id.department_name",
+            "fund_source_id",
+            "supporting_documents_url",
+            "status",
+        ].join(",");
+        
+        const freshRes = await fetch(`${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/items/disbursement/${id}?fields=${fields}`, {
+            headers: {
+                Authorization: `Bearer ${directusToken}`,
+                "Content-Type": "application/json",
+            },
+            cache: "no-store",
+        });
+
+        if (!freshRes.ok) throw new Error("Failed to fetch fresh disbursement header");
+        const freshDis = (await freshRes.json()).data;
 
         return NextResponse.json(
-            normalizeDisbursement(updatedDis, lineItems.payables, lineItems.payments, userMap)
+            normalizeDisbursement(freshDis, lineItems.payables, lineItems.payments, userMap, coaMap)
         );
+
+    } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        return NextResponse.json({ message: "BFF Error", detail: errorMessage }, { status: 502 });
+    }
+}
+
+// 🚀 DELETE Handler - Directus Native with Immutability Check
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("vos_access_token")?.value;
+
+    if (!token) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+
+    const resolvedParams = await params;
+    const id = Number(resolvedParams.id);
+
+    const decoded = decodeJwtPayload(token);
+    const encoderEmail = decoded?.email || decoded?.sub || null;
+    const currentUserId = await resolveEncoderId(encoderEmail);
+
+    try {
+        const directusToken = process.env.DIRECTUS_STATIC_TOKEN || "";
+        const directusUrl = `${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/items/disbursement/${id}`;
+
+        const currentRes = await fetch(directusUrl, {
+            headers: { Authorization: `Bearer ${directusToken}` },
+            cache: "no-store",
+        });
+
+        if (!currentRes.ok) {
+            return NextResponse.json({ message: "Disbursement not found" }, { status: 404 });
+        }
+
+        const currentDis = (await currentRes.json()).data;
+
+        // Immutability Enforcement Check
+        if (Number(currentDis.isPosted) === 1) {
+            return NextResponse.json({ message: "Cannot delete a transaction that is already Posted to the GL. This record is immutable." }, { status: 400 });
+        }
+
+        // Soft Delete: stamp is_deleted = 1, deleted_at = NOW(), and deleted_by = currentUserId
+        const deletePayload = {
+            is_deleted: 1,
+            deleted_at: new Date().toISOString(),
+            deleted_by: currentUserId,
+            status: "Deleted"
+        };
+
+        const patchRes = await fetch(directusUrl, {
+            method: "PATCH",
+            headers: {
+                Authorization: `Bearer ${directusToken}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(deletePayload),
+        });
+
+        if (!patchRes.ok) throw new Error(await patchRes.text());
+
+        return NextResponse.json({ message: "Disbursement soft-deleted successfully" });
 
     } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error';

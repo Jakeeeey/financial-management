@@ -188,4 +188,81 @@ export function getPageNumbers(currentPage: number, totalPages: number): (number
   return pages;
 }
 
+export function buildARQueryParams(
+  filters: {
+    dateFrom?: string;
+    dateTo?: string;
+    customer?: string;
+    cluster?: string;
+    salesman?: string;
+    division?: string;
+    operation?: string;
+    agingRange?: string;
+    search?: string;
+  },
+  sort?: import('../types').ARTableSort,
+): string {
+  const params = new URLSearchParams();
+  if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+  if (filters.dateTo) params.set('dateTo', filters.dateTo);
+  if (filters.customer) params.set('customer', filters.customer);
+  if (filters.cluster) params.set('cluster', filters.cluster);
+  if (filters.salesman) params.set('salesman', filters.salesman);
+  if (filters.division) params.set('division', filters.division);
+  if (filters.operation) params.set('operation', filters.operation);
+  if (filters.agingRange) params.set('agingRange', filters.agingRange);
+  if (filters.search?.trim()) params.set('search', filters.search.trim());
+  if (sort?.sortKey && sort?.sortOrder) {
+    params.set('sortKey', sort.sortKey);
+    params.set('sortOrder', sort.sortOrder);
+  }
+  return params.toString();
+}
+
+/** Map a server AR row into the client Invoice shape. */
+export function mapARRowToInvoice(row: RawInvoiceRow): import('../types').Invoice {
+  const netReceivable = Number(row.netReceivable ?? row.grossAmount ?? 0);
+  const totalPaid = Number(row.totalPaid ?? 0);
+  const outstanding = Number(row.outstandingBalance ?? Math.max(0, netReceivable - totalPaid));
+  const agingRaw = row.daysOverdue as number | null | undefined;
+  const aging: number | null = agingRaw !== undefined && agingRaw !== null ? Number(agingRaw) : null;
+  const isOverdue = aging !== null && aging >= 0 && outstanding > 0;
+
+  return {
+    id: String(row.invoiceId ?? row.id ?? row.invoiceNo ?? ''),
+    invoiceNo: String(row.invoiceNo ?? row.invoice_number ?? '—'),
+    orderId: String(row.orderId ?? '—'),
+    customer: String(row.customerName ?? row.customer ?? row.client ?? '—'),
+    customerCode: String(row.customerCode ?? '—'),
+    invoiceDate: String(row.invoiceDate ?? ''),
+    due: String(row.calculatedDueDate ?? row.dueDate ?? row.due ?? ''),
+    netReceivable,
+    totalPaid,
+    outstanding,
+    overdue: aging,
+    branch: String(row.branch ?? row.branchName ?? 'Unknown'),
+    salesman: String(row.salesman ?? row.salesmanName ?? 'Unknown'),
+    division: String(row.division ?? '—'),
+    status: isOverdue ? 'Overdue' : 'Due',
+    grossAmount: Number(row.grossAmount ?? 0),
+    discountAmount: Number(row.discountAmount ?? 0),
+    returnAmount: Number(row.returnAmount ?? 0),
+    unfulfilledAmount: Number(row.unfulfilledAmount ?? 0),
+    appliedCreditMemos: Number(row.appliedCreditMemos ?? 0),
+    appliedDebitMemos: Number(row.appliedDebitMemos ?? 0),
+    unpostedCollectionAmount: Number(row.unpostedCollectionAmount ?? 0),
+    isPosted: parseBit(row.isPosted),
+    salesType: row.salesType != null ? Number(row.salesType) : null,
+    deliveryDate: row.dispatchDate ? String(row.dispatchDate) : '',
+    arStatus: isOverdue ? 'Overdue' : (row.dispatchDate ? 'Due' : '—'),
+    paymentStatus: String(row.paymentStatus || 'Unpaid'),
+    transactionStatus: String(row.transactionStatus || 'NULL'),
+    cluster: String(row.cluster ?? 'Unassigned'),
+    salesmanCode: String(row.salesmanCode ?? '—'),
+  };
+}
+
 export * from './ai';
+export * from './arTableSort';
+export * from './arFilters';
+export * from './arTableRequest';
