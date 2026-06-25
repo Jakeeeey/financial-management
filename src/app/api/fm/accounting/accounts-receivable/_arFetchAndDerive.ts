@@ -102,6 +102,8 @@ export interface ARFullPayload {
   unpostedAllocationsPaid: number;
   unpostedUnallocated: number;
   salesmanUnposted: Record<string, number>;
+  /** Raw sales_invoice rows matching the Directus filter (before AR row derivation). */
+  sourceInvoiceCount?: number;
 }
 
 export interface ARTableFilters {
@@ -152,8 +154,67 @@ interface CollectionInvoiceRow { collection_id: number; invoice_id: number; amou
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
 const DIRECTUS_STATIC_TOKEN = (process.env.DIRECTUS_STATIC_TOKEN || '').trim();
 
-/** Safety cap for sales_invoice fetches to prevent timeouts on very large datasets. */
-const INVOICE_FETCH_LIMIT = 10_000;
+export const INVOICE_PAGE_SIZE = 500;
+export const AR_ID_CHUNK_SIZE = 300;
+export const AR_READ_CONCURRENCY = 5;
+
+type DirectusList<T> = { data?: T[]; meta?: { filter_count?: number | string } | null };
+
+function directusFetchHeaders(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${DIRECTUS_STATIC_TOKEN}`,
+  };
+}
+
+async function fetchDirectusPage<T>(url: string): Promise<DirectusList<T>> {
+  const res = await fetch(url, {
+    headers: directusFetchHeaders(),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Directus error ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return res.json() as Promise<DirectusList<T>>;
+}
+
+async function fetchAll<T>(url: string): Promise<T[]> {
+  const json = await fetchDirectusPage<T>(url);
+  return json.data || [];
+}
+
+/** Paginate through all matching sales_invoice rows (replaces silent limit cap). */
+export async function fetchAllSalesInvoices(
+  fields: string,
+  filterQuery: string,
+  pageSize = INVOICE_PAGE_SIZE,
+): Promise<{ rows: SalesInvoiceRow[]; sourceCount: number }> {
+  const all: SalesInvoiceRow[] = [];
+  let offset = 0;
+  let sourceCount: number | undefined;
+
+  while (true) {
+    let url =
+      `${DIRECTUS_URL}/items/sales_invoice?fields=${fields}&${filterQuery}` +
+      `&limit=${pageSize}&offset=${offset}`;
+    if (offset === 0) url += '&meta=filter_count';
+
+    const json = await fetchDirectusPage<SalesInvoiceRow>(url);
+    const rows = json.data ?? [];
+
+    if (offset === 0 && json.meta?.filter_count != null) {
+      const count = Number(json.meta.filter_count);
+      if (Number.isFinite(count)) sourceCount = count;
+    }
+
+    all.push(...rows);
+    if (rows.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return { rows: all, sourceCount: sourceCount ?? all.length };
+}
 
 function parseBit(val: unknown): boolean {
   if (val === null || val === undefined) return false;
@@ -166,34 +227,36 @@ function parseBit(val: unknown): boolean {
   return val === '1' || val === 1;
 }
 
-async function fetchAll<T>(url: string): Promise<T[]> {
-  const res = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${DIRECTUS_STATIC_TOKEN}`,
-    },
-    cache: 'no-store',
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Directus error ${res.status}: ${text.slice(0, 200)}`);
+async function runBatchedAsync<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency = AR_READ_CONCURRENCY,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
   }
-  const json = await res.json() as { data: T[] };
-  return json.data || [];
+  return results;
 }
 
-async function fetchAllChunked<T>(
+/** Chunked Directus _in lookups with bounded concurrent chunk fetches. */
+export async function fetchAllChunked<T>(
   baseUrl: string,
   idField: string,
   ids: (number | string)[],
-  chunkSize = 300,
+  chunkSize = AR_ID_CHUNK_SIZE,
+  concurrency = AR_READ_CONCURRENCY,
 ): Promise<T[]> {
   if (ids.length === 0) return [];
   const separator = baseUrl.includes('?') ? '&' : '?';
   const chunks: (number | string)[][] = [];
   for (let i = 0; i < ids.length; i += chunkSize) chunks.push(ids.slice(i, i + chunkSize));
-  const results = await Promise.all(
-    chunks.map(chunk => fetchAll<T>(`${baseUrl}${separator}filter[${idField}][_in]=${chunk.join(',')}`)),
+  const results = await runBatchedAsync(
+    chunks,
+    chunk => fetchAll<T>(`${baseUrl}${separator}filter[${idField}][_in]=${chunk.join(',')}`),
+    concurrency,
   );
   return results.flat();
 }
@@ -411,11 +474,10 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
     `&filter[_or][0][isPosted][_null]=true` +
     `&filter[_or][1][isPosted][_eq]=false`;
 
-  const invoiceUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=${INVOICE_FETCH_LIMIT}&fields=${invoiceFields}&${invoiceFilter}`;
   const collectionUrl = `${DIRECTUS_URL}/items/collection?limit=-1&fields=id,salesman_id,totalAmount&filter[isPosted][_neq]=true&filter[isCancelled][_neq]=true`;
 
-  const [invoices, unpostedCollections] = await Promise.all([
-    fetchAll<SalesInvoiceRow>(invoiceUrl),
+  const [{ rows: invoices, sourceCount: sourceInvoiceCount }, unpostedCollections] = await Promise.all([
+    fetchAllSalesInvoices(invoiceFields, invoiceFilter),
     fetchAll<CollectionRow>(collectionUrl).catch(() => [] as CollectionRow[]),
   ]);
 
@@ -425,7 +487,7 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
       rows: [], operationData: [], agingData: deriveAgingData([]),
       salesmanData: [], metrics: deriveMetricsFromRows([], emptyPool),
       filterOptions: { customers: [], clusters: [], salesmen: [], divisions: [], operations: [] },
-      salesmanUnposted: {}, ...emptyPool,
+      salesmanUnposted: {}, sourceInvoiceCount: 0, ...emptyPool,
     };
   }
 
@@ -578,6 +640,6 @@ export async function fetchARFullPayload(): Promise<ARFullPayload> {
     salesmanData: buildSalesmanData(rows, salesmanUnposted),
     metrics: deriveMetricsFromRows(rows, pool),
     filterOptions: buildFilterOptions(rows, operationData),
-    salesmanUnposted, ...pool,
+    salesmanUnposted, sourceInvoiceCount, ...pool,
   };
 }

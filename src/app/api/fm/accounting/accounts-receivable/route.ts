@@ -10,6 +10,7 @@ import {
   type ARRow,
 } from './_arData';
 import { parseARTableSort, sortCustomerGroups } from '@/modules/financial-management/accounting/accounts-receivable/utils/arTableSort';
+import { summaryTotalInvoices, tableTotalInvoices } from './_arRouteCounts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -156,7 +157,7 @@ export async function GET(request: NextRequest) {
           : payload.salesmanData,
         operationData: isFiltered ? filterOperationData(payload, filtered) : payload.operationData,
         filterOptions: payload.filterOptions,
-        totalInvoices: payload.rows.length,
+        totalInvoices: summaryTotalInvoices(payload, isFiltered),
         filteredCount: filtered.length,
         totalUnpostedPool: responsePool.totalUnpostedPool,
         unpostedAllocationsActive: responsePool.unpostedAllocationsActive,
@@ -182,7 +183,7 @@ export async function GET(request: NextRequest) {
         pageSize,
         totalPages,
         totalGroups,
-        totalInvoices: filtered.length,
+        totalInvoices: tableTotalInvoices(payload, filtered, isFiltered),
         filteredCount: filtered.length,
         sortKey: tableSort.sortKey,
         sortOrder: tableSort.sortOrder,
