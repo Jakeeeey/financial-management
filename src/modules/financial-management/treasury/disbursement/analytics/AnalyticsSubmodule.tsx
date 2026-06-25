@@ -3,12 +3,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, Legend, BarChart, Bar
+    PieChart, Pie, Cell
 } from "recharts";
 import {
     BrainCircuit, ShieldAlert, Sparkles, TrendingUp, AlertTriangle, CheckCircle,
-    SlidersHorizontal, X, Calendar, RefreshCw, BarChart3, HelpCircle,
-    User, ArrowUpRight, DollarSign, Activity, FileWarning, Search, ChevronsUpDown
+    SlidersHorizontal, RefreshCw, DollarSign, Activity, FileWarning, ChevronsUpDown
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 import { disbursementProvider } from "../providers/fetchProvider";
-import { Disbursement, DashboardFilters, COADto, SupplierDto, DivisionDto, DepartmentDto } from "../types";
+import { Disbursement, COADto, SupplierDto, DivisionDto, DepartmentDto } from "../types";
 import { AiInsightsPanel } from "../components/AiInsightsPanel";
 
 // Styling constants for charts
@@ -79,6 +78,7 @@ export default function AnalyticsSubmodule() {
     // Lookups
     const [suppliers, setSuppliers] = useState<SupplierDto[]>([]);
     const [divisions, setDivisions] = useState<DivisionDto[]>([]);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [departments, setDepartments] = useState<DepartmentDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
     const [isSupplierComboOpen, setIsSupplierComboOpen] = useState(false);
@@ -429,7 +429,7 @@ export default function AnalyticsSubmodule() {
         const c = n > 0 ? (sumY - m * sumX) / n : 0;
 
         // Generate final chart rows: actual weekly spend
-        const chartData = sortedWeeks.map((w, idx) => {
+        const chartData = sortedWeeks.map((w) => {
             const row: Record<string, unknown> = {
                 name: `W${w.week.split("-W")[1]}`,
                 totalSpend: w._total,
@@ -448,7 +448,6 @@ export default function AnalyticsSubmodule() {
 
         // Add 4 forecast weeks
         const lastWeekNum = parseInt(sortedWeeks[n - 1].week.split("-W")[1], 10);
-        const currentYear = new Date().getFullYear();
 
         // Calculate distribution percentages across categories to project division splits
         const groupTotals: Record<string, number> = {};

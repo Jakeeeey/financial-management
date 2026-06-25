@@ -3,9 +3,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
     Search, RefreshCw, FileSpreadsheet, SlidersHorizontal, X, ChevronDown, ChevronUp,
-    FileText, Calendar, ShieldCheck, Wallet, ArrowDownRight, ArrowUpRight, HelpCircle
+    FileText, Calendar, Wallet, ArrowDownRight, HelpCircle
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +34,7 @@ export default function LedgerSubmodule() {
     const [page, setPage] = useState(0);
     const [size, setSize] = useState(20);
     const [totalPages, setTotalPages] = useState(0);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [totalElements, setTotalElements] = useState(0);
 
     // Filter states
@@ -246,7 +247,7 @@ export default function LedgerSubmodule() {
             status: string;
         }> = [];
 
-        vouchers.forEach((v, vIdx) => {
+        vouchers.forEach((v) => {
             // 1. Map Payables as Debit rows
             v.payables.forEach((p, pIdx) => {
                 list.push({

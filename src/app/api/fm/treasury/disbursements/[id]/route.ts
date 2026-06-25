@@ -130,9 +130,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             },
             body: JSON.stringify(headerPayload),
         });
-
         if (!updateRes.ok) throw new Error(await updateRes.text());
-        const updatedDis = (await updateRes.json()).data;
+        await updateRes.json();
 
         // 5b. Batch insert new line items
         const payableLines = (body.payables || [])

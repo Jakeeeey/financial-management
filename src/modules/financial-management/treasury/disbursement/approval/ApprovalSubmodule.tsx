@@ -8,13 +8,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
-    Loader2, CheckCircle, Wallet, Building2, Lock, AlertTriangle, FileText,
+    Loader2, CheckCircle, Wallet, Building2, AlertTriangle, FileText,
     CheckCircle2, CircleDashed, ChevronRight, ChevronDown, Paperclip, ExternalLink,
-    Search, Calendar, Filter, X, ArrowLeftRight
+    Search, X, ArrowLeftRight
 } from "lucide-react";
 import { Disbursement } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
-import { formatCurrency, getStatusColor, VOUCHER_STEPS } from "../utils/disbursement-utils";
+import { formatCurrency, VOUCHER_STEPS } from "../utils/disbursement-utils";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -125,7 +125,6 @@ function TreeNode({ title, icon, defaultExpanded = true, children }: TreeNodePro
 export default function ApprovalSubmodule() {
     const {
         data, loading, changeStatus, actionLoading, refresh,
-        startDate, setStartDate, endDate, setEndDate,
         docNoSearch, setDocNoSearch, applyFilters, clearFilters
     } = useDisbursement();
 
@@ -141,11 +140,13 @@ export default function ApprovalSubmodule() {
 
     // Reset checklists when selecting a different voucher
     useEffect(() => {
+        /* eslint-disable react-hooks/set-state-in-effect */
         setCheckPayee(false);
         setCheckCostCenter(false);
         setCheckGLAccount(false);
         setCheckRemarks(false);
         setCheckAttachments(false);
+        /* eslint-enable react-hooks/set-state-in-effect */
     }, [selectedDisbursement]);
 
     // Force filters to "Submitted" status when loading

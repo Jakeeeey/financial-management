@@ -12,9 +12,9 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
-    Plus, Trash2, Loader2, Save, Building2, Calculator,
-    FileText, Check, ChevronsUpDown, Printer, AlertTriangle, FileSpreadsheet, UploadCloud, RefreshCw,
-    DownloadCloud, Search, Calendar, ChevronRight, FileEdit, PlusCircle,
+    Plus, Trash2, Loader2, Save, Calculator,
+    FileText, Check, ChevronsUpDown, Printer, UploadCloud, RefreshCw,
+    DownloadCloud, Search, PlusCircle,
     PanelLeftClose, PanelLeftOpen
 } from "lucide-react";
 import { format } from "date-fns";

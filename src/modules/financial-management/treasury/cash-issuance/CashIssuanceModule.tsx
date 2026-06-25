@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useCashIssuance } from "./hooks/useCashIssuance";
 import { CashIssuanceTable } from "./components/CashIssuanceTable";
 import { CashIssuanceApprovalTable } from "./components/CashIssuanceApprovalTable";
@@ -15,12 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
-    Plus, RefreshCw, FileText, Search, Check, ChevronsUpDown,
-    X, UserPlus, BarChart3, Receipt, SlidersHorizontal, CheckSquare, Send, Lock
+    Plus, RefreshCw, Search, Check, ChevronsUpDown,
+    X, UserPlus, SlidersHorizontal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -30,7 +29,6 @@ interface CashIssuanceModuleProps {
 }
 
 export default function CashIssuanceModule({ initialSubModule = "preparation" }: CashIssuanceModuleProps) {
-    const router = useRouter();
     const {
         data, loading, page, setPage, size, changeSize, totalPages,
         activeType, handleTabChange, refresh,
@@ -64,7 +62,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
             toast.success(`Successfully approved ${selectedIds.length} vouchers`);
             setSelectedIds([]);
             refresh();
-        } catch (error) {
+        } catch {
             toast.error("Failed to approve some vouchers");
             refresh();
         } finally {
@@ -80,7 +78,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
             toast.success(`Successfully returned ${selectedIds.length} vouchers for revision`);
             setSelectedIds([]);
             refresh();
-        } catch (error) {
+        } catch {
             toast.error("Failed to return some vouchers");
             refresh();
         } finally {

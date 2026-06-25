@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,14 +11,13 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-    Loader2, CheckCircle2, Wallet, Building2, Lock, AlertTriangle, FileText,
-    CircleDashed, ChevronRight, ChevronDown, Paperclip, ExternalLink,
+    Loader2, AlertTriangle, FileText,
     Search, X, Printer, Plus, Trash2, Check, ChevronsUpDown, ArrowUpFromLine
 } from "lucide-react";
 import { Disbursement, BankAccountDto, COADto, PaymentLine, DisbursementPayload } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
 import { disbursementProvider } from "../providers/fetchProvider";
-import { formatCurrency, getStatusColor, VOUCHER_STEPS, numberToWords } from "../utils/disbursement-utils";
+import { formatCurrency, numberToWords } from "../utils/disbursement-utils";
 import { generateDisbursementPDF, generateCheckLeafPDF } from "../utils/pdfGenerator";
 import { StickyTableWrapper } from "../components/StickyTableWrapper";
 import { format } from "date-fns";
@@ -101,6 +100,7 @@ export default function ReleasingSubmodule() {
 
     // Fetch active banks and COAs
     useEffect(() => {
+        /* eslint-disable react-hooks/set-state-in-effect */
         setLoadingMetadata(true);
         Promise.all([
             disbursementProvider.getBanks().catch(() => []),
@@ -111,10 +111,12 @@ export default function ReleasingSubmodule() {
         }).finally(() => {
             setLoadingMetadata(false);
         });
+        /* eslint-enable react-hooks/set-state-in-effect */
     }, []);
 
     // Set local payments state on voucher select
     useEffect(() => {
+        /* eslint-disable react-hooks/set-state-in-effect */
         if (selectedDisbursement) {
             setPayments(selectedDisbursement.payments?.map(p => ({
                 id: p.id,
@@ -128,6 +130,7 @@ export default function ReleasingSubmodule() {
         } else {
             setPayments([]);
         }
+        /* eslint-enable react-hooks/set-state-in-effect */
     }, [selectedDisbursement]);
 
     // Derived states
@@ -249,12 +252,14 @@ export default function ReleasingSubmodule() {
 
     // Load calibration from localStorage on mount
     useEffect(() => {
+        /* eslint-disable react-hooks/set-state-in-effect */
         if (typeof window !== "undefined") {
             const savedX = localStorage.getItem("check_print_calibration_x");
             const savedY = localStorage.getItem("check_print_calibration_y");
             if (savedX !== null) setCalibrationX(Number(savedX));
             if (savedY !== null) setCalibrationY(Number(savedY));
         }
+        /* eslint-enable react-hooks/set-state-in-effect */
     }, []);
 
     // Spaced out boxed check date (MM-DD-YYYY) parsing
@@ -448,7 +453,7 @@ export default function ReleasingSubmodule() {
                                             {payments.length === 0 ? (
                                                 <TableRow>
                                                     <TableCell colSpan={7} className="h-24 text-center text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                                                        No check lines issued yet. Click "Add Check" above.
+                                                     No check lines issued yet. Click &quot;Add Check&quot; above.
                                                     </TableCell>
                                                 </TableRow>
                                             ) : (
@@ -617,13 +622,13 @@ export default function ReleasingSubmodule() {
                             onClick={() => handleCommitRelease("Released")}
                             className="h-11 px-5 text-xs font-black uppercase bg-destructive hover:bg-destructive/90 text-white"
                         >
-                            Force 'Released'
+                            Force &apos;Released&apos;
                         </Button>
                         <Button 
                             onClick={() => handleCommitRelease("Partially Released")}
                             className="h-11 px-5 text-xs font-black uppercase bg-amber-500 hover:bg-amber-600 text-white"
                         >
-                            Flag 'Partially Released'
+                            Flag &apos;Partially Released&apos;
                         </Button>
                         <Button 
                             variant="outline"
