@@ -242,7 +242,7 @@ export function PriceChangeBatchDetailDialog({
                         <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm sm:grid-cols-4">
                             <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Supplier</div>
-                                <div className="mt-1 font-medium">{detail.supplier_name || "-"}</div>
+                                <div className="mt-1 break-words font-medium">{detail.supplier_name || "-"}</div>
                             </div>
                             <div>
                                 <div className="text-xs font-medium uppercase text-muted-foreground">Status</div>
@@ -294,16 +294,16 @@ export function PriceChangeBatchDetailDialog({
                                 <TableBody>
                                     {lines.map((line) => (
                                         <TableRow key={`${line.request_id ?? line.product_id}-${line.price_type_id}`}>
-                                            <TableCell className="max-w-[360px]">
-                                                <div className="truncate font-medium">{line.product_name || `Product #${line.product_id}`}</div>
+                                            <TableCell className="min-w-[280px] max-w-[420px] align-top">
+                                                <div className="whitespace-normal break-words leading-snug font-medium">{line.product_name || `Product #${line.product_id}`}</div>
                                                 {line.product_code ? (
-                                                    <div className="text-xs text-muted-foreground">{line.product_code}</div>
+                                                    <div className="whitespace-normal break-words text-xs text-muted-foreground">{line.product_code}</div>
                                                 ) : null}
                                             </TableCell>
-                                            <TableCell className="max-w-[140px] truncate" title={line.supplier_name ?? "-"}>
+                                            <TableCell className="min-w-[180px] max-w-[280px] whitespace-normal break-words align-top">
                                                 {line.supplier_name ?? "-"}
                                             </TableCell>
-                                            <TableCell className="truncate" title={line.unit_name ?? "-"}>
+                                            <TableCell>
                                                 {line.unit_name ?? "-"}
                                             </TableCell>
                                             <TableCell>{line.price_type_name || `#${line.price_type_id}`}</TableCell>
