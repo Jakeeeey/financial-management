@@ -1071,11 +1071,12 @@ export async function getSupplierNamesByProductId(productIds: number[]): Promise
 type DirectusUserRow = DirectusUserRelation;
 
 const USER_LOOKUP_FIELDS = [
-    "id",
     "user_id",
     "user_fname",
     "user_mname",
     "user_lname",
+    "suffix_name",
+    "nickname",
     "user_email",
 ].join(",");
 
@@ -1084,6 +1085,7 @@ function formatUserDisplayName(user: DirectusUserRow): string {
         user.user_fname,
         user.user_mname,
         user.user_lname,
+        user.suffix_name,
     ]
         .map((part) => String(part ?? "").trim())
         .filter(Boolean)
@@ -1092,6 +1094,9 @@ function formatUserDisplayName(user: DirectusUserRow): string {
         .trim();
 
     if (fullName) return fullName;
+
+    const nickname = String(user.nickname ?? "").trim();
+    if (nickname) return nickname;
 
     const email = String(user.user_email ?? "").trim();
     if (email) return email;
@@ -1158,12 +1163,13 @@ export async function fetchUserNamesById(
 
     const remaining = new Set(ids);
 
+    // Query by user_id only; the "id" field is not accessible to the Directus token.
+    // If this lookup fails, return whatever names were already resolved — partial
+    // success is better than wiping results on a fallback failure.
     try {
         await fetchUsersByLookupField("user_id", ids, userNames, remaining);
-        if (remaining.size > 0) {
-            await fetchUsersByLookupField("id", Array.from(remaining), userNames, remaining);
-        }
     } catch {
+        // Return partial results if the batch lookup fails.
         return userNames;
     }
 
