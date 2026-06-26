@@ -15,6 +15,7 @@ import {
     directusErrorResponse,
     directusHeaders,
     fetchDirectus,
+    findPriceSnapshotConflicts,
     getDetails,
     getHeader,
     mustBase,
@@ -23,6 +24,7 @@ import {
     nowManila,
     pickId,
 } from "../../price-change-batches/_batch";
+import { assertValidPriceValue } from "../../_pricePrecision";
 import { applyProposedPrice, getPriceRequest, type PcrRow } from "../../price-change-requests/_actions";
 import { CCR, getCostRequest, patchProductCostField, type CcrRow } from "../../cost-change-requests/_actions";
 import { COST_DETAILS, getCostDetails, getCostHeader } from "../../cost-change-batches/_batch";
@@ -60,6 +62,10 @@ function applicationStatus(row: { application_status?: string | null } | null) {
 
 function isScheduledApproved(row: { status?: string | null; application_status?: string | null } | null) {
     return String(row?.status ?? "") === "APPROVED" && applicationStatus(row) === "SCHEDULED";
+}
+
+function isPendingDetail(row: { status?: string | null; application_status?: string | null } | null) {
+    return String(row?.status ?? "") === "PENDING" && !applicationStatus(row);
 }
 
 function isFutureScheduledApproved(
@@ -107,6 +113,42 @@ async function patchRows(collection: string, ids: number[], patch: Record<string
             }),
         ),
     );
+}
+
+async function stageLegacyPendingRows(collection: string, ids: number[], userId: number) {
+    if (ids.length === 0) return;
+    const now = nowManila();
+    await patchRows(collection, ids, {
+        status: "APPROVED",
+        approved_by: userId,
+        approved_at: now,
+        effective_at: now,
+        application_status: "SCHEDULED",
+        application_lock_id: null,
+        application_started_at: null,
+        application_attempts: 0,
+        application_error: null,
+        applied_at: null,
+        applied_by: null,
+    });
+}
+
+async function failLegacyPendingRows(collection: string, headerId: number, ids: number[], message: string) {
+    if (ids.length === 0) return;
+    await patchRows(collection, ids, {
+        status: "APPROVED",
+        application_status: "FAILED",
+        application_lock_id: null,
+        application_started_at: null,
+        application_attempts: 3,
+        application_error: message,
+    });
+    await patchRows(HEADERS, [headerId], {
+        application_status: "FAILED",
+        application_lock_id: null,
+        application_started_at: null,
+        application_error: message,
+    });
 }
 
 async function rescheduleRequest(collection: string, id: number, effectiveAt?: string | null) {
@@ -177,10 +219,52 @@ async function prepareRetry<T extends ApplicationRow>(collection: string, row: T
 }
 
 async function applyPriceBatchNow(headerId: number, userId: number, retryFailed: boolean) {
-    if (retryFailed && !(await resetFailedBatchHeader(headerId))) {
-        return { affected: 0, applied: 0, failed: 0, skipped: 1, failures: [] as BatchApplyFailure[], application_status: null };
+    let details = await getDetails(headerId);
+    const pendingDetails = retryFailed ? details.filter(isPendingDetail) : [];
+    if (retryFailed && pendingDetails.length === 0 && !(await resetFailedBatchHeader(headerId))) {
+        const header = await getHeader(headerId);
+        if (applicationStatus(header) !== "APPLIED") {
+            return { affected: 0, applied: 0, failed: 0, skipped: 1, failures: [] as BatchApplyFailure[], application_status: null };
+        }
     }
-    const details = await getDetails(headerId);
+    if (pendingDetails.length > 0) {
+        const pendingIds = pendingDetails.map((row) => pickId(row.request_id)).filter((id): id is number => Boolean(id));
+        const conflicts = await findPriceSnapshotConflicts(
+            pendingDetails.map((row) => ({
+                request_id: pickId(row.request_id) ?? 0,
+                product_id: normalizeProductId(row),
+                price_type_id: normalizePriceTypeId(row),
+                current_price: row.current_price,
+            })),
+        );
+        for (const row of pendingDetails) {
+            assertValidPriceValue(row.proposed_price, "proposed_price");
+        }
+        if (conflicts.length > 0) {
+            const message = "Batch contains prices that changed after submission.";
+            await failLegacyPendingRows(PRICE_DETAILS, headerId, pendingIds, message);
+            return {
+                affected: pendingIds.length,
+                applied: 0,
+                failed: pendingIds.length,
+                skipped: 0,
+                failures: conflicts.map((conflict) => ({
+                    request_id: conflict.request_id,
+                    message,
+                })),
+                application_status: "FAILED",
+            };
+        }
+        await stageLegacyPendingRows(PRICE_DETAILS, pendingIds, userId);
+        await patchRows(HEADERS, [headerId], {
+            status: "APPROVED",
+            application_status: "SCHEDULED",
+            application_lock_id: null,
+            application_started_at: null,
+            application_error: null,
+        });
+        details = await getDetails(headerId);
+    }
     const failures: BatchApplyFailure[] = [];
     let applied = 0;
     let failed = 0;
@@ -204,10 +288,26 @@ async function applyPriceBatchNow(headerId: number, userId: number, retryFailed:
 }
 
 async function applyCostBatchNow(headerId: number, userId: number, retryFailed: boolean) {
-    if (retryFailed && !(await resetFailedBatchHeader(headerId))) {
-        return { affected: 0, applied: 0, failed: 0, skipped: 1, failures: [] as BatchApplyFailure[], application_status: null };
+    let details = await getCostDetails(headerId);
+    const pendingDetails = retryFailed ? details.filter(isPendingDetail) : [];
+    if (retryFailed && pendingDetails.length === 0 && !(await resetFailedBatchHeader(headerId))) {
+        const header = await getCostHeader(headerId);
+        if (applicationStatus(header) !== "APPLIED") {
+            return { affected: 0, applied: 0, failed: 0, skipped: 1, failures: [] as BatchApplyFailure[], application_status: null };
+        }
     }
-    const details = await getCostDetails(headerId);
+    if (pendingDetails.length > 0) {
+        const pendingIds = pendingDetails.map((row) => pickId(row.request_id)).filter((id): id is number => Boolean(id));
+        await stageLegacyPendingRows(COST_DETAILS, pendingIds, userId);
+        await patchRows(HEADERS, [headerId], {
+            status: "APPROVED",
+            application_status: "SCHEDULED",
+            application_lock_id: null,
+            application_started_at: null,
+            application_error: null,
+        });
+        details = await getCostDetails(headerId);
+    }
     const failures: BatchApplyFailure[] = [];
     let applied = 0;
     let failed = 0;
@@ -340,7 +440,7 @@ export async function POST(req: NextRequest) {
         }
 
         const header = kind === "price_batch" ? await getHeader(id) : await getCostHeader(id);
-        const valid = retry ? applicationStatus(header) === "FAILED" : isFutureScheduledApproved(header);
+        const valid = retry ? ["FAILED", "APPLIED"].includes(applicationStatus(header)) : isFutureScheduledApproved(header);
         if (!header || !valid) return NextResponse.json({ error: "Batch is not available for this override." }, { status: 400 });
         const collection = kind === "price_batch" ? PRICE_DETAILS : COST_DETAILS;
         if (action === "reschedule") {
