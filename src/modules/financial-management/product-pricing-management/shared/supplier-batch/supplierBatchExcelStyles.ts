@@ -32,7 +32,7 @@ export function addSupplierBatchInstructionRows(
     sheet.addRow(["Instructions"]);
     if (includeProposedColumns) {
         sheet.addRow(["", "Enter changes only in columns containing Proposed; the unit is shown in each price column header."]);
-        sheet.addRow(["", "Leave proposed cells blank when no change is needed."]);
+        sheet.addRow(["", "Leave proposed cells blank when no change is needed. Proposed price cells accept up to 4 decimal places; list cost cells follow standard cost precision."]);
         sheet.addRow(["", "Yellow Pending cells already have active requests; leave them unchanged."]);
         sheet.addRow(["", "Do not edit product identity columns, current-value columns, supplier metadata, or headers."]);
         sheet.addRow(["", "Save this file and import it through Price Change Requests."]);
