@@ -183,7 +183,6 @@ export async function GET(req: NextRequest) {
                 filterAnd.push({ division_id: { _in: ids } });
             }
         }
-
         const queryParams = new URLSearchParams({
             limit: "-1",
             fields: [
