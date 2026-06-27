@@ -157,6 +157,7 @@ export const disbursementProvider = {
         if (filters.minAmount !== undefined && filters.minAmount !== "") params.append("minAmount", filters.minAmount.toString());
         if (filters.maxAmount !== undefined && filters.maxAmount !== "") params.append("maxAmount", filters.maxAmount.toString());
         if (filters.remarks) params.append("remarks", filters.remarks);
+        if (filters.divisionId) params.append("divisionId", filters.divisionId);
 
         const res = await fetch(`${API_BASE}/dashboard?${params.toString()}`);
         if (!res.ok) throw new Error("Failed to fetch dashboard data");
