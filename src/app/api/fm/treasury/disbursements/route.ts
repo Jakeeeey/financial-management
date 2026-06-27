@@ -354,17 +354,23 @@ export async function getLineItems(disbursementIds: number[]) {
     };
 }
 
-function normalizePayable(row: PayableRow, coaMap?: Map<number, string>) {
+function normalizePayable(row: PayableRow, coaMap?: Map<number, string>, divisionMap?: Map<number, string>) {
     const rawCoaId = relationId(row.coa_id, "coa_id");
     let accountTitle = relationLabel(row.coa_id, "account_title");
     if (!accountTitle && rawCoaId && coaMap) {
         accountTitle = coaMap.get(rawCoaId) || `Account #${rawCoaId}`;
     }
 
+    const rawDivisionId = relationId(row.division_id, "division_id");
+    let divisionName = relationLabel(row.division_id, "division_name");
+    if (!divisionName && rawDivisionId && divisionMap) {
+        divisionName = divisionMap.get(rawDivisionId) || `Division #${rawDivisionId}`;
+    }
+
     return {
         id: asNumber(row.id),
-        divisionId: relationId(row.division_id, "division_id"),
-        divisionName: relationLabel(row.division_id, "division_name"),
+        divisionId: rawDivisionId,
+        divisionName,
         referenceNo: asString(row.reference_no),
         date: asString(row.date),
         coaId: rawCoaId,
@@ -404,9 +410,10 @@ export function normalizeDisbursement(
     paymentsMap: Map<number, PaymentRow[]>,
     userMap?: Map<string, string>,
     coaMap?: Map<number, string>,
+    divisionMap?: Map<number, string>,
 ) {
     const id = asNumber(row.id) ?? 0;
-    const payables = (payablesMap.get(id) ?? []).map((p) => normalizePayable(p, coaMap));
+    const payables = (payablesMap.get(id) ?? []).map((p) => normalizePayable(p, coaMap, divisionMap));
     const payments = (paymentsMap.get(id) ?? []).map((p) => normalizePayment(p, coaMap, userMap));
     const totalDebit = roundMoney(payables.reduce((sum, line) => sum + line.amount, 0));
     const totalCredit = roundMoney(payments.reduce((sum, line) => sum + line.amount, 0));
@@ -479,6 +486,25 @@ export async function getCoaMap() {
         }
     } catch (e) {
         console.warn("Failed to fetch COAs map:", e);
+    }
+    return map;
+}
+
+export async function getDivisionMap() {
+    const map = new Map<number, string>();
+    try {
+        const divRes = await directusFetch<DirectusList<{ division_id?: number; division_name?: string }>>("/items/division?limit=-1&fields=division_id,division_name");
+        if (divRes.data && Array.isArray(divRes.data)) {
+            divRes.data.forEach((d) => {
+                const id = Number(d.division_id);
+                const name = String(d.division_name);
+                if (id && name) {
+                    map.set(id, name);
+                }
+            });
+        }
+    } catch (e) {
+        console.warn("Failed to fetch divisions map:", e);
     }
     return map;
 }
@@ -687,9 +713,10 @@ export async function GET(request: NextRequest) {
         const totalElements = asNumber(disbursementsRes.meta?.filter_count) ?? rows.length;
         const userMap = await getUserMap(token);
         const coaMap = await getCoaMap();
+        const divisionMap = await getDivisionMap();
 
         return NextResponse.json({
-            content: rows.map((row) => normalizeDisbursement(row, lineItems.payables, lineItems.payments, userMap, coaMap)),
+            content: rows.map((row) => normalizeDisbursement(row, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap)),
             totalElements,
             totalPages: Math.ceil(totalElements / query.size),
             number: query.page,
@@ -821,9 +848,10 @@ export async function POST(request: NextRequest) {
         const lineItems = await getLineItems([createdId]);
         const userMap = await getUserMap(token);
         const coaMap = await getCoaMap();
+        const divisionMap = await getDivisionMap();
 
         return NextResponse.json(
-            normalizeDisbursement(freshDis, lineItems.payables, lineItems.payments, userMap, coaMap)
+            normalizeDisbursement(freshDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap)
         );
 
     } catch (err: unknown) {
