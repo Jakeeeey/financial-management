@@ -5,7 +5,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Printer, RotateCcw, RefreshCw, Save, FileSpreadsheet, FileUp } from "lucide-react";
+import { Printer, RotateCcw, RefreshCw, Save, FileSpreadsheet, FileUp, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function saveHelperText(priceDirtyCount: number, costDirtyCount: number): string {
@@ -37,6 +37,7 @@ type Props = {
     onPrint: () => void;
     onExportExcel?: () => void;
     onImportExcel?: () => void;
+    onNewBatch?: () => void;
 };
 
 export default function BulkSaveBar(props: Props) {
@@ -52,6 +53,7 @@ export default function BulkSaveBar(props: Props) {
         onPrint,
         onExportExcel,
         onImportExcel,
+        onNewBatch,
     } = props;
 
     const hasDirty = dirtyCount > 0;
@@ -86,6 +88,18 @@ export default function BulkSaveBar(props: Props) {
 
                         {onExportExcel || onImportExcel ? (
                             <div className="flex flex-wrap items-center justify-end gap-2">
+                                {onNewBatch ? (
+                                    <Button
+                                        size="sm"
+                                        onClick={onNewBatch}
+                                        disabled={loading}
+                                        className="gap-2 cursor-pointer"
+                                        type="button"
+                                    >
+                                        <Plus className="h-4 w-4" />
+                                        New Batch
+                                    </Button>
+                                ) : null}
                                 {onExportExcel ? (
                                     <Button
                                         variant="outline"
