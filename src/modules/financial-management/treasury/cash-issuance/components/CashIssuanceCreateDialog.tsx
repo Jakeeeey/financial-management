@@ -38,9 +38,7 @@ interface CashIssuanceCreateDialogProps {
     editData?: ExtendedDisbursement | null;
 }
 const isPaymentCOA = (c: COADto) => {
-    if (c.isPayment || c.isPaymentDuplicate) return true;
-    const title = (c.accountTitle || "").toLowerCase();
-    return title.includes("petty cash") || title.includes("revolving fund") || title.includes("revolving funds");
+    return !!c.isPayment;
 };
 
 const isPayableOrExpenseCOA = (c: COADto) => !isPaymentCOA(c);
@@ -520,6 +518,7 @@ export function CashIssuanceCreateDialog({
                                     payments={payments}
                                     setPayments={setPayments}
                                     bankAccounts={banks}
+                                    coas={coas}
                                     handleAddPayment={handleAddPayment}
                                     handleRemovePayment={(idx) => setPayments(payments.filter((_, i) => i !== idx))}
                                     totalPayments={totalPayments}

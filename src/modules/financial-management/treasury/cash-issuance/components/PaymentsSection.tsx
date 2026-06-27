@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Plus, Trash2, CreditCard } from "lucide-react";
 import { SearchableDropdown } from "./SearchableDropdown";
 import { StickyTableWrapper } from "./StickyTableWrapper";
-import { PaymentLine, BankAccountDto } from "../types";
+import { PaymentLine, BankAccountDto, COADto } from "../types";
 
 interface PaymentsSectionProps {
     payments: PaymentLine[];
     setPayments: (val: PaymentLine[]) => void;
     bankAccounts: BankAccountDto[];
+    coas: COADto[];
     handleAddPayment: () => void;
     handleRemovePayment: (idx: number) => void;
     totalPayments: number;
@@ -25,6 +26,7 @@ export function PaymentsSection({
     payments,
     setPayments,
     bankAccounts,
+    coas,
     handleAddPayment,
     handleRemovePayment,
     totalPayments,
@@ -48,6 +50,7 @@ export function PaymentsSection({
                                 <TableHead className="text-[11px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 min-w-[120px]">Check / Reference No</TableHead>
                                 <TableHead className="text-[11px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 min-w-[110px]">Payment Date</TableHead>
                                 <TableHead className="text-[11px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 min-w-[200px]">Bank / Cash Account</TableHead>
+                                <TableHead className="text-[11px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 min-w-[200px]">GL Account (COA)</TableHead>
                                 <TableHead className="text-[11px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 min-w-[180px]">Memo Description</TableHead>
                                 <TableHead className="text-[11px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 w-[120px] text-right">Amount</TableHead>
                                 <TableHead className="w-[40px]"></TableHead>
@@ -111,6 +114,26 @@ export function PaymentsSection({
                                                 setPayments(n);
                                             }}
                                             placeholder="Choose Cash/Bank..."
+                                            disabled={disabled}
+                                            className="h-7 w-full bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background text-xs rounded-sm shadow-none px-2 text-foreground disabled:opacity-50"
+                                            popoverWidth="w-[350px]"
+                                        />
+                                    </TableCell>
+
+                                    {/* GL Account (COA) */}
+                                    <TableCell className="p-1 align-middle">
+                                        <SearchableDropdown<number>
+                                            options={coas.filter(c => !!c.isPayment).map((c) => ({
+                                                value: c.coaId ?? 0,
+                                                label: `${c.glCode || 'NO-CODE'} - ${c.accountTitle || 'Unknown'}`
+                                            }))}
+                                            value={p.coaId || ""}
+                                            onSelect={(val) => {
+                                                const n = [...payments];
+                                                n[i].coaId = val;
+                                                setPayments(n);
+                                            }}
+                                            placeholder="Choose GL Account..."
                                             disabled={disabled}
                                             className="h-7 w-full bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background text-xs rounded-sm shadow-none px-2 text-foreground disabled:opacity-50"
                                             popoverWidth="w-[350px]"
