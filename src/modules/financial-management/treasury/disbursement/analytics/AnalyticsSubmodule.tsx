@@ -360,6 +360,48 @@ export default function AnalyticsSubmodule() {
             }
         });
 
+        // 7. Segregation of Duties Check
+        vouchers.forEach(v => {
+            if (v.encoderId && v.approverId && v.encoderId === v.approverId && v.status !== "Draft") {
+                logs.push({
+                    id: `sod-enc-app-${v.id}`,
+                    level: "high",
+                    title: "Control Violation: Same Encoder & Approver",
+                    description: `Voucher ${v.docNo} was encoded and approved by the same user (User ID: ${v.encoderId}). CPAs require independent verification for internal controls.`,
+                    docNo: v.docNo,
+                    date: v.transactionDate,
+                    category: "compliance"
+                });
+            }
+            if (v.approverId && v.postedById && v.approverId === v.postedById && v.status === "Posted") {
+                logs.push({
+                    id: `sod-app-post-${v.id}`,
+                    level: "high",
+                    title: "Control Violation: Same Approver & Poster",
+                    description: `Voucher ${v.docNo} was approved and posted to the General Ledger by the same user (User ID: ${v.approverId}). This violates basic segregation of duties controls.`,
+                    docNo: v.docNo,
+                    date: v.transactionDate,
+                    category: "compliance"
+                });
+            }
+        });
+
+        // 8. Ledger Debit-Credit Imbalance Check
+        vouchers.forEach(v => {
+            const imbalance = Math.abs((v.totalDebit || 0) - (v.totalCredit || 0));
+            if (v.status !== "Draft" && v.status !== "Submitted" && imbalance > 0.01) {
+                logs.push({
+                    id: `bal-imb-${v.id}`,
+                    level: "high",
+                    title: "Double-Entry Balance Mismatch",
+                    description: `Voucher ${v.docNo} has a ledger imbalance of ${new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(imbalance)} (Debits: ${new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(v.totalDebit || 0)}, Credits: ${new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(v.totalCredit || 0)}). Finalized vouchers must balance to zero.`,
+                    docNo: v.docNo,
+                    date: v.transactionDate,
+                    category: "mismatch"
+                });
+            }
+        });
+
         return logs.sort((a, b) => {
             const levelPriority = { high: 3, medium: 2, low: 1 };
             return levelPriority[b.level] - levelPriority[a.level];
@@ -524,6 +566,45 @@ export default function AnalyticsSubmodule() {
             criticalAnomalies
         };
     }, [vouchers, anomalies]);
+
+    const apAging = useMemo(() => {
+        let current = 0;
+        let range30_60 = 0;
+        let range61_90 = 0;
+        let over90 = 0;
+        
+        const today = new Date();
+        vouchers.forEach(v => {
+            const unpaid = Math.max(0, v.totalAmount - v.paidAmount);
+            if (unpaid <= 0) return;
+            
+            const docDate = v.transactionDate ? new Date(v.transactionDate) : new Date(v.dateCreated || today);
+            const diffDays = Math.floor((today.getTime() - docDate.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays <= 30) {
+                current += unpaid;
+            } else if (diffDays <= 60) {
+                range30_60 += unpaid;
+            } else if (diffDays <= 90) {
+                range61_90 += unpaid;
+            } else {
+                over90 += unpaid;
+            }
+        });
+        
+        const total = current + range30_60 + range61_90 + over90;
+        return { current, range30_60, range61_90, over90, total };
+    }, [vouchers]);
+
+    const dailyBurnRate = useMemo(() => {
+        if (vouchers.length === 0) return 0;
+        const dates = vouchers.map(v => v.transactionDate ? new Date(v.transactionDate).getTime() : 0).filter(Boolean);
+        if (dates.length <= 1) return 0;
+        const minDate = Math.min(...dates);
+        const maxDate = Math.max(...dates);
+        const days = Math.max(1, (maxDate - minDate) / (1000 * 60 * 60 * 24));
+        return summaryAnalyticsStats.totalOutflow / days;
+    }, [vouchers, summaryAnalyticsStats.totalOutflow]);
 
     const formatCurrency = (val: number) => {
         return new Intl.NumberFormat("en-PH", {
@@ -810,7 +891,8 @@ export default function AnalyticsSubmodule() {
                     </div>
                 ) : activePanel === "spend" ? (
                     /* PANEL 1: PREDICTIVE SPEND MODELING */
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         {/* Forecast Area Chart */}
                         <Card className="lg:col-span-2 rounded-xl border border-border bg-card p-5">
                             <CardHeader className="p-0 pb-4 flex flex-row items-center justify-between">
@@ -948,6 +1030,85 @@ export default function AnalyticsSubmodule() {
                             </CardContent>
                         </Card>
                     </div>
+
+                    {/* CPA Audit & Velocity Insights Row */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+                        <Card className="lg:col-span-2 rounded-xl border border-border bg-card p-5">
+                            <CardHeader className="p-0 pb-4">
+                                <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+                                    <Activity className="w-4 h-4 text-primary" /> Accounts Payable (Liability) Aging
+                                </CardTitle>
+                                <CardDescription className="text-[10px] font-bold text-muted-foreground uppercase mt-0.5">
+                                    Aging breakdown of outstanding unpaid voucher liabilities
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="p-0">
+                                <div className="border border-border/50 rounded-xl overflow-hidden shadow-sm">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                        <thead>
+                                            <tr className="bg-muted/40 border-b border-border/50 text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                                                <th className="p-3">Aging Interval</th>
+                                                <th className="p-3 text-right">Outstanding Amount</th>
+                                                <th className="p-3 text-right">% of Total</th>
+                                                <th className="p-3">Audit Action / Outlook</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {[
+                                                { label: "Current (< 30 Days)", val: apAging.current, outlook: "Normal trade liabilities in standard credit terms", color: "text-emerald-500" },
+                                                { label: "31 - 60 Days Outstanding", val: apAging.range30_60, outlook: "Verify payment schedule to avoid vendor disruptions", color: "text-blue-500" },
+                                                { label: "61 - 90 Days Outstanding", val: apAging.range61_90, outlook: "Aged balance requires priority settlement review", color: "text-amber-500 font-bold" },
+                                                { label: "Over 90 Days (Critical)", val: apAging.over90, outlook: "Overdue liabilities: audit dispute or cash shortage", color: "text-rose-500 font-black" }
+                                            ].map((row, i) => {
+                                                const pct = apAging.total > 0 ? (row.val / apAging.total) * 100 : 0;
+                                                return (
+                                                    <tr key={i} className="border-b border-border/30 last:border-none hover:bg-muted/10 transition-colors">
+                                                        <td className="p-3 font-bold uppercase text-[10px]">{row.label}</td>
+                                                        <td className="p-3 text-right font-mono font-bold">{formatCurrency(row.val)}</td>
+                                                        <td className="p-3 text-right font-bold text-muted-foreground">{pct.toFixed(1)}%</td>
+                                                        <td className={cn("p-3 text-[10px] uppercase font-bold", row.color)}>{row.outlook}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            <tr className="bg-muted/20 font-black border-t border-border">
+                                                <td className="p-3 uppercase text-[10px]">Total Unpaid Aging</td>
+                                                <td className="p-3 text-right font-mono text-primary">{formatCurrency(apAging.total)}</td>
+                                                <td className="p-3 text-right">100.0%</td>
+                                                <td className="p-3 text-[10px] text-primary uppercase">Liability Pipeline Total</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="rounded-xl border border-border bg-card p-5">
+                            <CardHeader className="p-0 pb-4">
+                                <CardTitle className="text-sm font-black uppercase tracking-widest">Treasury Outflow Velocity</CardTitle>
+                                <CardDescription className="text-[10px] font-bold text-muted-foreground uppercase mt-0.5">Average cash outflow metrics in period</CardDescription>
+                            </CardHeader>
+                            <CardContent className="p-0 space-y-4">
+                                <div className="p-4 rounded-xl bg-muted/20 border border-border/30 space-y-1">
+                                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Average Daily Burn Rate</span>
+                                    <div className="text-xl font-black text-foreground">{formatCurrency(dailyBurnRate)} / Day</div>
+                                    <p className="text-[8px] font-bold text-muted-foreground uppercase mt-0.5">Average daily cash paid out in date window</p>
+                                </div>
+                                <div className="p-4 rounded-xl bg-muted/20 border border-border/30 space-y-1">
+                                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Average Voucher Size</span>
+                                    <div className="text-xl font-black text-foreground">
+                                        {formatCurrency(vouchers.length ? summaryAnalyticsStats.totalOutflow / vouchers.length : 0)}
+                                    </div>
+                                    <p className="text-[8px] font-bold text-muted-foreground uppercase mt-0.5">Average cash payout per voucher</p>
+                                </div>
+                                <div className="p-4 rounded-xl bg-muted/20 border border-border/30 space-y-1">
+                                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Total Accrued (Liabilities)</span>
+                                    <div className="text-xl font-black text-foreground">{formatCurrency(vouchers.reduce((s,v) => s + v.totalAmount, 0))}</div>
+                                    <p className="text-[8px] font-bold text-muted-foreground uppercase mt-0.5">Gross vouchered amount before cash release</p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                </>
                 ) : activePanel === "anomalies" ? (
                     /* PANEL 2: AUDIT & ANOMALY LISTINGS */
                     <div className="grid grid-cols-1 gap-4">

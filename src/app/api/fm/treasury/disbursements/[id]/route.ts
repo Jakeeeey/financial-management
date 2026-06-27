@@ -157,7 +157,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 amount: Number(line.amount) || 0,
                 remarks: line.remarks || "",
                 released_by: line.releasedBy ? Number(line.releasedBy) : null,
-                date_released: line.releasedDate || null
+                released_date: line.releasedDate || null
             }));
 
         const lineRes = await Promise.all([
