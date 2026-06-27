@@ -31,15 +31,15 @@ export function CashIssuanceApprovalTable({
     const tokenPayload = useMemo(() => decodeToken(token), [token]);
     const currentUserId = tokenPayload?.sub;
 
-    const checkIsSelectable = (d: Disbursement) => {
-        const totalDebit = d.totalDebit ?? d.payables?.reduce((sum, p) => sum + (p.amount || 0), 0) ?? 0;
-        const totalCredit = d.totalCredit ?? d.payments?.reduce((sum, p) => sum + (p.amount || 0), 0) ?? 0;
-        const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
-        const isEncoder = d.encoderId != null && currentUserId != null && String(d.encoderId) === String(currentUserId);
-        return isBalanced && !isEncoder;
-    };
-
-    const selectables = useMemo(() => data.filter(checkIsSelectable), [data, currentUserId]);
+    const selectables = useMemo(() => {
+        return data.filter((d) => {
+            const totalDebit = d.totalDebit ?? d.payables?.reduce((sum, p) => sum + (p.amount || 0), 0) ?? 0;
+            const totalCredit = d.totalCredit ?? d.payments?.reduce((sum, p) => sum + (p.amount || 0), 0) ?? 0;
+            const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
+            const isEncoder = d.encoderId != null && currentUserId != null && String(d.encoderId) === String(currentUserId);
+            return isBalanced && !isEncoder;
+        });
+    }, [data, currentUserId]);
 
     const handleSelectAll = (checked: boolean) => {
         if (checked) {
