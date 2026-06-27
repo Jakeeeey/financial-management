@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId } from "../../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap } from "../../route";
 
 export const runtime = "nodejs";
 
@@ -332,7 +332,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         // 5. Build DTO representation
         const userMap = await getUserMap(token);
-        const normalized = normalizeDisbursement(updatedDis, lineItems.payables, lineItems.payments, userMap);
+        const coaMap = await getCoaMap();
+        const divisionMap = await getDivisionMap();
+        const normalized = normalizeDisbursement(updatedDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap);
 
         return NextResponse.json(normalized);
 
