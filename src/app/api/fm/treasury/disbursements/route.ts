@@ -85,7 +85,7 @@ export type PaymentRow = {
     amount?: unknown;
     remarks?: unknown;
     released_by?: unknown;
-    date_released?: unknown;
+    released_date?: unknown;
 };
 
 type SupplierRow = {
@@ -280,6 +280,8 @@ function buildDisbursementParams(
     if (status && status !== "All") {
         const op = status.includes(",") ? "_in" : "_eq";
         filterIndex = appendFilter(params, filterIndex, "status", op, status);
+    } else {
+        filterIndex = appendFilter(params, filterIndex, "status", "_neq", "Deleted");
     }
     if (isPosted !== "") {
         filterIndex = appendFilter(params, filterIndex, "isPosted", "_eq", isPosted);
@@ -337,7 +339,7 @@ export async function getLineItems(disbursementIds: number[]) {
     paymentParams.set("limit", "-1");
     paymentParams.set(
         "fields",
-        "id,disbursement_id,coa_id,coa_id.coa_id,coa_id.account_title,bank_id,check_no,date,amount,remarks,released_by,date_released",
+        "id,disbursement_id,coa_id,coa_id.coa_id,coa_id.account_title,bank_id,check_no,date,amount,remarks,released_by,released_date",
     );
     paymentParams.set("filter[disbursement_id][_in]", ids.join(","));
 
@@ -391,7 +393,7 @@ function normalizePayment(row: PaymentRow, coaMap?: Map<number, string>, userMap
         date: asString(row.date),
         amount: asNumber(row.amount) ?? 0,
         remarks: asString(row.remarks),
-        releasedDate: asString(row.date_released),
+        releasedDate: asString(row.released_date),
         releasedBy: releasedByName || releasedByVal || undefined,
     };
 }
@@ -503,12 +505,19 @@ export async function getUserMap(token: string) {
     return map;
 }
 
-/** Resolve the custom user table user_id from the JWT email (sub claim). Returns null if not found. */
-export async function resolveEncoderId(email: string | null): Promise<number | null> {
-    if (!email) return null;
+/** Resolve the custom user table user_id from the JWT email or numeric sub claim. Returns null if not found. */
+export async function resolveEncoderId(emailOrSub: string | null): Promise<number | null> {
+    if (!emailOrSub) return null;
+    
+    // If it's already a numeric ID from Spring Boot, parse it directly
+    const parsedId = Number(emailOrSub);
+    if (Number.isInteger(parsedId) && parsedId > 0) {
+        return parsedId;
+    }
+    
     try {
         const params = new URLSearchParams();
-        params.set("filter[user_email][_eq]", email);
+        params.set("filter[user_email][_eq]", emailOrSub);
         params.set("fields", "user_id");
         params.set("limit", "1");
         const res = await directusFetch<DirectusList<{ user_id?: number }>>(`/items/user?${params.toString()}`);
@@ -789,7 +798,7 @@ export async function POST(request: NextRequest) {
                 amount: Number(line.amount) || 0,
                 remarks: line.remarks || "",
                 released_by: line.releasedBy ? Number(line.releasedBy) : null,
-                date_released: line.releasedDate || null
+                released_date: line.releasedDate || null
             }));
 
         await Promise.all([

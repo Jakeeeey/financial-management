@@ -189,6 +189,7 @@ export interface DashboardFilters {
     coaId?: number | "";
     amount?: number | "";
     remarks?: string;
+    divisionId?: number | ""; // 🚀 NEW
 }
 
 export interface CoaExpense {

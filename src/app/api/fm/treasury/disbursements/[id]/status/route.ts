@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow } from "../../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId } from "../../route";
 
 export const runtime = "nodejs";
 
@@ -153,8 +153,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!status) return NextResponse.json({ message: "Status is required" }, { status: 400 });
 
     const decoded = decodeJwtPayload(token);
-    const userIdVal = decoded ? (decoded.userId || decoded.id || decoded.sub) : null;
-    const currentUserId = userIdVal ? Number(userIdVal) : 1;
+    const encoderEmail = decoded?.email || decoded?.sub || null;
+    const resolvedUserId = await resolveEncoderId(encoderEmail);
+    const currentUserId = resolvedUserId || 1;
 
     try {
         // 1. Fetch current record from Directus
@@ -273,6 +274,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 }
                 if (!isBalanced) {
                     return NextResponse.json({ message: "Cannot post: Debits do not match Credits. The voucher must be balanced first." }, { status: 400 });
+                }
+                if (currentDis.approver_id != null && Number(currentDis.approver_id) === currentUserId) {
+                    return NextResponse.json({
+                        message: "Segregation of Duties Violation",
+                        detail: "The user who approved the voucher cannot post it."
+                    }, { status: 400 });
                 }
                 isPosted = 1;
                 postedBy = currentUserId;

@@ -116,10 +116,12 @@ export function CashIssuanceDashboardTab() {
     const { data, filters, setFilters, isLoading, handleApplyFilters } = useCashIssuanceDashboard();
     const [selectedVoucher, setSelectedVoucher] = useState<VoucherSummary | null>(null);
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [showAiInsights, setShowAiInsights] = useState(false);
 
     const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
     const [payees, setPayees] = useState<{ id: number; name: string }[]>([]);
     const [coas, setCoas] = useState<{ coaId: number; glCode: string; accountTitle: string }[]>([]);
+    const [divisions, setDivisions] = useState<{ divisionId: number; divisionName: string }[]>([]);
 
     const activeEncoders = useMemo(() => {
         const activeIds = data?.activeEncoderIds;
@@ -169,6 +171,15 @@ export function CashIssuanceDashboardTab() {
                 }
             })
             .catch(err => console.warn("Failed to fetch COAs for filter:", err));
+
+        // Fetch divisions
+        disbursementProvider.getDivisions()
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setDivisions(data);
+                }
+            })
+            .catch(err => console.warn("Failed to fetch divisions for filter:", err));
     }, []);
 
     const formatMoney = (amount: number) => `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -274,7 +285,7 @@ export function CashIssuanceDashboardTab() {
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="space-y-3.5 animate-in fade-in duration-500">
             {/* 1. PREMIUM FILTER BAR */}
             <Card className="shadow-sm border-border/50 bg-card rounded-2xl overflow-hidden">
                 <CardContent className="p-5 space-y-4 bg-muted/10">
@@ -418,6 +429,19 @@ export function CashIssuanceDashboardTab() {
                         </div>
 
                         <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Division</label>
+                            <Select value={filters.divisionId?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, divisionId: val === "ALL" ? "" : Number(val) })}>
+                                <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="ALL" className="text-xs font-bold uppercase text-primary">All Divisions</SelectItem>
+                                    {divisions.map(d => (
+                                        <SelectItem key={d.divisionId} value={d.divisionId.toString()} className="text-xs font-bold uppercase">{d.divisionName}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Min Amount</label>
                             <Input
                                 type="number"
@@ -501,8 +525,26 @@ export function CashIssuanceDashboardTab() {
                 </Card>
             </div>
 
-            {/* AI Treasury Co-Pilot Insights */}
-            <AiInsightsPanel data={data} isLoading={isLoading} />
+            {/* Collapsible AI Insights Panel */}
+            <Card className="shadow-sm border border-border/50 rounded-xl overflow-hidden bg-card">
+                <CardHeader 
+                    className="py-2.5 px-4 bg-muted/10 border-b border-border/30 flex flex-row items-center justify-between cursor-pointer hover:bg-muted/20 transition-all" 
+                    onClick={() => setShowAiInsights(!showAiInsights)}
+                >
+                    <div className="flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-primary animate-pulse" />
+                        <span className="text-xs font-black uppercase tracking-wider text-foreground">AI Treasury Co-Pilot Insights</span>
+                    </div>
+                    <Badge variant="secondary" className="text-[9px] uppercase font-bold">
+                        {showAiInsights ? "Hide Insights" : "Show Insights"}
+                    </Badge>
+                </CardHeader>
+                {showAiInsights && (
+                    <CardContent className="p-0 animate-in fade-in duration-300">
+                        <AiInsightsPanel data={data} isLoading={isLoading} />
+                    </CardContent>
+                )}
+            </Card>
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
@@ -516,7 +558,7 @@ export function CashIssuanceDashboardTab() {
                             </CardTitle>
                             <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Top 10 Breakdown of actual outflows</p>
                         </CardHeader>
-                        <CardContent className="p-0 flex-1 min-h-[460px] flex flex-col">
+                        <CardContent className="p-0 flex-1 min-h-[340px] flex flex-col">
                             <Tabs defaultValue="payment" className="w-full h-full flex flex-col">
                                 <TabsList className="w-full rounded-none border-b bg-transparent h-12 flex">
                                     <TabsTrigger value="payment" className="flex-1 data-[state=active]:border-b-2 border-primary rounded-none h-full font-bold uppercase text-[9px] tracking-wider truncate">
@@ -536,7 +578,7 @@ export function CashIssuanceDashboardTab() {
                                 {/* CHART A: BY PAYMENT ACCOUNT */}
                                 <TabsContent value="payment" className="flex-1 p-4 m-0">
                                     {topPaymentExpenses.length > 0 ? (
-                                        <ResponsiveContainer width="100%" height={240}>
+                                        <ResponsiveContainer width="100%" height={180}>
                                             <BarChart data={topPaymentExpenses} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
                                                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--muted))" />
                                                 <XAxis type="number" tickFormatter={(val) => `₱${val/1000}k`} className="text-[9px] font-bold" />
@@ -558,7 +600,7 @@ export function CashIssuanceDashboardTab() {
                                 {/* CHART B: BY PAYABLE ACCOUNT */}
                                 <TabsContent value="payable" className="flex-1 p-4 m-0">
                                     {topPayableExpenses.length > 0 ? (
-                                        <ResponsiveContainer width="100%" height={240}>
+                                        <ResponsiveContainer width="100%" height={180}>
                                             <BarChart data={topPayableExpenses} layout="vertical" margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
                                                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--muted))" />
                                                 <XAxis type="number" tickFormatter={(val) => `₱${val/1000}k`} className="text-[9px] font-bold" />
@@ -581,7 +623,7 @@ export function CashIssuanceDashboardTab() {
                                 <TabsContent value="division" className="flex-1 p-4 m-0 space-y-4">
                                     {topDivisionExpenses.length > 0 ? (
                                         <>
-                                            <div className="h-40">
+                                            <div className="h-32">
                                                 <ResponsiveContainer width="100%" height="100%">
                                                     <RechartsPieChart>
                                                         <Tooltip
@@ -643,7 +685,7 @@ export function CashIssuanceDashboardTab() {
                                 {/* CHART D: CASH FLOW TIMELINE */}
                                 <TabsContent value="timeline" className="flex-1 p-4 m-0">
                                     {cashFlowTimeline.length > 0 ? (
-                                        <ResponsiveContainer width="100%" height={240}>
+                                        <ResponsiveContainer width="100%" height={180}>
                                             <AreaChart data={cashFlowTimeline} margin={{ top: 10, right: 10, left: -20, bottom: 10 }}>
                                                 <defs>
                                                     <linearGradient id="colorPaid" x1="0" y1="0" x2="0" y2="1">
@@ -729,7 +771,7 @@ export function CashIssuanceDashboardTab() {
                         <Badge variant="outline" className="font-mono bg-background shadow-sm">{data?.vouchers?.length || 0} Records</Badge>
                     </CardHeader>
                     <CardContent className="p-0 relative">
-                        <StickyTableWrapper className="overflow-auto max-h-[500px] custom-scrollbar">
+                        <StickyTableWrapper className="overflow-auto max-h-[340px] custom-scrollbar">
                             <Table>
                                 <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                     <TableRow>

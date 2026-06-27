@@ -27,6 +27,7 @@ import { generateReportPDF } from "../utils/reportPdfGenerator";
 import { generateReportExcel } from "../utils/reportExcelGenerator";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { AiInsightsPanel } from "./AiInsightsPanel";
+import { QUICK_RANGES, detectQuickRange } from "../utils/dateRangeHelper";
 
 const PIE_COLORS = [
     "hsl(var(--primary))",
@@ -219,8 +220,8 @@ export function DisbursementDashboardTab() {
     }, [data?.payableCoaExpenses, coas]);
 
     const topDivisionExpenses = useMemo(() => {
-        return (data?.divisionExpenses || []).slice(0, 10);
-    }, [data?.divisionExpenses]);
+        return (data?.payableDivisionExpenses || data?.divisionExpenses || []).slice(0, 10);
+    }, [data?.payableDivisionExpenses, data?.divisionExpenses]);
 
     const cashFlowTimeline = useMemo(() => {
         const dateMap = new Map<string, number>();
@@ -240,37 +241,21 @@ export function DisbursementDashboardTab() {
         return text.length > maxLength ? text.substring(0, maxLength) + "..." : text;
     };
 
-    const handleQuickRange = (range: string) => {
-        const today = new Date();
-        let start = new Date();
-        let end = new Date();
+    const selectedQuickRange = useMemo(() => {
+        return detectQuickRange(filters.startDate, filters.endDate);
+    }, [filters.startDate, filters.endDate]);
 
-        switch (range) {
-            case "today":
-                break;
-            case "this_week":
-                start.setDate(today.getDate() - today.getDay());
-                break;
-            case "this_month":
-                start = new Date(today.getFullYear(), today.getMonth(), 1);
-                end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-                break;
-            case "this_year":
-                start = new Date(today.getFullYear(), 0, 1);
-                end = new Date(today.getFullYear(), 11, 31);
-                break;
-            case "all_time":
-                start = new Date(2020, 0, 1);
-                end = new Date(today.getFullYear() + 1, 11, 31);
-                break;
-            default: return;
+    const handleQuickRange = (rangeVal: string) => {
+        if (rangeVal === "custom") return;
+        const matched = QUICK_RANGES.find(r => r.value === rangeVal);
+        if (matched) {
+            const range = matched.getRange();
+            setFilters({
+                ...filters,
+                startDate: range.start,
+                endDate: range.end
+            });
         }
-
-        setFilters({
-            ...filters,
-            startDate: start.toISOString().split('T')[0],
-            endDate: end.toISOString().split('T')[0]
-        });
     };
 
     return (
@@ -283,16 +268,15 @@ export function DisbursementDashboardTab() {
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
                                 <CalendarDays className="w-3.5 h-3.5 text-primary"/> Quick Range
                             </label>
-                            <Select onValueChange={handleQuickRange}>
+                            <Select value={selectedQuickRange} onValueChange={handleQuickRange}>
                                 <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50">
                                     <SelectValue placeholder="Custom" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="today" className="text-xs font-bold uppercase">Today</SelectItem>
-                                    <SelectItem value="this_week" className="text-xs font-bold uppercase">This Week</SelectItem>
-                                    <SelectItem value="this_month" className="text-xs font-bold uppercase">This Month</SelectItem>
-                                    <SelectItem value="this_year" className="text-xs font-bold uppercase">This Year</SelectItem>
-                                    <SelectItem value="all_time" className="text-xs font-bold uppercase">All Time</SelectItem>
+                                    <SelectItem value="custom" className="text-xs font-bold uppercase text-muted-foreground/60">Custom</SelectItem>
+                                    {QUICK_RANGES.map(r => (
+                                        <SelectItem key={r.value} value={r.value} className="text-xs font-bold uppercase">{r.label}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>

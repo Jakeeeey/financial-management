@@ -122,6 +122,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
     const tokenPayload = decodeToken(token);
     const currentUserId = tokenPayload?.sub;
     const isApprover = disbursement.approverId != null && currentUserId != null && String(disbursement.approverId) === String(currentUserId);
+    const isEncoder = disbursement.encoderId != null && currentUserId != null && String(disbursement.encoderId) === String(currentUserId);
 
     const handleAction = async (status: string) => {
         const success = await onUpdateStatus(disbursement.id, status);
@@ -199,14 +200,40 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                 <div className="flex-1 overflow-y-auto p-6 scrollbar-thin bg-muted/10 space-y-6">
                     {/* Approver Action Banner */}
                     {disbursement.status === "Submitted" && subModule === "approval" && (
-                        <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50 dark:border-blue-900/40 dark:bg-blue-950/10 text-blue-800 dark:text-blue-400 flex items-center gap-3 shadow-sm animate-in fade-in duration-300">
-                            <CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0" />
-                            <div>
-                                <p className="text-xs font-black uppercase tracking-widest">Pending Verification & Approval</p>
-                                <p className="text-[10px] font-semibold mt-0.5 uppercase tracking-wide opacity-80">
-                                    Please verify all voucher particulars, account titles, division codes, and supporting attachments below. Once validated, approve to proceed to check releasing.
-                                </p>
+                        <div className="space-y-3">
+                            <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50 dark:border-blue-900/40 dark:bg-blue-950/10 text-blue-800 dark:text-blue-400 flex items-center gap-3 shadow-sm animate-in fade-in duration-300">
+                                <CheckCircle2 className="w-5 h-5 text-blue-500 shrink-0" />
+                                <div>
+                                    <p className="text-xs font-black uppercase tracking-widest">Pending Verification & Approval</p>
+                                    <p className="text-[10px] font-semibold mt-0.5 uppercase tracking-wide opacity-80">
+                                        Please verify all voucher particulars, account titles, division codes, and supporting attachments below. Once validated, approve to proceed to check releasing.
+                                    </p>
+                                </div>
                             </div>
+
+                            {isEncoder && (
+                                <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/50 dark:border-rose-900/40 dark:bg-rose-950/10 text-rose-800 dark:text-rose-400 flex items-center gap-3 shadow-sm animate-in shake duration-300">
+                                    <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
+                                    <div>
+                                        <p className="text-xs font-black uppercase tracking-widest">Segregation of Duties Warning</p>
+                                        <p className="text-[10px] font-semibold mt-0.5 uppercase tracking-wide opacity-80">
+                                            You encoded/submitted this voucher. An independent accountant must verify and approve it.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {!isBalanced && (
+                                <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/10 text-amber-800 dark:text-amber-400 flex items-center gap-3 shadow-sm animate-in fade-in duration-300">
+                                    <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+                                    <div>
+                                        <p className="text-xs font-black uppercase tracking-widest">Double-Entry Balance Mismatch</p>
+                                        <p className="text-[10px] font-semibold mt-0.5 uppercase tracking-wide opacity-80">
+                                            Total Debits ({formatCurrency(totalDebit)}) do not equal Total Credits ({formatCurrency(totalCredit)}). This voucher must be balanced before approval.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                     {/* SUMMARY CARDS */}
@@ -422,7 +449,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         {/* Revert Tool */}
                         {disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" && 
                          (subModule === "preparation" || subModule === "approval" || subModule === "releasing") && (
-                            <Button variant="ghost" onClick={() => handleAction(subModule === "preparation" ? "Draft" : "Returned for Revision")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
+                            <Button variant="ghost" onClick={() => handleAction(subModule === "preparation" ? "Draft" : "Returned for Revision")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 flex">
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} 
                                 {subModule === "preparation" ? "Return to Draft" : "Return for Revision"}
                             </Button>
@@ -439,7 +466,11 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         )}
 
                         {disbursement.status === "Submitted" && subModule === "approval" && (
-                            <Button onClick={() => handleAction("Approved")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
+                            <Button 
+                                onClick={() => handleAction("Approved")} 
+                                disabled={loading || !isBalanced || isEncoder} 
+                                className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50"
+                            >
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
                                 Approve Voucher
                             </Button>

@@ -177,6 +177,7 @@ export interface DisbursementDashboardData {
     totalPaid: number;
     totalUnpaidPayables: number;
     divisionExpenses: DivisionExpense[];
+    payableDivisionExpenses?: DivisionExpense[];
     paymentCoaExpenses: CoaExpense[];
     payableCoaExpenses: CoaExpense[];
     vouchers: VoucherSummary[];

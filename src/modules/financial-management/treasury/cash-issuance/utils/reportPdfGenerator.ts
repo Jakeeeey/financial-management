@@ -15,39 +15,38 @@ export const generateReportPDF = (
         format: "a4"
     });
 
-    const primaryColor: [number, number, number] = [15, 23, 42]; // Slate-900 / dark branding
+    const primaryColor: [number, number, number] = [15, 23, 42]; // Slate-900 / dark navy
     const accentColor: [number, number, number] = [22, 163, 74]; // Emerald-600
 
     // --- Header ---
     doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.rect(0, 0, 297, 40, "F");
+    doc.rect(0, 0, 297, 24, "F");
 
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text("MEN2 MARKETING", 15, 16);
+    doc.setFontSize(14);
+    doc.text("MEN2 MARKETING", 10, 10);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
+    doc.setFontSize(8);
     doc.setTextColor(200, 200, 200);
-    doc.text("TREASURY OUTFLOWS REPORT", 15, 23);
+    doc.text("TREASURY OUTFLOWS EXECUTIVE DASHBOARD (ONE-PAGE REPORT)", 10, 15);
 
     // Date Generated & Filters info
     const nowStr = format(new Date(), "yyyy-MM-dd HH:mm:ss");
-    doc.text(`Generated At: ${nowStr}`, 220, 16);
+    doc.setFontSize(7.5);
+    doc.text(`Generated: ${nowStr}`, 235, 10);
     
     const startStr = filters.startDate ? format(new Date(filters.startDate), "MMM dd, yyyy") : "All Time";
     const endStr = filters.endDate ? format(new Date(filters.endDate), "MMM dd, yyyy") : "Present";
-    doc.text(`Period: ${startStr} - ${endStr}`, 220, 23);
+    doc.text(`Period: ${startStr} - ${endStr}`, 235, 15);
 
     // --- KPI Cards ---
-    let startY = 50;
-    
-    // Draw three KPI card shapes
-    const cardW = 85;
-    const cardH = 22;
-    const cardG = 8;
-    const xOffsets = [15, 15 + cardW + cardG, 15 + (cardW + cardG) * 2];
+    const startY = 28;
+    const cardW = 89;
+    const cardH = 15;
+    const cardG = 5;
+    const xOffsets = [10, 10 + cardW + cardG, 10 + (cardW + cardG) * 2];
 
     const formatMoney = (amount: number) => `PHP ${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -59,38 +58,28 @@ export const generateReportPDF = (
 
     kpis.forEach((kpi, idx) => {
         const x = xOffsets[idx];
-        // Draw card background
         doc.setFillColor(248, 250, 252);
         doc.rect(x, startY, cardW, cardH, "F");
         
-        // Left thick accent border
         doc.setFillColor(kpi.border[0], kpi.border[1], kpi.border[2]);
-        doc.rect(x, startY, 2, cardH, "F");
+        doc.rect(x, startY, 1.5, cardH, "F");
 
-        // KPI text
         doc.setTextColor(100, 116, 139);
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(8);
-        doc.text(kpi.title, x + 6, startY + 5.5);
+        doc.setFontSize(6.5);
+        doc.text(kpi.title, x + 4, startY + 4);
 
         doc.setTextColor(kpi.border[0], kpi.border[1], kpi.border[2]);
-        doc.setFontSize(14);
-        doc.text(kpi.value, x + 6, startY + 12);
+        doc.setFontSize(10.5);
+        doc.text(kpi.value, x + 4, startY + 9);
 
         doc.setTextColor(148, 163, 184);
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(7);
-        doc.text(kpi.desc, x + 6, startY + 17.5);
+        doc.setFontSize(6);
+        doc.text(kpi.desc, x + 4, startY + 13);
     });
 
-    startY += cardH + 12;
-
-    // --- Status Outflow Summary Table ---
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("OUTFLOW SUMMARY BY STATUS", 15, startY - 2);
-
+    // --- Outflow Summary by Status Table (Col 1, Row 1) ---
     const summaryData: Record<string, { count: number; total: number }> = {
         "Released": { count: 0, total: 0 },
         "Posted": { count: 0, total: 0 }
@@ -108,34 +97,21 @@ export const generateReportPDF = (
         String(stats.count),
         formatMoney(stats.total)
     ]);
-    
-    // Add total row
     const totalCount = Object.values(summaryData).reduce((sum, r) => sum + r.count, 0);
     const totalSum = Object.values(summaryData).reduce((sum, r) => sum + r.total, 0);
     summaryRows.push(["TOTAL OUTFLOWS", String(totalCount), formatMoney(totalSum)]);
 
     autoTable(doc, {
-        startY: startY,
-        head: [["STATUS", "VOUCHERS COUNT", "TOTAL PAID AMOUNT"]],
+        startY: 48,
+        margin: { left: 10 },
+        tableWidth: 89,
+        head: [["STATUS", "COUNT", "TOTAL PAID"]],
         body: summaryRows,
         theme: "striped",
-        headStyles: {
-            fillColor: primaryColor,
-            textColor: [255, 255, 255],
-            fontSize: 8,
-            fontStyle: "bold"
-        },
-        bodyStyles: {
-            fontSize: 8,
-            textColor: [51, 65, 85]
-        },
-        columnStyles: {
-            1: { halign: "center" },
-            2: { halign: "right", fontStyle: "bold" }
-        },
-        margin: { left: 15, right: 15 },
+        headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontSize: 7, fontStyle: "bold", cellPadding: 1.5 },
+        bodyStyles: { fontSize: 6.5, textColor: [51, 65, 85], cellPadding: 1.2 },
+        columnStyles: { 1: { halign: "center" }, 2: { halign: "right", fontStyle: "bold" } },
         didParseCell: (cellData) => {
-            // Bold the total row
             if (cellData.row.index === summaryRows.length - 1) {
                 cellData.cell.styles.fontStyle = "bold";
                 if (cellData.column.index === 2) {
@@ -145,13 +121,7 @@ export const generateReportPDF = (
         }
     });
 
-    // --- Tab 1: Payment Cash Accounts ---
-    let nextY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 12;
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("PAYMENT ACCOUNTS OUTFLOWS", 15, nextY - 2);
-
+    // --- Payment Accounts Outflows (Col 2, Row 1) ---
     const paymentRows = (data.paymentCoaExpenses || []).map(p => [
         `GL #${p.coaId}`,
         p.accountTitle || "N/A",
@@ -159,20 +129,18 @@ export const generateReportPDF = (
     ]);
 
     autoTable(doc, {
-        startY: nextY,
-        head: [["COA ID", "ACCOUNT TITLE", "TOTAL CASH OUTFLOW"]],
-        body: paymentRows.length > 0 ? paymentRows : [["N/A", "No payment data available", "PHP 0.00"]],
+        startY: 48,
+        margin: { left: 104 },
+        tableWidth: 89,
+        head: [["PAYMENT COA", "ACCOUNT TITLE", "TOTAL PAID"]],
+        body: paymentRows.length > 0 ? paymentRows.slice(0, 3) : [["N/A", "No payment data available", "PHP 0.00"]],
         theme: "striped",
-        headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontSize: 8 },
-        bodyStyles: { fontSize: 8 },
-        columnStyles: { 2: { halign: "right", fontStyle: "bold" } },
-        margin: { left: 15, right: 15 }
+        headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontSize: 7, fontStyle: "bold", cellPadding: 1.5 },
+        bodyStyles: { fontSize: 6.5, textColor: [51, 65, 85], cellPadding: 1.2 },
+        columnStyles: { 2: { halign: "right", fontStyle: "bold" } }
     });
 
-    // --- Tab 2: Payable Expense Accounts ---
-    nextY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 12;
-    doc.text("PAYABLE EXPENSE ACCOUNTS", 15, nextY - 2);
-
+    // --- Payable Expense Accounts (Col 3, Row 1) ---
     const payableRows = (data.payableCoaExpenses || []).map(p => [
         `GL #${p.coaId}`,
         p.accountTitle || "N/A",
@@ -180,39 +148,38 @@ export const generateReportPDF = (
     ]);
 
     autoTable(doc, {
-        startY: nextY,
-        head: [["COA ID", "ACCOUNT TITLE", "TOTAL EXPENSE ACCRUED"]],
-        body: payableRows.length > 0 ? payableRows : [["N/A", "No payable data available", "PHP 0.00"]],
+        startY: 48,
+        margin: { left: 198 },
+        tableWidth: 89,
+        head: [["PAYABLE COA", "ACCOUNT TITLE", "TOTAL ACCRUED"]],
+        body: payableRows.length > 0 ? payableRows.slice(0, 3) : [["N/A", "No payable data available", "PHP 0.00"]],
         theme: "striped",
-        headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontSize: 8 },
-        bodyStyles: { fontSize: 8 },
-        columnStyles: { 2: { halign: "right", fontStyle: "bold" } },
-        margin: { left: 15, right: 15 }
+        headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontSize: 7, fontStyle: "bold", cellPadding: 1.5 },
+        bodyStyles: { fontSize: 6.5, textColor: [51, 65, 85], cellPadding: 1.2 },
+        columnStyles: { 2: { halign: "right", fontStyle: "bold" } }
     });
 
-    // --- Tab 3: Divisions & Departments ---
-    nextY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 12;
-    doc.text("DIVISIONS & DEPARTMENTS OUTFLOWS", 15, nextY - 2);
-
+    // --- Divisions & Departments (Col 1, Row 2) ---
     const divDeptRows: string[][] = [];
     (data.divisionExpenses || []).forEach(div => {
         divDeptRows.push([div.divisionName, "DIV TOTAL", formatMoney(div.totalExpense)]);
         if (div.departments && div.departments.length > 0) {
-            div.departments.forEach(dept => {
+            div.departments.slice(0, 2).forEach(dept => {
                 divDeptRows.push([`  - ${dept.departmentName}`, "DEPT", formatMoney(dept.totalExpense)]);
             });
         }
     });
 
     autoTable(doc, {
-        startY: nextY,
+        startY: 84,
+        margin: { left: 10 },
+        tableWidth: 89,
         head: [["DIVISION / DEPARTMENT", "TYPE", "TOTAL AMOUNT"]],
-        body: divDeptRows.length > 0 ? divDeptRows : [["N/A", "N/A", "PHP 0.00"]],
+        body: divDeptRows.length > 0 ? divDeptRows.slice(0, 10) : [["N/A", "N/A", "PHP 0.00"]],
         theme: "striped",
-        headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontSize: 8 },
-        bodyStyles: { fontSize: 8 },
+        headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontSize: 7, fontStyle: "bold", cellPadding: 1.5 },
+        bodyStyles: { fontSize: 6.5, textColor: [51, 65, 85], cellPadding: 1.2 },
         columnStyles: { 2: { halign: "right", fontStyle: "bold" } },
-        margin: { left: 15, right: 15 },
         didParseCell: (cellData) => {
             const rawVal = cellData.row.cells[1]?.text;
             const textStr = Array.isArray(rawVal) ? rawVal.join(" ") : String(rawVal || "");
@@ -225,25 +192,11 @@ export const generateReportPDF = (
         }
     });
 
-    // --- Outflow Details Master Table ---
-    nextY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 12;
-    
-    // Add page break if it exceeds landscape height
-    if (nextY > 165) {
-        doc.addPage();
-        nextY = 20;
-    }
-
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("OUTFLOW REGISTER DETAILS", 15, nextY - 2);
-
+    // --- Outflow Register Details (Cols 2 & 3, Row 2) ---
     const detailHeaders = [
         "DOC NO",
         "DATE",
         "PAYEE",
-        "GL ACCOUNTS HIT",
         "STATUS",
         "TOTAL AMOUNT",
         "AMOUNT PAID"
@@ -253,43 +206,37 @@ export const generateReportPDF = (
         v.docNo,
         v.transactionDate ? format(new Date(v.transactionDate), "yyyy-MM-dd") : "N/A",
         v.payeeName || "N/A",
-        v.expenseAccountsHit || "N/A",
         (v.status || "Draft").toUpperCase(),
         v.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }),
         v.paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })
     ]);
 
     autoTable(doc, {
-        startY: nextY,
+        startY: 84,
+        margin: { left: 104 },
+        tableWidth: 183,
         head: [detailHeaders],
-        body: detailRows,
+        body: detailRows.length > 0 ? detailRows.slice(0, 10) : [["N/A", "N/A", "N/A", "N/A", "0.00", "0.00"]],
         theme: "striped",
-        headStyles: {
-            fillColor: primaryColor,
-            textColor: [255, 255, 255],
-            fontSize: 8,
-            fontStyle: "bold"
-        },
-        bodyStyles: {
-            fontSize: 7.5,
-            textColor: [51, 65, 85]
-        },
+        headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontSize: 7, fontStyle: "bold", cellPadding: 1.5 },
+        bodyStyles: { fontSize: 6.5, textColor: [51, 65, 85], cellPadding: 1.2 },
         columnStyles: {
-            0: { cellWidth: 25, fontStyle: "bold" },
-            1: { cellWidth: 22 },
-            2: { cellWidth: 40 },
-            3: { cellWidth: 80 },
-            4: { cellWidth: 20, halign: "center" },
-            5: { cellWidth: 35, halign: "right" },
-            6: { cellWidth: 35, halign: "right", fontStyle: "bold" }
-        },
-        margin: { left: 15, right: 15 },
-        styles: {
-            overflow: "ellipsize",
-            cellWidth: "auto"
+            0: { fontStyle: "bold", cellWidth: 20 },
+            1: { cellWidth: 18 },
+            2: { cellWidth: 55 },
+            3: { halign: "center", cellWidth: 20 },
+            4: { halign: "right", cellWidth: 35 },
+            5: { halign: "right", fontStyle: "bold", cellWidth: 35 }
         }
     });
 
+    // --- Footer ---
+    doc.setTextColor(148, 163, 184);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.5);
+    doc.text("CONFIDENTIAL - FOR INTERNAL USE ONLY. ONE-PAGE EXECUTIVE SUMMARY.", 10, 203);
+    doc.text(`Report generated by Antigravity Core VOS - Page 1 of 1`, 240, 203);
+
     // Save document
-    doc.save(`treasury-outflows-report-${format(new Date(), "yyyyMMdd-HHmmss")}.pdf`);
+    doc.save(`treasury-outflows-dashboard-${format(new Date(), "yyyyMMdd-HHmmss")}.pdf`);
 };
