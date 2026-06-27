@@ -195,6 +195,7 @@ export interface DashboardFilters {
     minAmount?: number | "";
     maxAmount?: number | "";
     remarks?: string;
+    divisionId?: string; // 🚀 NEW
 }
 
 export interface CoaExpense {
