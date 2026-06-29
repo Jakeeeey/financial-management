@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +41,7 @@ type Props = {
     onOpenChange: (open: boolean) => void;
     onApprove?: (headerId: number, effectiveAt?: string | null) => Promise<void> | void;
     onReject?: (headerId: number, reason: string) => Promise<void> | void;
+    onRemoveLine?: (headerId: number, requestId: number) => Promise<void> | void;
     onApplyScheduledNow?: (headerId: number) => Promise<void> | void;
     onRejectScheduled?: (headerId: number, reason: string) => Promise<void> | void;
     onRetryApplication?: (headerId: number) => Promise<void> | void;
@@ -107,6 +108,7 @@ export function ListCostBatchDetailDialog({
     onOpenChange,
     onApprove,
     onReject,
+    onRemoveLine,
     onApplyScheduledNow,
     onRejectScheduled,
     onRetryApplication,
@@ -116,39 +118,46 @@ export function ListCostBatchDetailDialog({
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
     const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | "apply_now" | "reject_schedule" | null>(null);
+    const [confirmingRemoveLine, setConfirmingRemoveLine] = React.useState<ListCostBatchLine | null>(null);
+    const [removingLine, setRemovingLine] = React.useState(false);
+    const loadRequestSeqRef = React.useRef(0);
 
-    React.useEffect(() => {
-        let cancelled = false;
-
-        async function load() {
-            if (!open || !batchId) {
-                setDetail(null);
-                return;
-            }
-
-            setLoading(true);
-            try {
-                const result = await getListCostBatch(batchId);
-                if (!cancelled) setDetail(result.data);
-            } catch (error: unknown) {
-                const message = error instanceof Error ? error.message : "Failed to load list cost batch detail";
-                if (!cancelled) toast.error(message);
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
+    const loadDetail = React.useCallback(async (options?: { silent?: boolean }) => {
+        const requestSeq = ++loadRequestSeqRef.current;
+        if (!open || !batchId) {
+            setDetail(null);
+            return;
         }
 
-        void load();
+        const requestedBatchId = batchId;
 
-        return () => {
-            cancelled = true;
-        };
+        if (!options?.silent) setLoading(true);
+        try {
+            const result = await getListCostBatch(requestedBatchId);
+            if (requestSeq === loadRequestSeqRef.current && requestedBatchId === batchId) {
+                setDetail(result.data);
+            }
+        } catch (error: unknown) {
+            if (requestSeq === loadRequestSeqRef.current && requestedBatchId === batchId) {
+                const message = error instanceof Error ? error.message : "Failed to load list cost batch detail";
+                toast.error(message);
+            }
+        } finally {
+            if (!options?.silent && requestSeq === loadRequestSeqRef.current && requestedBatchId === batchId) {
+                setLoading(false);
+            }
+        }
     }, [batchId, open]);
+
+    React.useEffect(() => {
+        void loadDetail();
+    }, [loadDetail]);
 
     const lines = React.useMemo(() => detail?.details ?? [], [detail?.details]);
     const isPending = detail?.status === "PENDING";
     const headerId = detail?.header_id ?? batchId ?? 0;
     const canAct = !readOnly && isPending && headerId != null && onApprove != null && onReject != null;
+    const canRemoveLines = !readOnly && isPending && headerId > 0 && onRemoveLine != null;
     const effectiveTime = new Date(detail?.effective_at ?? "").getTime();
     const isScheduledBeforeEffective =
         detail?.status === "APPROVED" &&
@@ -172,6 +181,7 @@ export function ListCostBatchDetailDialog({
                 setRejecting(false);
                 setRejectReason("");
                 setConfirmingAction(null);
+                setConfirmingRemoveLine(null);
             }
             onOpenChange(nextOpen);
         },
@@ -215,6 +225,20 @@ export function ListCostBatchDetailDialog({
         await onRetryApplication(headerId);
         handleOpenChange(false);
     }, [handleOpenChange, headerId, onRetryApplication]);
+
+    const handleRemoveLine = React.useCallback(async () => {
+        const requestId = confirmingRemoveLine?.request_id;
+        if (!headerId || !requestId || !onRemoveLine) return;
+
+        setRemovingLine(true);
+        try {
+            await onRemoveLine(headerId, requestId);
+            setConfirmingRemoveLine(null);
+            await loadDetail({ silent: true });
+        } finally {
+            setRemovingLine(false);
+        }
+    }, [confirmingRemoveLine?.request_id, headerId, loadDetail, onRemoveLine]);
 
     return (
         <>
@@ -284,6 +308,7 @@ export function ListCostBatchDetailDialog({
                                             <TableHead className="w-[140px] text-right">Proposed</TableHead>
                                             <TableHead className="w-[130px] text-right">Change</TableHead>
                                             <TableHead className="w-[120px] text-right">% Change</TableHead>
+                                            {canRemoveLines ? <TableHead className="w-[72px] text-right">Action</TableHead> : null}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -312,18 +337,35 @@ export function ListCostBatchDetailDialog({
                                                 <TableCell className={cn("text-right", diffClass(line))}>
                                                     {percent(line.percent_change)}
                                                 </TableCell>
+                                                {canRemoveLines ? (
+                                                    <TableCell className="text-right">
+                                                        {line.status === "PENDING" && line.request_id ? (
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="size-8 text-muted-foreground hover:text-destructive"
+                                                                onClick={() => setConfirmingRemoveLine(line)}
+                                                                disabled={acting || removingLine}
+                                                                title="Remove line"
+                                                            >
+                                                                <Trash2 className="size-4" />
+                                                            </Button>
+                                                        ) : null}
+                                                    </TableCell>
+                                                ) : null}
                                             </TableRow>
                                         ))}
                                         {lines.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                                                <TableCell colSpan={canRemoveLines ? 9 : 8} className="py-8 text-center text-muted-foreground">
                                                     No detail lines found.
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
                                             <TableRow>
                                                 <TableCell className="font-medium">Summary</TableCell>
-                                                <TableCell colSpan={7} className="text-sm text-muted-foreground">
+                                                <TableCell colSpan={canRemoveLines ? 8 : 7} className="text-sm text-muted-foreground">
                                                     {lineSummary.lineCount} line(s) - {lineSummary.productCount} product(s)
                                                     {lineSummary.increaseCount > 0 || lineSummary.decreaseCount > 0
                                                         ? ` - ${lineSummary.increaseCount} increase(s), ${lineSummary.decreaseCount} decrease(s)`
@@ -478,6 +520,18 @@ export function ListCostBatchDetailDialog({
                                 ? handleApplyScheduledNow
                                 : handleApprove
                 }
+            />
+            <DecisionConfirmationDialog
+                open={confirmingRemoveLine != null}
+                action="reject"
+                recordLabel={confirmingRemoveLine?.product_name || "this line"}
+                loading={removingLine || acting}
+                description={`Remove ${confirmingRemoveLine?.product_name || "this line"} from ${headerId ? `CCR-${headerId}` : "this list cost request"}? This will cancel only this pending line.`}
+                confirmLabel="Remove Line"
+                onOpenChange={(nextOpen) => {
+                    if (!nextOpen) setConfirmingRemoveLine(null);
+                }}
+                onConfirm={handleRemoveLine}
             />
         </>
     );

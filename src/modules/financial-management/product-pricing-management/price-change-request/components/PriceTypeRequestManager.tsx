@@ -147,6 +147,22 @@ export function PriceTypeRequestManager({
         }
     }, [inbox, onUnauthorized]);
 
+    const removeBatchLine = React.useCallback(async (headerId: number, requestId: number) => {
+        setBatchActing(true);
+        try {
+            await pcrApi.removePriceChangeBatchLine(headerId, requestId);
+            toast.success("Price change line removed.");
+            await inbox.refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to remove price change line", { onUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setBatchActing(false);
+        }
+    }, [inbox, onUnauthorized]);
+
     const approvePriceRequest = React.useCallback(async (requestId: number, effectiveAt?: string | null) => {
         setBatchActing(true);
         try {
@@ -472,6 +488,7 @@ export function PriceTypeRequestManager({
                     : {
                           onApprove: approveBatch,
                           onReject: rejectBatch,
+                          onRemoveLine: removeBatchLine,
                           onApplyScheduledNow: (headerId: number) => inbox.applyScheduledNow("price_batch", headerId),
                           onRejectScheduled: (headerId: number, reason: string) =>
                               inbox.rejectScheduled("price_batch", headerId, reason),

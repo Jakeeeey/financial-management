@@ -4,6 +4,7 @@ import {
     applyApprovedBatch,
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
+    fetchSupplierLabelsById,
     fetchUserNamesById,
     getDetails,
     getHeader,
@@ -133,13 +134,16 @@ export async function GET(req: NextRequest, context: RouteContext) {
         const requestedById = userIdOf(requestedBy);
         const requesterNamesById = await fetchUserNamesById([requestedById]);
         const requested_by_name = userNameOf(requestedBy) ?? resolveUserDisplayName(requestedById, requesterNamesById);
+        const supplierId = supplierIdOf(header.supplier_id);
+        const supplierLabelsById = await fetchSupplierLabelsById([supplierId]);
+        const supplierName = supplierNameOf(header.supplier_id) || (supplierId ? supplierLabelsById.get(supplierId) ?? "" : "");
 
         return NextResponse.json({
             data: {
                 id: normalizeHeaderId(header),
                 header_id: normalizeHeaderId(header),
-                supplier_id: supplierIdOf(header.supplier_id),
-                supplier_name: supplierNameOf(header.supplier_id),
+                supplier_id: supplierId,
+                supplier_name: supplierName,
                 reference_no: header.reference_no ?? "",
                 remarks: header.remarks ?? "",
                 status: header.status ?? "PENDING",

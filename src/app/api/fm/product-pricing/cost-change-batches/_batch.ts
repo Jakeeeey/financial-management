@@ -338,6 +338,7 @@ export async function getCostDetails(headerId: number) {
     params.set("limit", "-1");
     params.set("sort", "request_id");
     params.set("filter[header_id][_eq]", String(headerId));
+    params.set("filter[status][_neq]", "CANCELLED");
     params.set(
         "fields",
         [
@@ -372,6 +373,41 @@ export async function getCostDetails(headerId: number) {
     return json.data ?? [];
 }
 
+export async function removeCostBatchLine(headerId: number, requestId: number) {
+    const header = await getCostHeader(headerId);
+    if (!header) return NextResponse.json({ error: "Cost batch not found" }, { status: 404 });
+    if (String(header.status ?? "") !== "PENDING") {
+        return NextResponse.json({ error: "Only PENDING cost batches can have lines removed." }, { status: 400 });
+    }
+
+    const details = await getCostDetails(headerId);
+    const pendingDetails = details.filter((line) => String(line.status ?? "PENDING") === "PENDING");
+    const target = pendingDetails.find((line) => pickId(line.request_id) === requestId);
+
+    if (!target) {
+        return NextResponse.json({ error: "Pending cost batch line not found." }, { status: 404 });
+    }
+    if (pendingDetails.length <= 1) {
+        return NextResponse.json(
+            { error: "Cannot remove the last pending line. Reject the batch instead." },
+            { status: 400 },
+        );
+    }
+
+    await fetchDirectus(`${mustBase()}/items/${COST_DETAILS}/${requestId}`, {
+        method: "PATCH",
+        headers: directusHeaders(),
+        body: JSON.stringify({ status: "CANCELLED" }),
+    });
+
+    return NextResponse.json({
+        ok: true,
+        header_id: headerId,
+        request_id: requestId,
+        remaining: pendingDetails.length - 1,
+    });
+}
+
 export function normalizeEffectiveAt(value: unknown): string | null {
     if (typeof value !== "string") return null;
     const normalized = value.trim();
@@ -385,7 +421,7 @@ export async function approveCostBatch(headerId: number, userId: number, effecti
         return NextResponse.json({ error: "Only PENDING cost batches can be approved." }, { status: 400 });
     }
 
-    const details = await getCostDetails(headerId);
+    const details = (await getCostDetails(headerId)).filter((line) => String(line.status ?? "") === "PENDING");
     if (details.length === 0) {
         return NextResponse.json({ error: "Cost batch has no detail lines." }, { status: 400 });
     }

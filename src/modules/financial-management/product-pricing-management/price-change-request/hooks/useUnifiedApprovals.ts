@@ -124,6 +124,38 @@ export function useUnifiedApprovals(
         }
     }, [refresh]);
 
+    const removePriceBatchLine = React.useCallback(async (headerId: number, requestId: number) => {
+        setActing(true);
+        try {
+            await api.removePriceChangeBatchLine(headerId, requestId);
+            toast.success("Price change line removed.");
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to remove price change line", { setUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
+    const removeCostBatchLine = React.useCallback(async (headerId: number, requestId: number) => {
+        setActing(true);
+        try {
+            await api.removeListCostBatchLine(headerId, requestId);
+            toast.success("List cost line removed.");
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to remove list cost line", { setUnauthorized })) {
+                throw error;
+            }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
     const approvePriceRequest = React.useCallback(async (requestId: number, effectiveAt?: string | null) => {
         setActing(true);
         try {
@@ -225,6 +257,8 @@ export function useUnifiedApprovals(
         rejectBatch,
         approveCostBatch,
         rejectCostBatch,
+        removePriceBatchLine,
+        removeCostBatchLine,
         approvePriceRequest,
         rejectPriceRequest,
         applyScheduledNow,

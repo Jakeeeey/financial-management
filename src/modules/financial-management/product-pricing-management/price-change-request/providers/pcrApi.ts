@@ -612,6 +612,20 @@ export async function getListCostBatch(headerId: number) {
     );
 }
 
+export async function removePriceChangeBatchLine(headerId: number, requestId: number) {
+    return http<{ ok: boolean; header_id: number; request_id: number; remaining: number }>(
+        `/api/fm/product-pricing/price-change-batches/${headerId}/lines/${requestId}`,
+        { method: "DELETE" },
+    );
+}
+
+export async function removeListCostBatchLine(headerId: number, requestId: number) {
+    return http<{ ok: boolean; header_id: number; request_id: number; remaining: number }>(
+        `/api/fm/product-pricing/cost-change-batches/${headerId}/lines/${requestId}`,
+        { method: "DELETE" },
+    );
+}
+
 export async function createPriceChangeBatch(payload: CreatePriceChangeBatchPayload) {
     return http<{
         data: PriceChangeBatchHeader;

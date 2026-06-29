@@ -623,6 +623,7 @@ export function UnifiedApprovalsManager({
                     : {
                           onApprove: feed.approveBatch,
                           onReject: feed.rejectBatch,
+                          onRemoveLine: feed.removePriceBatchLine,
                           onApplyScheduledNow: (headerId: number) => feed.applyScheduledNow("price_batch", headerId),
                           onRejectScheduled: (headerId: number, reason: string) =>
                               feed.rejectScheduled("price_batch", headerId, reason),
@@ -643,6 +644,7 @@ export function UnifiedApprovalsManager({
                     : {
                           onApprove: feed.approveCostBatch,
                           onReject: feed.rejectCostBatch,
+                          onRemoveLine: feed.removeCostBatchLine,
                           onApplyScheduledNow: (headerId: number) => feed.applyScheduledNow("cost_batch", headerId),
                           onRejectScheduled: (headerId: number, reason: string) =>
                               feed.rejectScheduled("cost_batch", headerId, reason),

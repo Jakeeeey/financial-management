@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,15 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import {
     Table,
     TableBody,
@@ -41,10 +49,13 @@ type Props = {
     onOpenChange: (open: boolean) => void;
     onApprove?: (headerId: number, effectiveAt?: string | null) => Promise<void> | void;
     onReject?: (headerId: number, reason: string) => Promise<void> | void;
+    onRemoveLine?: (headerId: number, requestId: number) => Promise<void> | void;
     onApplyScheduledNow?: (headerId: number) => Promise<void> | void;
     onRejectScheduled?: (headerId: number, reason: string) => Promise<void> | void;
     onRetryApplication?: (headerId: number) => Promise<void> | void;
 };
+
+type DirectionFilter = "ALL" | "INCREASE" | "DECREASE" | "NO_CHANGE";
 
 function money(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
@@ -104,6 +115,19 @@ function buildLineSummary(lines: PriceChangeBatchLine[]) {
     };
 }
 
+function normalizeText(value: unknown) {
+    return String(value ?? "").trim().toLowerCase();
+}
+
+function lineMatchesDirection(line: PriceChangeBatchLine, direction: DirectionFilter) {
+    if (direction === "ALL") return true;
+    const delta = Number(line.delta ?? 0);
+    if (!Number.isFinite(delta)) return false;
+    if (direction === "INCREASE") return delta > 0;
+    if (direction === "DECREASE") return delta < 0;
+    return delta === 0;
+}
+
 export function PriceChangeBatchDetailDialog({
     batchId,
     open,
@@ -112,6 +136,7 @@ export function PriceChangeBatchDetailDialog({
     onOpenChange,
     onApprove,
     onReject,
+    onRemoveLine,
     onApplyScheduledNow,
     onRejectScheduled,
     onRetryApplication,
@@ -121,39 +146,100 @@ export function PriceChangeBatchDetailDialog({
     const [rejecting, setRejecting] = React.useState(false);
     const [rejectReason, setRejectReason] = React.useState("");
     const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | "apply_now" | "reject_schedule" | null>(null);
+    const [confirmingRemoveLine, setConfirmingRemoveLine] = React.useState<PriceChangeBatchLine | null>(null);
+    const [removingLine, setRemovingLine] = React.useState(false);
+    const [lineSearch, setLineSearch] = React.useState("");
+    const [priceTypeFilter, setPriceTypeFilter] = React.useState("ALL");
+    const [directionFilter, setDirectionFilter] = React.useState<DirectionFilter>("ALL");
+    const [lineStatusFilter, setLineStatusFilter] = React.useState("ALL");
+    const loadRequestSeqRef = React.useRef(0);
 
-    React.useEffect(() => {
-        let cancelled = false;
-
-        async function load() {
-            if (!open || !batchId) {
-                setDetail(null);
-                return;
-            }
-
-            setLoading(true);
-            try {
-                const result = await getPriceChangeBatch(batchId);
-                if (!cancelled) setDetail(result.data);
-            } catch (error: unknown) {
-                const message = error instanceof Error ? error.message : "Failed to load batch detail";
-                if (!cancelled) toast.error(message);
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
+    const loadDetail = React.useCallback(async (options?: { silent?: boolean }) => {
+        const requestSeq = ++loadRequestSeqRef.current;
+        if (!open || !batchId) {
+            setDetail(null);
+            return;
         }
 
-        void load();
+        const requestedBatchId = batchId;
 
-        return () => {
-            cancelled = true;
-        };
+        if (!options?.silent) setLoading(true);
+        try {
+            const result = await getPriceChangeBatch(requestedBatchId);
+            if (requestSeq === loadRequestSeqRef.current && requestedBatchId === batchId) {
+                setDetail(result.data);
+            }
+        } catch (error: unknown) {
+            if (requestSeq === loadRequestSeqRef.current && requestedBatchId === batchId) {
+                const message = error instanceof Error ? error.message : "Failed to load batch detail";
+                toast.error(message);
+            }
+        } finally {
+            if (!options?.silent && requestSeq === loadRequestSeqRef.current && requestedBatchId === batchId) {
+                setLoading(false);
+            }
+        }
     }, [batchId, open]);
 
+    React.useEffect(() => {
+        void loadDetail();
+    }, [loadDetail]);
+
+    React.useEffect(() => {
+        setLineSearch("");
+        setPriceTypeFilter("ALL");
+        setDirectionFilter("ALL");
+        setLineStatusFilter("ALL");
+    }, [batchId]);
+
     const lines = React.useMemo(() => detail?.details ?? [], [detail?.details]);
+    const priceTypeOptions = React.useMemo(() => {
+        const byId = new Map<string, string>();
+        for (const line of lines) {
+            const id = String(line.price_type_id);
+            if (!id || byId.has(id)) continue;
+            byId.set(id, line.price_type_name || `#${line.price_type_id}`);
+        }
+        return Array.from(byId, ([id, label]) => ({ id, label })).sort((a, b) =>
+            a.label.localeCompare(b.label),
+        );
+    }, [lines]);
+    const statusOptions = React.useMemo(() => {
+        const statuses = new Set<string>();
+        for (const line of lines) {
+            const status = displayPcrStatus(line.status, line.application_status);
+            if (status) statuses.add(status);
+        }
+        return Array.from(statuses).sort((a, b) => a.localeCompare(b));
+    }, [lines]);
+    const filteredLines = React.useMemo(() => {
+        const q = normalizeText(lineSearch);
+        return lines.filter((line) => {
+            if (priceTypeFilter !== "ALL" && String(line.price_type_id) !== priceTypeFilter) return false;
+            if (lineStatusFilter !== "ALL" && displayPcrStatus(line.status, line.application_status) !== lineStatusFilter) {
+                return false;
+            }
+            if (!lineMatchesDirection(line, directionFilter)) return false;
+            if (!q) return true;
+
+            return [
+                line.product_name,
+                line.product_code,
+                line.supplier_name,
+                line.unit_name,
+                line.price_type_name,
+            ].some((value) => normalizeText(value).includes(q));
+        });
+    }, [directionFilter, lineSearch, lineStatusFilter, lines, priceTypeFilter]);
+    const hasLineFilters =
+        Boolean(lineSearch.trim()) ||
+        priceTypeFilter !== "ALL" ||
+        directionFilter !== "ALL" ||
+        lineStatusFilter !== "ALL";
     const isPending = detail?.status === "PENDING";
     const headerId = detail?.header_id ?? batchId ?? 0;
     const canAct = !readOnly && isPending && headerId != null && onApprove != null && onReject != null;
+    const canRemoveLines = !readOnly && isPending && headerId > 0 && onRemoveLine != null;
     const effectiveTime = new Date(detail?.effective_at ?? "").getTime();
     const isScheduledBeforeEffective =
         detail?.status === "APPROVED" &&
@@ -169,7 +255,7 @@ export function PriceChangeBatchDetailDialog({
     const canRetryApplication =
         !readOnly && detail?.application_status === "FAILED" && headerId > 0 && onRetryApplication != null;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status) : "";
-    const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
+    const lineSummary = React.useMemo(() => buildLineSummary(filteredLines), [filteredLines]);
 
     const handleOpenChange = React.useCallback(
         (nextOpen: boolean) => {
@@ -177,11 +263,23 @@ export function PriceChangeBatchDetailDialog({
                 setRejecting(false);
                 setRejectReason("");
                 setConfirmingAction(null);
+                setConfirmingRemoveLine(null);
+                setLineSearch("");
+                setPriceTypeFilter("ALL");
+                setDirectionFilter("ALL");
+                setLineStatusFilter("ALL");
             }
             onOpenChange(nextOpen);
         },
         [onOpenChange],
     );
+
+    const resetLineFilters = React.useCallback(() => {
+        setLineSearch("");
+        setPriceTypeFilter("ALL");
+        setDirectionFilter("ALL");
+        setLineStatusFilter("ALL");
+    }, []);
 
     const handleApprove = React.useCallback(async (effectiveAt?: string | null) => {
         if (!headerId) return;
@@ -220,6 +318,20 @@ export function PriceChangeBatchDetailDialog({
         await onRetryApplication(headerId);
         handleOpenChange(false);
     }, [handleOpenChange, headerId, onRetryApplication]);
+
+    const handleRemoveLine = React.useCallback(async () => {
+        const requestId = confirmingRemoveLine?.request_id;
+        if (!headerId || !requestId || !onRemoveLine) return;
+
+        setRemovingLine(true);
+        try {
+            await onRemoveLine(headerId, requestId);
+            setConfirmingRemoveLine(null);
+            await loadDetail({ silent: true });
+        } finally {
+            setRemovingLine(false);
+        }
+    }, [confirmingRemoveLine?.request_id, headerId, loadDetail, onRemoveLine]);
 
     return (
         <>
@@ -277,6 +389,114 @@ export function PriceChangeBatchDetailDialog({
                             <BatchDecisionSummaryFields detail={detail} />
                         </div>
 
+                        <div className="rounded-md border bg-muted/20 p-3">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                                <div className="min-w-[240px] flex-1">
+                                    <Label htmlFor="batch-line-search" className="text-xs font-medium">
+                                        Search lines
+                                    </Label>
+                                    <div className="relative mt-1">
+                                        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            id="batch-line-search"
+                                            value={lineSearch}
+                                            onChange={(event) => setLineSearch(event.target.value)}
+                                            placeholder="Product, code, supplier, unit, or price type"
+                                            className="h-9 pl-9 pr-9"
+                                        />
+                                        {lineSearch ? (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+                                                onClick={() => setLineSearch("")}
+                                                title="Clear search"
+                                            >
+                                                <X className="size-4" />
+                                            </Button>
+                                        ) : null}
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-3 lg:w-[560px]">
+                                    <div>
+                                        <Label className="text-xs font-medium">Price Type</Label>
+                                        <Select value={priceTypeFilter} onValueChange={setPriceTypeFilter}>
+                                            <SelectTrigger className="mt-1 h-9 w-full">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="ALL">All price types</SelectItem>
+                                                {priceTypeOptions.map((option) => (
+                                                    <SelectItem key={option.id} value={option.id}>
+                                                        {option.label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div>
+                                        <Label className="text-xs font-medium">Change</Label>
+                                        <Select
+                                            value={directionFilter}
+                                            onValueChange={(value) => setDirectionFilter(value as DirectionFilter)}
+                                        >
+                                            <SelectTrigger className="mt-1 h-9 w-full">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="ALL">All changes</SelectItem>
+                                                <SelectItem value="INCREASE">Increases</SelectItem>
+                                                <SelectItem value="DECREASE">Decreases</SelectItem>
+                                                <SelectItem value="NO_CHANGE">No change</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div>
+                                        <Label className="text-xs font-medium">Line Status</Label>
+                                        <Select value={lineStatusFilter} onValueChange={setLineStatusFilter}>
+                                            <SelectTrigger className="mt-1 h-9 w-full">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="ALL">All statuses</SelectItem>
+                                                {statusOptions.map((status) => (
+                                                    <SelectItem key={status} value={status}>
+                                                        {status}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-3 lg:flex-col lg:items-end">
+                                    <div className="whitespace-nowrap text-sm text-muted-foreground">
+                                        Showing{" "}
+                                        <span className="font-medium text-foreground">
+                                            {filteredLines.length.toLocaleString()}
+                                        </span>{" "}
+                                        of {lines.length.toLocaleString()} lines
+                                    </div>
+                                    {hasLineFilters ? (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="gap-2"
+                                            onClick={resetLineFilters}
+                                        >
+                                            <RotateCcw className="size-4" />
+                                            Reset
+                                        </Button>
+                                    ) : null}
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="rounded-md border overflow-x-auto">
                             <Table>
                                 <TableHeader>
@@ -289,10 +509,11 @@ export function PriceChangeBatchDetailDialog({
                                         <TableHead className="w-[140px] text-right">Proposed</TableHead>
                                         <TableHead className="w-[130px] text-right">Change</TableHead>
                                         <TableHead className="w-[120px] text-right">% Change</TableHead>
+                                        {canRemoveLines ? <TableHead className="w-[72px] text-right">Action</TableHead> : null}
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {lines.map((line) => (
+                                    {filteredLines.map((line) => (
                                         <TableRow key={`${line.request_id ?? line.product_id}-${line.price_type_id}`}>
                                             <TableCell className="min-w-[280px] max-w-[420px] align-top">
                                                 <div className="whitespace-normal break-words leading-snug font-medium">{line.product_name || `Product #${line.product_id}`}</div>
@@ -315,12 +536,31 @@ export function PriceChangeBatchDetailDialog({
                                             <TableCell className={cn("text-right", diffClass(line))}>
                                                 {percent(line.percent_change)}
                                             </TableCell>
+                                            {canRemoveLines ? (
+                                                <TableCell className="text-right">
+                                                    {line.status === "PENDING" && line.request_id ? (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="size-8 text-muted-foreground hover:text-destructive"
+                                                            onClick={() => setConfirmingRemoveLine(line)}
+                                                            disabled={acting || removingLine}
+                                                            title="Remove line"
+                                                        >
+                                                            <Trash2 className="size-4" />
+                                                        </Button>
+                                                    ) : null}
+                                                </TableCell>
+                                            ) : null}
                                         </TableRow>
                                     ))}
-                                    {lines.length === 0 ? (
+                                    {filteredLines.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                                                No detail lines found.
+                                            <TableCell colSpan={canRemoveLines ? 9 : 8} className="py-8 text-center text-muted-foreground">
+                                                {lines.length === 0
+                                                    ? "No detail lines found."
+                                                    : "No lines match the current filters."}
                                             </TableCell>
                                         </TableRow>
                                     ) : (
@@ -328,7 +568,7 @@ export function PriceChangeBatchDetailDialog({
                                             <TableCell colSpan={2} className="font-medium">
                                                 Summary
                                             </TableCell>
-                                            <TableCell colSpan={6} className="text-sm text-muted-foreground">
+                                            <TableCell colSpan={canRemoveLines ? 7 : 6} className="text-sm text-muted-foreground">
                                                 {lineSummary.lineCount} line(s) · {lineSummary.productCount} product(s) ·{" "}
                                                 {lineSummary.priceTypeCount} price type(s)
                                                 {lineSummary.increaseCount > 0 || lineSummary.decreaseCount > 0
@@ -487,6 +727,18 @@ export function PriceChangeBatchDetailDialog({
                                 ? handleApplyScheduledNow
                                 : handleApprove
                 }
+            />
+            <DecisionConfirmationDialog
+                open={confirmingRemoveLine != null}
+                action="reject"
+                recordLabel={confirmingRemoveLine?.product_name || "this line"}
+                loading={removingLine || acting}
+                description={`Remove ${confirmingRemoveLine?.product_name || "this line"} from ${headerId ? `PCB-${headerId}` : "this price change batch"}? This will cancel only this pending line.`}
+                confirmLabel="Remove Line"
+                onOpenChange={(nextOpen) => {
+                    if (!nextOpen) setConfirmingRemoveLine(null);
+                }}
+                onConfirm={handleRemoveLine}
             />
         </>
     );

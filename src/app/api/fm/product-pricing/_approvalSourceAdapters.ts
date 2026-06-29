@@ -14,6 +14,7 @@ import {
     BatchHeaderRow,
     DETAILS,
     HEADERS,
+    fetchSupplierLabelsById,
     getSupplierNameListsByProductId,
     isRecord,
     mustBase,
@@ -335,8 +336,13 @@ function supplierNameOf(value: unknown): string {
 }
 
 function supplierIdOf(value: unknown): number | null {
-    if (!isRecord(value)) return null;
-    return pickId(value.id) ?? null;
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value === "string") {
+        const id = Number(value);
+        return Number.isFinite(id) ? id : null;
+    }
+    if (isRecord(value)) return pickId(value.id) ?? null;
+    return null;
 }
 
 function pickProductId(value: unknown): number | null {
@@ -428,6 +434,7 @@ async function summarizeBatchLines(headerIds: number[]): Promise<Map<number, Bat
         params.set("limit", "-1");
         params.set("fields", "header_id,product_id,proposed_price");
         params.set("filter[header_id][_in]", chunk.join(","));
+        params.set("filter[status][_neq]", "CANCELLED");
 
         const url = `${mustBase()}/items/${DETAILS}?${params.toString()}`;
         const json = await fetchDirectus<DirectusList<BatchDetailRow>>(url, { headers: directusHeaders() });
@@ -484,6 +491,7 @@ async function summarizeCostBatchLines(headerIds: number[]): Promise<Map<number,
         params.set("limit", "-1");
         params.set("fields", "header_id,product_id,proposed_cost");
         params.set("filter[header_id][_in]", chunk.join(","));
+        params.set("filter[status][_neq]", "CANCELLED");
 
         const url = `${mustBase()}/items/${COST_DETAILS}?${params.toString()}`;
         const json = await fetchDirectus<DirectusList<CostDetailRow>>(url, { headers: directusHeaders() });
@@ -537,6 +545,7 @@ export async function getBatchHeaderIdsForProductSearch(text: string): Promise<n
         params.set("limit", String(limit));
         params.set("offset", String(offset));
         params.set("fields", "header_id");
+        params.set("filter[status][_neq]", "CANCELLED");
         params.set("filter[_or][0][product_id][product_name][_contains]", q);
         params.set("filter[_or][1][product_id][product_code][_contains]", q);
         params.set("filter[_or][2][product_id][barcode][_contains]", q);
@@ -608,6 +617,7 @@ export async function getCostHeaderIdsForProductSearch(text: string): Promise<nu
         params.set("limit", String(limit));
         params.set("offset", String(offset));
         params.set("fields", "header_id");
+        params.set("filter[status][_neq]", "CANCELLED");
         params.set("filter[_or][0][product_id][product_name][_contains]", q);
         params.set("filter[_or][1][product_id][product_code][_contains]", q);
         params.set("filter[_or][2][product_id][barcode][_contains]", q);
@@ -639,6 +649,7 @@ export async function getCostHeaderIdsForProducts(productIds: number[]): Promise
         const params = new URLSearchParams();
         params.set("limit", "-1");
         params.set("fields", "header_id");
+        params.set("filter[status][_neq]", "CANCELLED");
         params.set("filter[product_id][_in]", chunk.join(","));
 
         const url = `${mustBase()}/items/${COST_DETAILS}?${params.toString()}`;
@@ -664,6 +675,7 @@ export async function getAllCostBatchHeaderIds(): Promise<number[]> {
         params.set("offset", String(offset));
         params.set("fields", "header_id");
         params.set("filter[header_id][_nnull]", "true");
+        params.set("filter[status][_neq]", "CANCELLED");
 
         const url = `${mustBase()}/items/${COST_DETAILS}?${params.toString()}`;
         const json = await fetchDirectus<DirectusList<CostDetailRow>>(url, { headers: directusHeaders() });
@@ -692,6 +704,7 @@ export async function getAllPriceBatchHeaderIds(): Promise<number[]> {
         params.set("offset", String(offset));
         params.set("fields", "header_id");
         params.set("filter[header_id][_nnull]", "true");
+        params.set("filter[status][_neq]", "CANCELLED");
 
         const url = `${mustBase()}/items/${DETAILS}?${params.toString()}`;
         const json = await fetchDirectus<DirectusList<BatchDetailRow>>(url, { headers: directusHeaders() });
@@ -1031,6 +1044,7 @@ export async function fetchPriceBatchesPage(
     const headerRows = json.data ?? [];
     const headerIds = headerRows.map(normalizeHeaderId).filter((id) => id > 0);
     const summaries = await summarizeBatchLines(headerIds);
+    const supplierLabelsById = await fetchSupplierLabelsById(headerRows.map((row) => supplierIdOf(row.supplier_id)));
 
     const rows: UnifiedApprovalRow[] = [];
     for (const row of headerRows) {
@@ -1039,7 +1053,8 @@ export async function fetchPriceBatchesPage(
 
         const requestedBy = Number(row.requested_by);
         const summary = summaries.get(headerId);
-        const supplierName = supplierNameOf(row.supplier_id);
+        const supplierId = supplierIdOf(row.supplier_id);
+        const supplierName = supplierNameOf(row.supplier_id) || (supplierId ? supplierLabelsById.get(supplierId) ?? "" : "");
         const supplierNames = supplierName ? [supplierName] : [];
         const referenceNo = String(row.reference_no ?? "").trim();
         const remarks = String(row.remarks ?? "").trim();
@@ -1075,7 +1090,7 @@ export async function fetchPriceBatchesPage(
             proposed_price: proposedMin === proposedMax ? proposedMin : null,
             remarks: remarks || null,
             reference_no: referenceNo || null,
-            supplier_id: supplierIdOf(row.supplier_id),
+            supplier_id: supplierId,
             supplier_name: supplierName || null,
             supplier_names: supplierNames,
         });

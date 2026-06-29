@@ -13,6 +13,7 @@ import {
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
     directusHeaders,
+    fetchSupplierLabelsById,
     fetchDirectus,
     mapBatchHeaderResponse,
     mustBase,
@@ -37,6 +38,7 @@ async function countLines(headerId: number) {
     params.set("meta", "total_count");
     params.set("fields", "request_id");
     params.set("filter[header_id][_eq]", String(headerId));
+    params.set("filter[status][_neq]", "CANCELLED");
 
     const url = `${mustBase()}/items/${DETAILS}?${params.toString()}`;
     const json = await fetchDirectus<DirectusList<BatchDetailRow>>(url, { headers: directusHeaders() });
@@ -112,11 +114,22 @@ export async function GET(req: NextRequest) {
 
         const url = `${mustBase()}/items/${HEADERS}?${params.toString()}`;
         const json = await fetchDirectus<DirectusList<BatchHeaderRow>>(url, { headers: directusHeaders() });
+        const supplierLabelsById = await fetchSupplierLabelsById(
+            (json.data ?? []).map((row) => {
+                const value = row.supplier_id;
+                if (typeof value === "number") return value;
+                if (typeof value === "string") {
+                    const id = Number(value);
+                    return Number.isFinite(id) ? id : null;
+                }
+                return null;
+            }),
+        );
 
         const rows = await Promise.all(
             (json.data ?? []).map(async (row) => {
                 const headerId = normalizeHeaderId(row);
-                return mapBatchHeaderResponse(row, headerId ? await countLines(headerId) : 0);
+                return mapBatchHeaderResponse(row, headerId ? await countLines(headerId) : 0, supplierLabelsById);
             }),
         );
 

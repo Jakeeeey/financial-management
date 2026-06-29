@@ -481,14 +481,48 @@ function supplierNameOf(value: unknown): string {
     return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
 }
 
-export function mapBatchHeaderResponse(row: BatchHeaderRow, lineCount = 0) {
+type SupplierRow = {
+    id?: number | string | null;
+    supplier_name?: string | null;
+    supplier_shortcut?: string | null;
+};
+
+export async function fetchSupplierLabelsById(supplierIds: Array<number | null | undefined>): Promise<Map<number, string>> {
+    const labels = new Map<number, string>();
+    const uniqueIds = Array.from(
+        new Set(supplierIds.filter((id): id is number => Number.isFinite(id) && Number(id) > 0)),
+    );
+    if (uniqueIds.length === 0) return labels;
+
+    for (const idChunk of chunkArray(uniqueIds, 200)) {
+        const params = new URLSearchParams();
+        params.set("limit", "-1");
+        params.set("fields", "id,supplier_name,supplier_shortcut");
+        params.set("filter[id][_in]", idChunk.join(","));
+
+        const url = `${mustBase()}/items/suppliers?${params.toString()}`;
+        const json = await fetchDirectus<DirectusList<SupplierRow>>(url, { headers: directusHeaders() });
+
+        for (const supplier of json.data ?? []) {
+            const supplierId = pickId(supplier.id);
+            if (!supplierId) continue;
+            const label = supplierNameOf(supplier);
+            if (label) labels.set(supplierId, label);
+        }
+    }
+
+    return labels;
+}
+
+export function mapBatchHeaderResponse(row: BatchHeaderRow, lineCount = 0, supplierLabelsById?: Map<number, string>) {
     const headerId = normalizeHeaderId(row);
     const supplierId = supplierIdOf(row.supplier_id);
+    const supplierName = supplierNameOf(row.supplier_id) || (supplierId ? supplierLabelsById?.get(supplierId) ?? "" : "");
     return {
         id: headerId,
         header_id: headerId,
         supplier_id: supplierId,
-        supplier_name: supplierNameOf(row.supplier_id),
+        supplier_name: supplierName,
         reference_no: row.reference_no ?? "",
         remarks: row.remarks ?? "",
         status: row.status ?? "PENDING",
@@ -758,8 +792,44 @@ export async function getDetails(headerId: number) {
         const params = new URLSearchParams();
         params.set("fields", detailFields);
         params.set("filter[header_id][_eq]", String(headerId));
+        params.set("filter[status][_neq]", "CANCELLED");
         params.set("sort", "request_id");
         return params;
+    });
+}
+
+export async function removePriceChangeBatchLine(headerId: number, requestId: number) {
+    const header = await getHeader(headerId);
+    if (!header) return NextResponse.json({ error: "Batch not found" }, { status: 404 });
+    if (String(header.status ?? "") !== "PENDING") {
+        return NextResponse.json({ error: "Only PENDING batches can have lines removed." }, { status: 400 });
+    }
+
+    const details = await getDetails(headerId);
+    const pendingDetails = details.filter((line) => String(line.status ?? "PENDING") === "PENDING");
+    const target = pendingDetails.find((line) => pickId(line.request_id) === requestId);
+
+    if (!target) {
+        return NextResponse.json({ error: "Pending batch line not found." }, { status: 404 });
+    }
+    if (pendingDetails.length <= 1) {
+        return NextResponse.json(
+            { error: "Cannot remove the last pending line. Reject the batch instead." },
+            { status: 400 },
+        );
+    }
+
+    await fetchDirectus(`${mustBase()}/items/${DETAILS}/${requestId}`, {
+        method: "PATCH",
+        headers: directusHeaders(),
+        body: JSON.stringify({ status: "CANCELLED" }),
+    });
+
+    return NextResponse.json({
+        ok: true,
+        header_id: headerId,
+        request_id: requestId,
+        remaining: pendingDetails.length - 1,
     });
 }
 
@@ -842,7 +912,7 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
         return NextResponse.json({ error: "Only PENDING batches can be approved." }, { status: 400 });
     }
 
-    const details = await getDetails(headerId);
+    const details = (await getDetails(headerId)).filter((line) => String(line.status ?? "") === "PENDING");
     if (details.length === 0) {
         return NextResponse.json({ error: "Batch has no detail lines." }, { status: 400 });
     }
