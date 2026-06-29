@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+    type LegacyPriceTypeRow,
+    resolveLegacyProductsPatch,
+} from "../_legacyProductPriceSync";
+import { assertValidPriceValue, isInvalidPriceValueError } from "../_pricePrecision";
+import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
+import { batchAsyncOps, CHUNK_SIZE } from "../_supplierFilters";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -20,6 +27,7 @@ type JwtPayload = {
 type PriceTypeRow = {
     price_type_id?: number | string | null;
     price_type_name?: string | null;
+    sort?: number | string | null;
 };
 
 type ExistingPriceRow = {
@@ -77,17 +85,6 @@ function decodeUserIdFromJwtCookie(req: NextRequest, cookieName = "vos_access_to
     }
 }
 
-function tierToProductPatch(tierName: string, price: number | null) {
-    const tier = String(tierName ?? "").trim().toUpperCase();
-
-    if (tier === "A") return { priceA: price, price_per_unit: price };
-    if (tier === "B") return { priceB: price };
-    if (tier === "C") return { priceC: price };
-    if (tier === "D") return { priceD: price };
-    if (tier === "E") return { priceE: price };
-    return null;
-}
-
 export async function POST(req: NextRequest) {
     try {
         if (!DIRECTUS_URL) {
@@ -115,31 +112,30 @@ export async function POST(req: NextRequest) {
             }
 
             if (line.price !== null && line.price !== undefined) {
-                const price = Number(line.price);
-
-                if (!Number.isFinite(price)) {
-                    return NextResponse.json({ error: "Invalid price value" }, { status: 400 });
-                }
-
-                if (price < 0) {
-                    return NextResponse.json({ error: "Price cannot be negative" }, { status: 400 });
-                }
+                assertValidPriceValue(line.price, "price");
             }
         }
 
         const priceTypeParams = new URLSearchParams();
         priceTypeParams.set("limit", "-1");
-        priceTypeParams.set("fields", "price_type_id,price_type_name");
+        priceTypeParams.set("fields", "price_type_id,price_type_name,sort");
+        priceTypeParams.set("sort", "sort,price_type_id");
 
         const priceTypeUrl = `${DIRECTUS_URL}/items/${PRICE_TYPES}?${priceTypeParams.toString()}`;
         const priceTypeJson = await fetchDirectus<{ data: PriceTypeRow[] }>(priceTypeUrl);
 
+        const priceTypeCatalog: LegacyPriceTypeRow[] = [];
         const idToTier = new Map<number, string>();
         for (const row of priceTypeJson.data ?? []) {
             const id = Number(row.price_type_id);
             const name = String(row.price_type_name ?? "").trim();
             if (Number.isFinite(id) && name) {
                 idToTier.set(id, name);
+                priceTypeCatalog.push({
+                    price_type_id: id,
+                    price_type_name: name,
+                    sort: row.sort,
+                });
             }
         }
 
@@ -155,19 +151,31 @@ export async function POST(req: NextRequest) {
         const productIds = Array.from(new Set(lines.map((line) => Number(line.product_id))));
         const priceTypeIds = Array.from(new Set(lines.map((line) => Number(line.price_type_id))));
 
-        const existingParams = new URLSearchParams();
-        existingParams.set("limit", "-1");
-        existingParams.set("fields", "id,product_id,price_type_id");
-        existingParams.set("filter[product_id][_in]", productIds.join(","));
-        existingParams.set("filter[price_type_id][_in]", priceTypeIds.join(","));
-
-        const existingUrl = `${DIRECTUS_URL}/items/${PRICES}?${existingParams.toString()}`;
-        const existingJson = await fetchDirectus<{ data: ExistingPriceRow[] }>(existingUrl);
-
         const existingKeyToId = new Map<string, number>();
-        for (const row of existingJson.data ?? []) {
-            const key = `${Number(row.product_id)}:${Number(row.price_type_id)}`;
-            existingKeyToId.set(key, Number(row.id));
+        const productIdChunks = [];
+        for (let i = 0; i < productIds.length; i += CHUNK_SIZE) {
+            productIdChunks.push(productIds.slice(i, i + CHUNK_SIZE));
+        }
+        for (const pidChunk of productIdChunks) {
+            const ptidChunks = [];
+            for (let i = 0; i < priceTypeIds.length; i += CHUNK_SIZE) {
+                ptidChunks.push(priceTypeIds.slice(i, i + CHUNK_SIZE));
+            }
+            for (const ptidChunk of ptidChunks) {
+                const existingParams = new URLSearchParams();
+                existingParams.set("limit", "-1");
+                existingParams.set("fields", "id,product_id,price_type_id");
+                existingParams.set("filter[product_id][_in]", pidChunk.join(","));
+                existingParams.set("filter[price_type_id][_in]", ptidChunk.join(","));
+
+                const existingUrl = `${DIRECTUS_URL}/items/${PRICES}?${existingParams.toString()}`;
+                const existingJson = await fetchDirectus<{ data: ExistingPriceRow[] }>(existingUrl);
+
+                for (const row of existingJson.data ?? []) {
+                    const key = `${Number(row.product_id)}:${Number(row.price_type_id)}`;
+                    existingKeyToId.set(key, Number(row.id));
+                }
+            }
         }
 
         const toCreate: CreatePriceRecordPayload[] = [];
@@ -182,7 +190,9 @@ export async function POST(req: NextRequest) {
                 status: (line.status ?? "draft").trim() || "draft",
                 product_id: pid,
                 price_type_id: ptid,
-                price: line.price === null || line.price === undefined ? null : Number(line.price),
+                price: line.price === null || line.price === undefined
+                    ? null
+                    : assertValidPriceValue(line.price, "price"),
                 updated_by: userId,
             };
 
@@ -207,14 +217,12 @@ export async function POST(req: NextRequest) {
         }
 
         if (toUpdate.length) {
-            await Promise.all(
-                toUpdate.map(({ id, payload }) =>
-                    fetchDirectus<unknown>(`${DIRECTUS_URL}/items/${PRICES}/${id}`, {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload),
-                    }),
-                ),
+            await batchAsyncOps(toUpdate, ({ id, payload }) =>
+                fetchDirectus<unknown>(`${DIRECTUS_URL}/items/${PRICES}/${id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                }),
             );
             affected += toUpdate.length;
         }
@@ -223,11 +231,14 @@ export async function POST(req: NextRequest) {
             .map((line) => {
                 const pid = Number(line.product_id);
                 const ptid = Number(line.price_type_id);
-                const tierName = idToTier.get(ptid) ?? "";
-                const patch = tierToProductPatch(
-                    tierName,
-                    line.price === null || line.price === undefined ? null : Number(line.price),
-                );
+                const price =
+                    line.price === null || line.price === undefined ? null : Number(line.price);
+                const patch = resolveLegacyProductsPatch({
+                    priceTypeId: ptid,
+                    priceTypeName: idToTier.get(ptid) ?? "",
+                    price,
+                    catalog: priceTypeCatalog,
+                });
 
                 if (!patch) return null;
 
@@ -241,10 +252,15 @@ export async function POST(req: NextRequest) {
 
         if (syncOps.length) {
             await Promise.all(syncOps);
+            invalidateGroupIndexCacheOnCatalogChange();
         }
 
         return NextResponse.json({ ok: true, affected });
     } catch (error: unknown) {
+        if (isInvalidPriceValueError(error)) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+
         return NextResponse.json(
             {
                 error: "Unexpected error",

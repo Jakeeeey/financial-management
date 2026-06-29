@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+
+const COOKIE_NAME = "vos_access_token";
 
 interface CashFlowEntry {
   cashFlowActivity?: string | null;
@@ -43,10 +46,29 @@ interface AIInsight {
  */
 export async function POST(request: Request) {
   try {
-    const body: AIAnalysisRequest = await request.json();
+    const cookieStore = await cookies();
+    const token = cookieStore.get(COOKIE_NAME)?.value;
+
+    if (!token) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized: Missing token" },
+        { status: 401 }
+      );
+    }
+
+    let body: AIAnalysisRequest;
+    try {
+      const rawBody = await request.json();
+      body = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
+    } catch {
+      return NextResponse.json(
+        { success: false, message: "Invalid JSON body" },
+        { status: 400 }
+      );
+    }
 
     // Validate required fields
-    if (!body.summary || !body.period || !body.entries) {
+    if (!body || !body.summary || !body.period || !body.entries) {
       return NextResponse.json(
         { success: false, message: "Missing required fields: summary, period, entries" },
         { status: 400 }

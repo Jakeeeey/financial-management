@@ -34,7 +34,15 @@ export function useDisbursementDashboard() {
     // Initial load and refetch when filters change
     useEffect(() => {
         fetchDashboard(filters);
-    }, [fetchDashboard, filters]);
+
+        const timer = setInterval(() => {
+            if (typeof window !== "undefined" && document.hasFocus() && !isLoading) {
+                fetchDashboard(filters);
+            }
+        }, 10000); // 10s poll
+
+        return () => clearInterval(timer);
+    }, [fetchDashboard, filters, isLoading]);
 
     const handleApplyFilters = () => {
         fetchDashboard(filters);

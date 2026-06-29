@@ -26,7 +26,7 @@ function supplierParams(type: string) {
     const params = new URLSearchParams();
     params.set("limit", "-1");
     params.set("sort", "supplier_name");
-    params.set("fields", "id,supplier_name,supplier_shortcut,isActive");
+    params.set("fields", "id,supplier_name,supplier_shortcut,isActive,supplier_type");
     params.set("filter[_and][0][isActive][_eq]", "1");
     params.set("filter[_and][1][supplier_type][_eq]", supplierTypeFilter(type));
     return params;
@@ -56,12 +56,13 @@ export async function GET(request: NextRequest) {
 
         if (!directusRes.ok) throw new Error(await directusRes.text());
 
-        const payload = await directusRes.json() as DirectusList<DirectusSupplier>;
+        const payload = await directusRes.json() as DirectusList<DirectusSupplier & { supplier_type?: string }>;
         return NextResponse.json((payload.data ?? []).map((supplier) => ({
             id: supplier.id,
             supplier_name: supplier.supplier_name ?? "",
             supplier_shortcut: supplier.supplier_shortcut ?? "",
             isActive: supplier.isActive === true || supplier.isActive === 1,
+            supplier_type: supplier.supplier_type ?? "",
         })));
     } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : "Unknown error occurred";

@@ -1,40 +1,28 @@
 "use client";
 
-import React, {useState, useEffect, useMemo, useCallback} from "react";
-import {Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription} from "@/components/ui/sheet";
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-    DialogFooter
-} from "@/components/ui/dialog";
-import {Popover, PopoverContent, PopoverTrigger} from "@/components/ui/popover";
-import {Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList} from "@/components/ui/command";
-import {Button} from "@/components/ui/button";
-import {Input} from "@/components/ui/input";
-import {Label} from "@/components/ui/label";
-import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
-import {Checkbox} from "@/components/ui/checkbox";
-import {Badge} from "@/components/ui/badge";
-import {
-    Plus, Trash2, Loader2, Save, Building2, Wallet, Calculator,
-    DownloadCloud, FileText, Check, ChevronsUpDown, Search,
-    Paperclip, UploadCloud
-} from "lucide-react";
-import {format} from "date-fns";
-import {cn} from "@/lib/utils";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Loader2, Save, Search, FileText, DownloadCloud } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 import {
     DisbursementPayload, PayableLine, PaymentLine, SupplierDto, COADto,
     Disbursement, BankAccountDto, UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto
 } from "../types";
-import {disbursementProvider} from "../providers/fetchProvider";
-import {toast} from "sonner";
+import { disbursementProvider } from "../providers/fetchProvider";
+import { toast } from "sonner";
 import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
 import type { Payee } from "@/modules/financial-management/payee-registration/types/payee.schema";
-import { StickyTableWrapper } from "./StickyTableWrapper";
 import { formatCurrency } from "../utils/disbursement-utils";
+import { VoucherDetailsSection } from "./VoucherDetailsSection";
+import { PayablesSection } from "./PayablesSection";
+import { PaymentsSection } from "./PaymentsSection";
+import { StickyTableWrapper } from "./StickyTableWrapper";
 
 export interface ExtendedDisbursement extends Disbursement {
     payeeId?: number;
@@ -50,86 +38,8 @@ interface DisbursementCreateSheetProps {
     editData?: ExtendedDisbursement | null;
 }
 
-interface SearchableDropdownProps<T extends string | number> {
-    options: { label: string; value: T }[];
-    value: T | "";
-    onSelect: (val: T) => void;
-    placeholder: string;
-    disabled?: boolean;
-    className?: string;
-    popoverWidth?: string;
-    overrideLabel?: string;
-}
-
-function SearchableDropdown<T extends string | number>({
-                                                           options,
-                                                           value,
-                                                           onSelect,
-                                                           placeholder,
-                                                           disabled,
-                                                           className,
-                                                           popoverWidth = "w-[400px]",
-                                                           overrideLabel
-                                                       }: SearchableDropdownProps<T>) {
-    const [open, setOpen] = useState(false);
-    const listRef = React.useRef<HTMLDivElement>(null);
-    const selectedLabel = options.find((o) => String(o.value) === String(value))?.label || overrideLabel || placeholder;
-    const handlePopoverWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-        const list = listRef.current;
-        if (!list) return;
-
-        event.stopPropagation();
-        list.scrollTop += event.deltaY;
-    };
-
-    return (
-        <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-                <Button variant="outline" role="combobox" aria-expanded={open} disabled={disabled}
-                        className={cn("justify-between font-normal px-3", className)}>
-                    <span className="truncate">{selectedLabel}</span>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50"/>
-                </Button>
-            </PopoverTrigger>
-            <PopoverContent
-                className={cn("p-0 shadow-lg border-border pointer-events-auto z-[100]", popoverWidth)}
-                align="start"
-                onWheelCapture={handlePopoverWheel}
-            >
-                <Command>
-                    <CommandInput placeholder="Search..." className="h-9 text-xs"/>
-                    <CommandList
-                        ref={listRef}
-                        className="max-h-[250px] overflow-y-auto overscroll-contain scrollbar-thin"
-                    >
-                        <CommandEmpty className="py-4 text-center text-xs text-muted-foreground">No results
-                            found.</CommandEmpty>
-                        <CommandGroup>
-                            {options.map((opt, index) => (
-                                <CommandItem
-                                    key={`${opt.value}-${index}`}
-                                    value={opt.label || `Option-${index}`}
-                                    onSelect={() => {
-                                        onSelect(opt.value);
-                                        setOpen(false);
-                                    }}
-                                    className="text-xs cursor-pointer"
-                                >
-                                    <Check
-                                        className={cn("mr-2 h-4 w-4 text-primary", String(value) === String(opt.value) ? "opacity-100" : "opacity-0")}/>
-                                    {opt.label || "Unnamed Option"}
-                                </CommandItem>
-                            ))}
-                        </CommandGroup>
-                    </CommandList>
-                </Command>
-            </PopoverContent>
-        </Popover>
-    );
-}
-
 const isPaymentCOA = (c: COADto) => {
-    if (c.isPayment || c.isPaymentDuplicate) return true;
+    if (c.isPayment) return true;
     const title = (c.accountTitle || "").toLowerCase();
     return title.includes("petty cash") || title.includes("revolving fund") || title.includes("revolving funds");
 };
@@ -268,9 +178,9 @@ export function DisbursementCreateSheet({
                 setDepartmentId("");
                 setRemarks("");
                 setSupportingDocumentsUrl("");
-                // Start with one blank row each so the user can begin typing immediately
-                setPayables([{referenceNo: "", date: today, amount: 0, remarks: ""}]);
-                setPayments([{checkNo: "", date: today, amount: 0, remarks: ""}]);
+                // Start with one blank row for payables so the user can begin typing immediately, payments start empty
+                setPayables([{referenceNo: "", date: today, amount: 0, remarks: "", divisionId: undefined}]);
+                setPayments([]);
                 setTransactionDate(today);
             }
         }
@@ -297,7 +207,7 @@ export function DisbursementCreateSheet({
         }
     }, [open, editData, departmentId, departments]);
 
-    const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: today, amount: 0, remarks: ""}]), [today]);
+    const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: today, amount: 0, remarks: "", divisionId: divisionId || undefined}]), [today, divisionId]);
 
     // Pre-fill payment amount with the outstanding balance; auto-select COA if only one payment option exists
     const handleAddPayment = useCallback(() => {
@@ -327,6 +237,7 @@ export function DisbursementCreateSheet({
                         {
                             id: createdPayeeId,
                             supplier_name: createdPayee?.supplier_name || "New Payee",
+                            supplier_type: payeeSupplierType,
                             isActive: true,
                         },
                     ],
@@ -373,6 +284,7 @@ export function DisbursementCreateSheet({
         selectedPos.forEach(po => {
             const baseRef = `${po.poNo} / ${po.receiptNo}`;
             const taxType = currentTaxTypes[po.uniqueKey] || "VAT";
+            const currentDivId = divisionId || undefined;
 
             if (taxType === "VAT") {
                 const netAmount = po.amountDue / (1 + VAT_RATE);
@@ -383,21 +295,24 @@ export function DisbursementCreateSheet({
                     date: date,
                     amount: Number(netAmount.toFixed(2)),
                     coaId: 8,
-                    remarks: `Principal Net of VAT`
+                    remarks: `Principal Net of VAT`,
+                    divisionId: currentDivId
                 });
                 newPayables.push({
                     referenceNo: baseRef,
                     date: date,
                     amount: Number(vatAmount.toFixed(2)),
                     coaId: 9,
-                    remarks: `Input VAT (12%)`
+                    remarks: `Input VAT (12%)`,
+                    divisionId: currentDivId
                 });
                 newPayables.push({
                     referenceNo: baseRef,
                     date: date,
                     amount: -Number(ewtAmount.toFixed(2)),
                     coaId: 38,
-                    remarks: `EWT Deduction (1%)`
+                    remarks: `EWT Deduction (1%)`,
+                    divisionId: currentDivId
                 });
             } else {
                 newPayables.push({
@@ -405,12 +320,13 @@ export function DisbursementCreateSheet({
                     date: date,
                     amount: Number(po.amountDue.toFixed(2)),
                     coaId: 8,
-                    remarks: `Principal (Non-VAT)`
+                    remarks: `Principal (Non-VAT)`,
+                    divisionId: currentDivId
                 });
             }
         });
         return newPayables;
-    }, []);
+    }, [divisionId]);
 
     const handleImportPos = useCallback(() => {
         const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
@@ -501,481 +417,127 @@ export function DisbursementCreateSheet({
 
     return (
         <>
-            <Sheet open={open} onOpenChange={onOpenChange}>
-                <SheetContent
-                    className="sm:max-w-[950px] w-full p-0 flex flex-col bg-background overflow-hidden border-l border-border">
-                    <SheetHeader className="p-6 border-b border-border bg-card shrink-0">
-                        <SheetTitle
-                            className="text-xl font-black uppercase text-foreground">{editData ? `Edit Draft: ${editData.docNo}` : "New Disbursement Voucher"}</SheetTitle>
-                        <SheetDescription
-                            className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{editData ? "Update voucher details and line items." : "Draft a new voucher, select a payee, and assign financial entries."}</SheetDescription>
-                    </SheetHeader>
-
-                    <div className="flex-1 overflow-y-auto p-6 scrollbar-thin space-y-6">
-                        <div className="bg-card p-5 rounded-xl border border-border shadow-sm grid grid-cols-2 gap-4">
-                            <div className="col-span-2 flex items-center gap-2 mb-2">
-                                <Building2 className="w-4 h-4 text-primary"/>
-                                <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Voucher
-                                    Details</h3>
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent
+                    className="max-w-[98vw] sm:max-w-[98vw] w-[98vw] h-[96vh] p-0 flex flex-col bg-background overflow-hidden border border-border shadow-2xl rounded-xl">
+                    <DialogHeader className="px-6 py-4 border-b border-border bg-card shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                            <DialogTitle className="text-lg font-bold text-foreground">
+                                {editData ? `Disbursement Voucher [Doc: ${editData.docNo}]` : `New Disbursement Voucher [Doc: ${loadingDocNo ? "..." : (previewDocNo || "AUTO-GENERATED")}]`}
+                            </DialogTitle>
+                            <DialogDescription className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                                {editData ? "Update voucher details and line items." : "Draft a new voucher, select a payee, and assign financial entries."}
+                            </DialogDescription>
+                        </div>
+                        
+                        {/* Totals Summary on the right side of the header */}
+                        <div className="flex items-center gap-6 text-xs bg-muted/40 border border-border px-4 py-2 rounded-sm select-none self-end sm:self-auto">
+                            <div className="flex flex-col items-end">
+                                <span className="text-[10px] text-muted-foreground font-semibold uppercase">Total Allocated</span>
+                                <span className="font-bold text-foreground">{formatCurrency(totalAmount)}</span>
                             </div>
-
-                            <div className="space-y-1.5">
-                                <Label
-                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Document
-                                    No.</Label>
-                                <Input value={editData ? editData.docNo : (loadingDocNo ? "LOADING..." : (previewDocNo || "AUTO-GENERATED"))} disabled
-                                       className="h-9 text-[10px] font-black text-muted-foreground uppercase border-border bg-muted"/>
+                            <div className="flex flex-col items-end border-l border-border pl-6">
+                                <span className="text-[10px] text-muted-foreground font-semibold uppercase">Total Paid</span>
+                                <span className="font-bold text-foreground">{formatCurrency(totalPayments)}</span>
                             </div>
-
-                            <div className="space-y-1.5">
-                                <Label
-                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                    Transaction Type <span className="text-destructive">*</span>
-                                </Label>
-                                <select
-                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs font-bold uppercase text-foreground shadow-sm focus-visible:outline-none"
-                                    value={transactionTypeId}
-                                    onChange={e => {
-                                        setTransactionTypeId(e.target.value === "" ? "" : Number(e.target.value));
-                                        setPayeeId("");
-                                        setUnpaidPos([]);
-                                        setMemos([]);
-                                    }}>
-                                    <option value="" disabled>-- Select Type --</option>
-                                    <option value={1}>Trade</option>
-                                    <option value={2}>Non-Trade</option>
-                                </select>
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <Label
-                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Transaction
-                                    Date <span className="text-destructive">*</span></Label>
-                                <Input type="date" value={transactionDate}
-                                       onChange={e => setTransactionDate(e.target.value)}
-                                       className="h-9 text-xs font-bold uppercase border-input bg-background text-foreground"/>
-                            </div>
-
-                            <div className="space-y-1.5 col-span-2">
-                                <Label
-                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex justify-between">
-                                    Payee (Supplier) <span className="text-destructive">*</span>
-                                    {loadingData && <Loader2 className="w-3 h-3 animate-spin text-primary"/>}
-                                </Label>
-                                <div className="flex gap-2">
-                                    <div className="flex-1 min-w-0">
-                                        <SearchableDropdown<number>
-                                            options={suppliers.map((s) => ({
-                                                value: s.id ?? 0,
-                                                label: s.supplier_name || `Supplier-${s.id}`
-                                            }))}
-                                            value={payeeId as number | ""} onSelect={handlePayeeSelect}
-                                            placeholder={`-- Search Payee --`}
-                                            disabled={loadingData || !transactionTypeId}
-                                            className="h-9 w-full bg-background border-input text-xs font-bold uppercase"
-                                        />
-                                    </div>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={() => setIsPayeeRegistrationOpen(true)}
-                                        className="h-9 px-3 text-[10px] font-black uppercase tracking-widest shrink-0"
-                                        title={`Register a ${payeeSupplierTypeLabel} payee`}
-                                    >
-                                        <Plus className="w-4 h-4 mr-1"/>
-                                        New Payee
-                                    </Button>
-                                    {!isNonTradeVoucher && (
-                                        <Button type="button" onClick={() => handleOpenPoModal()} disabled={!payeeId}
-                                                className="h-9 px-3 bg-amber-500 hover:bg-amber-600 text-white shadow-sm shrink-0"
-                                                title="Pull Unpaid POs">
-                                            <DownloadCloud className="w-4 h-4"/>
-                                        </Button>
+                            <div className="flex flex-col items-end border-l border-border pl-6">
+                                <span className="text-[10px] text-muted-foreground font-semibold uppercase">Difference</span>
+                                <span className={cn("font-bold flex items-center gap-1", paymentDifference === 0 ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500")}>
+                                    {formatCurrency(paymentDifference)}
+                                    {paymentDifference === 0 && (
+                                        <span className="text-[9px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 px-1 rounded-sm border border-emerald-200">Balanced</span>
                                     )}
-                                </div>
+                                </span>
                             </div>
+                        </div>
+                    </DialogHeader>
 
-                            <div className="space-y-1.5">
-                                <Label
-                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Division <span
-                                    className="text-destructive">*</span></Label>
-                                <SearchableDropdown<number>
-                                    options={divisions.map((d) => ({
-                                        value: d.divisionId ?? 0,
-                                        label: d.divisionName || `Division`
-                                    }))}
-                                    value={divisionId as number | ""} onSelect={(val) => setDivisionId(val)}
-                                    placeholder="-- Search Division --"
-                                    className="h-9 w-full bg-background border-input text-xs font-bold uppercase text-foreground shadow-sm"
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden h-full">
+                        {/* LEFT COLUMN: Metadata inputs, attachments & totals */}
+                        <div className="md:col-span-4 border-r border-border bg-muted/5 flex flex-col h-full overflow-y-auto scrollbar-thin">
+                            <div className="p-5 space-y-5">
+                                <VoucherDetailsSection
+                                    transactionTypeId={transactionTypeId}
+                                    setTransactionTypeId={setTransactionTypeId}
+                                    transactionDate={transactionDate}
+                                    setTransactionDate={setTransactionDate}
+                                    payeeId={payeeId}
+                                    handlePayeeSelect={handlePayeeSelect}
+                                    suppliers={suppliers}
+                                    loadingData={loadingData}
+                                    payeeSupplierTypeLabel={payeeSupplierTypeLabel}
+                                    isNonTradeVoucher={isNonTradeVoucher}
+                                    setIsPayeeRegistrationOpen={setIsPayeeRegistrationOpen}
+                                    handleOpenPoModal={handleOpenPoModal}
+                                    divisions={divisions}
+                                    divisionId={divisionId}
+                                    setDivisionId={setDivisionId}
+                                    departments={departments}
+                                    departmentId={departmentId}
+                                    setDepartmentId={setDepartmentId}
+                                    remarks={remarks}
+                                    setRemarks={setRemarks}
+                                    supportingDocumentsUrl={supportingDocumentsUrl}
+                                    setSupportingDocumentsUrl={setSupportingDocumentsUrl}
+                                    uploadingFile={uploadingFile}
+                                    setUploadingFile={setUploadingFile}
+                                    totalAmount={totalAmount}
+                                    totalPayments={totalPayments}
+                                    paymentDifference={paymentDifference}
                                 />
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <Label
-                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Department <span
-                                    className="text-destructive">*</span></Label>
-                                <SearchableDropdown<number>
-                                    options={departments.map((d) => ({
-                                        value: d.departmentId ?? 0,
-                                        label: d.departmentName || `Department`
-                                    }))}
-                                    value={departmentId as number | ""} onSelect={(val) => setDepartmentId(val)}
-                                    placeholder="-- Search Department --"
-                                    className="h-9 w-full bg-background border-input text-xs font-bold uppercase text-foreground shadow-sm"
-                                />
-                            </div>
-
-                            <div className="space-y-1.5 col-span-2">
-                                <Label
-                                    className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Particulars
-                                    / Remarks</Label>
-                                <Input value={remarks} onChange={e => setRemarks(e.target.value)}
-                                       className="h-9 text-xs border-input bg-background text-foreground"
-                                       placeholder="What is this payment for?"/>
-                            </div>
-
-                            <div className="space-y-1.5 col-span-2">
-                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                                    <Paperclip className="w-3.5 h-3.5 text-primary"/> Supporting Documents / Attachments
-                                </Label>
-                                
-                                {supportingDocumentsUrl ? (
-                                    <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-card shadow-sm">
-                                        <div className="flex items-center gap-2.5 truncate max-w-[85%]">
-                                            <Paperclip className="w-4 h-4 text-emerald-500 shrink-0" />
-                                            <a 
-                                                href={supportingDocumentsUrl.startsWith("http") ? supportingDocumentsUrl : `${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/assets/${supportingDocumentsUrl}`} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer" 
-                                                className="text-xs font-bold text-primary hover:underline truncate"
-                                            >
-                                                {supportingDocumentsUrl.split("/").pop() || "view_attachment"}
-                                            </a>
-                                        </div>
-                                        <Button 
-                                            type="button" 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            onClick={() => setSupportingDocumentsUrl("")} 
-                                            className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive rounded-full"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                    </div>
-                                ) : (
-                                    <div className="relative border border-dashed border-border/70 rounded-xl p-4 hover:border-primary/50 transition-colors flex flex-col items-center justify-center gap-2 bg-muted/10">
-                                        {uploadingFile ? (
-                                            <>
-                                                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Uploading attachment...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <UploadCloud className="w-6 h-6 text-muted-foreground" />
-                                                <span className="text-xs font-semibold text-foreground text-center">
-                                                    Click to upload supporting documents
-                                                </span>
-                                                <span className="text-[10px] text-muted-foreground font-medium">
-                                                    PDF, Images (Max 5MB)
-                                                </span>
-                                                <input 
-                                                    type="file" 
-                                                    accept="image/*,application/pdf"
-                                                    onChange={async (e) => {
-                                                        const file = e.target.files?.[0];
-                                                        if (!file) return;
-                                                        try {
-                                                            setUploadingFile(true);
-                                                            const formData = new FormData();
-                                                            formData.append("file", file);
-                                                            const res = await fetch("/api/fm/treasury/disbursements/upload", {
-                                                                method: "POST",
-                                                                body: formData
-                                                            });
-                                                            if (!res.ok) throw new Error("Upload failed");
-                                                            const result = await res.json();
-                                                            const fileId = result?.data?.id;
-                                                            if (fileId) {
-                                                                setSupportingDocumentsUrl(fileId);
-                                                                toast.success("Attachment uploaded successfully!");
-                                                            } else {
-                                                                toast.error("Upload succeeded but returned no ID.");
-                                                            }
-                                                        } catch (err) {
-                                                            toast.error("Failed to upload file.");
-                                                            console.error(err);
-                                                        } finally {
-                                                            setUploadingFile(false);
-                                                        }
-                                                    }}
-                                                    className="absolute inset-0 opacity-0 cursor-pointer" 
-                                                />
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="col-span-2 pt-2 border-t border-border mt-2 space-y-2">
-                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1">
-                                    <Calculator className="w-3.5 h-3.5 text-primary"/> Financial Summary (Payables vs Payments)
-                                </Label>
-                                <div className="grid grid-cols-3 gap-3 p-3 rounded-lg border border-border bg-muted/40 shadow-inner">
-                                    <div className="space-y-1">
-                                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Total Payables</span>
-                                        <div className="text-sm font-black text-foreground">
-                                            {formatCurrency(totalAmount)}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Total Payments</span>
-                                        <div className="text-sm font-black text-foreground">
-                                            {formatCurrency(totalPayments)}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block">Difference / Balance</span>
-                                        <div className={cn("text-sm font-black", paymentDifference === 0 ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500")}>
-                                            {formatCurrency(paymentDifference)}
-                                            {paymentDifference === 0 && (
-                                                <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200/50">Balanced</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
 
-                        {/* ── PAYABLES SECTION ── */}
-                        <div className="bg-card p-1 rounded-xl border border-border shadow-sm">
-                            <div className="px-4 pt-4 pb-2 border-b border-border flex items-center gap-2">
-                                <FileText className="w-3.5 h-3.5 text-primary"/>
-                                <span className="text-[10px] font-black uppercase tracking-widest text-foreground">Payables (Expense Lines)</span>
-                                <span className="ml-auto text-[10px] font-bold text-muted-foreground">{payables.length} row{payables.length !== 1 ? 's' : ''}</span>
-                            </div>
-                            <div className="p-4 space-y-4">
-                                    <StickyTableWrapper className="rounded-md border border-border overflow-auto max-h-[320px] custom-scrollbar">
-                                        <Table>
-                                            <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
-                                                <TableRow className="border-border">
-                                                    <TableHead
-                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Ref
-                                                        No (PO)</TableHead>
-                                                    <TableHead
-                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[200px]">Chart
-                                                        of Account</TableHead>
-                                                    <TableHead
-                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[180px]">Remarks</TableHead>
-                                                    <TableHead
-                                                        className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Amount</TableHead>
-                                                    <TableHead className="w-[40px]"></TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {payables.length === 0 ? (
-                                                    <TableRow><TableCell colSpan={5}
-                                                                         className="text-center text-xs text-muted-foreground py-8 font-medium">No
-                                                        payables added.</TableCell></TableRow>
-                                                ) : payables.map((p, i) => (
-                                                    <TableRow key={i} className="border-border hover:bg-muted/50">
-                                                        <TableCell className="p-2 align-top pt-3">
-                                                            <Input className="h-8 text-xs uppercase bg-background"
-                                                                   placeholder="Invoice/PO" value={p.referenceNo}
-                                                                   onChange={e => {
-                                                                       const n = [...payables];
-                                                                       n[i].referenceNo = e.target.value;
-                                                                       setPayables(n);
-                                                                   }}/>
-                                                        </TableCell>
-                                                        <TableCell className="p-2 align-top pt-3">
-                                                            <SearchableDropdown<number>
-                                                                options={coas.filter(isPayableOrExpenseCOA).map((c) => ({
-                                                                    value: c.coaId ?? 0,
-                                                                    label: `${c.glCode || 'NO-CODE'} - ${c.accountTitle || 'Unknown'}`
-                                                                }))}
-                                                                value={p.coaId || ""}
-                                                                onSelect={(val) => {
-                                                                    const n = [...payables];
-                                                                    n[i].coaId = val;
-                                                                    setPayables(n);
-                                                                }}
-                                                                placeholder="Search GL Code..."
-                                                                className="h-8 w-full bg-background border-input text-[11px] font-medium"
-                                                                popoverWidth="w-[400px]"
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell className="p-2 align-top pt-3">
-                                                            <Input className="h-8 text-[10px] bg-background"
-                                                                   placeholder="Line remarks..." value={p.remarks || ""}
-                                                                   onChange={e => {
-                                                                       const n = [...payables];
-                                                                       n[i].remarks = e.target.value;
-                                                                       setPayables(n);
-                                                                   }}/>
-                                                        </TableCell>
-                                                        <TableCell className="p-2 align-top pt-3">
-                                                            <Input type="number"
-                                                                   className={`h-8 text-xs font-bold bg-background ${p.amount < 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-500'}`}
-                                                                   value={p.amount || ""} onChange={e => {
-                                                                const n = [...payables];
-                                                                n[i].amount = Number(e.target.value);
-                                                                setPayables(n);
-                                                            }}/>
-                                                        </TableCell>
-                                                        <TableCell className="p-2 text-right align-top pt-3">
-                                                            <Button variant="ghost" size="icon"
-                                                                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                                                                    onClick={() => setPayables(payables.filter((_, idx) => idx !== i))}><Trash2
-                                                                className="w-4 h-4"/></Button>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))}
-                                            </TableBody>
-                                        </Table>
-                                    </StickyTableWrapper>
-                                    <div className="flex gap-2 w-full">
-                                        <Button variant="outline" size="sm"
-                                                className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border"
-                                                onClick={handleAddPayable}>
-                                            <Plus className="w-3.5 h-3.5 mr-2"/> Add Manual Payable
-                                        </Button>
-                                        <Button variant="outline" size="sm"
-                                                className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-purple-600 hover:bg-purple-50 hover:text-purple-700 border-purple-200 dark:border-purple-800/50 dark:hover:bg-purple-900/20"
-                                                onClick={handleOpenMemoModal}>
-                                            <FileText className="w-3.5 h-3.5 mr-2"/> Apply Credit/Debit Memo
-                                        </Button>
-                                    </div>
-                            </div>
-                        </div>
+                        {/* RIGHT COLUMN: Table line items */}
+                        <div className="md:col-span-8 flex flex-col h-full overflow-y-auto scrollbar-thin bg-background">
+                            <div className="p-6 space-y-6">
+                                <PayablesSection
+                                    payables={payables}
+                                    setPayables={setPayables}
+                                    coas={coas}
+                                    divisions={divisions}
+                                    isPayableOrExpenseCOA={isPayableOrExpenseCOA}
+                                    totalAmount={totalAmount}
+                                    payeeId={payeeId}
+                                    handleAddPayable={handleAddPayable}
+                                    handleOpenMemoModal={handleOpenMemoModal}
+                                    handleRemovePayable={(idx) => setPayables(payables.filter((_, i) => i !== idx))}
+                                    formatMoney={formatCurrency}
+                                    isAddDisabled={!divisionId || !departmentId}
+                                />
 
-                        {/* ── PAYMENTS SECTION ── */}
-                        <div className="bg-card p-1 rounded-xl border border-border shadow-sm">
-                            <div className="px-4 pt-4 pb-2 border-b border-border flex items-center gap-2">
-                                <Wallet className="w-3.5 h-3.5 text-primary"/>
-                                <span className="text-[10px] font-black uppercase tracking-widest text-foreground">Payments (Checks / Cash)</span>
-                                <span className="ml-auto text-[10px] font-bold text-muted-foreground">{payments.length} row{payments.length !== 1 ? 's' : ''}</span>
-                            </div>
-                            <div className="p-4 space-y-4">
-                                    <StickyTableWrapper className="rounded-md border border-border overflow-auto max-h-[320px] custom-scrollbar">
-                                        <Table>
-                                            <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
-                                                <TableRow className="border-border">
-                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Date</TableHead>
-                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Check No</TableHead>
-                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Bank Account</TableHead>
-                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[200px]">GL Account (COA)</TableHead>
-                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[100px]">Amount</TableHead>
-                                                    <TableHead className="w-[40px]"></TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {payments.length === 0 ? (
-                                                    <TableRow><TableCell colSpan={6}
-                                                                         className="text-center text-xs text-muted-foreground py-8 font-medium">No
-                                                        payments added.</TableCell></TableRow>
-                                                ) : payments.map((p, i) => (
-                                                    <TableRow key={i} className="border-border hover:bg-muted/50">
-                                                        <TableCell className="p-2 align-top pt-3">
-                                                            <Input type="date" className="h-8 text-xs bg-background"
-                                                                   value={p.date ? p.date.split('T')[0] : ""}
-                                                                   onChange={e => {
-                                                                       const n = [...payments];
-                                                                       n[i].date = e.target.value;
-                                                                       setPayments(n);
-                                                                   }}/>
-                                                        </TableCell>
-                                                        <TableCell className="p-2 align-top pt-3">
-                                                            <Input className="h-8 text-xs bg-background"
-                                                                   placeholder="Check #" value={p.checkNo}
-                                                                   onChange={e => {
-                                                                       const n = [...payments];
-                                                                       n[i].checkNo = e.target.value;
-                                                                       setPayments(n);
-                                                                   }}/>
-                                                        </TableCell>
-                                                        <TableCell className="p-2 align-top pt-3">
-                                                            <SearchableDropdown<number>
-                                                                options={banks.map((b) => ({
-                                                                    value: b.bankId ?? 0,
-                                                                    label: `${b.bankName || 'Unknown Bank'} - ${b.accountNumber || ''}`
-                                                                }))}
-                                                                value={p.bankId || ""}
-                                                                onSelect={(val) => {
-                                                                    const n = [...payments];
-                                                                    n[i].bankId = val;
-                                                                    setPayments(n);
-                                                                }}
-                                                                placeholder="Select Bank..."
-                                                                className="h-8 w-full bg-background border-input text-[11px] font-medium"
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell className="p-2 align-top pt-3">
-                                                            <SearchableDropdown<number>
-                                                                options={coas.filter(isPaymentCOA).map((c) => ({
-                                                                    value: c.coaId ?? 0,
-                                                                    label: `${c.glCode || 'NO-CODE'} - ${c.accountTitle || 'Unknown'}`
-                                                                }))}
-                                                                value={p.coaId || ""}
-                                                                onSelect={(val) => {
-                                                                    const n = [...payments];
-                                                                    n[i].coaId = val;
-                                                                    setPayments(n);
-                                                                }}
-                                                                placeholder="Search COA..."
-                                                                className="h-8 w-full bg-background border-input text-[11px] font-medium"
-                                                                popoverWidth="w-[400px]"
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell className="p-2 align-top pt-3">
-                                                            <Input type="number"
-                                                                   className="h-8 text-xs font-bold bg-background text-emerald-600 dark:text-emerald-500"
-                                                                   value={p.amount || ""}
-                                                                   onChange={e => {
-                                                                       const n = [...payments];
-                                                                       n[i].amount = Number(e.target.value);
-                                                                       setPayments(n);
-                                                                   }}/>
-                                                        </TableCell>
-                                                        <TableCell className="p-2 text-right align-top pt-3">
-                                                            <Button variant="ghost" size="icon"
-                                                                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                                                                    onClick={() => setPayments(payments.filter((_, idx) => idx !== i))}><Trash2
-                                                                className="w-4 h-4"/></Button>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))}
-                                            </TableBody>
-                                        </Table>
-                                    </StickyTableWrapper>
-                                    <div className="flex gap-2 w-full">
-                                        <Button variant="outline" size="sm"
-                                                className="flex-1 text-[10px] font-bold uppercase tracking-widest border-dashed text-primary hover:bg-primary/5 border-border"
-                                                onClick={handleAddPayment}>
-                                            <Plus className="w-3.5 h-3.5 mr-2"/> Add Payment Row
-                                        </Button>
-                                    </div>
+                                <PaymentsSection
+                                    payments={payments}
+                                    setPayments={setPayments}
+                                    bankAccounts={banks}
+                                    handleAddPayment={handleAddPayment}
+                                    handleRemovePayment={(idx) => setPayments(payments.filter((_, i) => i !== idx))}
+                                    totalPayments={totalPayments}
+                                    formatMoney={formatCurrency}
+                                    isAddDisabled={!divisionId || !departmentId}
+                                />
                             </div>
                         </div>
                     </div>
 
-                    <div className="p-6 bg-card border-t border-border shrink-0 flex justify-between items-center z-10">
+                    <div className="p-4 bg-muted border-t border-border shrink-0 flex justify-between items-center z-10">
                         <div
-                            className="flex items-center gap-2 text-[10px] font-black uppercase text-muted-foreground tracking-widest">
-                            <Wallet className="w-4 h-4"/> Lines: {payables.length} Pay | {payments.length} Rcv
+                            className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                            Lines: {payables.length} Allocated | {payments.length} Paid
                         </div>
                         <div className="flex gap-2">
                             <Button variant="outline" onClick={() => onOpenChange(false)}
-                                    className="text-[10px] font-black uppercase tracking-widest h-10 px-6">Cancel</Button>
+                                    className="border-input text-foreground hover:bg-accent font-bold text-xs h-9 px-5 rounded-sm">Cancel</Button>
                             <Button onClick={handleSubmit} disabled={loading}
-                                    className="text-[10px] font-black uppercase tracking-widest h-10 px-8 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md">
+                                    className="text-xs font-bold h-9 px-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm shadow-sm transition-colors">
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> :
                                     <Save className="w-4 h-4 mr-2"/>}
-                                {editData ? "Update Voucher" : "Save Voucher"}
+                                {editData ? "Save and Close" : "Save and Close"}
                             </Button>
                         </div>
                     </div>
-                </SheetContent>
-            </Sheet>
+                </DialogContent>
+            </Dialog>
 
             <AddPayeeModal
                 open={isPayeeRegistrationOpen}
@@ -1055,7 +617,7 @@ export function DisbursementCreateSheet({
                                                   }}>
                                             <TableCell className="text-center">
                                                 <Checkbox checked={selectedPoIds.includes(po.uniqueKey)}
-                                                          onCheckedChange={(checked) => {
+                                                          onCheckedChange={(checked: boolean | "indeterminate") => {
                                                               if (checked === true) {
                                                                   setSelectedPoIds([...selectedPoIds, po.uniqueKey]);
                                                                   if (!taxTypes[po.uniqueKey]) setTaxTypes(prev => ({
@@ -1082,7 +644,7 @@ export function DisbursementCreateSheet({
                                                         With Order</Badge>}
                                                 </div>
                                             </TableCell>
-                                            <TableCell onClick={(e) => e.stopPropagation()}>
+                                            <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                                                 <select
                                                     className="h-7 w-full rounded-sm border border-input bg-background px-1 text-[10px] font-bold text-foreground shadow-sm disabled:opacity-30"
                                                     value={taxTypes[po.uniqueKey] || "VAT"}

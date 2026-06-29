@@ -828,7 +828,7 @@ export default function CustomerBillingSummaryModule() {
                             key={customer.id}
                             className={`cursor-pointer transition-all relative ${
                               isSelected
-                                ? "bg-indigo-50/65 dark:bg-indigo-950/25 font-semibold text-indigo-700 dark:text-indigo-300 border-l-4 border-indigo-650 pl-2"
+                                ? "bg-indigo-50/65 dark:bg-indigo-950/25 font-semibold text-indigo-700 dark:text-indigo-300 border-l-4 border-indigo-600 pl-2"
                                 : "hover:bg-zinc-50/60 dark:hover:bg-zinc-900/40 border-l-4 border-transparent"
                             }`}
                             onClick={() => selectCustomer(customer.id)}
@@ -936,7 +936,7 @@ export default function CustomerBillingSummaryModule() {
                 {/* Visual Dashboard Header */}
                 <div className="p-6 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent border border-indigo-500/10 shadow-sm">
                   <div className="flex items-start gap-4">
-                    <div className="p-3 bg-indigo-650/10 dark:bg-indigo-400/10 rounded-xl text-indigo-650 dark:text-indigo-455 mt-1">
+                    <div className="p-3 bg-indigo-600/10 dark:bg-indigo-400/10 rounded-xl text-indigo-600 dark:text-indigo-400 mt-1">
                       <Sparkles className="h-6 w-6 animate-pulse" />
                     </div>
                     <div>
@@ -971,7 +971,7 @@ export default function CustomerBillingSummaryModule() {
 
                       <div className="p-4 rounded-xl bg-zinc-50/60 dark:bg-zinc-900/60 border border-zinc-150/50 dark:border-zinc-800">
                         <span className="text-xs text-muted-foreground font-semibold">Discount Overrides</span>
-                        <div className="text-3xl font-black mt-1 text-indigo-650 dark:text-indigo-400 font-mono">
+                        <div className="text-3xl font-black mt-1 text-indigo-600 dark:text-indigo-400 font-mono">
                           {searchResults.reduce((sum, c) => sum + (c.discount_config_count > 0 ? 1 : 0), 0)} <span className="text-xs font-normal text-muted-foreground">active</span>
                         </div>
                         <p className="text-[10px] text-zinc-400 mt-1">Accounts with custom pricing</p>

@@ -11,6 +11,9 @@ export function RejectDialog(props: {
     onOpenChange: (v: boolean) => void;
     onConfirm: (reason: string) => void;
     loading?: boolean;
+    title?: string;
+    contentClassName?: string;
+    children?: React.ReactNode;
 }) {
     const [reason, setReason] = React.useState("");
 
@@ -20,10 +23,12 @@ export function RejectDialog(props: {
 
     return (
         <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent className={props.contentClassName ?? "sm:max-w-lg"}>
                 <DialogHeader>
-                    <DialogTitle>Reject Request</DialogTitle>
+                    <DialogTitle>{props.title || "Reject Request"}</DialogTitle>
                 </DialogHeader>
+
+                {props.children}
 
                 <div className="space-y-2">
                     <Label>Reject Reason</Label>

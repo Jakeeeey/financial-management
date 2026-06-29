@@ -13,6 +13,8 @@ import { useCollectionReport, PouchReportDto } from "../hooks/useCollectionRepor
 import { ReportHeader } from "./ReportHeader";
 import { KpiCards } from "./KpiCards";
 import { PouchDetailSheet } from "./PouchDetailSheet";
+import { exportCollectionReportToExcel } from "../utils/exportUtils";
+import { generateCollectionPDF } from "../utils/pdf-generator";
 
 export default function CollectionSummaryDashboard() {
     const { reportData, isLoading, startDate, setStartDate, endDate, setEndDate, fetchReport } = useCollectionReport();
@@ -51,8 +53,16 @@ export default function CollectionSummaryDashboard() {
                     endDate={endDate} setEndDate={setEndDate}
                     isLoading={isLoading} hasData={!!reportData}
                     onGenerate={fetchReport}
-                    onExportExcel={() => console.log("Export")}
-                    onPrint={() => console.log("Print")}
+                    onExportExcel={() => {
+                        if (reportData) {
+                            exportCollectionReportToExcel(reportData, startDate, endDate);
+                        }
+                    }}
+                    onPrint={() => {
+                        if (reportData) {
+                            generateCollectionPDF(reportData, startDate, endDate);
+                        }
+                    }}
                 />
             </div>
 

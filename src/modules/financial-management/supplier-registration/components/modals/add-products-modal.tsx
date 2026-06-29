@@ -135,7 +135,7 @@ export function AddProductsModal({
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-medium leading-none truncate group-hover:text-primary transition-colors">
-                        {product.short_description || product.product_name}
+                        {product.product_name || product.short_description}
                       </p>
                       {product.unit_of_measurement != null && (
                         <p className="text-xs text-muted-foreground mt-1">

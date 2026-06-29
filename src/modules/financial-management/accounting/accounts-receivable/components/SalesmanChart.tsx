@@ -1,6 +1,6 @@
 // components/SalesmanChart.tsx
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChartEmptyState } from './ChartEmptyState';
 import { formatPeso } from '../utils';
 import type { SalesmanARData } from '../types';
@@ -8,9 +8,11 @@ import type { SalesmanARData } from '../types';
 interface SalesmanChartProps {
   data: SalesmanARData[];
   isFiltered?: boolean;
+  selectedSalesman?: string;
+  onSalesmanSelect?: (salesman: string) => void;
 }
 
-export function SalesmanChart({ data, isFiltered = false }: SalesmanChartProps) {
+export function SalesmanChart({ data, isFiltered = false, selectedSalesman, onSalesmanSelect }: SalesmanChartProps) {
   const isEmpty = isFiltered && data.length === 0;
 
   return (
@@ -65,8 +67,30 @@ export function SalesmanChart({ data, isFiltered = false }: SalesmanChartProps) 
                     );
                   }}
                 />
-                <Bar dataKey="value" name="Outstanding" fill="#8b5cf6" radius={[3, 3, 0, 0]} maxBarSize={25} />
-                <Bar dataKey="unposted" name="Unposted Collections" fill="#f97316" radius={[3, 3, 0, 0]} maxBarSize={25} />
+                <Bar dataKey="value" name="Outstanding" radius={[3, 3, 0, 0]} maxBarSize={25} cursor="pointer">
+                  {data.map((entry, index) => {
+                    const isSelected = selectedSalesman === entry.name;
+                    return (
+                      <Cell
+                        key={`cell-val-${index}`}
+                        fill={isSelected ? '#f59e0b' : '#8b5cf6'}
+                        onClick={() => onSalesmanSelect?.(isSelected ? '' : entry.name)}
+                      />
+                    );
+                  })}
+                </Bar>
+                <Bar dataKey="unposted" name="Unposted Collections" radius={[3, 3, 0, 0]} maxBarSize={25} cursor="pointer">
+                  {data.map((entry, index) => {
+                    const isSelected = selectedSalesman === entry.name;
+                    return (
+                      <Cell
+                        key={`cell-unp-${index}`}
+                        fill={isSelected ? '#d97706' : '#f97316'}
+                        onClick={() => onSalesmanSelect?.(isSelected ? '' : entry.name)}
+                      />
+                    );
+                  })}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 pl-1 border-t border-border/40 pt-2">
