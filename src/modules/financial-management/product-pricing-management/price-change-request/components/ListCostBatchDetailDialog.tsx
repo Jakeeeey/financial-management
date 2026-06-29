@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,15 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import {
     Table,
     TableBody,
@@ -47,6 +55,8 @@ type Props = {
     onRetryApplication?: (headerId: number) => Promise<void> | void;
 };
 
+type DirectionFilter = "ALL" | "INCREASE" | "DECREASE" | "NO_CHANGE";
+
 function money(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
     return new Intl.NumberFormat("en-PH", {
@@ -69,11 +79,36 @@ function safeDate(value: string | null | undefined) {
     return date.toLocaleString();
 }
 
+function getFiniteDelta(line: ListCostBatchLine): number | null {
+    if (line.delta === null || line.delta === undefined) return null;
+    const n = Number(line.delta);
+    return Number.isFinite(n) ? n : null;
+}
+
 function diffClass(line: ListCostBatchLine) {
-    const delta = Number(line.delta ?? 0);
+    const delta = getFiniteDelta(line);
+    if (delta === null) return "text-muted-foreground";
     if (delta > 0) return "text-destructive";
     if (delta < 0) return "text-emerald-600";
     return "text-muted-foreground";
+}
+
+function normalizeText(value: unknown): string {
+    return String(value ?? "").trim().toLowerCase();
+}
+
+function lineMatchesDirection(line: ListCostBatchLine, direction: DirectionFilter): boolean {
+    const delta = getFiniteDelta(line);
+    switch (direction) {
+        case "INCREASE": return delta !== null && delta > 0;
+        case "DECREASE": return delta !== null && delta < 0;
+        case "NO_CHANGE": return delta !== null && delta === 0;
+        default: return true;
+    }
+}
+
+function lineDisplayStatus(line: ListCostBatchLine) {
+    return displayPcrStatus(line.status, line.application_status);
 }
 
 function buildLineSummary(lines: ListCostBatchLine[]) {
@@ -120,6 +155,9 @@ export function ListCostBatchDetailDialog({
     const [confirmingAction, setConfirmingAction] = React.useState<"approve" | "reject" | "apply_now" | "reject_schedule" | null>(null);
     const [confirmingRemoveLine, setConfirmingRemoveLine] = React.useState<ListCostBatchLine | null>(null);
     const [removingLine, setRemovingLine] = React.useState(false);
+    const [lineSearch, setLineSearch] = React.useState("");
+    const [directionFilter, setDirectionFilter] = React.useState<DirectionFilter>("ALL");
+    const [lineStatusFilter, setLineStatusFilter] = React.useState("ALL");
     const loadRequestSeqRef = React.useRef(0);
 
     const loadDetail = React.useCallback(async (options?: { silent?: boolean }) => {
@@ -173,7 +211,53 @@ export function ListCostBatchDetailDialog({
     const canRetryApplication =
         !readOnly && detail?.application_status === "FAILED" && headerId > 0 && onRetryApplication != null;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status) : "";
-    const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
+
+    React.useEffect(() => {
+        setLineSearch("");
+        setDirectionFilter("ALL");
+        setLineStatusFilter("ALL");
+    }, [batchId]);
+
+    const statusOptions = React.useMemo(() => {
+        const statuses = new Set<string>();
+        for (const line of lines) {
+            const status = lineDisplayStatus(line);
+            if (status) statuses.add(status);
+        }
+        return Array.from(statuses).sort((a, b) => a.localeCompare(b));
+    }, [lines]);
+
+    const filteredLines = React.useMemo(() => {
+        const q = normalizeText(lineSearch);
+        return lines.filter((line) => {
+            if (lineStatusFilter !== "ALL" && lineDisplayStatus(line) !== lineStatusFilter) {
+                return false;
+            }
+            if (!lineMatchesDirection(line, directionFilter)) return false;
+            if (!q) return true;
+
+            return [
+                line.product_name,
+                line.product_code,
+                line.supplier_name,
+                line.unit_name,
+            ].some((value) => normalizeText(value).includes(q));
+        });
+    }, [directionFilter, lineSearch, lineStatusFilter, lines]);
+
+    const batchSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
+    const lineSummary = React.useMemo(() => buildLineSummary(filteredLines), [filteredLines]);
+
+    const hasLineFilters =
+        Boolean(lineSearch.trim()) ||
+        directionFilter !== "ALL" ||
+        lineStatusFilter !== "ALL";
+
+    const resetLineFilters = React.useCallback(() => {
+        setLineSearch("");
+        setDirectionFilter("ALL");
+        setLineStatusFilter("ALL");
+    }, []);
 
     const handleOpenChange = React.useCallback(
         (nextOpen: boolean) => {
@@ -279,11 +363,11 @@ export function ListCostBatchDetailDialog({
                                 </div>
                                 <div>
                                     <div className="text-xs font-medium uppercase text-muted-foreground">Products</div>
-                                    <div className="mt-1 font-medium">{lineSummary.productCount.toLocaleString()}</div>
+                                    <div className="mt-1 font-medium">{batchSummary.productCount.toLocaleString()}</div>
                                 </div>
                                 <div>
                                     <div className="text-xs font-medium uppercase text-muted-foreground">Lines</div>
-                                    <div className="mt-1 font-medium">{lines.length.toLocaleString()}</div>
+                                    <div className="mt-1 font-medium">{batchSummary.lineCount.toLocaleString()}</div>
                                 </div>
                                 <div className="sm:col-span-2">
                                     <div className="text-xs font-medium uppercase text-muted-foreground">Reference No.</div>
@@ -295,6 +379,99 @@ export function ListCostBatchDetailDialog({
                                 </div>
                                 <BatchDecisionSummaryFields detail={detail} />
                             </div>
+
+                            {lines.length > 0 ? (
+                            <div className="rounded-md border bg-muted/20 p-3">
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                                    <div className="min-w-[240px] flex-1">
+                                        <Label htmlFor="ccr-line-search" className="text-xs font-medium">
+                                            Search lines
+                                        </Label>
+                                        <div className="relative mt-1">
+                                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                                            <Input
+                                                id="ccr-line-search"
+                                                value={lineSearch}
+                                                onChange={(event) => setLineSearch(event.target.value)}
+                                                placeholder="Product, code, supplier, or unit"
+                                                className="h-9 pl-9 pr-9"
+                                            />
+                                            {lineSearch ? (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+                                                    onClick={() => setLineSearch("")}
+                                                    title="Clear search"
+                                                >
+                                                    <X className="size-4" />
+                                                </Button>
+                                            ) : null}
+                                        </div>
+                                    </div>
+
+                                    <div className="grid gap-3 sm:grid-cols-2 lg:w-[380px]">
+                                        <div>
+                                            <Label className="text-xs font-medium">Change</Label>
+                                            <Select
+                                                value={directionFilter}
+                                                onValueChange={(value) => setDirectionFilter(value as DirectionFilter)}
+                                            >
+                                                <SelectTrigger className="mt-1 h-9 w-full">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="ALL">All changes</SelectItem>
+                                                    <SelectItem value="INCREASE">Increases</SelectItem>
+                                                    <SelectItem value="DECREASE">Decreases</SelectItem>
+                                                    <SelectItem value="NO_CHANGE">No change</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div>
+                                            <Label className="text-xs font-medium">Line Status</Label>
+                                            <Select value={lineStatusFilter} onValueChange={setLineStatusFilter}>
+                                                <SelectTrigger className="mt-1 h-9 w-full">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="ALL">All statuses</SelectItem>
+                                                    {statusOptions.map((status) => (
+                                                        <SelectItem key={status} value={status}>
+                                                            {status}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-3 lg:flex-col lg:items-end">
+                                        <div className="whitespace-nowrap text-sm text-muted-foreground">
+                                            Showing{" "}
+                                            <span className="font-medium text-foreground">
+                                                {filteredLines.length.toLocaleString()}
+                                            </span>{" "}
+                                            of {lines.length.toLocaleString()} lines
+                                        </div>
+                                        {hasLineFilters ? (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="gap-2"
+                                                onClick={resetLineFilters}
+                                            >
+                                                <RotateCcw className="size-4" />
+                                                Reset
+                                            </Button>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            </div>
+                            ) : null}
 
                             <div className="rounded-md border overflow-x-auto">
                                 <Table>
@@ -312,7 +489,7 @@ export function ListCostBatchDetailDialog({
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {lines.map((line) => (
+                                        {filteredLines.map((line) => (
                                             <TableRow key={`${line.request_id ?? line.product_id}`}>
                                                 <TableCell className="min-w-[280px] max-w-[420px] align-top">
                                                     <div className="whitespace-normal break-words leading-snug font-medium">
@@ -356,10 +533,10 @@ export function ListCostBatchDetailDialog({
                                                 ) : null}
                                             </TableRow>
                                         ))}
-                                        {lines.length === 0 ? (
+                                        {filteredLines.length === 0 ? (
                                             <TableRow>
                                                 <TableCell colSpan={canRemoveLines ? 9 : 8} className="py-8 text-center text-muted-foreground">
-                                                    No detail lines found.
+                                                    {lines.length === 0 ? "No detail lines found." : "No lines match your filters."}
                                                 </TableCell>
                                             </TableRow>
                                         ) : (

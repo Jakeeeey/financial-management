@@ -334,22 +334,6 @@ export type BatchImportPrefill = {
     importedProductIds: number[];
 };
 
-export type ListCostImportLine = {
-    product_id: number;
-    product_code: string | null;
-    barcode: string | null;
-    product_name: string;
-    current_cost: number | null;
-    proposed_cost: number;
-};
-
-export type ListCostImportPrefill = {
-    supplierId: number;
-    supplierName: string;
-    remarks: string;
-    lines: ListCostImportLine[];
-};
-
 export type CreateCCRPayload = {
     product_id: number;
     proposed_cost: number;

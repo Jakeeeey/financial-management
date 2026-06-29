@@ -11,7 +11,6 @@ import { BulkListCostActionResultDialog } from "./BulkListCostActionResultDialog
 import { BulkListCostApprovePreview } from "./BulkListCostApprovePreview";
 import { BulkPriceTypeActionResultDialog } from "./BulkPriceTypeActionResultDialog";
 import { BulkPriceTypeApprovePreview } from "./BulkPriceTypeApprovePreview";
-import { CreatePriceChangeBatchDialog } from "./CreatePriceChangeBatchDialog";
 import { PcrStatusTabs } from "./PcrStatusTabs";
 import { PcrTabExportImportActions } from "./PcrTabExportImportActions";
 import { ListPriceRequestDetailDialog } from "./ListPriceRequestDetailDialog";
@@ -415,12 +414,7 @@ export function UnifiedApprovalsManager({
                     busy={priceExportImport.busy}
                     onExportPdf={() => void priceExportImport.handleExportPdf()}
                     onExportExcel={() => void priceExportImport.handleExportExcel()}
-                    onImportExcelClick={priceExportImport.handleImportExcelClick}
-                    onImportExcelFile={priceExportImport.handleImportExcelFile}
-                    importFileInputRef={priceExportImport.importFileInputRef}
-                    exportOnly={readOnly}
-                    showNewBatch={!readOnly}
-                    onNewBatch={() => priceExportImport.setCreatingBatch(true)}
+                    exportOnly={true}
                 />
             </div>
 
@@ -672,19 +666,6 @@ export function UnifiedApprovalsManager({
                           onRetryApplication: (kind, id) => feed.retryApplication(kind, id),
                       })}
             />
-
-            {!readOnly ? (
-            <CreatePriceChangeBatchDialog
-                open={priceExportImport.creatingBatch}
-                onOpenChange={(open) => {
-                    priceExportImport.setCreatingBatch(open);
-                    if (!open) priceExportImport.clearImportPrefill();
-                }}
-                suppliers={suppliers}
-                onCreated={feed.refresh}
-                importPrefill={priceExportImport.importPrefill}
-            />
-            ) : null}
 
             {!readOnly ? (
             <>

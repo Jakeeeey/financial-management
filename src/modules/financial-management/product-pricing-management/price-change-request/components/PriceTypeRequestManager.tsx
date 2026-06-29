@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { ApproveDialog } from "./ApproveDialog";
 import { BulkPriceTypeActionResultDialog } from "./BulkPriceTypeActionResultDialog";
 import { BulkPriceTypeApprovePreview } from "./BulkPriceTypeApprovePreview";
-import { CreatePriceChangeBatchDialog } from "./CreatePriceChangeBatchDialog";
 import { PcrStatusTabs } from "./PcrStatusTabs";
 import { PcrTabExportImportActions } from "./PcrTabExportImportActions";
 import { PriceChangeBatchDetailDialog } from "./PriceChangeBatchDetailDialog";
@@ -285,12 +284,7 @@ export function PriceTypeRequestManager({
                     busy={priceExportImport.busy}
                     onExportPdf={() => void priceExportImport.handleExportPdf()}
                     onExportExcel={() => void priceExportImport.handleExportExcel()}
-                    onImportExcelClick={priceExportImport.handleImportExcelClick}
-                    onImportExcelFile={priceExportImport.handleImportExcelFile}
-                    importFileInputRef={priceExportImport.importFileInputRef}
-                    exportOnly={readOnly}
-                    showNewBatch={!readOnly}
-                    onNewBatch={() => priceExportImport.setCreatingBatch(true)}
+                    exportOnly={true}
                 />
             </div>
 
@@ -632,16 +626,6 @@ export function PriceTypeRequestManager({
                 snapshots={bulkActionOutcome?.snapshots ?? []}
             />
 
-            <CreatePriceChangeBatchDialog
-                open={priceExportImport.creatingBatch}
-                onOpenChange={(open) => {
-                    priceExportImport.setCreatingBatch(open);
-                    if (!open) priceExportImport.clearImportPrefill();
-                }}
-                suppliers={suppliers}
-                onCreated={() => void inbox.refresh()}
-                importPrefill={priceExportImport.importPrefill}
-            />
             </>
             ) : null}
 

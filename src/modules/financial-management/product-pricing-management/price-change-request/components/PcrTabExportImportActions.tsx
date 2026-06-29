@@ -10,9 +10,9 @@ type Props = {
     busy: boolean;
     onExportPdf: () => void;
     onExportExcel: () => void;
-    onImportExcelClick: () => void;
-    onImportExcelFile: (event: React.ChangeEvent<HTMLInputElement>) => void;
-    importFileInputRef: React.RefObject<HTMLInputElement | null>;
+    onImportExcelClick?: () => void;
+    onImportExcelFile?: (event: React.ChangeEvent<HTMLInputElement>) => void;
+    importFileInputRef?: React.RefObject<HTMLInputElement | null>;
     showNewBatch?: boolean;
     onNewBatch?: () => void;
     exportOnly?: boolean;
@@ -59,7 +59,7 @@ export function PcrTabExportImportActions({
                 )}
                 {excelLabel}
             </Button>
-            {!exportOnly ? (
+            {!exportOnly && onImportExcelClick && onImportExcelFile && importFileInputRef ? (
                 <>
                     <Button
                         type="button"

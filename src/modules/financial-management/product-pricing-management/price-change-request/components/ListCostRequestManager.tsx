@@ -9,8 +9,6 @@ import { Button } from "@/components/ui/button";
 import { ApproveDialog } from "./ApproveDialog";
 import { BulkListCostActionResultDialog } from "./BulkListCostActionResultDialog";
 import { BulkListCostApprovePreview } from "./BulkListCostApprovePreview";
-import { CreateListCostBatchDialog } from "./CreateListCostBatchDialog";
-import { CreatePriceChangeBatchDialog } from "./CreatePriceChangeBatchDialog";
 import { ListCostBatchDetailDialog } from "./ListCostBatchDetailDialog";
 import { ListPriceRequestDetailDialog } from "./ListPriceRequestDetailDialog";
 import { PcrStatusTabs } from "./PcrStatusTabs";
@@ -74,7 +72,6 @@ export function ListCostRequestManager({
     const [viewingRequestId, setViewingRequestId] = React.useState<number | null>(null);
     const [rejectingId, setRejectingId] = React.useState<number | null>(null);
     const [rejectingBulk, setRejectingBulk] = React.useState<boolean>(false);
-    const [creatingBatch, setCreatingBatch] = React.useState(false);
     const [confirmingApprove, setConfirmingApprove] = React.useState<
         { type: "single"; id: number } | { type: "batch" } | null
     >(null);
@@ -183,12 +180,7 @@ export function ListCostRequestManager({
                     busy={listCostExportImport.busy}
                     onExportPdf={() => void listCostExportImport.handleExportPdf()}
                     onExportExcel={() => void listCostExportImport.handleExportExcel()}
-                    onImportExcelClick={listCostExportImport.handleImportExcelClick}
-                    onImportExcelFile={listCostExportImport.handleImportExcelFile}
-                    importFileInputRef={listCostExportImport.importFileInputRef}
-                    exportOnly={readOnly}
-                    showNewBatch={!readOnly}
-                    onNewBatch={() => setCreatingBatch(true)}
+                    exportOnly={true}
                 />
             </div>
 
@@ -375,6 +367,7 @@ export function ListCostRequestManager({
                     : {
                           onApprove: inbox.approveCostBatch,
                           onReject: inbox.rejectCostBatch,
+                          onRemoveLine: inbox.removeCostBatchLine,
                           onApplyScheduledNow: (headerId: number) => inbox.applyScheduledNow("cost_batch", headerId),
                           onRejectScheduled: (headerId: number, reason: string) =>
                               inbox.rejectScheduled("cost_batch", headerId, reason),
@@ -463,23 +456,6 @@ export function ListCostRequestManager({
                 snapshots={bulkActionOutcome?.snapshots ?? []}
             />
 
-            <CreateListCostBatchDialog
-                open={listCostExportImport.reviewOpen}
-                onOpenChange={(open) => {
-                    listCostExportImport.setReviewOpen(open);
-                    if (!open) listCostExportImport.clearImportPrefill();
-                }}
-                importPrefill={listCostExportImport.importPrefill}
-                onCreated={() => void inbox.refresh()}
-                onUnauthorized={onUnauthorized}
-            />
-
-            <CreatePriceChangeBatchDialog
-                open={creatingBatch}
-                onOpenChange={setCreatingBatch}
-                suppliers={suppliers}
-                onCreated={() => void inbox.refresh()}
-            />
             </>
             ) : null}
 
