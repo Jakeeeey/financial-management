@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap } from "../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap } from "../route";
 
 export const runtime = "nodejs";
 
@@ -188,6 +188,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const userMap = await getUserMap(token);
         const coaMap = await getCoaMap();
         const divisionMap = await getDivisionMap();
+        const bankMap = await getBankMap();
 
         // 7. Get fresh, fully-populated header details to normalize and return
         const fields = [
@@ -232,7 +233,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const freshDis = (await freshRes.json()).data;
 
         return NextResponse.json(
-            normalizeDisbursement(freshDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap)
+            normalizeDisbursement(freshDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap)
         );
 
     } catch (err: unknown) {

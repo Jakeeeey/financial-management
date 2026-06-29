@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { FileText, Building2, AlertTriangle, AlertCircle } from "lucide-react";
+import { FileText, Building2, AlertTriangle } from "lucide-react";
 import { StickyTableWrapper } from "./StickyTableWrapper";
 import { formatCurrency, getCookie, decodeToken } from "../utils/disbursement-utils";
 

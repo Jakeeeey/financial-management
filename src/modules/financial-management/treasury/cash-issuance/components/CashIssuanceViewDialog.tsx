@@ -223,7 +223,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                                 </div>
                             )}
 
-                            {!isBalanced && disbursement.status !== "Draft" && disbursement.status !== "Submitted" && (
+                            {!isBalanced && (disbursement.status as string) !== "Draft" && (disbursement.status as string) !== "Submitted" && (
                                 <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/10 text-amber-800 dark:text-amber-400 flex items-center gap-3 shadow-sm animate-in fade-in duration-300">
                                     <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
                                     <div>
@@ -289,7 +289,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         <AttachmentPreview docUrl={disbursement.supportingDocumentsUrl} />
                     ) : null}
 
-                    {!isBalanced && disbursement.status !== "Draft" && disbursement.status !== "Submitted" && disbursement.status !== "Posted" && (
+                    {!isBalanced && (disbursement.status as string) !== "Draft" && (disbursement.status as string) !== "Submitted" && (disbursement.status as string) !== "Posted" && (
                         <div className="bg-destructive/10 text-destructive border border-destructive/20 p-3 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4 shrink-0" />
                             <span>Warning: Debits do not match Credits. This voucher cannot be posted.</span>

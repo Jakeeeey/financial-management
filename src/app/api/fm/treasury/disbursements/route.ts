@@ -380,7 +380,12 @@ function normalizePayable(row: PayableRow, coaMap?: Map<number, string>, divisio
     };
 }
 
-function normalizePayment(row: PaymentRow, coaMap?: Map<number, string>, userMap?: Map<string, string>) {
+function normalizePayment(
+    row: PaymentRow,
+    coaMap?: Map<number, string>,
+    userMap?: Map<string, string>,
+    bankMap?: Map<number, { bankName: string; accountNumber: string }>
+) {
     const rawCoaId = relationId(row.coa_id, "coa_id");
     let accountTitle = relationLabel(row.coa_id, "account_title");
     if (!accountTitle && rawCoaId && coaMap) {
@@ -390,11 +395,24 @@ function normalizePayment(row: PaymentRow, coaMap?: Map<number, string>, userMap
     const releasedByVal = asNumber(row.released_by);
     const releasedByName = releasedByVal ? (userMap?.get(String(releasedByVal)) || `User #${releasedByVal}`) : "";
 
+    const rawBankId = asNumber(row.bank_id);
+    let bankName = "";
+    let bankAccountNumber = "";
+    if (rawBankId && bankMap) {
+        const bankInfo = bankMap.get(rawBankId);
+        if (bankInfo) {
+            bankName = bankInfo.bankName;
+            bankAccountNumber = bankInfo.accountNumber;
+        }
+    }
+
     return {
         id: asNumber(row.id),
         coaId: rawCoaId,
         accountTitle,
-        bankId: asNumber(row.bank_id),
+        bankId: rawBankId,
+        bankName: bankName || undefined,
+        bankAccountNumber: bankAccountNumber || undefined,
         checkNo: asString(row.check_no),
         date: asString(row.date),
         amount: asNumber(row.amount) ?? 0,
@@ -411,10 +429,12 @@ export function normalizeDisbursement(
     userMap?: Map<string, string>,
     coaMap?: Map<number, string>,
     divisionMap?: Map<number, string>,
+    bankMap?: Map<number, { bankName: string; accountNumber: string }>,
 ) {
     const id = asNumber(row.id) ?? 0;
-    const payables = (payablesMap.get(id) ?? []).map((p) => normalizePayable(p, coaMap, divisionMap));
-    const payments = (paymentsMap.get(id) ?? []).map((p) => normalizePayment(p, coaMap, userMap));
+
+    const payables = (payablesMap.get(id) || []).map((p) => normalizePayable(p, coaMap, divisionMap));
+    const payments = (paymentsMap.get(id) || []).map((p) => normalizePayment(p, coaMap, userMap, bankMap));
     const totalDebit = roundMoney(payables.reduce((sum, line) => sum + line.amount, 0));
     const totalCredit = roundMoney(payments.reduce((sum, line) => sum + line.amount, 0));
 
@@ -505,6 +525,26 @@ export async function getDivisionMap() {
         }
     } catch (e) {
         console.warn("Failed to fetch divisions map:", e);
+    }
+    return map;
+}
+
+export async function getBankMap() {
+    const map = new Map<number, { bankName: string; accountNumber: string }>();
+    try {
+        const bankRes = await directusFetch<DirectusList<{ bank_id?: number; bank_name?: string; account_number?: string }>>("/items/bank_accounts?limit=-1&fields=bank_id,bank_name,account_number");
+        if (bankRes.data && Array.isArray(bankRes.data)) {
+            bankRes.data.forEach((b) => {
+                const id = Number(b.bank_id);
+                const bankName = String(b.bank_name || "");
+                const accountNumber = String(b.account_number || "");
+                if (id) {
+                    map.set(id, { bankName, accountNumber });
+                }
+            });
+        }
+    } catch (e) {
+        console.warn("Failed to fetch bank accounts map:", e);
     }
     return map;
 }
@@ -714,9 +754,10 @@ export async function GET(request: NextRequest) {
         const userMap = await getUserMap(token);
         const coaMap = await getCoaMap();
         const divisionMap = await getDivisionMap();
+        const bankMap = await getBankMap();
 
         return NextResponse.json({
-            content: rows.map((row) => normalizeDisbursement(row, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap)),
+            content: rows.map((row) => normalizeDisbursement(row, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap)),
             totalElements,
             totalPages: Math.ceil(totalElements / query.size),
             number: query.page,
@@ -849,9 +890,10 @@ export async function POST(request: NextRequest) {
         const userMap = await getUserMap(token);
         const coaMap = await getCoaMap();
         const divisionMap = await getDivisionMap();
+        const bankMap = await getBankMap();
 
         return NextResponse.json(
-            normalizeDisbursement(freshDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap)
+            normalizeDisbursement(freshDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap)
         );
 
     } catch (err: unknown) {

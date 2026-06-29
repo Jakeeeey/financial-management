@@ -15,6 +15,8 @@ export interface PaymentLine {
     coaId?: number;
     accountTitle?: string;
     bankId?: number;
+    bankName?: string;
+    bankAccountNumber?: string;
     checkNo: string;
     date: string;
     amount: number;
