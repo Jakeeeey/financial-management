@@ -79,8 +79,15 @@ function safeDate(value: string | null | undefined) {
     return date.toLocaleString();
 }
 
+function getFiniteDelta(line: PriceChangeBatchLine): number | null {
+    if (line.delta === null || line.delta === undefined) return null;
+    const n = Number(line.delta);
+    return Number.isFinite(n) ? n : null;
+}
+
 function diffClass(line: PriceChangeBatchLine) {
-    const delta = Number(line.delta ?? 0);
+    const delta = getFiniteDelta(line);
+    if (delta === null) return "text-muted-foreground";
     if (delta > 0) return "text-destructive";
     if (delta < 0) return "text-emerald-600";
     return "text-muted-foreground";
@@ -121,8 +128,8 @@ function normalizeText(value: unknown) {
 
 function lineMatchesDirection(line: PriceChangeBatchLine, direction: DirectionFilter) {
     if (direction === "ALL") return true;
-    const delta = Number(line.delta ?? 0);
-    if (!Number.isFinite(delta)) return false;
+    const delta = getFiniteDelta(line);
+    if (delta === null) return false;
     if (direction === "INCREASE") return delta > 0;
     if (direction === "DECREASE") return delta < 0;
     return delta === 0;
