@@ -6,6 +6,7 @@ import {
     createPendingPriceBatch,
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
+    isPriceControlValidationError,
     mapBatchHeaderResponse,
     mustBase,
     normalizeBatchCreateLines,
@@ -213,6 +214,16 @@ export async function POST(req: NextRequest) {
                         if (isCostBatchStorageSetupError(costError)) {
                             return costBatchStorageSetupResponse(message, true);
                         }
+                        if (isPriceControlValidationError(costError)) {
+                            return NextResponse.json(
+                                {
+                                    error: message,
+                                    code: "mixed_save_validation_failed",
+                                    rolled_back: true,
+                                },
+                                { status: 400 },
+                            );
+                        }
 
                         return NextResponse.json(
                             {
@@ -229,6 +240,9 @@ export async function POST(req: NextRequest) {
                         return costBatchStorageSetupResponse(
                             costError instanceof Error ? costError.message : String(costError),
                         );
+                    }
+                    if (isPriceControlValidationError(costError)) {
+                        return NextResponse.json({ error: costError.message }, { status: 400 });
                     }
 
                     throw costError;
@@ -259,6 +273,9 @@ export async function POST(req: NextRequest) {
         );
     } catch (error: unknown) {
         if (isInvalidProposedCostError(error)) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+        if (isPriceControlValidationError(error)) {
             return NextResponse.json({ error: error.message }, { status: 400 });
         }
 

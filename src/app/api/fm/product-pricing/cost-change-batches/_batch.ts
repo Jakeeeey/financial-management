@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 import {
+    assertProductsEligible,
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
     directusHeaders,
@@ -13,6 +14,7 @@ import {
     mustBase,
     nowManila,
     pickId,
+    productCostSnapshot,
     resolveBatchDecisionUserNames,
     resolveUserDisplayName,
 } from "../price-change-batches/_batch";
@@ -205,6 +207,7 @@ export async function createPendingCostBatch(args: {
             `items[${index}].proposed_cost`,
         ),
     }));
+    const productsById = await assertProductsEligible(validatedItems.map((item) => item.product_id));
 
     await assertCostBatchStorageReady();
 
@@ -229,7 +232,7 @@ export async function createPendingCostBatch(args: {
     const detailPayload = validatedItems.map((item) => ({
         header_id: headerId,
         product_id: item.product_id,
-        current_cost: item.current_cost,
+        current_cost: productCostSnapshot(productsById.get(item.product_id)),
         proposed_cost: item.proposed_cost,
         status: "PENDING",
         requested_by: userId,

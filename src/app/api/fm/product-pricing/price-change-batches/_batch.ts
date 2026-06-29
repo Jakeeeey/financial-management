@@ -36,6 +36,13 @@ type DirectusUserRelation = {
     user_email?: string | null;
 };
 
+export type ProductControlRow = {
+    product_id?: number | string | null;
+    isActive?: number | string | boolean | null;
+    status?: string | null;
+    cost_per_unit?: number | string | null;
+};
+
 export type BatchHeaderRow = {
     id?: number | string | null;
     header_id?: number | string | null;
@@ -287,8 +294,23 @@ export function parseWrappedError(message: string): DirectusWrappedError | null 
     }
 }
 
+export class PriceControlValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "PriceControlValidationError";
+    }
+}
+
+export function isPriceControlValidationError(error: unknown): error is PriceControlValidationError {
+    return error instanceof PriceControlValidationError;
+}
+
 export function directusErrorResponse(error: unknown) {
     if (isInvalidPriceValueError(error)) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (isPriceControlValidationError(error)) {
         return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
@@ -391,6 +413,75 @@ function parseSnapshotPrice(value: unknown): { valid: boolean; value: number | n
 function snapshotPricesMatch(snapshot: number | null, live: number | null): boolean {
     if (snapshot === null || live === null) return snapshot === live;
     return Math.abs(snapshot - live) <= 1e-9;
+}
+
+function isActiveProduct(row: ProductControlRow): boolean {
+    const value = row.isActive;
+    return value === true || value === 1 || value === "1";
+}
+
+function isApprovedProduct(row: ProductControlRow): boolean {
+    const status = String(row.status ?? "").trim().toUpperCase();
+    return status === "APPROVED" || status === "PUBLISHED";
+}
+
+function formatValidationIds(ids: number[]): string {
+    const preview = ids.slice(0, 8).join(", ");
+    return ids.length > 8 ? `${preview}, ...` : preview;
+}
+
+export function productCostSnapshot(row: ProductControlRow | undefined): number | null {
+    if (!row || row.cost_per_unit === null || row.cost_per_unit === undefined) return null;
+    const value = Number(row.cost_per_unit);
+    return Number.isFinite(value) ? value : null;
+}
+
+export async function fetchProductControlRows(productIds: number[]): Promise<Map<number, ProductControlRow>> {
+    const rowsById = new Map<number, ProductControlRow>();
+    const uniqueIds = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
+    if (uniqueIds.length === 0) return rowsById;
+
+    for (const productChunk of chunkArray(uniqueIds, IN_CHUNK_SIZE)) {
+        const rows = await fetchAllPagesLocal<ProductControlRow>(PRODUCTS, () => {
+            const params = new URLSearchParams();
+            params.set("fields", "product_id,isActive,status,cost_per_unit");
+            params.set("filter[product_id][_in]", productChunk.join(","));
+            return params;
+        });
+
+        for (const row of rows) {
+            const productId = pickId(row.product_id);
+            if (productId) rowsById.set(productId, row);
+        }
+    }
+
+    return rowsById;
+}
+
+export async function assertProductsEligible(productIds: number[]): Promise<Map<number, ProductControlRow>> {
+    const uniqueIds = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
+    const rowsById = await fetchProductControlRows(uniqueIds);
+    const missing = uniqueIds.filter((id) => !rowsById.has(id));
+    const inactive = uniqueIds.filter((id) => {
+        const row = rowsById.get(id);
+        return row ? !isActiveProduct(row) : false;
+    });
+    const unapproved = uniqueIds.filter((id) => {
+        const row = rowsById.get(id);
+        return row ? !isApprovedProduct(row) : false;
+    });
+
+    if (missing.length > 0) {
+        throw new PriceControlValidationError(`Product not found: ${formatValidationIds(missing)}.`);
+    }
+    if (inactive.length > 0) {
+        throw new PriceControlValidationError(`Only active products can be submitted: ${formatValidationIds(inactive)}.`);
+    }
+    if (unapproved.length > 0) {
+        throw new PriceControlValidationError(`Only approved or published products can be submitted: ${formatValidationIds(unapproved)}.`);
+    }
+
+    return rowsById;
 }
 
 export async function fetchLivePriceSnapshots(
@@ -629,7 +720,9 @@ export async function createPendingPriceBatch(args: {
         throw new Error("linesToCreate must be non-empty");
     }
 
+    await assertProductsEligible(linesToCreate.map((line) => line.product_id));
     const liveSnapshots = await fetchLivePriceSnapshots(linesToCreate);
+
     const snapshottedLines = linesToCreate.map((line) => ({
         ...line,
         current_price: liveSnapshots.get(batchLineKey(line.product_id, line.price_type_id)) ?? null,

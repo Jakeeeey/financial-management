@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { isCostBatchStorageSetupError } from "../../cost-change-batches/_batch";
-import { decodeUserIdFromJwtCookie } from "../../price-change-batches/_batch";
+import { decodeUserIdFromJwtCookie, isPriceControlValidationError } from "../../price-change-batches/_batch";
 import {
     CostBulkItemInput,
     createPendingCostRequests,
@@ -93,6 +93,9 @@ export async function POST(req: NextRequest) {
         );
     } catch (error: unknown) {
         if (isInvalidProposedCostError(error)) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+        if (isPriceControlValidationError(error)) {
             return NextResponse.json({ error: error.message }, { status: 400 });
         }
 

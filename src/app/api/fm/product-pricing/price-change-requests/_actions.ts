@@ -8,6 +8,7 @@ import {
     PRODUCTS,
     PRICES,
     PRICE_TYPES,
+    assertProductsEligible,
     assertPriceSnapshotCurrent,
     directusHeaders,
     fetchDirectus,
@@ -181,6 +182,7 @@ export async function applyProposedPrice(args: {
 }) {
     const { userId, productId, priceTypeId, currentPrice, proposedPrice } = args;
     const validProposedPrice = assertValidPriceValue(proposedPrice, "proposed_price");
+    await assertProductsEligible([productId]);
     await assertPriceSnapshotCurrent({
         product_id: productId,
         price_type_id: priceTypeId,
@@ -193,7 +195,7 @@ export async function applyProposedPrice(args: {
     ]);
 
     const payload = {
-        status: "draft",
+        status: "published",
         product_id: productId,
         price_type_id: priceTypeId,
         price: validProposedPrice,

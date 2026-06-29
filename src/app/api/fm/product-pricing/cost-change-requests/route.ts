@@ -6,7 +6,7 @@ import { appendDisplayStatusFilter } from "../_approvalStatusPolicy";
 import { fetchPendingCcrByProductIds } from "../_fetchPendingByProductIds";
 import { appendProductIdInFilter, getSupplierScopedProductIdsForSuppliers, resolveSupplierIds } from "../_supplierFilters";
 import { isCostBatchStorageSetupError } from "../cost-change-batches/_batch";
-import { fetchUserNamesById } from "../price-change-batches/_batch";
+import { fetchUserNamesById, isPriceControlValidationError } from "../price-change-batches/_batch";
 import { createPendingCostRequests, planCostBulkCreate } from "./_bulk";
 import {
     assertValidProposedCost,
@@ -401,6 +401,9 @@ export async function POST(req: NextRequest) {
         );
     } catch (error: unknown) {
         if (isInvalidProposedCostError(error)) {
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+        if (isPriceControlValidationError(error)) {
             return NextResponse.json({ error: error.message }, { status: 400 });
         }
 
