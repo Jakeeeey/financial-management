@@ -90,16 +90,16 @@ export default function DeliveryTermsFormDialog(props: {
       }
 
       // Add user tracking
-      if (userId) {
-        if (mode === "create") {
+      if (mode === "create") {
+        if (userId) {
           payload.created_by = userId;
           console.log("✅ Added created_by:", userId, "to payload");
-        } else if (mode === "edit") {
+        }
+      } else if (mode === "edit") {
+        if (userId) {
           payload.updated_by = userId;
           console.log("✅ Added updated_by:", userId, "to payload");
         }
-      } else {
-        console.warn("⚠️  userId is", userId, "not adding user tracking");
       }
 
       console.log("📦 Final payload being sent:", payload);
