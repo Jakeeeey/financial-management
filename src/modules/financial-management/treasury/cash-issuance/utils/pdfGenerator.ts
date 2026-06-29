@@ -105,11 +105,20 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
         styles: { fontSize: isA4 ? 8 : 5, textColor: 0, lineColor: [150, 150, 150], lineWidth: 0.1, cellPadding: isA4 ? 2 : 1 },
         headStyles: { fillColor: [255, 255, 255], textColor: 0, fontStyle: 'bold', lineColor: 0, lineWidth: 0.2 },
         head: isA4 ? [['Check / Ref', 'Bank / GL Account', 'Amount']] : [['Check', 'Bank/GL', 'Amount']],
-        body: (disbursement.payments || []).map(p => [
-            p.checkNo || 'N/A',
-            p.accountTitle || `COA: ${p.coaId}`,
-            { content: p.amount.toLocaleString('en-US', {minimumFractionDigits: 2}), styles: { halign: 'right' } }
-        ])
+        body: (disbursement.payments || []).map(p => {
+            if (isA4) {
+                const bankInfo = p.bankName ? `${p.bankName}${p.bankAccountNumber ? ` (${p.bankAccountNumber})` : ''}` : '';
+                const accountTitle = p.accountTitle || `COA: ${p.coaId}`;
+                const bankAndAccount = bankInfo ? `${accountTitle}\n[Bank: ${bankInfo}]` : accountTitle;
+                return [p.checkNo || 'N/A', bankAndAccount, { content: p.amount.toLocaleString('en-US', {minimumFractionDigits: 2}), styles: { halign: 'right' } }];
+            } else {
+                return [
+                    p.checkNo || 'N/A',
+                    p.accountTitle || `COA: ${p.coaId}`,
+                    { content: p.amount.toLocaleString('en-US', {minimumFractionDigits: 2}), styles: { halign: 'right' } }
+                ];
+            }
+        })
     });
 
     // @ts-expect-error - TypeScript doesn't recognize lastAutoTable property from jsPDF autotable plugin

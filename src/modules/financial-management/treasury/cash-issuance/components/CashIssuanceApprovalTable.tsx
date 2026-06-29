@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { FileText, Building2, AlertTriangle, AlertCircle } from "lucide-react";
+import { FileText, Building2, AlertTriangle } from "lucide-react";
 import { StickyTableWrapper } from "./StickyTableWrapper";
 import { formatCurrency, getCookie, decodeToken } from "../utils/disbursement-utils";
 
@@ -33,11 +33,8 @@ export function CashIssuanceApprovalTable({
 
     const selectables = useMemo(() => {
         return data.filter((d) => {
-            const totalDebit = d.totalDebit ?? d.payables?.reduce((sum, p) => sum + (p.amount || 0), 0) ?? 0;
-            const totalCredit = d.totalCredit ?? d.payments?.reduce((sum, p) => sum + (p.amount || 0), 0) ?? 0;
-            const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
             const isEncoder = d.encoderId != null && currentUserId != null && String(d.encoderId) === String(currentUserId);
-            return isBalanced && !isEncoder;
+            return !isEncoder;
         });
     }, [data, currentUserId]);
 
@@ -70,11 +67,8 @@ export function CashIssuanceApprovalTable({
                     <div className="p-8 text-center text-xs font-bold text-muted-foreground uppercase tracking-widest bg-card border rounded-xl">No disbursements pending approval.</div>
                 ) : (
                     data.map((d) => {
-                        const totalDebit = d.totalDebit ?? d.payables?.reduce((sum, p) => sum + (p.amount || 0), 0) ?? 0;
-                        const totalCredit = d.totalCredit ?? d.payments?.reduce((sum, p) => sum + (p.amount || 0), 0) ?? 0;
-                        const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
                         const isEncoder = d.encoderId != null && currentUserId != null && String(d.encoderId) === String(currentUserId);
-                        const isSelectable = isBalanced && !isEncoder;
+                        const isSelectable = !isEncoder;
 
                         return (
                             <div key={d.id} className="p-4 bg-card border border-border rounded-xl shadow-sm space-y-3 relative group hover:border-primary/30 transition-all">
@@ -108,18 +102,11 @@ export function CashIssuanceApprovalTable({
                                 </div>
 
                                 {/* Audit warnings */}
-                                {(isEncoder || !isBalanced) && (
+                                {isEncoder && (
                                     <div className="space-y-1.5">
-                                        {isEncoder && (
-                                            <Badge variant="destructive" className="text-[8px] uppercase tracking-wider px-1.5 py-0 bg-rose-50 text-rose-700 border-rose-200 w-full flex items-center gap-1.5">
-                                                <AlertTriangle className="w-2.5 h-2.5" /> SoD violation: You encoded this
-                                            </Badge>
-                                        )}
-                                        {!isBalanced && (
-                                            <Badge variant="outline" className="text-[8px] uppercase tracking-wider px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200 w-full flex items-center gap-1.5">
-                                                <AlertTriangle className="w-2.5 h-2.5" /> Unbalanced Double-Entry
-                                            </Badge>
-                                        )}
+                                        <Badge variant="destructive" className="text-[8px] uppercase tracking-wider px-1.5 py-0 bg-rose-50 text-rose-700 border-rose-200 w-full flex items-center gap-1.5">
+                                            <AlertTriangle className="w-2.5 h-2.5" /> SoD violation: You encoded this
+                                        </Badge>
                                     </div>
                                 )}
 
@@ -160,11 +147,8 @@ export function CashIssuanceApprovalTable({
                             <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements pending approval.</TableCell></TableRow>
                         ) : (
                             data.map((d) => {
-                                const totalDebit = d.totalDebit ?? d.payables?.reduce((sum, p) => sum + (p.amount || 0), 0) ?? 0;
-                                const totalCredit = d.totalCredit ?? d.payments?.reduce((sum, p) => sum + (p.amount || 0), 0) ?? 0;
-                                const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
                                 const isEncoder = d.encoderId != null && currentUserId != null && String(d.encoderId) === String(currentUserId);
-                                const isSelectable = isBalanced && !isEncoder;
+                                const isSelectable = !isEncoder;
 
                                 return (
                                     <TableRow key={d.id} className="group hover:bg-primary/[0.04] transition-all duration-200 border-border even:bg-muted/15">
@@ -190,11 +174,7 @@ export function CashIssuanceApprovalTable({
                                                         <AlertTriangle className="w-2.5 h-2.5" /> SoD: You Encoder
                                                     </Badge>
                                                 )}
-                                                {!isBalanced && (
-                                                    <Badge variant="outline" className="text-[8px] uppercase tracking-wider px-1.5 py-0 mt-1 bg-amber-50 text-amber-700 border-amber-200 w-fit flex items-center gap-1">
-                                                        <AlertCircle className="w-2.5 h-2.5" /> Unbalanced Double-Entry
-                                                    </Badge>
-                                                )}
+
                                                 {d.remarks && (
                                                     <span className="text-[9px] font-semibold text-muted-foreground/80 mt-1 uppercase max-w-[170px] truncate" title={d.remarks}>
                                                         Remarks: {d.remarks}

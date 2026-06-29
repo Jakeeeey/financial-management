@@ -223,13 +223,13 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                                 </div>
                             )}
 
-                            {!isBalanced && (
+                            {!isBalanced && (disbursement.status as string) !== "Draft" && (disbursement.status as string) !== "Submitted" && (
                                 <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/10 text-amber-800 dark:text-amber-400 flex items-center gap-3 shadow-sm animate-in fade-in duration-300">
                                     <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
                                     <div>
                                         <p className="text-xs font-black uppercase tracking-widest">Double-Entry Balance Mismatch</p>
                                         <p className="text-[10px] font-semibold mt-0.5 uppercase tracking-wide opacity-80">
-                                            Total Debits ({formatCurrency(totalDebit)}) do not equal Total Credits ({formatCurrency(totalCredit)}). This voucher must be balanced before approval.
+                                            Total Debits ({formatCurrency(totalDebit)}) do not equal Total Credits ({formatCurrency(totalCredit)}). This voucher must be balanced before posting to the ledger.
                                         </p>
                                     </div>
                                 </div>
@@ -289,7 +289,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         <AttachmentPreview docUrl={disbursement.supportingDocumentsUrl} />
                     ) : null}
 
-                    {!isBalanced && disbursement.status !== "Posted" && (
+                    {!isBalanced && (disbursement.status as string) !== "Draft" && (disbursement.status as string) !== "Submitted" && (disbursement.status as string) !== "Posted" && (
                         <div className="bg-destructive/10 text-destructive border border-destructive/20 p-3 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4 shrink-0" />
                             <span>Warning: Debits do not match Credits. This voucher cannot be posted.</span>
@@ -468,7 +468,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         {disbursement.status === "Submitted" && subModule === "approval" && (
                             <Button 
                                 onClick={() => handleAction("Approved")} 
-                                disabled={loading || !isBalanced || isEncoder} 
+                                disabled={loading || isEncoder} 
                                 className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50"
                             >
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
