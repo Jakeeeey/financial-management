@@ -8,14 +8,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-function formatDate(iso: string | null | undefined) {
+function formatDateTime(iso: string | null | undefined) {
   if (!iso) return "-";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "-";
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${mm}/${dd}/${yyyy}`;
+  return d.toLocaleString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Manila",
+  });
 }
 
 function UserCell({ userId }: { userId: number | null }) {
@@ -100,7 +105,7 @@ export default function DeliveryTermsViewDialog(props: {
                 {/* Created At */}
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground mb-1">Created At</p>
-                  <p className="text-sm truncate">{formatDate(row.created_at)}</p>
+                  <p className="text-sm truncate">{formatDateTime(row.created_at)}</p>
                 </div>
 
                 {/* Updated By */}
@@ -114,7 +119,7 @@ export default function DeliveryTermsViewDialog(props: {
                 {/* Updated At */}
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground mb-1">Updated At</p>
-                  <p className="text-sm truncate">{formatDate(row.updated_at)}</p>
+                  <p className="text-sm truncate">{formatDateTime(row.updated_at)}</p>
                 </div>
               </div>
             </div>
