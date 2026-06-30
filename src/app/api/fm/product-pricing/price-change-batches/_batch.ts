@@ -374,12 +374,6 @@ function batchLineKey(productId: number, priceTypeId: number) {
     return `${productId}:${priceTypeId}`;
 }
 
-type LivePriceRow = {
-    product_id?: number | string | null;
-    price_type_id?: number | string | null;
-    price?: number | string | null;
-};
-
 export type PriceSnapshotConflict = {
     request_id: number;
     product_id: number;
@@ -484,19 +478,26 @@ export async function assertProductsEligible(productIds: number[]): Promise<Map<
     return rowsById;
 }
 
-export async function fetchLivePriceSnapshots(
+type ExistingPriceRow = {
+    product_id?: number | string | null;
+    price_type_id?: number | string | null;
+    price?: number | string | null;
+    id?: number | string | null;
+};
+
+export async function fetchExistingPriceRows(
     keys: Array<{ product_id: number; price_type_id: number }>,
-): Promise<Map<string, number | null>> {
+): Promise<Map<string, { id: number; price: number | null }>> {
     const productIds = Array.from(new Set(keys.map((key) => key.product_id).filter((id) => id > 0)));
     const priceTypeIds = Array.from(new Set(keys.map((key) => key.price_type_id).filter((id) => id > 0)));
-    const snapshots = new Map<string, number | null>();
+    const result = new Map<string, { id: number; price: number | null }>();
 
-    if (productIds.length === 0 || priceTypeIds.length === 0) return snapshots;
+    if (productIds.length === 0 || priceTypeIds.length === 0) return result;
 
     for (const productChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
-        const rows = await fetchAllPagesLocal<LivePriceRow>(PRICES, () => {
+        const rows = await fetchAllPagesLocal<ExistingPriceRow>(PRICES, () => {
             const params = new URLSearchParams();
-            params.set("fields", "product_id,price_type_id,price");
+            params.set("fields", "id,product_id,price_type_id,price");
             params.set("filter[product_id][_in]", productChunk.join(","));
             params.set("filter[price_type_id][_in]", priceTypeIds.join(","));
             return params;
@@ -505,14 +506,26 @@ export async function fetchLivePriceSnapshots(
         for (const row of rows) {
             const productId = pickId(row.product_id) ?? 0;
             const priceTypeId = pickId(row.price_type_id) ?? 0;
-            if (!productId || !priceTypeId) continue;
-            snapshots.set(
-                batchLineKey(productId, priceTypeId),
-                parseSnapshotPrice(row.price).value,
-            );
+            const id = pickId(row.id) ?? 0;
+            if (!productId || !priceTypeId || !id) continue;
+            result.set(batchLineKey(productId, priceTypeId), {
+                id,
+                price: parseSnapshotPrice(row.price).value,
+            });
         }
     }
 
+    return result;
+}
+
+export async function fetchLivePriceSnapshots(
+    keys: Array<{ product_id: number; price_type_id: number }>,
+): Promise<Map<string, number | null>> {
+    const rows = await fetchExistingPriceRows(keys);
+    const snapshots = new Map<string, number | null>();
+    for (const [key, { price }] of rows) {
+        snapshots.set(key, price);
+    }
     return snapshots;
 }
 
