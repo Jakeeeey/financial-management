@@ -32,7 +32,9 @@ export async function GET(request: NextRequest) {
         });
 
         if (!springRes.ok) throw new Error(await springRes.text());
-        return NextResponse.json(await springRes.json());
+        const json = await springRes.json();
+        console.log("FIRST USER JSON:", JSON.stringify(Array.isArray(json) ? json[0] : json?.data?.[0], null, 2));
+        return NextResponse.json(json);
     } catch (err: unknown) { // 🚀 STRICT TYPING PRESERVED
         const errorMessage = err instanceof Error ? err.message : "Unknown error occurred";
         return NextResponse.json({ message: "BFF Error", detail: errorMessage }, { status: 502 });

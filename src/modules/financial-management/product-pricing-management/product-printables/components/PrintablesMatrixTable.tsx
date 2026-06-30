@@ -15,6 +15,12 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { AlertCircle, RefreshCw } from "lucide-react";
+import {
+    getVisibleMatrixPriceTypes,
+    getVisibleMatrixUnits,
+    matrixPriceTypeColor,
+    priceTypeTierKey,
+} from "../utils/matrixDisplay";
 
 type Props = {
     rows: MatrixRow[];
@@ -90,25 +96,9 @@ export default function PrintablesMatrixTable({
 
     if (rows.length === 0) return <div className="p-8 text-center text-muted-foreground">No products found.</div>;
 
-    const visibleUnits = units.filter(u => usedUnitIds.has(Number(u.unit_id)));
-    
-    // Filter price types based on selection
-    const activePriceTypes = priceTypes.filter(pt => {
-        if (selectedPriceTypeIds.length === 0) return pt.sort != null && pt.sort <= 5; // Default to first 5
-        return selectedPriceTypeIds.includes(String(pt.price_type_id));
-    });
-
+    const visibleUnits = getVisibleMatrixUnits(units, usedUnitIds);
+    const activePriceTypes = getVisibleMatrixPriceTypes(priceTypes, selectedPriceTypeIds);
     const totalMatrixCols = activePriceTypes.length * (visibleUnits.length || 1);
-
-    // Defined colors for groups (matching spreadsheet aesthetic)
-    const groupColors = [
-        "bg-[#F3F4F6] text-[#374151] border-[#D1D5DB]", // List Price (Gray)
-        "bg-[#EAF4FF] text-[#1E4D8C] border-[#B8D1F3]", // Group 1 (Blue)
-        "bg-[#F0FFF4] text-[#1D5C2E] border-[#C6F6D5]", // Group 2 (Green)
-        "bg-[#FFF9E6] text-[#8C6D1E] border-[#FCEFB4]", // Group 3 (Yellow)
-        "bg-[#FFF5F5] text-[#8C1E1E] border-[#FED7D7]", // Group 4 (Red)
-        "bg-[#F7F0FF] text-[#4D1E8C] border-[#E9D8FD]", // Group 5 (Purple)
-    ];
 
     return (
         <div className="rounded-xl border border-[#D1D5DB] overflow-hidden overflow-x-auto shadow-md">
@@ -138,7 +128,7 @@ export default function PrintablesMatrixTable({
                                     colSpan={visibleUnits.length || 1} 
                                     className={cn(
                                         "text-center font-black text-xs border-r border-[#D1D5DB] py-1.5 sticky top-8 z-30",
-                                        groupColors[absoluteIndex !== -1 ? absoluteIndex % groupColors.length : 0]
+                                        matrixPriceTypeColor(absoluteIndex).className
                                     )}
                                 >
                                     {pt.price_type_name}
@@ -181,7 +171,7 @@ export default function PrintablesMatrixTable({
                                 {row.display.product_name}
                             </TableCell>
                             {activePriceTypes.map((pt) => {
-                                const ptSuffix = pt.price_type_id === -1 ? "LIST" : String(pt.price_type_id);
+                                const ptSuffix = priceTypeTierKey(pt);
                                 
                                 return (
                                     <React.Fragment key={pt.price_type_id}>

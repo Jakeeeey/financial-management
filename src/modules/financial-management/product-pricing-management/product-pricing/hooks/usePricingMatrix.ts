@@ -542,7 +542,7 @@ export function usePricingMatrix(args: {
             }
 
             const proposed = parseDirtyProposedValue(price);
-            if (proposed === null || proposed === 0) continue;
+            if (proposed === null) continue;
 
             if (isListTierKey(tier)) {
                 const current_cost =
@@ -600,7 +600,7 @@ export function usePricingMatrix(args: {
 
         for (const [k, price] of dirty.entries()) {
             const proposed = parseDirtyProposedValue(price);
-            if (proposed === null || proposed === 0) continue;
+            if (proposed === null) continue;
 
             const productId = Number(k.slice(0, k.indexOf(":")));
             const tier = k.slice(k.indexOf(":") + 1);

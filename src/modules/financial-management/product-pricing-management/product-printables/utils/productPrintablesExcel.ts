@@ -1,191 +1,219 @@
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 
-import type { MatrixRow } from "../types";
-import type { PriceTypeRef, UnitRef } from "../../shared/supplier-batch/flattenPrintMatrix";
-import { buildUnitColumns } from "../../shared/supplier-batch/flattenPrintMatrix";
+import type { MatrixRow, PriceType, Unit } from "../types";
+import { sanitizePdfFilenamePart } from "../../shared/print/pdfFileNames";
 import {
-    styleSupplierBatchWorksheet,
-    isProposedColumnHeader,
-} from "../../shared/supplier-batch/supplierBatchExcelStyles";
+    getVisibleMatrixUnits,
+    matrixPriceTypeColor,
+    priceTypeTierKey,
+} from "./matrixDisplay";
 
-const COL_PRODUCT_ID = "Product ID";
-const COL_PRODUCT_CODE = "Product Code";
-const COL_BARCODE = "Barcode";
-const COL_PRODUCT_NAME = "Product Name";
-const COL_GROUP_ID = "Group ID";
-const COL_PARENT_ID = "Parent ID";
+const MATRIX_START_ROW = 7;
+const MATRIX_HEADER_ROWS = 3;
+const IDENTITY_COLUMN_COUNT = 3;
+const DASH = "-";
 
-const IDENTITY_HEADERS = [
-    COL_PRODUCT_ID,
-    COL_PRODUCT_CODE,
-    COL_BARCODE,
-    COL_PRODUCT_NAME,
-    COL_GROUP_ID,
-    COL_PARENT_ID,
-] as const;
-
-function sortPriceTypes(priceTypes: PriceTypeRef[]): PriceTypeRef[] {
-    return [...priceTypes].sort((a, b) => {
-        const aSort = Number(a.sort ?? Number.MAX_SAFE_INTEGER);
-        const bSort = Number(b.sort ?? Number.MAX_SAFE_INTEGER);
-        return aSort - bSort || String(a.price_type_name ?? "").localeCompare(String(b.price_type_name ?? ""));
-    });
+function collectUsedUnitIds(matrixRows: MatrixRow[]): Set<number> {
+    const unitIds = new Set<number>();
+    for (const row of matrixRows) {
+        for (const unitId of Object.keys(row.variantsByUnitId)) {
+            const numericUnitId = Number(unitId);
+            if (Number.isFinite(numericUnitId)) {
+                unitIds.add(numericUnitId);
+            }
+        }
+    }
+    return unitIds;
 }
 
-function currentListCostHeader(unitLabel: string) {
-    return `Current List Cost (${unitLabel})`;
+function fill(color: string): ExcelJS.Fill {
+    return { type: "pattern", pattern: "solid", fgColor: { argb: color } };
 }
 
-function proposedListCostHeader(unitLabel: string) {
-    return `Proposed List Cost (${unitLabel})`;
+function thinBorder(color = "FFE5E7EB"): Partial<ExcelJS.Borders> {
+    return {
+        top: { style: "thin", color: { argb: color } },
+        left: { style: "thin", color: { argb: color } },
+        bottom: { style: "thin", color: { argb: color } },
+        right: { style: "thin", color: { argb: color } },
+    };
 }
 
-function priceCurrentHeader(priceType: PriceTypeRef, unitLabel: string) {
-    return `Price ${String(priceType.price_type_name ?? `#${priceType.price_type_id}`).trim()} Current (${unitLabel})`;
+function styleMetaRows(ws: ExcelJS.Worksheet, totalColumns: number) {
+    ws.mergeCells(1, 1, 1, Math.max(2, totalColumns));
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = "Product Printables Masterlist";
+    titleCell.font = { name: "Calibri", bold: true, size: 14, color: { argb: "FF111827" } };
+    titleCell.alignment = { vertical: "middle" };
+    ws.getRow(1).height = 28;
+
+    for (let rowNumber = 2; rowNumber <= 5; rowNumber++) {
+        ws.getCell(rowNumber, 1).font = { name: "Calibri", bold: true, color: { argb: "FF374151" } };
+        ws.getCell(rowNumber, 2).font = { name: "Calibri", color: { argb: "FF4B5563" } };
+    }
 }
 
-function priceProposedHeader(priceType: PriceTypeRef, unitLabel: string) {
-    return `Price ${String(priceType.price_type_name ?? `#${priceType.price_type_id}`).trim()} Proposed (${unitLabel})`;
+function styleHeaderCell(cell: ExcelJS.Cell, options?: { fill?: string; font?: string; bold?: boolean }) {
+    cell.fill = fill(options?.fill ?? "FFF9FAFB");
+    cell.font = {
+        name: "Calibri",
+        bold: options?.bold ?? true,
+        size: 10,
+        color: { argb: options?.font ?? "FF374151" },
+    };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.border = thinBorder("FFD1D5DB");
 }
 
 export async function exportProductPrintablesExcel(args: {
     matrixRows: MatrixRow[];
-    priceTypes: PriceTypeRef[];
-    units: UnitRef[];
+    priceTypes: PriceType[];
+    colorPriceTypes?: PriceType[];
+    units: Unit[];
     filterSummary: string;
     userName: string;
-    includeProposedColumns?: boolean;
+    supplierName?: string;
 }): Promise<void> {
     const {
         matrixRows,
         priceTypes,
+        colorPriceTypes = priceTypes,
         units,
         filterSummary,
         userName,
-        includeProposedColumns = false,
+        supplierName,
     } = args;
 
     if (matrixRows.length === 0) return;
 
-    const sortedPriceTypes = sortPriceTypes(priceTypes);
-    const unitColumns = buildUnitColumns(matrixRows as Parameters<typeof buildUnitColumns>[0], units);
     const generatedAt = new Date();
+    const visibleUnits = getVisibleMatrixUnits(units, collectUsedUnitIds(matrixRows));
+    const unitSlots = visibleUnits.length > 0 ? visibleUnits : [null];
+    const matrixColumnCount = Math.max(1, priceTypes.length * unitSlots.length);
+    const totalColumns = IDENTITY_COLUMN_COUNT + matrixColumnCount;
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Masterlist");
 
-    // Meta rows (2-column [label, value] format matching PRC style)
     ws.addRow(["Report", "Product Printables Masterlist"]);
     ws.addRow(["Generated", `${generatedAt.toLocaleDateString("en-PH")} ${generatedAt.toLocaleTimeString("en-PH")}`]);
     ws.addRow(["Generated by", userName || "System User"]);
-    if (filterSummary) {
-        ws.addRow(["Filters", filterSummary.replace(/\n/g, "; ")]);
-    } else {
-        ws.addRow(["Filters", "All Products"]);
+    ws.addRow(["Supplier", supplierName || "All Suppliers"]);
+    ws.addRow(["Filters", filterSummary ? filterSummary.replace(/\n/g, "; ") : "All Products"]);
+    ws.addRow([]);
+
+    styleMetaRows(ws, totalColumns);
+
+    const topHeaderRow = ws.getRow(MATRIX_START_ROW);
+    const priceTypeHeaderRow = ws.getRow(MATRIX_START_ROW + 1);
+    const unitHeaderRow = ws.getRow(MATRIX_START_ROW + 2);
+
+    ws.mergeCells(MATRIX_START_ROW, 1, MATRIX_START_ROW, IDENTITY_COLUMN_COUNT);
+    styleHeaderCell(topHeaderRow.getCell(1));
+
+    ws.mergeCells(MATRIX_START_ROW, IDENTITY_COLUMN_COUNT + 1, MATRIX_START_ROW, totalColumns);
+    const priceTypeTitleCell = topHeaderRow.getCell(IDENTITY_COLUMN_COUNT + 1);
+    priceTypeTitleCell.value = "Price Type";
+    styleHeaderCell(priceTypeTitleCell);
+    priceTypeTitleCell.font = { name: "Calibri", bold: true, size: 10, color: { argb: "FF4B5563" } };
+
+    const identityHeaders = ["Brand", "Category", "Product Name"];
+    identityHeaders.forEach((header, index) => {
+        const cell = priceTypeHeaderRow.getCell(index + 1);
+        cell.value = header;
+        styleHeaderCell(cell);
+        styleHeaderCell(unitHeaderRow.getCell(index + 1));
+    });
+
+    let column = IDENTITY_COLUMN_COUNT + 1;
+    for (const priceType of priceTypes) {
+        const startColumn = column;
+        const endColumn = column + unitSlots.length - 1;
+        const color = matrixPriceTypeColor(colorPriceTypes.indexOf(priceType));
+
+        if (startColumn !== endColumn) {
+            ws.mergeCells(MATRIX_START_ROW + 1, startColumn, MATRIX_START_ROW + 1, endColumn);
+        }
+        const priceTypeCell = priceTypeHeaderRow.getCell(startColumn);
+        priceTypeCell.value = priceType.price_type_name;
+        styleHeaderCell(priceTypeCell, { fill: color.fill, font: color.font, bold: true });
+
+        for (const unit of unitSlots) {
+            const unitCell = unitHeaderRow.getCell(column);
+            unitCell.value = unit?.unit_shortcut || DASH;
+            styleHeaderCell(unitCell);
+            column += 1;
+        }
     }
-    ws.addRow([]); // blank separator row
 
-    // Headers
-    const headers = [
-        ...IDENTITY_HEADERS,
-        ...unitColumns.flatMap((unit) =>
-            includeProposedColumns
-                ? [currentListCostHeader(unit.label), proposedListCostHeader(unit.label)]
-                : [currentListCostHeader(unit.label)],
-        ),
-        ...sortedPriceTypes.flatMap((priceType) =>
-            unitColumns.flatMap((unit) =>
-                includeProposedColumns
-                    ? [priceCurrentHeader(priceType, unit.label), priceProposedHeader(priceType, unit.label)]
-                    : [priceCurrentHeader(priceType, unit.label)],
-            ),
-        ),
-    ];
+    topHeaderRow.height = 18;
+    priceTypeHeaderRow.height = 24;
+    unitHeaderRow.height = 20;
 
-    const headerRow = ws.addRow(headers);
-    const headerRowNumber = headerRow.number;
-    const totalColumns = headers.length;
-
-    // Data rows
     for (const row of matrixRows) {
-        const display = row.display;
-        const values: Array<string | number | null> = [
-            display.product_id,
-            display.product_code ?? "",
-            display.barcode ?? "",
-            display.product_name,
-            row.group_id,
-            display.parent_id ?? "",
+        const values: Array<string | number> = [
+            row.brand_name || DASH,
+            row.category_name || DASH,
+            row.display.product_name || "",
         ];
 
-        for (const unit of unitColumns) {
-            const variant = row.variantsByUnitId[unit.unitId];
-            const current = variant?.tiers.LIST ?? variant?.product.cost_per_unit ?? null;
-            values.push(variant && current != null ? Number(current) : null);
-            if (includeProposedColumns) values.push(null);
-        }
-
-        for (const priceType of sortedPriceTypes) {
-            for (const unit of unitColumns) {
-                const variant = row.variantsByUnitId[unit.unitId];
-                const current = variant?.tiers[String(priceType.price_type_id)] ?? null;
-                values.push(variant ? current : null);
-                if (includeProposedColumns) values.push(null);
+        for (const priceType of priceTypes) {
+            const tierKey = priceTypeTierKey(priceType);
+            for (const unit of unitSlots) {
+                if (!unit) {
+                    values.push(DASH);
+                    continue;
+                }
+                const variant = row.variantsByUnitId[Number(unit.unit_id)];
+                const price = (variant?.tiers as Record<string, number | null> | undefined)?.[tierKey] ?? null;
+                values.push(price == null ? DASH : Number(price));
             }
         }
 
-        ws.addRow(values.map((v) => v === null ? "" : v));
-    }
+        const worksheetRow = ws.addRow(values);
+        worksheetRow.height = 22;
 
-    const dataStartRowNumber = headerRowNumber + 1;
-
-    // Column widths (shared styling expects specific widths)
-    ws.getColumn(1).width = 12;
-    ws.getColumn(2).width = 14;
-    ws.getColumn(3).width = 16;
-    ws.getColumn(4).width = 36;
-    ws.getColumn(5).width = 10;
-    ws.getColumn(6).width = 10;
-    for (let c = 7; c <= headers.length; c++) {
-        ws.getColumn(c).width = 18;
-    }
-
-    // Number formatting for price columns
-    const identityColCount = IDENTITY_HEADERS.length;
-    for (let r = dataStartRowNumber; r <= ws.rowCount; r++) {
-        for (let c = identityColCount + 1; c <= headers.length; c++) {
-            ws.getCell(r, c).numFmt = "#,##0.00";
+        for (let cellIndex = 1; cellIndex <= totalColumns; cellIndex++) {
+            const cell = worksheetRow.getCell(cellIndex);
+            cell.border = thinBorder();
+            cell.alignment = {
+                vertical: "middle",
+                horizontal: cellIndex <= IDENTITY_COLUMN_COUNT ? "left" : "right",
+                wrapText: cellIndex <= IDENTITY_COLUMN_COUNT,
+            };
+            cell.font = {
+                name: cellIndex <= IDENTITY_COLUMN_COUNT ? "Calibri" : "Consolas",
+                size: cellIndex <= IDENTITY_COLUMN_COUNT ? 10 : 9,
+                bold: cellIndex === 3 || (cellIndex > IDENTITY_COLUMN_COUNT && typeof cell.value === "number"),
+                color: { argb: cell.value === DASH ? "FFD1D5DB" : cellIndex === 3 ? "FF111827" : "FF374151" },
+            };
+            if (cell.value === DASH) {
+                cell.fill = fill("FFF9FAFB");
+            }
+            if (cellIndex > IDENTITY_COLUMN_COUNT && typeof cell.value === "number") {
+                cell.numFmt = "#,##0.000";
+            }
         }
     }
 
-    // Proposed column indexes (1-based) for shared styling
-    const proposedColumnIndexes: number[] = [];
-    for (let c = 0; c < headers.length; c++) {
-        if (isProposedColumnHeader(headers[c])) {
-            proposedColumnIndexes.push(c + 1);
-        }
+    ws.getColumn(1).width = 16;
+    ws.getColumn(2).width = 16;
+    ws.getColumn(3).width = 38;
+    for (let colIndex = IDENTITY_COLUMN_COUNT + 1; colIndex <= totalColumns; colIndex++) {
+        ws.getColumn(colIndex).width = 12;
     }
 
-    // Apply the same styling pipeline used by the PRC supplier export
-    styleSupplierBatchWorksheet({
-        sheet: ws,
-        headerRowNumber,
-        totalColumns,
-        dataStartRowNumber,
-        proposedColumnIndexes,
-        // instructionStartRowNumber intentionally omitted (read-only export)
-    });
-
-    // Re-style the first meta row as a bold title
-    const titleRow = ws.getRow(1);
-    ws.mergeCells(1, 1, 1, Math.min(2, totalColumns));
-    titleRow.getCell(1).value = "Product Printables Masterlist";
-    titleRow.getCell(1).font = { name: "Calibri", bold: true, size: 14 };
-    titleRow.getCell(1).alignment = { vertical: "middle" };
-    titleRow.height = 28;
+    ws.views = [
+        {
+            state: "frozen",
+            xSplit: IDENTITY_COLUMN_COUNT,
+            ySplit: MATRIX_START_ROW + MATRIX_HEADER_ROWS - 1,
+        },
+    ];
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    saveAs(blob, `Masterlist_${generatedAt.toISOString().split("T")[0]}.xlsx`);
+    const supplierSuffix = supplierName ? `_${sanitizePdfFilenamePart(supplierName)}` : "";
+    saveAs(blob, `Masterlist${supplierSuffix}_${generatedAt.toISOString().split("T")[0]}.xlsx`);
 }

@@ -24,6 +24,8 @@ import {
   useDeliveryTerms,
   usePaymentTerms,
 } from "@/modules/financial-management/supplier-registration/hooks/useTerms";
+import { usePayeeUsers } from "../../hooks/usePayeeUsers";
+import { UserSelect } from "./user-select";
 
 interface AddPayeeFormProps {
   onSuccess: (payee?: Payee) => void | Promise<void>;
@@ -202,9 +204,11 @@ export function AddPayeeForm({
   const supplierTypeLabel = supplierType === "TRADE" ? "Trade" : "Non-Trade";
   const { paymentTerms, isLoading: isLoadingPaymentTerms } = usePaymentTerms();
   const { deliveryTerms, isLoading: isLoadingDeliveryTerms } = useDeliveryTerms();
+  const { users: payeeUsers, loading: isLoadingPayeeUsers } = usePayeeUsers();
   const form = useForm({
     resolver: zodResolver(PayeeFormSchema),
     defaultValues: {
+      user_id: undefined,
       supplier_name: "",
       supplier_shortcut: "",
       supplier_type: supplierType,
@@ -498,6 +502,32 @@ export function AddPayeeForm({
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <Card>
           <CardContent className="grid gap-4 pt-6">
+            <div className="flex flex-col space-y-2">
+              <FormLabel>Autofill from User (Optional)</FormLabel>
+              <UserSelect
+                users={payeeUsers}
+                loading={isLoadingPayeeUsers}
+                onSelect={(user) => {
+                  const userId = user.id || user.user_id || user.userId;
+                  if (userId) form.setValue("user_id", userId, { shouldValidate: true });
+                  
+                  const fname = user.firstName || user.user_fname || "";
+                  const lname = user.lastName || user.user_lname || "";
+                  const name = `${fname} ${lname}`.trim();
+                  if (name) form.setValue("supplier_name", name, { shouldValidate: true });
+                  
+                  const tin = user.tinNumber || user.user_tin || "";
+                  if (tin) form.setValue("tin_number", tin.replace(/\D/g, "").slice(0, 12), { shouldValidate: true });
+                  
+                  const email = user.email || user.user_email || "";
+                  if (email) form.setValue("email_address", email, { shouldValidate: true });
+                  
+                  const phone = user.contactNumber || user.user_contact || "";
+                  if (phone) form.setValue("phone_number", phone, { shouldValidate: true });
+                }}
+              />
+            </div>
+
             <FormField
               control={form.control}
               name="supplier_name"

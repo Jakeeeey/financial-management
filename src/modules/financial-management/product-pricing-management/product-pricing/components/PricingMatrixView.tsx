@@ -695,6 +695,11 @@ export default function PricingMatrixView() {
         importFileInputRef.current?.click();
     }, [lookups.suppliers, matrix.filters.supplier_ids]);
 
+    const openCreateBatchDialog = React.useCallback(() => {
+        setImportPrefill(null);
+        setCreateBatchOpen(true);
+    }, []);
+
     const handleImportExcelFile = React.useCallback(
         async (event: React.ChangeEvent<HTMLInputElement>) => {
             const file = event.target.files?.[0];
@@ -818,6 +823,7 @@ export default function PricingMatrixView() {
                         onPrint={openPrint}
                         onExportExcel={openExcelOptions}
                         onImportExcel={handleImportExcelClick}
+                        onNewBatch={openCreateBatchDialog}
                         loading={actionBarLoading}
                     />
                     <input

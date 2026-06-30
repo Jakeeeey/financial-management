@@ -46,15 +46,20 @@ export type DisbursementRow = {
     total_amount?: unknown;
     paid_amount?: unknown;
     encoder_id?: unknown;
+    submitted_by?: unknown;
     approver_id?: unknown;
+    released_by?: unknown;
     posted_by?: unknown;
     isPosted?: unknown;
     transaction_date?: unknown;
     date_created?: unknown;
+    date_submitted?: unknown;
     date_approved?: unknown;
+    date_released?: unknown;
     date_posted?: unknown;
     division_id?: RelationValue;
     department_id?: RelationValue;
+    fund_source_id?: unknown;
     status?: unknown;
     supporting_documents_url?: unknown;
 };
@@ -79,6 +84,8 @@ export type PaymentRow = {
     date?: unknown;
     amount?: unknown;
     remarks?: unknown;
+    released_by?: unknown;
+    released_date?: unknown;
 };
 
 type SupplierRow = {
@@ -99,6 +106,8 @@ interface DirectusDisbursementNo {
 }
 
 export interface PayableInput {
+    id?: number;
+    divisionId?: number;
     referenceNo?: string;
     date?: string;
     coaId?: number;
@@ -107,12 +116,15 @@ export interface PayableInput {
 }
 
 export interface PaymentInput {
+    id?: number;
     coaId?: number;
     bankId?: number;
     checkNo?: string;
     date?: string;
     amount?: number;
     remarks?: string;
+    releasedDate?: string;
+    releasedBy?: string;
 }
 
 function asString(value: unknown) {
@@ -219,13 +231,14 @@ function buildDisbursementParams(
     const divisionId = searchParams.get("divisionId") || "";
     const departmentId = searchParams.get("departmentId") || "";
     const docNo = searchParams.get("docNo") || "";
+    const isPosted = searchParams.get("isPosted") || "";
     const params = new URLSearchParams();
     let filterIndex = 0;
 
     params.set("limit", String(size));
     params.set("offset", String(page * size));
     params.set("meta", "filter_count");
-    params.set("sort", "-date_updated,-date_created,-id");
+    params.set("sort", "-date_created,-id");
     params.set(
         "fields",
         [
@@ -238,17 +251,22 @@ function buildDisbursementParams(
             "total_amount",
             "paid_amount",
             "encoder_id",
+            "submitted_by",
             "approver_id",
+            "released_by",
             "posted_by",
             "isPosted",
             "transaction_date",
             "date_created",
+            "date_submitted",
             "date_approved",
+            "date_released",
             "date_posted",
             "division_id.division_id",
             "division_id.division_name",
             "department_id.department_id",
             "department_id.department_name",
+            "fund_source_id",
             "supporting_documents_url",
             "status",
         ].join(","),
@@ -260,7 +278,13 @@ function buildDisbursementParams(
         filterIndex = appendFilter(params, filterIndex, "transaction_type", "_eq", "2");
     }
     if (status && status !== "All") {
-        filterIndex = appendFilter(params, filterIndex, "status", "_eq", status);
+        const op = status.includes(",") ? "_in" : "_eq";
+        filterIndex = appendFilter(params, filterIndex, "status", op, status);
+    } else {
+        filterIndex = appendFilter(params, filterIndex, "status", "_neq", "Deleted");
+    }
+    if (isPosted !== "") {
+        filterIndex = appendFilter(params, filterIndex, "isPosted", "_eq", isPosted);
     }
     if (supplierIds.length > 0) {
         filterIndex = appendFilter(params, filterIndex, "payee", "_in", supplierIds.join(","));
@@ -307,7 +331,7 @@ export async function getLineItems(disbursementIds: number[]) {
     payableParams.set("limit", "-1");
     payableParams.set(
         "fields",
-        "id,disbursement_id,division_id.division_id,division_id.division_name,reference_no,date,coa_id,coa_id.coa_id,coa_id.account_title,amount,remarks",
+        "id,disbursement_id,division_id,division_id.division_id,division_id.division_name,reference_no,date,coa_id,coa_id.coa_id,coa_id.account_title,amount,remarks",
     );
     payableParams.set("filter[disbursement_id][_in]", ids.join(","));
 
@@ -315,7 +339,7 @@ export async function getLineItems(disbursementIds: number[]) {
     paymentParams.set("limit", "-1");
     paymentParams.set(
         "fields",
-        "id,disbursement_id,coa_id,coa_id.coa_id,coa_id.account_title,bank_id,check_no,date,amount,remarks",
+        "id,disbursement_id,coa_id,coa_id.coa_id,coa_id.account_title,bank_id,check_no,date,amount,remarks,released_by,released_date",
     );
     paymentParams.set("filter[disbursement_id][_in]", ids.join(","));
 
@@ -330,17 +354,23 @@ export async function getLineItems(disbursementIds: number[]) {
     };
 }
 
-function normalizePayable(row: PayableRow, coaMap?: Map<number, string>) {
+function normalizePayable(row: PayableRow, coaMap?: Map<number, string>, divisionMap?: Map<number, string>) {
     const rawCoaId = relationId(row.coa_id, "coa_id");
     let accountTitle = relationLabel(row.coa_id, "account_title");
     if (!accountTitle && rawCoaId && coaMap) {
         accountTitle = coaMap.get(rawCoaId) || `Account #${rawCoaId}`;
     }
 
+    const rawDivisionId = relationId(row.division_id, "division_id");
+    let divisionName = relationLabel(row.division_id, "division_name");
+    if (!divisionName && rawDivisionId && divisionMap) {
+        divisionName = divisionMap.get(rawDivisionId) || `Division #${rawDivisionId}`;
+    }
+
     return {
         id: asNumber(row.id),
-        divisionId: relationId(row.division_id, "division_id"),
-        divisionName: relationLabel(row.division_id, "division_name"),
+        divisionId: rawDivisionId,
+        divisionName,
         referenceNo: asString(row.reference_no),
         date: asString(row.date),
         coaId: rawCoaId,
@@ -350,22 +380,45 @@ function normalizePayable(row: PayableRow, coaMap?: Map<number, string>) {
     };
 }
 
-function normalizePayment(row: PaymentRow, coaMap?: Map<number, string>) {
+function normalizePayment(
+    row: PaymentRow,
+    coaMap?: Map<number, string>,
+    userMap?: Map<string, string>,
+    bankMap?: Map<number, { bankName: string; accountNumber: string }>
+) {
     const rawCoaId = relationId(row.coa_id, "coa_id");
     let accountTitle = relationLabel(row.coa_id, "account_title");
     if (!accountTitle && rawCoaId && coaMap) {
         accountTitle = coaMap.get(rawCoaId) || `Account #${rawCoaId}`;
     }
 
+    const releasedByVal = asNumber(row.released_by);
+    const releasedByName = releasedByVal ? (userMap?.get(String(releasedByVal)) || `User #${releasedByVal}`) : "";
+
+    const rawBankId = asNumber(row.bank_id);
+    let bankName = "";
+    let bankAccountNumber = "";
+    if (rawBankId && bankMap) {
+        const bankInfo = bankMap.get(rawBankId);
+        if (bankInfo) {
+            bankName = bankInfo.bankName;
+            bankAccountNumber = bankInfo.accountNumber;
+        }
+    }
+
     return {
         id: asNumber(row.id),
         coaId: rawCoaId,
         accountTitle,
-        bankId: asNumber(row.bank_id),
+        bankId: rawBankId,
+        bankName: bankName || undefined,
+        bankAccountNumber: bankAccountNumber || undefined,
         checkNo: asString(row.check_no),
         date: asString(row.date),
         amount: asNumber(row.amount) ?? 0,
         remarks: asString(row.remarks),
+        releasedDate: asString(row.released_date),
+        releasedBy: releasedByName || releasedByVal || undefined,
     };
 }
 
@@ -375,19 +428,26 @@ export function normalizeDisbursement(
     paymentsMap: Map<number, PaymentRow[]>,
     userMap?: Map<string, string>,
     coaMap?: Map<number, string>,
+    divisionMap?: Map<number, string>,
+    bankMap?: Map<number, { bankName: string; accountNumber: string }>,
 ) {
     const id = asNumber(row.id) ?? 0;
-    const payables = (payablesMap.get(id) ?? []).map((p) => normalizePayable(p, coaMap));
-    const payments = (paymentsMap.get(id) ?? []).map((p) => normalizePayment(p, coaMap));
+
+    const payables = (payablesMap.get(id) || []).map((p) => normalizePayable(p, coaMap, divisionMap));
+    const payments = (paymentsMap.get(id) || []).map((p) => normalizePayment(p, coaMap, userMap, bankMap));
     const totalDebit = roundMoney(payables.reduce((sum, line) => sum + line.amount, 0));
     const totalCredit = roundMoney(payments.reduce((sum, line) => sum + line.amount, 0));
 
     const encoderIdVal = asNumber(row.encoder_id);
+    const submittedByVal = asNumber(row.submitted_by);
     const approverIdVal = asNumber(row.approver_id);
+    const releasedByVal = asNumber(row.released_by);
     const postedByVal = asNumber(row.posted_by);
 
     const encoderName = encoderIdVal ? (userMap?.get(String(encoderIdVal)) || `User #${encoderIdVal}`) : "";
+    const submittedByName = submittedByVal ? (userMap?.get(String(submittedByVal)) || `User #${submittedByVal}`) : "";
     const approverName = approverIdVal ? (userMap?.get(String(approverIdVal)) || `User #${approverIdVal}`) : "";
+    const releasedByName = releasedByVal ? (userMap?.get(String(releasedByVal)) || `User #${releasedByVal}`) : "";
     const postedByName = postedByVal ? (userMap?.get(String(postedByVal)) || `User #${postedByVal}`) : "";
 
     return {
@@ -403,20 +463,27 @@ export function normalizeDisbursement(
         totalCredit,
         balance: roundMoney(totalDebit - totalCredit),
         encoderName,
+        submittedByName,
         approverName,
+        releasedByName,
         postedByName,
         encoderId: encoderIdVal,
+        submittedById: submittedByVal,
         approverId: approverIdVal,
+        releasedById: releasedByVal,
         postedById: postedByVal,
         isPosted: asNumber(row.isPosted) ?? 0,
         transactionDate: asString(row.transaction_date),
         dateCreated: asString(row.date_created),
+        dateSubmitted: asString(row.date_submitted),
         dateApproved: asString(row.date_approved),
+        dateReleased: asString(row.date_released),
         datePosted: asString(row.date_posted),
         divisionId: relationId(row.division_id, "division_id"),
         departmentId: relationId(row.department_id, "department_id"),
         divisionName: relationLabel(row.division_id, "division_name"),
         departmentName: relationLabel(row.department_id, "department_name"),
+        fundSourceId: asNumber(row.fund_source_id),
         status: asString(row.status) || "Draft",
         supportingDocumentsUrl: asString(row.supporting_documents_url),
         payables,
@@ -443,38 +510,80 @@ export async function getCoaMap() {
     return map;
 }
 
-export async function getUserMap(token: string) {
-    const map = new Map<string, string>();
+export async function getDivisionMap() {
+    const map = new Map<number, string>();
     try {
-        const url = process.env.SPRING_API_BASE_URL || "http://localhost:8080";
-        const targetUrl = `${url.replace(/\/$/, "")}/users`;
-        const usersRes = await fetch(targetUrl, {
-            headers: { "Authorization": `Bearer ${token}` },
-        });
-        if (usersRes.ok) {
-            const list = await usersRes.json();
-            if (Array.isArray(list)) {
-                list.forEach((u: { id?: unknown; firstName?: unknown; lastName?: unknown }) => {
-                    const id = String(u.id);
-                    const name = `${u.firstName || ""} ${u.lastName || ""}`.trim();
-                    if (id && name) {
-                        map.set(id, name);
-                    }
-                });
-            }
+        const divRes = await directusFetch<DirectusList<{ division_id?: number; division_name?: string }>>("/items/division?limit=-1&fields=division_id,division_name");
+        if (divRes.data && Array.isArray(divRes.data)) {
+            divRes.data.forEach((d) => {
+                const id = Number(d.division_id);
+                const name = String(d.division_name);
+                if (id && name) {
+                    map.set(id, name);
+                }
+            });
         }
     } catch (e) {
-        console.warn("Failed to fetch users map:", e);
+        console.warn("Failed to fetch divisions map:", e);
     }
     return map;
 }
 
-/** Resolve the custom user table user_id from the JWT email (sub claim). Returns null if not found. */
-export async function resolveEncoderId(email: string | null): Promise<number | null> {
-    if (!email) return null;
+export async function getBankMap() {
+    const map = new Map<number, { bankName: string; accountNumber: string }>();
+    try {
+        const bankRes = await directusFetch<DirectusList<{ bank_id?: number; bank_name?: string; account_number?: string }>>("/items/bank_accounts?limit=-1&fields=bank_id,bank_name,account_number");
+        if (bankRes.data && Array.isArray(bankRes.data)) {
+            bankRes.data.forEach((b) => {
+                const id = Number(b.bank_id);
+                const bankName = String(b.bank_name || "");
+                const accountNumber = String(b.account_number || "");
+                if (id) {
+                    map.set(id, { bankName, accountNumber });
+                }
+            });
+        }
+    } catch (e) {
+        console.warn("Failed to fetch bank accounts map:", e);
+    }
+    return map;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function getUserMap(token: string) {
+    const map = new Map<string, string>();
+    try {
+        const res = await directusFetch<DirectusList<{ user_id?: number; user_fname?: string; user_lname?: string }>>(
+            "/items/user?limit=-1&fields=user_id,user_fname,user_lname"
+        );
+        if (res.data && Array.isArray(res.data)) {
+            res.data.forEach((u) => {
+                const id = String(u.user_id);
+                const name = `${u.user_fname || ""} ${u.user_lname || ""}`.trim();
+                if (id && name) {
+                    map.set(id, name);
+                }
+            });
+        }
+    } catch (e) {
+        console.warn("Failed to fetch users map from Directus:", e);
+    }
+    return map;
+}
+
+/** Resolve the custom user table user_id from the JWT email or numeric sub claim. Returns null if not found. */
+export async function resolveEncoderId(emailOrSub: string | null): Promise<number | null> {
+    if (!emailOrSub) return null;
+    
+    // If it's already a numeric ID from Spring Boot, parse it directly
+    const parsedId = Number(emailOrSub);
+    if (Number.isInteger(parsedId) && parsedId > 0) {
+        return parsedId;
+    }
+    
     try {
         const params = new URLSearchParams();
-        params.set("filter[user_email][_eq]", email);
+        params.set("filter[user_email][_eq]", emailOrSub);
         params.set("fields", "user_id");
         params.set("limit", "1");
         const res = await directusFetch<DirectusList<{ user_id?: number }>>(`/items/user?${params.toString()}`);
@@ -644,9 +753,11 @@ export async function GET(request: NextRequest) {
         const totalElements = asNumber(disbursementsRes.meta?.filter_count) ?? rows.length;
         const userMap = await getUserMap(token);
         const coaMap = await getCoaMap();
+        const divisionMap = await getDivisionMap();
+        const bankMap = await getBankMap();
 
         return NextResponse.json({
-            content: rows.map((row) => normalizeDisbursement(row, lineItems.payables, lineItems.payments, userMap, coaMap)),
+            content: rows.map((row) => normalizeDisbursement(row, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap)),
             totalElements,
             totalPages: Math.ceil(totalElements / query.size),
             number: query.page,
@@ -736,6 +847,7 @@ export async function POST(request: NextRequest) {
             .filter((line: PayableInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== ""))
             .map((line: PayableInput) => ({
                 disbursement_id: createdId,
+                division_id: line.divisionId ? Number(line.divisionId) : null,
                 reference_no: line.referenceNo || "",
                 date: line.date,
                 coa_id: line.coaId ? Number(line.coaId) : null,
@@ -752,7 +864,9 @@ export async function POST(request: NextRequest) {
                 check_no: line.checkNo || "",
                 date: line.date,
                 amount: Number(line.amount) || 0,
-                remarks: line.remarks || ""
+                remarks: line.remarks || "",
+                released_by: line.releasedBy ? Number(line.releasedBy) : null,
+                released_date: line.releasedDate || null
             }));
 
         await Promise.all([
@@ -765,12 +879,21 @@ export async function POST(request: NextRequest) {
         ]);
 
         // 7. Return the full normalized record
+        const freshHeaderRes = await fetch(`${DIRECTUS_URL}/items/disbursement/${createdId}?fields=id,doc_no,transaction_type,payee.id,payee.supplier_name,remarks,total_amount,paid_amount,encoder_id,submitted_by,approver_id,released_by,posted_by,isPosted,transaction_date,date_created,date_submitted,date_approved,date_released,date_posted,division_id.division_id,division_id.division_name,department_id.department_id,department_id.department_name,fund_source_id,supporting_documents_url,status`, {
+            headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+            cache: "no-store",
+        });
+        if (!freshHeaderRes.ok) throw new Error("Failed to fetch fresh disbursement header");
+        const freshDis = (await freshHeaderRes.json()).data;
+
         const lineItems = await getLineItems([createdId]);
         const userMap = await getUserMap(token);
         const coaMap = await getCoaMap();
+        const divisionMap = await getDivisionMap();
+        const bankMap = await getBankMap();
 
         return NextResponse.json(
-            normalizeDisbursement(createdDisbursement, lineItems.payables, lineItems.payments, userMap, coaMap)
+            normalizeDisbursement(freshDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap)
         );
 
     } catch (err: unknown) {

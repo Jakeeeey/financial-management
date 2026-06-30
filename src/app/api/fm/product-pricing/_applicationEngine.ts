@@ -37,6 +37,8 @@ export type ApplicationOutcome<T extends ApplicationRow> = {
 
 type DirectusList<T> = { data?: T[] };
 
+const UNSTAGED_DETAIL_ERROR = "Batch has pending detail rows that were not staged for application.";
+
 function sanitizedError(error: unknown): string {
     const raw = error instanceof Error ? error.message : String(error);
     if (!raw) return "Application failed.";
@@ -76,6 +78,32 @@ async function patchFiltered<T>(
         }),
     });
     return response.data ?? [];
+}
+
+async function fetchBatchApplicationRows(collection: string, headerId: number): Promise<ApplicationRow[]> {
+    const params = new URLSearchParams();
+    params.set("limit", "-1");
+    params.set(
+        "fields",
+        [
+            "request_id",
+            "status",
+            "application_status",
+            "application_attempts",
+            "application_error",
+        ].join(","),
+    );
+    params.set("filter[header_id][_eq]", String(headerId));
+
+    const response = await fetchDirectus<DirectusList<ApplicationRow>>(
+        `${mustBase()}/items/${collection}?${params.toString()}`,
+        { headers: directusHeaders() },
+    );
+    return response.data ?? [];
+}
+
+function rowIdSet(rows: ApplicationRow[]) {
+    return new Set(rows.map(requestId).filter((id) => id > 0));
 }
 
 export async function stageStandaloneApproval<T extends ApplicationRow>(args: {
@@ -156,6 +184,12 @@ export async function stageBatchApproval(args: {
     if (!claimed[0]) return null;
 
     try {
+        const pendingRows = await fetchBatchApplicationRows(args.detailCollection, args.headerId);
+        const pendingIds = rowIdSet(pendingRows.filter((row) => String(row.status ?? "") === "PENDING"));
+        if (pendingIds.size === 0) {
+            throw new Error("Batch has no pending detail rows to stage.");
+        }
+
         await patchFiltered<ApplicationRow>(
             args.detailCollection,
             { _and: [{ header_id: { _eq: args.headerId } }, { status: { _eq: "PENDING" } }] },
@@ -174,6 +208,17 @@ export async function stageBatchApproval(args: {
             },
             "request_id,header_id,status,effective_at,application_status",
         );
+
+        const rowsAfterStaging = await fetchBatchApplicationRows(args.detailCollection, args.headerId);
+        const stagedIds = rowIdSet(rowsAfterStaging.filter((row) =>
+            pendingIds.has(requestId(row)) &&
+            String(row.status ?? "") === "APPROVED" &&
+            String(row.application_status ?? "").toUpperCase() === "SCHEDULED",
+        ));
+        const allExpectedRowsStaged = Array.from(pendingIds).every((id) => stagedIds.has(id));
+        if (!allExpectedRowsStaged) {
+            throw new Error(UNSTAGED_DETAIL_ERROR);
+        }
 
         const finalized = await patchFiltered<ApplicationRow>(
             HEADERS,
@@ -402,34 +447,27 @@ export async function refreshBatchApplicationStatus(args: {
     userId: number | null;
 }) {
     if (args.headerId <= 0) return null;
-    const params = new URLSearchParams();
-    params.set("limit", "-1");
-    params.set("fields", "request_id,application_status,application_attempts,application_error");
-    params.set("filter[header_id][_eq]", String(args.headerId));
-    params.set("filter[status][_eq]", "APPROVED");
-    const response = await fetchDirectus<DirectusList<ApplicationRow>>(
-        `${mustBase()}/items/${args.detailCollection}?${params.toString()}`,
-        { headers: directusHeaders() },
-    );
-    const rows = response.data ?? [];
+    const rows = await fetchBatchApplicationRows(args.detailCollection, args.headerId);
     if (rows.length === 0) return null;
 
-    const statuses = rows.map((row) => String(row.application_status ?? "").toUpperCase());
-    const applicationStatus: ApplicationStatus = statuses.includes("FAILED")
+    const hasPendingRows = rows.some((row) => String(row.status ?? "") === "PENDING");
+    const approvedRows = rows.filter((row) => String(row.status ?? "") === "APPROVED");
+    const statuses = approvedRows.map((row) => String(row.application_status ?? "").toUpperCase());
+    const applicationStatus: ApplicationStatus = hasPendingRows || statuses.includes("FAILED")
         ? "FAILED"
         : statuses.includes("APPLYING")
           ? "APPLYING"
           : statuses.includes("SCHEDULED")
             ? "SCHEDULED"
             : "APPLIED";
-    const error = rows.find((row) => String(row.application_status ?? "").toUpperCase() === "FAILED")?.application_error ?? null;
+    const error = hasPendingRows
+        ? UNSTAGED_DETAIL_ERROR
+        : rows.find((row) => String(row.application_status ?? "").toUpperCase() === "FAILED")?.application_error ?? null;
     const attempts = Math.max(...rows.map((row) => Number(row.application_attempts ?? 0)), 0);
     const now = nowManila();
 
     const headerConditions: Record<string, unknown>[] = [{ header_id: { _eq: args.headerId } }];
-    if (applicationStatus === "FAILED") {
-        headerConditions.push({ application_status: { _neq: "APPLIED" } });
-    } else if (applicationStatus !== "APPLIED") {
+    if (applicationStatus !== "APPLIED" && applicationStatus !== "FAILED") {
         headerConditions.push({ application_status: { _nin: ["APPLIED", "FAILED"] } });
     }
 
