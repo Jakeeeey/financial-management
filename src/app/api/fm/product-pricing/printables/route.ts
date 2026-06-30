@@ -28,12 +28,7 @@ type ProductRow = {
     product_brand: number | string | null;
     unit_of_measurement: number | string | null;
     isActive: number | string | null;
-    price_per_unit?: number | string | null;
-    priceA?: number | string | null;
-    priceB?: number | string | null;
-    priceC?: number | string | null;
-    priceD?: number | string | null;
-    priceE?: number | string | null;
+    cost_per_unit?: number | string | null;
 };
 
 function pickId(v: unknown): number | null {
@@ -122,7 +117,7 @@ export async function GET(req: NextRequest) {
         const fields = [
             "product_id", "parent_id", "product_code", "barcode", "product_name",
             "isActive", "product_category", "product_brand", "unit_of_measurement",
-            "price_per_unit", "priceA", "priceB", "priceC", "priceD", "priceE", "cost_per_unit"
+            "cost_per_unit"
         ].join(",");
 
         let supplierProductIdsIn: number[] | undefined;

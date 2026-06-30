@@ -10,12 +10,6 @@ export type ProductRow = {
     product_category: number | string | null;
     product_brand: number | string | null;
     unit_of_measurement: number | string | null;
-    price_per_unit?: number | string | null;
-    priceA?: number | string | null;
-    priceB?: number | string | null;
-    priceC?: number | string | null;
-    priceD?: number | string | null;
-    priceE?: number | string | null;
     cost_per_unit?: number | string | null;
 };
 
