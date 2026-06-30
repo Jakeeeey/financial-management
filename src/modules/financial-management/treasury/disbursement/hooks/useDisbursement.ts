@@ -66,8 +66,15 @@ export function useDisbursement() {
 
     useEffect(() => {
         fetchList(page, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, activeType, size]);
+        
+        const timer = setInterval(() => {
+            if (typeof window !== "undefined" && document.hasFocus() && !actionLoading) {
+                fetchList(page, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
+            }
+        }, 10000); // 10s poll
+
+        return () => clearInterval(timer);
+    }, [page, activeType, size, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch, actionLoading, fetchList]);
 
     const applyFilters = () => {
         setPage(0);

@@ -1,7 +1,8 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
-import { Disbursement } from "../types";
+import { Disbursement, PaymentLine } from "../types";
+import { numberToWords } from "./disbursement-utils";
 
 export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "A4" | "58mm") => {
     const doc = new jsPDF({
@@ -105,11 +106,20 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
         styles: { fontSize: isA4 ? 8 : 5, textColor: 0, lineColor: [150, 150, 150], lineWidth: 0.1, cellPadding: isA4 ? 2 : 1 },
         headStyles: { fillColor: [255, 255, 255], textColor: 0, fontStyle: 'bold', lineColor: 0, lineWidth: 0.2 },
         head: isA4 ? [['Check / Ref', 'Bank / GL Account', 'Amount']] : [['Check', 'Bank/GL', 'Amount']],
-        body: (disbursement.payments || []).map(p => [
-            p.checkNo || 'N/A',
-            p.accountTitle || `COA: ${p.coaId}`,
-            { content: p.amount.toLocaleString('en-US', {minimumFractionDigits: 2}), styles: { halign: 'right' } }
-        ])
+        body: (disbursement.payments || []).map(p => {
+            if (isA4) {
+                const bankInfo = p.bankName ? `${p.bankName}${p.bankAccountNumber ? ` (${p.bankAccountNumber})` : ''}` : '';
+                const accountTitle = p.accountTitle || `COA: ${p.coaId}`;
+                const bankAndAccount = bankInfo ? `${accountTitle}\n[Bank: ${bankInfo}]` : accountTitle;
+                return [p.checkNo || 'N/A', bankAndAccount, { content: p.amount.toLocaleString('en-US', {minimumFractionDigits: 2}), styles: { halign: 'right' } }];
+            } else {
+                return [
+                    p.checkNo || 'N/A',
+                    p.accountTitle || `COA: ${p.coaId}`,
+                    { content: p.amount.toLocaleString('en-US', {minimumFractionDigits: 2}), styles: { halign: 'right' } }
+                ];
+            }
+        })
     });
 
     // @ts-expect-error - TypeScript doesn't recognize lastAutoTable property from jsPDF autotable plugin
@@ -144,6 +154,92 @@ export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "
         startY += 7;
         doc.setFont("helvetica", "normal"); doc.text("Received By:", marginX, startY); doc.text("______________", marginX, startY + 4);
     }
+
+    const pdfBlobUrl = doc.output('bloburl');
+    window.open(pdfBlobUrl, '_blank');
+};
+
+export const generateCheckLeafPDF = (
+    payment: PaymentLine,
+    payeeName: string,
+    calibration?: { offsetX?: number; offsetY?: number }
+) => {
+    const offsetX = calibration?.offsetX ?? 0;
+    const offsetY = calibration?.offsetY ?? 0;
+
+    // Standard PH check leaf size is 8.0 in x 3.0 in = 203.2 mm x 76.2 mm
+    const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: [203.2, 76.2]
+    });
+
+    // 1. Date Field
+    if (payment.date) {
+        // Date parsing: extract digits correctly, ignoring timezone shifting issues if any
+        // We parse date components directly from the YYYY-MM-DD string to avoid timezone conversion offsets
+        let mm = "";
+        let dd = "";
+        let yyyy = "";
+        
+        if (typeof payment.date === "string" && payment.date.includes("-")) {
+            const parts = payment.date.split("-");
+            if (parts.length === 3) {
+                yyyy = parts[0];
+                mm = parts[1];
+                dd = parts[2];
+            }
+        }
+        
+        if (!mm || !dd || !yyyy) {
+            const dObj = new Date(payment.date);
+            mm = String(dObj.getMonth() + 1).padStart(2, "0");
+            dd = String(dObj.getDate()).padStart(2, "0");
+            yyyy = String(dObj.getFullYear());
+        }
+        
+        doc.setFont("courier", "bold");
+        doc.setFontSize(12);
+        
+        // Base starting X coordinate for date in mm: ~153.7mm
+        // Base starting Y coordinate for date in mm: ~9.8mm (aligned to baseline of the boxes)
+        const dateStartX = 153.7 + offsetX;
+        const dateY = 9.8 + offsetY;
+        const stepX = 4.8; // 0.189 inches step
+        
+        const rawDate = mm + dd + yyyy;
+        const gridIndices = [0, 1, 3, 4, 6, 7, 8, 9];
+        
+        for (let i = 0; i < 8; i++) {
+            if (rawDate[i]) {
+                const gridIndex = gridIndices[i];
+                const posX = dateStartX + gridIndex * stepX;
+                doc.text(rawDate[i], posX, dateY);
+            }
+        }
+    }
+
+    // 2. Payee Name
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    // Base baseline position: X = 24.1mm, Y = 24.5mm (sits nicely on the line)
+    doc.text((payeeName || "").toUpperCase(), 24.1 + offsetX, 24.5 + offsetY);
+
+    // 3. Amount in figures
+    doc.setFont("courier", "bold");
+    doc.setFontSize(11);
+    const amountVal = payment.amount ?? 0;
+    const amountStr = `**${amountVal.toLocaleString('en-US', { minimumFractionDigits: 2 })}*`;
+    // Base baseline position: X = 157.5mm, Y = 24.5mm
+    doc.text(amountStr, 157.5 + offsetX, 24.5 + offsetY);
+
+    // 4. Amount in words
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    const wordsStr = numberToWords(amountVal).toUpperCase();
+    // Base baseline position: X = 29.2mm, Y = 35.0mm, max width = 129.5mm
+    const splitWords = doc.splitTextToSize(wordsStr, 129.5);
+    doc.text(splitWords, 29.2 + offsetX, 35.0 + offsetY);
 
     const pdfBlobUrl = doc.output('bloburl');
     window.open(pdfBlobUrl, '_blank');
