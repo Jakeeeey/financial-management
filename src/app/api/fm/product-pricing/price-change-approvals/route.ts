@@ -156,13 +156,19 @@ export async function GET(req: NextRequest) {
                 : null,
         ];
 
-        const { rows, total: totalCount } = await fetchMergedUnifiedPage(page, pageSize, sources);
+        const { rows, total: actualTotalCount } = await fetchMergedUnifiedPage(page, pageSize, sources);
+        const pageableTotalCount = Math.min(actualTotalCount, MAX_UNIFIED_PAGE_WINDOW);
         let enrichedData = await addActorNames(rows);
         enrichedData = await addSuppliersToRows(enrichedData);
 
         return NextResponse.json({
             data: enrichedData,
-            meta: { total_count: totalCount },
+            meta: {
+                total_count: pageableTotalCount,
+                actual_total_count: actualTotalCount,
+                result_window: MAX_UNIFIED_PAGE_WINDOW,
+                total_count_capped: actualTotalCount > MAX_UNIFIED_PAGE_WINDOW,
+            },
         });
     } catch (error: unknown) {
         return directusErrorResponse(error);
