@@ -248,7 +248,7 @@ export function useAccountsReceivable(
         }
         setError(null);
         if (isFirstFetch && toastId !== undefined) {
-          toast.dismiss(toastId);
+          toast.success('Data loaded successfully', { id: toastId });
         }
       } catch (e: unknown) {
         if (isAbortError(e)) return;
