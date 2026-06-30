@@ -34,7 +34,11 @@ import { appendDisplayStatusFilter } from "./_approvalStatusPolicy";
 
 const CCR = "cost_change_requests";
 const PCR = "price_change_requests";
-type DirectusList<T> = { data?: T[]; meta?: { total_count?: number } | null };
+type DirectusList<T> = { data?: T[]; meta?: { filter_count?: number; total_count?: number } | null };
+
+function filteredTotal<T>(json: DirectusList<T>, fallback: number): number {
+    return Number(json.meta?.filter_count ?? json.meta?.total_count ?? fallback);
+}
 
 type DirectusCCRRow = {
     request_id?: number | string | null;
@@ -950,7 +954,7 @@ async function fetchPriceRequestsDirectPage(
 
     return {
         rows,
-        total: Number(json.meta?.total_count ?? rows.length),
+        total: filteredTotal(json, rows.length),
     };
 }
 
@@ -1082,7 +1086,7 @@ export async function fetchPriceBatchesPage(
 
     return {
         rows,
-        total: Number(json.meta?.total_count ?? rows.length),
+        total: filteredTotal(json, rows.length),
     };
 }
 
@@ -1183,7 +1187,7 @@ export async function fetchCostBatchesPage(
 
     return {
         rows,
-        total: Number(json.meta?.total_count ?? rows.length),
+        total: filteredTotal(json, rows.length),
     };
 }
 
@@ -1277,7 +1281,7 @@ async function fetchCostRequestsDirectPage(
 
     return {
         rows,
-        total: Number(json.meta?.total_count ?? rows.length),
+        total: filteredTotal(json, rows.length),
     };
 }
 
