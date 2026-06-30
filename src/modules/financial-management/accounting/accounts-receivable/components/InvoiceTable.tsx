@@ -1,5 +1,8 @@
+/* eslint-disable react-hooks/incompatible-library */
 // src/modules/financial-management/accounting/accounts-receivable/components/InvoiceTable.tsx
-import React, { useMemo, useState, Fragment } from 'react';
+
+import React, { useMemo, useState, Fragment, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -15,8 +18,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, ChevronUp, ChevronRight, ChevronsUpDown, X } from 'lucide-react';
 import { cn } from "@/lib/utils";
-import { formatPeso, formatDate, getPageNumbers } from '../utils';
-import type { Invoice } from '../types';
+import { formatPeso, formatDate, getPageNumbers, mapARRowToInvoice, sortCustomerGroups } from '../utils';
+import type { Invoice, CustomerGroup } from '../types';
 
 const PAGE_SIZE = 10;
 
@@ -26,12 +29,11 @@ const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
   'Partially Paid': { bg: 'rgba(245,158,11,0.1)',  color: '#d97706' },
   'Unpaid':         { bg: 'rgba(100,116,139,0.1)', color: '#64748b' },
   'Due':            { bg: 'rgba(100,116,139,0.1)', color: '#64748b' },
-  'Cancellation Requested': { bg: 'rgba(245,158,11,0.12)', color: '#d97706' },
 };
 
 function StatusPill({ status }: { status: string }) {
   const style = STATUS_STYLES[status] ?? { bg: 'rgba(100,116,139,0.1)', color: '#64748b' };
-  const showDot = ['Paid', 'Fully Paid', 'Overdue', 'Due', 'Unpaid', 'Partially Paid', 'Cancellation Requested'].includes(status);
+  const showDot = ['Paid', 'Fully Paid', 'Overdue', 'Due', 'Unpaid', 'Partially Paid'].includes(status);
   const dotColors: Record<string, string> = {
     'Paid': 'bg-emerald-500',
     'Fully Paid': 'bg-emerald-500',
@@ -39,12 +41,11 @@ function StatusPill({ status }: { status: string }) {
     'Due': 'bg-blue-500',
     'Unpaid': 'bg-slate-400',
     'Partially Paid': 'bg-amber-500 animate-pulse',
-    'Cancellation Requested': 'bg-amber-500 animate-pulse',
   };
 
   return (
     <span
-      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border border-current/10 whitespace-nowrap shadow-sm"
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border border-current/10 whitespace-nowrap"
       style={{ background: style.bg, color: style.color }}
     >
       {showDot && (
@@ -55,6 +56,16 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+/**
+ * Color for the aging day count.
+ *
+ * Only called when aging >= 0 (i.e. actually overdue).
+ *   0 days  → amber  (due today — overdue but freshest)
+ *   1–30    → slate  (default muted)
+ *   31–60   → amber
+ *   61–90   → orange-red
+ *   91+     → red
+ */
 function agingColor(aging: number): string {
   if (aging === 0)  return '#f59e0b';
   if (aging > 90)   return '#dc2626';
@@ -84,7 +95,7 @@ function SortableHeader<T>({
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          "flex items-center gap-1.5 focus:outline-none hover:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground whitespace-nowrap font-bold",
+          "flex items-center gap-1.5 focus:outline-none hover:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground whitespace-nowrap",
           className
         )}
       >
@@ -124,25 +135,237 @@ function SortableHeader<T>({
 }
 
 interface InvoiceTableProps {
-  invoices: Invoice[];
+  invoices?: Invoice[];
+  customerGroups?: CustomerGroup[];
+  serverMode?: boolean;
   page:     number;
   setPage:  (p: number | ((prev: number) => number)) => void;
+  totalPages?: number;
+  totalInvoiceCount?: number;
+  totalGroupCount?: number;
+  tableLoading?: boolean;
+  truncated?: boolean;
+  sortKey?: keyof Invoice | null;
+  sortOrder?: 'asc' | 'desc' | null;
+  onSortChange?: (key: keyof Invoice | null, order: 'asc' | 'desc' | null) => void;
   onRowClick?: (invoice: Invoice) => void;
 }
 
-export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTableProps) {
-  const [sortKey, setSortKey] = useState<keyof Invoice | null>(null);
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
+const VIRTUALIZE_THRESHOLD = 15;
+const INVOICE_ROW_HEIGHT = 44;
+const MAX_VIRTUAL_LIST_HEIGHT = 320;
+
+const INVOICE_TABLE_COL_WIDTHS = [
+  '8%', '10%', '8%', '6%', '6%', '6%', '6%', '6%',
+  '7%', '6%', '7%', '5%', '6%', '6%', '7%',
+] as const;
+
+function InvoiceTableColGroup() {
+  return (
+    <colgroup>
+      {INVOICE_TABLE_COL_WIDTHS.map((width, i) => (
+        <col key={i} style={{ width }} />
+      ))}
+    </colgroup>
+  );
+}
+
+function VirtualInvoiceRows({
+  invoices,
+  onRowClick,
+}: {
+  invoices: Invoice[];
+  onRowClick?: (invoice: Invoice) => void;
+}) {
+  "use no memo";
+
+  const parentRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: invoices.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => INVOICE_ROW_HEIGHT,
+    overscan: 5,
+  });
+
+  if (invoices.length <= VIRTUALIZE_THRESHOLD) {
+    return (
+      <>
+        {invoices.map((inv, idx) => (
+          <InvoiceChildRow
+            key={`${inv.invoiceNo}-${idx}`}
+            inv={inv}
+            isLast={idx === invoices.length - 1}
+            onRowClick={onRowClick}
+          />
+        ))}
+      </>
+    );
+  }
+
+  const listHeight = Math.min(
+    invoices.length * INVOICE_ROW_HEIGHT,
+    MAX_VIRTUAL_LIST_HEIGHT,
+  );
+
+  return (
+    <TableRow className="hover:bg-transparent border-0">
+      <TableCell colSpan={15} className="p-0">
+        <div
+          ref={parentRef}
+          className="overflow-auto"
+          style={{ height: listHeight }}
+        >
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const inv = invoices[virtualRow.index];
+              return (
+                <div
+                  key={virtualRow.key}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <table className="w-full table-fixed">
+                    <InvoiceTableColGroup />
+                    <tbody>
+                      <InvoiceChildRow inv={inv} isLast={virtualRow.index === invoices.length - 1} onRowClick={onRowClick} asTableRow />
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function InvoiceChildRow({
+  inv,
+  isLast,
+  onRowClick,
+  asTableRow = false,
+}: {
+  inv: Invoice;
+  isLast: boolean;
+  onRowClick?: (invoice: Invoice) => void;
+  asTableRow?: boolean;
+}) {
+  const row = (
+    <>
+      <TableCell className="py-2 pl-8 relative">
+        {isLast ? (
+          <div className="absolute left-5 top-0 h-[22px] w-px bg-border/80 dark:bg-border/45" />
+        ) : (
+          <div className="absolute left-5 top-0 bottom-0 w-px bg-border/80 dark:bg-border/45" />
+        )}
+        <div className="absolute left-5 top-[22px] w-3 h-px bg-border/80 dark:bg-border/45" />
+        <div className="flex flex-col gap-0.5 min-w-0 pl-2.5">
+          <span className="font-bold text-primary/95 text-xs truncate block w-full" title={inv.invoiceNo}>{inv.invoiceNo}</span>
+          {inv.isPosted ? (
+            <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8px] font-semibold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/15 uppercase">Posted</span>
+          ) : (
+            <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8px] font-semibold tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/15 uppercase">Draft</span>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="py-2 text-muted-foreground/45 text-[10px] italic">└─ detail</TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.salesman}>{inv.salesman || <span className="text-muted-foreground/30">—</span>}</span></TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.division}>{inv.division || <span className="text-muted-foreground/30">—</span>}</span></TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.salesmanCode}>{inv.salesmanCode || <span className="text-muted-foreground/30">—</span>}</span></TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground whitespace-nowrap block">{formatDate(inv.invoiceDate)}</span></TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground whitespace-nowrap block">{formatDate(inv.deliveryDate)}</span></TableCell>
+      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground whitespace-nowrap block">{formatDate(inv.due)}</span></TableCell>
+      <TableCell className="py-2 text-right"><span className="text-xs font-medium text-muted-foreground/90">{formatPeso(inv.netReceivable)}</span></TableCell>
+      <TableCell className="py-2 text-right"><span className="text-xs font-medium text-muted-foreground/90">{formatPeso(inv.totalPaid)}</span></TableCell>
+      <TableCell className="py-2 text-right font-semibold tabular-nums text-foreground/90">{formatPeso(inv.outstanding)}</TableCell>
+      <TableCell className="py-2 text-center">
+        {inv.overdue !== null && inv.overdue >= 0 ? (
+          <span className={`text-xs ${inv.overdue > 30 ? 'font-semibold' : ''}`} style={{ color: agingColor(inv.overdue) }}>{inv.overdue}d</span>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="py-2"><StatusPill status={inv.arStatus} /></TableCell>
+      <TableCell className="py-2"><StatusPill status={inv.paymentStatus} /></TableCell>
+      <TableCell className="py-2 pr-4"><StatusPill status={inv.transactionStatus} /></TableCell>
+    </>
+  );
+
+  if (asTableRow) {
+    return (
+      <TableRow className="border-b border-border/20 hover:bg-muted/15 cursor-pointer bg-card/45 transition-colors active:bg-muted/25" onClick={() => onRowClick?.(inv)}>
+        {row}
+      </TableRow>
+    );
+  }
+
+  return (
+    <TableRow className="border-b border-border/20 hover:bg-muted/15 cursor-pointer bg-card/45 transition-colors active:bg-muted/25" onClick={() => onRowClick?.(inv)}>
+      {row}
+    </TableRow>
+  );
+}
+
+export function InvoiceTable({
+  invoices = [],
+  customerGroups: serverGroups,
+  serverMode = false,
+  page,
+  setPage,
+  totalPages: serverTotalPages,
+  totalInvoiceCount,
+  totalGroupCount,
+  tableLoading = false,
+  truncated = false,
+  sortKey: controlledSortKey,
+  sortOrder: controlledSortOrder,
+  onSortChange,
+  onRowClick,
+}: InvoiceTableProps) {
+  const [localSortKey, setLocalSortKey] = useState<keyof Invoice | null>(null);
+  const [localSortOrder, setLocalSortOrder] = useState<'asc' | 'desc' | null>(null);
   const [expandedCustomers, setExpandedCustomers] = useState<Record<string, boolean>>({});
 
+  const isControlledSort = serverMode && onSortChange != null;
+  const sortKey = isControlledSort ? (controlledSortKey ?? null) : localSortKey;
+  const sortOrder = isControlledSort ? (controlledSortOrder ?? null) : localSortOrder;
+
   const handleSort = (key: keyof Invoice, order: 'asc' | 'desc' | null) => {
-    setSortKey(key);
-    setSortOrder(order);
+    if (isControlledSort) {
+      onSortChange!(key, order);
+    } else {
+      setLocalSortKey(key);
+      setLocalSortOrder(order);
+    }
   };
 
+  const mappedServerGroups = useMemo(() => {
+    if (!serverGroups) return [];
+    return serverGroups.map((g) => ({
+      customerName: g.customerName,
+      customerCode: g.customerCode,
+      netReceivable: g.netReceivable,
+      totalPaid: g.totalPaid,
+      outstanding: g.outstanding,
+      maxOverdue: g.maxOverdue,
+      invoices: g.invoices.map(mapARRowToInvoice),
+    }));
+  }, [serverGroups]);
+
+  const filtered = useMemo(() => serverMode ? [] as Invoice[] : invoices, [serverMode, invoices]);
+
   const customerGroups = useMemo(() => {
+    if (serverMode) return mappedServerGroups;
+
     const groupsMap: Record<string, Invoice[]> = {};
-    invoices.forEach((inv) => {
+    filtered.forEach((inv) => {
       const name = inv.customer || '—';
       if (!groupsMap[name]) groupsMap[name] = [];
       groupsMap[name].push(inv);
@@ -152,7 +375,7 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
       const netReceivable = invs.reduce((sum, inv) => sum + inv.netReceivable, 0);
       const totalPaid = invs.reduce((sum, inv) => sum + inv.totalPaid, 0);
       const outstanding = invs.reduce((sum, inv) => sum + inv.outstanding, 0);
-      
+
       let maxOverdue: number | null = null;
       invs.forEach((inv) => {
         if (inv.overdue !== null && inv.overdue >= 0) {
@@ -162,26 +385,6 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
         }
       });
 
-      // Sort child invoices
-      const sortedInvoices = [...invs];
-      if (sortKey && sortOrder) {
-        sortedInvoices.sort((a, b) => {
-          let aVal = a[sortKey];
-          let bVal = b[sortKey];
-          if (aVal == null) aVal = '';
-          if (bVal == null) bVal = '';
-
-          if (typeof aVal === 'string' && typeof bVal === 'string') {
-            const compare = aVal.localeCompare(bVal);
-            return sortOrder === 'asc' ? compare : -compare;
-          }
-          if (typeof aVal === 'number' && typeof bVal === 'number') {
-            return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
-          }
-          return 0;
-        });
-      }
-
       return {
         customerName: name,
         customerCode: invs[0]?.customerCode || '—',
@@ -189,68 +392,18 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
         totalPaid,
         outstanding,
         maxOverdue,
-        invoices: sortedInvoices,
+        invoices: invs,
       };
     });
 
-    // Sort customer groups
-    if (sortKey && sortOrder) {
-      groups.sort((a, b) => {
-        let aVal: string | number | null = '';
-        let bVal: string | number | null = '';
+    return sortCustomerGroups(groups, { sortKey, sortOrder });
+  }, [serverMode, mappedServerGroups, filtered, sortKey, sortOrder]);
 
-        if (sortKey === 'customer') {
-          aVal = a.customerName;
-          bVal = b.customerName;
-        } else if (sortKey === 'netReceivable') {
-          aVal = a.netReceivable;
-          bVal = b.netReceivable;
-        } else if (sortKey === 'totalPaid') {
-          aVal = a.totalPaid;
-          bVal = b.totalPaid;
-        } else if (sortKey === 'outstanding') {
-          aVal = a.outstanding;
-          bVal = b.outstanding;
-        } else if (sortKey === 'overdue') {
-          aVal = a.maxOverdue ?? -1;
-          bVal = b.maxOverdue ?? -1;
-        } else {
-          const aChild = a.invoices[0];
-          const bChild = b.invoices[0];
-          if (aChild && bChild) {
-            let aChildVal = aChild[sortKey];
-            let bChildVal = bChild[sortKey];
-            if (aChildVal == null) aChildVal = '';
-            if (bChildVal == null) bChildVal = '';
-            if (typeof aChildVal === 'string' && typeof bChildVal === 'string') {
-              return sortOrder === 'asc' ? aChildVal.localeCompare(bChildVal) : bChildVal.localeCompare(aChildVal);
-            }
-            if (typeof aChildVal === 'number' && typeof bChildVal === 'number') {
-              return sortOrder === 'asc' ? aChildVal - bChildVal : bChildVal - aChildVal;
-            }
-          }
-          return 0;
-        }
-
-        if (typeof aVal === 'string' && typeof bVal === 'string') {
-          const compare = aVal.localeCompare(bVal);
-          return sortOrder === 'asc' ? compare : -compare;
-        }
-        if (typeof aVal === 'number' && typeof bVal === 'number') {
-          return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
-        }
-        return 0;
-      });
-    } else {
-      groups.sort((a, b) => a.customerName.localeCompare(b.customerName));
-    }
-
-    return groups;
-  }, [invoices, sortKey, sortOrder]);
-
-  const totalPages  = Math.ceil(customerGroups.length / PAGE_SIZE);
+  const totalPages  = serverMode ? (serverTotalPages ?? 1) : Math.ceil(customerGroups.length / PAGE_SIZE);
   const safePage    = Math.min(page, totalPages || 1);
-  const pagedGroups = customerGroups.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pagedGroups = serverMode ? customerGroups : customerGroups.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const displayInvoiceCount = serverMode ? (totalInvoiceCount ?? 0) : filtered.length;
+  const displayGroupCount = serverMode ? (totalGroupCount ?? customerGroups.length) : customerGroups.length;
   const pageNumbers = getPageNumbers(safePage, totalPages);
 
   const isAllExpanded = pagedGroups.length > 0 && pagedGroups.every(g => expandedCustomers[g.customerName] !== false);
@@ -267,225 +420,154 @@ export function InvoiceTable({ invoices, page, setPage, onRowClick }: InvoiceTab
   };
 
   return (
-    <Card className="dark:bg-zinc-950 border-border overflow-hidden w-full shadow-md">
-      <CardHeader className="bg-muted/30 border-b border-border/50 flex flex-row items-center justify-between gap-4 py-3">
-        <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground/90 shrink-0">Invoice Ledger Details</CardTitle>
-        <div className="flex items-center gap-4">
+    <Card className="dark:bg-zinc-950 border-border overflow-hidden w-full">
+      <CardHeader className="bg-muted/30 border-b border-border/50 flex flex-row items-center justify-between gap-4">
+        <CardTitle className="text-sm font-bold uppercase shrink-0">Invoice Details</CardTitle>
+        <div className="flex items-center gap-2 max-w-sm w-full justify-end">
           <button
             type="button"
             onClick={toggleAll}
-            className="h-7 px-3 text-[10px] font-bold uppercase tracking-wider border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-sm"
+            className="h-8 px-2.5 text-[10px] font-bold uppercase tracking-wider border border-border bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground rounded transition-colors whitespace-nowrap"
           >
-            {isAllExpanded ? "Collapse All Groups" : "Expand All Groups"}
+            {isAllExpanded ? "Collapse Page" : "Expand Page"}
           </button>
-          <span className="text-[10px] font-bold text-muted-foreground bg-muted border border-border/60 px-2 py-0.5 rounded-md shrink-0">
-            {invoices.length} Invoices &bull; {customerGroups.length} Customers
-          </span>
         </div>
+        <span className="text-xs text-muted-foreground shrink-0">
+          {tableLoading ? 'Loading…' : (
+            <>{displayInvoiceCount} invoice{displayInvoiceCount !== 1 ? 's' : ''} ({displayGroupCount} customer{displayGroupCount !== 1 ? 's' : ''}) &mdash; page {safePage} of {totalPages || 1}</>
+          )}
+        </span>
       </CardHeader>
+
+      {truncated ? (
+        <div className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800">
+          Data truncated — showing partial results. Narrow the date range or use supplier/customer filters to see all records.
+        </div>
+      ) : null}
 
       <CardContent className="p-0">
         <div className="max-h-[600px] overflow-auto relative w-full">
           <Table className="w-full table-fixed">
+            <InvoiceTableColGroup />
             <TableHeader className="sticky top-0 bg-background dark:bg-zinc-950 z-20 shadow-sm">
-              <TableRow className="bg-muted/40 hover:bg-muted/40 border-b border-border/50">
-                <TableHead className="py-2.5 pl-4 w-[13%] whitespace-nowrap"><SortableHeader<Invoice> label="Invoice No" sortKey="invoiceNo" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px]" /></TableHead>
-                <TableHead className="py-2.5 w-[15%] whitespace-nowrap"><SortableHeader<Invoice> label="Salesperson" sortKey="salesman" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px]" /></TableHead>
-                <TableHead className="py-2.5 w-[10%] whitespace-nowrap"><SortableHeader<Invoice> label="Division" sortKey="division" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px]" /></TableHead>
-                <TableHead className="py-2.5 w-[9%] whitespace-nowrap"><SortableHeader<Invoice> label="Inv. Date" sortKey="invoiceDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px]" /></TableHead>
-                <TableHead className="py-2.5 w-[9%] whitespace-nowrap"><SortableHeader<Invoice> label="Del. Date" sortKey="deliveryDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px]" /></TableHead>
-                <TableHead className="py-2.5 w-[9%] whitespace-nowrap"><SortableHeader<Invoice> label="Due Date" sortKey="due" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px]" /></TableHead>
-                <TableHead className="py-2.5 text-right w-[11%] whitespace-nowrap"><SortableHeader<Invoice> label="Receivable" sortKey="netReceivable" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px] justify-end w-full" /></TableHead>
-                <TableHead className="py-2.5 text-right w-[9%] whitespace-nowrap"><SortableHeader<Invoice> label="Paid" sortKey="totalPaid" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px] justify-end w-full" /></TableHead>
-                <TableHead className="py-2.5 text-right w-[11%] whitespace-nowrap"><SortableHeader<Invoice> label="Outstanding" sortKey="outstanding" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px] justify-end w-full" /></TableHead>
-                <TableHead className="py-2.5 text-center w-[7%] whitespace-nowrap"><SortableHeader<Invoice> label="Aging" sortKey="overdue" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px] justify-center w-full" /></TableHead>
-                <TableHead className="py-2.5 w-[10%] whitespace-nowrap"><SortableHeader<Invoice> label="AR Status" sortKey="arStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px]" /></TableHead>
-                <TableHead className="py-2.5 pr-4 w-[12%] whitespace-nowrap"><SortableHeader<Invoice> label="TX Status" sortKey="transactionStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-[10px]" /></TableHead>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
+              <TableHead className="py-3 pl-4 w-[8%] whitespace-nowrap"><SortableHeader<Invoice> label="inv #" sortKey="invoiceNo" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 w-[10%] whitespace-nowrap"><SortableHeader<Invoice> label="Customer" sortKey="customer" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 w-[8%] whitespace-nowrap"><SortableHeader<Invoice> label="Salesman" sortKey="salesman" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Division" sortKey="division" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="SCode" sortKey="salesmanCode" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Inv. Date" sortKey="invoiceDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Del Date" sortKey="deliveryDate" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Due Date" sortKey="due" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 text-right w-[7%] whitespace-nowrap"><SortableHeader<Invoice> label="Net Receivable" sortKey="netReceivable" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold justify-end w-full" /></TableHead>
+              <TableHead className="py-3 text-right w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Paid" sortKey="totalPaid" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold justify-end w-full" /></TableHead>
+              <TableHead className="py-3 text-right w-[7%] whitespace-nowrap"><SortableHeader<Invoice> label="Outstanding" sortKey="outstanding" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold justify-end w-full" /></TableHead>
+              <TableHead className="py-3 text-center w-[5%] whitespace-nowrap"><SortableHeader<Invoice> label="Overdue" sortKey="overdue" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold justify-center w-full" /></TableHead>
+              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="AR Status" sortKey="arStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Payment Status" sortKey="paymentStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+              <TableHead className="py-3 pr-4 w-[7%] whitespace-nowrap"><SortableHeader<Invoice> label="Transaction Status" sortKey="transactionStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
+            </TableRow>
+          </TableHeader>
+
+          <TableBody>
+            {pagedGroups.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={15} className="text-center py-10 text-muted-foreground text-sm">
+                  {tableLoading ? 'Loading invoices…' : 'No invoices found.'}
+                </TableCell>
               </TableRow>
-            </TableHeader>
+            ) : (
+              pagedGroups.map((group) => {
+                const isExpanded = expandedCustomers[group.customerName] !== false;
+                const toggleExpand = (e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  setExpandedCustomers((prev) => ({
+                    ...prev,
+                    [group.customerName]: !isExpanded,
+                  }));
+                };
 
-            <TableBody>
-              {pagedGroups.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={12} className="text-center py-12 text-muted-foreground text-xs font-medium">
-                    No active invoices match the selected search or filter options.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                pagedGroups.map((group) => {
-                  const isExpanded = expandedCustomers[group.customerName] !== false;
-                  const toggleExpand = (e: React.MouseEvent) => {
-                    e.stopPropagation();
-                    setExpandedCustomers((prev) => ({
-                      ...prev,
-                      [group.customerName]: !isExpanded,
-                    }));
-                  };
+                return (
+                  <Fragment key={group.customerName}>
+                    {/* Customer Group Row */}
+                    <TableRow
+                      className="bg-muted/35 hover:bg-muted/50 border-b border-border/40 cursor-pointer transition-colors active:bg-muted/60 font-semibold border-l-4 border-l-primary/60 dark:border-l-primary/45"
+                      onClick={(e) => toggleExpand(e)}
+                    >
+                      <TableCell className="py-2.5 pl-4 flex items-center gap-1.5 font-bold text-xs text-primary">
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="truncate block max-w-[80px]" title="Customer Group Header">
+                          Group
+                        </span>
+                        <span className="text-[10px] font-normal text-muted-foreground">
+                          ({group.invoices.length})
+                        </span>
+                      </TableCell>
 
-                  return (
-                    <Fragment key={group.customerName}>
-                      {/* Unified 100% Full-Width Group Header Card */}
-                      <TableRow
-                        className="bg-muted/40 hover:bg-muted/65 border-b border-border/40 cursor-pointer select-none font-semibold transition-colors active:bg-muted/50 border-l-4 border-l-primary/60 dark:border-l-primary/45"
-                        onClick={(e) => toggleExpand(e)}
-                      >
-                        <TableCell colSpan={12} className="py-2.5 pl-4 pr-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                            {/* Chevron + Customer identification */}
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              {isExpanded ? (
-                                <ChevronDown className="h-4.5 w-4.5 text-primary shrink-0 transition-transform duration-200" />
-                              ) : (
-                                <ChevronRight className="h-4.5 w-4.5 text-muted-foreground/60 shrink-0 transition-transform duration-200" />
-                              )}
-                              <div className="truncate flex items-center gap-2 flex-wrap">
-                                <span className="font-extrabold text-xs text-foreground tracking-tight">{group.customerName}</span>
-                                <span className="text-[9px] font-bold text-muted-foreground bg-background px-1.5 py-0.5 rounded border border-border/60">
-                                  {group.customerCode}
-                                </span>
-                                <span className="text-[9px] font-bold text-primary/75">
-                                  ({group.invoices.length} Invoice{group.invoices.length !== 1 ? 's' : ''})
-                                </span>
-                              </div>
-                            </div>
-                            
-                            {/* Aggregated totals in compact layout */}
-                            <div className="flex items-center gap-4 text-[10px] shrink-0 self-end sm:self-auto font-mono">
-                              <div className="text-right">
-                                <span className="text-[8px] block text-muted-foreground font-sans font-bold uppercase tracking-wider leading-none">Receivable</span>
-                                <span className="font-bold text-muted-foreground/90">{formatPeso(group.netReceivable)}</span>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-[8px] block text-muted-foreground font-sans font-bold uppercase tracking-wider leading-none">Paid</span>
-                                <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatPeso(group.totalPaid)}</span>
-                              </div>
-                              <div className="text-right bg-primary/[0.04] px-2 py-0.5 rounded border border-primary/10">
-                                <span className="text-[8px] block text-primary font-sans font-black uppercase tracking-wider leading-none">Outstanding</span>
-                                <span className="font-black text-primary">{formatPeso(group.outstanding)}</span>
-                              </div>
-                              {group.maxOverdue !== null && group.maxOverdue >= 0 && (
-                                <div className="text-center bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/15">
-                                  <span className="text-[8px] block text-rose-600 dark:text-rose-400 font-sans font-bold uppercase tracking-wider leading-none">Overdue</span>
-                                  <span className="font-bold text-rose-600 dark:text-rose-400">{group.maxOverdue}d</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                      <TableCell className="py-2.5 font-black text-xs text-foreground truncate" colSpan={7}>
+                        {group.customerName} <span className="font-semibold text-[10px] text-muted-foreground ml-1">({group.customerCode})</span>
+                      </TableCell>
 
-                      {/* Child Invoice Rows (Expanded state) */}
-                      {isExpanded &&
-                        group.invoices.map((inv, idx) => {
-                          const isLast = idx === group.invoices.length - 1;
-                          return (
-                            <TableRow
-                              key={`${inv.invoiceNo}-${idx}`}
-                              className="border-b border-border/20 hover:bg-muted/15 cursor-pointer bg-card/25 transition-colors active:bg-muted/20"
-                              onClick={() => onRowClick?.(inv)}
-                            >
-                              {/* Invoice identification (with vertical and horizontal layout connectors) */}
-                              <TableCell className="py-2 pl-8 relative">
-                                {isLast ? (
-                                  <div className="absolute left-5 top-0 h-[22px] w-px bg-border/80 dark:bg-border/45" />
-                                ) : (
-                                  <div className="absolute left-5 top-0 bottom-0 w-px bg-border/80 dark:bg-border/45" />
-                                )}
-                                <div className="absolute left-5 top-[22px] w-3 h-px bg-border/80 dark:bg-border/45" />
-                                
-                                <div className="flex flex-col gap-0.5 min-w-0 pl-2.5">
-                                  <span className="font-bold text-primary/95 text-[11px] truncate block w-full" title={inv.invoiceNo}>
-                                    {inv.invoiceNo}
-                                  </span>
-                                  {inv.isPosted ? (
-                                    <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/15 uppercase">
-                                      Posted
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8px] font-bold tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/15 uppercase">
-                                      Draft
-                                    </span>
-                                  )}
-                                </div>
-                              </TableCell>
+                      {/* Net Receivable */}
+                      <TableCell className="py-2.5 text-right font-bold text-xs text-foreground">
+                        {formatPeso(group.netReceivable)}
+                      </TableCell>
 
-                              {/* Consolidated Salesperson Column (contains SCode as subtitle) */}
-                              <TableCell className="py-2">
-                                <div className="flex flex-col min-w-0">
-                                  <span className="text-[11px] font-bold text-foreground/95 truncate block" title={inv.salesman}>
-                                    {inv.salesman}
-                                  </span>
-                                  <span className="text-[9px] text-muted-foreground/80 font-semibold uppercase tracking-wider">
-                                    Code: {inv.salesmanCode}
-                                  </span>
-                                </div>
-                              </TableCell>
+                      {/* Paid */}
+                      <TableCell className="py-2.5 text-right font-bold text-xs text-emerald-600 dark:text-emerald-400">
+                        {formatPeso(group.totalPaid)}
+                      </TableCell>
 
-                              <TableCell className="py-2">
-                                <span className="text-[11px] text-muted-foreground font-medium block">
-                                  {inv.division || <span className="text-muted-foreground/30">&mdash;</span>}
-                                </span>
-                              </TableCell>
+                      {/* Outstanding */}
+                      <TableCell className="py-2.5 text-right font-black text-xs text-primary">
+                        {formatPeso(group.outstanding)}
+                      </TableCell>
 
-                              <TableCell className="py-2">
-                                <span className="text-[11px] text-muted-foreground whitespace-nowrap block">
-                                  {formatDate(inv.invoiceDate)}
-                                </span>
-                              </TableCell>
+                      {/* Overdue */}
+                      <TableCell className="py-2.5 text-center">
+                        {group.maxOverdue !== null && group.maxOverdue >= 0 ? (
+                          <span
+                            className={`text-xs ${group.maxOverdue > 30 ? 'font-black' : 'font-semibold'}`}
+                            style={{ color: agingColor(group.maxOverdue) }}
+                          >
+                            {group.maxOverdue}d
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
 
-                              <TableCell className="py-2">
-                                <span className="text-[11px] text-muted-foreground whitespace-nowrap block">
-                                  {formatDate(inv.deliveryDate)}
-                                </span>
-                              </TableCell>
+                      {/* AR Status */}
+                      <TableCell className="py-2.5">
+                        <StatusPill status={group.maxOverdue !== null && group.maxOverdue >= 0 ? 'Overdue' : 'Due'} />
+                      </TableCell>
 
-                              <TableCell className="py-2">
-                                <span className="text-[11px] text-muted-foreground whitespace-nowrap block font-medium">
-                                  {formatDate(inv.due)}
-                                </span>
-                              </TableCell>
+                      {/* Payment Status & Transaction Status empty at Group level */}
+                      <TableCell className="py-2.5">
+                        <span className="text-[11px] text-muted-foreground">—</span>
+                      </TableCell>
+                      <TableCell className="py-2.5 pr-4">
+                        <span className="text-[11px] text-muted-foreground">—</span>
+                      </TableCell>
+                    </TableRow>
 
-                              <TableCell className="py-2 text-right font-medium text-muted-foreground/90 tabular-nums">
-                                {formatPeso(inv.netReceivable)}
-                              </TableCell>
-
-                              <TableCell className="py-2 text-right font-medium text-muted-foreground/90 tabular-nums">
-                                {formatPeso(inv.totalPaid)}
-                              </TableCell>
-
-                              <TableCell className="py-2 text-right font-black text-xs tabular-nums text-foreground/90">
-                                {formatPeso(inv.outstanding)}
-                              </TableCell>
-
-                              <TableCell className="py-2 text-center">
-                                {inv.overdue !== null && inv.overdue >= 0 ? (
-                                  <span
-                                    className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md bg-muted border border-border/40"
-                                    style={{ color: agingColor(inv.overdue) }}
-                                  >
-                                    {inv.overdue}d
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] text-muted-foreground/45">&mdash;</span>
-                                )}
-                              </TableCell>
-
-                              <TableCell className="py-2">
-                                <StatusPill status={inv.arStatus} />
-                              </TableCell>
-
-                              <TableCell className="py-2 pr-4">
-                                <StatusPill status={inv.transactionStatus} />
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                    </Fragment>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+                    {/* Child Invoice Rows */}
+                    {isExpanded && (
+                      <VirtualInvoiceRows
+                        invoices={group.invoices}
+                        onRowClick={onRowClick}
+                      />
+                    )}
+                  </Fragment>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
         </div>
 
         {totalPages > 1 && (

@@ -272,6 +272,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                     <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                         <TableRow className="border-border">
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Ref No</TableHead>
+                                            <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[120px]">Division</TableHead>
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[300px]">Chart of Account</TableHead>
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[150px]">Remarks</TableHead>
                                             <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground min-w-[120px]">Amount</TableHead>
@@ -279,10 +280,11 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                     </TableHeader>
                                     <TableBody>
                                         {!disbursement.payables?.length ? (
-                                            <TableRow><TableCell colSpan={4} className="text-center text-[10px] text-muted-foreground py-6 font-bold">No payables attached.</TableCell></TableRow>
+                                            <TableRow><TableCell colSpan={5} className="text-center text-[10px] text-muted-foreground py-6 font-bold">No payables attached.</TableCell></TableRow>
                                         ) : disbursement.payables.map((p, i) => (
                                             <TableRow key={i} className="hover:bg-muted/50 border-border">
                                                 <TableCell className="text-xs font-bold uppercase text-foreground">{p.referenceNo || "N/A"}</TableCell>
+                                                <TableCell className="text-xs font-bold uppercase text-foreground">{p.divisionName || "N/A"}</TableCell>
                                                 <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">{p.accountTitle || `COA: ${p.coaId}`}</TableCell>
                                                 <TableCell className="text-[10px] font-medium text-muted-foreground truncate max-w-[200px]">{p.remarks || "-"}</TableCell>
                                                 <TableCell className="text-xs font-black text-right text-foreground">{formatCurrency(p.amount)}</TableCell>
@@ -381,15 +383,17 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         </div>
 
                         {/* Dynamic Edit Button */}
-                        {(disbursement.status === "Draft" || disbursement.status === "Approved") && onEdit && (
+                        {(disbursement.status === "Draft" || disbursement.status === "Approved" || disbursement.status === "Returned for Revision") && onEdit && (
                             <Button variant="outline" onClick={() => onEdit(disbursement)} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-6 text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/30">
                                 <Pencil className="w-4 h-4 sm:mr-2" />
-                                <span className="hidden sm:inline">{disbursement.status === "Draft" ? "Edit Draft" : "Add/Edit Checks"}</span>
+                                <span className="hidden sm:inline">
+                                    {disbursement.status === "Approved" ? "Add/Edit Checks" : "Edit Voucher"}
+                                </span>
                             </Button>
                         )}
 
                         {/* Revert Tool */}
-                        {disbursement.status !== "Draft" && disbursement.status !== "Posted" && (
+                        {disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" && (
                             <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
                             </Button>
@@ -398,7 +402,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
 
                     {/* RIGHT SIDE: Dynamic Primary Action Pipeline */}
                     <div className="flex gap-2">
-                        {disbursement.status === "Draft" && (
+                        {(disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && (
                             <Button onClick={() => handleAction("Submitted")} disabled={loading} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
                                 {isAutoApprove ? "Submit & Auto-Approve" : "Submit for Approval"}

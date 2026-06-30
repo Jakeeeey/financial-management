@@ -1,5 +1,7 @@
 // src/app/api/fm/accounting/supplier-management/delivery-terms/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { decodeJwtPayload, COOKIE_NAME } from "@/lib/auth-utils";
 
 export const runtime = "nodejs";
 
@@ -96,8 +98,52 @@ function buildDeliveryTermsListQuery(req: NextRequest) {
   return { q, page, pageSize, offset, params };
 }
 
+function nowManila(): string {
+  return new Date()
+    .toLocaleString("sv-SE", { timeZone: "Asia/Manila" })
+    .replace(" ", "T");
+}
+
 export async function GET(req: NextRequest) {
   try {
+    const sp = req.nextUrl.searchParams;
+    const resource = sp.get("resource");
+
+    if (resource === "me") {
+      const cookieStore = await cookies();
+      const token = cookieStore.get(COOKIE_NAME)?.value;
+      if (!token) return json({ error: "Unauthorized" }, { status: 401 });
+      const payload = decodeJwtPayload(token);
+      const userId = payload?.id || payload?.user_id || payload?.sub;
+      if (!userId) return json({ error: "Unauthorized" }, { status: 401 });
+
+      const userRes = await directusFetch(`/items/user/${userId}`);
+      if (!userRes.ok) return json(userRes.json, { status: userRes.status });
+
+      const userData = ((userRes.json as Record<string, unknown>)?.data || userRes.json) as Record<string, unknown>;
+      return json({
+        ...userData,
+        id: (userData.id || userData.user_id || Number(userId)) as number,
+        user_id: (userData.user_id || userData.id || Number(userId)) as number,
+      });
+    }
+
+    if (resource === "user") {
+      const userId = sp.get("id");
+      if (!userId) {
+        return json({ error: "Bad request", message: "Missing user id" }, { status: 400 });
+      }
+      const userRes = await directusFetch(`/items/user/${userId}`);
+      if (!userRes.ok) return json(userRes.json, { status: userRes.status });
+
+      const userData = ((userRes.json as Record<string, unknown>)?.data || userRes.json) as Record<string, unknown>;
+      return json({
+        ...userData,
+        id: (userData.id || userData.user_id || Number(userId)) as number,
+        user_id: (userData.user_id || userData.id || Number(userId)) as number,
+      });
+    }
+
     const { params, page, pageSize } = buildDeliveryTermsListQuery(req);
     const res = await directusFetch(`/items/delivery_terms?${params.toString()}`);
     if (!res.ok) return json(res.json, { status: res.status });
@@ -131,6 +177,7 @@ export async function POST(req: NextRequest) {
     const payloadWithId = {
       ...body,
       id: nextId,
+      created_at: nowManila(),
     };
 
     console.log("📤 Sending to Directus:", payloadWithId);
@@ -169,10 +216,15 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
+    const updatedPayload = {
+      ...payload,
+      updated_at: nowManila(),
+    };
+
     const res = await directusFetch(`/items/delivery_terms/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(updatedPayload),
     });
 
     if (!res.ok) return json(res.json, { status: res.status });

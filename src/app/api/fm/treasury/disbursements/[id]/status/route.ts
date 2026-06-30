@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow } from "../../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap } from "../../route";
 
 export const runtime = "nodejs";
 
@@ -153,8 +153,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!status) return NextResponse.json({ message: "Status is required" }, { status: 400 });
 
     const decoded = decodeJwtPayload(token);
-    const userIdVal = decoded ? (decoded.userId || decoded.id || decoded.sub) : null;
-    const currentUserId = userIdVal ? Number(userIdVal) : 1;
+    const encoderEmail = decoded?.email || decoded?.sub || null;
+    const resolvedUserId = await resolveEncoderId(encoderEmail);
+    const currentUserId = resolvedUserId || 1;
 
     try {
         // 1. Fetch current record from Directus
@@ -166,6 +167,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         if (!currentRes.ok) return NextResponse.json({ message: "Disbursement not found in Directus" }, { status: 404 });
         const currentDis = (await currentRes.json()).data;
+
+        // Immutability Enforcement: block modifications if isPosted = 1
+        if (Number(currentDis.isPosted) === 1) {
+            return NextResponse.json({
+                message: "Immutability Violation",
+                detail: "Cannot modify a transaction that is already Posted to the GL. This record is immutable."
+            }, { status: 400 });
+        }
 
         // 2. Fetch line items to calculate double-entry debits/credits balance
         const lineItems = await getLineItems([id]);
@@ -191,7 +200,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         totalCredit = Math.round(totalCredit * 100) / 100;
         const isBalanced = Math.abs(totalDebit - totalCredit) <= 0.01;
 
-        // 3. Status Transition Logic matching Spring Boot
+        // 3. Status Transition Logic matching Spring Boot and Specifications
         const APPROVAL_THRESHOLD = 1000.00;
         let newStatus = status;
         let approverId = currentDis.approver_id;
@@ -199,31 +208,40 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         let postedBy = currentDis.posted_by;
         let datePosted = currentDis.date_posted;
         let isPosted = currentDis.isPosted;
-
-        // Enforce segregation of duties (commented out for later implementation)
-        /*
-        if (status === "Posted") {
-            const approverIdVal = currentDis.approver_id;
-            if (approverIdVal && currentUserId && String(approverIdVal) === String(currentUserId)) {
-                return NextResponse.json({
-                    message: "Segregation of Duties Violation",
-                    detail: "Segregation of Duties: The user who approved this voucher cannot be the same user who posts it to the ledger."
-                }, { status: 400 });
-            }
-        }
-        */
+        let submittedBy = currentDis.submitted_by;
+        let dateSubmitted = currentDis.date_submitted;
+        let releasedBy = currentDis.released_by;
+        let dateReleased = currentDis.date_released;
+        let paidAmount = currentDis.paid_amount;
 
         switch (status) {
-            case "Submitted":
+            case "Submitted": {
                 if (currentDis.status !== "Draft" && currentDis.status !== "Returned for Revision") {
                     return NextResponse.json({ message: "Can only submit from Draft or Returned status." }, { status: 400 });
                 }
-                if (Number(currentDis.total_amount) < APPROVAL_THRESHOLD) {
+
+                // Submission Integrity Constraint: disbursement.total_amount = sum(disbursement_payables.amount)
+                const totalPayableLinesSum = payables.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+                const roundedPayables = Math.round(totalPayableLinesSum * 100) / 100;
+                const roundedTotalAmount = Math.round(Number(currentDis.total_amount) * 100) / 100;
+
+                if (roundedTotalAmount !== roundedPayables) {
+                    return NextResponse.json({
+                        message: "Submission Integrity Mismatch",
+                        detail: `The total disbursement amount (${roundedTotalAmount}) does not equal the sum of payables (${roundedPayables}).`
+                    }, { status: 400 });
+                }
+
+                submittedBy = currentUserId;
+                dateSubmitted = new Date().toISOString();
+
+                if (roundedTotalAmount < APPROVAL_THRESHOLD) {
                     newStatus = "Approved";
                     approverId = currentUserId;
                     dateApproved = new Date().toISOString();
                 }
                 break;
+            }
             case "Approved":
                 if (currentDis.status !== "Submitted") {
                     return NextResponse.json({ message: "Can only approve Submitted disbursements." }, { status: 400 });
@@ -231,49 +249,73 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 approverId = currentUserId;
                 dateApproved = new Date().toISOString();
                 break;
+
             case "Released":
-                if (currentDis.status !== "Approved") {
-                    return NextResponse.json({ message: "Can only release Approved disbursements." }, { status: 400 });
+            case "Partially Released": {
+                if (currentDis.status !== "Approved" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
+                    return NextResponse.json({ message: "Can only release Approved or already Released disbursements." }, { status: 400 });
                 }
+
+                releasedBy = currentUserId;
+                dateReleased = new Date().toISOString();
+
+                // Recalculate parent values dynamically upon payment line processing:
+                // disbursement.paid_amount = sum(disbursement_payments.amount)
+                const totalPaidPayments = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+                paidAmount = totalPaidPayments;
+
                 // Sync PO statuses
                 await syncPurchaseOrderStatuses(currentDis, payables);
                 break;
+            }
             case "Posted":
-                if (currentDis.status !== "Released") {
-                    return NextResponse.json({ message: "Can only post Released disbursements." }, { status: 400 });
+                if (currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
+                    return NextResponse.json({ message: "Can only post Released or Partially Released disbursements." }, { status: 400 });
                 }
                 if (!isBalanced) {
                     return NextResponse.json({ message: "Cannot post: Debits do not match Credits. The voucher must be balanced first." }, { status: 400 });
+                }
+                if (currentDis.approver_id != null && Number(currentDis.approver_id) === currentUserId) {
+                    return NextResponse.json({
+                        message: "Segregation of Duties Violation",
+                        detail: "The user who approved the voucher cannot post it."
+                    }, { status: 400 });
                 }
                 isPosted = 1;
                 postedBy = currentUserId;
                 datePosted = new Date().toISOString();
                 // Lock applied memos
                 await lockAppliedMemos(payables);
-                // Sync PO statuses (backup in case it was not triggered or updated)
+                // Sync PO statuses
                 await syncPurchaseOrderStatuses(currentDis, payables);
                 break;
+
             case "Draft":
             case "Returned for Revision":
-                if (Number(currentDis.isPosted) === 1) {
-                    return NextResponse.json({ message: "Cannot modify a transaction that is already Posted to the GL." }, { status: 400 });
-                }
                 approverId = null;
                 dateApproved = null;
-                newStatus = "Draft";
+                submittedBy = null;
+                dateSubmitted = null;
+                newStatus = status;
                 break;
+
             default:
                 return NextResponse.json({ message: `Unknown status transition: ${status}` }, { status: 400 });
         }
 
-        // 4. Update status in Directus
+        // 4. Update status and attributes in Directus
         const updatePayload = {
             status: newStatus,
             approver_id: approverId,
             date_approved: dateApproved,
             posted_by: postedBy,
             date_posted: datePosted,
-            isPosted: isPosted
+            isPosted: isPosted,
+            submitted_by: submittedBy,
+            date_submitted: dateSubmitted,
+            released_by: releasedBy,
+            date_released: dateReleased,
+            paid_amount: paidAmount
         };
 
         const patchRes = await fetch(`${DIRECTUS_URL}/items/disbursement/${id}?fields=*.*`, {
@@ -290,7 +332,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         // 5. Build DTO representation
         const userMap = await getUserMap(token);
-        const normalized = normalizeDisbursement(updatedDis, lineItems.payables, lineItems.payments, userMap);
+        const coaMap = await getCoaMap();
+        const divisionMap = await getDivisionMap();
+        const bankMap = await getBankMap();
+        const normalized = normalizeDisbursement(updatedDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap);
 
         return NextResponse.json(normalized);
 

@@ -148,6 +148,12 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
     const exportIncludesListCost =
         filters.price_type_ids.length === 0 || filters.price_type_ids.includes("-1");
 
+    const excelPriceTypes = React.useMemo(() => {
+        if (filters.price_type_ids.length === 0) return priceTypes;
+        const selectedIds = new Set(filters.price_type_ids);
+        return priceTypes.filter(priceType => selectedIds.has(String(priceType.price_type_id)));
+    }, [filters.price_type_ids, priceTypes]);
+
     const exportTiers = React.useMemo(() => {
         const tiers = buildMatrixTierKeys(exportPriceTypes);
         return exportIncludesListCost ? tiers : tiers.filter(tier => tier !== "LIST");
@@ -323,12 +329,12 @@ export default function ProductPrintablesView({ userName }: { userName?: string 
         try {
             await exportProductPrintablesExcel({
                 matrixRows: result.matrixRows,
-                priceTypes: exportPriceTypes,
+                priceTypes: excelPriceTypes,
+                colorPriceTypes: priceTypes,
                 units,
                 filterSummary,
                 userName: currentUser,
                 supplierName: supplier?.supplier_name,
-                includeListCost: exportIncludesListCost,
             });
             toast.success("Excel report downloaded.");
         } catch (error: unknown) {

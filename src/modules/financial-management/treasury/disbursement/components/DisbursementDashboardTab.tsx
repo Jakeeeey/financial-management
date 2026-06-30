@@ -27,6 +27,7 @@ import { generateReportPDF } from "../utils/reportPdfGenerator";
 import { generateReportExcel } from "../utils/reportExcelGenerator";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { AiInsightsPanel } from "./AiInsightsPanel";
+import { QUICK_RANGES, detectQuickRange } from "../utils/dateRangeHelper";
 
 const PIE_COLORS = [
     "hsl(var(--primary))",
@@ -120,6 +121,7 @@ export function DisbursementDashboardTab() {
     const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
     const [payees, setPayees] = useState<{ id: number; name: string }[]>([]);
     const [coas, setCoas] = useState<{ coaId: number; glCode: string; accountTitle: string }[]>([]);
+    const [divisions, setDivisions] = useState<{ divisionId: number; divisionName: string }[]>([]);
 
     const activeEncoders = useMemo(() => {
         const activeIds = data?.activeEncoderIds;
@@ -169,6 +171,15 @@ export function DisbursementDashboardTab() {
                 }
             })
             .catch(err => console.warn("Failed to fetch COAs for filter:", err));
+
+        // Fetch divisions
+        disbursementProvider.getDivisions()
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setDivisions(data);
+                }
+            })
+            .catch(err => console.warn("Failed to fetch divisions for filter:", err));
     }, []);
 
     const formatMoney = (amount: number) => `₱${(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -219,8 +230,8 @@ export function DisbursementDashboardTab() {
     }, [data?.payableCoaExpenses, coas]);
 
     const topDivisionExpenses = useMemo(() => {
-        return (data?.divisionExpenses || []).slice(0, 10);
-    }, [data?.divisionExpenses]);
+        return (data?.payableDivisionExpenses || data?.divisionExpenses || []).slice(0, 10);
+    }, [data?.payableDivisionExpenses, data?.divisionExpenses]);
 
     const cashFlowTimeline = useMemo(() => {
         const dateMap = new Map<string, number>();
@@ -240,37 +251,21 @@ export function DisbursementDashboardTab() {
         return text.length > maxLength ? text.substring(0, maxLength) + "..." : text;
     };
 
-    const handleQuickRange = (range: string) => {
-        const today = new Date();
-        let start = new Date();
-        let end = new Date();
+    const selectedQuickRange = useMemo(() => {
+        return detectQuickRange(filters.startDate, filters.endDate);
+    }, [filters.startDate, filters.endDate]);
 
-        switch (range) {
-            case "today":
-                break;
-            case "this_week":
-                start.setDate(today.getDate() - today.getDay());
-                break;
-            case "this_month":
-                start = new Date(today.getFullYear(), today.getMonth(), 1);
-                end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-                break;
-            case "this_year":
-                start = new Date(today.getFullYear(), 0, 1);
-                end = new Date(today.getFullYear(), 11, 31);
-                break;
-            case "all_time":
-                start = new Date(2020, 0, 1);
-                end = new Date(today.getFullYear() + 1, 11, 31);
-                break;
-            default: return;
+    const handleQuickRange = (rangeVal: string) => {
+        if (rangeVal === "custom") return;
+        const matched = QUICK_RANGES.find(r => r.value === rangeVal);
+        if (matched) {
+            const range = matched.getRange();
+            setFilters({
+                ...filters,
+                startDate: range.start,
+                endDate: range.end
+            });
         }
-
-        setFilters({
-            ...filters,
-            startDate: start.toISOString().split('T')[0],
-            endDate: end.toISOString().split('T')[0]
-        });
     };
 
     return (
@@ -283,16 +278,15 @@ export function DisbursementDashboardTab() {
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-1.5">
                                 <CalendarDays className="w-3.5 h-3.5 text-primary"/> Quick Range
                             </label>
-                            <Select onValueChange={handleQuickRange}>
+                            <Select value={selectedQuickRange} onValueChange={handleQuickRange}>
                                 <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50">
                                     <SelectValue placeholder="Custom" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="today" className="text-xs font-bold uppercase">Today</SelectItem>
-                                    <SelectItem value="this_week" className="text-xs font-bold uppercase">This Week</SelectItem>
-                                    <SelectItem value="this_month" className="text-xs font-bold uppercase">This Month</SelectItem>
-                                    <SelectItem value="this_year" className="text-xs font-bold uppercase">This Year</SelectItem>
-                                    <SelectItem value="all_time" className="text-xs font-bold uppercase">All Time</SelectItem>
+                                    <SelectItem value="custom" className="text-xs font-bold uppercase text-muted-foreground/60">Custom</SelectItem>
+                                    {QUICK_RANGES.map(r => (
+                                        <SelectItem key={r.value} value={r.value} className="text-xs font-bold uppercase">{r.label}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>
@@ -350,7 +344,7 @@ export function DisbursementDashboardTab() {
                     )}>
                         <div className="space-y-1.5">
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Trans Type</label>
-                            <Select value={filters.transactionType?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, transactionType: val === "ALL" ? "" : Number(val) })}>
+                            <Select value={filters.transactionType?.toString() || "ALL"} onValueChange={(val) => setFilters({ ...filters, transactionType: val === "ALL" ? "" : val })}>
                                 <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="ALL" className="text-xs font-bold uppercase">All Types</SelectItem>
@@ -379,7 +373,7 @@ export function DisbursementDashboardTab() {
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Encoder</label>
                             <SearchableSelect
                                 value={filters.encoderId?.toString() || "ALL"}
-                                onValueChange={(val) => setFilters({ ...filters, encoderId: val === "ALL" ? "" : Number(val) })}
+                                onValueChange={(val) => setFilters({ ...filters, encoderId: val === "ALL" ? "" : val })}
                                 options={[
                                     { value: "ALL", label: "All Encoders" },
                                     ...activeEncoders.map(u => ({ value: u.id.toString(), label: u.name }))
@@ -393,7 +387,7 @@ export function DisbursementDashboardTab() {
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Supplier / Payee</label>
                             <SearchableSelect
                                 value={filters.payeeId?.toString() || "ALL"}
-                                onValueChange={(val) => setFilters({ ...filters, payeeId: val === "ALL" ? "" : Number(val) })}
+                                onValueChange={(val) => setFilters({ ...filters, payeeId: val === "ALL" ? "" : val })}
                                 options={[
                                     { value: "ALL", label: "All Payees" },
                                     ...payees.map(p => ({ value: p.id.toString(), label: p.name }))
@@ -407,7 +401,7 @@ export function DisbursementDashboardTab() {
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">GL COA</label>
                             <SearchableSelect
                                 value={filters.coaId?.toString() || "ALL"}
-                                onValueChange={(val) => setFilters({ ...filters, coaId: val === "ALL" ? "" : Number(val) })}
+                                onValueChange={(val) => setFilters({ ...filters, coaId: val === "ALL" ? "" : val })}
                                 options={[
                                     { value: "ALL", label: "All COAs" },
                                     ...coas.map(c => ({ value: c.coaId.toString(), label: `${c.glCode} - ${c.accountTitle}` }))
@@ -418,13 +412,26 @@ export function DisbursementDashboardTab() {
                         </div>
 
                         <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Division</label>
+                            <Select value={filters.divisionId || "ALL"} onValueChange={(val) => setFilters({ ...filters, divisionId: val === "ALL" ? "" : val })}>
+                                <SelectTrigger className="h-10 text-xs font-bold uppercase bg-background shadow-sm border-border/50"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="ALL" className="text-xs font-bold uppercase text-primary">All Divisions</SelectItem>
+                                    {divisions.map(d => (
+                                        <SelectItem key={d.divisionId} value={d.divisionId.toString()} className="text-xs font-bold uppercase">{d.divisionName}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
                             <label className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Min Amount</label>
                             <Input
                                 type="number"
                                 placeholder="Min"
                                 className="h-10 text-xs font-bold bg-background shadow-sm border-border/50"
-                                value={filters.amount || ""}
-                                onChange={(e) => setFilters({ ...filters, amount: e.target.value === "" ? "" : Number(e.target.value) })}
+                                value={filters.minAmount || ""}
+                                onChange={(e) => setFilters({ ...filters, minAmount: e.target.value === "" ? "" : Number(e.target.value) })}
                             />
                         </div>
 
