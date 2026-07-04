@@ -550,7 +550,6 @@ export async function getBankMap() {
     return map;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function getUserMap(token: string, userIds?: number[]) {
     const map = new Map<string, string>();
     try {
@@ -908,7 +907,17 @@ export async function POST(request: NextRequest) {
         const paymentLines = (body.payments || [])
             .filter((line: PaymentInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo && line.checkNo.trim() !== ""))
             .map((line: PaymentInput) => {
-                const payload: any = {
+                const payload: {
+                    disbursement_id: number;
+                    coa_id: number | null;
+                    bank_id: number | null;
+                    check_no: string;
+                    date: string | undefined;
+                    amount: number;
+                    remarks: string;
+                    released_by?: number;
+                    released_date?: string;
+                } = {
                     disbursement_id: createdId,
                     coa_id: line.coaId ? Number(line.coaId) : null,
                     bank_id: line.bankId ? Number(line.bankId) : null,

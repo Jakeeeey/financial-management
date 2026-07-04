@@ -242,7 +242,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                 const dateB = b.dateCreated ? new Date(b.dateCreated).getTime() : 0;
                 return dateB - dateA;
             });
-    }, [editableVouchers, sidebarSearch, sidebarStatusFilter, sidebarTypeFilter]);
+    }, [editableVouchers, sidebarSearch, sidebarStatusFilter, sidebarTypeFilter, sidebarStartDate, sidebarEndDate, sidebarPayeeId]);
 
     // Load active records from DB
     const loadMetadata = useCallback(async () => {

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -19,7 +19,7 @@ import { useDisbursement } from "../hooks/useDisbursement";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { formatCurrency, numberToWords } from "../utils/disbursement-utils";
 import { generateDisbursementPDF, generateCheckLeafPDF } from "../utils/pdfGenerator";
-import { StickyTableWrapper } from "../components/StickyTableWrapper";
+
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
