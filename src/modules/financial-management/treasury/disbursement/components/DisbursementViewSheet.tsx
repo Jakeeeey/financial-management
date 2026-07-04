@@ -26,12 +26,14 @@ interface DisbursementViewSheetProps {
     onUpdateStatus: (id: number, status: string) => Promise<boolean>;
     onEdit?: (d: Disbursement) => void;
     loading: boolean;
+    readOnly?: boolean;
 }
 
 function AttachmentPreview({ docUrl }: { docUrl: string }) {
     const [contentType, setContentType] = useState<string>("");
     const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
-    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}`;
+    const token = process.env.NEXT_PUBLIC_DIRECTUS_STATIC_TOKEN || "AAKv73dkIV8DfAIA5vEt3eXVdIebzmBW";
+    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}?access_token=${token}`;
 
     useEffect(() => {
         if (!viewUrl) return;
@@ -99,7 +101,7 @@ function AttachmentPreview({ docUrl }: { docUrl: string }) {
     );
 }
 
-export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading }: DisbursementViewSheetProps) {
+export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading, readOnly = false }: DisbursementViewSheetProps) {
     const [showPrintOptions, setShowPrintOptions] = useState(false);
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
@@ -243,6 +245,30 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                 <p className="text-xs font-bold text-foreground">{disbursement.departmentName || "N/A"}</p>
                             </div>
                         </div>
+
+                        {/* Audit Trail Section */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 col-span-2 border-t border-border pt-4 mt-2">
+                            <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Prepared By</p>
+                                <p className="text-xs font-black text-foreground mt-0.5">{disbursement.submittedByName || disbursement.encoderName || "N/A"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateSubmitted ? format(new Date(disbursement.dateSubmitted), "MMM dd, yyyy HH:mm") : "Draft State"}</p>
+                            </div>
+                            <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Approved By</p>
+                                <p className="text-xs font-black text-foreground mt-0.5">{disbursement.approverName || "Pending"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateApproved ? format(new Date(disbursement.dateApproved), "MMM dd, yyyy HH:mm") : "N/A"}</p>
+                            </div>
+                            <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Released By</p>
+                                <p className="text-xs font-black text-foreground mt-0.5">{disbursement.releasedByName || "Pending"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateReleased ? format(new Date(disbursement.dateReleased), "MMM dd, yyyy HH:mm") : "N/A"}</p>
+                            </div>
+                            <div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Posted By</p>
+                                <p className="text-xs font-black text-foreground mt-0.5">{disbursement.postedByName || "Pending"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.datePosted ? format(new Date(disbursement.datePosted), "MMM dd, yyyy HH:mm") : "N/A"}</p>
+                            </div>
+                        </div>
                     </div>
 
                     {disbursement.supportingDocumentsUrl ? (
@@ -383,7 +409,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         </div>
 
                         {/* Dynamic Edit Button */}
-                        {(disbursement.status === "Draft" || disbursement.status === "Approved" || disbursement.status === "Returned for Revision") && onEdit && (
+                        {!readOnly && (disbursement.status === "Draft" || disbursement.status === "Approved" || disbursement.status === "Returned for Revision") && onEdit && (
                             <Button variant="outline" onClick={() => onEdit(disbursement)} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-6 text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/30">
                                 <Pencil className="w-4 h-4 sm:mr-2" />
                                 <span className="hidden sm:inline">
@@ -393,7 +419,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         )}
 
                         {/* Revert Tool */}
-                        {disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" && (
+                        {!readOnly && disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" && (
                             <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
                             </Button>
@@ -402,46 +428,50 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
 
                     {/* RIGHT SIDE: Dynamic Primary Action Pipeline */}
                     <div className="flex gap-2">
-                        {(disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && (
-                            <Button onClick={() => handleAction("Submitted")} disabled={loading} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
-                                {isAutoApprove ? "Submit & Auto-Approve" : "Submit for Approval"}
-                            </Button>
-                        )}
-
-                        {disbursement.status === "Submitted" && (
-                            <Button onClick={() => handleAction("Approved")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
-                                Approve Voucher
-                            </Button>
-                        )}
-
-                        {disbursement.status === "Approved" && (
-                            <Button
-                                onClick={() => handleAction("Released")}
-                                disabled={loading || !disbursement.payments || disbursement.payments.length === 0}
-                                className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-purple-600 hover:bg-purple-700 text-white shadow-md disabled:opacity-50">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Send className="w-4 h-4 sm:mr-2" />}
-                                Release Check
-                            </Button>
-                        )}
-
-                        {disbursement.status === "Released" && (
-                            <div className="flex flex-col items-end gap-1">
-                                <Button 
-                                    onClick={() => handleAction("Posted")} 
-                                    disabled={loading || !isBalanced || isApprover} 
-                                    className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md disabled:opacity-50"
-                                >
-                                    {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
-                                    Post to Ledger
-                                </Button>
-                                {isApprover && (
-                                    <span className="text-[9px] text-destructive font-black uppercase tracking-widest mt-1">
-                                        Segregation of Duties: Approver cannot post
-                                    </span>
+                        {!readOnly && (
+                            <>
+                                {(disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && (
+                                    <Button onClick={() => handleAction("Submitted")} disabled={loading} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
+                                        {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
+                                        {isAutoApprove ? "Submit & Auto-Approve" : "Submit for Approval"}
+                                    </Button>
                                 )}
-                            </div>
+
+                                {disbursement.status === "Submitted" && (
+                                    <Button onClick={() => handleAction("Approved")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
+                                        {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
+                                        Approve Voucher
+                                    </Button>
+                                )}
+
+                                {disbursement.status === "Approved" && (
+                                    <Button
+                                        onClick={() => handleAction("Released")}
+                                        disabled={loading || !disbursement.payments || disbursement.payments.length === 0}
+                                        className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-purple-600 hover:bg-purple-700 text-white shadow-md disabled:opacity-50">
+                                        {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Send className="w-4 h-4 sm:mr-2" />}
+                                        Release Check
+                                    </Button>
+                                )}
+
+                                {disbursement.status === "Released" && (
+                                    <div className="flex flex-col items-end gap-1">
+                                        <Button 
+                                            onClick={() => handleAction("Posted")} 
+                                            disabled={loading || !isBalanced || isApprover} 
+                                            className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md disabled:opacity-50"
+                                        >
+                                            {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
+                                            Post to Ledger
+                                        </Button>
+                                        {isApprover && (
+                                            <span className="text-[9px] text-destructive font-black uppercase tracking-widest mt-1">
+                                                Segregation of Duties: Approver cannot post
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 </div>

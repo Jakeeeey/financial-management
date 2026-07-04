@@ -52,8 +52,8 @@ export function numberToWords(amount: number): string {
     
     function convert(n: number): string {
         if (n < 20) return ones[n];
-        if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
-        if (n < 1000) return ones[Math.floor(n / 100)] + " Hundred" + (n % 100 ? " and " + convert(n % 100) : "");
+        if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? "-" + ones[n % 10] : "");
+        if (n < 1000) return ones[Math.floor(n / 100)] + " Hundred" + (n % 100 ? " " + convert(n % 100) : "");
         if (n < 1000000) return convert(Math.floor(n / 1000)) + " Thousand" + (n % 1000 ? " " + convert(n % 1000) : "");
         return convert(Math.floor(n / 1000000)) + " Million" + (n % 1000000 ? " " + convert(n % 1000000) : "");
     }
@@ -67,7 +67,7 @@ export function numberToWords(amount: number): string {
     
     let words = convert(pesos) + " Pesos";
     if (centavos > 0) {
-        words += ` and ${centavos}/100`;
+        words += " and " + convert(centavos) + " Centavos Only";
     } else {
         words += " Only";
     }

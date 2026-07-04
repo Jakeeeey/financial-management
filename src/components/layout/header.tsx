@@ -24,6 +24,7 @@ const NAV = [
     { href: "/", label: "Home" },
     { href: "/about", label: "About Us" },
     { href: "/services", label: "Services" },
+    { href: "/fm/presentation", label: "Presentation" },
     { href: "/contact", label: "Contact" },
 ]
 

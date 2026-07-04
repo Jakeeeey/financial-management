@@ -136,24 +136,8 @@ export function VoucherDetailsSection({
                 </div>
             </div>
 
-            {/* Row 2: Division & Department */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-muted-foreground">Division <span className="text-destructive">*</span></Label>
-                    <SearchableDropdown<number>
-                        options={divisions.map((d) => ({
-                            value: d.divisionId ?? 0,
-                            label: d.divisionName || `Division`
-                        }))}
-                        value={divisionId as number | ""} 
-                        onSelect={(val) => setDivisionId(val)}
-                        placeholder="Choose Division..."
-                        disabled={disabled}
-                        className="h-8 w-full bg-background border-input hover:border-accent-foreground/30 text-xs text-foreground rounded-sm disabled:bg-muted disabled:cursor-not-allowed"
-                        popoverWidth="w-[280px]"
-                    />
-                </div>
-
+            {/* Row 2: Department (Division removed) */}
+            <div className="grid grid-cols-1 gap-3">
                 <div className="space-y-1">
                     <Label className="text-[11px] font-semibold text-muted-foreground">Department <span className="text-destructive">*</span></Label>
                     <SearchableDropdown<number>
@@ -206,7 +190,7 @@ export function VoucherDetailsSection({
                         <div className="flex items-center gap-2 truncate max-w-[80%]">
                             <Paperclip className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500 shrink-0" />
                             <a 
-                                href={supportingDocumentsUrl.startsWith("http") ? supportingDocumentsUrl : `${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/assets/${supportingDocumentsUrl}`} 
+                                href={supportingDocumentsUrl.startsWith("http") ? supportingDocumentsUrl : `${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/assets/${supportingDocumentsUrl}?access_token=${process.env.NEXT_PUBLIC_DIRECTUS_STATIC_TOKEN || "AAKv73dkIV8DfAIA5vEt3eXVdIebzmBW"}`} 
                                 target="_blank" 
                                 rel="noopener noreferrer" 
                                 className="text-xs font-semibold text-primary hover:underline truncate"

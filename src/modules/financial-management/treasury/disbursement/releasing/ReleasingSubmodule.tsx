@@ -135,16 +135,19 @@ export default function ReleasingSubmodule() {
 
     // Derived states
     const approvedVouchers = useMemo(() => {
-        return data.filter(v => v.status === "Approved");
+        return data.filter(v => v.status === "Approved" || v.status === "Partially Released");
     }, [data]);
 
     const totalPaymentsAmount = useMemo(() => {
         return payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     }, [payments]);
 
+    const paymentCoas = useMemo(() => {
+        return coas.filter(c => c.isPayment);
+    }, [coas]);
+
     const handleAddPayment = () => {
         const remaining = Number(((selectedDisbursement?.totalAmount || 0) - totalPaymentsAmount).toFixed(2));
-        const paymentCoas = coas.filter(c => c.isPayment);
         const autoCoaId = paymentCoas.length === 1 ? paymentCoas[0].coaId : undefined;
 
         setPayments([...payments, {
@@ -173,7 +176,13 @@ export default function ReleasingSubmodule() {
         // validate payments
         for (let i = 0; i < payments.length; i++) {
             const p = payments[i];
-            if (!p.checkNo) {
+            const selectedCoa = coas.find(c => c.coaId === p.coaId);
+            const accountTitle = selectedCoa?.accountTitle || "";
+            const isCashOrPetty = accountTitle.toLowerCase().includes("petty cash") || 
+                                  accountTitle.toLowerCase().includes("cash") || 
+                                  accountTitle.toLowerCase().includes("revolving");
+
+            if (!isCashOrPetty && !p.checkNo) {
                 toast.error(`Please provide a check number on check row ${i + 1}`);
                 return false;
             }
@@ -418,64 +427,150 @@ export default function ReleasingSubmodule() {
                                             <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
                                         </div>
                                     </div>
-                                    <div>
-                                        <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Particulars / Remarks</span>
-                                        <span className="text-xs font-semibold text-foreground truncate block">{selectedDisbursement.remarks || "No remarks provided."}</span>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Particulars / Remarks</span>
+                                            <span className="text-xs font-semibold text-foreground truncate block">{selectedDisbursement.remarks || "No remarks provided."}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Voucher Approver</span>
+                                            <span className="text-xs font-bold text-foreground uppercase truncate block">{selectedDisbursement.approverName || "Unknown Approver"}</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Checks table */}
-                            <div className="bg-card p-1 rounded-xl border border-border shadow-sm">
+                            {/* QuickBooks Check Leafs Container */}
+                            <div className="bg-card p-1 rounded-xl border border-border shadow-sm space-y-4">
                                 <div className="px-4 pt-4 pb-2 border-b border-border flex items-center justify-between">
                                     <div className="flex items-center gap-2 text-foreground font-black uppercase tracking-widest text-[11px]">
-                                        <ArrowUpFromLine className="w-3.5 h-3.5 text-purple-600" /> Checks & Payment Lines (Credits)
+                                        <ArrowUpFromLine className="w-3.5 h-3.5 text-purple-600" /> QuickBooks Check leaves (Credits)
                                     </div>
                                     <Button onClick={handleAddPayment} disabled={loadingMetadata} size="sm" className="h-8 px-3.5 bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest text-[9px]">
                                         <Plus className="w-3.5 h-3.5 mr-1" /> Add Check
                                     </Button>
                                 </div>
 
-                                <StickyTableWrapper className="max-h-[300px] overflow-y-auto">
-                                    <Table>
-                                        <TableHeader className="bg-muted/70 sticky top-0 z-10">
-                                            <TableRow>
-                                                <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[120px]">Check Date</TableHead>
-                                                <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[120px]">Check No.</TableHead>
-                                                <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[180px]">Bank Account</TableHead>
-                                                <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[180px]">GL Account (COA)</TableHead>
-                                                <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[120px] text-right">Amount (PHP)</TableHead>
-                                                <TableHead className="w-[100px] text-center">Print Check</TableHead>
-                                                <TableHead className="w-[50px]"></TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {payments.length === 0 ? (
-                                                <TableRow>
-                                                    <TableCell colSpan={7} className="h-24 text-center text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                                                     No check lines issued yet. Click &quot;Add Check&quot; above.
-                                                    </TableCell>
-                                                </TableRow>
-                                            ) : (
-                                                payments.map((line, idx) => (
-                                                    <TableRow key={idx} className="hover:bg-muted/5">
-                                                        <TableCell className="py-2">
+                                <div className="px-4 pb-4 space-y-5 max-h-[480px] overflow-y-auto scrollbar-thin">
+                                    {payments.length === 0 ? (
+                                        <div className="py-16 text-center text-xs font-black text-muted-foreground uppercase tracking-widest bg-muted/5 rounded-xl border border-dashed border-border/80">
+                                            No check leaves issued yet. Click &quot;Add Check&quot; above.
+                                        </div>
+                                    ) : (
+                                        payments.map((line, idx) => {
+                                            const amountInWords = numberToWords(line.amount || 0);
+                                            return (
+                                                <div key={idx} className="relative bg-card border border-border/80 rounded-2xl p-6 shadow-md hover:shadow-lg transition-all space-y-5">
+                                                    {/* Top control bar: Header */}
+                                                    <div className="flex flex-row justify-between items-center pb-3 border-b border-border">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-black text-foreground uppercase tracking-widest">Check Leaf #{idx + 1}</span>
+                                                            <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 hover:bg-purple-100 font-bold text-[8px] uppercase tracking-wider">Approved Queue</Badge>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <Button 
+                                                                type="button"
+                                                                variant="outline" 
+                                                                size="sm" 
+                                                                disabled={!line.checkNo || !line.bankId || !line.amount}
+                                                                onClick={() => handlePrintCheck(line)}
+                                                                className="h-8 text-[9px] font-black uppercase tracking-widest bg-white dark:bg-zinc-800 text-foreground border-border hover:bg-muted/50"
+                                                            >
+                                                                <Printer className="w-3.5 h-3.5 mr-1 text-purple-600" /> Print leaf
+                                                            </Button>
+                                                            <Button 
+                                                                type="button"
+                                                                variant="ghost" 
+                                                                size="icon" 
+                                                                onClick={() => handleRemovePayment(idx)} 
+                                                                className="h-8 w-8 text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Visual Check Leaf Preview (Modernized QuickBooks style) */}
+                                                    <div className="bg-gradient-to-br from-purple-50/50 via-slate-50/50 to-indigo-50/50 dark:from-zinc-900/40 dark:via-zinc-900/20 dark:to-zinc-950/40 rounded-xl p-5 border border-dashed border-border/80 relative space-y-4 shadow-inner">
+                                                        {/* Top row of check */}
+                                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                                            <div className="space-y-0.5">
+                                                                <span className="text-[9px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest block font-mono">DRAWEE BANK</span>
+                                                                <span className="text-xs font-black text-foreground uppercase tracking-wide">
+                                                                    {banks.find(b => b.bankId === line.bankId)?.bankName || "No Bank Selected"}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-right font-mono text-[9px] text-muted-foreground/80 space-y-0.5 self-end sm:self-auto">
+                                                                <div>NO: <span className="font-bold text-foreground">{line.checkNo || "------"}</span></div>
+                                                                <div>DATE: <span className="font-bold text-foreground">{line.date ? format(new Date(line.date), "MM/dd/yyyy") : "--/--/----"}</span></div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Payee row */}
+                                                        <div className="flex items-end gap-2 border-b border-zinc-300 dark:border-zinc-800 pb-1">
+                                                            <span className="text-[8px] font-black text-muted-foreground/80 tracking-widest font-mono shrink-0 mb-1">PAY TO THE ORDER OF:</span>
+                                                            <span className="text-xs font-black text-foreground uppercase tracking-wider flex-1 truncate pb-0.5">
+                                                                {selectedDisbursement.payeeName}
+                                                            </span>
+                                                        </div>
+
+                                                        {/* Written Amount & Numeric Box */}
+                                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+                                                            <div className="flex items-end gap-2 border-b border-zinc-300 dark:border-zinc-800 pb-1 flex-1 w-full">
+                                                                <span className="text-[8px] font-black text-muted-foreground/80 tracking-widest font-mono shrink-0 mb-1">PESOS:</span>
+                                                                <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 italic flex-1 pb-0.5 leading-relaxed">
+                                                                    {amountInWords}
+                                                                </span>
+                                                            </div>
+                                                            <div className="bg-white dark:bg-zinc-950 px-4 py-2 rounded-lg border border-border/80 flex items-center gap-2 font-mono shrink-0 w-full sm:w-auto shadow-sm">
+                                                                <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400">PHP</span>
+                                                                <span className="text-sm font-black text-foreground">
+                                                                    {line.amount ? formatCurrency(line.amount).replace("₱", "") : "0.00"}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Form Inputs Grid (modern, highly styled) */}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+                                                        <div>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Check Date</label>
                                                             <Input 
                                                                 type="date"
-                                                                className="h-8 text-[11px] font-bold bg-background border-border/85" 
+                                                                className="h-9 text-xs font-bold bg-background border-border" 
                                                                 value={line.date} 
                                                                 onChange={e => handlePaymentChange(idx, "date", e.target.value)} 
                                                             />
-                                                        </TableCell>
-                                                        <TableCell className="py-2">
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Check No.</label>
                                                             <Input 
-                                                                className="h-8 text-[11px] font-bold bg-background border-border/85 placeholder:text-muted-foreground/30" 
+                                                                className="h-9 text-xs font-bold bg-background border-border placeholder:text-muted-foreground/30 font-mono" 
                                                                 placeholder="CK-000000"
                                                                 value={line.checkNo} 
                                                                 onChange={e => handlePaymentChange(idx, "checkNo", e.target.value)} 
                                                             />
-                                                        </TableCell>
-                                                        <TableCell className="py-2">
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Check Amount (PHP)</label>
+                                                            <Input 
+                                                                type="number"
+                                                                className="h-9 text-xs font-black bg-background border-border text-right font-mono text-emerald-600 dark:text-emerald-400" 
+                                                                placeholder="0.00"
+                                                                value={line.amount || ""} 
+                                                                onChange={e => handlePaymentChange(idx, "amount", e.target.value === "" ? 0 : Number(e.target.value))} 
+                                                            />
+                                                        </div>
+                                                        <div className="sm:col-span-2 md:col-span-1">
+                                                            <div className="h-full flex items-end">
+                                                                <span className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-widest block mb-2 font-mono">PHP CURRENCY</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/60">
+                                                        <div>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Draw Bank Account</label>
                                                             <SearchSelect<number>
                                                                 options={banks.map(b => ({
                                                                     value: b.bankId,
@@ -483,56 +578,27 @@ export default function ReleasingSubmodule() {
                                                                 }))}
                                                                 value={line.bankId || ""}
                                                                 onSelect={val => handlePaymentChange(idx, "bankId", val)}
-                                                                placeholder="Select Bank..."
+                                                                placeholder="Select Draw Bank Account..."
                                                             />
-                                                        </TableCell>
-                                                        <TableCell className="py-2">
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">GL Account (Credit)</label>
                                                             <SearchSelect<number>
-                                                                options={coas.map(c => ({
+                                                                options={paymentCoas.map(c => ({
                                                                     value: c.coaId,
                                                                     label: `${c.glCode} - ${c.accountTitle}`
                                                                 }))}
                                                                 value={line.coaId || ""}
                                                                 onSelect={val => handlePaymentChange(idx, "coaId", val)}
-                                                                placeholder="Select COA..."
+                                                                placeholder="Select GL Account (Credit)..."
                                                             />
-                                                        </TableCell>
-                                                        <TableCell className="py-2">
-                                                            <Input 
-                                                                type="number"
-                                                                className={`h-8 text-[11px] font-bold bg-background border-border/85 text-right font-mono ${line.amount < 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-500'}`} 
-                                                                placeholder="0.00"
-                                                                value={line.amount || ""} 
-                                                                onChange={e => handlePaymentChange(idx, "amount", e.target.value === "" ? 0 : Number(e.target.value))} 
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell className="py-2 text-center">
-                                                            <Button 
-                                                                variant="outline" 
-                                                                size="sm" 
-                                                                disabled={!line.checkNo || !line.bankId || !line.amount}
-                                                                onClick={() => handlePrintCheck(line)}
-                                                                className="h-8 text-[9px] font-black uppercase tracking-widest border-border bg-card"
-                                                            >
-                                                                <Printer className="w-3.5 h-3.5 mr-1 text-primary" /> PH Format
-                                                            </Button>
-                                                        </TableCell>
-                                                        <TableCell className="py-2 text-center">
-                                                            <Button 
-                                                                variant="ghost" 
-                                                                size="icon" 
-                                                                onClick={() => handleRemovePayment(idx)} 
-                                                                className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </Button>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))
-                                            )}
-                                        </TableBody>
-                                    </Table>
-                                </StickyTableWrapper>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
 
                                 <div className="p-4 border-t border-border bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs font-black uppercase tracking-widest">
                                     <div className="flex gap-4">
