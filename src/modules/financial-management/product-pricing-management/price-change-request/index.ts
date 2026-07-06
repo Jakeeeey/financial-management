@@ -1,2 +1,2 @@
-export * from "./PriceChangeRequestsModule";
 export * from "./types";
+export { default as PriceChangeRequestsModule } from "./PriceChangeRequestsModule";

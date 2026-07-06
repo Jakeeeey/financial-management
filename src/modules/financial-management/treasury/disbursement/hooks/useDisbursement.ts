@@ -11,7 +11,7 @@ export function useDisbursement() {
     const [actionLoading, setActionLoading] = useState(false);
 
     const [page, setPage] = useState(0);
-    const [size] = useState(20);
+    const [size, setSize] = useState(20);
     const [totalPages, setTotalPages] = useState(0);
     const [activeType, setActiveType] = useState<string>("All");
 
@@ -66,8 +66,15 @@ export function useDisbursement() {
 
     useEffect(() => {
         fetchList(page, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, activeType]);
+        
+        const timer = setInterval(() => {
+            if (typeof window !== "undefined" && document.hasFocus() && !actionLoading) {
+                fetchList(page, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
+            }
+        }, 10000); // 10s poll
+
+        return () => clearInterval(timer);
+    }, [page, activeType, size, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch, actionLoading, fetchList]);
 
     const applyFilters = () => {
         setPage(0);
@@ -138,12 +145,19 @@ export function useDisbursement() {
         }
     };
 
+    const changeSize = (newSize: number) => {
+        setSize(newSize);
+        setPage(0);
+    };
+
     return {
         data,
         loading,
         actionLoading,
         page,
         setPage,
+        size,
+        changeSize,
         totalPages,
         activeType,
         handleTabChange,

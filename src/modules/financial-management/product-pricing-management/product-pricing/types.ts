@@ -45,7 +45,9 @@ export type ProductRow = {
     cost_per_unit: number | null;
 };
 
-export type ProductTierKey = "A" | "B" | "C" | "D" | "E" | "LIST";
+/** `"LIST"` or a numeric `price_type_id` string */
+export type ProductTierKey = string;
+export type PriceViewMode = "FOCUSED" | "LIST" | "ALL";
 
 export type PriceRow = {
     id: number;
@@ -63,7 +65,7 @@ export type PriceRow = {
  */
 export type VariantCell = {
     product: ProductRow;
-    tiers: Record<ProductTierKey, number | null>;
+    tiers: Record<string, number | null>;
 };
 
 /**
@@ -88,7 +90,7 @@ export type PricingFilters = {
     brand_ids: number[];
     unit_ids: number[];
 
-    // ✅ multi supplier + scope (hook uses this)
+    // single-select UI; 0 or 1 supplier IDs + scope (hook uses this)
     supplier_ids: number[];
     supplier_scope: "ALL" | "LINKED_ONLY";
 
@@ -96,6 +98,7 @@ export type PricingFilters = {
     missing_tier: boolean;
 
     // ✅ New: UI filters for column visibility
+    price_view: PriceViewMode;
     price_type_ids: number[];
     show_list_price: boolean;
 };
@@ -115,6 +118,53 @@ export type PriceChangeRequest = {
     price_type_id: number | { price_type_id: number };
     proposed_price: number;
     status: string;
+    application_status?: string | null;
+    effective_at?: string | null;
+};
+
+export type PriceChangeBatchLineInput = {
+    product_id: number;
+    price_type_id: number;
+    current_price: number | null;
+    proposed_price: number;
+};
+
+export type SavePriceChangeBatchInput = {
+    supplier_id: number;
+    reference_no?: string;
+    remarks: string;
+};
+
+export type SaveAllResult =
+    | { success: true; created: number }
+    | {
+          success: false;
+          reason:
+              | "validation"
+              | "no_changes"
+              | "no_valid_lines"
+              | "missing_batch_fields"
+              | "api_error"
+              | "nothing_created"
+              | "mixed_preflight_failed"
+              | "mixed_save_rolled_back";
+      };
+
+export type DirtyCellMeta = {
+    product_name: string;
+    product_code: string | null;
+    current_value: number | null;
+};
+
+export type DirtyPreviewLine = {
+    product_id: number;
+    product_name: string;
+    product_code: string | null;
+    tier_label: string;
+    kind: "price" | "cost";
+    current_value: number | null;
+    proposed_value: number | null;
+    validation_error?: string | null;
 };
 
 export type CostChangeRequest = {
@@ -123,5 +173,14 @@ export type CostChangeRequest = {
     proposed_cost: number;
     current_cost: number | null;
     status: string;
+    application_status?: string | null;
+    effective_at?: string | null;
+};
+
+export type PendingCellRequest = {
+    proposedValue: number;
+    status?: string | null;
+    applicationStatus?: string | null;
+    effectiveAt?: string | null;
 };
 

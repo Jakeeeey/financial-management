@@ -1,6 +1,6 @@
 // components/AgingChart.tsx
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChartEmptyState } from './ChartEmptyState';
 import { formatPeso } from '../utils';
 import type { AgingBucket } from '../types';
@@ -8,9 +8,11 @@ import type { AgingBucket } from '../types';
 interface AgingChartProps {
   data: AgingBucket[];
   isFiltered?: boolean;
+  selectedRange?: string;
+  onRangeSelect?: (range: string) => void;
 }
 
-export function AgingChart({ data, isFiltered = false }: AgingChartProps) {
+export function AgingChart({ data, isFiltered = false, selectedRange, onRangeSelect }: AgingChartProps) {
   const hasData = data.some((d) => d.amount > 0);
   const isEmpty = isFiltered && !hasData;
 
@@ -45,7 +47,18 @@ export function AgingChart({ data, isFiltered = false }: AgingChartProps) {
                 }}
                 labelStyle={{ color: 'hsl(var(--muted-foreground))' }}
               />
-              <Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+              <Bar dataKey="amount" radius={[4, 4, 0, 0]} barSize={40} cursor="pointer">
+                {data.map((entry, index) => {
+                  const isSelected = selectedRange === entry.range;
+                  return (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={isSelected ? '#f59e0b' : '#3b82f6'}
+                      onClick={() => onRangeSelect?.(isSelected ? '' : entry.range)}
+                    />
+                  );
+                })}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         )}

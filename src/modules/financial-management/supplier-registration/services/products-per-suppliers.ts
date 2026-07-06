@@ -4,6 +4,8 @@ import {
   ProductsPerSupplierResponse,
   ProductPerSupplierResponse,
 } from "../types/product-per-suppplier.schema";
+import { fetchUnitsMap } from "./products";
+
 /**
  * Base Directus API URL
  */
@@ -38,7 +40,7 @@ export async function fetchSupplierProducts(
   try {
     const filter = { supplier_id: { _eq: supplierId } };
     const fields =
-      "id,supplier_id,product_id,discount_type,product_id.product_name,product_id.product_code";
+      "id,supplier_id,product_id,discount_type,product_id.product_id,product_id.product_name,product_id.product_code,product_id.short_description,product_id.unit_of_measurement";
 
     const url = `${API_BASE}/product_per_supplier?limit=-1&fields=${fields}&filter=${encodeURIComponent(
       JSON.stringify(filter),
@@ -48,11 +50,14 @@ export async function fetchSupplierProducts(
     console.log(`[SERVER FETCH] Requesting Supplier ID: ${supplierId}`);
     console.log(`[SERVER FETCH] URL: ${url}`);
 
-    const response = await fetch(url, {
-      method: "GET",
-      headers: getHeaders(),
-      cache: "no-store",
-    });
+    const [response, unitsMap] = await Promise.all([
+      fetch(url, {
+        method: "GET",
+        headers: getHeaders(),
+        cache: "no-store",
+      }),
+      fetchUnitsMap(),
+    ]);
 
     if (!response.ok) {
       // DEBUGGER: Get the actual error message from Directus
@@ -70,23 +75,36 @@ export async function fetchSupplierProducts(
 
     const result = await response.json();
 
-    return (result.data || []).map((item: { id: number, supplier_id: number, product_id: unknown, discount_type: number | null }) => ({
-      id: item.id,
-      supplier_id: item.supplier_id,
-      product_id:
-        typeof item.product_id === 'object' && item.product_id !== null
-          ? (item.product_id as Record<string, unknown>).product_id // Check if this field name is correct in Directus!
-          : item.product_id,
-      discount_type: item.discount_type,
-      product_name:
-        typeof item.product_id === 'object' && item.product_id !== null
-          ? (item.product_id as Record<string, unknown>).product_name
-          : "Unknown Product",
-      product_code:
-        typeof item.product_id === 'object' && item.product_id !== null
-          ? (item.product_id as Record<string, unknown>).product_code
-          : null,
-    }));
+    return (result.data || []).map(
+      (item: {
+        id: number;
+        supplier_id: number;
+        product_id: unknown;
+        discount_type: number | null;
+      }) => {
+        const isObject =
+          typeof item.product_id === "object" && item.product_id !== null;
+        const expanded = isObject
+          ? (item.product_id as Record<string, unknown>)
+          : null;
+
+        return {
+          id: item.id,
+          supplier_id: item.supplier_id,
+          product_id: expanded
+            ? ((expanded.product_id || expanded.id) as number)
+            : (item.product_id as number),
+          discount_type: item.discount_type,
+          product_name:
+             (expanded?.product_name as string) || "Unknown Product",
+          product_code: (expanded?.product_code as string) || null,
+          unit_of_measurement:
+            unitsMap[expanded?.unit_of_measurement as number] ||
+            (expanded?.unit_of_measurement as string) ||
+            null,
+        };
+      },
+    );
   } catch (error: unknown) {
     console.error(
       `[SERVER FATAL] Error for supplier ${supplierId}:`,
@@ -120,6 +138,34 @@ export async function addProductToSupplier(
     return result.data;
   } catch (error) {
     console.error("Error adding product to supplier:", error);
+    throw error;
+  }
+}
+
+/**
+ * Add products to supplier in bulk
+ */
+export async function createBulkSupplierProducts(
+  items: Partial<ProductPerSupplier>[],
+): Promise<ProductPerSupplier[]> {
+  try {
+    const response = await fetch(`${API_BASE}/product_per_supplier`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(items),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(
+        error.errors?.[0]?.message || "Failed to add products in bulk",
+      );
+    }
+
+    const result = await response.json();
+    return result.data;
+  } catch (error) {
+    console.error("Error bulk adding products to supplier:", error);
     throw error;
   }
 }

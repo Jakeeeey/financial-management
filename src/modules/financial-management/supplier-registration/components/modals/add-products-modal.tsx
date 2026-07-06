@@ -34,10 +34,21 @@ export function AddProductsModal({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Filter out products already assigned
+  // Filter out products already assigned and de-duplicate the available list
   const availableProducts = useMemo(() => {
     const assignedSet = new Set(assignedProductIds.map((id) => Number(id)));
-    return products.filter((p) => !assignedSet.has(Number(p.product_id)));
+    const uniqueProducts = new Map<number, (typeof products)[0]>();
+
+    products.forEach((p) => {
+      const productId = Number(
+        p.product_id || (p as { id?: number; product_id?: number }).id,
+      );
+      if (!assignedSet.has(productId) && !uniqueProducts.has(productId)) {
+        uniqueProducts.set(productId, p);
+      }
+    });
+
+    return Array.from(uniqueProducts.values());
   }, [products, assignedProductIds]);
 
   // Filter available products based on search
@@ -46,8 +57,9 @@ export function AddProductsModal({
     const query = searchQuery.toLowerCase();
     return availableProducts.filter(
       (p) =>
+        (p.short_description?.toLowerCase() ?? "").includes(query) ||
         (p.product_name?.toLowerCase() ?? "").includes(query) ||
-        (p.product_code?.toLowerCase() ?? "").includes(query),
+        (String(p.unit_of_measurement ?? "").toLowerCase()).includes(query),
     );
   }, [availableProducts, searchQuery]);
 
@@ -80,7 +92,7 @@ export function AddProductsModal({
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
-        className="sm:max-w-[500px] h-[80vh] flex flex-col gap-0 p-0"
+        className="sm:max-w-[800px] h-[80vh] flex flex-col gap-0 p-0"
         showCloseButton={false}
       >
         <DialogHeader className="px-6 py-4 border-b shrink-0">
@@ -123,11 +135,11 @@ export function AddProductsModal({
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-medium leading-none truncate group-hover:text-primary transition-colors">
-                        {product.product_name}
+                        {product.product_name || product.short_description}
                       </p>
-                      {product.product_code && (
+                      {product.unit_of_measurement != null && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          {product.product_code}
+                          {product.unit_of_measurement}
                         </p>
                       )}
                     </div>

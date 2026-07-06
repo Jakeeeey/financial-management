@@ -15,43 +15,63 @@ export interface PaymentLine {
     coaId?: number;
     accountTitle?: string;
     bankId?: number;
+    bankName?: string;
+    bankAccountNumber?: string;
     checkNo: string;
     date: string;
     amount: number;
     remarks?: string;
+    releasedDate?: string;
+    releasedBy?: string | number;
 }
 
 export interface Disbursement {
     id: number;
     docNo: string;
-    payeeId?: number; // 🚀 Added for Edit mode population
+    payeeId?: number;
     transactionTypeName?: string;
     payeeName?: string;
     remarks?: string;
     totalAmount: number;
     paidAmount: number;
 
+    // Financial Header Aggregates
+    totalDebit?: number;
+    totalCredit?: number;
+    balance?: number;
+
     encoderName?: string;
+    submittedByName?: string;
     approverName?: string;
+    releasedByName?: string;
     postedByName?: string;
+    encoderId?: number;
+    approverId?: number;
+    postedById?: number;
+    submittedById?: number;
+    releasedById?: number;
 
     isPosted: number;
     transactionDate?: string;
     dateCreated?: string;
+    dateSubmitted?: string;
     dateApproved?: string;
+    dateReleased?: string;
     datePosted?: string;
-    divisionId?: number;     // 🚀 NEW: Needed for Edit Mode
-    departmentId?: number;   // 🚀 NEW: Needed for Edit Mode
+    
+    divisionId?: number;
+    departmentId?: number;
     divisionName?: string;
     departmentName?: string;
     status: string;
+    supportingDocumentsUrl?: string;
 
     payables: PayableLine[];
     payments: PaymentLine[];
 }
 
 export interface DisbursementPayload {
-    docNo?: string; // 🚀 Made optional so the backend can auto-generate
+    docNo?: string;
     transactionTypeId?: number;
     payeeId: number;
     remarks?: string;
@@ -67,12 +87,12 @@ export interface DisbursementPayload {
 }
 
 export interface DivisionDto {
-    id: number;
+    divisionId: number;
     divisionName: string;
 }
 
 export interface DepartmentDto {
-    id: number;
+    departmentId: number;
     departmentName: string;
 }
 
@@ -80,6 +100,7 @@ export interface SupplierDto {
     id: number;
     supplier_name: string;
     supplier_shortcut?: string;
+    supplier_type: "TRADE" | "NON-TRADE";
     isActive: boolean;
 }
 
@@ -95,14 +116,16 @@ export interface COADto {
     coaId: number;
     glCode: string;
     accountTitle: string;
-    isPayment?: boolean; // 🚀 Added to support the payments dropdown filter
-    isPaymentDuplicate?: boolean; // 🚀 Added to support the payments dropdown filter
+    accountType?: number | null;
+    isPayment?: boolean;
 }
+
 export interface BankAccountDto {
     bankId: number;
     bankName: string;
     accountNumber: string;
 }
+
 export interface UnpaidPoDto {
     uniqueKey: string;
     poId: number;
@@ -110,9 +133,9 @@ export interface UnpaidPoDto {
     receiptNo: string;
     date: string;
     amountDue: number;
-    type: string; // 🚀 NEW
+    type: string;
 }
-// Add this interface to your types file
+
 export interface MemoDto {
     id: number;
     memo_number: string;
@@ -123,4 +146,64 @@ export interface MemoDto {
     reason: string | null;
     coa_id: number;
     account_title: string;
+}
+
+export interface DepartmentExpense {
+    departmentId: number;
+    departmentName: string;
+    totalExpense: number;
+}
+
+export interface DivisionExpense {
+    divisionId: number;
+    divisionName: string;
+    totalExpense: number;
+    departments?: DepartmentExpense[];
+}
+
+export interface VoucherSummary {
+    id: number;
+    docNo: string;
+    transactionDate: string;
+    status: string;
+    payeeName: string;
+    totalAmount: number;
+    paidAmount: number;
+    checkNumbers: string;
+    bankNames: string;
+    expenseAccountsHit: string;
+    supportingDocumentsUrl?: string;
+    remarks?: string;
+}
+
+export interface DisbursementDashboardData {
+    totalDisbursed: number;
+    totalPaid: number;
+    totalUnpaidPayables: number;
+    divisionExpenses: DivisionExpense[];
+    payableDivisionExpenses?: DivisionExpense[];
+    paymentCoaExpenses: CoaExpense[];
+    payableCoaExpenses: CoaExpense[];
+    vouchers: VoucherSummary[];
+    activeEncoderIds?: number[];
+}
+
+export interface DashboardFilters {
+    startDate?: string;
+    endDate?: string;
+    status?: string; // Comma-separated list e.g., "Draft,Submitted"
+    payeeId?: string; // Comma-separated list e.g., "1,2"
+    transactionType?: string; // Comma-separated list e.g., "1,2"
+    encoderId?: string; // Comma-separated list e.g., "1,2"
+    coaId?: string; // Comma-separated list e.g., "1,2"
+    minAmount?: number | "";
+    maxAmount?: number | "";
+    remarks?: string;
+    divisionId?: string; // 🚀 NEW
+}
+
+export interface CoaExpense {
+    coaId: number;
+    accountTitle: string;
+    totalExpense: number;
 }

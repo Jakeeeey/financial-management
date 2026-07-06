@@ -26,6 +26,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import Image from "next/image";
+import { formatTIN } from "../../utils/utils";
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -112,7 +113,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
         formData.append("file", selectedFile);
         formData.append("folder_name", "supplier_profile_image");
 
-        const uploadRes = await fetch("/api/supplier-registration/supplier-image-upload", {
+        const uploadRes = await fetch("/api/fm/supplier-registration/supplier-image-upload", {
           method: "POST",
           body: formData,
         });
@@ -126,7 +127,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
         imageId = uploadResult.data?.id || "";
       }
 
-      const response = await fetch("/api/supplier-registration/suppliers", {
+      const response = await fetch("/api/fm/supplier-registration/suppliers", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -357,7 +358,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Address <span className="text-destructive">*</span>
+                        Street Address <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
                         <Input placeholder="Street address" {...field} />
@@ -467,10 +468,17 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                         TIN Number <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
-                        <Input placeholder="9-12 digits" {...field} />
+                        <Input
+                          placeholder="000-000-000-000"
+                          {...field}
+                          onChange={(e) => {
+                            const formatted = formatTIN(e.target.value);
+                            field.onChange(formatted);
+                          }}
+                        />
                       </FormControl>
                       <FormDescription>
-                        Tax Identification Number (9-12 digits) - Optional
+                        Tax Identification Number (9-12 digits)
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
