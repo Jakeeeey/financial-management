@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
     Loader2, CheckCircle2, Lock, AlertTriangle,
-    CircleDashed, ArrowDownToLine, ArrowUpFromLine, Search, X
+    CircleDashed, ArrowDownToLine, ArrowUpFromLine, Search, X,
+    Paperclip, ExternalLink
 } from "lucide-react";
 import { Disbursement, BankAccountDto, COADto } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
@@ -17,6 +18,78 @@ import { StickyTableWrapper } from "../components/StickyTableWrapper";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+
+function AttachmentPreview({ docUrl }: { docUrl: string }) {
+    const [contentType, setContentType] = useState<string>("");
+    const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
+    const token = process.env.NEXT_PUBLIC_DIRECTUS_STATIC_TOKEN || "AAKv73dkIV8DfAIA5vEt3eXVdIebzmBW";
+    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}?access_token=${token}`;
+
+    useEffect(() => {
+        if (!viewUrl) return;
+        fetch(viewUrl, { method: "HEAD" })
+            .then((res) => {
+                const type = res.headers.get("content-type");
+                if (type) setContentType(type.toLowerCase());
+            })
+            .catch((err) => console.warn("Failed to fetch document headers:", err));
+    }, [viewUrl]);
+
+    const isPdf = docUrl.toLowerCase().endsWith(".pdf") || viewUrl.toLowerCase().endsWith(".pdf") || contentType.includes("pdf");
+
+    return (
+        <div className="space-y-3">
+            <div className="bg-card rounded-xl border border-border p-4 shadow-sm flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                        <Paperclip className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-0.5">Attachment / Supporting Docs</p>
+                        <p className="text-xs font-bold text-foreground truncate max-w-[220px]">
+                            {docUrl.split("/").pop() || "view_attachment"}
+                        </p>
+                    </div>
+                </div>
+                <Button variant="outline" size="sm" asChild className="text-[10px] font-black uppercase tracking-widest h-8 px-3">
+                    <a href={viewUrl} target="_blank" rel="noopener noreferrer">
+                        View <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
+                    </a>
+                </Button>
+            </div>
+
+            {/* Inline Preview */}
+            <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
+                <div className="px-4 py-2 bg-muted/50 border-b border-border text-[9px] font-black uppercase tracking-widest text-muted-foreground flex items-center justify-between">
+                    <span>Attachment Preview</span>
+                </div>
+                <div className="p-3 flex justify-center items-center bg-card max-h-[320px] overflow-hidden">
+                    {isPdf ? (
+                        <iframe 
+                            src={viewUrl} 
+                            className="w-full h-[280px] border-0 rounded-lg" 
+                            title="Supporting Document PDF" 
+                        />
+                    ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img 
+                            src={viewUrl} 
+                            alt="Supporting Document" 
+                            className="max-h-[280px] max-w-full object-contain rounded-lg shadow-sm"
+                            onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                                const parent = e.currentTarget.parentElement;
+                                if (parent) {
+                                    parent.innerHTML = '<div class="text-[10px] font-black uppercase tracking-widest text-muted-foreground p-4 text-center">Preview not available. Click "View" above to open.</div>';
+                                }
+                            }}
+                        />
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export default function PostingSubmodule() {
     const {
@@ -242,12 +315,23 @@ export default function PostingSubmodule() {
                                             <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
                                         </div>
                                     </div>
-                                    <div>
-                                        <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Voucher Approver</span>
-                                        <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.approverName || "Unknown Approver"}</span>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Voucher Approver</span>
+                                            <span className="text-xs font-bold text-foreground uppercase truncate block">{selectedDisbursement.approverName || "Unknown Approver"}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Released By</span>
+                                            <span className="text-xs font-bold text-foreground uppercase truncate block">{selectedDisbursement.releasedByName || "Not Released"}</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Supporting Attachment Preview */}
+                            {selectedDisbursement.supportingDocumentsUrl ? (
+                                <AttachmentPreview docUrl={selectedDisbursement.supportingDocumentsUrl} />
+                            ) : null}
 
                             {/* Dual Side-by-Side Tables for Debit/Credit Audit */}
                             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -297,6 +381,7 @@ export default function PostingSubmodule() {
                                         <Table>
                                             <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                                 <TableRow className="border-border">
+                                                    <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[110px]">Date</TableHead>
                                                     <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[125px]">Check No.</TableHead>
                                                     <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Bank & GL</TableHead>
                                                     <TableHead className="text-[9px] font-black uppercase tracking-widest text-right text-muted-foreground w-[100px]">Amount</TableHead>
@@ -311,6 +396,9 @@ export default function PostingSubmodule() {
 
                                                     return (
                                                         <TableRow key={i} className="hover:bg-muted/50 border-border">
+                                                            <TableCell className="text-[10px] font-bold uppercase text-muted-foreground">
+                                                                {p.date ? format(new Date(p.date), "MMM dd, yyyy") : "N/A"}
+                                                            </TableCell>
                                                             <TableCell className="text-xs font-bold uppercase text-foreground">{p.checkNo || "N/A"}</TableCell>
                                                             <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">
                                                                 <div className="flex flex-col">
