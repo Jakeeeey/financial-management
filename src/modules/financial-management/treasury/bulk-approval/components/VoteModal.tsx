@@ -7,7 +7,7 @@ import {
   ShieldCheck, X,
   ExternalLink, CheckSquare, Info,
   AlertTriangle, RefreshCw, Send, Check, User, Building2, Wallet,
-  Maximize2, ZoomIn, ZoomOut, RotateCcw, Move
+  Maximize2, ZoomIn, ZoomOut, RotateCcw, RotateCw, Move
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -77,7 +77,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [zoom, setZoom] = React.useState(1);
+  const [rotation, setRotation] = React.useState(0);
   const [inlineZoom, setInlineZoom] = React.useState(1);
+  const [inlineRotation, setInlineRotation] = React.useState(0);
   const [showConcernWarning, setShowConcernWarning] = React.useState(false);
 
   // State-based callback refs: the element becomes a proper effect dependency,
@@ -114,7 +116,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     setCurrentSlide(carouselApi.selectedScrollSnap());
     carouselApi.on("select", () => {
       setCurrentSlide(carouselApi.selectedScrollSnap());
-      setInlineZoom(1); // Reset zoom on slide change
+      setInlineZoom(1);
+      setInlineRotation(0);
     });
   }, [carouselApi]);
 
@@ -449,7 +452,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                               drag={inlineZoom > 1}
                               dragMomentum={false}
                               className="relative flex items-center justify-center w-full h-full select-none"
-                              style={{ scale: inlineZoom }}
+                              style={{ scale: inlineZoom, rotate: inlineRotation }}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
@@ -467,8 +470,11 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(prev => Math.max(prev - 0.25, 1))} title="Zoom Out">
                                 <ZoomOut size={16} />
                               </Button>
-                              {inlineZoom > 1 && (
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(1)} title="Reset">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineRotation(prev => (prev + 90) % 360)} title="Rotate Clockwise">
+                                <RotateCw size={16} />
+                              </Button>
+                              {(inlineZoom > 1 || inlineRotation !== 0) && (
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => { setInlineZoom(1); setInlineRotation(0); }} title="Reset">
                                   <RotateCcw size={16} />
                                 </Button>
                               )}
@@ -890,7 +896,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!previewUrl} onOpenChange={(v) => { if (!v) { setPreviewUrl(null); setZoom(1); } }}>
+      <Dialog open={!!previewUrl} onOpenChange={(v) => { if (!v) { setPreviewUrl(null); setZoom(1); setRotation(0); } }}>
         <DialogContent showCloseButton={false} className="max-w-[95vw] w-[95vw] h-[90vh] p-0 overflow-hidden bg-[#020617] border-none shadow-2xl flex flex-col">
           <DialogTitle className="sr-only">Evidence Preview</DialogTitle>
           <DialogDescription className="sr-only">Detailed view of the attached evidence document</DialogDescription>
@@ -903,8 +909,11 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
             <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => handleZoom(-0.25)} title="Zoom Out">
               <ZoomOut size={20} />
             </Button>
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setRotation(prev => (prev + 90) % 360)} title="Rotate Clockwise">
+              <RotateCw size={20} />
+            </Button>
             <div className="w-px h-6 bg-white/10 mx-1" />
-            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setZoom(1)} title="Reset View">
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => { setZoom(1); setRotation(0); }} title="Reset View">
               <RotateCcw size={20} />
             </Button>
             <div className="px-3 text-[10px] font-black text-white/40 uppercase tracking-widest border-l border-white/10 ml-1">
@@ -934,7 +943,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                     drag
                     dragMomentum={false}
                     className="relative select-none"
-                    style={{ scale: zoom }}
+                    style={{ scale: zoom, rotate: rotation }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
