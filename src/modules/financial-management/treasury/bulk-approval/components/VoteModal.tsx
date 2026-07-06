@@ -567,7 +567,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
               </div>
             </div>
             {/* Stats Bar Section */}
-            <div className="grid grid-cols-4 gap-4 px-[1.5vw] py-[2vh] bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm shrink-0">
+            <div className="grid grid-cols-5 gap-4 px-[1.5vw] py-[2vh] bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm shrink-0">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800 shadow-inner">
                   <User size={20} />
@@ -598,6 +598,30 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                   <p className="text-[9px] text-muted-foreground dark:text-slate-500 italic">Target Value</p>
                 </div>
               </div>
+              {/* Current Tier Approvers Card */}
+              <div className="flex items-center gap-3 pl-4 border-l border-muted/50 dark:border-slate-800">
+                <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800 shadow-inner shrink-0">
+                  <ShieldCheck size={20} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[8px] uppercase font-black text-muted-foreground dark:text-slate-500 tracking-widest leading-none mb-1.5">Current Approver</p>
+                  <div className="flex flex-col gap-0.5">
+                    {(detail?.approvers_by_level?.[currentTier] ?? []).length > 0
+                      ? (detail?.approvers_by_level?.[currentTier] ?? []).map((a) => (
+                          <div key={a.approver_id} className="flex items-center gap-1.5">
+                            <span className="font-black text-[10px] text-indigo-700 dark:text-indigo-400 truncate max-w-[10vw]">{a.name}</span>
+                            {a.vote
+                              ? <Badge className="text-[8px] px-1 py-0 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 font-black shrink-0">Voted</Badge>
+                              : <Badge className="text-[8px] px-1 py-0 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 font-black shrink-0">Pending</Badge>
+                            }
+                          </div>
+                        ))
+                      : <span className="text-[10px] text-muted-foreground dark:text-slate-500">—</span>
+                    }
+                  </div>
+                </div>
+              </div>
+              {/* Progress Card */}
               <div className="flex items-center gap-3 pl-4 border-l border-muted/50 dark:border-slate-800">
                 <div className="flex flex-col gap-1 w-full">
                   <p className="text-[8px] uppercase font-black text-muted-foreground dark:text-slate-500 tracking-widest leading-none mb-1 text-right">Progress</p>

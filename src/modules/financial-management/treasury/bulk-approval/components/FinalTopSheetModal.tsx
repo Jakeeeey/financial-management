@@ -797,6 +797,24 @@ export default function FinalTopSheetModal({
               </DialogTitle>
 
               <div className="flex items-center gap-2">
+                {/* Current Tier Approvers Pill */}
+                {(data?.group.current_tier_approvers ?? []).length > 0 && (
+                  <div className="hidden sm:flex items-center gap-2 rounded-xl border border-indigo-400/30 dark:border-indigo-500/30 bg-white/10 dark:bg-indigo-900/30 px-3 py-1.5 backdrop-blur-sm">
+                    <ShieldCheck className="h-3.5 w-3.5 text-indigo-300 dark:text-indigo-400 shrink-0" />
+                    <div className="flex flex-col leading-none gap-0.5">
+                      <span className="text-[8px] font-black uppercase tracking-[0.2em] text-indigo-300/70 dark:text-indigo-500">Current Approver</span>
+                      {(data?.group.current_tier_approvers ?? []).map((a) => (
+                        <div key={a.approver_id} className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-black text-white dark:text-indigo-200 truncate max-w-[12rem]">{a.name}</span>
+                          {a.voted
+                            ? <span className="text-[8px] font-black text-emerald-400 shrink-0">✓ Voted</span>
+                            : <span className="text-[8px] font-black text-amber-400 shrink-0">Pending</span>
+                          }
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {group && (
                   <div className="flex items-center gap-2 bg-white/5 p-1.5 rounded-xl border border-white/10">
                     <Badge className="rounded-lg bg-primary/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-primary border border-primary/30">
