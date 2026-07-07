@@ -71,12 +71,6 @@ export default function DeliveryTermsViewDialog(props: {
 
         {row ? (
           <div className="space-y-6 overflow-y-auto max-h-[calc(90vh-120px)] pr-4">
-            {/* ID Section */}
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground mb-2">ID</h3>
-              <p className="text-sm">{row.id}</p>
-            </div>
-
             {/* Name Section */}
             <div>
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Delivery Name</h3>
