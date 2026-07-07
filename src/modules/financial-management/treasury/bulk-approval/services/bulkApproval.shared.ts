@@ -792,9 +792,17 @@ export async function buildApproversByLevel(params: {
     }[]
   > = {};
 
+  const seenGrouped = new Set<string>();
+
   for (const row of approvers) {
     const approverId = toNumericId(row.approver_id) ?? 0;
     const level = toNumber(row.approver_heirarchy, 1);
+    if (!approverId) continue;
+
+    const key = `${level}:${approverId}`;
+    if (seenGrouped.has(key)) continue;
+    seenGrouped.add(key);
+
     const vote = voteMap.get(approverId);
 
     if (!grouped[level]) grouped[level] = [];
