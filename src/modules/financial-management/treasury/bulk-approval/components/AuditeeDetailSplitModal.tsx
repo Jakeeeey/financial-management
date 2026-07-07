@@ -9,6 +9,7 @@ import {
   Loader2,
   Maximize2,
   RotateCcw,
+  RotateCw,
   ShieldCheck,
   X,
   XCircle,
@@ -100,6 +101,7 @@ export default function AuditeeDetailSplitModal({
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [inlineZoom, setInlineZoom] = React.useState(1);
+  const [inlineRotation, setInlineRotation] = React.useState(0);
   const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
   const [showEvidence, setShowEvidence] = React.useState(true);
 
@@ -121,6 +123,7 @@ export default function AuditeeDetailSplitModal({
     carouselApi.on("select", () => {
       setCurrentSlide(carouselApi.selectedScrollSnap());
       setInlineZoom(1);
+      setInlineRotation(0);
     });
   }, [carouselApi]);
 
@@ -128,6 +131,7 @@ export default function AuditeeDetailSplitModal({
   React.useEffect(() => {
     if (!open) {
       setInlineZoom(1);
+      setInlineRotation(0);
       setCurrentSlide(0);
       setShowEvidence(true);
     }
@@ -224,12 +228,11 @@ export default function AuditeeDetailSplitModal({
                   {attachments.map((at, i) => (
                     <CarouselItem key={i} className="flex items-center justify-center h-full">
                       <div className="relative w-full h-full flex flex-col items-center justify-center gap-6">
-                        <div className="relative group/img max-w-full h-[65vh] w-full flex items-center justify-center bg-black/40 rounded-3xl overflow-hidden border border-white/10 shadow-2xl select-none">
-                          <motion.div
+                        <div className="relative group/img max-w-full h-[65vh] w-full flex items-center justify-center bg-black/40 rounded-3xl overflow-hidden border border-white/10 shadow-2xl select-none">                           <motion.div
                             drag={inlineZoom > 1}
                             dragMomentum={false}
                             className="relative flex items-center justify-center w-full h-full select-none"
-                            style={{ scale: inlineZoom }}
+                            style={{ scale: inlineZoom, rotate: inlineRotation }}
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
@@ -247,8 +250,11 @@ export default function AuditeeDetailSplitModal({
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(prev => Math.max(prev - 0.25, 1))} title="Zoom Out">
                               <ZoomOut size={16} />
                             </Button>
-                            {inlineZoom > 1 && (
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(1)} title="Reset">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineRotation(prev => (prev + 90) % 360)} title="Rotate Clockwise">
+                              <RotateCw size={16} />
+                            </Button>
+                            {(inlineZoom > 1 || inlineRotation !== 0) && (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => { setInlineZoom(1); setInlineRotation(0); }} title="Reset">
                                 <RotateCcw size={16} />
                               </Button>
                             )}

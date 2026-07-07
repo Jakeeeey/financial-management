@@ -647,6 +647,7 @@ export async function buildFinalTopSheet(params: {
       is_waiting: !linked.canAct,
       current_tier: linked.currentTier,
       required_approver_level: linked.requiredApproverLevel,
+      current_tier_approvers: [] as { approver_id: number; name: string; voted: boolean }[],
     },
     salesmen: [],
     coa_rows: [],
@@ -688,12 +689,43 @@ export async function buildFinalTopSheet(params: {
     ...new Set(expenses.map((expense) => toNumericId(expense.particulars) ?? 0).filter((id) => id > 0)),
   ];
 
-  const [divisionMap, userMap, salesmanMap, coaMap] = await Promise.all([
+  const draftIds = linked.visibleDrafts.map((d) => d.id);
+
+  const [divisionMap, userMap, salesmanMap, coaMap, approversRes, votesRes] = await Promise.all([
     fetchDivisionMap([params.divisionId]),
     fetchUserMap(employeeIds),
     fetchSalesmanMap(employeeIds),
     fetchCoaDetailMap(coaIds),
+    directusFetch(
+      `/items/disbursement_draft_approver?filter[division_id][_eq]=${params.divisionId}&filter[is_deleted][_eq]=0&fields=approver_id,approver_heirarchy&limit=-1`
+    ),
+    draftIds.length > 0
+      ? directusFetch(
+          `/items/disbursement_draft_approvals?filter[draft_id][_in]=${draftIds.join(",")}&fields=approver_id,status,draft_id&limit=-1`
+        )
+      : Promise.resolve({ ok: true, data: { data: [] } }),
   ]);
+
+  // Build current-tier approver list with voted/pending status
+  type ApproverRow = { approver_id?: number | string | null; approver_heirarchy?: number | string | null };
+  type VoteRow = { approver_id?: number | string | null; status?: string | null };
+  const allApproverRows: ApproverRow[] = (approversRes.ok ? (approversRes.data as { data?: ApproverRow[] }).data ?? [] : []);
+  const allVoteRows: VoteRow[] = (votesRes.ok ? (votesRes.data as { data?: VoteRow[] }).data ?? [] : []);
+  const votedApproverIds = new Set(allVoteRows.map((v) => toNumericId(v.approver_id)).filter((id): id is number => Boolean(id)));
+  const tierApproverIds = Array.from(
+    new Set(
+      allApproverRows
+        .filter((r) => toNumber(r.approver_heirarchy) === linked.currentTier)
+        .map((r) => toNumericId(r.approver_id))
+        .filter((id): id is number => Boolean(id))
+    )
+  );
+  const tierApproverUserMap = tierApproverIds.length > 0 ? await fetchUserMap(tierApproverIds) : new Map<number, string>();
+  const currentTierApprovers = tierApproverIds.map((id) => ({
+    approver_id: id,
+    name: tierApproverUserMap.get(id) ?? `User #${id}`,
+    voted: votedApproverIds.has(id),
+  }));
 
   const salesmen: FinalTopSheetSalesmanResponse[] = employeeIds
     .map((employeeId) => {
@@ -788,6 +820,7 @@ export async function buildFinalTopSheet(params: {
         is_finalized: linked.isApprovedHistory,
         current_tier: linked.currentTier,
         required_approver_level: linked.requiredApproverLevel,
+        current_tier_approvers: currentTierApprovers,
       },
       salesmen,
       coa_rows: coaRows,
