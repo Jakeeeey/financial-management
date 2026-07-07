@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap } from "../../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap, relationId } from "../../route";
 
 export const runtime = "nodejs";
 
@@ -154,8 +154,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const decoded = decodeJwtPayload(token);
     const encoderEmail = decoded?.email || decoded?.sub || null;
-    const resolvedUserId = await resolveEncoderId(encoderEmail);
-    const currentUserId = resolvedUserId || 1;
+    const currentUserId = await resolveEncoderId(encoderEmail);
+
+    if (!currentUserId) {
+        return NextResponse.json({
+            message: "User Profile Not Found",
+            detail: "Your account is not registered in the system user directory. State transitions are blocked."
+        }, { status: 403 });
+    }
 
     try {
         // 1. Fetch current record from Directus
@@ -203,14 +209,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         // 3. Status Transition Logic matching Spring Boot and Specifications
         const APPROVAL_THRESHOLD = 1000.00;
         let newStatus = status;
-        let approverId = currentDis.approver_id;
+        let approverId: number | null | undefined = relationId(currentDis.approver_id, "user_id");
         let dateApproved = currentDis.date_approved;
-        let postedBy = currentDis.posted_by;
+        let postedBy: number | null | undefined = relationId(currentDis.posted_by, "user_id");
         let datePosted = currentDis.date_posted;
         let isPosted = currentDis.isPosted;
-        let submittedBy = currentDis.submitted_by;
+        let submittedBy: number | null | undefined = relationId(currentDis.submitted_by, "user_id");
         let dateSubmitted = currentDis.date_submitted;
-        let releasedBy = currentDis.released_by;
+        let releasedBy: number | null | undefined = relationId(currentDis.released_by, "user_id");
         let dateReleased = currentDis.date_released;
         let paidAmount = currentDis.paid_amount;
 
@@ -252,8 +258,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
             case "Released":
             case "Partially Released": {
-                if (currentDis.status !== "Approved" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
-                    return NextResponse.json({ message: "Can only release Approved or already Released disbursements." }, { status: 400 });
+                if (currentDis.status !== "Approved" && currentDis.status !== "Released" && currentDis.status !== "Partially Released" && currentDis.status !== "Submitted") {
+                    return NextResponse.json({ message: "Can only release Approved, Submitted, or already Released disbursements." }, { status: 400 });
                 }
 
                 releasedBy = currentUserId;
@@ -263,6 +269,40 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 // disbursement.paid_amount = sum(disbursement_payments.amount)
                 const totalPaidPayments = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
                 paidAmount = totalPaidPayments;
+
+                // Dynamically determine status based on total paid amount vs total voucher amount
+                const totalVoucherAmount = Number(currentDis.total_amount) || 0;
+                if (Math.abs(totalVoucherAmount - totalPaidPayments) < 0.01) {
+                    newStatus = "Released";
+                } else {
+                    newStatus = "Partially Released";
+                }
+
+                // Batch-update all related payment rows to bind release audit stamps
+                const paymentIds = payments.map((p) => p.id).filter(Boolean);
+                if (paymentIds.length > 0) {
+                    try {
+                        const batchRes = await fetch(`${DIRECTUS_URL}/items/disbursement_payments`, {
+                            method: "PATCH",
+                            headers: {
+                                Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                keys: paymentIds,
+                                data: {
+                                    released_by: releasedBy,
+                                    released_date: dateReleased
+                                }
+                            })
+                        });
+                        if (!batchRes.ok) {
+                            console.error("Directus payment lines release stamp failed:", await batchRes.text());
+                        }
+                    } catch (err) {
+                        console.error("Failed to execute batch release update on payments:", err);
+                    }
+                }
 
                 // Sync PO statuses
                 await syncPurchaseOrderStatuses(currentDis, payables);
@@ -331,7 +371,22 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const updatedDis = (await patchRes.json()).data;
 
         // 5. Build DTO representation
-        const userMap = await getUserMap(token);
+        const userIdsToFetch: number[] = [];
+        const addId = (val: number | undefined) => {
+            if (typeof val === "number" && Number.isFinite(val)) {
+                userIdsToFetch.push(val);
+            }
+        };
+        addId(relationId(updatedDis.encoder_id, "user_id"));
+        addId(relationId(updatedDis.submitted_by, "user_id"));
+        addId(relationId(updatedDis.approver_id, "user_id"));
+        addId(relationId(updatedDis.released_by, "user_id"));
+        addId(relationId(updatedDis.posted_by, "user_id"));
+        payments.forEach(p => {
+            addId(relationId(p.released_by, "user_id"));
+        });
+
+        const userMap = await getUserMap(token, userIdsToFetch);
         const coaMap = await getCoaMap();
         const divisionMap = await getDivisionMap();
         const bankMap = await getBankMap();

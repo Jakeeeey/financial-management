@@ -412,9 +412,17 @@ export type FinalTopSheetGroupMetaResponse = {
   is_waiting?: boolean;
   current_tier?: number;
   required_approver_level?: number;
+  current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
 };
 
 export type DraftPayable = PayableResponse;
+
+export type DraftApproverEntry = {
+  approver_id: number;
+  name: string;
+  level: number;
+  vote: { status: string; remarks: string | null; created_at: string; version: number } | null;
+};
 
 export type DraftDetail = {
   draft: DraftRow;
@@ -423,6 +431,7 @@ export type DraftDetail = {
   attachments?: { file_url: string; file_name: string }[];
   my_vote: { status: string; created_at: string; version: number } | null;
   can_vote: boolean;
+  approvers_by_level?: Record<number, DraftApproverEntry[]>;
 };
 
 export type FinalHeaderDecisionStatus = "Approved" | "Rejected" | "With Concern";

@@ -151,6 +151,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     const coaOptions = useMemo(() => coas.map(c => ({ label: `${c.glCode} - ${c.accountTitle}`, value: c.coaId })), [coas]);
     const divisionOptions = useMemo(() => divisions.map(d => ({ label: d.divisionName, value: d.divisionId })), [divisions]);
+    const departmentOptions = useMemo(() => departments.map(d => ({ label: d.departmentName, value: d.departmentId })), [departments]);
     
     // Loaders
     const [loadingData, setLoadingData] = useState(false);
@@ -160,6 +161,14 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     // Print Success Modal
     const [showPrintModal, setShowPrintModal] = useState(false);
     const [createdDisbursement, setCreatedDisbursement] = useState<Disbursement | null>(null);
+
+    // Validation State
+    const [showValidationErrors, setShowValidationErrors] = useState(false);
+
+    // Sidebar Filters
+    const [sidebarStartDate, setSidebarStartDate] = useState("");
+    const [sidebarEndDate, setSidebarEndDate] = useState("");
+    const [sidebarPayeeId, setSidebarPayeeId] = useState<number | "">("");
 
     // Dropdown triggers
     const [payeeOpen, setPayeeOpen] = useState(false);
@@ -215,7 +224,17 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                     (sidebarTypeFilter === "Trade" && v.transactionTypeName === "Trade") ||
                     (sidebarTypeFilter === "Non-Trade" && v.transactionTypeName === "Non-Trade");
 
-                return matchesSearch && matchesStatus && matchesType;
+                // Filter by date range
+                const matchesDateRange =
+                    (!sidebarStartDate || (v.transactionDate && v.transactionDate >= sidebarStartDate)) &&
+                    (!sidebarEndDate || (v.transactionDate && v.transactionDate <= sidebarEndDate));
+
+                // Filter by payee supplier
+                const matchesPayee =
+                    sidebarPayeeId === "" ||
+                    v.payeeId === sidebarPayeeId;
+
+                return matchesSearch && matchesStatus && matchesType && matchesDateRange && matchesPayee;
             })
             .sort((a, b) => {
                 // Sort by created date descending (newest first)
@@ -223,7 +242,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                 const dateB = b.dateCreated ? new Date(b.dateCreated).getTime() : 0;
                 return dateB - dateA;
             });
-    }, [editableVouchers, sidebarSearch, sidebarStatusFilter, sidebarTypeFilter]);
+    }, [editableVouchers, sidebarSearch, sidebarStatusFilter, sidebarTypeFilter, sidebarStartDate, sidebarEndDate, sidebarPayeeId]);
 
     // Load active records from DB
     const loadMetadata = useCallback(async () => {
@@ -265,6 +284,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             setDepartmentId(activeVoucher.departmentId || "");
             setSupportingDocumentsUrl(activeVoucher.supportingDocumentsUrl || "");
             setPayables(activeVoucher.payables || []);
+            setShowValidationErrors(false);
         } else {
             // Reset to blank voucher creation
             setPayeeId("");
@@ -274,6 +294,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             setDepartmentId("");
             setSupportingDocumentsUrl("");
             setPayables([]);
+            setShowValidationErrors(false);
         }
     }, [activeVoucher, today]);
 
@@ -404,10 +425,10 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     // Handlers for payable line editing
     const handleAddPayable = () => {
         const newLine: PayableLine = {
-            coaId: coas[0]?.coaId || undefined,
-            divisionId: Number(divisionId) || undefined,
+            coaId: undefined,
+            divisionId: undefined,
             referenceNo: "",
-            date: transactionDate,
+            date: "",
             amount: 0,
             remarks: ""
         };
@@ -440,7 +461,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             });
             if (!res.ok) throw new Error("Upload failed");
             const data = await res.json();
-            const cleanUrl = data.url || data.uuid || data.id || "";
+            const cleanUrl = data.data?.id || data.url || data.uuid || data.id || "";
             setSupportingDocumentsUrl(cleanUrl);
             toast.success("Supporting document uploaded successfully");
         } catch (err) {
@@ -453,8 +474,14 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     // Submit for approval (Draft -> Submitted)
     const handleSave = async (submitImmediate: boolean) => {
-        if (!payeeId) {
-            toast.error("Please select a Payee / Supplier");
+        let hasError = false;
+        if (!payeeId) hasError = true;
+        if (!departmentId) hasError = true;
+        if (!transactionDate) hasError = true;
+
+        if (hasError) {
+            setShowValidationErrors(true);
+            toast.error("Please fill out all required fields marked in red.");
             return;
         }
 
@@ -636,6 +663,56 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                 Non-Trade
                             </Button>
                         </div>
+
+                        {/* Date Range & Payee Filters */}
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/40">
+                            <div className="space-y-1">
+                                <Label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80">Start Date</Label>
+                                <Input
+                                    type="date"
+                                    value={sidebarStartDate}
+                                    onChange={(e) => setSidebarStartDate(e.target.value)}
+                                    className="h-7 text-[9px] font-bold bg-background border-border/60"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80">End Date</Label>
+                                <Input
+                                    type="date"
+                                    value={sidebarEndDate}
+                                    onChange={(e) => setSidebarEndDate(e.target.value)}
+                                    className="h-7 text-[9px] font-bold bg-background border-border/60"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-1 pt-1">
+                            <Label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80">Filter Payee</Label>
+                            <select
+                                className="h-7 w-full rounded-md border border-border/60 bg-background px-2 text-[9px] font-bold uppercase outline-none focus:ring-1 focus:ring-primary/20 cursor-pointer text-foreground"
+                                value={sidebarPayeeId}
+                                onChange={(e) => setSidebarPayeeId(e.target.value === "" ? "" : Number(e.target.value))}
+                            >
+                                <option value="">All Payees</option>
+                                {suppliers.map(s => (
+                                    <option key={s.id} value={s.id}>{s.supplier_name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {(sidebarStartDate || sidebarEndDate || sidebarPayeeId !== "") && (
+                            <Button
+                                onClick={() => {
+                                    setSidebarStartDate("");
+                                    setSidebarEndDate("");
+                                    setSidebarPayeeId("");
+                                }}
+                                variant="ghost"
+                                className="w-full h-6 text-[8px] font-black uppercase text-destructive hover:bg-destructive/5 mt-1 border border-dashed border-destructive/25"
+                            >
+                                Clear Extra Filters
+                            </Button>
+                        )}
                     </div>
 
                     <div className="h-px bg-border/40 my-1 shrink-0" />
@@ -753,7 +830,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                         <div className="flex-1 min-w-0">
                                             <Popover open={payeeOpen} onOpenChange={setPayeeOpen}>
                                                 <PopoverTrigger asChild>
-                                                    <Button variant="outline" className="w-full min-w-0 h-10 text-xs font-bold justify-between bg-background border-border/80 px-3 uppercase text-left">
+                                                    <Button variant="outline" className={cn("w-full min-w-0 h-10 text-xs font-bold justify-between bg-background border-border/80 px-3 uppercase text-left", showValidationErrors && !payeeId && "border-rose-500 hover:border-rose-600 focus:ring-rose-500/20")}>
                                                         <span className="truncate flex-1 pr-1">{suppliers.find(s => s.id === payeeId)?.supplier_name || "Select Payee..."}</span>
                                                         <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-55" />
                                                     </Button>
@@ -798,59 +875,46 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Transaction Date</Label>
-                                    <Input type="date" className="h-10 text-xs font-bold uppercase bg-background border-border/80" value={transactionDate} onChange={e => setTransactionDate(e.target.value)} />
-                                </div>
+                                     <Label className="text-[10px] font-black uppercase tracking-wider">Transaction Date <span className="text-destructive">*</span></Label>
+                                     <Input type="date" className={cn("h-10 text-xs font-bold uppercase bg-background border-border/80", showValidationErrors && !transactionDate && "border-rose-500 focus:ring-rose-500/30")} value={transactionDate} onChange={e => setTransactionDate(e.target.value)} />
+                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Voucher Limit (Calculated)</Label>
-                                    <div className="h-10 flex items-center px-4 bg-muted/40 border border-border/85 rounded-lg text-sm font-black text-emerald-600 dark:text-emerald-500">
-                                        {formatCurrency(totalAmount)}
-                                    </div>
-                                </div>
+                                 <div className="space-y-2">
+                                     <Label className="text-[10px] font-black uppercase tracking-wider">Voucher Limit (Calculated)</Label>
+                                     <div className="h-10 flex items-center px-4 bg-muted/40 border border-border/85 rounded-lg text-sm font-black text-emerald-600 dark:text-emerald-500">
+                                         {formatCurrency(totalAmount)}
+                                     </div>
+                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Cost Division</Label>
-                                    <select 
-                                        className="h-10 w-full rounded-lg border border-border/80 bg-background px-3 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary/30 cursor-pointer"
-                                        value={divisionId !== "" ? String(divisionId) : ""}
-                                        onChange={e => setDivisionId(e.target.value === "" ? "" : Number(e.target.value))}
-                                    >
-                                        <option value="">No Division</option>
-                                        {divisions.map(d => <option key={d.divisionId} value={String(d.divisionId)}>{d.divisionName}</option>)}
-                                    </select>
-                                </div>
+                                 <div className="space-y-2 flex flex-col justify-end">
+                                     <Label className="text-[10px] font-black uppercase tracking-wider mb-1.5">Cost Department <span className="text-destructive">*</span></Label>
+                                     <SearchSelect
+                                         options={departmentOptions}
+                                         value={departmentId !== "" ? Number(departmentId) : ""}
+                                         onSelect={val => setDepartmentId(Number(val))}
+                                         placeholder="Select Department..."
+                                         className={cn("h-10 text-xs font-bold bg-background border-border/80", showValidationErrors && !departmentId && "border-rose-500 ring-rose-500/20")}
+                                     />
+                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Cost Department</Label>
-                                    <select 
-                                        className="h-10 w-full rounded-lg border border-border/80 bg-background px-3 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary/30 cursor-pointer"
-                                        value={departmentId !== "" ? String(departmentId) : ""}
-                                        onChange={e => setDepartmentId(e.target.value === "" ? "" : Number(e.target.value))}
-                                    >
-                                        <option value="">No Department</option>
-                                        {departments.map(d => <option key={d.departmentId} value={String(d.departmentId)}>{d.departmentName}</option>)}
-                                    </select>
-                                </div>
+                                 <div className="space-y-2 sm:col-span-2">
+                                     <Label className="text-[10px] font-black uppercase tracking-wider">Voucher Remarks</Label>
+                                     <Input className="h-10 text-xs font-bold bg-background border-border/80" placeholder="e.g. Purchase of office supplies" value={remarks} onChange={e => setRemarks(e.target.value)} />
+                                 </div>
 
-                                <div className="space-y-2 sm:col-span-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Voucher Remarks</Label>
-                                    <Input className="h-10 text-xs font-bold bg-background border-border/80" placeholder="e.g. Purchase of office supplies" value={remarks} onChange={e => setRemarks(e.target.value)} />
-                                </div>
-
-                                {/* Supporting Doc Upload */}
-                                <div className="space-y-2 sm:col-span-2 lg:col-span-4 border-t border-dashed border-border pt-4">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5"><UploadCloud className="w-3.5 h-3.5" /> Supporting Document File</Label>
-                                    <div className="flex items-center gap-4">
-                                        <Input type="file" onChange={handleFileUpload} disabled={uploading} className="max-w-[320px] text-xs cursor-pointer" />
-                                        {uploading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
-                                        {supportingDocumentsUrl && (
-                                            <Badge variant="outline" className="text-xs bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400 font-bold max-w-[400px] truncate">
-                                                Doc URL: {supportingDocumentsUrl}
-                                            </Badge>
-                                        )}
-                                    </div>
-                                </div>
+                                 {/* Supporting Doc Upload */}
+                                 <div className="space-y-2 sm:col-span-2 lg:col-span-4 border-t border-dashed border-border pt-4">
+                                     <Label className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5"><UploadCloud className="w-3.5 h-3.5" /> Supporting Document File</Label>
+                                     <div className="flex items-center gap-4">
+                                         <Input type="file" onChange={handleFileUpload} disabled={uploading} className="max-w-[320px] text-xs cursor-pointer" />
+                                         {uploading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+                                         {supportingDocumentsUrl && (
+                                             <Badge variant="outline" className="text-xs bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400 font-bold max-w-[400px] truncate">
+                                                 Doc URL: {supportingDocumentsUrl}
+                                             </Badge>
+                                         )}
+                                     </div>
+                                 </div>
                             </div>
                         )}
                     </CardContent>
@@ -1015,7 +1079,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
             {/* 🌟 INSTANT PRINT DIALOG (Submodule 1 Feature Integration) 🌟 */}
             <Dialog open={showPrintModal} onOpenChange={setShowPrintModal}>
-                <DialogContent className="sm:max-w-[460px] border-border shadow-2xl p-6 bg-background rounded-2xl text-center">
+                <DialogContent className="max-w-[95vw] sm:max-w-[460px] w-full border-border shadow-2xl p-6 bg-background rounded-2xl text-center">
                     <DialogHeader className="flex flex-col items-center">
                         <div className="h-16 w-16 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-4">
                             <Check className="w-8 h-8 stroke-[3]" />
@@ -1030,32 +1094,32 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                         Do you want to print a copy of this voucher for physical records or ledger archiving now?
                     </div>
 
-                    <DialogFooter className="sm:justify-center flex flex-col sm:flex-row gap-3">
+                    <div className="flex flex-col sm:flex-row gap-2.5 justify-center">
                         <Button 
                             variant="outline" 
                             onClick={() => {
                                 if (createdDisbursement) generateDisbursementPDF(createdDisbursement, "A4");
                             }}
-                            className="h-11 px-5 text-xs font-black uppercase tracking-widest border-border/60"
+                            className="h-10 text-xs font-black uppercase tracking-widest border-border/60 hover:bg-muted"
                         >
-                            <Printer className="w-4 h-4 mr-2 text-blue-500" /> Print A4 Document
+                            <Printer className="w-3.5 h-3.5 mr-2 text-blue-500" /> Print A4
                         </Button>
                         <Button 
                             variant="outline" 
                             onClick={() => {
                                 if (createdDisbursement) generateDisbursementPDF(createdDisbursement, "58mm");
                             }}
-                            className="h-11 px-5 text-xs font-black uppercase tracking-widest border-border/60"
+                            className="h-10 text-xs font-black uppercase tracking-widest border-border/60 hover:bg-muted"
                         >
-                            <Printer className="w-4 h-4 mr-2 text-amber-500" /> Print 58mm Thermal
+                            <Printer className="w-3.5 h-3.5 mr-2 text-amber-500" /> Print Thermal
                         </Button>
                         <Button 
                             onClick={() => setShowPrintModal(false)}
-                            className="h-11 px-6 text-xs font-bold uppercase tracking-widest"
+                            className="h-10 text-xs font-black uppercase tracking-widest bg-primary hover:bg-primary/90 text-primary-foreground"
                         >
                             Close
                         </Button>
-                    </DialogFooter>
+                    </div>
                 </DialogContent>
             </Dialog>
 
@@ -1101,20 +1165,24 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                             <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2"/> Loading Records...
                                         </TableCell>
                                     </TableRow>
-                                ) : unpaidPos.filter(po =>
-                                    po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
-                                    (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()))
-                                ).length === 0 ? (
+                                ) : unpaidPos.filter(po => {
+                                    const matchesSearch = po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
+                                        (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()));
+                                    const isAlreadyImported = payables.some(p => p.referenceNo.startsWith(`${po.poNo} / ${po.receiptNo}`));
+                                    return matchesSearch && !isAlreadyImported;
+                                }).length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground">
                                             No matching records found.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
-                                    unpaidPos.filter(po =>
-                                        po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
-                                        (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()))
-                                    ).map(po => (
+                                    unpaidPos.filter(po => {
+                                        const matchesSearch = po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
+                                            (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()));
+                                        const isAlreadyImported = payables.some(p => p.referenceNo.startsWith(`${po.poNo} / ${po.receiptNo}`));
+                                        return matchesSearch && !isAlreadyImported;
+                                    }).map(po => (
                                         <TableRow key={po.uniqueKey} className="cursor-pointer hover:bg-muted/50 border-border" onClick={() => {
                                             const isChecking = !selectedPoIds.includes(po.uniqueKey);
                                             setSelectedPoIds(prev => isChecking ? [...prev, po.uniqueKey] : prev.filter(id => id !== po.uniqueKey));
@@ -1122,13 +1190,13 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                 setTaxTypes(prev => ({...prev, [po.uniqueKey]: "VAT"}));
                                             }
                                         }}>
-                                            <TableCell className="text-center">
+                                            <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                                                 <Checkbox checked={selectedPoIds.includes(po.uniqueKey)} onCheckedChange={(checked) => {
                                                     if (checked === true) {
-                                                        setSelectedPoIds([...selectedPoIds, po.uniqueKey]);
+                                                        setSelectedPoIds(prev => prev.includes(po.uniqueKey) ? prev : [...prev, po.uniqueKey]);
                                                         if (!taxTypes[po.uniqueKey]) setTaxTypes(prev => ({ ...prev, [po.uniqueKey]: "VAT" }));
                                                     } else {
-                                                        setSelectedPoIds(selectedPoIds.filter(id => id !== po.uniqueKey));
+                                                        setSelectedPoIds(prev => prev.filter(id => id !== po.uniqueKey));
                                                     }
                                                 }}/>
                                             </TableCell>
@@ -1201,14 +1269,14 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                             <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2"/> Fetching Memos...
                                         </TableCell>
                                     </TableRow>
-                                ) : memos.length === 0 ? (
+                                ) : memos.filter(memo => !payables.some(p => p.referenceNo === memo.memo_number)).length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground">
                                             No available memos found for this supplier.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
-                                    memos.map(memo => (
+                                    memos.filter(memo => !payables.some(p => p.referenceNo === memo.memo_number)).map(memo => (
                                         <TableRow key={memo.id} className="hover:bg-muted/50 border-border">
                                             <TableCell className="font-bold text-xs uppercase text-foreground">{memo.memo_number}</TableCell>
                                             <TableCell>
