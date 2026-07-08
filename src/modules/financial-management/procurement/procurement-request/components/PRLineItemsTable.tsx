@@ -131,7 +131,7 @@ export function PRLineItemsTable({ details, readOnly, onReload }: PRLineItemsTab
                   )}
                 </td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">
-                  {formatPHP(d.total_amount)}
+                  {formatPHP(d.total_amount || d.qty * d.unit_price)}
                 </td>
                 {!readOnly && (
                   <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -162,7 +162,7 @@ export function PRLineItemsTable({ details, readOnly, onReload }: PRLineItemsTab
           <tr className="border-t font-medium">
             <td colSpan={5} className="px-3 py-2 text-right">Grand Total</td>
             <td className="px-3 py-2 text-right font-mono tabular-nums">
-              {formatPHP(details.reduce((s, d) => s + Number(d.total_amount), 0))}
+              {formatPHP(details.reduce((s, d) => s + Number(d.total_amount || d.qty * d.unit_price), 0))}
             </td>
             {!readOnly && <td></td>}
           </tr>

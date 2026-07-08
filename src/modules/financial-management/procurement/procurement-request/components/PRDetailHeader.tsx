@@ -7,9 +7,12 @@ import type { ProcurementRequest } from "../utils/types";
 
 type PRDetailHeaderProps = {
   master: ProcurementRequest;
+  computedTotal?: number;
 };
 
-export function PRDetailHeader({ master }: PRDetailHeaderProps) {
+export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
+  const displayTotal = computedTotal ?? master.total_amount ?? 0;
+
   return (
     <Card>
       <CardContent className="p-4 sm:p-6">
@@ -39,7 +42,7 @@ export function PRDetailHeader({ master }: PRDetailHeaderProps) {
           </div>
           <div>
             <span className="text-muted-foreground block">Total Amount</span>
-            <span className="font-mono font-semibold tabular-nums">{formatPHP(master.total_amount)}</span>
+            <span className="font-mono font-semibold tabular-nums">{formatPHP(displayTotal)}</span>
           </div>
           {master.department_name && (
             <div>

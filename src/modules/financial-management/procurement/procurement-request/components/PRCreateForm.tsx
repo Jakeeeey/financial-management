@@ -11,8 +11,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Plus, Trash2, Search } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createPR } from "../providers/prService";
 import { searchSuppliers, listItemTemplates, listItemVariants } from "../providers/lookupsService";
@@ -30,64 +38,54 @@ let _nextKey = 1;
 
 export function ProcurementRequestCreatePage() {
   const router = useRouter();
-
-  const [supplierQuery, setSupplierQuery] = React.useState("");
-  const [suppliers, setSuppliers] = React.useState<Supplier[]>([]);
-  const [selectedSupplier, setSelectedSupplier] = React.useState<Supplier | null>(null);
-  const [showSupplierDropdown, setShowSupplierDropdown] = React.useState(false);
   const [leadDate, setLeadDate] = React.useState(() => new Date().toISOString().split("T")[0]);
   const [lineItems, setLineItems] = React.useState<LineItem[]>([]);
   const [submitting, setSubmitting] = React.useState(false);
 
-  const [itemQuery, setItemQuery] = React.useState("");
-  const [itemTemplates, setItemTemplates] = React.useState<ItemTemplate[]>([]);
-  const [showItemDropdown, setShowItemDropdown] = React.useState(false);
-  const itemDropdownRef = React.useRef<HTMLDivElement>(null);
-
-  const supplierSearchRef = React.useRef<HTMLDivElement>(null);
+  /* Supplier combobox */
+  const [supplierSearchText, setSupplierSearchText] = React.useState("");
+  const [supplierItems, setSupplierItems] = React.useState<string[]>([]);
+  const [selectedSupplier, setSelectedSupplier] = React.useState<Supplier | null>(null);
+  const supplierDataRef = React.useRef<Record<string, Supplier>>({});
 
   React.useEffect(() => {
-    if (!supplierQuery.trim()) { setSuppliers([]); return; }
+    if (!supplierSearchText.trim()) { setSupplierItems([]); return; }
     const ac = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const results = await searchSuppliers(supplierQuery, ac.signal);
+        const rows = await searchSuppliers(supplierSearchText, ac.signal);
         if (!ac.signal.aborted) {
-          setSuppliers(results);
-          setShowSupplierDropdown(results.length > 0);
+          const map: Record<string, Supplier> = {};
+          rows.forEach((r) => { map[r.supplier_name] = r; });
+          supplierDataRef.current = map;
+          setSupplierItems(rows.map((r) => r.supplier_name));
         }
       } catch { /* ignore */ }
     }, 300);
     return () => { clearTimeout(timer); ac.abort(); };
-  }, [supplierQuery]);
+  }, [supplierSearchText]);
+
+  /* Item template combos per line */
+  const [itemSearchText, setItemSearchText] = React.useState("");
+  const [itemTemplateItems, setItemTemplateItems] = React.useState<string[]>([]);
+  const itemTemplateDataRef = React.useRef<Record<string, ItemTemplate>>({});
 
   React.useEffect(() => {
-    if (!itemQuery.trim()) { setItemTemplates([]); return; }
+    if (!itemSearchText.trim()) { setItemTemplateItems([]); return; }
     const ac = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const results = await listItemTemplates(itemQuery, ac.signal);
+        const rows = await listItemTemplates(itemSearchText, ac.signal);
         if (!ac.signal.aborted) {
-          setItemTemplates(results);
-          setShowItemDropdown(results.length > 0);
+          const map: Record<string, ItemTemplate> = {};
+          rows.forEach((r) => { map[r.name] = r; });
+          itemTemplateDataRef.current = map;
+          setItemTemplateItems(rows.map((r) => r.name));
         }
       } catch { /* ignore */ }
     }, 300);
     return () => { clearTimeout(timer); ac.abort(); };
-  }, [itemQuery]);
-
-  React.useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (supplierSearchRef.current && !supplierSearchRef.current.contains(e.target as Node)) {
-        setShowSupplierDropdown(false);
-      }
-      if (itemDropdownRef.current && !itemDropdownRef.current.contains(e.target as Node)) {
-        setShowItemDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  }, [itemSearchText]);
 
   function addLine() {
     setLineItems((prev) => [
@@ -113,27 +111,19 @@ export function ProcurementRequestCreatePage() {
     setLineItems((prev) => prev.map((li) => (li._key === key ? { ...li, ...patch } : li)));
   }
 
-  async function handleSelectTemplate(item: ItemTemplate) {
-    setItemQuery(item.name);
-    setShowItemDropdown(false);
-    const existingLine = lineItems.find((li) => li._key === lineItems.length);
-    if (existingLine) {
-      updateLine(existingLine._key, {
-        item_template_id: item.id,
-        item_name: item.name,
-        item_description: item.description,
-        uom: item.uom,
-        unit_price: item.base_price ?? 0,
-        template_name: item.name,
-      });
-    }
-  }
-
-  function handleSelectVariant(lineKey: number, variant: ItemVariant) {
+  function handleSelectTemplate(lineKey: number, templateName: string | null) {
+    if (!templateName) return;
+    const t = itemTemplateDataRef.current[templateName];
+    if (!t) return;
     updateLine(lineKey, {
-      item_variant_id: variant.id,
-      unit_price: variant.list_price ?? 0,
-      variant_name: variant.name,
+      item_template_id: t.id,
+      item_name: t.name,
+      item_description: t.description ?? null,
+      uom: t.uom ?? null,
+      unit_price: t.base_price ?? 0,
+      template_name: t.name,
+      item_variant_id: null,
+      variant_name: undefined,
     });
   }
 
@@ -174,45 +164,49 @@ export function ProcurementRequestCreatePage() {
           <CardTitle className="text-lg">Supplier Information</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div ref={supplierSearchRef} className="relative">
-            <Label>Search Supplier</Label>
-            <div className="relative mt-1.5">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-8"
-                placeholder="Type supplier name..."
-                value={supplierQuery}
-                onChange={(e) => { setSupplierQuery(e.target.value); setSelectedSupplier(null); }}
-              />
-            </div>
-            {showSupplierDropdown && (
-              <div className="absolute z-10 mt-1 w-full rounded-md border bg-popover shadow-md max-h-[200px] overflow-auto">
-                {suppliers.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-accent transition-colors"
-                    onClick={() => {
-                      setSelectedSupplier(s);
-                      setSupplierQuery(s.supplier_name);
-                      setShowSupplierDropdown(false);
-                    }}
-                  >
-                    <div className="font-medium">{s.supplier_name}</div>
-                    {s.supplier_type && (
-                      <div className="text-xs text-muted-foreground">{s.supplier_type}</div>
+          <div>
+            <Label>Supplier</Label>
+            <div className="mt-1.5">
+              <Combobox
+                items={supplierItems}
+                value={selectedSupplier?.supplier_name ?? ""}
+                onValueChange={(name: string | null) => {
+                  if (name) {
+                    const data = supplierDataRef.current[name];
+                    setSelectedSupplier(data ?? null);
+                  } else {
+                    setSelectedSupplier(null);
+                    setSupplierSearchText("");
+                  }
+                }}
+              >
+                <ComboboxInput
+                  placeholder="Search supplier..."
+                  showClear
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    setSupplierSearchText(e.target.value);
+                    if (!e.target.value) setSelectedSupplier(null);
+                  }}
+                />
+                <ComboboxContent>
+                  <ComboboxEmpty>No suppliers found.</ComboboxEmpty>
+                  <ComboboxList>
+                    {(name: string) => (
+                      <ComboboxItem key={name} value={name}>
+                        {name}
+                      </ComboboxItem>
                     )}
-                  </button>
-                ))}
-              </div>
-            )}
+                  </ComboboxList>
+                </ComboboxContent>
+              </Combobox>
+            </div>
           </div>
 
           {selectedSupplier && (
             <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Type</span>
-                <span className="font-medium">{selectedSupplier.supplier_type ?? "—"}</span>
+                <span className="font-medium">{selectedSupplier.supplier_type ?? "\u2014"}</span>
               </div>
               {selectedSupplier.email_address && (
                 <div className="flex justify-between">
@@ -278,8 +272,8 @@ export function ProcurementRequestCreatePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-3 py-2 text-left font-medium">Item</th>
-                    <th className="px-3 py-2 text-left font-medium">Description</th>
+                    <th className="px-3 py-2 text-left font-medium">Template</th>
+                    <th className="px-3 py-2 text-left font-medium">Item Name</th>
                     <th className="px-3 py-2 text-left font-medium">UOM</th>
                     <th className="px-3 py-2 text-right font-medium">Qty</th>
                     <th className="px-3 py-2 text-right font-medium">Unit Price</th>
@@ -288,45 +282,49 @@ export function ProcurementRequestCreatePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {lineItems.map((line, idx) => (
+                  {lineItems.map((line) => (
                     <tr key={line._key} className="border-b last:border-0">
                       <td className="px-3 py-2">
-                        <div ref={idx === lineItems.length - 1 ? itemDropdownRef : undefined} className="relative">
-                          <Input
-                            placeholder="Search item..."
-                            value={idx === lineItems.length - 1 ? itemQuery : line.item_name}
-                            onChange={(e) => {
-                              if (idx === lineItems.length - 1) {
-                                setItemQuery(e.target.value);
-                              }
-                              updateLine(line._key, { item_name: e.target.value });
-                            }}
-                            className="h-8 text-xs"
+                        <Combobox
+                          items={itemTemplateItems}
+                          value={line.template_name ?? ""}
+                          onValueChange={(name: string | null) => {
+                            handleSelectTemplate(line._key, name);
+                          }}
+                        >
+                          <ComboboxInput
+                            placeholder="Select template..."
+                            showClear
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                              setItemSearchText(e.target.value)
+                            }
                           />
-                          {idx === lineItems.length - 1 && showItemDropdown && (
-                            <div className="absolute z-10 mt-1 w-full rounded-md border bg-popover shadow-md max-h-[150px] overflow-auto">
-                              {itemTemplates.map((t) => (
-                                <button
-                                  key={t.id}
-                                  type="button"
-                                  className="w-full px-2 py-1.5 text-left text-xs hover:bg-accent transition-colors"
-                                  onClick={() => handleSelectTemplate(t)}
-                                >
-                                  <div className="font-medium">{t.name}</div>
-                                  {t.uom && <span className="text-muted-foreground">{t.uom}</span>}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                          <ComboboxContent>
+                            <ComboboxEmpty>No templates.</ComboboxEmpty>
+                            <ComboboxList>
+                              {(name: string) => (
+                                <ComboboxItem key={name} value={name}>
+                                  <div className="font-medium">{name}</div>
+                                </ComboboxItem>
+                              )}
+                            </ComboboxList>
+                          </ComboboxContent>
+                        </Combobox>
                         {line.item_template_id && (
                           <div className="mt-1 flex gap-1">
                             <Select
                               onValueChange={(v) => {
                                 const variantId = Number(v);
                                 if (variantId) {
-                                  const v = itemTemplates.find((t) => t.id === line.item_template_id);
-                                  // variant lookup would go here
+                                  updateLine(line._key, {
+                                    item_variant_id: variantId,
+                                    variant_name: v,
+                                  });
+                                } else {
+                                  updateLine(line._key, {
+                                    item_variant_id: null,
+                                    variant_name: undefined,
+                                  });
                                 }
                               }}
                             >
@@ -334,7 +332,7 @@ export function ProcurementRequestCreatePage() {
                                 <SelectValue placeholder="Variant" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">-- No variant --</SelectItem>
+                                <SelectItem value="">— No variant —</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -342,9 +340,9 @@ export function ProcurementRequestCreatePage() {
                       </td>
                       <td className="px-3 py-2">
                         <Input
-                          placeholder="Description"
-                          value={line.item_description ?? ""}
-                          onChange={(e) => updateLine(line._key, { item_description: e.target.value || null })}
+                          placeholder="Item name"
+                          value={line.item_name}
+                          onChange={(e) => updateLine(line._key, { item_name: e.target.value })}
                           className="h-8 text-xs"
                         />
                       </td>
@@ -389,7 +387,7 @@ export function ProcurementRequestCreatePage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t font-medium">
-                    <td colSpan={4} className="px-3 py-2 text-right">Grand Total</td>
+                    <td colSpan={5} className="px-3 py-2 text-right">Grand Total</td>
                     <td className="px-3 py-2 text-right font-mono tabular-nums">
                       {formatPHP(lineItems.reduce((s, li) => s + li.qty * li.unit_price, 0))}
                     </td>

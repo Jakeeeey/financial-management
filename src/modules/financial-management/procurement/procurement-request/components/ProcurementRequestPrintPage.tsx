@@ -1,12 +1,11 @@
 "use client";
 
-import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Printer, ArrowLeft } from "lucide-react";
 import { usePRDetail } from "../hooks/usePRDetail";
-import { PRPrintContent } from "./PRPrintContent";
+import { formatPHP } from "../utils/format";
 
 type ProcurementRequestPrintPageProps = {
   id: number;
@@ -15,44 +14,8 @@ type ProcurementRequestPrintPageProps = {
 export default function ProcurementRequestPrintPage({ id }: ProcurementRequestPrintPageProps) {
   const router = useRouter();
   const { master, details, loading, error } = usePRDetail(id);
-  const printRef = React.useRef<HTMLDivElement>(null);
 
-  function handlePrint() {
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "absolute";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "none";
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow?.document;
-    if (!doc || !printRef.current) return;
-
-    const clone = printRef.current.cloneNode(true) as HTMLElement;
-    doc.open();
-    doc.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Print - ${master?.procurement_no ?? "PR"}</title>
-          <style>
-            body { font-family: system-ui, sans-serif; margin: 0; padding: 0; }
-            @media print {
-              body { padding: 0; }
-            }
-          </style>
-        </head>
-        <body>${clone.outerHTML}</body>
-      </html>
-    `);
-    doc.close();
-
-    setTimeout(() => {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-      setTimeout(() => document.body.removeChild(iframe), 1000);
-    }, 500);
-  }
+  const total = details.reduce((a, b) => a + Number(b.total_amount || (b.qty || 0) * (b.unit_price || 0)), 0);
 
   if (loading) {
     return <Skeleton className="h-96 w-full" />;
@@ -68,18 +31,108 @@ export default function ProcurementRequestPrintPage({ id }: ProcurementRequestPr
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between print:hidden">
-        <Button variant="ghost" size="sm" onClick={() => router.push(`/fm/procurement/procurement-request/${id}`)}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back
+    <div className="p-8 print:p-0">
+      <style>{`
+        @media print {
+          :root { color-scheme: light; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
+          .no-print { display: none !important; }
+          #print-area { display: block; width: 100%; margin: 0; padding: 0; }
+          #print-area table { border-collapse: collapse; width: 100%; page-break-inside: auto; }
+          #print-area thead { display: table-header-group; }
+          #print-area tfoot { display: table-row-group; }
+          #print-area tr { page-break-inside: avoid; }
+          #print-area tbody { page-break-inside: auto; }
+          #print-area th, #print-area td { border-top: 1px solid #ccc; padding: 6px 8px; font-size: 11px; vertical-align: top; }
+          #print-area th { background: #F8FAFC !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; text-align: left; }
+          #print-area hr { page-break-after: avoid; }
+          #print-area .signature-section { page-break-inside: avoid; }
+        }
+        @page {
+          size: A4;
+          margin: 10mm 12mm;
+        }
+      `}</style>
+
+      <div className="no-print mb-4 flex gap-2">
+        <Button variant="ghost" size="sm" onClick={() => router.push(`/fm/procurement/procurement-request`)}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Procurement
         </Button>
-        <Button onClick={handlePrint}>
+        <Button onClick={() => window.print()}>
           <Printer className="h-4 w-4 mr-1" /> Print
         </Button>
       </div>
 
-      <div className="border rounded-md bg-white p-8">
-        <PRPrintContent ref={printRef} master={master} details={details} />
+      <div id="print-area" className="max-w-4xl mx-auto p-6">
+        <header className="flex items-start justify-between">
+          <div>
+            <div className="text-2xl font-bold">PROCUREMENT</div>
+            <div className="text-sm text-slate-600">Reference: {master.procurement_no}</div>
+            <div className="text-sm text-slate-600">Lead Date: {master.lead_date ?? "\u2014"}</div>
+            <div className="text-sm text-slate-600">
+              Status: {master.status}{master.isApproved ? " (Approved)" : ""}
+            </div>
+          </div>
+          <div className="text-right text-sm">
+            <div className="font-semibold">
+              {master.supplier_name ?? `Supplier #${master.supplier_id ?? ""}`}
+            </div>
+            <div>{master.supplier_address}</div>
+            <div>{master.supplier_email} {master.supplier_phone ? `\u00B7 ${master.supplier_phone}` : ""}</div>
+            <div>TIN: {master.supplier_tin}</div>
+            <div>Terms: {master.supplier_payment_terms}</div>
+          </div>
+        </header>
+
+        <hr className="my-4" />
+
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left border-b">
+              <th className="py-2">Item Template</th>
+              <th className="py-2">Variant</th>
+              <th className="py-2">UOM</th>
+              <th className="py-2 text-right">Qty</th>
+              <th className="py-2 text-right">Unit Price</th>
+              <th className="py-2 text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {details.map((l) => {
+              const uom = l.uom || "\u2014";
+              return (
+                <tr key={l.id} className="border-b">
+                  <td className="py-2">{l.template_name ?? "\u2014"}</td>
+                  <td className="py-2">{l.variant_name ?? "\u2014"}</td>
+                  <td className="py-2">{uom}</td>
+                  <td className="py-2 text-right">{l.qty}</td>
+                  <td className="py-2 text-right">{formatPHP(l.unit_price)}</td>
+                  <td className="py-2 text-right">{formatPHP(Number(l.total_amount || (l.qty || 0) * (l.unit_price || 0)))}</td>
+                </tr>
+              );
+            })}
+            {details.length === 0 && (
+              <tr><td colSpan={6} className="py-6 text-center text-slate-500">No lines.</td></tr>
+            )}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={5} className="pt-4 text-right font-semibold">Grand Total</td>
+              <td className="pt-4 text-right font-bold">{formatPHP(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div className="signature-section mt-8 grid grid-cols-2 gap-8 text-sm">
+          <div>
+            <div className="font-semibold">Prepared By</div>
+            <div className="mt-12 border-t w-56"></div>
+          </div>
+          <div>
+            <div className="font-semibold">Approved By</div>
+            <div className="mt-12 border-t w-56"></div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -74,7 +74,7 @@ export function usePRList(query: PRListQuery) {
       const errorMessage = e instanceof Error ? e.message : "Unknown error";
       setState((s) => ({ ...s, loading: false, error: errorMessage }));
     }
-  }, [query.q, query.status, query.supplier_id, query.page, query.pageSize]);
+  }, [query.q, query.status, query.supplier_id, query.date_from, query.date_to, query.page, query.pageSize]);
 
   React.useEffect(() => {
     void runFetch();

@@ -15,6 +15,11 @@ export type ProcurementRequest = {
   transaction_type: string | null;
   status: string | null;
   supplier_name?: string | null;
+  supplier_email?: string | null;
+  supplier_phone?: string | null;
+  supplier_address?: string | null;
+  supplier_tin?: string | null;
+  supplier_payment_terms?: string | null;
   encoder_name?: string | null;
   department_name?: string | null;
 };
@@ -76,6 +81,8 @@ export type PRListQuery = {
   q?: string;
   status?: string;
   supplier_id?: string;
+  date_from?: string;
+  date_to?: string;
   page?: number;
   pageSize?: number;
 };

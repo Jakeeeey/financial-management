@@ -32,6 +32,8 @@ export async function GET(request: NextRequest) {
     const q = searchParams.get("q") || "";
     const status = searchParams.get("status") || "";
     const supplier_id = searchParams.get("supplier_id") || "";
+    const date_from = searchParams.get("date_from") || "";
+    const date_to = searchParams.get("date_to") || "";
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
     const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") ?? 20)));
     const offset = (page - 1) * pageSize;
@@ -39,10 +41,15 @@ export async function GET(request: NextRequest) {
     const filter: Record<string, unknown> = {};
     if (status) filter.status = { _eq: status };
     if (supplier_id) filter.supplier_id = { _eq: Number(supplier_id) };
+    if (date_from || date_to) {
+      const leadDateFilter: Record<string, string> = {};
+      if (date_from) leadDateFilter._gte = date_from;
+      if (date_to) leadDateFilter._lte = date_to;
+      filter.lead_date = leadDateFilter;
+    }
     if (q) {
       filter._or = [
         { procurement_no: { _contains: q } },
-        { status: { _contains: q } },
       ];
     }
 
