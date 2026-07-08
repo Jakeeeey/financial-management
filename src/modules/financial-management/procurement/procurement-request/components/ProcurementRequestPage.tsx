@@ -38,7 +38,7 @@ export default function ProcurementRequestPage() {
           <h1 className="text-xl font-semibold">Procurement Requests</h1>
           <p className="text-sm text-muted-foreground">Manage purchase requests</p>
         </div>
-        <Button onClick={() => router.push("/fm/procurement/create")}>
+        <Button onClick={() => router.push("/fm/procurement/procurement-request/create")}>
           <Plus className="h-4 w-4 mr-1" /> New Request
         </Button>
       </div>
@@ -55,7 +55,7 @@ export default function ProcurementRequestPage() {
         loading={loading}
         error={error}
         total={total}
-        onView={(id) => router.push(`/fm/procurement/${id}`)}
+        onView={(id) => router.push(`/fm/procurement/procurement-request/${id}`)}
       />
     </div>
   );

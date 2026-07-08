@@ -48,26 +48,32 @@ export function ProcurementRequestCreatePage() {
 
   React.useEffect(() => {
     if (!supplierQuery.trim()) { setSuppliers([]); return; }
+    const ac = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const results = await searchSuppliers(supplierQuery);
-        setSuppliers(results);
-        setShowSupplierDropdown(results.length > 0);
+        const results = await searchSuppliers(supplierQuery, ac.signal);
+        if (!ac.signal.aborted) {
+          setSuppliers(results);
+          setShowSupplierDropdown(results.length > 0);
+        }
       } catch { /* ignore */ }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); ac.abort(); };
   }, [supplierQuery]);
 
   React.useEffect(() => {
     if (!itemQuery.trim()) { setItemTemplates([]); return; }
+    const ac = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const results = await listItemTemplates(itemQuery);
-        setItemTemplates(results);
-        setShowItemDropdown(results.length > 0);
+        const results = await listItemTemplates(itemQuery, ac.signal);
+        if (!ac.signal.aborted) {
+          setItemTemplates(results);
+          setShowItemDropdown(results.length > 0);
+        }
       } catch { /* ignore */ }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); ac.abort(); };
   }, [itemQuery]);
 
   React.useEffect(() => {
@@ -153,7 +159,7 @@ export function ProcurementRequestCreatePage() {
         items: lineItems.map(({ _key, template_name, variant_name, ...item }) => item),
       });
       toast.success(`Saved! Procurement #${result.procurement_no} created.`);
-      router.push(`/fm/procurement/${result.id}`);
+      router.push(`/fm/procurement/procurement-request/${result.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create procurement");
     } finally {

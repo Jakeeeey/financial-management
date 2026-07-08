@@ -70,7 +70,7 @@ export default function ProcurementRequestPrintPage({ id }: ProcurementRequestPr
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between print:hidden">
-        <Button variant="ghost" size="sm" onClick={() => router.push(`/fm/procurement/${id}`)}>
+        <Button variant="ghost" size="sm" onClick={() => router.push(`/fm/procurement/procurement-request/${id}`)}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Back
         </Button>
         <Button onClick={handlePrint}>

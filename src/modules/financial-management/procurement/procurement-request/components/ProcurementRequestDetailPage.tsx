@@ -46,7 +46,7 @@ export default function ProcurementRequestDetailPage({ id }: ProcurementRequestD
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/fm/procurement")}>
+        <Button variant="ghost" size="sm" onClick={() => router.push("/fm/procurement/procurement-request")}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Back to List
         </Button>
         <div className="flex items-center gap-2">
