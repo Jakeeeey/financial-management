@@ -13,6 +13,7 @@ import { ArrowLeft, Printer, CheckCircle, FileText, Loader2, ShieldCheck } from 
 import { usePRDetail } from "../hooks/usePRDetail";
 import { PRDetailHeader } from "./PRDetailHeader";
 import { PRLineItemsTable } from "./PRLineItemsTable";
+import type { ProcurementDetail } from "../utils/types";
 import { formatPHP } from "../utils/format";
 import { toBoolLike } from "../utils/parse";
 import { approvePR, generatePOFromPR } from "../providers/prService";
@@ -129,6 +130,7 @@ function PrintContent({
 export default function ProcurementRequestDetailPage({ id }: ProcurementRequestDetailPageProps) {
   const router = useRouter();
   const { master, details, loading, error, reload } = usePRDetail(id);
+  const [localDetails, setLocalDetails] = useState<ProcurementDetail[]>([]);
   const [mounted, setMounted] = useState(false);
   const [approving, setApproving] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -138,7 +140,25 @@ export default function ProcurementRequestDetailPage({ id }: ProcurementRequestD
     setMounted(true);
   }, []);
 
-  const computedTotal = details.reduce((a, b) => a + Number(b.total_amount || (b.qty || 0) * (b.unit_price || 0)), 0);
+  useEffect(() => {
+    setLocalDetails(details);
+  }, [details]);
+
+  const handleDetailUpdated = useCallback((detailId: number, changes: Partial<ProcurementDetail>) => {
+    setLocalDetails((prev) =>
+      prev.map((d) => (d.id === detailId ? { ...d, ...changes } : d)),
+    );
+  }, []);
+
+  const handleDetailDeleted = useCallback((detailId: number) => {
+    setLocalDetails((prev) => prev.filter((d) => d.id !== detailId));
+  }, []);
+
+  const handleDetailAdded = useCallback((detail: ProcurementDetail) => {
+    setLocalDetails((prev) => [...prev, detail]);
+  }, []);
+
+  const computedTotal = localDetails.reduce((a, b) => a + Number((b.qty || 0) * (b.unit_price || 0)), 0);
 
   const handlePrint = useCallback(() => {
     window.print();
@@ -242,9 +262,12 @@ export default function ProcurementRequestDetailPage({ id }: ProcurementRequestD
         </CardHeader>
         <CardContent>
           <PRLineItemsTable
-            details={details}
+            details={localDetails}
+            procurementId={id}
             readOnly={readOnly}
-            onReload={reload}
+            onDetailUpdated={handleDetailUpdated}
+            onDetailDeleted={handleDetailDeleted}
+            onDetailAdded={handleDetailAdded}
           />
         </CardContent>
       </Card>
@@ -278,7 +301,7 @@ export default function ProcurementRequestDetailPage({ id }: ProcurementRequestD
       </Dialog>
 
       {mounted && createPortal(
-        <PrintContent master={master} details={details} total={computedTotal} />,
+        <PrintContent master={master} details={localDetails} total={computedTotal} />,
         document.body
       )}
     </div>

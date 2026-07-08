@@ -25,10 +25,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (body.qty !== undefined) patchBody.qty = Number(body.qty);
     if (body.unit_price !== undefined) patchBody.unit_price = Number(body.unit_price);
     if (body.uom !== undefined) patchBody.uom = body.uom;
+    if (body.supplier !== undefined) patchBody.supplier = body.supplier === null ? null : Number(body.supplier);
 
-    if (patchBody.qty !== undefined && patchBody.unit_price !== undefined) {
-      patchBody.total_amount = patchBody.qty * patchBody.unit_price;
-    } else if (patchBody.qty !== undefined) {
+    const q = patchBody.qty as number | undefined;
+    const up = patchBody.unit_price as number | undefined;
+    if (q !== undefined && up !== undefined) {
+      patchBody.total_amount = q * up;
+    } else if (q !== undefined) {
       const detailRes = await fetch(
         `${DIRECTUS_URL}/items/procurement_details/${detailId}?fields=unit_price`,
         {
@@ -38,10 +41,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       );
       if (detailRes.ok) {
         const detailData = await detailRes.json();
-        const currentUnitPrice = Number(detailData.data?.unit_price) || 0;
-        patchBody.total_amount = patchBody.qty * currentUnitPrice;
+        const currentUnitPrice = Number((detailData.data as Record<string, unknown> | undefined)?.unit_price) || 0;
+        patchBody.total_amount = q * currentUnitPrice;
       }
-    } else if (patchBody.unit_price !== undefined) {
+    } else if (up !== undefined) {
       const detailRes = await fetch(
         `${DIRECTUS_URL}/items/procurement_details/${detailId}?fields=qty`,
         {
@@ -51,8 +54,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       );
       if (detailRes.ok) {
         const detailData = await detailRes.json();
-        const currentQty = Number(detailData.data?.qty) || 0;
-        patchBody.total_amount = currentQty * patchBody.unit_price;
+        const currentQty = Number((detailData.data as Record<string, unknown> | undefined)?.qty) || 0;
+        patchBody.total_amount = currentQty * up;
       }
     }
 

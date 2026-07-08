@@ -73,25 +73,30 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!detailsRes.ok) throw new Error(await detailsRes.text());
     const detailsData = await detailsRes.json();
 
-    const details = (detailsData.data || []).map((d: Record<string, unknown>) => ({
-      id: d.id,
-      procurement_id: d.procurement_id,
-      item_variant_id: d.item_variant_id?.id ?? d.item_variant_id,
-      item_template_id: d.item_template_id?.id ?? d.item_template_id,
-      qty: d.qty,
-      unit_price: d.unit_price,
-      total_amount: d.total_amount,
-      date_added: d.date_added,
-      supplier: d.supplier,
-      link: d.link,
-      created_at: d.created_at,
-      updated_at: d.updated_at,
-      uom: d.uom,
-      item_name: d.item_name,
-      item_description: d.item_description,
-      template_name: d.item_template_id?.name ?? null,
-      variant_name: d.item_variant_id?.name ?? null,
-    }));
+    const details = (detailsData.data || []).map((d: Record<string, unknown>) => {
+      const itid = d.item_template_id as Record<string, unknown> | null | undefined;
+      const ivid = d.item_variant_id as Record<string, unknown> | null | undefined;
+      return {
+        id: d.id as number,
+        procurement_id: d.procurement_id as number,
+        item_variant_id: (ivid?.id as number) ?? (d.item_variant_id as number),
+        item_template_id: (itid?.id as number) ?? (d.item_template_id as number),
+        qty: d.qty as number,
+        unit_price: d.unit_price as number,
+        total_amount: d.total_amount as number,
+        date_added: d.date_added as string,
+        supplier: d.supplier as number,
+        link: d.link as string,
+        created_at: d.created_at as string,
+        updated_at: d.updated_at as string,
+        uom: d.uom as string,
+        item_name: d.item_name as string,
+        item_description: d.item_description as string,
+        template_name: (itid?.name as string) ?? null,
+        variant_name: (ivid?.name as string) ?? null,
+        supplier_name: null as string | null,
+      };
+    });
 
     return NextResponse.json({ master, details });
   } catch (err) {

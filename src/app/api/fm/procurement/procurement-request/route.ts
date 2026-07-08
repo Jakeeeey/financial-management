@@ -75,28 +75,33 @@ export async function GET(request: NextRequest) {
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
 
-    const rows = (data.data || []).map((r: Record<string, unknown>) => ({
-      id: r.id,
-      procurement_no: r.procurement_no,
-      supplier_id: r.supplier_id?.id ?? r.supplier_id,
-      lead_date: r.lead_date,
-      total_amount: r.total_amount,
-      created_at: r.created_at,
-      updated_at: r.updated_at,
-      encoder_id: r.encoder_id?.id ?? r.encoder_id,
-      department_id: r.department_id?.id ?? r.department_id,
-      po_no: r.po_no,
-      isApproved: r.isApproved,
-      approved_by: r.approved_by,
-      approved_date: r.approved_date,
-      transaction_type: r.transaction_type,
-      status: r.status,
-      supplier_name: r.supplier_id?.supplier_name ?? null,
-      encoder_name: r.encoder_id
-        ? `${r.encoder_id.first_name ?? ""} ${r.encoder_id.last_name ?? ""}`.trim() || null
-        : null,
-      department_name: r.department_id?.name ?? null,
-    }));
+    const rows = (data.data || []).map((r: Record<string, unknown>) => {
+      const sid = r.supplier_id as Record<string, unknown> | null | undefined;
+      const eid = r.encoder_id as Record<string, unknown> | null | undefined;
+      const did = r.department_id as Record<string, unknown> | null | undefined;
+      return {
+        id: r.id as number,
+        procurement_no: r.procurement_no as string,
+        supplier_id: (sid?.id as number) ?? (r.supplier_id as number),
+        lead_date: r.lead_date as string,
+        total_amount: r.total_amount as number,
+        created_at: r.created_at as string,
+        updated_at: r.updated_at as string,
+        encoder_id: (eid?.id as number) ?? (r.encoder_id as number),
+        department_id: (did?.id as number) ?? (r.department_id as number),
+        po_no: r.po_no as number,
+        isApproved: r.isApproved as number,
+        approved_by: r.approved_by as number,
+        approved_date: r.approved_date as string,
+        transaction_type: r.transaction_type as string,
+        status: r.status as string,
+        supplier_name: (sid?.supplier_name as string) ?? null,
+        encoder_name: eid
+          ? `${(eid.first_name as string) ?? ""} ${(eid.last_name as string) ?? ""}`.trim() || null
+          : null,
+        department_name: (did?.name as string) ?? null,
+      };
+    });
 
     return NextResponse.json({
       data: rows,

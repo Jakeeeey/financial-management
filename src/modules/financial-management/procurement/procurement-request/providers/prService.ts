@@ -1,4 +1,4 @@
-import type { PRListQuery, PRListResponse, ProcurementRequest, ProcurementDetail, CreatePRInput, UpdateDetailInput } from "../utils/types";
+import type { PRListQuery, PRListResponse, ProcurementRequest, ProcurementDetail, CreatePRInput, UpdateDetailInput, CreateDetailInput } from "../utils/types";
 
 function qs(query: PRListQuery) {
   const p = new URLSearchParams();
@@ -56,6 +56,22 @@ export async function createPR(input: CreatePRInput, signal?: AbortSignal): Prom
     throw new Error(`Failed to create PR (${res.status}): ${text}`);
   }
   return (await res.json()) as { id: number; procurement_no: string };
+}
+
+export async function createPRDetail(input: CreateDetailInput, signal?: AbortSignal): Promise<ProcurementDetail> {
+  const url = `/api/fm/procurement/procurement-request/details`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    signal,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to create detail (${res.status}): ${text}`);
+  }
+  return (await res.json()) as ProcurementDetail;
 }
 
 export async function updatePRDetail(detailId: number, input: UpdateDetailInput, signal?: AbortSignal): Promise<ProcurementDetail> {

@@ -42,6 +42,7 @@ export type ProcurementDetail = {
   item_description: string | null;
   template_name?: string | null;
   variant_name?: string | null;
+  supplier_name?: string | null;
 };
 
 export type Supplier = {
@@ -119,4 +120,14 @@ export type UpdateDetailInput = {
   qty?: number;
   unit_price?: number;
   uom?: string;
+  supplier?: number | null;
+};
+
+export type CreateDetailInput = {
+  procurement_id: number;
+  item_name: string;
+  qty: number;
+  unit_price: number;
+  uom?: string;
+  supplier?: number | null;
 };
