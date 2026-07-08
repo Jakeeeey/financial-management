@@ -279,6 +279,9 @@ export type UnifiedApprovalRow =
 
 export type ListMeta = {
     total_count?: number;
+    actual_total_count?: number;
+    result_window?: number;
+    total_count_capped?: boolean;
 };
 
 export type ListQuery = {

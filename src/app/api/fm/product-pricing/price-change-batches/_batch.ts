@@ -294,6 +294,7 @@ export function directusErrorResponse(error: unknown) {
 
     const message = error instanceof Error ? error.message : String(error);
     const wrapped = parseWrappedError(message);
+    const errorId = crypto.randomUUID();
 
     if (wrapped) {
         const isBatchStorageRequest =
@@ -303,29 +304,45 @@ export function directusErrorResponse(error: unknown) {
             wrapped.body.includes(DETAILS);
 
         if ((wrapped.status === 401 || wrapped.status === 403 || wrapped.status === 404) && isBatchStorageRequest) {
+            console.error(
+                `[directusErrorResponse:${errorId}] Storage/permission error`,
+                `status=${wrapped.status}`,
+                `url=${wrapped.url}`,
+                `body=${wrapped.body}`,
+                `message=${message}`,
+            );
             return NextResponse.json(
                 {
                     error: "Price change batch storage is not configured or the Directus token lacks permission.",
                     details: `Confirm ${HEADERS} exists, ${DETAILS} has header_id/current_price fields, and the Directus token role can read/create/update both collections.`,
                     setup_required: true,
                     directus_status: wrapped.status,
+                    error_id: errorId,
                 },
                 { status: 503 },
             );
         }
 
+        console.error(
+            `[directusErrorResponse:${errorId}] Directus request failed`,
+            `status=${wrapped.status}`,
+            `url=${wrapped.url}`,
+            `body=${wrapped.body}`,
+            `message=${message}`,
+        );
+
         return NextResponse.json(
             {
-                error: "Directus request failed",
+                error: "Product pricing service request failed.",
                 directus_status: wrapped.status,
-                directus_url: wrapped.url,
-                directus_body: wrapped.body,
+                error_id: errorId,
             },
             { status: 500 },
         );
     }
 
-    return NextResponse.json({ error: "Unexpected error", details: message }, { status: 500 });
+    console.error(`[directusErrorResponse:${errorId}] Unexpected error: ${message}`);
+    return NextResponse.json({ error: "Unexpected product pricing error.", error_id: errorId }, { status: 500 });
 }
 
 export type BatchCreateLineInput = {
