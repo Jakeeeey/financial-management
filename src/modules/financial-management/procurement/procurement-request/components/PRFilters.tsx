@@ -58,6 +58,7 @@ export function PRFilters({
 }: PRFiltersProps) {
   /* Supplier async combobox state */
   const [supplierSearchText, setSupplierSearchText] = React.useState("");
+  const [supplierOpen, setSupplierOpen] = React.useState(false);
   const [supplierNameItems, setSupplierNameItems] = React.useState<string[]>(() =>
     supplierLabel ? [supplierLabel] : []
   );
@@ -66,6 +67,7 @@ export function PRFilters({
   React.useEffect(() => {
     if (supplierSearchText.trim().length < 1) {
       setSupplierNameItems(supplierLabel ? [supplierLabel] : []);
+      setSupplierOpen(false);
       return;
     }
     const ac = new AbortController();
@@ -80,6 +82,8 @@ export function PRFilters({
           });
           supplierIdByName.current = map;
           setSupplierNameItems(names);
+          if (names.length > 0) setSupplierOpen(true);
+          else setSupplierOpen(false);
         }
       } catch {
         if (!ac.signal.aborted) setSupplierNameItems([]);
@@ -110,30 +114,16 @@ export function PRFilters({
     );
   }
 
-  return (
-    <div className="flex flex-wrap items-end gap-3">
-      {/* PR No. — leftmost */}
-      <div className="w-[220px]">
-        <label className="text-xs text-muted-foreground mb-1 block">PR No.</label>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-9 h-9"
-            placeholder="Search by PR No."
-            value={procurementNo}
-            onChange={(e) => onProcurementNoChange(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* Right-aligned group — flush with table edge */}
-      <div className="flex flex-wrap items-end gap-3 ml-auto">
+  const rightGroup = (
+    <div className="flex flex-col lg:flex-row items-end gap-3 shrink-0 w-full">
       {/* Supplier */}
-      <div className="w-[200px]">
+      <div className="w-full lg:w-[200px] shrink-0">
         <label className="text-xs text-muted-foreground mb-1 block">Supplier</label>
         <Combobox
           items={supplierNameItems}
           value={supplierLabel ?? ""}
+          open={supplierOpen}
+          onOpenChange={setSupplierOpen}
           onValueChange={(name: string | null) => {
             if (name) {
               const id = supplierIdByName.current[name] ?? "";
@@ -152,7 +142,7 @@ export function PRFilters({
             }
           />
           <ComboboxContent>
-            <ComboboxEmpty>No results.</ComboboxEmpty>
+            <ComboboxEmpty>{supplierSearchText.trim() ? "No results." : "Type to search suppliers"}</ComboboxEmpty>
             <ComboboxList>
               {(name: string) => (
                 <ComboboxItem key={name} value={name}>
@@ -165,7 +155,7 @@ export function PRFilters({
       </div>
 
       {/* Lead Date Range */}
-      <div className="w-[220px]">
+      <div className="w-full lg:w-[220px] shrink-0">
         <label className="text-xs text-muted-foreground mb-1 block">Lead Date</label>
         <Popover>
           <PopoverTrigger asChild>
@@ -219,10 +209,10 @@ export function PRFilters({
       </div>
 
       {/* Status */}
-      <div className="w-[160px]">
+      <div className="w-full lg:w-[160px] shrink-0">
         <label className="text-xs text-muted-foreground mb-1 block">Status</label>
         <Select value={status} onValueChange={onStatusChange}>
-          <SelectTrigger className="h-9">
+          <SelectTrigger className="h-9 w-full">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -235,7 +225,38 @@ export function PRFilters({
           </SelectContent>
         </Select>
       </div>
-    </div>{/* end right-aligned group */}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Top row: desktop side-by-side, mobile stacks */}
+      <div className="flex flex-col lg:flex-row lg:items-end lg:gap-3 lg:justify-between">
+        {/* PR No. */}
+        <div className="w-full lg:w-[220px] shrink-0">
+          <label className="text-xs text-muted-foreground mb-1 block">PR No.</label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-9 h-9"
+              placeholder="Search by PR No."
+              value={procurementNo}
+              onChange={(e) => onProcurementNoChange(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Desktop spacer */}
+        <div className="hidden lg:block flex-1" />
+
+        {/* Desktop right group */}
+        <div className="hidden lg:flex items-end gap-3 shrink-0">
+          {rightGroup}
+        </div>
+      </div>
+
+      {/* Mobile: rightGroup renders flex-col natively */}
+      <div className="lg:hidden">{rightGroup}</div>
     </div>
   );
 }

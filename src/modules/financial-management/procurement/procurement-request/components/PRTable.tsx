@@ -61,9 +61,9 @@ export function PRTable({ rows, loading, error, total, onView }: PRTableProps) {
             <TableHead>PR No.</TableHead>
             <TableHead>Supplier</TableHead>
             <TableHead>Lead Date</TableHead>
-            <TableHead className="text-right">Total</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>PO Ref</TableHead>
+            <TableHead className="text-right">Total</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -77,14 +77,14 @@ export function PRTable({ rows, loading, error, total, onView }: PRTableProps) {
                 {row.supplier_name ?? `Supplier #${row.supplier_id}`}
               </TableCell>
               <TableCell>{formatDate(row.lead_date)}</TableCell>
-              <TableCell className="text-right font-mono tabular-nums">
-                {formatPHP(row.total_amount)}
-              </TableCell>
               <TableCell>
                 <PRStatusBadge status={row.status} />
               </TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">
                 {row.po_no ? `PO #${row.po_no}` : "—"}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {formatPHP(row.total_amount)}
               </TableCell>
               <TableCell className="text-right">
                 <Button variant="ghost" size="icon" onClick={() => onView(row.id)}>
