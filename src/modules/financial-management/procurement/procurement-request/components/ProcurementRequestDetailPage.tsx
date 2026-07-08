@@ -201,38 +201,36 @@ export default function ProcurementRequestDetailPage({ id }: ProcurementRequestD
         <Button variant="ghost" size="sm" onClick={() => router.push("/fm/procurement/procurement-request")}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Back to List
         </Button>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handlePrint}>
             <Printer className="h-4 w-4 mr-1" /> Print
           </Button>
-          <div className="flex items-center gap-2">
-            {!isApproved && (
-              <Button onClick={() => setShowConfirm(true)} disabled={approving}>
-                {approving ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : (
-                  <CheckCircle className="h-4 w-4 mr-1" />
-                )}
-                Approve
-              </Button>
-            )}
-            {isApproved && !master.po_no && (
-              <Button onClick={handleGeneratePO} disabled={generating} variant="secondary">
-                {generating ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : (
-                  <FileText className="h-4 w-4 mr-1" />
-                )}
-                Generate PO
-              </Button>
-            )}
-            {master.po_no && (
-              <Button variant="outline" onClick={() => router.push(`/fm/procurement/purchase-order/${master.po_no}`)}>
+          {!isApproved && (
+            <Button onClick={() => setShowConfirm(true)} disabled={approving}>
+              {approving ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4 mr-1" />
+              )}
+              Approve
+            </Button>
+          )}
+          {isApproved && !master.po_no && (
+            <Button onClick={handleGeneratePO} disabled={generating} variant="secondary">
+              {generating ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
                 <FileText className="h-4 w-4 mr-1" />
-                PO #{master.po_no}
-              </Button>
-            )}
-          </div>
+              )}
+              Generate PO
+            </Button>
+          )}
+          {master.po_no && (
+            <Button variant="outline" onClick={() => router.push(`/fm/procurement/purchase-order/${master.po_no}`)}>
+              <FileText className="h-4 w-4 mr-1" />
+              PO #{master.po_no}
+            </Button>
+          )}
         </div>
       </div>
 
