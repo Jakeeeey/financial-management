@@ -177,7 +177,6 @@ export function ProcurementRequestCreatePage() {
         lead_date: leadDate,
         encoder_id: 1,
         department_id: null,
-        transaction_type: selectedSupplier.supplier_type?.includes("TRADE") ? "trade" : "non-trade",
         status: "pending",
         items: lineItems.map(({ _key, template_name, variant_name, ...item }) => item),
       });

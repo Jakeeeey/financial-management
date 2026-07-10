@@ -11,16 +11,6 @@ async function getAuthToken(): Promise<string | null> {
   return cookieStore.get("vos_access_token")?.value ?? null;
 }
 
-function generatePRNumber(supplierType: string | null): string {
-  let prefix = "PR";
-  const type = (supplierType || "").toUpperCase();
-  if (type.includes("TRADE")) prefix = "PRTR";
-  else if (type.includes("NON") || type.includes("NON-TRADE")) prefix = "PRNT";
-  const year = new Date().getFullYear();
-  const rand = String(Math.floor(Math.random() * 999999)).padStart(6, "0");
-  return `${prefix}-${year}-${rand}`;
-}
-
 export async function GET(request: NextRequest) {
   const token = await getAuthToken();
   if (!token) {
@@ -162,7 +152,14 @@ export async function POST(request: NextRequest) {
     const supplierData = await supplierRes.json();
     const supplierType = supplierData.data?.supplier_type ?? null;
 
-    const procurement_no = generatePRNumber(supplierType);
+    const norm = (s: string | null) => (s ?? "").trim().replace(/\s+/g, " ");
+    const prefix =
+      norm(supplierType).includes("Trade") ? "PRTR" :
+      norm(supplierType).includes("Non")   ? "PRNT" : "PR";
+    const transactionType =
+      prefix === "PRNT" ? "non-trade" :
+      prefix === "PRTR" ? "trade" : null;
+    const procurement_no = `${prefix}-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 999999)).padStart(6, "0")}`;
 
     const masterRes = await fetch(`${DIRECTUS_URL}/items/procurement`, {
       method: "POST",
@@ -176,7 +173,7 @@ export async function POST(request: NextRequest) {
         lead_date,
         encoder_id,
         department_id: department_id || null,
-        transaction_type: transaction_type || "trade",
+        transaction_type: transactionType,
         status: status || "pending",
         total_amount: 0,
       }),

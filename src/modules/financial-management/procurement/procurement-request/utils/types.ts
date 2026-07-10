@@ -99,7 +99,6 @@ export type CreatePRInput = {
   lead_date: string;
   encoder_id: number;
   department_id?: number | null;
-  transaction_type: string;
   status: string;
   items: CreatePRItemInput[];
 };
