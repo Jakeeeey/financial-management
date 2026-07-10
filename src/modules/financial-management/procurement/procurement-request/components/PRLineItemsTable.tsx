@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Trash2, Save, Plus, Search, X } from "lucide-react";
+import { Loader2, Trash2, Save, Plus, Pencil } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Combobox,
   ComboboxContent,
@@ -15,7 +22,8 @@ import {
 import type { ProcurementDetail } from "../utils/types";
 import { formatPHP } from "../utils/format";
 import { createPRDetail, updatePRDetail, deletePRDetail } from "../providers/prService";
-import { searchSuppliers } from "../providers/lookupsService";
+import { listItemTemplates, listItemVariants } from "../providers/lookupsService";
+import type { ItemTemplate, ItemVariant } from "../utils/types";
 import { toast } from "sonner";
 
 type PRLineItemsTableProps = {
@@ -29,12 +37,15 @@ type PRLineItemsTableProps = {
 
 type NewRow = {
   id: number;
+  item_template_id: number | null;
+  item_variant_id: number | null;
   item_name: string;
+  template_name: string | null;
+  variant_name: string | null;
+  item_description: string | null;
   qty: number;
   unit_price: number;
   uom: string;
-  supplier: number | null;
-  supplier_label: string;
   saving: boolean;
 };
 
@@ -47,29 +58,37 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced;
 }
 
-function SupplierCombobox({
+function ItemTemplateCombobox({
   value,
-  onChange,
+  templateId,
+  onSelect,
   disabled,
 }: {
   value: string;
-  onChange: (id: number | null, label: string) => void;
+  templateId: number | null;
+  onSelect: (tmpl: { id: number; name: string; uom: string | null; description: string | null; base_price: number | null } | null) => void;
   disabled?: boolean;
 }) {
   const [searchText, setSearchText] = useState("");
-  const [selectedValue, setSelectedValue] = useState<string | null>(value || null);
+  const [selectedValue, setSelectedValue] = useState<string | null>(templateId ? `tmpl:${templateId}` : null);
   const [items, setItems] = useState<string[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const debouncedSearch = useDebounce(searchText, 300);
+
+  const selectedName = selectedValue && selectedValue.startsWith("tmpl:")
+    ? selectedValue.split(":").slice(2).join(":")
+    : null;
 
   useEffect(() => {
     if (!searchText.trim()) {
-      setItems([]);
+      if (selectedValue) setItems([selectedValue]);
+      else setItems([]);
       return;
     }
     let cancelled = false;
-    searchSuppliers(searchText).then((suppliers) => {
+    listItemTemplates(searchText).then((templates) => {
       if (cancelled) return;
-      setItems(suppliers.map((s) => `${s.id}:${s.supplier_name}`));
+      setItems(templates.map((t) => `tmpl:${t.id}:${t.name}`));
     });
     return () => { cancelled = true; };
   }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -77,39 +96,95 @@ function SupplierCombobox({
   function handleValueChange(selected: string | null) {
     if (!selected) return;
     setSelectedValue(selected);
-    setSearchText("");
-    const colonIdx = selected.indexOf(":");
-    const id = colonIdx > 0 ? Number(selected.slice(0, colonIdx)) : null;
-    const label = colonIdx > 0 ? selected.slice(colonIdx + 1) : selected;
-    onChange(id, label);
+    setIsSearching(false);
+    const parts = selected.split(":");
+    if (parts[0] === "tmpl" && parts[1]) {
+      const id = Number(parts[1]);
+      const name = parts.slice(2).join(":");
+      setSearchText(name);
+      const tmpl: ItemTemplate = { id, name, uom: null, base_price: null, description: null };
+      onSelect(tmpl);
+    }
+  }
+
+  if (selectedName && !isSearching) {
+    return (
+      <div className="flex items-center gap-1 min-w-[180px]">
+        <span className="text-xs font-medium truncate flex-1">{selectedName}</span>
+        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setIsSearching(true)}>
+          <Pencil className="h-3 w-3" />
+        </Button>
+      </div>
+    );
   }
 
   return (
-    <div className="flex items-center gap-1">
-      <Combobox items={items} value={selectedValue} onValueChange={handleValueChange} disabled={disabled}>
+    <div className="min-w-[180px]">
+      <Combobox items={items} value={isSearching ? null : selectedValue} onValueChange={handleValueChange} disabled={disabled}>
         <ComboboxInput
-          placeholder={disabled ? "—" : "Supplier"}
-          className="h-8 text-xs w-32"
+          placeholder={disabled ? "—" : "Search item template..."}
+          className="h-8 text-xs"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
         />
         <ComboboxContent>
-          <ComboboxEmpty>No results</ComboboxEmpty>
+          <ComboboxEmpty>{searchText.trim() ? "No results" : "Type to search items"}</ComboboxEmpty>
           <ComboboxList>
-            {(item) => (
-              <ComboboxItem key={item} value={item}>
-                {item.includes(":") ? item.slice(item.indexOf(":") + 1) : item}
-              </ComboboxItem>
-            )}
+            {(item) => {
+              const parts = item.split(":");
+              const label = parts[0] === "tmpl" ? parts.slice(2).join(":") : item;
+              return <ComboboxItem key={item} value={item}>{label}</ComboboxItem>;
+            }}
           </ComboboxList>
         </ComboboxContent>
       </Combobox>
-      {value && !disabled && (
-        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { setSelectedValue(null); setSearchText(""); setItems([]); onChange(null, ""); }}>
-          <X className="h-3 w-3" />
-        </Button>
-      )}
     </div>
+  );
+}
+
+function VariantSelect({
+  templateId,
+  variantId,
+  onChange,
+  disabled,
+}: {
+  templateId: number | null;
+  variantId: number | null;
+  onChange: (variant: { id: number; name: string; list_price: number | null } | null) => void;
+  disabled?: boolean;
+}) {
+  const [variants, setVariants] = useState<ItemVariant[]>([]);
+
+  useEffect(() => {
+    if (!templateId) { setVariants([]); return; }
+    let cancelled = false;
+    listItemVariants(templateId).then((vs) => {
+      if (cancelled) return;
+      setVariants(vs);
+    });
+    return () => { cancelled = true; };
+  }, [templateId]);
+
+  if (!templateId || variants.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+
+  return (
+    <Select
+      value={variantId ? String(variantId) : ""}
+      onValueChange={(v) => {
+        const found = variants.find((x) => x.id === Number(v));
+        onChange(found ?? null);
+      }}
+      disabled={disabled}
+    >
+      <SelectTrigger className="h-7 text-xs max-w-[140px]">
+        <SelectValue placeholder="Select variant" />
+      </SelectTrigger>
+      <SelectContent>
+        {variants.map((v) => (
+          <SelectItem key={v.id} value={String(v.id)} className="text-xs">{v.name}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -118,25 +193,20 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
   const [editQty, setEditQty] = useState(0);
   const [editPrice, setEditPrice] = useState(0);
   const [editUom, setEditUom] = useState("");
-  const [editSupplier, setEditSupplier] = useState<number | null>(null);
-  const [editSupplierLabel, setEditSupplierLabel] = useState("");
   const [savingId, setSavingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [newRows, setNewRows] = useState<NewRow[]>([]);
   const [filterText, setFilterText] = useState("");
-  const [filterSupplier, setFilterSupplier] = useState<number | null>(null);
-  const [filterSupplierLabel, setFilterSupplierLabel] = useState("");
   const nextId = useRef(0);
 
   async function handleSave(detailId: number) {
     const changes: Partial<ProcurementDetail> = { qty: editQty, unit_price: editPrice };
     if (editUom) changes.uom = editUom;
-    if (editSupplier !== undefined) changes.supplier = editSupplier;
     onDetailUpdated(detailId, changes);
     setEditingId(null);
     setSavingId(detailId);
     try {
-      await updatePRDetail(detailId, { qty: editQty, unit_price: editPrice, uom: editUom || undefined, supplier: editSupplier });
+      await updatePRDetail(detailId, { qty: editQty, unit_price: editPrice, uom: editUom || undefined });
       toast.success("Line item updated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to update");
@@ -153,8 +223,6 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
     setEditQty(d.qty);
     setEditPrice(d.unit_price);
     setEditUom(d.uom ?? "");
-    setEditSupplier(d.supplier);
-    setEditSupplierLabel(d.supplier_name ?? "");
   }
 
   function handleCancel() {
@@ -176,8 +244,30 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
 
   function handleAddRow() {
     nextId.current -= 1;
-    const newRow: NewRow = { id: nextId.current, item_name: "", qty: 1, unit_price: 0, uom: "", supplier: null, supplier_label: "", saving: false };
+    const newRow: NewRow = { id: nextId.current, item_template_id: null, item_variant_id: null, item_name: "", template_name: null, variant_name: null, item_description: null, qty: 1, unit_price: 0, uom: "", saving: false };
     setNewRows((prev) => [newRow, ...prev]);
+  }
+
+  function handleTemplateSelect(id: number, tmpl: { id: number; name: string; uom: string | null; description: string | null; base_price: number | null } | null) {
+    if (!tmpl) return;
+    updateNewRow(id, {
+      item_template_id: tmpl.id,
+      item_variant_id: null,
+      item_name: tmpl.name,
+      template_name: tmpl.name,
+      variant_name: null,
+      item_description: tmpl.description,
+      uom: tmpl.uom ?? "",
+      unit_price: tmpl.base_price ?? 0,
+    });
+  }
+
+  function handleVariantSelect(id: number, variant: { id: number; name: string; list_price: number | null } | null) {
+    updateNewRow(id, {
+      item_variant_id: variant?.id ?? null,
+      unit_price: variant?.list_price ?? 0,
+      variant_name: variant?.name ?? null,
+    });
   }
 
   function updateNewRow(id: number, patch: Partial<NewRow>) {
@@ -199,14 +289,20 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
     try {
       const created = await createPRDetail({
         procurement_id: procurementId,
+        item_template_id: row.item_template_id,
+        item_variant_id: row.item_variant_id,
         item_name: row.item_name.trim(),
+        item_description: row.item_description,
         qty: row.qty,
         unit_price: row.unit_price,
         uom: row.uom || undefined,
-        supplier: row.supplier,
       });
       setNewRows((prev) => prev.filter((r) => r.id !== id));
-      onDetailAdded(created);
+      onDetailAdded({
+        ...created,
+        template_name: row.template_name ?? row.item_name,
+        variant_name: row.variant_name,
+      });
       toast.success("Line item added");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to add line item");
@@ -230,23 +326,20 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
     total_amount: r.qty * r.unit_price,
     uom: r.uom || null,
     item_name: r.item_name || null,
-    supplier: r.supplier,
-    supplier_name: r.supplier_label || null,
-    item_description: null,
-    item_variant_id: null,
-    item_template_id: null,
+    item_description: r.item_description || null,
+    item_variant_id: r.item_variant_id || null,
+    item_template_id: r.item_template_id || null,
     date_added: null,
     link: null,
     created_at: null,
     updated_at: null,
-    template_name: null,
-    variant_name: null,
+    template_name: (r.template_name ?? r.item_name) || null,
+    variant_name: r.variant_name ?? null,
   } as ProcurementDetail));
 
   const allDetails = [...tempDetails, ...details];
   const filtered = allDetails.filter((d) => {
     if (filterText && !(d.item_name ?? "").toLowerCase().includes(filterText.toLowerCase()) && !(d.template_name ?? "").toLowerCase().includes(filterText.toLowerCase())) return false;
-    if (filterSupplier !== null && d.supplier !== filterSupplier) return false;
     return true;
   });
 
@@ -257,26 +350,11 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
           <Button variant="outline" size="sm" onClick={handleAddRow}>
             <Plus className="h-4 w-4 mr-1" /> Add Line Item
           </Button>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                value={filterText}
-                onChange={(e) => setFilterText(e.target.value)}
-                placeholder="Search items..."
-                className="h-8 pl-7 pr-2 text-xs w-40"
-              />
-            </div>
-            <SupplierCombobox
-              value={filterSupplierLabel}
-              onChange={(id, label) => { setFilterSupplier(id); setFilterSupplierLabel(label); }}
-            />
-            {(filterText || filterSupplier !== null) && (
-              <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setFilterText(""); setFilterSupplier(null); setFilterSupplierLabel(""); }}>
-                Clear
-              </Button>
-            )}
-          </div>
+          {filterText && (
+            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setFilterText("")}>
+              Clear
+            </Button>
+          )}
         </div>
       )}
       <div className="rounded-md border overflow-x-auto">
@@ -284,7 +362,6 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="px-3 py-2 text-left font-medium">Item</th>
-              {!readOnly && <th className="px-3 py-2 text-left font-medium">Supplier</th>}
               <th className="px-3 py-2 text-left font-medium">Variant</th>
               <th className="px-3 py-2 text-left font-medium">UOM</th>
               <th className="px-3 py-2 text-right font-medium">Qty</th>
@@ -296,8 +373,8 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={readOnly ? 6 : 8} className="text-sm text-muted-foreground text-center py-8">
-                  {filterText || filterSupplier !== null ? "No matching line items" : "No line items"}
+                <td colSpan={readOnly ? 5 : 7} className="text-sm text-muted-foreground text-center py-8">
+                  {filterText ? "No matching line items" : "No line items"}
                 </td>
               </tr>
             )}
@@ -309,13 +386,12 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
               const nr = isNew ? newRows.find((r) => r.id === d.id) : null;
               return (
                 <tr key={d.id} className="border-b last:border-0 hover:bg-muted/20">
-                  <td className="px-3 py-2 max-w-[160px]">
+                  <td className="px-3 py-2 max-w-[220px] min-w-[180px]">
                     {isNew ? (
-                      <Input
+                      <ItemTemplateCombobox
                         value={nr?.item_name ?? ""}
-                        onChange={(e) => updateNewRow(d.id, { item_name: e.target.value })}
-                        placeholder="Item name"
-                        className="h-8 text-xs"
+                        templateId={nr?.item_template_id ?? null}
+                        onSelect={(tmpl) => handleTemplateSelect(d.id, tmpl)}
                       />
                     ) : (
                       <>
@@ -324,25 +400,16 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
                       </>
                     )}
                   </td>
-                  {!readOnly && (
-                    <td className="px-3 py-2">
-                      {isNew ? (
-                        <SupplierCombobox
-                          value={nr?.supplier_label ?? ""}
-                          onChange={(id, label) => updateNewRow(d.id, { supplier: id, supplier_label: label })}
-                        />
-                      ) : isEditing ? (
-                        <SupplierCombobox
-                          value={editSupplierLabel}
-                          onChange={(id, label) => { setEditSupplier(id); setEditSupplierLabel(label); }}
-                        />
-                      ) : (
-                        <span className="text-xs">{d.supplier_name ?? "—"}</span>
-                      )}
-                    </td>
-                  )}
                   <td className="px-3 py-2">
-                    {isNew ? "—" : (d.variant_name ?? "—")}
+                    {isNew ? (
+                      <VariantSelect
+                        templateId={nr?.item_template_id ?? null}
+                        variantId={nr?.item_variant_id ?? null}
+                        onChange={(v) => handleVariantSelect(d.id, v)}
+                      />
+                    ) : (
+                      d.variant_name ?? "—"
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     {isNew ? (
@@ -447,7 +514,7 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
           </tbody>
           <tfoot>
             <tr className="border-t font-medium">
-              <td colSpan={readOnly ? 5 : 6} className="px-3 py-2 text-right">Grand Total</td>
+              <td colSpan={5} className="px-3 py-2 text-right">Grand Total</td>
               <td className="px-3 py-2 text-right font-mono tabular-nums">
                 {formatPHP(filtered.reduce((s, d) => {
                   if (d.id === editingId) return s + Number(editQty * editPrice);

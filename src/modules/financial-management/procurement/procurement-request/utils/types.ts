@@ -114,6 +114,7 @@ export type CreatePRItemInput = {
   uom: string | null;
   qty: number;
   unit_price: number;
+  supplier?: number | null;
 };
 
 export type UpdateDetailInput = {
@@ -125,7 +126,10 @@ export type UpdateDetailInput = {
 
 export type CreateDetailInput = {
   procurement_id: number;
+  item_template_id: number | null;
+  item_variant_id: number | null;
   item_name: string;
+  item_description?: string | null;
   qty: number;
   unit_price: number;
   uom?: string;

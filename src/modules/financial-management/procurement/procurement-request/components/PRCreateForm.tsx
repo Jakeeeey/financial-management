@@ -87,6 +87,10 @@ export function ProcurementRequestCreatePage() {
     return () => { clearTimeout(timer); ac.abort(); };
   }, [itemSearchText]);
 
+  /* Per-line variant options */
+  const [variantOptions, setVariantOptions] = React.useState<Record<number, ItemVariant[]>>({});
+  const [loadingVariant, setLoadingVariant] = React.useState<Record<number, boolean>>({});
+
   function addLine() {
     setLineItems((prev) => [
       {
@@ -102,28 +106,39 @@ export function ProcurementRequestCreatePage() {
       ...prev,
     ]);
   }
-        _key: _nextKey++,
-        item_template_id: null,
-        item_variant_id: null,
-        item_name: "",
-        item_description: null,
-        uom: null,
-        qty: 1,
-        unit_price: 0,
-      },
-    ]);
-  }
 
   function removeLine(key: number) {
     setLineItems((prev) => prev.filter((li) => li._key !== key));
+    setVariantOptions((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   }
 
   function updateLine(key: number, patch: Partial<LineItem>) {
     setLineItems((prev) => prev.map((li) => (li._key === key ? { ...li, ...patch } : li)));
   }
 
-  function handleSelectTemplate(lineKey: number, templateName: string | null) {
-    if (!templateName) return;
+  async function handleSelectTemplate(lineKey: number, templateName: string | null) {
+    if (!templateName) {
+      updateLine(lineKey, {
+        item_template_id: null,
+        item_name: "",
+        item_description: null,
+        uom: null,
+        unit_price: 0,
+        template_name: undefined,
+        item_variant_id: null,
+        variant_name: undefined,
+      });
+      setVariantOptions((prev) => {
+        const next = { ...prev };
+        delete next[lineKey];
+        return next;
+      });
+      return;
+    }
     const t = itemTemplateDataRef.current[templateName];
     if (!t) return;
     updateLine(lineKey, {
@@ -136,6 +151,19 @@ export function ProcurementRequestCreatePage() {
       item_variant_id: null,
       variant_name: undefined,
     });
+
+    setLoadingVariant((prev) => ({ ...prev, [lineKey]: true }));
+    try {
+      const variants = await listItemVariants(t.id);
+      setVariantOptions((prev) => ({ ...prev, [lineKey]: variants || [] }));
+      if (variants?.length === 1) {
+        updateLine(lineKey, {
+          item_variant_id: variants[0].id,
+          variant_name: variants[0].name,
+        });
+      }
+    } catch { /* ignore */ }
+    setLoadingVariant((prev) => ({ ...prev, [lineKey]: false }));
   }
 
   async function handleSubmit() {
@@ -153,7 +181,7 @@ export function ProcurementRequestCreatePage() {
       const result = await createPR({
         supplier_id: selectedSupplier.id,
         lead_date: leadDate,
-        encoder_id: 1, // will be resolved server-side
+        encoder_id: 1,
         department_id: null,
         transaction_type: selectedSupplier.supplier_type?.includes("TRADE") ? "trade" : "non-trade",
         status: "pending",
@@ -279,23 +307,25 @@ export function ProcurementRequestCreatePage() {
           )}
 
           {lineItems.length > 0 && (
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-3 py-2 text-left font-medium">Template</th>
-                    <th className="px-3 py-2 text-left font-medium">Item Name</th>
-                    <th className="px-3 py-2 text-left font-medium">UOM</th>
-                    <th className="px-3 py-2 text-right font-medium">Qty</th>
-                    <th className="px-3 py-2 text-right font-medium">Unit Price</th>
-                    <th className="px-3 py-2 text-right font-medium">Total</th>
-                    <th className="px-3 py-2"></th>
+                    <th className="px-3 py-2 text-left font-medium w-[180px]">Item</th>
+                    <th className="px-3 py-2 text-left font-medium w-[120px]">Variant</th>
+                    <th className="px-3 py-2 text-left font-medium w-[70px]">UOM</th>
+                    <th className="px-3 py-2 text-right font-medium w-[80px]">Qty</th>
+                    <th className="px-3 py-2 text-right font-medium w-[120px]">Unit Price</th>
+                    <th className="px-3 py-2 text-right font-medium w-[110px]">Total</th>
+                    <th className="px-3 py-2 w-[48px]"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {lineItems.map((line) => (
+                  {lineItems.map((line) => {
+                    const hasVariants = line.item_template_id && variantOptions[line._key] !== undefined && variantOptions[line._key].length > 0;
+                    return (
                     <tr key={line._key} className="border-b last:border-0">
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 w-[180px]">
                         <Combobox
                           items={itemTemplateItems}
                           value={line.template_name ?? ""}
@@ -304,8 +334,9 @@ export function ProcurementRequestCreatePage() {
                           }}
                         >
                           <ComboboxInput
-                            placeholder="Select template..."
+                            placeholder="Search item template..."
                             showClear
+                            className="h-8 text-xs"
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                               setItemSearchText(e.target.value)
                             }
@@ -321,48 +352,51 @@ export function ProcurementRequestCreatePage() {
                             </ComboboxList>
                           </ComboboxContent>
                         </Combobox>
-                        {line.item_template_id && (
-                          <div className="mt-1 flex gap-1">
-                            <Select
-                              onValueChange={(v) => {
-                                const variantId = Number(v);
-                                if (variantId) {
-                                  updateLine(line._key, {
-                                    item_variant_id: variantId,
-                                    variant_name: v,
-                                  });
-                                } else {
-                                  updateLine(line._key, {
-                                    item_variant_id: null,
-                                    variant_name: undefined,
-                                  });
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="h-7 text-xs">
-                                <SelectValue placeholder="Variant" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="">— No variant —</SelectItem>
-                              </SelectContent>
-                            </Select>
+                        {loadingVariant[line._key] && (
+                          <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                            <Loader2 className="h-3 w-3 animate-spin" /> Loading variants...
                           </div>
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        <Input
-                          placeholder="Item name"
-                          value={line.item_name}
-                          onChange={(e) => updateLine(line._key, { item_name: e.target.value })}
-                          className="h-8 text-xs"
-                        />
+                        {hasVariants ? (
+                          <Select
+                            value={line.variant_name ?? ""}
+                            onValueChange={(v: string) => {
+                              const vr = variantOptions[line._key].find((x) => x.name === v);
+                              if (vr) {
+                                updateLine(line._key, {
+                                  item_variant_id: vr.id,
+                                  variant_name: vr.name,
+                                  unit_price: vr.list_price ?? line.unit_price,
+                                });
+                              } else {
+                                updateLine(line._key, {
+                                  item_variant_id: null,
+                                  variant_name: undefined,
+                                });
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Select variant" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {variantOptions[line._key].map((vr) => (
+                                <SelectItem key={vr.id} value={vr.name} className="text-xs">{vr.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         <Input
                           placeholder="UOM"
                           value={line.uom ?? ""}
                           onChange={(e) => updateLine(line._key, { uom: e.target.value || null })}
-                          className="h-8 text-xs w-20"
+                          className="h-8 text-xs"
                         />
                       </td>
                       <td className="px-3 py-2">
@@ -372,20 +406,20 @@ export function ProcurementRequestCreatePage() {
                           step="1"
                           value={line.qty}
                           onChange={(e) => updateLine(line._key, { qty: Number(e.target.value) || 0 })}
-                          className="h-8 text-xs w-20 text-right"
+                          className="h-8 text-xs text-right w-full"
                         />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 w-[120px]">
                         <Input
                           type="number"
                           min="0"
                           step="0.01"
                           value={line.unit_price}
                           onChange={(e) => updateLine(line._key, { unit_price: Number(e.target.value) || 0 })}
-                          className="h-8 text-xs w-24 text-right"
+                          className="h-8 text-xs text-right w-full"
                         />
                       </td>
-                      <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">
+                      <td className="px-3 py-2 text-right font-mono text-xs tabular-nums w-[110px] max-w-[110px] truncate">
                         {formatPHP(line.qty * line.unit_price)}
                       </td>
                       <td className="px-3 py-2">
@@ -394,7 +428,8 @@ export function ProcurementRequestCreatePage() {
                         </Button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="border-t font-medium">
