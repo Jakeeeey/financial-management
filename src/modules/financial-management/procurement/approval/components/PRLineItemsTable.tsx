@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Trash2, Save, Plus } from "lucide-react";
@@ -125,7 +125,7 @@ function VariantSelect({
   const [variants, setVariants] = useState<ItemVariant[]>([]);
 
   useEffect(() => {
-    if (!templateId) { setVariants([]); return; }
+    if (!templateId) return;
     let cancelled = false;
     listItemVariants(templateId).then((vs) => { if (cancelled) return; setVariants(vs); });
     return () => { cancelled = true; };

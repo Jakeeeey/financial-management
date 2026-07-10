@@ -37,7 +37,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const detailsData = await detailsRes.json();
     const details = detailsData.data || [];
 
-    const sup = master.supplier_id as Record<string, unknown> | null | undefined;
     const enc = master.encoder_id as Record<string, unknown> | null | undefined;
 
     const poNo = `PO-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 999999)).padStart(6, "0")}`;

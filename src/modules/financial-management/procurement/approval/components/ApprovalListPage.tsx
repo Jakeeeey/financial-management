@@ -1,11 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { PRFilters } from "./PRFilters";
 import { PRTable } from "./PRTable";
 import { usePRList } from "../hooks/usePRList";
 
 export default function ApprovalListPage() {
+  const router = useRouter();
   const [procurementNo, setProcurementNo] = React.useState("");
   const [debouncedProcurementNo, setDebouncedProcurementNo] = React.useState("");
   const [status, setStatus] = React.useState("all");
@@ -32,7 +34,7 @@ export default function ApprovalListPage() {
     [debouncedProcurementNo, status, supplierId, dateFrom, dateTo]
   );
 
-  const { rows, total, loading, error, reload } = usePRList(query);
+  const { rows, total, loading, error } = usePRList(query);
 
   return (
     <div className="space-y-4">

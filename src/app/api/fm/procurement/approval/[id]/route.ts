@@ -76,6 +76,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
-export async function PATCH(request: NextRequest) {
+export async function PATCH() {
   return NextResponse.json({ message: "Not implemented" }, { status: 501 });
 }

@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { supplier_id, lead_date, department_id, transaction_type, status, items } = body;
+    const { supplier_id, lead_date, department_id, status, items } = body;
 
     let encoder_id: number | null = null;
     if (token) {

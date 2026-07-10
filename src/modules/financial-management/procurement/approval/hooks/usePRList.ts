@@ -71,6 +71,7 @@ export function usePRList(query: PRListQuery) {
       if (ac.signal.aborted) return;
       setState((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : "Unknown error" }));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.q, query.status, query.supplier_id, query.date_from, query.date_to, query.page, query.pageSize]);
 
   React.useEffect(() => {

@@ -155,7 +155,10 @@ export function RequestCreatePage() {
         encoder_id: 1,
         department_id: null,
         status: "pending",
-        items: lineItems.map(({ _key, template_name, variant_name, ...item }) => item),
+        items: lineItems.map(({ _key, template_name, variant_name, ...item }) => {
+          void _key; void template_name; void variant_name;
+          return item;
+        }),
       });
       toast.success(`Saved! Procurement #${result.procurement_no} created.`);
       router.push(`/fm/procurement/approval/${result.id}`);
@@ -237,9 +240,9 @@ export function RequestCreatePage() {
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="px-3 py-2 text-left font-medium min-w-[200px]">Item</th>
-                    <th className="px-3 py-2 text-left font-medium min-w-[160px]">Variant</th>
-                    <th className="px-3 py-2 text-left font-medium w-[1%] whitespace-nowrap min-w-[70px]">UOM</th>
-                    <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[80px]">Qty</th>
+                    <th className="px-3 py-2 text-left font-medium min-w-[200px]">Variant</th>
+                    <th className="px-3 py-2 text-left font-medium w-[1%] whitespace-nowrap min-w-[120px]">UOM</th>
+                    <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[120px]">Qty</th>
                     <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[120px]">Unit Price</th>
                     <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[110px]">Total</th>
                     <th className="px-3 py-2"></th>
