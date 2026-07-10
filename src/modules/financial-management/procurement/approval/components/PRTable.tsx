@@ -4,10 +4,11 @@ import * as React from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Eye } from "lucide-react";
+import { Eye, ExternalLink } from "lucide-react";
 import type { ProcurementRequest } from "../utils/types";
 import { PRStatusBadge } from "./PRStatusBadge";
 import { formatPHP, formatDate } from "../utils/format";
+import { useRouter } from "next/navigation";
 
 type PRTableProps = {
   rows: ProcurementRequest[];
@@ -18,6 +19,7 @@ type PRTableProps = {
 };
 
 export function PRTable({ rows, loading, error, total, onView }: PRTableProps) {
+  const router = useRouter();
   if (loading) {
     return <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>;
   }
@@ -61,7 +63,16 @@ export function PRTable({ rows, loading, error, total, onView }: PRTableProps) {
               <TableCell className="max-w-[200px] truncate">{row.supplier_name ?? `Supplier #${row.supplier_id}`}</TableCell>
               <TableCell>{formatDate(row.lead_date)}</TableCell>
               <TableCell><PRStatusBadge status={row.status} /></TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">{row.po_no ? `PO #${row.po_no}` : "—"}</TableCell>
+              <TableCell>
+                {row.po_no ? (
+                  <button
+                    onClick={() => router.push(`/fm/procurement/purchase-order/${row.po_no}`)}
+                    className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline cursor-pointer"
+                  >
+                    PO #{row.po_no} <ExternalLink className="h-3 w-3" />
+                  </button>
+                ) : "—"}
+              </TableCell>
               <TableCell className="text-right font-mono tabular-nums">{formatPHP(row.total_amount)}</TableCell>
               <TableCell className="text-right">
                 <Button variant="ghost" size="icon" onClick={() => onView(row.id)}><Eye className="h-4 w-4" /></Button>

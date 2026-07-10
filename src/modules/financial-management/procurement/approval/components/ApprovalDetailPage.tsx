@@ -149,7 +149,7 @@ export default function ApprovalDetailPage({ id }: ApprovalDetailPageProps) {
     try {
       const result = await generatePOFromPR(id);
       toast.success(`Purchase Order #${result.purchase_order_no} generated`);
-      reload();
+      router.push(`/fm/procurement/purchase-order/${result.purchase_order_id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to generate PO");
     } finally { setGenerating(false); }
