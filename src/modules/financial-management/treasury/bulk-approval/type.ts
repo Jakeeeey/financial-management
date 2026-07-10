@@ -127,6 +127,7 @@ export type ExpenseDraftRow = {
   feedback?: string | null;
   status?: string | null;
   header_id?: number | string | null;
+  is_supervisor?: number | string | null;
 };
 
 export type ApprovalVoteRow = {

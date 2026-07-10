@@ -42,6 +42,7 @@ export interface ExpenseDraft {
   version: number;
   feedback: string | null;
   return_to: string | null;
+  is_supervisor?: number | null;
 }
 
 /** Match vos_database.disbursement_draft */
@@ -118,6 +119,7 @@ export interface ExpenseDraftRow {
   remarks: string | null;
   version: number;
   feedback: string | null;
+  is_supervisor?: number | null;
 }
 
 export interface ExpenseHeader {
