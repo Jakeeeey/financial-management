@@ -1062,6 +1062,7 @@ export async function POST(req: NextRequest) {
       remarks?: string | null;
       version?: number | string | null;
       feedback?: string | null;
+      is_supervisor?: number | string | null;
     };
 
     type SalesmanRow = {

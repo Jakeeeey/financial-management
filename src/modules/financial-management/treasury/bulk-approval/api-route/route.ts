@@ -2584,7 +2584,7 @@ export async function POST(req: NextRequest) {
           // if every item was rejected, the draft should be "Rejected";
           // if items were flagged with concern, keep "With Concern".
           const terminalStatus: DraftLifecycleStatus =
-            finalVoteStatus === "REJECTED" ? "Rejected" : "With Concern";
+            (finalVoteStatus as string) === "REJECTED" ? "Rejected" : "With Concern";
 
           await directusFetch(`/items/disbursement_draft/${draftId}`, {
             method: "PATCH",
