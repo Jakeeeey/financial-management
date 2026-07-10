@@ -394,7 +394,7 @@ export function ProcurementRequestCreatePage() {
                               }
                             }}
                           >
-                            <SelectTrigger className="h-8 text-xs">
+                            <SelectTrigger className="h-8 text-xs w-full">
                               <SelectValue placeholder="Select variant" />
                             </SelectTrigger>
                             <SelectContent>
