@@ -1,8 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { PRStatusBadge } from "./PRStatusBadge";
 import { formatDate, formatPHP } from "../utils/format";
+import { ExternalLink } from "lucide-react";
 import type { ProcurementRequest } from "../utils/types";
 
 type PRDetailHeaderProps = {
@@ -11,6 +13,7 @@ type PRDetailHeaderProps = {
 };
 
 export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
+  const router = useRouter();
   const displayTotal = computedTotal ?? master.total_amount ?? 0;
 
   return (
@@ -53,7 +56,12 @@ export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
           {master.po_no && (
             <div>
               <span className="text-muted-foreground block">PO Reference</span>
-              <span className="font-mono text-xs">PO #{master.po_no}</span>
+              <button
+                onClick={() => router.push(`/fm/procurement/purchase-order/${master.po_no}`)}
+                className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline cursor-pointer"
+              >
+                PO #{master.po_no} <ExternalLink className="h-3 w-3" />
+              </button>
             </div>
           )}
           {master.approved_date && (
