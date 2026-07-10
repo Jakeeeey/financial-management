@@ -90,8 +90,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         created_at: d.created_at as string,
         updated_at: d.updated_at as string,
         uom: d.uom as string,
-        item_name: d.item_name as string,
-        item_description: d.item_description as string,
         template_name: (itid?.name as string) ?? null,
         variant_name: (ivid?.name as string) ?? null,
         supplier_name: null as string | null,

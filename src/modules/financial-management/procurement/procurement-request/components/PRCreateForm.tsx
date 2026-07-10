@@ -97,8 +97,6 @@ export function ProcurementRequestCreatePage() {
         _key: _nextKey++,
         item_template_id: null,
         item_variant_id: null,
-        item_name: "",
-        item_description: null,
         uom: null,
         qty: 1,
         unit_price: 0,
@@ -124,8 +122,6 @@ export function ProcurementRequestCreatePage() {
     if (!templateName) {
       updateLine(lineKey, {
         item_template_id: null,
-        item_name: "",
-        item_description: null,
         uom: null,
         unit_price: 0,
         template_name: undefined,
@@ -143,8 +139,6 @@ export function ProcurementRequestCreatePage() {
     if (!t) return;
     updateLine(lineKey, {
       item_template_id: t.id,
-      item_name: t.name,
-      item_description: t.description ?? null,
       uom: t.uom ?? null,
       unit_price: t.base_price ?? 0,
       template_name: t.name,

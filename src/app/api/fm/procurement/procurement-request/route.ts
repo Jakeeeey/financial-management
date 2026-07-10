@@ -121,7 +121,28 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { supplier_id, lead_date, encoder_id, department_id, transaction_type, status, items } = body;
+    const { supplier_id, lead_date, department_id, transaction_type, status, items } = body;
+
+    let encoder_id: number | null = null;
+    if (token) {
+      try {
+        const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString("utf-8"));
+        const userId = payload?.id || payload?.user_id || payload?.sub;
+        if (userId) {
+          const userRes = await fetch(
+            `${DIRECTUS_URL}/items/user/${userId}?fields=user_id`,
+            { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+          );
+          if (userRes.ok) {
+            const userData = await userRes.json();
+            const uid = userData?.data?.user_id ?? userData?.data?.id;
+            if (uid) encoder_id = Number(uid);
+          }
+        }
+      } catch {
+        // fallback: send null
+      }
+    }
 
     if (!supplier_id || !items?.length) {
       return NextResponse.json(
@@ -177,8 +198,6 @@ export async function POST(request: NextRequest) {
         procurement_id: procurementId,
         item_template_id: item.item_template_id || null,
         item_variant_id: item.item_variant_id || null,
-        item_name: item.item_name || "",
-        item_description: item.item_description || null,
         uom: item.uom || null,
         qty,
         unit_price,

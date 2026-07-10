@@ -19,9 +19,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { procurement_id, item_template_id, item_variant_id, item_name, item_description, qty, unit_price, uom, supplier, date_added } = body;
+    const { procurement_id, item_template_id, item_variant_id, qty, unit_price, uom, supplier, date_added } = body;
 
-    if (!procurement_id || !item_name || qty === undefined || unit_price === undefined) {
+    if (!procurement_id || qty === undefined || unit_price === undefined) {
       return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
     }
 
@@ -29,14 +29,12 @@ export async function POST(request: NextRequest) {
 
     const createBody: Record<string, unknown> = {
       procurement_id: Number(procurement_id),
-      item_name: String(item_name),
       qty: Number(qty),
       unit_price: Number(unit_price),
       total_amount,
     };
     if (item_template_id !== undefined && item_template_id !== null) createBody.item_template_id = Number(item_template_id);
     if (item_variant_id !== undefined && item_variant_id !== null) createBody.item_variant_id = Number(item_variant_id);
-    if (item_description) createBody.item_description = String(item_description);
     if (uom) createBody.uom = String(uom);
     if (supplier !== undefined && supplier !== null) createBody.supplier = Number(supplier);
     createBody.date_added = date_added || new Date().toISOString().split("T")[0];

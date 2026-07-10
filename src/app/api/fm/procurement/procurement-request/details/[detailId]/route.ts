@@ -26,6 +26,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (body.unit_price !== undefined) patchBody.unit_price = Number(body.unit_price);
     if (body.uom !== undefined) patchBody.uom = body.uom;
     if (body.supplier !== undefined) patchBody.supplier = body.supplier === null ? null : Number(body.supplier);
+    if (body.item_template_id !== undefined) patchBody.item_template_id = body.item_template_id === null ? null : Number(body.item_template_id);
+    if (body.item_variant_id !== undefined) patchBody.item_variant_id = body.item_variant_id === null ? null : Number(body.item_variant_id);
 
     const q = patchBody.qty as number | undefined;
     const up = patchBody.unit_price as number | undefined;

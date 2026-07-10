@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Trash2, Save, Plus, Pencil } from "lucide-react";
+import { Loader2, Trash2, Save, Plus } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -39,10 +39,8 @@ type NewRow = {
   id: number;
   item_template_id: number | null;
   item_variant_id: number | null;
-  item_name: string;
   template_name: string | null;
   variant_name: string | null;
-  item_description: string | null;
   qty: number;
   unit_price: number;
   uom: string;
@@ -70,14 +68,9 @@ function ItemTemplateCombobox({
   disabled?: boolean;
 }) {
   const [searchText, setSearchText] = useState("");
-  const [selectedValue, setSelectedValue] = useState<string | null>(templateId ? `tmpl:${templateId}` : null);
+  const [selectedValue, setSelectedValue] = useState<string | null>(templateId ? `tmpl:${templateId}:${value}` : null);
   const [items, setItems] = useState<string[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const debouncedSearch = useDebounce(searchText, 300);
-
-  const selectedName = selectedValue && selectedValue.startsWith("tmpl:")
-    ? selectedValue.split(":").slice(2).join(":")
-    : null;
 
   useEffect(() => {
     if (!searchText.trim()) {
@@ -96,39 +89,29 @@ function ItemTemplateCombobox({
   function handleValueChange(selected: string | null) {
     if (!selected) return;
     setSelectedValue(selected);
-    setIsSearching(false);
     const parts = selected.split(":");
     if (parts[0] === "tmpl" && parts[1]) {
       const id = Number(parts[1]);
       const name = parts.slice(2).join(":");
-      setSearchText(name);
+      setSearchText("");
       const tmpl: ItemTemplate = { id, name, uom: null, base_price: null, description: null };
       onSelect(tmpl);
     }
   }
 
-  if (selectedName && !isSearching) {
-    return (
-      <div className="flex items-center gap-1 min-w-[180px]">
-        <span className="text-xs font-medium truncate flex-1">{selectedName}</span>
-        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setIsSearching(true)}>
-          <Pencil className="h-3 w-3" />
-        </Button>
-      </div>
-    );
-  }
+  const selectedLabel = selectedValue?.split(":").slice(2).join(":") || value;
 
   return (
     <div className="min-w-[180px]">
-      <Combobox items={items} value={isSearching ? null : selectedValue} onValueChange={handleValueChange} disabled={disabled}>
+      <Combobox items={items} value={selectedValue} onValueChange={handleValueChange} disabled={disabled}>
         <ComboboxInput
-          placeholder={disabled ? "—" : "Search item template..."}
+          placeholder={disabled ? "—" : templateId ? selectedLabel : "Search item template..."}
           className="h-8 text-xs"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
+          value={selectedValue && !searchText ? selectedLabel : searchText}
+          onChange={(e) => { setSearchText(e.target.value); if (selectedValue) setSelectedValue(null); }}
         />
         <ComboboxContent>
-          <ComboboxEmpty>{searchText.trim() ? "No results" : "Type to search items"}</ComboboxEmpty>
+          <ComboboxEmpty>{searchText.trim() || !selectedValue ? "Type to search items" : "No results"}</ComboboxEmpty>
           <ComboboxList>
             {(item) => {
               const parts = item.split(":");
@@ -244,7 +227,7 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
 
   function handleAddRow() {
     nextId.current -= 1;
-    const newRow: NewRow = { id: nextId.current, item_template_id: null, item_variant_id: null, item_name: "", template_name: null, variant_name: null, item_description: null, qty: 1, unit_price: 0, uom: "", saving: false };
+    const newRow: NewRow = { id: nextId.current, item_template_id: null, item_variant_id: null, template_name: null, variant_name: null, qty: 1, unit_price: 0, uom: "", saving: false };
     setNewRows((prev) => [newRow, ...prev]);
   }
 
@@ -253,10 +236,8 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
     updateNewRow(id, {
       item_template_id: tmpl.id,
       item_variant_id: null,
-      item_name: tmpl.name,
       template_name: tmpl.name,
       variant_name: null,
-      item_description: tmpl.description,
       uom: tmpl.uom ?? "",
       unit_price: tmpl.base_price ?? 0,
     });
@@ -277,8 +258,8 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
   async function handleSaveNewRow(id: number) {
     const row = newRows.find((r) => r.id === id);
     if (!row) return;
-    if (!row.item_name.trim()) {
-      toast.error("Item name is required");
+    if (!row.template_name?.trim()) {
+      toast.error("Item template is required");
       return;
     }
     if (row.qty <= 0) {
@@ -291,8 +272,6 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
         procurement_id: procurementId,
         item_template_id: row.item_template_id,
         item_variant_id: row.item_variant_id,
-        item_name: row.item_name.trim(),
-        item_description: row.item_description,
         qty: row.qty,
         unit_price: row.unit_price,
         uom: row.uom || undefined,
@@ -300,7 +279,7 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
       setNewRows((prev) => prev.filter((r) => r.id !== id));
       onDetailAdded({
         ...created,
-        template_name: row.template_name ?? row.item_name,
+        template_name: row.template_name,
         variant_name: row.variant_name,
       });
       toast.success("Line item added");
@@ -325,21 +304,19 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
     unit_price: r.unit_price,
     total_amount: r.qty * r.unit_price,
     uom: r.uom || null,
-    item_name: r.item_name || null,
-    item_description: r.item_description || null,
     item_variant_id: r.item_variant_id || null,
     item_template_id: r.item_template_id || null,
     date_added: null,
     link: null,
     created_at: null,
     updated_at: null,
-    template_name: (r.template_name ?? r.item_name) || null,
+    template_name: r.template_name ?? null,
     variant_name: r.variant_name ?? null,
   } as ProcurementDetail));
 
   const allDetails = [...tempDetails, ...details];
   const filtered = allDetails.filter((d) => {
-    if (filterText && !(d.item_name ?? "").toLowerCase().includes(filterText.toLowerCase()) && !(d.template_name ?? "").toLowerCase().includes(filterText.toLowerCase())) return false;
+    if (filterText && !(d.template_name ?? "").toLowerCase().includes(filterText.toLowerCase())) return false;
     return true;
   });
 
@@ -389,15 +366,12 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
                   <td className="px-3 py-2 max-w-[220px] min-w-[180px]">
                     {isNew ? (
                       <ItemTemplateCombobox
-                        value={nr?.item_name ?? ""}
+                        value={nr?.template_name ?? ""}
                         templateId={nr?.item_template_id ?? null}
                         onSelect={(tmpl) => handleTemplateSelect(d.id, tmpl)}
                       />
                     ) : (
-                      <>
-                        <div className="font-medium truncate">{d.item_name ?? d.template_name ?? "—"}</div>
-                        {d.item_description && <div className="text-xs text-muted-foreground truncate">{d.item_description}</div>}
-                      </>
+                      <div className="font-medium truncate">{d.template_name ?? "—"}</div>
                     )}
                   </td>
                   <td className="px-3 py-2">

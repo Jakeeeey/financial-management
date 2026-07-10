@@ -38,10 +38,8 @@ export type ProcurementDetail = {
   created_at: string | null;
   updated_at: string | null;
   uom: string | null;
-  item_name: string | null;
-  item_description: string | null;
-  template_name?: string | null;
-  variant_name?: string | null;
+  template_name: string | null;
+  variant_name: string | null;
   supplier_name?: string | null;
 };
 
@@ -109,8 +107,6 @@ export type CreatePRInput = {
 export type CreatePRItemInput = {
   item_template_id: number | null;
   item_variant_id: number | null;
-  item_name: string;
-  item_description: string | null;
   uom: string | null;
   qty: number;
   unit_price: number;
@@ -122,14 +118,14 @@ export type UpdateDetailInput = {
   unit_price?: number;
   uom?: string;
   supplier?: number | null;
+  item_template_id?: number | null;
+  item_variant_id?: number | null;
 };
 
 export type CreateDetailInput = {
   procurement_id: number;
   item_template_id: number | null;
   item_variant_id: number | null;
-  item_name: string;
-  item_description?: string | null;
   qty: number;
   unit_price: number;
   uom?: string;
