@@ -135,7 +135,6 @@ export default function ProcurementRequestDetailPage({ id }: ProcurementRequestD
   const [approving, setApproving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-
   useEffect(() => {
     setMounted(true);
   }, []);

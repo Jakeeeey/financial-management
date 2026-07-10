@@ -20,7 +20,14 @@ import {
   ComboboxList,
 } from "@/components/ui/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { CalendarIcon, Loader2, Plus, Trash2 } from "lucide-react";
+import { format, isValid } from "date-fns";
 import { useRouter } from "next/navigation";
 import { createPR } from "../providers/prService";
 import { searchSuppliers, listItemTemplates, listItemVariants } from "../providers/lookupsService";
@@ -38,7 +45,7 @@ let _nextKey = 1;
 
 export function ProcurementRequestCreatePage() {
   const router = useRouter();
-  const [leadDate, setLeadDate] = React.useState(() => new Date().toISOString().split("T")[0]);
+  const [leadDate, setLeadDate] = React.useState<Date>(new Date());
   const [lineItems, setLineItems] = React.useState<LineItem[]>([]);
   const [submitting, setSubmitting] = React.useState(false);
 
@@ -174,7 +181,7 @@ export function ProcurementRequestCreatePage() {
     try {
       const result = await createPR({
         supplier_id: selectedSupplier.id,
-        lead_date: leadDate,
+        lead_date: format(leadDate, "yyyy-MM-dd"),
         encoder_id: 1,
         department_id: null,
         status: "pending",
@@ -196,92 +203,108 @@ export function ProcurementRequestCreatePage() {
           <CardTitle className="text-lg">Supplier Information</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <Label>Supplier</Label>
-            <div className="mt-1.5">
-              <Combobox
-                items={supplierItems}
-                value={selectedSupplier?.supplier_name ?? ""}
-                onValueChange={(name: string | null) => {
-                  if (name) {
-                    const data = supplierDataRef.current[name];
-                    setSelectedSupplier(data ?? null);
-                  } else {
-                    setSelectedSupplier(null);
-                    setSupplierSearchText("");
-                  }
-                }}
-              >
-                <ComboboxInput
-                  placeholder="Search supplier..."
-                  showClear
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    setSupplierSearchText(e.target.value);
-                    if (!e.target.value) setSelectedSupplier(null);
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="max-w-sm">
+              <Label>Supplier</Label>
+              <div className="mt-1.5">
+                <Combobox
+                  items={supplierItems}
+                  value={selectedSupplier?.supplier_name ?? ""}
+                  onValueChange={(name: string | null) => {
+                    if (name) {
+                      const data = supplierDataRef.current[name];
+                      setSelectedSupplier(data ?? null);
+                    } else {
+                      setSelectedSupplier(null);
+                      setSupplierSearchText("");
+                    }
                   }}
-                />
-                <ComboboxContent>
-                  <ComboboxEmpty>No suppliers found.</ComboboxEmpty>
-                  <ComboboxList>
-                    {(name: string) => (
-                      <ComboboxItem key={name} value={name}>
-                        {name}
-                      </ComboboxItem>
-                    )}
-                  </ComboboxList>
-                </ComboboxContent>
-              </Combobox>
+                >
+                  <ComboboxInput
+                    placeholder="Search supplier..."
+                    showClear
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      setSupplierSearchText(e.target.value);
+                      if (!e.target.value) setSelectedSupplier(null);
+                    }}
+                  />
+                  <ComboboxContent>
+                    <ComboboxEmpty>No suppliers found.</ComboboxEmpty>
+                    <ComboboxList>
+                      {(name: string) => (
+                        <ComboboxItem key={name} value={name}>
+                          {name}
+                        </ComboboxItem>
+                      )}
+                    </ComboboxList>
+                  </ComboboxContent>
+                </Combobox>
+              </div>
+            </div>
+            <div className="max-w-sm ml-auto sm:ml-auto">
+              <Label>Lead Date</Label>
+              <div className="mt-1.5">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {isValid(leadDate) ? format(leadDate, "MMM dd, yyyy") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={leadDate}
+                      onSelect={(d) => d && setLeadDate(d)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
           </div>
 
           {selectedSupplier && (
-            <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Type</span>
+            <div className="rounded-md border bg-muted/30 p-3 text-sm grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <div>
+                <span className="text-muted-foreground text-xs block">Type</span>
                 <span className="font-medium">{selectedSupplier.supplier_type ?? "\u2014"}</span>
               </div>
               {selectedSupplier.email_address && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Email</span>
-                  <span>{selectedSupplier.email_address}</span>
+                <div>
+                  <span className="text-muted-foreground text-xs block">Email</span>
+                  <span className="truncate">{selectedSupplier.email_address}</span>
                 </div>
               )}
               {selectedSupplier.phone_number && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Phone</span>
+                <div>
+                  <span className="text-muted-foreground text-xs block">Phone</span>
                   <span>{selectedSupplier.phone_number}</span>
                 </div>
               )}
               {selectedSupplier.tin_number && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">TIN</span>
+                <div>
+                  <span className="text-muted-foreground text-xs block">TIN</span>
                   <span className="font-mono text-xs">{selectedSupplier.tin_number}</span>
                 </div>
               )}
               {selectedSupplier.payment_terms && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Payment Terms</span>
+                <div>
+                  <span className="text-muted-foreground text-xs block">Payment Terms</span>
                   <span>{selectedSupplier.payment_terms}</span>
                 </div>
               )}
               {selectedSupplier.address && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Address</span>
-                  <span className="text-right max-w-[250px]">{selectedSupplier.address}</span>
+                <div>
+                  <span className="text-muted-foreground text-xs block">Address</span>
+                  <span className="truncate block">{selectedSupplier.address}</span>
                 </div>
               )}
             </div>
           )}
-
-          <div className="max-w-[240px]">
-            <Label>Lead Date</Label>
-            <Input
-              type="date"
-              value={leadDate}
-              onChange={(e) => setLeadDate(e.target.value)}
-              className="mt-1.5"
-            />
-          </div>
         </CardContent>
       </Card>
 
@@ -304,13 +327,13 @@ export function ProcurementRequestCreatePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-3 py-2 text-left font-medium w-[180px]">Item</th>
-                    <th className="px-3 py-2 text-left font-medium w-[120px]">Variant</th>
-                    <th className="px-3 py-2 text-left font-medium w-[70px]">UOM</th>
-                    <th className="px-3 py-2 text-right font-medium w-[80px]">Qty</th>
-                    <th className="px-3 py-2 text-right font-medium w-[120px]">Unit Price</th>
-                    <th className="px-3 py-2 text-right font-medium w-[110px]">Total</th>
-                    <th className="px-3 py-2 w-[48px]"></th>
+                    <th className="px-3 py-2 text-left font-medium">Item</th>
+                    <th className="px-3 py-2 text-left font-medium">Variant</th>
+                    <th className="px-3 py-2 text-left font-medium w-[1%] whitespace-nowrap">UOM</th>
+                    <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[90px]">Qty</th>
+                    <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap">Unit Price</th>
+                    <th className="px-3 py-2 text-right font-medium">Total</th>
+                    <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -318,7 +341,7 @@ export function ProcurementRequestCreatePage() {
                     const hasVariants = line.item_template_id && variantOptions[line._key] !== undefined && variantOptions[line._key].length > 0;
                     return (
                     <tr key={line._key} className="border-b last:border-0">
-                      <td className="px-3 py-2 w-[180px]">
+                      <td className="px-3 py-2 max-w-[240px] min-w-[200px]">
                         <Combobox
                           items={itemTemplateItems}
                           value={line.template_name ?? ""}
@@ -402,7 +425,7 @@ export function ProcurementRequestCreatePage() {
                           className="h-8 text-xs text-right w-full"
                         />
                       </td>
-                      <td className="px-3 py-2 w-[120px]">
+                      <td className="px-3 py-2">
                         <Input
                           type="number"
                           min="0"
@@ -412,7 +435,7 @@ export function ProcurementRequestCreatePage() {
                           className="h-8 text-xs text-right w-full"
                         />
                       </td>
-                      <td className="px-3 py-2 text-right font-mono text-xs tabular-nums w-[110px] max-w-[110px] truncate">
+                      <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">
                         {formatPHP(line.qty * line.unit_price)}
                       </td>
                       <td className="px-3 py-2">

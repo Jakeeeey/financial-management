@@ -71,6 +71,7 @@ function ItemTemplateCombobox({
   const [selectedValue, setSelectedValue] = useState<string | null>(templateId ? `tmpl:${templateId}:${value}` : null);
   const [items, setItems] = useState<string[]>([]);
   const debouncedSearch = useDebounce(searchText, 300);
+  const templateDataRef = useRef<Record<string, ItemTemplate>>({});
 
   useEffect(() => {
     if (!searchText.trim()) {
@@ -81,6 +82,9 @@ function ItemTemplateCombobox({
     let cancelled = false;
     listItemTemplates(searchText).then((templates) => {
       if (cancelled) return;
+      const map: Record<string, ItemTemplate> = {};
+      templates.forEach((t) => { const key = `tmpl:${t.id}`; map[key] = t; });
+      templateDataRef.current = map;
       setItems(templates.map((t) => `tmpl:${t.id}:${t.name}`));
     });
     return () => { cancelled = true; };
@@ -94,15 +98,20 @@ function ItemTemplateCombobox({
       const id = Number(parts[1]);
       const name = parts.slice(2).join(":");
       setSearchText("");
-      const tmpl: ItemTemplate = { id, name, uom: null, base_price: null, description: null };
-      onSelect(tmpl);
+      const cached = templateDataRef.current[`tmpl:${id}`];
+      if (cached) {
+        onSelect(cached);
+      } else {
+        const tmpl: ItemTemplate = { id, name, uom: null, base_price: null, description: null };
+        onSelect(tmpl);
+      }
     }
   }
 
   const selectedLabel = selectedValue?.split(":").slice(2).join(":") || value;
 
   return (
-    <div className="min-w-[180px]">
+    <div className="min-w-[200px]">
       <Combobox items={items} value={selectedValue} onValueChange={handleValueChange} disabled={disabled}>
         <ComboboxInput
           placeholder={disabled ? "—" : templateId ? selectedLabel : "Search item template..."}
@@ -159,7 +168,7 @@ function VariantSelect({
       }}
       disabled={disabled}
     >
-      <SelectTrigger className="h-7 text-xs max-w-[140px]">
+      <SelectTrigger className="h-7 text-xs w-full">
         <SelectValue placeholder="Select variant" />
       </SelectTrigger>
       <SelectContent>
@@ -339,10 +348,10 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="px-3 py-2 text-left font-medium">Item</th>
-              <th className="px-3 py-2 text-left font-medium">Variant</th>
-              <th className="px-3 py-2 text-left font-medium">UOM</th>
-              <th className="px-3 py-2 text-right font-medium">Qty</th>
-              <th className="px-3 py-2 text-right font-medium">Unit Price</th>
+              <th className="px-3 py-2 text-left font-medium min-w-[200px]">Variant</th>
+              <th className="px-3 py-2 text-left font-medium w-[1%] whitespace-nowrap">UOM</th>
+              <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[90px]">Qty</th>
+              <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap">Unit Price</th>
               <th className="px-3 py-2 text-right font-medium">Total</th>
               {!readOnly && <th className="px-3 py-2 text-right font-medium">Actions</th>}
             </tr>
@@ -361,9 +370,9 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
               const isSaving = savingId === d.id;
               const isDeleting = deletingId === d.id;
               const nr = isNew ? newRows.find((r) => r.id === d.id) : null;
-              return (
+  return (
                 <tr key={d.id} className="border-b last:border-0 hover:bg-muted/20">
-                  <td className="px-3 py-2 max-w-[220px] min-w-[180px]">
+                  <td className="px-3 py-2 max-w-[240px] min-w-[200px]">
                     {isNew ? (
                       <ItemTemplateCombobox
                         value={nr?.template_name ?? ""}
@@ -450,9 +459,8 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
                     )}
                   </td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums">
-                    {isNew
-                      ? formatPHP((nr?.qty ?? 0) * (nr?.unit_price ?? 0))
-                      : formatPHP((d.qty || 0) * (d.unit_price || 0))}
+                    {formatPHP((d.qty || 0) * (d.unit_price || 0))}
+
                   </td>
                   {!readOnly && (
                     <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -490,10 +498,7 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
             <tr className="border-t font-medium">
               <td colSpan={5} className="px-3 py-2 text-right">Grand Total</td>
               <td className="px-3 py-2 text-right font-mono tabular-nums">
-                {formatPHP(filtered.reduce((s, d) => {
-                  if (d.id === editingId) return s + Number(editQty * editPrice);
-                  return s + Number((d.qty || 0) * (d.unit_price || 0));
-                }, 0))}
+                {formatPHP(filtered.reduce((s, d) => s + Number((d.qty || 0) * (d.unit_price || 0)), 0))}
               </td>
               {!readOnly && <td></td>}
             </tr>
