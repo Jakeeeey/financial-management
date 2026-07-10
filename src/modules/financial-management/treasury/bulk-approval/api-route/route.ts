@@ -1150,24 +1150,36 @@ export async function GET(req: NextRequest) {
     if (resource === "drafts") {
       const filterDivId = toNumericId(sp.get("divisionId"));
 
-      const filter: Record<string, unknown> = {
-        division_id: filterDivId ? { _eq: filterDivId } : { _in: myDivisionIds },
-        status: {
-          _nin: ["Approved", "Rejected"],
-        },
-      };
+      // Build the draft list URL using explicit Directus bracket-notation for
+      // array filters. JSON.stringify passes an array as a single string value
+      // which Directus does not interpret as a _nin array — bracket params are
+      // the correct serialization.
+      const divisionFilter = filterDivId
+        ? `filter[division_id][_eq]=${filterDivId}`
+        : myDivisionIds.map((id) => `filter[division_id][_in][]=${id}`).join("&");
 
-      const query = buildFilterQuery(
-        filter,
-        "id,doc_no,payee,total_amount,remarks,status,approval_version,version,transaction_date,division_id,department_id,encoder_id,transaction_type,supporting_documents_url,date_created,date_updated",
-        { sort: "-id" }
+      const excludedStatuses = ["Approved", "Rejected", "With Concern"];
+      const statusFilter = excludedStatuses
+        .map((s) => `filter[status][_nin][]=${encodeURIComponent(s)}`)
+        .join("&");
+
+      const draftFields =
+        "id,doc_no,payee,total_amount,remarks,status,approval_version,version,transaction_date,division_id,department_id,encoder_id,transaction_type,supporting_documents_url,date_created,date_updated";
+
+      const draftRes = await directusFetch(
+        `/items/disbursement_draft?${divisionFilter}&${statusFilter}&fields=${draftFields}&limit=-1&sort=-id`
       );
-
-      const draftRes = await directusFetch(`/items/disbursement_draft?${query}`);
       if (!draftRes.ok) return json(draftRes.data, { status: draftRes.status });
 
-      const realDrafts =
+      const allFetchedDrafts =
         (draftRes.data as DirectusListResponse<DisbursementDraftRow>).data ?? [];
+
+      // Safety net: strip any records the DB filter may have missed (e.g. existing
+      // malformed data where status was incorrectly set before the bug fix).
+      const EXCLUDED_STATUSES = new Set(["Approved", "Rejected", "With Concern"]);
+      const realDrafts = allFetchedDrafts.filter(
+        (d) => !EXCLUDED_STATUSES.has(d.status ?? "")
+      );
 
       const returnedFilter: Record<string, unknown> = {
         status: {
@@ -1810,19 +1822,25 @@ export async function GET(req: NextRequest) {
 
     if (resource === "log-detail") {
       const draftIdRaw = sp.get("draft_id") || sp.get("id");
+      console.log(`[log-detail] Received draftIdRaw:`, draftIdRaw);
       if (!draftIdRaw) return json({ error: "draft_id is required" }, { status: 400 });
 
       const draftId = Number(draftIdRaw);
+      console.log(`[log-detail] Parsed draftId:`, draftId);
 
       const draftRes = await directusFetch(
         `/items/disbursement_draft?filter[id][_eq]=${draftId}&fields=id,division_id&limit=1`
       );
+      console.log(`[log-detail] draftRes ok:`, draftRes.ok, `status:`, draftRes.status, `data:`, JSON.stringify(draftRes.data));
 
       const draft =
         ((draftRes.data as DirectusListResponse<DisbursementDraftRow>).data ??
           [])[0];
 
-      if (!draft) return json({ error: "Draft not found" }, { status: 404 });
+      if (!draft) {
+        console.warn(`[log-detail] Draft with ID ${draftId} not found in DB!`);
+        return json({ error: "Draft not found" }, { status: 404 });
+      }
 
       const divisionId = toNumericId(draft.division_id) ?? 0;
       if (!myDivisionIds.includes(divisionId)) {
@@ -2500,9 +2518,11 @@ export async function POST(req: NextRequest) {
       const draftStatus: DraftLifecycleStatus =
         finalVoteStatus === "WITH_CONCERN"
           ? "With Concern"
-          : remainingCount <= 0
-            ? "With Concern"
-            : "Rejected";
+          : finalVoteStatus === "REJECTED"
+            ? "Rejected"
+            : remainingCount <= 0
+              ? "With Concern"
+              : "Rejected";
 
       await directusFetch(`/items/disbursement_draft/${draftId}`, {
         method: "PATCH",
@@ -2560,18 +2580,24 @@ export async function POST(req: NextRequest) {
             .data ?? [];
 
         if (!payDraftRows.length) {
+          // No payable items remain. Determine the correct terminal status:
+          // if every item was rejected, the draft should be "Rejected";
+          // if items were flagged with concern, keep "With Concern".
+          const terminalStatus: DraftLifecycleStatus =
+            (finalVoteStatus as string) === "REJECTED" ? "Rejected" : "With Concern";
+
           await directusFetch(`/items/disbursement_draft/${draftId}`, {
             method: "PATCH",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              status: "With Concern",
+              status: terminalStatus,
               approval_version: currentVersion + 1,
             }),
           });
 
           return json({
             ok: true,
-            result: "WITH_CONCERN",
+            result: finalVoteStatus,
             message: "No payable items remained after verification.",
           });
         }

@@ -1281,7 +1281,7 @@ export async function processDraftApproval(params: {
     currentTier = tier;
   } else {
     const draftRes = await directusFetch<DirectusItemResponse<DisbursementDraftRow>>(
-      `/items/disbursement_draft/${draftId}?fields=id,status,approval_version,division_id,encoder_id,payee,transaction_type,transaction_date,doc_no`
+      `/items/disbursement_draft/${draftId}?fields=id,status,approval_version,division_id,encoder_id,payee,transaction_type,transaction_date,doc_no,is_supervisor`
     );
     draft = (draftRes.ok ? draftRes.data.data : null) ?? null;
     if (!draft) return { ok: false, status: 404, data: { error: "Draft not found" } };
@@ -1340,6 +1340,8 @@ export async function processDraftApproval(params: {
     return { ok: false, status: 400, data: { error: "Remarks required for concerns" } };
   }
 
+  const headersToUpdate = new Set<number>();
+
   if (item_decisions && Object.keys(item_decisions).length > 0) {
     const concernDecisions = Object.entries(item_decisions).filter(
       ([id]) => Number(id) < 0 && !handledVirtualExpenseIds.has(Math.abs(Number(id)))
@@ -1373,6 +1375,7 @@ export async function processDraftApproval(params: {
             approval_version: 1,
             date_created: nowTs,
             date_updated: nowTs,
+            is_supervisor: draft.is_supervisor ? toNumber(draft.is_supervisor) : 0,
           }),
         });
 
@@ -1390,6 +1393,11 @@ export async function processDraftApproval(params: {
       const expenseId = Math.abs(Number(idStr));
       const expense = await fetchExpenseById(expenseId);
       if (!expense) continue;
+
+      const headerId = toNumericId(expense.header_id);
+      if (headerId) {
+        headersToUpdate.add(headerId);
+      }
 
       if (decision.status === "APPROVED") {
         const insertResult = await insertExpenseIntoPayableDraft({
@@ -1501,6 +1509,26 @@ export async function processDraftApproval(params: {
       });
 
       if (toNumber(draft.transaction_type) === 2) {
+        const expenseIdsToFetch = culledPayables
+          .map((p) => toNumericId(p.expense_id))
+          .filter((id): id is number => Boolean(id));
+
+        const expenseHeaderMap = new Map<number, number>();
+        if (expenseIdsToFetch.length > 0) {
+          const expenseRes = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
+            `/items/expense_draft?filter[id][_in]=${expenseIdsToFetch.join(",")}&fields=id,header_id&limit=-1`
+          );
+          if (expenseRes.ok) {
+            for (const exp of expenseRes.data.data ?? []) {
+              const expId = toNumericId(exp.id);
+              const hId = toNumericId(exp.header_id);
+              if (expId && hId) {
+                expenseHeaderMap.set(expId, hId);
+              }
+            }
+          }
+        }
+
         for (const payable of culledPayables) {
           const payableId = toNumericId(payable.id);
           const expenseId = toNumericId(payable.expense_id);
@@ -1508,6 +1536,11 @@ export async function processDraftApproval(params: {
 
           const decision = item_decisions[String(payableId)];
           if (!decision) continue;
+
+          const headerId = expenseHeaderMap.get(expenseId);
+          if (headerId) {
+            headersToUpdate.add(headerId);
+          }
 
           const targetStatus = decision.status === "WITH_CONCERN" ? "With Concern" : "Rejected";
 
@@ -1534,6 +1567,10 @@ export async function processDraftApproval(params: {
           });
         }
       }
+    }
+
+    if (headersToUpdate.size > 0) {
+      await updateParentHeaderStatuses(Array.from(headersToUpdate));
     }
   }
 
@@ -1666,9 +1703,15 @@ export async function processDraftApproval(params: {
     }
   }
 
-  if (finalVoteStatus === "REJECTED" || remainingCount <= 0) {
+  if (finalVoteStatus === "REJECTED" || finalVoteStatus === "WITH_CONCERN" || remainingCount <= 0) {
     const draftStatus: DraftLifecycleStatus =
-      remainingCount <= 0 ? "With Concern" : "Rejected";
+      finalVoteStatus === "WITH_CONCERN"
+        ? "With Concern"
+        : finalVoteStatus === "REJECTED"
+        ? "Rejected"
+        : remainingCount <= 0
+        ? "With Concern"
+        : "Rejected";
 
     await directusFetch(`/items/disbursement_draft/${draftId}`, {
       method: "PATCH",
@@ -1726,4 +1769,40 @@ export async function processDraftApproval(params: {
   }
 
   return { ok: true, result: finalVoteStatus, message: "Vote recorded." };
+}
+
+export async function updateParentHeaderStatuses(headerIds: number[]) {
+  const uniqueHeaderIds = Array.from(new Set(headerIds)).filter((id) => id > 0);
+  for (const headerId of uniqueHeaderIds) {
+    const expensesRes = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
+      `/items/expense_draft?filter[header_id][_eq]=${headerId}&fields=id,status&limit=-1`
+    );
+    if (!expensesRes.ok) continue;
+
+    const expenses = expensesRes.data.data ?? [];
+    if (!expenses.length) continue;
+
+    const allRejected = expenses.every((e) => e.status === "Rejected");
+    const anyConcern = expenses.some((e) => e.status === "With Concern");
+    const anyApproved = expenses.some((e) => e.status === "Approved");
+
+    let newStatus: string | null = null;
+    if (allRejected) {
+      newStatus = "Rejected";
+    } else if (!anyApproved && anyConcern) {
+      newStatus = "With Concern";
+    }
+
+    if (newStatus) {
+      const nowTs = nowManila();
+      await directusFetch(`/items/expense_draft_header/${headerId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          status: newStatus,
+          date_updated: nowTs,
+        }),
+      });
+    }
+  }
 }
