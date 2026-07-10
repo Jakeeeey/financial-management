@@ -177,7 +177,7 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
   function handleAddRow() {
     nextId.current -= 1;
     const newRow: NewRow = { id: nextId.current, item_name: "", qty: 1, unit_price: 0, uom: "", supplier: null, supplier_label: "", saving: false };
-    setNewRows((prev) => [...prev, newRow]);
+    setNewRows((prev) => [newRow, ...prev]);
   }
 
   function updateNewRow(id: number, patch: Partial<NewRow>) {
@@ -243,7 +243,7 @@ export function PRLineItemsTable({ details, procurementId, readOnly, onDetailUpd
     variant_name: null,
   } as ProcurementDetail));
 
-  const allDetails = [...details, ...tempDetails];
+  const allDetails = [...tempDetails, ...details];
   const filtered = allDetails.filter((d) => {
     if (filterText && !(d.item_name ?? "").toLowerCase().includes(filterText.toLowerCase()) && !(d.template_name ?? "").toLowerCase().includes(filterText.toLowerCase())) return false;
     if (filterSupplier !== null && d.supplier !== filterSupplier) return false;

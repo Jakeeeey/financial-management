@@ -89,8 +89,19 @@ export function ProcurementRequestCreatePage() {
 
   function addLine() {
     setLineItems((prev) => [
-      ...prev,
       {
+        _key: _nextKey++,
+        item_template_id: null,
+        item_variant_id: null,
+        item_name: "",
+        item_description: null,
+        uom: null,
+        qty: 1,
+        unit_price: 0,
+      },
+      ...prev,
+    ]);
+  }
         _key: _nextKey++,
         item_template_id: null,
         item_variant_id: null,
