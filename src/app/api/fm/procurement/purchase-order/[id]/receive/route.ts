@@ -14,7 +14,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { id } = await params;
     const poId = Number(id);
     const body = await request.json();
-    const { rows, reference_no, notes, received_by, currentUserId } = body;
+    const { rows, reference_no, notes, received_by: clientReceivedBy, currentUserId } = body;
+
+    let resolvedReceivedBy: number | null = null;
+    try {
+      const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString("utf-8"));
+      const userId = payload?.id || payload?.user_id || payload?.sub;
+      if (userId) {
+        const userRes = await fetch(
+          `${DIRECTUS_URL}/items/user/${userId}?fields=user_id`,
+          { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+        );
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          const uid = userData?.data?.user_id ?? userData?.data?.id;
+          if (uid) resolvedReceivedBy = Number(uid);
+        }
+      }
+    } catch { /* fallback */ }
+    if (!resolvedReceivedBy) resolvedReceivedBy = clientReceivedBy ?? currentUserId ?? 1;
 
     if (!rows || !Array.isArray(rows) || rows.length === 0) {
       return NextResponse.json({ message: "Validation Error", detail: "No items to receive" }, { status: 400 });
@@ -25,7 +43,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         purchase_order_id: poId,
-        received_by: received_by ?? currentUserId ?? null,
+        received_by: resolvedReceivedBy,
         reference_no: reference_no || null,
         notes: notes || null,
         received_date: new Date().toISOString().split("T")[0],
@@ -68,7 +86,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           department_id: Number(split.department_id),
           user_id: split.user_id ? Number(split.user_id) : null,
           qty_assigned: Number(split.qty),
-          assigned_by: currentUserId ?? received_by ?? 1,
+          assigned_by: resolvedReceivedBy,
         }));
 
         const asgRes = await fetch(`${DIRECTUS_URL}/items/item_assignment`, {
@@ -120,8 +138,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       method: "PATCH",
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        inventory_status: allFulfilled ? 6 : 5,
-        status: newStatus,
+        inventory_status: allFulfilled ? 6 : 9,
         date_received: new Date().toISOString(),
       }),
       cache: "no-store",

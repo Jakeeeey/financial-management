@@ -100,7 +100,7 @@ export default function PODetailPage() {
                 {po.lead_date || po.date || "—"}
               </p>
             </div>
-            <POStatusBadge status={po.status} />
+            <POStatusBadge status={po.inventory_status} />
           </div>
         </CardHeader>
         <CardContent>

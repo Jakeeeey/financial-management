@@ -49,10 +49,19 @@ export interface POListQuery {
   limit?: number;
 }
 
-export function statusLabel(status?: string | null): string {
-  if (!status) return "Open";
+const INVENTORY_STATUS = { OPEN: 3, PARTIAL: 9, FULL: 6, CANCELLED: 7 } as const;
+
+export function statusLabel(status?: number | string | null): string {
+  if (status == null) return "Open";
+  if (typeof status === "number") {
+    if (status === INVENTORY_STATUS.FULL) return "Fully Received";
+    if (status === INVENTORY_STATUS.PARTIAL) return "Partially Received";
+    if (status === INVENTORY_STATUS.CANCELLED) return "Cancelled";
+    return "Open";
+  }
   const map: Record<string, string> = {
     pending: "Open",
+    open: "Open",
     partial: "Partially Received",
     full: "Fully Received",
     cancelled: "Cancelled",
@@ -62,10 +71,17 @@ export function statusLabel(status?: string | null): string {
   return map[status.toLowerCase()] ?? status;
 }
 
-export function statusColor(status?: string | null): string {
-  if (!status) return "bg-slate-100 text-slate-700";
+export function statusColor(status?: number | string | null): string {
+  if (status == null) return "bg-slate-100 text-slate-700";
+  if (typeof status === "number") {
+    if (status === INVENTORY_STATUS.FULL) return "bg-emerald-50 text-emerald-700";
+    if (status === INVENTORY_STATUS.PARTIAL) return "bg-amber-50 text-amber-700";
+    if (status === INVENTORY_STATUS.CANCELLED) return "bg-red-50 text-red-700";
+    return "bg-slate-100 text-slate-700";
+  }
   const map: Record<string, string> = {
     pending: "bg-slate-100 text-slate-700",
+    open: "bg-slate-100 text-slate-700",
     partial: "bg-amber-50 text-amber-700",
     full: "bg-emerald-50 text-emerald-700",
     cancelled: "bg-red-50 text-red-700",

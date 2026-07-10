@@ -69,7 +69,7 @@ export function POTable({ data, loading, error }: POTableProps) {
               <TableCell className="text-muted-foreground">{resolveSupplier(po)}</TableCell>
               <TableCell>{po.lead_date || po.date || "—"}</TableCell>
               <TableCell className="text-right font-mono tabular-nums">{formatCurrency(po.total_amount)}</TableCell>
-              <TableCell><POStatusBadge status={po.status} /></TableCell>
+              <TableCell><POStatusBadge status={po.inventory_status} /></TableCell>
             </TableRow>
           ))}
         </TableBody>

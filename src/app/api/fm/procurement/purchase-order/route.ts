@@ -14,7 +14,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
     const statusRaw = searchParams.get("status") || "";
-    const status = statusRaw === "_all" ? "" : statusRaw;
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(300, Math.max(1, Number(searchParams.get("limit")) || 50));
     const offset = (page - 1) * limit;
@@ -40,8 +39,18 @@ export async function GET(request: NextRequest) {
     if (search) {
       andConditions.push({ purchase_order_no: { _icontains: search } });
     }
-    if (status) {
-      andConditions.push({ status: { _eq: status } });
+    if (statusRaw && statusRaw !== "_all") {
+      const statusMap: Record<string, Record<string, unknown> | number> = {
+        pending: { _nin: [9, 6] },
+        open: { _nin: [9, 6] },
+        partial: { _eq: 9 },
+        full: { _eq: 6 },
+        cancelled: { _eq: 7 },
+      };
+      const mapped = statusMap[statusRaw];
+      if (mapped !== undefined) {
+        andConditions.push({ inventory_status: mapped });
+      }
     }
 
     if (andConditions.length === 1) {

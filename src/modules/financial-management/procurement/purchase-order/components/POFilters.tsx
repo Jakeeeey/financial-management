@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "_all", label: "All Statuses" },
-  { value: "pending", label: "Open" },
+  { value: "open", label: "Open" },
   { value: "partial", label: "Partially Received" },
   { value: "full", label: "Fully Received" },
   { value: "cancelled", label: "Cancelled" },

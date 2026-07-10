@@ -19,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, X, AlertCircle } from "lucide-react";
+
+import { Loader2, Plus, X, AlertCircle, ChevronDown, ChevronRight, PackageCheck } from "lucide-react";
 import type { PurchaseOrderItem } from "../utils/types";
 import { toNum } from "../utils/po-utils";
 
@@ -98,6 +99,7 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const baseRows = useMemo<ReceiveRow[]>(
     () =>
@@ -136,6 +138,7 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
     const load = async () => {
       setLoading(true);
       setError("");
+      setExpandedRows(new Set());
       try {
         const [loadedDepartments, loadedUsers] = await Promise.all([
           fetchJson<{ data: Department[] }>("/api/fm/procurement/purchase-order/lookups/departments"),
@@ -163,6 +166,25 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
     load();
   }, [open, poId, baseRows]);
 
+  const toggleExpand = useCallback((key: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+        setRows((r) =>
+          r.map((row) =>
+            row.key === key && row.splits.length === 0
+              ? { ...row, splits: [{ department_id: departments[0]?.department_id ?? 0, user_id: null, qty: 0 }] }
+              : row
+          )
+        );
+      }
+      return next;
+    });
+  }, [departments]);
+
   const patchRow = useCallback((key: string, patch: Partial<ReceiveRow>) => {
     setRows((prev) =>
       prev.map((row) => {
@@ -181,13 +203,7 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
       setRows((prev) =>
         prev.map((row) =>
           row.key === key
-            ? {
-                ...row,
-                splits: [
-                  ...row.splits,
-                  { department_id: departments[0]?.department_id ?? 0, user_id: null, qty: 0 },
-                ],
-              }
+            ? { ...row, splits: [...row.splits, { department_id: departments[0]?.department_id ?? 0, user_id: null, qty: 0 }] }
             : row
         )
       );
@@ -289,198 +305,176 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 gap-0">
+        <DialogHeader className="px-6 pt-6 pb-0">
           <DialogTitle>Receive &amp; Assign Items</DialogTitle>
           <DialogDescription>Record received quantities and assign items to departments or users.</DialogDescription>
         </DialogHeader>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="mx-6 mt-3 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {error}
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div>
-            <Label htmlFor="reference-no">Reference No.</Label>
-            <Input
-              id="reference-no"
-              placeholder="DR / SI number"
-              value={referenceNo}
-              onChange={(e) => setReferenceNo(e.target.value)}
-            />
+        <div className="flex flex-col gap-2 px-6 pt-4 pb-3 sm:flex-row">
+          <div className="sm:w-56">
+            <Label htmlFor="reference-no" className="text-xs">Reference No.</Label>
+            <Input id="reference-no" placeholder="DR / SI number" className="h-8 text-sm" value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} />
           </div>
-          <div className="sm:col-span-2">
-            <Label htmlFor="notes">Notes</Label>
-            <Input
-              id="notes"
-              placeholder="Remarks"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
+          <div className="flex-1">
+            <Label htmlFor="notes" className="text-xs">Notes / Remarks</Label>
+            <Input id="notes" placeholder="Optional remarks..." className="h-8 text-sm" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
         </div>
 
         {loading && (
-          <div className="flex items-center justify-center py-8">
+          <div className="flex items-center justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         )}
 
         {allItemsFulfilled && !loading && (
-          <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+          <div className="mx-6 my-3 flex items-center gap-2 rounded-md border bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            <PackageCheck className="h-4 w-4 shrink-0" />
             All items in this PO are fully received. Nothing left to receive.
           </div>
         )}
 
-        {!loading &&
-          rows.map((row) => (
-            <div key={row.key} className="rounded-lg border p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="font-medium">
-                  {row.item_name}{" "}
-                  <span className="text-xs text-muted-foreground">• {row.uom}</span>
-                </div>
-                <div className="flex gap-3 text-xs text-muted-foreground">
-                  <span>Ordered: <strong>{row.ordered_qty}</strong></span>
-                  <span>Received: <strong>{row.received_so_far}</strong></span>
-                  <span>Remaining: <strong>{row.remaining}</strong></span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                <div>
-                  <Label>Qty Received</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={row.remaining}
-                    step="0.0001"
-                    value={row.received_today}
-                    onChange={(e) => patchRow(row.key, { received_today: Number(e.target.value || 0) })}
-                  />
-                </div>
-                <div>
-                  <Label>Unit Cost</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={row.unit_cost}
-                    onChange={(e) => patchRow(row.key, { unit_cost: Number(e.target.value) })}
-                  />
-                </div>
-                <div>
-                  <Label>Currency</Label>
-                  <Input
-                    value={row.currency}
-                    onChange={(e) => patchRow(row.key, { currency: e.target.value })}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => addSplit(row.key)}
-                    disabled={row.remaining <= 0}
+        {!loading && !allItemsFulfilled && (
+          <div className="min-h-0 flex-1 overflow-y-auto space-y-1 px-6 py-3">
+            {rows.map((row) => {
+              const expanded = expandedRows.has(row.key);
+              const sumSplit = row.splits.reduce((t, s) => t + (Number(s.qty) || 0), 0);
+              const sumValid = sumSplit === Number(row.received_today || 0);
+              return (
+                <div key={row.key} className="rounded-md border">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium hover:bg-muted/30 transition-colors"
+                    onClick={() => toggleExpand(row.key)}
                   >
-                    <Plus className="h-4 w-4 mr-1" /> Add Split
-                  </Button>
+                    <span className={`shrink-0 transition-transform ${expanded ? "text-accent" : "text-muted-foreground"}`}>
+                      {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </span>
+                    <span className="flex-1 truncate">{row.item_name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">Ord. {row.ordered_qty.toFixed(2)}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">Rec. {row.received_so_far.toFixed(2)}</span>
+                    <span className={`shrink-0 text-xs font-medium ${Number(row.remaining) > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                      Rem. {row.remaining.toFixed(2)}
+                    </span>
+                  </button>
+
+                  {expanded && (
+                    <div className="border-t px-4 py-3 space-y-3 bg-muted/10">
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div className="w-48">
+                          <Label className="text-xs font-medium">Receive Qty</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={row.remaining}
+                            step="0.0001"
+                            className="h-8 text-sm font-mono text-right"
+                            value={row.received_today || ""}
+                            onChange={(e) => patchRow(row.key, { received_today: Number(e.target.value || 0) })}
+                          />
+                        </div>
+                        <div className="w-36 text-xs text-muted-foreground pb-1.5">
+                          <span className="font-medium text-foreground">
+                            {Number(row.unit_cost).toLocaleString("en-PH", { style: "currency", currency: "PHP" })}
+                          </span>
+                          <span className="block">/ {row.uom || "unit"}</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground">Assignments</span>
+                          <span className={`text-xs ${sumValid ? "text-muted-foreground" : "text-red-500 font-medium"}`}>
+                            {sumSplit.toFixed(2)} / {Number(row.received_today || 0).toFixed(2)} assigned
+                            {!sumValid && " — mismatch"}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          {row.splits.map((split, idx) => {
+                            const filteredUsers = users.filter(
+                              (u) => Number(u.user_department ?? -1) === Number(split.department_id)
+                            );
+                            return (
+                              <div key={idx} className="grid grid-cols-[1fr_1fr_100px_28px] gap-2 items-center">
+                                <Select
+                                  value={String(split.department_id)}
+                                  onValueChange={(v) => updateSplit(row.key, idx, { department_id: Number(v) })}
+                                >
+                                  <SelectTrigger className="w-full h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="max-h-[200px] overflow-y-auto">
+                                    {departments.map((d) => (
+                                      <SelectItem key={d.department_id} value={String(d.department_id)}>{d.department_name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Select
+                                  value={split.user_id != null ? String(split.user_id) : "_none"}
+                                  onValueChange={(v) => updateSplit(row.key, idx, { user_id: (v && v !== "_none") ? Number(v) : null })}
+                                >
+                                  <SelectTrigger className="w-full h-8 text-xs">
+                                    <SelectValue placeholder="Unassigned" />
+                                  </SelectTrigger>
+                                  <SelectContent className="max-h-[200px] overflow-y-auto">
+                                    <SelectItem value="_none">Unassigned</SelectItem>
+                                    {filteredUsers.map((u) => (
+                                      <SelectItem key={u.user_id} value={String(u.user_id)}>{u.full_name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={row.received_today}
+                                  step="0.0001"
+                                  className="h-8 text-xs font-mono text-right"
+                                  value={split.qty || ""}
+                                  onChange={(e) => {
+                                    const value = Number(e.target.value || 0);
+                                    updateSplit(row.key, idx, { qty: Math.max(0, Math.min(row.received_today, value)) });
+                                  }}
+                                />
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeSplit(row.key, idx)}>
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => addSplit(row.key)}>
+                          <Plus className="h-3 w-3 mr-1" /> Add Split
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              );
+            })}
+          </div>
+        )}
 
-              {row.splits.map((split, idx) => {
-                const filteredUsers = users.filter(
-                  (u) => Number(u.user_department ?? -1) === Number(split.department_id)
-                );
-                return (
-                  <div key={idx} className="grid grid-cols-1 gap-3 sm:grid-cols-4 items-end rounded-md bg-muted/20 p-3">
-                    <div>
-                      <Label>Department</Label>
-                      <Select
-                        value={String(split.department_id)}
-                        onValueChange={(v) => updateSplit(row.key, idx, { department_id: Number(v) })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {departments.map((d) => (
-                            <SelectItem key={d.department_id} value={String(d.department_id)}>
-                              {d.department_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>User (optional)</Label>
-                      <Select
-                        value={split.user_id != null ? String(split.user_id) : "_none"}
-                        onValueChange={(v) => updateSplit(row.key, idx, { user_id: (v && v !== "_none") ? Number(v) : null })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Unassigned" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="_none">Unassigned</SelectItem>
-                          {filteredUsers.map((u) => (
-                            <SelectItem key={u.user_id} value={String(u.user_id)}>
-                              {u.full_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>Qty</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={row.received_today}
-                        step="0.0001"
-                        value={split.qty}
-                        onChange={(e) => {
-                          const value = Number(e.target.value || 0);
-                          updateSplit(row.key, idx, { qty: Math.max(0, Math.min(row.received_today, value)) });
-                        }}
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <Button variant="ghost" size="sm" onClick={() => removeSplit(row.key, idx)}>
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
+        {!loading && !allItemsFulfilled && rows.length > 0 && (
+          <div className="flex items-center justify-between border-t px-6 py-2.5 text-xs text-muted-foreground bg-muted/10">
+            <span>{rows.filter((r) => r.received_today > 0).length} of {rows.length} item(s) being received</span>
+            <span className="font-medium text-foreground">
+              Total: {rows.reduce((s, r) => s + (Number(r.received_today) || 0), 0).toFixed(2)} qty
+            </span>
+          </div>
+        )}
 
-              {row.splits.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Sum of splits must equal Qty Received ({row.received_today}).
-                </p>
-              )}
-            </div>
-          ))}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={!valid || !hasWork || saving || allItemsFulfilled}
-          >
-            {saving ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving…
-              </>
-            ) : (
-              "Save Receiving"
-            )}
+        <DialogFooter className="px-6 py-3 border-t">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={!valid || !hasWork || saving || allItemsFulfilled}>
+            {saving ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving…</> : "Save Receiving"}
           </Button>
         </DialogFooter>
       </DialogContent>
