@@ -35,7 +35,7 @@ export function useSuppliers() {
         params.set("search", search.trim());
       }
 
-      const url = `/api/supplier-registration/suppliers${params.toString() ? `?${params.toString()}` : ""}`;
+      const url = `/api/fm/supplier-registration/suppliers${params.toString() ? `?${params.toString()}` : ""}`;
       const response = await fetch(url);
 
       if (!response.ok) {
@@ -47,7 +47,7 @@ export function useSuppliers() {
     } catch (err: unknown) {
       setError({
         hasError: true,
-        message: (err instanceof Error ? err.message : String(err)) || "Could not load asset records.",
+        message: (err instanceof Error ? err.message : String(err)) || "Could not load supplier records.",
       });
       setSuppliers([]);
     } finally {

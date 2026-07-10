@@ -41,7 +41,7 @@ export function QueueTable({ queue, onReview, sortField, sortDir, onSort }: Queu
                         </TableHead>
                         <TableHead className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => onSort("totalAppliedAmount")}>
                             <div className="flex items-center justify-end text-[10px] font-black uppercase tracking-widest">
-                                AR Allocated {renderSortIcon("totalAppliedAmount")}
+                                AR Target / Net {renderSortIcon("totalAppliedAmount")}
                             </div>
                         </TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-right">Adj. Debit (Shortage)</TableHead>
@@ -62,6 +62,7 @@ export function QueueTable({ queue, onReview, sortField, sortDir, onSort }: Queu
                     ) : queue.map((item) => {
                         const hasShortage = item.adjustmentDebit > 0;
                         const hasOverage = item.adjustmentCredit > 0;
+                        const netTarget = item.totalAppliedAmount - item.creditAppliedAmount; // 🚀 Calculate Net Target
 
                         return (
                             <TableRow key={item.id} className="hover:bg-muted/50 transition-colors group">
@@ -84,9 +85,16 @@ export function QueueTable({ queue, onReview, sortField, sortDir, onSort }: Queu
                                 </TableCell>
 
                                 <TableCell className="text-right align-top pt-4">
-                                    <span className="font-mono font-black text-blue-600 text-sm">
-                                        ₱{item.totalAppliedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                    </span>
+                                    <div className="flex flex-col items-end gap-0.5">
+                                        <span className="font-mono font-black text-blue-600 text-sm">
+                                            ₱{netTarget.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        </span>
+                                        {item.creditAppliedAmount > 0 && (
+                                            <span className="text-[9px] font-bold text-amber-600 uppercase">
+                                                (Gross: ₱{item.totalAppliedAmount.toLocaleString()} - Memo: ₱{item.creditAppliedAmount.toLocaleString()})
+                                            </span>
+                                        )}
+                                    </div>
                                 </TableCell>
 
                                 <TableCell className="text-right align-top pt-4">

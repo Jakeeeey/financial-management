@@ -81,4 +81,4 @@ export type FilterState = {
     total_pages: number;
 };
 
-export type ProductTierKey = "A" | "B" | "C" | "D" | "E" | "ListPrice";
+export type ProductTierKey = string;

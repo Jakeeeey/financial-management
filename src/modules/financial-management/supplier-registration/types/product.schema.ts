@@ -16,7 +16,7 @@ export const ProductSchema = z.object({
   priceD: z.number().nullable().optional(),
   priceE: z.number().nullable().optional(),
   short_description: z.string().nullable().optional(),
-  unit_of_measurement: z.number().nullable().optional(),
+  unit_of_measurement: z.union([z.number(), z.string()]).nullable().optional(),
   isActive: z.number().int().min(0).max(1).optional(),
 });
 

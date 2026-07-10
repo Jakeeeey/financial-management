@@ -2,6 +2,7 @@
 import type {
     Brand,
     Category,
+    MatrixRow,
     PriceRow,
     PriceType,
     ProductRow,
@@ -10,6 +11,8 @@ import type {
     Supplier,
     PriceChangeRequest,
     CostChangeRequest,
+    PriceChangeBatchLineInput,
+    SavePriceChangeBatchInput,
 } from "../types";
 import { http } from "./fetchProvider";
 
@@ -93,7 +96,7 @@ export async function getProducts(params: {
     );
 }
 
-export async function getPrintProducts(params: {
+export async function getMatrixPage(params: {
     q?: string;
     category_id?: string;
     category_ids?: string;
@@ -106,6 +109,9 @@ export async function getPrintProducts(params: {
     supplier_scope?: "ALL" | "LINKED_ONLY";
     active_only?: "0" | "1";
     missing_tier?: "0" | "1";
+    page?: string;
+    page_size?: string;
+    pending_product_ids?: string;
 }) {
     const sp = new URLSearchParams();
 
@@ -116,14 +122,111 @@ export async function getPrintProducts(params: {
         sp.set(k, s);
     }
 
+    return http<{
+        data: ProductRow[];
+        meta: ProductsMeta;
+        prices: PriceRow[];
+        pending_price_requests: PriceChangeRequest[];
+        pending_cost_requests: CostChangeRequest[];
+    }>(`/api/fm/product-pricing/products/matrix-page?${sp.toString()}`);
+}
+
+export type PrintFilterParams = {
+    q?: string;
+    category_id?: string;
+    category_ids?: string;
+    brand_id?: string;
+    brand_ids?: string;
+    unit_id?: string;
+    unit_ids?: string;
+    supplier_id?: string;
+    supplier_ids?: string;
+    supplier_scope?: "ALL" | "LINKED_ONLY";
+    active_only?: "0" | "1";
+    missing_tier?: "0" | "1";
+};
+
+export type PrintMatrixMetaResponse = {
+    meta: {
+        totalGroups: number;
+        totalVariants: number;
+    };
+    groupIds: number[];
+};
+
+export type PrintMatrixPageResponse = {
+    data: MatrixRow[];
+    usedUnitIds: number[];
+};
+
+function buildPrintSearchParams(params: PrintFilterParams): URLSearchParams {
+    const sp = new URLSearchParams();
+
+    for (const [k, v] of Object.entries(params)) {
+        if (v === undefined || v === null) continue;
+        const s = String(v).trim();
+        if (!s || s === "undefined" || s === "null") continue;
+        sp.set(k, s);
+    }
+
+    return sp;
+}
+
+export async function getPrintProducts(params: PrintFilterParams) {
+    const sp = buildPrintSearchParams(params);
+
     return http<{ data: ProductRow[] }>(
         `/api/fm/product-pricing/print/products?${sp.toString()}`,
     );
 }
 
-export async function getPricesForProducts(productIds: number[]) {
-    const sp = new URLSearchParams({ product_ids: productIds.join(",") });
-    return http<{ data: PriceRow[] }>(`/api/fm/product-pricing/prices?${sp.toString()}`);
+export async function getPrintMatrixMeta(params: PrintFilterParams, init?: RequestInit) {
+    const sp = buildPrintSearchParams(params);
+    sp.set("step", "meta");
+
+    return http<PrintMatrixMetaResponse>(
+        `/api/fm/product-pricing/print/matrix?${sp.toString()}`,
+        init,
+    );
+}
+
+export async function getPrintMatrixPage(
+    params: PrintFilterParams & { group_ids: string },
+    init?: RequestInit,
+) {
+    const sp = buildPrintSearchParams(params);
+    sp.set("step", "page");
+    sp.set("group_ids", params.group_ids);
+
+    return http<PrintMatrixPageResponse>(
+        `/api/fm/product-pricing/print/matrix?${sp.toString()}`,
+        init,
+    );
+}
+
+export async function getPricesForProducts(productIds: number[], init?: RequestInit) {
+    if (productIds.length === 0) {
+        return { data: [] as PriceRow[] };
+    }
+
+    const CHUNK_SIZE = 200;
+    const chunks: number[][] = [];
+    for (let i = 0; i < productIds.length; i += CHUNK_SIZE) {
+        chunks.push(productIds.slice(i, i + CHUNK_SIZE));
+    }
+
+    const results = await Promise.all(
+        chunks.map(async (chunk) => {
+            const sp = new URLSearchParams({ product_ids: chunk.join(",") });
+            return http<{ data: PriceRow[] }>(
+                `/api/fm/product-pricing/prices?${sp.toString()}`,
+                init,
+            );
+        }),
+    );
+
+    const data = results.flatMap((res) => res.data ?? []);
+    return { data };
 }
 
 export async function upsertPrices(lines: UpsertLine[]) {
@@ -133,18 +236,23 @@ export async function upsertPrices(lines: UpsertLine[]) {
     });
 }
 
-export async function createPriceChangeRequests(items: {
-    product_id: number;
-    price_type_id: number;
-    proposed_price: number;
-}[]) {
+export async function createPriceChangeBatch(
+    batch: SavePriceChangeBatchInput,
+    lines: PriceChangeBatchLineInput[],
+) {
     return http<{
+        data: { id: number; header_id: number; line_count?: number };
         created: number;
         skipped_duplicates?: number;
         skipped_existing_pending?: number;
-    }>(`/api/fm/product-pricing/price-change-requests/bulk`, {
+    }>(`/api/fm/product-pricing/price-change-batches`, {
         method: "POST",
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({
+            supplier_id: batch.supplier_id,
+            reference_no: batch.reference_no,
+            remarks: batch.remarks,
+            lines,
+        }),
     });
 }
 
@@ -164,6 +272,7 @@ export async function createCostChangeRequests(
 ) {
     return http<{
         created: number;
+        header_id?: number;
         skipped_duplicates?: number;
         skipped_existing_pending?: number;
     }>(`/api/fm/product-pricing/cost-change-requests/bulk`, {
@@ -172,10 +281,59 @@ export async function createCostChangeRequests(
     });
 }
 
-export async function getPendingPriceRequests() {
-    return http<{ data: PriceChangeRequest[] }>("/api/fm/product-pricing/price-change-requests?status=PENDING&limit=-1");
+export type MixedSavePreflightSide = {
+    would_create: number;
+    skipped_duplicates?: number;
+    skipped_existing_pending?: number;
+};
+
+export type MixedSaveResponse = {
+    created: number;
+    price: {
+        created: number;
+        skipped_duplicates?: number;
+        skipped_existing_pending?: number;
+        header_id?: number;
+    };
+    cost: {
+        created: number;
+        skipped_duplicates?: number;
+        skipped_existing_pending?: number;
+        header_id?: number;
+    };
+};
+
+export async function saveMixedPricingChanges(payload: {
+    batch: SavePriceChangeBatchInput;
+    price_lines: PriceChangeBatchLineInput[];
+    cost_items: {
+        product_id: number;
+        proposed_cost: number;
+        current_cost?: number | null;
+    }[];
+}) {
+    return http<MixedSaveResponse>(`/api/fm/product-pricing/mixed-save`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+    });
 }
 
-export async function getPendingCostRequests() {
-    return http<{ data: CostChangeRequest[] }>("/api/fm/product-pricing/cost-change-requests?status=PENDING&limit=-1");
+export async function getPendingPriceRequests(productIds: number[]) {
+    if (productIds.length === 0) return { data: [] as PriceChangeRequest[] };
+
+    const sp = new URLSearchParams({
+        status: "PENDING",
+        product_ids: productIds.join(","),
+    });
+    return http<{ data: PriceChangeRequest[] }>(`/api/fm/product-pricing/price-change-requests?${sp.toString()}`);
+}
+
+export async function getPendingCostRequests(productIds: number[]) {
+    if (productIds.length === 0) return { data: [] as CostChangeRequest[] };
+
+    const sp = new URLSearchParams({
+        status: "PENDING",
+        product_ids: productIds.join(","),
+    });
+    return http<{ data: CostChangeRequest[] }>(`/api/fm/product-pricing/cost-change-requests?${sp.toString()}`);
 }
