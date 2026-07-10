@@ -2152,7 +2152,7 @@ export async function POST(req: NextRequest) {
 
     const finalRemarks = remarks?.trim() || null;
 
-    if (overallStatus === "WITH_CONCERN" && (!finalRemarks || finalRemarks.length < 5)) {
+    if (overallStatus === "WITH_CONCERN" && !finalRemarks) {
       return json({ error: "Remarks required for concerns" }, { status: 400 });
     }
 

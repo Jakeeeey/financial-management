@@ -1336,7 +1336,7 @@ export async function processDraftApproval(params: {
 
   const finalRemarks = remarks?.trim() || null;
 
-  if (overallStatus === "WITH_CONCERN" && (!finalRemarks || finalRemarks.length < 5)) {
+  if (overallStatus === "WITH_CONCERN" && !finalRemarks) {
     return { ok: false, status: 400, data: { error: "Remarks required for concerns" } };
   }
 
