@@ -19,8 +19,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   try {
     const { id } = await params;
-    const body = await request.json();
-    const approved_by = body.approved_by;
+
+    const jwtPayload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString("utf-8"));
+    const email = jwtPayload.email ?? jwtPayload.sub;
+    const userRes = await fetch(`${DIRECTUS_URL}/items/user?filter[user_email][_eq]=${encodeURIComponent(email)}&limit=1`, {
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      cache: "no-store",
+    });
+    const userData = await userRes.json();
+    const approved_by = userData?.data?.[0]?.user_id ?? null;
+    if (!approved_by) {
+      return NextResponse.json({ message: "BFF Error", detail: "User not found" }, { status: 404 });
+    }
 
     const now = new Date().toISOString();
 
@@ -33,7 +43,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       body: JSON.stringify({
         isApproved: 1,
         status: "approved",
-        approved_by: approved_by || null,
+        approved_by,
         approved_date: now,
       }),
       cache: "no-store",
