@@ -83,6 +83,7 @@ type ExpenseDraftRow = {
   remarks?: string | null;
   version?: number | string | null;
   feedback?: string | null;
+  is_supervisor?: number | string | null;
 };
 
 type EnrichedExpenseDraftRow = ExpenseDraftRow & {
@@ -514,7 +515,7 @@ export async function GET(req: NextRequest) {
 
       const eRes = await directusFetch(
         expFilter +
-        `&fields=id,header_id,encoded_by,particulars,transaction_date,amount,payee,payee_id,attachment_url,status,drafted_at,rejected_at,approved_at,remarks,division_id,version,feedback` +
+        `&fields=id,header_id,encoded_by,particulars,transaction_date,amount,payee,payee_id,attachment_url,status,drafted_at,rejected_at,approved_at,remarks,division_id,version,feedback,is_supervisor` +
         `&limit=-1&sort=transaction_date`
       );
 
@@ -626,7 +627,7 @@ export async function GET(req: NextRequest) {
 
     if (resource === "logs") {
       const disbRes = await directusFetch(
-        `/items/disbursement_draft?filter[transaction_type][_eq]=2&sort=-id&limit=200&fields=id,doc_no,status,transaction_date,payee,encoder_id,total_amount,remarks,approver_id,date_created,division_id`
+        `/items/disbursement_draft?filter[transaction_type][_eq]=2&filter[_or][0][is_supervisor][_neq]=1&filter[_or][1][is_supervisor][_null]=true&sort=-id&limit=200&fields=id,doc_no,status,transaction_date,payee,encoder_id,total_amount,remarks,approver_id,date_created,division_id,is_supervisor`
       );
 
       if (!disbRes.ok) return json(disbRes.data, { status: disbRes.status });
@@ -691,13 +692,30 @@ export async function GET(req: NextRequest) {
       );
 
       let allExpenseLogs: ExpenseLogRow[] = [];
+      const supervisorExpenseIdsSet = new Set<number>();
 
       if (expenseIdsForAudit.length > 0) {
-        const finalElRes = await directusFetch(
-          `/items/expense_draft_logs?filter[expense_id][_in]=${expenseIdsForAudit.join(",")}&fields=log_id,expense_id,action,changed_by,changed_at,amount,remarks,particulars,status,version&limit=-1`
-        );
+        const [finalElRes, expDraftsRes] = await Promise.all([
+          directusFetch(
+            `/items/expense_draft_logs?filter[expense_id][_in]=${expenseIdsForAudit.join(",")}&fields=log_id,expense_id,action,changed_by,changed_at,amount,remarks,particulars,status,version&limit=-1`
+          ),
+          directusFetch(
+            `/items/expense_draft?filter[id][_in]=${expenseIdsForAudit.join(",")}&fields=id,is_supervisor&limit=-1`
+          ),
+        ]);
 
-        allExpenseLogs = getListData<ExpenseLogRow>(finalElRes.data);
+        if (finalElRes.ok) {
+          allExpenseLogs = getListData<ExpenseLogRow>(finalElRes.data);
+        }
+
+        if (expDraftsRes.ok) {
+          const expRows = getListData<{ id: number; is_supervisor?: number | string | null }>(expDraftsRes.data);
+          for (const row of expRows) {
+            if (Number(row.is_supervisor) === 1) {
+              supervisorExpenseIdsSet.add(toNumber(row.id));
+            }
+          }
+        }
       }
 
       const voteUids = uniquePositiveNumbers([
@@ -737,86 +755,94 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const formattedLogs = visibleLogs.map((log) => {
-        const logId = toNumber(log.id);
+      const formattedLogs = visibleLogs
+        .map((log) => {
+          const logId = toNumber(log.id);
 
-        const logVotes = allVotes
-          .filter((vote) => toNumber(vote.draft_id) === logId)
-          .map((vote) => ({
-            approver_name: userMap[toNumber(vote.approver_id)] || `User #${vote.approver_id}`,
-            status: String(vote.status ?? ""),
-            remarks: vote.remarks ? String(vote.remarks) : null,
-            version: toNumber(vote.version, 1),
-            created_at: String(vote.created_at ?? ""),
-          }));
+          const currentExpenseIds = pRowsForIds
+            .filter((payable) => getRelationId(payable.disbursement_id) === logId)
+            .map((payable) => getRelationId(payable.expense_id))
+            .filter((id) => id > 0);
 
-        const draftLogs = allDraftLogs
-          .filter((draftLog) => toNumber(draftLog.disbursement_id) === logId)
-          .map((draftLog) => {
-            let snapshot: { old_total?: number; new_total?: number } = {};
+          const hasSupervisorExpense = currentExpenseIds.some((expId) => supervisorExpenseIdsSet.has(expId));
+          if (hasSupervisorExpense) return null;
 
-            try {
-              snapshot = JSON.parse(String(draftLog.payload_snapshot || "{}")) as {
-                old_total?: number;
-                new_total?: number;
+          const logVotes = allVotes
+            .filter((vote) => toNumber(vote.draft_id) === logId)
+            .map((vote) => ({
+              approver_name: userMap[toNumber(vote.approver_id)] || `User #${vote.approver_id}`,
+              status: String(vote.status ?? ""),
+              remarks: vote.remarks ? String(vote.remarks) : null,
+              version: toNumber(vote.version, 1),
+              created_at: String(vote.created_at ?? ""),
+            }));
+
+          const draftLogs = allDraftLogs
+            .filter((draftLog) => toNumber(draftLog.disbursement_id) === logId)
+            .map((draftLog) => {
+              let snapshot: { old_total?: number; new_total?: number } = {};
+
+              try {
+                snapshot = JSON.parse(String(draftLog.payload_snapshot || "{}")) as {
+                  old_total?: number;
+                  new_total?: number;
+                };
+              } catch {
+                snapshot = {};
+              }
+
+              return {
+                id: toNumber(draftLog.id),
+                editor_name:
+                  userMap[toNumber(draftLog.updated_by)] || `User #${draftLog.updated_by}`,
+                edit_reason: String(draftLog.edit_reason || ""),
+                old_total: toNumber(snapshot.old_total),
+                new_total: toNumber(snapshot.new_total),
+                created_at: String(draftLog.log_date || ""),
               };
-            } catch {
-              snapshot = {};
-            }
+            });
 
-            return {
-              id: toNumber(draftLog.id),
+          const expenseLogs = allExpenseLogs
+            .filter((expenseLog) => {
+              const expId = toNumber(expenseLog.expense_id);
+              return currentExpenseIds.includes(expId) && !supervisorExpenseIdsSet.has(expId);
+            })
+            .map((expenseLog) => ({
+              log_id: toNumber(expenseLog.log_id),
+              expense_id: toNumber(expenseLog.expense_id),
+              action: String(expenseLog.action || ""),
               editor_name:
-                userMap[toNumber(draftLog.updated_by)] || `User #${draftLog.updated_by}`,
-              edit_reason: String(draftLog.edit_reason || ""),
-              old_total: toNumber(snapshot.old_total),
-              new_total: toNumber(snapshot.new_total),
-              created_at: String(draftLog.log_date || ""),
-            };
-          });
+                userMap[toNumber(expenseLog.changed_by)] || `User #${expenseLog.changed_by}`,
+              changed_at: String(expenseLog.changed_at || ""),
+              amount: toNumber(expenseLog.amount),
+              remarks: expenseLog.remarks ? String(expenseLog.remarks) : null,
+              particulars:
+                coaMapForLogs[toNumber(expenseLog.particulars)] ||
+                String(expenseLog.particulars || ""),
+              status: String(expenseLog.status || ""),
+              version: toNumber(expenseLog.version, 1),
+            }));
 
-        const currentExpenseIds = pRowsForIds
-          .filter((payable) => getRelationId(payable.disbursement_id) === logId)
-          .map((payable) => getRelationId(payable.expense_id))
-          .filter((id) => id > 0);
-
-        const expenseLogs = allExpenseLogs
-          .filter((expenseLog) => currentExpenseIds.includes(toNumber(expenseLog.expense_id)))
-          .map((expenseLog) => ({
-            log_id: toNumber(expenseLog.log_id),
-            expense_id: toNumber(expenseLog.expense_id),
-            action: String(expenseLog.action || ""),
-            editor_name:
-              userMap[toNumber(expenseLog.changed_by)] || `User #${expenseLog.changed_by}`,
-            changed_at: String(expenseLog.changed_at || ""),
-            amount: toNumber(expenseLog.amount),
-            remarks: expenseLog.remarks ? String(expenseLog.remarks) : null,
-            particulars:
-              coaMapForLogs[toNumber(expenseLog.particulars)] ||
-              String(expenseLog.particulars || ""),
-            status: String(expenseLog.status || ""),
-            version: toNumber(expenseLog.version, 1),
-          }));
-
-        return {
-          id: log.id,
-          doc_no: log.doc_no,
-          transaction_date: log.transaction_date,
-          salesman_name:
-            userMap[toNumber(log.encoder_id)] ||
-            userMap[toNumber(log.payee)] ||
-            `User #${log.encoder_id || log.payee}`,
-          total_amount: toNumber(log.total_amount),
-          remarks: log.remarks,
-          approver_name:
-            userMap[toNumber(log.approver_id)] || `User #${log.approver_id}`,
-          status: log.status,
-          date_created: log.date_created,
-          votes: logVotes,
-          logs: draftLogs,
-          expense_logs: expenseLogs,
-        };
-      });
+          return {
+            id: log.id,
+            doc_no: log.doc_no,
+            transaction_date: log.transaction_date,
+            salesman_name:
+              userMap[toNumber(log.encoder_id)] ||
+              userMap[toNumber(log.payee)] ||
+              `User #${log.encoder_id || log.payee}`,
+            total_amount: toNumber(log.total_amount),
+            remarks: log.remarks,
+            approver_name:
+              userMap[toNumber(log.approver_id)] || `User #${log.approver_id}`,
+            status: log.status,
+            date_created: log.date_created,
+            votes: logVotes,
+            logs: draftLogs,
+            expense_logs: expenseLogs,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
 
       return json({ data: formattedLogs });
     }
@@ -870,7 +896,7 @@ export async function GET(req: NextRequest) {
     expFilterBase = withDateFilters(expFilterBase, startDate, endDate);
 
     const allExpRes = await directusFetch(
-      `${expFilterBase}&fields=id,header_id,encoded_by,division_id,status,transaction_date,amount,approved_at&limit=-1`
+      `${expFilterBase}&fields=id,header_id,encoded_by,division_id,status,transaction_date,amount,approved_at,is_supervisor&limit=-1`
     );
 
     if (!allExpRes.ok) {
@@ -882,6 +908,8 @@ export async function GET(req: NextRequest) {
     const userMap = await fetchUserMap(encodedByIds);
 
     const allExpenses = rawExpenses.filter((expense) => {
+      if (Number(expense.is_supervisor) === 1) return false;
+
       const encoderId = toNumber(expense.encoded_by);
       const encoderDepartmentId = toNumber(userMap[encoderId]?.user_department);
       const expenseDivisionId = toNumber(expense.division_id);
@@ -1218,7 +1246,7 @@ export async function POST(req: NextRequest) {
     const eRes = await directusFetch(
       `/items/expense_draft?filter[encoded_by][_eq]=${salesmanUserId}` +
       `&filter[status][_in]=Approved,Drafts,Rejected,With Concern` +
-      `&fields=id,header_id,encoded_by,particulars,amount,transaction_date,attachment_url,remarks,division_id,payee,payee_id,status,version,feedback,approved_at,rejected_at&limit=-1`
+      `&fields=id,header_id,encoded_by,particulars,amount,transaction_date,attachment_url,remarks,division_id,payee,payee_id,status,version,feedback,approved_at,rejected_at,is_supervisor&limit=-1`
     );
 
     if (!eRes.ok) {
@@ -1440,6 +1468,8 @@ export async function POST(req: NextRequest) {
       .map((expense) => expense.attachment_url)
       .join(",");
 
+    const hasSupervisor = allDetailRows.some((e) => Number(e.is_supervisor) === 1);
+
     if (disbursementId) {
       const updateDisbRes = await directusFetch(
         `/items/disbursement_draft/${disbursementId}`,
@@ -1453,6 +1483,7 @@ export async function POST(req: NextRequest) {
             status: "Submitted",
             approval_version: approvalVersion,
             date_updated: nowTs,
+            is_supervisor: hasSupervisor ? 1 : 0,
           }),
         }
       );
@@ -1533,6 +1564,7 @@ export async function POST(req: NextRequest) {
           date_created: nowTs,
           date_updated: nowTs,
           date_approved: nowTs,
+          is_supervisor: hasSupervisor ? 1 : 0,
         }),
       });
 
