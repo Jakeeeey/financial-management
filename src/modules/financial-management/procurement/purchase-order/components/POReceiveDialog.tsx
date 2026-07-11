@@ -359,17 +359,15 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
                       {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </span>
                     <span className="flex-1 truncate">{row.item_name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">Ord. {row.ordered_qty.toFixed(2)}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">Rec. {row.received_so_far.toFixed(2)}</span>
-                    <span className={`shrink-0 text-xs font-medium ${Number(row.remaining) > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-                      Rem. {row.remaining.toFixed(2)}
+                    <span className="shrink-0 text-xs font-mono text-muted-foreground whitespace-nowrap ml-2">
+                      {row.received_so_far.toFixed(2)} / {row.ordered_qty.toFixed(2)}
                     </span>
                   </button>
 
                   {expanded && (
                     <div className="border-t px-4 py-3 space-y-3 bg-muted/10">
                       <div className="flex flex-wrap items-end gap-3">
-                        <div className="w-48">
+                        <div className="w-36 min-w-[120px] max-w-[180px]">
                           <Label className="text-xs font-medium">Receive Qty</Label>
                           <Input
                             type="number"
@@ -381,12 +379,7 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
                             onChange={(e) => patchRow(row.key, { received_today: Number(e.target.value || 0) })}
                           />
                         </div>
-                        <div className="w-36 text-xs text-muted-foreground pb-1.5">
-                          <span className="font-medium text-foreground">
-                            {Number(row.unit_cost).toLocaleString("en-PH", { style: "currency", currency: "PHP" })}
-                          </span>
-                          <span className="block">/ {row.uom || "unit"}</span>
-                        </div>
+
                       </div>
 
                       <div className="space-y-1.5">

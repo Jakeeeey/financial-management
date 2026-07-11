@@ -14,12 +14,28 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const { id } = await params;
 
     const poRes = await fetch(
-      `${DIRECTUS_URL}/items/purchase_order/${id}?fields=*,supplier_id.supplier_name`,
+      `${DIRECTUS_URL}/items/purchase_order/${id}?fields=*`,
       { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
     );
     if (!poRes.ok) throw new Error("Failed to fetch purchase order");
     const poJson = await poRes.json();
     const po = poJson.data;
+
+    // Resolve supplier name
+    let _supplier_name: string | null = null;
+    if (po?.supplier_name) {
+      try {
+        const supRes = await fetch(
+          `${DIRECTUS_URL}/items/suppliers/${po.supplier_name}?fields=supplier_name`,
+          { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+        );
+        if (supRes.ok) {
+          const supJson = await supRes.json();
+          _supplier_name = supJson.data?.supplier_name ?? null;
+        }
+      } catch { /* supplier lookup is best-effort */ }
+    }
+    if (po) po._supplier_name = _supplier_name;
     if (!po) {
       return NextResponse.json({ message: "Purchase order not found" }, { status: 404 });
     }

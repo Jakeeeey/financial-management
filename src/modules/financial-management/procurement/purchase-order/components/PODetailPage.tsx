@@ -24,12 +24,7 @@ export default function PODetailPage() {
 
   useEffect(() => { setMounted(true); }, []); // eslint-disable-line react-hooks/set-state-in-effect
 
-  const supplierName = (() => {
-    if (typeof po?.supplier_id === "object" && po?.supplier_id && "supplier_name" in po.supplier_id) {
-      return (po.supplier_id as { supplier_name?: string }).supplier_name ?? "—";
-    }
-    return po?.supplier_name ?? "—";
-  })();
+  const supplierName = po ? (po as unknown as Record<string, unknown>)?._supplier_name as string : "—";
 
   const orderedTotal = useMemo(() => items.reduce((s, i) => s + toNum(i.qty), 0), [items]);
   const receivedTotal = useMemo(
@@ -95,7 +90,7 @@ export default function PODetailPage() {
         <CardHeader>
           <div className="flex items-start justify-between">
             <div>
-              <CardTitle className="text-lg">Purchase Order #{po.purchase_order_no}</CardTitle>
+              <CardTitle className="text-lg">{po.purchase_order_no}</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
                 {po.lead_date || po.date || "—"}
               </p>

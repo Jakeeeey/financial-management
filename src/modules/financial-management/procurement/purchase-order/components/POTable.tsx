@@ -39,13 +39,6 @@ export function POTable({ data, loading, error }: POTableProps) {
     );
   }
 
-  const resolveSupplier = (po: PurchaseOrder): string => {
-    if (typeof po.supplier_id === "object" && po.supplier_id && "supplier_name" in po.supplier_id) {
-      return (po.supplier_id as { supplier_name?: string }).supplier_name ?? "—";
-    }
-    return po.supplier_name ?? "—";
-  };
-
   return (
     <div className="rounded-md border overflow-hidden">
       <Table>
@@ -66,7 +59,7 @@ export function POTable({ data, loading, error }: POTableProps) {
               onClick={() => router.push(`/fm/procurement/purchase-order/${po.id ?? po.purchase_order_id}`)}
             >
               <TableCell className="font-medium">{po.purchase_order_no || "—"}</TableCell>
-              <TableCell className="text-muted-foreground">{resolveSupplier(po)}</TableCell>
+              <TableCell className="text-muted-foreground">{(po as unknown as Record<string, unknown>)._supplier_name as string || "—"}</TableCell>
               <TableCell>{po.lead_date || po.date || "—"}</TableCell>
               <TableCell className="text-right font-mono tabular-nums">{formatCurrency(po.total_amount)}</TableCell>
               <TableCell><POStatusBadge status={po.inventory_status} /></TableCell>
