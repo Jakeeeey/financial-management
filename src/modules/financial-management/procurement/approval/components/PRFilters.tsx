@@ -11,12 +11,12 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from "@/components/ui/combobox";
-import { searchSuppliers } from "../providers/lookupsService";
+
+type SupplierOption = { name: string; id: string };
 
 type PRFiltersProps = {
   procurementNo: string;
   status: string;
-  supplierId: string;
   supplierLabel: string | null;
   dateFrom: string | null;
   dateTo: string | null;
@@ -24,36 +24,23 @@ type PRFiltersProps = {
   onStatusChange: (v: string) => void;
   onSupplierChange: (v: string, label: string | null) => void;
   onDateChange: (from: string | null, to: string | null) => void;
+  tableSupplierOptions: SupplierOption[];
 };
 
 export function PRFilters({
-  procurementNo, status, supplierId, supplierLabel, dateFrom, dateTo,
+  procurementNo, status, supplierLabel, dateFrom, dateTo,
   onProcurementNoChange, onStatusChange, onSupplierChange, onDateChange,
+  tableSupplierOptions,
 }: PRFiltersProps) {
   const [supplierSearchText, setSupplierSearchText] = React.useState("");
   const [supplierOpen, setSupplierOpen] = React.useState(false);
-  const [allSupplierOptions, setAllSupplierOptions] = React.useState<{ name: string; id: string }[]>([]);
-  const [supplierLoading, setSupplierLoading] = React.useState(false);
 
   const filteredSupplierOptions = React.useMemo(
     () => supplierSearchText.trim()
-      ? allSupplierOptions.filter((s) => s.name.toLowerCase().includes(supplierSearchText.toLowerCase()))
-      : allSupplierOptions,
-    [allSupplierOptions, supplierSearchText]
+      ? tableSupplierOptions.filter((s) => s.name.toLowerCase().includes(supplierSearchText.toLowerCase()))
+      : tableSupplierOptions,
+    [tableSupplierOptions, supplierSearchText]
   );
-
-  React.useEffect(() => {
-    if (!supplierOpen) return;
-    if (allSupplierOptions.length > 0) return;
-    setSupplierLoading(true);
-    const ac = new AbortController();
-    searchSuppliers("", ac.signal).then((rows) => {
-      if (ac.signal.aborted) return;
-      const opts = rows.map((r) => ({ name: r.supplier_name, id: String(r.id) }));
-      setAllSupplierOptions(opts);
-    }).catch(() => {}).finally(() => { if (!ac.signal.aborted) setSupplierLoading(false); });
-    return () => ac.abort();
-  }, [supplierOpen, allSupplierOptions.length]);
 
   const dateRange: DateRange | undefined = React.useMemo(() => {
     if (!dateFrom && !dateTo) return undefined;
@@ -78,19 +65,19 @@ export function PRFilters({
         open={supplierOpen} onOpenChange={setSupplierOpen}
         onValueChange={(name: string | null) => {
           if (name) {
-            const match = allSupplierOptions.find((s) => s.name === name);
-            onSupplierChange(match?.id ?? "", name);
+            onSupplierChange(name, name);
           } else {
             onSupplierChange("", null);
             setSupplierSearchText("");
           }
+          setSupplierOpen(false);
         }}
       >
         <ComboboxInput placeholder="Any supplier" showClear
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSupplierSearchText(e.target.value)}
         />
         <ComboboxContent>
-          <ComboboxEmpty>{supplierLoading ? "Loading..." : (supplierSearchText.trim() ? "No results." : "All suppliers loaded")}</ComboboxEmpty>
+          <ComboboxEmpty>{supplierSearchText.trim() ? "No results." : (tableSupplierOptions.length === 0 ? "No suppliers in table" : "")}</ComboboxEmpty>
           <ComboboxList>{(name: string) => <ComboboxItem key={name} value={name}>{name}</ComboboxItem>}</ComboboxList>
         </ComboboxContent>
       </Combobox>

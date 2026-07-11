@@ -5,6 +5,7 @@ function qs(query: PRListQuery) {
   if (query.q) p.set("q", query.q);
   if (query.status) p.set("status", query.status);
   if (query.supplier_id) p.set("supplier_id", query.supplier_id);
+  if (query.supplier_name) p.set("supplier_name", query.supplier_name);
   if (query.date_from) p.set("date_from", query.date_from);
   if (query.date_to) p.set("date_to", query.date_to);
   if (query.page) p.set("page", String(query.page));

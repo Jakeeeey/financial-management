@@ -79,6 +79,7 @@ export type PRListQuery = {
   q?: string;
   status?: string;
   supplier_id?: string;
+  supplier_name?: string;
   date_from?: string;
   date_to?: string;
   page?: number;
