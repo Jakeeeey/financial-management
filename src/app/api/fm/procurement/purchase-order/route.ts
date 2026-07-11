@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     }
 
     const params = new URLSearchParams({
-      fields: "*,supplier_id.supplier_name",
+      fields: "*",
       sort: "-purchase_order_id",
       limit: String(limit),
       offset: String(offset),
@@ -77,9 +77,34 @@ export async function GET(request: NextRequest) {
     if (!res.ok) throw new Error(await res.text());
     const json = await res.json();
 
+    const rows: Record<string, unknown>[] = json.data || [];
+
+    // Resolve supplier names separately (supplier_name is an int FK, no Directus M2O)
+    const supplierIds = [...new Set(rows.map((r: Record<string, unknown>) => r.supplier_name).filter(Boolean) as number[])];
+    const supplierNameMap: Record<number, string> = {};
+    if (supplierIds.length > 0) {
+      try {
+        const supRes = await fetch(
+          `${DIRECTUS_URL}/items/suppliers?filter=${encodeURIComponent(JSON.stringify({ id: { _in: supplierIds } }))}&fields=id,supplier_name&limit=-1`,
+          { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+        );
+        if (supRes.ok) {
+          const supJson = await supRes.json();
+          for (const s of supJson.data || []) {
+            supplierNameMap[Number(s.id)] = s.supplier_name || "";
+          }
+        }
+      } catch { /* supplier name resolution is best-effort */ }
+    }
+
+    const enriched = rows.map((r: Record<string, unknown>) => ({
+      ...r,
+      _supplier_name: supplierNameMap[Number(r.supplier_name)] ?? null,
+    }));
+
     return NextResponse.json({
-      data: json.data || [],
-      total: json.meta?.total_count ?? (json.data || []).length,
+      data: enriched,
+      total: json.meta?.total_count ?? enriched.length,
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";

@@ -11,7 +11,6 @@ export default function ApprovalListPage() {
   const [procurementNo, setProcurementNo] = React.useState("");
   const [debouncedProcurementNo, setDebouncedProcurementNo] = React.useState("");
   const [status, setStatus] = React.useState("all");
-  const [supplierId, setSupplierId] = React.useState("");
   const [supplierLabel, setSupplierLabel] = React.useState<string | null>(null);
   const [dateFrom, setDateFrom] = React.useState<string | null>(null);
   const [dateTo, setDateTo] = React.useState<string | null>(null);
@@ -25,16 +24,30 @@ export default function ApprovalListPage() {
     () => ({
       q: debouncedProcurementNo || undefined,
       status: status !== "all" ? status : undefined,
-      supplier_id: supplierId || undefined,
+      supplier_name: supplierLabel || undefined,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
       page: 1,
       pageSize: 50,
     }),
-    [debouncedProcurementNo, status, supplierId, dateFrom, dateTo]
+    [debouncedProcurementNo, status, supplierLabel, dateFrom, dateTo]
   );
 
   const { rows, total, loading, error } = usePRList(query);
+
+  const tableSupplierOptions = React.useMemo(() => {
+    if (!rows || rows.length === 0) return [];
+    const seen = new Set<string>();
+    const result: { name: string; id: string }[] = [];
+    for (const r of rows) {
+      const name = r.supplier_name;
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        result.push({ name, id: name });
+      }
+    }
+    return result;
+  }, [rows]);
 
   return (
     <div className="space-y-4">
@@ -46,14 +59,14 @@ export default function ApprovalListPage() {
       <PRFilters
         procurementNo={procurementNo}
         status={status}
-        supplierId={supplierId}
         supplierLabel={supplierLabel}
         dateFrom={dateFrom}
         dateTo={dateTo}
         onProcurementNoChange={setProcurementNo}
         onStatusChange={setStatus}
-        onSupplierChange={(id, label) => { setSupplierId(id); setSupplierLabel(label); }}
+        onSupplierChange={(_id, label) => { setSupplierLabel(label); }}
         onDateChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
+        tableSupplierOptions={tableSupplierOptions}
       />
 
       <PRTable

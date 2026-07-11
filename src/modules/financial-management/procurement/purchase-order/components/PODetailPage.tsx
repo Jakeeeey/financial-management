@@ -6,7 +6,7 @@ import { usePODetail } from "../hooks/usePurchaseOrders";
 import { POStatusBadge } from "./POStatusBadge";
 import { POPrintContent } from "./POPrintContent";
 import { POReceiveDialog } from "./POReceiveDialog";
-import { formatCurrency, toNum } from "../utils/po-utils";
+import { formatCurrency, formatDate, formatDateTime,  toNum } from "../utils/po-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -24,12 +24,7 @@ export default function PODetailPage() {
 
   useEffect(() => { setMounted(true); }, []); // eslint-disable-line react-hooks/set-state-in-effect
 
-  const supplierName = (() => {
-    if (typeof po?.supplier_id === "object" && po?.supplier_id && "supplier_name" in po.supplier_id) {
-      return (po.supplier_id as { supplier_name?: string }).supplier_name ?? "—";
-    }
-    return po?.supplier_name ?? "—";
-  })();
+  const supplierName = po ? (po as unknown as Record<string, unknown>)?._supplier_name as string : "—";
 
   const orderedTotal = useMemo(() => items.reduce((s, i) => s + toNum(i.qty), 0), [items]);
   const receivedTotal = useMemo(
@@ -95,9 +90,9 @@ export default function PODetailPage() {
         <CardHeader>
           <div className="flex items-start justify-between">
             <div>
-              <CardTitle className="text-lg">Purchase Order #{po.purchase_order_no}</CardTitle>
+              <CardTitle className="text-lg">{po.purchase_order_no}</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                {po.lead_date || po.date || "—"}
+                {formatDate(po.lead_date || po.date)}
               </p>
             </div>
             <POStatusBadge status={po.inventory_status} />
@@ -120,13 +115,13 @@ export default function PODetailPage() {
             {po.date_approved && (
               <div>
                 <span className="text-muted-foreground">Date Approved</span>
-                <p className="font-medium">{po.date_approved}</p>
+                <p className="font-medium">{formatDateTime(po.date_approved)}</p>
               </div>
             )}
             {po.date_received && (
               <div>
                 <span className="text-muted-foreground">Last Received</span>
-                <p className="font-medium">{po.date_received}</p>
+                <p className="font-medium">{formatDateTime(po.date_received)}</p>
               </div>
             )}
           </div>

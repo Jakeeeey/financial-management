@@ -126,7 +126,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       inventory_status: 3, // For Receiving
       transaction_type: 1,
       receipt_required: 1,
-      remark: `PR: ${master.procurement_no ?? ""}`.trim(),
+      remark: master.procurement_no ?? "",
       reference: String(master.id),
     };
 

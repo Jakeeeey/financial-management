@@ -29,13 +29,10 @@ import {
 import { CalendarIcon, Loader2, Plus, Trash2 } from "lucide-react";
 import { format, isValid } from "date-fns";
 import { useRouter } from "next/navigation";
-import { createPR, searchSuppliers, listItemTemplates, listItemVariants } from "../providers/requestService";
-import type { Supplier, ItemTemplate, ItemVariant, CreatePRItemInput } from "../utils/types";
+import { createPR, searchSuppliers, listItemTemplates, listItemVariants, listUnits } from "../providers/requestService";
+import type { Supplier, ItemTemplate, ItemVariant, Unit, CreatePRItemInput } from "../utils/types";
+import { formatPHP } from "../utils/format";
 import { toast } from "sonner";
-
-const PHP = new Intl.NumberFormat("en-PH", {
-  style: "currency", currency: "PHP", maximumFractionDigits: 2,
-});
 
 type LineItem = CreatePRItemInput & {
   _key: number;
@@ -50,49 +47,54 @@ export function RequestCreatePage() {
   const [leadDate, setLeadDate] = React.useState<Date>(new Date());
   const [lineItems, setLineItems] = React.useState<LineItem[]>([]);
   const [submitting, setSubmitting] = React.useState(false);
+  const [units, setUnits] = React.useState<Unit[]>([]);
+  React.useEffect(() => { listUnits().then(setUnits).catch(() => {}); }, []);
 
   const [supplierSearchText, setSupplierSearchText] = React.useState("");
   const [supplierItems, setSupplierItems] = React.useState<string[]>([]);
   const [selectedSupplier, setSelectedSupplier] = React.useState<Supplier | null>(null);
   const supplierDataRef = React.useRef<Record<string, Supplier>>({});
 
+  const supplierFetchId = React.useRef(0);
   React.useEffect(() => {
-    if (!supplierSearchText.trim()) { setSupplierItems([]); return; }
+    const id = ++supplierFetchId.current;
     const ac = new AbortController();
     const timer = setTimeout(async () => {
       try {
         const rows = await searchSuppliers(supplierSearchText, ac.signal);
-        if (!ac.signal.aborted) {
+        if (!ac.signal.aborted && id === supplierFetchId.current) {
           const map: Record<string, Supplier> = {};
           rows.forEach((r) => { map[r.supplier_name] = r; });
           supplierDataRef.current = map;
           setSupplierItems(rows.map((r) => r.supplier_name));
         }
       } catch { /* ignore */ }
-    }, 300);
+    }, 150);
     return () => { clearTimeout(timer); ac.abort(); };
   }, [supplierSearchText]);
 
+  const [itemOpen, setItemOpen] = React.useState(false);
   const [itemSearchText, setItemSearchText] = React.useState("");
   const [itemTemplateItems, setItemTemplateItems] = React.useState<string[]>([]);
   const itemTemplateDataRef = React.useRef<Record<string, ItemTemplate>>({});
+  const itemFetchId = React.useRef(0);
 
   React.useEffect(() => {
-    if (!itemSearchText.trim()) { setItemTemplateItems([]); return; }
+    const id = ++itemFetchId.current;
     const ac = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const rows = await listItemTemplates(itemSearchText, ac.signal);
-        if (!ac.signal.aborted) {
+        const rows = await listItemTemplates(itemSearchText ?? "", ac.signal);
+        if (!ac.signal.aborted && id === itemFetchId.current) {
           const map: Record<string, ItemTemplate> = {};
           rows.forEach((r) => { map[r.name] = r; });
           itemTemplateDataRef.current = map;
           setItemTemplateItems(rows.map((r) => r.name));
         }
       } catch { /* ignore */ }
-    }, 300);
+    }, 150);
     return () => { clearTimeout(timer); ac.abort(); };
-  }, [itemSearchText]);
+  }, [itemSearchText, itemOpen]);
 
   const [variantOptions, setVariantOptions] = React.useState<Record<number, ItemVariant[]>>({});
   const [loadingVariant, setLoadingVariant] = React.useState<Record<number, boolean>>({});
@@ -147,6 +149,17 @@ export function RequestCreatePage() {
   async function handleSubmit() {
     if (!selectedSupplier) { toast.error("Please select a supplier"); return; }
     if (!lineItems.length) { toast.error("Please add at least one item"); return; }
+    for (const li of lineItems) {
+      if (!li.item_template_id) { toast.error("Each item needs a template"); return; }
+      if (String(li.qty).replace(/\D/g, "").length > 7) { toast.error("Qty cannot exceed 7 digits"); return; }
+      if (String(li.unit_price).replace(/\D/g, "").length > 9) { toast.error("Unit price cannot exceed 9 digits"); return; }
+      const upStr = String(li.unit_price);
+      const decParts = upStr.split(".");
+      if (decParts.length > 1 && decParts[1].length > 2) { toast.error("Unit price can only have 2 decimal places"); return; }
+      if (String(Math.floor(li.qty * li.unit_price)).replace(/\D/g, "").length > 8) { toast.error("Line total exceeds maximum (decimal(10,2))"); return; }
+    }
+    const grandTotal = lineItems.reduce((s, li) => s + li.qty * li.unit_price, 0);
+    if (String(Math.floor(grandTotal)).replace(/\D/g, "").length > 8) { toast.error("Grand total exceeds maximum (decimal(10,2))"); return; }
     setSubmitting(true);
     try {
       const result = await createPR({
@@ -242,9 +255,9 @@ export function RequestCreatePage() {
                     <th className="px-3 py-2 text-left font-medium min-w-[200px]">Item</th>
                     <th className="px-3 py-2 text-left font-medium min-w-[200px]">Variant</th>
                     <th className="px-3 py-2 text-left font-medium w-[1%] whitespace-nowrap min-w-[120px]">UOM</th>
-                    <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[120px]">Qty</th>
-                    <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[120px]">Unit Price</th>
-                    <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[110px]">Total</th>
+                    <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[90px] max-w-[90px]">Qty</th>
+                    <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[130px] max-w-[160px]">Unit Price</th>
+                    <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[130px] max-w-[160px]">Total</th>
                     <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
@@ -256,13 +269,14 @@ export function RequestCreatePage() {
                       <td className="px-3 py-2 max-w-[240px] min-w-[200px]">
                         <Combobox items={itemTemplateItems} value={line.template_name ?? ""}
                           onValueChange={(name: string | null) => handleSelectTemplate(line._key, name)}
+                          onOpenChange={(open: boolean) => { setItemOpen(open); if (!open) setItemSearchText(""); }}
                         >
                           <ComboboxInput placeholder="Search item template..." showClear className="h-8 text-xs"
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setItemSearchText(e.target.value)}
                           />
                           <ComboboxContent>
                             <ComboboxEmpty>No templates.</ComboboxEmpty>
-                            <ComboboxList>{(name: string) => <ComboboxItem key={name} value={name}><div className="font-medium">{name}</div></ComboboxItem>}</ComboboxList>
+                            <ComboboxList>{(name: string) => <ComboboxItem key={name} value={name}><div>{name}</div></ComboboxItem>}</ComboboxList>
                           </ComboboxContent>
                         </Combobox>
                         {loadingVariant[line._key] && <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Loading variants...</div>}
@@ -283,11 +297,18 @@ export function RequestCreatePage() {
                           </Select>
                         ) : <span className="text-xs text-muted-foreground">&mdash;</span>}
                       </td>
-                      <td className="px-3 py-2"><Input placeholder="UOM" value={line.uom ?? ""} onChange={(e) => updateLine(line._key, { uom: e.target.value || null })} className="h-8 text-xs" /></td>
-                      <td className="px-3 py-2"><Input type="number" min="0" step="1" value={line.qty} onChange={(e) => updateLine(line._key, { qty: Number(e.target.value) || 0 })} className="h-8 text-xs text-right" /></td>
-                      <td className="px-3 py-2"><Input type="number" min="0" step="0.01" value={line.unit_price} onChange={(e) => updateLine(line._key, { unit_price: Number(e.target.value) || 0 })} className="h-8 text-xs text-right" /></td>
-                      <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">{PHP.format(line.qty * line.unit_price)}</td>
-                      <td className="px-3 py-2"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeLine(line._key)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button></td>
+                      <td className="px-3 py-2">
+                        <Select value={line.uom ?? ""} onValueChange={(v) => updateLine(line._key, { uom: v || null })}>
+                          <SelectTrigger className="h-8 text-xs w-24"><SelectValue placeholder="UOM" /></SelectTrigger>
+                            <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </td>
+                    <td className="px-3 py-2 max-w-[90px]"><Input type="number" min="0" step="1" value={line.qty} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 7) return; updateLine(line._key, { qty: Number(e.target.value) || 0 }); }} className="h-8 text-xs text-right" /></td>
+                     <td className="px-3 py-2 max-w-[160px]"><Input type="number" min="0" step="0.01" value={line.unit_price} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 9) return; updateLine(line._key, { unit_price: Number(e.target.value) || 0 }); }} className="h-8 w-24 text-xs text-right" /></td>
+                        <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">{formatPHP(line.qty * line.unit_price)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeLine(line._key)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
+                        </td>
                     </tr>
                     );
                   })}
@@ -295,7 +316,7 @@ export function RequestCreatePage() {
                 <tfoot>
                   <tr className="border-t font-medium">
                     <td colSpan={5} className="px-3 py-2 text-right">Grand Total</td>
-                    <td className="px-3 py-2 text-right font-mono tabular-nums">{PHP.format(lineItems.reduce((s, li) => s + li.qty * li.unit_price, 0))}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">{formatPHP(lineItems.reduce((s, li) => s + li.qty * li.unit_price, 0))}</td>
                     <td></td>
                   </tr>
                 </tfoot>

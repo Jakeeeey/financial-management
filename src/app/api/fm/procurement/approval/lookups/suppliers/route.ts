@@ -7,9 +7,10 @@ const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 export async function GET(request: NextRequest) {
   try {
     const q = request.nextUrl.searchParams.get("q") || "";
-    const filter = q ? { supplier_name: { _icontains: q } } : {};
+    const filter: Record<string, unknown> = { supplier_type: { _neq: "Trade" } };
+    if (q) filter.supplier_name = { _icontains: q };
     const res = await fetch(
-      `${DIRECTUS_URL}/items/suppliers?filter=${encodeURIComponent(JSON.stringify(filter))}&limit=20`,
+      `${DIRECTUS_URL}/items/suppliers?limit=-1&filter=${encodeURIComponent(JSON.stringify(filter))}`,
       { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
     );
     if (!res.ok) throw new Error(await res.text());

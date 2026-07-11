@@ -45,7 +45,7 @@ export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
           </div>
           <div>
             <span className="text-muted-foreground block">Total Amount</span>
-            <span className="font-mono font-semibold tabular-nums">{formatPHP(displayTotal)}</span>
+            <span className="block font-mono font-semibold tabular-nums">{formatPHP(displayTotal)}</span>
           </div>
           {master.department_name && (
             <div>

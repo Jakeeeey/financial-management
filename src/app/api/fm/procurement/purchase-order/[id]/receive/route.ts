@@ -46,7 +46,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         received_by: resolvedReceivedBy,
         reference_no: reference_no || null,
         notes: notes || null,
-        received_date: new Date().toISOString().split("T")[0],
+        received_date: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().split("T")[0],
       }),
       cache: "no-store",
     });
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
     );
     const poItemsJson = await poItemsRes.json();
-    const allItems: { id: number; qty: string | number }[] = poItemsJson.data || [];
+    const allItems: { po_item_id: number; qty: string | number }[] = poItemsJson.data || [];
 
     const receivingIdsRes = await fetch(
       `${DIRECTUS_URL}/items/receiving?filter=${encodeURIComponent(JSON.stringify({ purchase_order_id: { _eq: poId } }))}&fields=id`,
@@ -129,9 +129,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const allFulfilled = allItems.every((item) => {
       const ordered = Number(item.qty || 0);
-      const got = receivedMap[item.id] || 0;
+      const itemKey = item.po_item_id;
+      const got = receivedMap[itemKey] || 0;
       return got >= ordered;
     });
+
+    const gmt8Now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const lastReceived = gmt8Now.toISOString().replace("T", " ").split(".")[0];
 
     const newStatus = allFulfilled ? "full" : "partial";
     await fetch(`${DIRECTUS_URL}/items/purchase_order/${poId}`, {
@@ -139,7 +143,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         inventory_status: allFulfilled ? 6 : 9,
-        date_received: new Date().toISOString(),
+        date_received: gmt8Now.toISOString(),
+        last_received: lastReceived,
       }),
       cache: "no-store",
     });

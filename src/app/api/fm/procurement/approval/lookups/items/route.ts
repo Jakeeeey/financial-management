@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const q = request.nextUrl.searchParams.get("q") || "";
     const filter = q ? { name: { _icontains: q } } : {};
     const res = await fetch(
-      `${DIRECTUS_URL}/items/item_template?filter=${encodeURIComponent(JSON.stringify(filter))}&limit=20`,
+      `${DIRECTUS_URL}/items/item_template?filter=${encodeURIComponent(JSON.stringify(filter))}`,
       { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
     );
     if (!res.ok) throw new Error(await res.text());
