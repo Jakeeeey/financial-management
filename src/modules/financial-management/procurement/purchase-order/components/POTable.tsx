@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { POStatusBadge } from "./POStatusBadge";
-import { formatCurrency } from "../utils/po-utils";
+import { formatCurrency, formatDate } from "../utils/po-utils";;
 import type { PurchaseOrder } from "../utils/types";
 
 interface POTableProps {
@@ -60,7 +60,7 @@ export function POTable({ data, loading, error }: POTableProps) {
             >
               <TableCell className="font-medium">{po.purchase_order_no || "—"}</TableCell>
               <TableCell className="text-muted-foreground">{(po as unknown as Record<string, unknown>)._supplier_name as string || "—"}</TableCell>
-              <TableCell>{po.lead_date || po.date || "—"}</TableCell>
+              <TableCell>{formatDate(po.lead_date || po.date)}</TableCell>
               <TableCell className="text-right font-mono tabular-nums">{formatCurrency(po.total_amount)}</TableCell>
               <TableCell><POStatusBadge status={po.inventory_status} /></TableCell>
             </TableRow>

@@ -1,5 +1,5 @@
 import type { PurchaseOrder, PurchaseOrderItem } from "../utils/types";
-import { formatCurrency, toNum } from "../utils/po-utils";
+import { formatCurrency, formatDate, toNum } from "../utils/po-utils";
 
 interface POPrintContentProps {
   po: PurchaseOrder | null;
@@ -34,7 +34,7 @@ export function POPrintContent({ po, items, supplierName }: POPrintContentProps)
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
           <div style={{ fontSize: 11 }}>
             <strong>Supplier:</strong> {supplierName || "—"}<br />
-            <strong>Date:</strong> {po?.lead_date || po?.date || "—"}
+            <strong>Date:</strong> {formatDate(po?.lead_date || po?.date)}
           </div>
           <div style={{ fontSize: 11, textAlign: "right" }}>
             <strong>Status:</strong> {po?.status || "—"}<br />

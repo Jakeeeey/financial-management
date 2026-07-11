@@ -46,7 +46,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         received_by: resolvedReceivedBy,
         reference_no: reference_no || null,
         notes: notes || null,
-        received_date: new Date().toISOString().split("T")[0],
+        received_date: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().split("T")[0],
       }),
       cache: "no-store",
     });
@@ -134,13 +134,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return got >= ordered;
     });
 
+    const gmt8Now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const lastReceived = gmt8Now.toISOString().replace("T", " ").split(".")[0];
+
     const newStatus = allFulfilled ? "full" : "partial";
     await fetch(`${DIRECTUS_URL}/items/purchase_order/${poId}`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         inventory_status: allFulfilled ? 6 : 9,
-        date_received: new Date().toISOString(),
+        date_received: gmt8Now.toISOString(),
+        last_received: lastReceived,
       }),
       cache: "no-store",
     });

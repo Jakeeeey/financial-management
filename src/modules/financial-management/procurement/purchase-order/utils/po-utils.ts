@@ -21,4 +21,23 @@ export function toNum(val: unknown): number {
   return Number(val ?? 0);
 }
 
+export function formatDate(value: string | null | undefined): string {
+  if (!value) return "\u2014";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "\u2014";
+  return d.toLocaleDateString("en-PH", {
+    year: "numeric", month: "short", day: "2-digit",
+  });
+}
+
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "\u2014";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "\u2014";
+  return d.toLocaleString("en-PH", {
+    year: "numeric", month: "short", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
 export { statusLabel, statusColor };
