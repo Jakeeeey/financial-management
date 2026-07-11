@@ -49,22 +49,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supplierRes = await fetch(
-      `${DIRECTUS_URL}/items/suppliers/${supplier_id}?fields=supplier_type,supplier_name`,
-      { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
-    );
-    if (!supplierRes.ok) throw new Error("Failed to fetch supplier");
-    const supplierData = await supplierRes.json();
-    const supplierType = supplierData.data?.supplier_type ?? null;
-
-    const norm = (s: string | null) => (s ?? "").trim().replace(/\s+/g, " ");
-    const prefix =
-      norm(supplierType).includes("Trade") ? "PRTR" :
-      norm(supplierType).includes("Non")   ? "PRNT" : "PR";
-    const transactionType =
-      prefix === "PRNT" ? "non-trade" :
-      prefix === "PRTR" ? "trade" : null;
-    const procurement_no = `${prefix}-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 999999)).padStart(6, "0")}`;
+    const procurement_no = `PRNT-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 999999)).padStart(6, "0")}`;
 
     const masterRes = await fetch(`${DIRECTUS_URL}/items/procurement`, {
       method: "POST",
@@ -72,7 +57,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         procurement_no, supplier_id, lead_date, encoder_id,
         department_id: department_id || null,
-        transaction_type: transactionType,
+        transaction_type: "non-trade",
         status: status || "pending",
         total_amount: 0,
       }),
