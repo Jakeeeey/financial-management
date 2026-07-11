@@ -300,7 +300,7 @@ export function RequestCreatePage() {
                       <td className="px-3 py-2">
                         <Select value={line.uom ?? ""} onValueChange={(v) => updateLine(line._key, { uom: v || null })}>
                           <SelectTrigger className="h-8 text-xs w-24"><SelectValue placeholder="UOM" /></SelectTrigger>
-                          <SelectContent className="max-h-[160px] overflow-y-auto">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
+                            <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
                         </Select>
                       </td>
                     <td className="px-3 py-2 max-w-[90px]"><Input type="number" min="0" step="1" value={line.qty} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 7) return; updateLine(line._key, { qty: Number(e.target.value) || 0 }); }} className="h-8 text-xs text-right" /></td>

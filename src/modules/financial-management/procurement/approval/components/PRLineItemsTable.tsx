@@ -319,12 +319,12 @@ export function PRLineItemsTable({
                     {isNew ? (
                       <Select value={nr?.uom ?? ""} onValueChange={(v) => updateNewRow(d.id, { uom: v })}>
                         <SelectTrigger className="h-8 text-xs w-24"><SelectValue placeholder="UOM" /></SelectTrigger>
-                        <SelectContent className="max-h-[160px] overflow-y-auto">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
+                        <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
                       </Select>
                     ) : isEditing ? (
-                      <Select value={editUom} onValueChange={setEditUom}>
+                      <Select value={d.uom ?? ""} onValueChange={(v) => setEditUom(v)}>
                         <SelectTrigger className="h-8 text-xs w-24"><SelectValue placeholder="UOM" /></SelectTrigger>
-                        <SelectContent className="max-h-[160px] overflow-y-auto">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
+                        <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
                       </Select>
                     ) : d.uom ?? "\u2014"}
                   </td>
