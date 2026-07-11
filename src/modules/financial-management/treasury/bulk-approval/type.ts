@@ -377,6 +377,7 @@ export type FinalTopSheetResponse = {
     header_id: number;
     file_url: string;
     file_name: string;
+    encoder_id?: number;
   }[];
 };
 

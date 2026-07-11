@@ -46,6 +46,7 @@ type ExpenseAttachmentRow = {
   header_id?: number | string | null;
   file_url?: string | null;
   file_name?: string | null;
+  uploaded_by?: number | string | null;
 };
 
 function normalizeDecisionScope(value: unknown): FinalDecisionScope | null {
@@ -768,7 +769,7 @@ export async function buildFinalTopSheet(params: {
   });
 
   const attachmentsRes = await directusFetch<DirectusListResponse<ExpenseAttachmentRow>>(
-    `/items/expense_attachments?filter[header_id][_in]=${linked.headerIds.join(",")}&fields=header_id,file_url,file_name&limit=-1`
+    `/items/expense_attachments?filter[header_id][_in]=${linked.headerIds.join(",")}&fields=header_id,file_url,file_name,uploaded_by&limit=-1`
   );
 
   const attachments = attachmentsRes.ok ? attachmentsRes.data.data ?? [] : [];
@@ -830,6 +831,7 @@ export async function buildFinalTopSheet(params: {
         header_id: toNumericId(attachment.header_id) ?? 0,
         file_url: attachment.file_url ?? "",
         file_name: attachment.file_name ?? "Attachment",
+        encoder_id: toNumericId(attachment.uploaded_by) ?? 0,
       })),
     },
   };

@@ -59,6 +59,7 @@ type ApprovalMeta = {
   is_finalized?: boolean;
   current_tier?: number;
   required_approver_level?: number;
+  current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
 };
 
 function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null | undefined): ApprovalMeta {
@@ -69,6 +70,7 @@ function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null
     is_finalized: source?.is_finalized,
     current_tier: source?.current_tier,
     required_approver_level: source?.required_approver_level,
+    current_tier_approvers: source?.current_tier_approvers ?? [],
   };
 }
 
@@ -78,7 +80,14 @@ function formatDraftStatusList(statuses?: string[]) {
 }
 
 function getApprovalInfo(meta: ApprovalMeta) {
-  const currentLevel = meta.current_tier ? `Level ${meta.current_tier}` : "not yet routed";
+  const pendingApprovers = (meta.current_tier_approvers ?? [])
+    .filter((a) => !a.voted)
+    .map((a) => a.name);
+  const pendingText = pendingApprovers.length > 0
+    ? ` (pending: ${pendingApprovers.join(", ")})`
+    : "";
+
+  const currentLevel = meta.current_tier ? `Level ${meta.current_tier}${pendingText}` : "not yet routed";
   const requiredLevel = meta.required_approver_level ? `Level ${meta.required_approver_level}` : "final approver level";
   const currentStatuses = formatDraftStatusList(meta.draft_statuses);
   const isApproved = (meta.draft_statuses?.length ?? 0) > 0 && meta.draft_statuses?.every((s) => s === "Approved");
@@ -804,7 +813,7 @@ export default function FinalTopSheetModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex !h-screen !w-screen !max-w-none !max-h-none flex-col overflow-hidden border-none p-0 sm:rounded-none">
+        <DialogContent showCloseButton={false} className="flex !h-screen !w-screen !max-w-none !max-h-none flex-col overflow-hidden border-none p-0 sm:rounded-none">
           <div className="shrink-0 bg-slate-50 dark:bg-gradient-to-r dark:from-slate-950 dark:via-slate-900 dark:to-[#1e1e2e] border-b dark:border-none px-5 py-3 text-slate-900 dark:text-white shadow-xl relative">
             <div className="flex items-center justify-between gap-4 relative z-10">
               <DialogTitle className="flex items-center gap-3 text-base font-black tracking-tight text-slate-900 dark:text-white">
@@ -831,16 +840,16 @@ export default function FinalTopSheetModal({
               <div className="flex items-center gap-2">
                 {/* Current Tier Approvers Pill */}
                 {(data?.group.current_tier_approvers ?? []).length > 0 && (
-                  <div className="hidden sm:flex items-center gap-2 rounded-xl border border-indigo-400/30 dark:border-indigo-500/30 bg-white/10 dark:bg-indigo-900/30 px-3 py-1.5 backdrop-blur-sm">
-                    <ShieldCheck className="h-3.5 w-3.5 text-indigo-300 dark:text-indigo-400 shrink-0" />
+                  <div className="hidden sm:flex items-center gap-2 rounded-xl border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-900/30 px-3 py-1.5 backdrop-blur-sm">
+                    <ShieldCheck className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                     <div className="flex flex-col leading-none gap-0.5">
-                      <span className="text-[8px] font-black uppercase tracking-[0.2em] text-indigo-300/70 dark:text-indigo-500">Current Approver</span>
+                      <span className="text-[8px] font-black uppercase tracking-[0.2em] text-indigo-700 dark:text-indigo-400">Current Approver</span>
                       {(data?.group.current_tier_approvers ?? []).map((a) => (
                         <div key={a.approver_id} className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-black text-white dark:text-indigo-200 truncate max-w-[12rem]">{a.name}</span>
+                          <span className="text-[10px] font-black text-slate-900 dark:text-indigo-200 truncate max-w-[12rem]">{a.name}</span>
                           {a.voted
-                            ? <span className="text-[8px] font-black text-emerald-400 shrink-0">✓ Voted</span>
-                            : <span className="text-[8px] font-black text-amber-400 shrink-0">Pending</span>
+                            ? <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 shrink-0">✓ Voted</span>
+                            : <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 shrink-0">Pending</span>
                           }
                         </div>
                       ))}
@@ -848,19 +857,19 @@ export default function FinalTopSheetModal({
                   </div>
                 )}
                 {group && (
-                  <div className="flex items-center gap-2 bg-white/5 p-1.5 rounded-xl border border-white/10">
+                  <div className="flex items-center gap-2 bg-slate-100 dark:bg-white/5 p-1.5 rounded-xl border border-slate-200 dark:border-white/10">
                     <Badge className="rounded-lg bg-primary/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-primary border border-primary/30">
                       {group.division_name ?? `Division #${group.division_id}`}
                     </Badge>
-                    <span className="text-[10px] font-bold text-white/50">
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-white/50">
                       {formatDate(group.period_from)} – {formatDate(group.period_to)}
                     </span>
                     <Badge className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${
                       isApprovedHistory
-                        ? "border border-emerald-500/30 bg-emerald-500/20 text-emerald-400"
+                        ? "border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                         : canSubmitFinalAction 
-                          ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-200" 
-                          : "border border-amber-300/40 bg-amber-400/15 text-amber-200"
+                          ? "border border-emerald-100 dark:border-emerald-300/40 bg-emerald-50 dark:bg-emerald-400/15 text-emerald-600 dark:text-emerald-200" 
+                          : "border border-amber-200 dark:border-amber-300/40 bg-amber-50 dark:bg-amber-400/15 text-amber-700 dark:text-amber-200"
                     }`}>
                       {isApprovedHistory ? "FINALIZED" : approvalInfo.shortLabel}
                     </Badge>
@@ -921,14 +930,14 @@ export default function FinalTopSheetModal({
                             ? "Ready for final approver action" 
                             : "View-only until previous approval tier is completed"}
                       </h3>
-                      <p className={`text-[11px] font-medium leading-none ${
+                      <p className={`text-[11px] font-medium leading-normal ${
                         isApprovedHistory || canSubmitFinalAction ? "text-emerald-700/70 dark:text-emerald-400/70" : "text-slate-500 dark:text-slate-400"
                       }`}>
                         {isApprovedHistory 
                           ? "This top-sheet has been successfully audited and posted to the live Disbursement table."
                           : canSubmitFinalAction 
                             ? `Current status: ${(data?.group.draft_statuses ?? []).join(", ")}. This top-sheet is ${toNumber(data?.group.current_tier) >= 999 ? "Finalized" : `on Level ${data?.group.current_tier}`}.` 
-                            : `Current status: ${(data?.group.draft_statuses ?? []).join(", ")}. Final approver actions are enabled only at Level ${data?.group.required_approver_level}.`}
+                            : approvalInfo.description}
                       </p>
                     </div>
                   </div>
