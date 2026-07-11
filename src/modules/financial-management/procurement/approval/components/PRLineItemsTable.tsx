@@ -7,10 +7,10 @@ import { Loader2, Trash2, Save, Plus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxList, ComboboxItem } from "@/components/ui/combobox";
 import type { ProcurementDetail } from "../utils/types";
-import { formatPHP } from "../utils/format";
+import { formatPHP, formatQty } from "../utils/format";
 import { createPRDetail, updatePRDetail, deletePRDetail } from "../providers/approvalService";
-import { listItemTemplates, listItemVariants } from "../providers/lookupsService";
-import type { ItemTemplate, ItemVariant } from "../utils/types";
+import { listItemTemplates, listItemVariants, listUnits } from "../providers/lookupsService";
+import type { ItemTemplate, ItemVariant, Unit } from "../utils/types";
 import { toast } from "sonner";
 
 type PRLineItemsTableProps = {
@@ -54,17 +54,19 @@ function ItemTemplateCombobox({
   const [searchText, setSearchText] = useState("");
   const [selectedValue, setSelectedValue] = useState<string | null>(templateId ? `tmpl:${templateId}:${value}` : null);
   const [items, setItems] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
   const debouncedSearch = useDebounce(searchText, 300);
   const templateDataRef = useRef<Record<string, ItemTemplate>>({});
+  const initialFetchRef = useRef(false);
 
   useEffect(() => {
-    if (!searchText.trim()) {
+    if (!searchText.trim() && !open) {
       if (selectedValue) setItems([selectedValue]);
       else setItems([]);
       return;
     }
     let cancelled = false;
-    listItemTemplates(searchText).then((templates) => {
+    (searchText.trim() ? listItemTemplates(searchText) : listItemTemplates("")).then((templates) => {
       if (cancelled) return;
       const map: Record<string, ItemTemplate> = {};
       templates.forEach((t) => { const key = `tmpl:${t.id}`; map[key] = t; });
@@ -73,7 +75,7 @@ function ItemTemplateCombobox({
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch]);
+  }, [debouncedSearch, open]);
 
   function handleValueChange(selected: string | null) {
     if (!selected) return;
@@ -92,7 +94,7 @@ function ItemTemplateCombobox({
 
   return (
     <div className="min-w-[200px]">
-      <Combobox items={items} value={selectedValue} onValueChange={handleValueChange} disabled={disabled}>
+      <Combobox items={items} value={selectedValue} onValueChange={handleValueChange} disabled={disabled} open={open} onOpenChange={(o) => { setOpen(o); if (o) initialFetchRef.current = false; }}>
         <ComboboxInput
           placeholder={disabled ? "—" : templateId ? selectedLabel : "Search item template..."}
           className="h-8 text-xs"
@@ -100,7 +102,7 @@ function ItemTemplateCombobox({
           onChange={(e) => { setSearchText(e.target.value); if (selectedValue) setSelectedValue(null); }}
         />
         <ComboboxContent>
-          <ComboboxEmpty>{searchText.trim() || !selectedValue ? "Type to search items" : "No results"}</ComboboxEmpty>
+          <ComboboxEmpty>{searchText.trim() ? "No results" : "No items found"}</ComboboxEmpty>
           <ComboboxList>
             {(item) => {
               const parts = item.split(":");
@@ -157,9 +159,24 @@ export function PRLineItemsTable({
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [newRows, setNewRows] = useState<NewRow[]>([]);
   const [filterText, setFilterText] = useState("");
+  const [units, setUnits] = useState<Unit[]>([]);
+  useEffect(() => {
+    listUnits().then(setUnits).catch(() => {});
+  }, []);
   const nextId = useRef(0);
 
   async function handleSave(detailId: number) {
+    if (String(editQty).replace(/\D/g, "").length > 7) { toast.error("Qty cannot exceed 7 digits"); return; }
+    if (String(editPrice).replace(/\D/g, "").length > 9) { toast.error("Unit price cannot exceed 9 digits"); return; }
+    const upStr = String(editPrice);
+    const upParts = upStr.split(".");
+    if (upParts.length > 1 && upParts[1].length > 2) { toast.error("Unit price can only have 2 decimal places"); return; }
+    if (String(Math.floor(editQty * editPrice)).replace(/\D/g, "").length > 8) { toast.error("Line total exceeds maximum (decimal(10,2))"); return; }
+    const newTotal = details.reduce((s, d) => {
+      if (d.id === detailId) return s + editQty * editPrice;
+      return s + (d.qty || 0) * (d.unit_price || 0);
+    }, 0);
+    if (String(Math.floor(newTotal)).replace(/\D/g, "").length > 8) { toast.error("Grand total exceeds maximum (decimal(10,2))"); return; }
     const changes: Partial<ProcurementDetail> = { qty: editQty, unit_price: editPrice };
     if (editUom) changes.uom = editUom;
     onDetailUpdated(detailId, changes);
@@ -217,6 +234,14 @@ export function PRLineItemsTable({
     if (!row) return;
     if (!row.template_name?.trim()) { toast.error("Item template is required"); return; }
     if (row.qty <= 0) { toast.error("Qty must be greater than 0"); return; }
+    if (String(row.qty).replace(/\D/g, "").length > 7) { toast.error("Qty cannot exceed 7 digits"); return; }
+    if (String(row.unit_price).replace(/\D/g, "").length > 9) { toast.error("Unit price cannot exceed 9 digits"); return; }
+    const npStr = String(row.unit_price);
+    const npParts = npStr.split(".");
+    if (npParts.length > 1 && npParts[1].length > 2) { toast.error("Unit price can only have 2 decimal places"); return; }
+    if (String(Math.floor(row.qty * row.unit_price)).replace(/\D/g, "").length > 8) { toast.error("Line total exceeds maximum (decimal(10,2))"); return; }
+    const newTotal = details.reduce((s, d) => s + (d.qty || 0) * (d.unit_price || 0), row.qty * row.unit_price);
+    if (String(Math.floor(newTotal)).replace(/\D/g, "").length > 8) { toast.error("Grand total exceeds maximum (decimal(10,2))"); return; }
     updateNewRow(id, { saving: true });
     try {
       const created = await createPRDetail({
@@ -263,9 +288,9 @@ export function PRLineItemsTable({
               <th className="px-3 py-2 text-left font-medium">Item</th>
               <th className="px-3 py-2 text-left font-medium min-w-[200px]">Variant</th>
               <th className="px-3 py-2 text-left font-medium w-[1%] whitespace-nowrap">UOM</th>
-              <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[90px]">Qty</th>
-              <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap">Unit Price</th>
-              <th className="px-3 py-2 text-right font-medium">Total</th>
+              <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[90px] max-w-[90px]">Qty</th>
+              <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[130px] max-w-[160px]">Unit Price</th>
+              <th className="px-3 py-2 text-right font-medium max-w-[160px]">Total</th>
               {!readOnly && <th className="px-3 py-2 text-right font-medium">Actions</th>}
             </tr>
           </thead>
@@ -291,19 +316,27 @@ export function PRLineItemsTable({
                     : d.variant_name ?? "—"}
                   </td>
                   <td className="px-3 py-2">
-                    {isNew ? <Input value={nr?.uom ?? ""} onChange={(e) => updateNewRow(d.id, { uom: e.target.value })} placeholder="UOM" className="h-8 w-16 text-xs" />
-                    : isEditing ? <Input value={editUom} onChange={(e) => setEditUom(e.target.value)} className="h-8 w-16 text-xs" />
-                    : d.uom ?? "—"}
+                    {isNew ? (
+                      <Select value={nr?.uom ?? ""} onValueChange={(v) => updateNewRow(d.id, { uom: v })}>
+                        <SelectTrigger className="h-8 text-xs w-24"><SelectValue placeholder="UOM" /></SelectTrigger>
+                        <SelectContent className="max-h-[160px] overflow-y-auto">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    ) : isEditing ? (
+                      <Select value={editUom} onValueChange={setEditUom}>
+                        <SelectTrigger className="h-8 text-xs w-24"><SelectValue placeholder="UOM" /></SelectTrigger>
+                        <SelectContent className="max-h-[160px] overflow-y-auto">{units.map((u) => <SelectItem key={u.unit_id} value={u.unit_shortcut ?? u.unit_name} className="text-xs">{u.unit_shortcut ?? u.unit_name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    ) : d.uom ?? "\u2014"}
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    {isNew ? <Input type="number" min="1" step="1" value={nr?.qty ?? 1} onChange={(e) => updateNewRow(d.id, { qty: Number(e.target.value) || 0 })} className="h-8 w-16 text-xs text-right" />
-                    : isEditing ? <Input type="number" min="0" step="1" value={editQty} onChange={(e) => setEditQty(Number(e.target.value) || 0)} className="h-8 w-16 text-xs text-right" />
-                    : <span className="tabular-nums">{d.qty}</span>}
+                  <td className="px-3 py-2 text-right max-w-[90px]">
+                    {isNew ? <Input type="number" min="1" step="1" value={nr?.qty ?? 1} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 7) return; updateNewRow(d.id, { qty: Number(e.target.value) || 0 }); }} className="h-8 w-16 text-xs text-right" />
+                    : isEditing ? <Input type="number" min="0" step="1" value={editQty} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 7) return; setEditQty(Number(e.target.value) || 0); }} className="h-8 w-16 text-xs text-right" />
+                    : <span className="tabular-nums">{formatQty(d.qty)}</span>}
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    {isNew ? <Input type="number" min="0" step="0.01" value={nr?.unit_price ?? 0} onChange={(e) => updateNewRow(d.id, { unit_price: Number(e.target.value) || 0 })} className="h-8 w-20 text-xs text-right" />
-                    : isEditing ? <Input type="number" min="0" step="0.01" value={editPrice} onChange={(e) => setEditPrice(Number(e.target.value) || 0)} className="h-8 w-20 text-xs text-right" />
-                    : <span className="font-mono tabular-nums">{formatPHP(d.unit_price)}</span>}
+                  <td className="px-3 py-2 text-right max-w-[160px]">
+                    {isNew ? <Input type="number" min="0" step="0.01" value={nr?.unit_price ?? 0} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 9) return; updateNewRow(d.id, { unit_price: Number(e.target.value) || 0 }); }} className="h-8 w-24 text-xs text-right" />
+                    : isEditing ? <Input type="number" min="0" step="0.01" value={editPrice} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 9) return; setEditPrice(Number(e.target.value) || 0); }} className="h-8 w-24 text-xs text-right" />
+                    :                     <div className="font-mono tabular-nums">{formatPHP(d.unit_price)}</div>}
                   </td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums">{formatPHP((d.qty || 0) * (d.unit_price || 0))}</td>
                   {!readOnly && (

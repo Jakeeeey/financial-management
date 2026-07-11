@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Printer, ArrowLeft } from "lucide-react";
 import { usePRDetail } from "../hooks/usePRDetail";
-import { formatPHP } from "../utils/format";
+import { formatPHP, formatQty } from "../utils/format";
 
 type ApprovalPrintPageProps = { id: number };
 
@@ -86,7 +86,7 @@ export default function ApprovalPrintPage({ id }: ApprovalPrintPageProps) {
                 <td className="py-2">{l.template_name ?? "\u2014"}</td>
                 <td className="py-2">{l.variant_name ?? "\u2014"}</td>
                 <td className="py-2">{l.uom || "\u2014"}</td>
-                <td className="py-2 text-right">{l.qty}</td>
+                <td className="py-2 text-right">{formatQty(l.qty)}</td>
                 <td className="py-2 text-right">{formatPHP(l.unit_price)}</td>
                 <td className="py-2 text-right">{formatPHP(Number(l.total_amount || (l.qty || 0) * (l.unit_price || 0)))}</td>
               </tr>
