@@ -105,7 +105,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
     );
     const poItemsJson = await poItemsRes.json();
-    const allItems: { id: number; qty: string | number }[] = poItemsJson.data || [];
+    const allItems: { po_item_id: number; qty: string | number }[] = poItemsJson.data || [];
 
     const receivingIdsRes = await fetch(
       `${DIRECTUS_URL}/items/receiving?filter=${encodeURIComponent(JSON.stringify({ purchase_order_id: { _eq: poId } }))}&fields=id`,
@@ -129,7 +129,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const allFulfilled = allItems.every((item) => {
       const ordered = Number(item.qty || 0);
-      const got = receivedMap[item.id] || 0;
+      const itemKey = item.po_item_id;
+      const got = receivedMap[itemKey] || 0;
       return got >= ordered;
     });
 
