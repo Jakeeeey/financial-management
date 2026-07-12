@@ -108,6 +108,7 @@ export type DisbursementPayableDraftRow = {
     status?: string | null;
     feedback?: string | null;
     header_id?: number | string | null;
+    amount?: number | string | null;
     attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   }
   | null;
@@ -364,6 +365,7 @@ export type FinalTopSheetDetail = {
   remarks: string | null;
   status: string;
   attachment_url: string | null;
+  feedback?: string | null;
 };
 export type FinalTopSheetDetailResponse = FinalTopSheetDetail;
 
@@ -415,6 +417,7 @@ export type FinalTopSheetGroupMetaResponse = {
   current_tier?: number;
   required_approver_level?: number;
   current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  previous_tier_approver_names?: string[];
 };
 
 export type DraftPayable = PayableResponse;

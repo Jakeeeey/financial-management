@@ -109,6 +109,7 @@ export type DisbursementPayableDraftRow = {
     status?: string | null;
     feedback?: string | null;
     header_id?: number | string | null;
+    amount?: number | string | null;
     attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   }
   | null;
@@ -370,6 +371,7 @@ export type FinalTopSheetGroupMetaResponse = {
   is_waiting?: boolean;
   current_tier?: number;
   required_approver_level?: number;
+  previous_tier_approver_names?: string[];
 };
 
 export type FinalHeaderDecisionStatus = "Approved" | "Rejected" | "With Concern";

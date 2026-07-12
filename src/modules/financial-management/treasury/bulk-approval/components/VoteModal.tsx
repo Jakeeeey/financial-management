@@ -5,7 +5,7 @@ import * as React from "react";
 import {
   Loader2, FileText, CheckCircle2,
   ShieldCheck, X,
-  ExternalLink, CheckSquare, Info,
+  ExternalLink, Info,
   AlertTriangle, RefreshCw, Send, Check, User, Building2, Wallet,
   Maximize2, ZoomIn, ZoomOut, RotateCcw, RotateCw, Move
 } from "lucide-react";
@@ -83,6 +83,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const [showConcernWarning, setShowConcernWarning] = React.useState(false);
   const [showRejectWarning, setShowRejectWarning] = React.useState(false);
   const pendingRemarks = React.useRef<string>("");
+  const [sidebarWidth, setSidebarWidth] = React.useState(350);
+  const isDraggingSidebar = React.useRef(false);
 
   // State-based callback refs: the element becomes a proper effect dependency,
   // so the listener is attached only after the DOM node actually mounts
@@ -211,37 +213,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     setItemDecisions(prev => ({ ...prev, [id]: prev[id] === status ? "PENDING" : status }));
   };
 
-  const toggleGroupStatus = (groupItems: DraftPayable[], status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
-    setItemDecisions(prev => {
-      const next = { ...prev };
-      groupItems.forEach(item => {
-        const isPersistentLocked = item.is_concern || item.is_rejected;
-        // Don't override if persistent lock exists OR if we are doing a mass "APPROVED" but item is locally REJECTED/CONCERN
-        const isLocallyLocked = (status === "APPROVED" && (next[item.id] === "REJECTED" || next[item.id] === "WITH_CONCERN"));
 
-        if (!isPersistentLocked && !isLocallyLocked) {
-          next[item.id] = status;
-        }
-      });
-      return next;
-    });
-  };
-
-  const approveAll = () => {
-    setItemDecisions(prev => {
-      const next = { ...prev };
-      combinedItems.forEach(item => {
-        // Skip items that are already concerns or rejected (persistent or local)
-        const isCurrentlyConcern = next[item.id] === "WITH_CONCERN" || item.is_concern;
-        const isCurrentlyRejected = next[item.id] === "REJECTED" || item.is_rejected;
-
-        if (item.id > 0 && !isCurrentlyConcern && !isCurrentlyRejected) {
-          next[item.id] = "APPROVED";
-        }
-      });
-      return next;
-    });
-  };
 
   const uncheckAll = () => {
     const next = { ...itemDecisions };
@@ -679,14 +651,14 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                       Verification Registry
                     </h3>
                     <div className="flex items-center gap-3">
-                      <button
+                      {/* <button
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40"}`}
                         onClick={() => !isInteractionDisabled && approveAll()}
                         disabled={isInteractionDisabled}
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         <span className="text-[10px] font-black uppercase tracking-widest">Approve All</span>
-                      </button>
+                      </button> */}
                       <button
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"}`}
                         onClick={() => !isInteractionDisabled && uncheckAll()}
@@ -704,13 +676,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
                 <div className="flex-1 flex min-h-0 bg-slate-50/50">
                   {/* Sidebar: COA Groups */}
-                  <div className="w-[20vw] border-r dark:border-slate-800 bg-white dark:bg-slate-950 overflow-y-auto shrink-0">
+                  <div style={{ width: sidebarWidth, minWidth: 200, maxWidth: "50vw" }} className="bg-white dark:bg-slate-950 overflow-y-auto shrink-0 relative flex flex-col">
                     <Table>
                       <TableHeader className="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10 shadow-sm">
                         <TableRow>
                           <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 pl-8 text-slate-800 dark:text-slate-400">Account / Period</TableHead>
                           <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-right pr-4 text-slate-800 dark:text-slate-400">Amount</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-center text-slate-800 dark:text-slate-400">Action</TableHead>
+                          {/* <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-center text-slate-800 dark:text-slate-400">Action</TableHead> */}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -718,7 +690,6 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                           const gid = `${g.coa_name}-${w.weekKey}`;
                           const isSelected = selectedGroupId === gid;
                           const total = w.items.reduce((acc, p) => acc + Number(p.amount), 0);
-                          const isVerified = w.items.every(i => itemDecisions[i.id] !== "PENDING");
                           return (
                             <TableRow key={gid}
                               className={`cursor-pointer group transition-all ${isSelected ? "bg-blue-50 dark:bg-blue-900/40" : "hover:bg-slate-50 dark:hover:bg-slate-900/50"}`}
@@ -740,7 +711,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                 <p className="text-[10px] font-black tabular-nums text-slate-800 dark:text-slate-200">{formatCurrency(total)}</p>
                                 <p className="text-[8px] text-muted-foreground dark:text-slate-500 font-bold italic">{w.items.length} units</p>
                               </TableCell>
-                              <TableCell className="text-center py-3">
+                              {/* <TableCell className="text-center py-3">
                                 <Button
                                   variant="ghost"
                                   className={`h-7 px-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${isVerified ? "bg-emerald-500/10 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 dark:border-emerald-800" : "bg-blue-600 dark:bg-blue-700 text-white hover:bg-blue-700 dark:hover:bg-blue-600"}`}
@@ -754,13 +725,35 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                 >
                                   {isVerified ? <CheckCircle2 size={12} /> : <CheckSquare size={12} />}
                                 </Button>
-                              </TableCell>
+                              </TableCell> */}
                             </TableRow>
                           );
                         }))}
                       </TableBody>
                     </Table>
                   </div>
+
+                  {/* Vertical Drag Resizer */}
+                  <div
+                    className="w-1 cursor-col-resize bg-slate-200 dark:bg-slate-800 hover:bg-blue-500 active:bg-blue-600 shrink-0 z-20 transition-colors"
+                    onMouseDown={(e) => {
+                      isDraggingSidebar.current = true;
+                      const startX = e.clientX;
+                      const startWidth = sidebarWidth;
+                      const onMouseMove = (moveEvent: MouseEvent) => {
+                        if (!isDraggingSidebar.current) return;
+                        const newWidth = Math.min(Math.max(startWidth + (moveEvent.clientX - startX), 200), window.innerWidth * 0.5);
+                        setSidebarWidth(newWidth);
+                      };
+                      const onMouseUp = () => {
+                        isDraggingSidebar.current = false;
+                        document.removeEventListener("mousemove", onMouseMove);
+                        document.removeEventListener("mouseup", onMouseUp);
+                      };
+                      document.addEventListener("mousemove", onMouseMove);
+                      document.addEventListener("mouseup", onMouseUp);
+                    }}
+                  />
 
                   {/* Detail Table Area */}
                   <div className="flex-1 bg-white dark:bg-slate-950 flex flex-col overflow-hidden">

@@ -65,6 +65,8 @@ type Props = {
     status: FinalHeaderDecisionStatus,
     target: FinalDecisionTarget
   ) => void | Promise<void>;
+  onToggleDecision?: (status: FinalHeaderDecisionStatus, target: FinalDecisionTarget) => void;
+  stagedDecisions?: Record<string, { target: FinalDecisionTarget; status: FinalHeaderDecisionStatus }>;
   onPreviewUrl: (url: string) => void;
 };
 
@@ -79,14 +81,6 @@ function groupByCoa(details: FinalTopSheetDetail[]) {
   return Array.from(map.values());
 }
 
-function statusBadgeClass(status: string) {
-  const s = status.toLowerCase();
-  if (s === "approved") return "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50";
-  if (s === "rejected") return "bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/50";
-  if (s.includes("concern")) return "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/50";
-  return "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700";
-}
-
 export default function AuditeeDetailSplitModal({
   open,
   onOpenChange,
@@ -96,6 +90,8 @@ export default function AuditeeDetailSplitModal({
   lineRemarks,
   onLineRemarkChange,
   onSubmitTargetDecision,
+  onToggleDecision,
+  stagedDecisions,
   onPreviewUrl,
 }: Props) {
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
@@ -104,6 +100,24 @@ export default function AuditeeDetailSplitModal({
   const [inlineRotation, setInlineRotation] = React.useState(0);
   const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
   const [showEvidence, setShowEvidence] = React.useState(true);
+
+  const isApprovedHistory = React.useMemo(() => {
+    return (
+      Array.isArray(data?.group?.draft_statuses) &&
+      data.group.draft_statuses.length > 0 &&
+      data.group.draft_statuses.every((s) => s.toLowerCase() === "approved")
+    );
+  }, [data]);
+
+  const isRejectedHistory = React.useMemo(() => {
+    const statuses = data?.group?.draft_statuses;
+    if (!Array.isArray(statuses) || statuses.length === 0) return false;
+    return statuses.every((s) => s.toLowerCase() === "rejected");
+  }, [data]);
+
+  const isTerminalHistory = isApprovedHistory || isRejectedHistory;
+
+  const canAct = Boolean(data?.group?.can_act) && !isTerminalHistory;
 
   // Non-passive wheel zoom for inline viewer
   React.useEffect(() => {
@@ -152,7 +166,7 @@ export default function AuditeeDetailSplitModal({
     return data.group.current_tier_approvers
       .filter((a) => !a.voted)
       .map((a) => a.name);
-  }, [data?.group?.current_tier_approvers]);
+  }, [data]);
 
   const attachments = React.useMemo(() => {
     if (!data) return [];
@@ -388,24 +402,46 @@ export default function AuditeeDetailSplitModal({
           </div>
 
           {/* View-Only Context Banner */}
-          {!data?.group?.can_act && (
-            <div className="mx-[1.5vw] mt-4 relative overflow-hidden rounded-2xl border border-amber-200/60 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-950/10 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.06),transparent_40%)]" />
+          {!canAct && (
+            <div className={`mx-[1.5vw] mt-4 relative overflow-hidden rounded-2xl border p-4 animate-in fade-in slide-in-from-top-2 duration-300 ${
+              isRejectedHistory
+                ? "border-rose-200/60 dark:border-rose-900/30 bg-rose-50/40 dark:bg-rose-950/10"
+                : "border-amber-200/60 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-950/10"
+            }`}>
+              <div className={`absolute inset-0 ${
+                isRejectedHistory
+                  ? "bg-[radial-gradient(circle_at_top_left,rgba(239,68,68,0.06),transparent_40%)]"
+                  : "bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.06),transparent_40%)]"
+              }`} />
               <div className="relative flex gap-3.5 items-start">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-500 shadow-sm shadow-amber-500/5">
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-sm ${
+                  isRejectedHistory
+                    ? "bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-500 shadow-rose-500/5"
+                    : "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-500 shadow-amber-500/5"
+                }`}>
                   <AlertTriangle className="h-4.5 w-4.5" />
                 </div>
                 <div className="space-y-1 text-left min-w-0 flex-1">
-                  <h4 className="text-[11px] font-black uppercase tracking-wider text-amber-800 dark:text-amber-500 leading-none">
-                    View-Only Staging Mode
+                  <h4 className={`text-[11px] font-black uppercase tracking-wider leading-none ${
+                    isRejectedHistory ? "text-rose-800 dark:text-rose-400" : "text-amber-800 dark:text-amber-500"
+                  }`}>
+                    {isRejectedHistory ? "Rejected — View Only" : isApprovedHistory ? "Finalized — View Only" : "View-Only Staging Mode"}
                   </h4>
-                  <p className="text-xs font-medium text-amber-700/90 dark:text-amber-400/80 leading-relaxed max-w-4xl">
-                    You are viewing the details for <strong className="text-slate-900 dark:text-white font-bold">{salesmantName}</strong>. Since the draft is currently at <strong className="text-slate-900 dark:text-white font-bold">Level {data?.group?.current_tier ?? 1}{pendingApproverNames.length > 0 ? ` (pending: ${pendingApproverNames.join(", ")})` : ""}</strong>, action items, staging buttons, and feedback updates are locked. They will become actionable once the draft reaches the required final approval tier (<strong className="text-slate-900 dark:text-white font-bold">Level {data?.group?.required_approver_level ?? 4}</strong>).
+                  <p className={`text-xs font-medium leading-relaxed max-w-4xl ${
+                    isRejectedHistory ? "text-rose-700/90 dark:text-rose-400/80" : "text-amber-700/90 dark:text-amber-400/80"
+                  }`}>
+                    You are viewing the details for <strong className="text-slate-900 dark:text-white font-bold">{salesmantName}</strong>.{" "}
+                    {isRejectedHistory
+                      ? "This submission was rejected by the final approver. No further actions can be taken on this record."
+                      : isApprovedHistory
+                      ? "This top-sheet has been finalized and posted. No further actions can be taken."
+                      : `Since the draft is currently at Level ${data?.group?.current_tier ?? 1}${pendingApproverNames.length > 0 ? ` (pending: ${pendingApproverNames.join(", ")})` : ""}, action items, staging buttons, and feedback updates are locked. They will become actionable once the draft reaches the required final approval tier (Level ${data?.group?.required_approver_level ?? 4}).`}
                   </p>
                 </div>
               </div>
             </div>
           )}
+
 
           {/* Toolbar */}
           <div className="px-[2vw] py-3 bg-muted/5 dark:bg-slate-900/50 border-b dark:border-slate-800 flex items-center justify-between shrink-0">
@@ -413,22 +449,6 @@ export default function AuditeeDetailSplitModal({
               <FileText className="h-4 w-4 text-primary" />
               Verification Registry — Grouped by COA
             </h3>
-            {/* <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 rounded-full text-[10px] font-black uppercase tracking-widest gap-2"
-              disabled={submitting || !data?.group?.can_act}
-              onClick={() =>
-                void onSubmitTargetDecision("Approved", {
-                  scope: "encoder",
-                  employee_id: employeeId!,
-                })
-              }
-            >
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-              Approve All for {salesmantName.split(" ")[0]}
-            </Button> */}
           </div>
 
           {/* COA-Grouped Table */}
@@ -454,20 +474,17 @@ export default function AuditeeDetailSplitModal({
                         </div>
                         <div className="flex items-center gap-3">
                           <p className="text-sm font-black text-emerald-400">{formatCurrency(coaTotal)}</p>
-                          {/* COA-level actions */}
-                          {data?.group?.can_act && (
-                            <div className="flex items-center gap-1">
-                              <Button type="button" size="icon" className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white" disabled={submitting} onClick={() => void onSubmitTargetDecision("Approved", { scope: "coa", coa_id: group.coa_id })} title="Approve entire COA">
-                                <CheckCircle2 className="h-4 w-4" />
-                              </Button>
-                              <Button type="button" size="icon" variant="outline" className="h-7 w-7 rounded-lg border-amber-500/30 text-amber-400 hover:bg-amber-500/20" disabled={submitting} onClick={() => void onSubmitTargetDecision("With Concern", { scope: "coa", coa_id: group.coa_id })} title="Flag entire COA with concern">
-                                <AlertTriangle className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button type="button" size="icon" variant="outline" className="h-7 w-7 rounded-lg border-rose-500/30 text-rose-400 hover:bg-rose-500/20" disabled={submitting} onClick={() => void onSubmitTargetDecision("Rejected", { scope: "coa", coa_id: group.coa_id })} title="Reject entire COA">
-                                <XCircle className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          )}
+                          {/* <div className="flex items-center gap-1">
+                            <Button type="button" size="icon" className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white" disabled={submitting} onClick={() => void onSubmitTargetDecision("Approved", { scope: "coa", coa_id: group.coa_id })} title="Approve entire COA">
+                              <CheckCircle2 className="h-4 w-4" />
+                            </Button>
+                            <Button type="button" size="icon" variant="outline" className="h-7 w-7 rounded-lg border-amber-500/30 text-amber-400 hover:bg-amber-500/20" disabled={submitting} onClick={() => void onSubmitTargetDecision("With Concern", { scope: "coa", coa_id: group.coa_id })} title="Flag entire COA with concern">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button type="button" size="icon" variant="outline" className="h-7 w-7 rounded-lg border-rose-500/30 text-rose-400 hover:bg-rose-500/20" disabled={submitting} onClick={() => void onSubmitTargetDecision("Rejected", { scope: "coa", coa_id: group.coa_id })} title="Reject entire COA">
+                              <XCircle className="h-3.5 w-3.5" />
+                            </Button>
+                          </div> */}
                         </div>
                       </div>
 
@@ -486,7 +503,10 @@ export default function AuditeeDetailSplitModal({
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {group.items.map((item, idx) => (
+                          {group.items.map((item, idx) => {
+                            const isAlreadyCulled = ["with concern", "rejected"].includes(item.status.toLowerCase());
+                            const stagedStatus = stagedDecisions?.[`expense:${item.expense_id}`]?.status;
+                            return (
                             <TableRow key={item.expense_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
                               <TableCell className="py-3 pl-5 text-[9px] font-black text-slate-300 dark:text-slate-600 italic">{String(idx + 1).padStart(2, "0")}</TableCell>
                               <TableCell className="py-3">
@@ -496,12 +516,8 @@ export default function AuditeeDetailSplitModal({
                               <TableCell className="py-3 text-center text-[10px] font-bold text-slate-500 uppercase tabular-nums">{formatDate(item.transaction_date)}</TableCell>
                               <TableCell className="py-3 text-right text-[10px] font-black text-slate-800 dark:text-slate-200 tabular-nums">{formatCurrency(item.amount)}</TableCell>
                               <TableCell className="py-3 text-center">
-                                {data?.group?.can_act ? (
-                                  <Badge className={`text-[9px] font-black border rounded-lg px-2 ${statusBadgeClass(item.status)}`}>
-                                    {item.status}
-                                  </Badge>
-                                ) : (
-                                  <div className="flex items-center justify-center gap-1.5">
+                                <div className="flex flex-col items-center justify-center gap-1.5">
+                                  <div className="flex items-center gap-1.5">
                                     <Badge className="text-[9px] font-black border rounded-lg px-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700">
                                       Draft
                                     </Badge>
@@ -522,31 +538,77 @@ export default function AuditeeDetailSplitModal({
                                         ? "With Concern"
                                         : (data?.group?.current_tier ?? 1) === 1
                                         ? "Submitted"
-                                        : `L${(data?.group?.current_tier ?? 2) - 1} Approved`}
+                                        : `L${(data?.group?.current_tier ?? 2) - 1} Approved (${data?.group?.previous_tier_approver_names?.length ? data.group.previous_tier_approver_names.join(', ') : 'System'})`}
                                     </Badge>
                                   </div>
-                                )}
+                                  {canAct && !isAlreadyCulled && !stagedStatus && (
+                                    <Badge className="text-[8px] font-black border rounded-lg px-2 bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800 uppercase shadow-sm">
+                                      Pending Your Action
+                                    </Badge>
+                                  )}
+                                  {stagedStatus === "Approved" && (
+                                    <Badge className="text-[8px] font-black border rounded-lg px-2 bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800 uppercase shadow-sm mt-0.5">
+                                      Approved (Staged)
+                                    </Badge>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell className="py-3 px-3">
-                                <Input
-                                  placeholder="Feedback for rejection / concern..."
-                                  className="h-7 text-[10px] font-medium border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-lg"
-                                  value={lineRemarks[item.expense_id] ?? ""}
-                                  onChange={e => onLineRemarkChange(item.expense_id, e.target.value)}
-                                  disabled={submitting || !data?.group?.can_act}
-                                />
+                                {canAct && (
+                                  <Input
+                                    placeholder="Feedback for rejection / concern..."
+                                    className={`h-7 text-[10px] font-medium border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-lg ${item.feedback ? 'mb-1' : ''}`}
+                                    value={lineRemarks[item.expense_id] ?? ""}
+                                    onChange={e => onLineRemarkChange(item.expense_id, e.target.value)}
+                                    disabled={submitting}
+                                  />
+                                )}
+                                {item.feedback && (
+                                  <p className="text-[9px] font-medium text-slate-600 dark:text-slate-400 bg-amber-50 dark:bg-amber-900/20 p-1.5 rounded-lg border border-amber-100 dark:border-amber-900/50 text-left">
+                                    <span className="font-bold text-amber-700 dark:text-amber-500 uppercase">Prior Note:</span> {item.feedback}
+                                  </p>
+                                )}
                               </TableCell>
                               <TableCell className="py-3 text-center">
                                 <div className="flex items-center justify-center gap-1">
-                                  {data?.group?.can_act ? (
+                                  {canAct ? (
                                     <>
-                                      <Button type="button" size="icon" className="h-7 w-7 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white" disabled={submitting} onClick={() => void onSubmitTargetDecision("Approved", { scope: "expense_ids", expense_ids: [item.expense_id] })} title="Approve">
+                                      <Button 
+                                        type="button" 
+                                        size="icon" 
+                                        className={`h-7 w-7 rounded-lg ${stagedStatus === 'Approved' ? 'bg-emerald-500 text-white shadow-md' : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white'}`} 
+                                        disabled={submitting} 
+                                        onClick={() => {
+                                          if (isAlreadyCulled) {
+                                            void onSubmitTargetDecision("Approved", { scope: "expense_ids", expense_ids: [item.expense_id] });
+                                          } else {
+                                            onToggleDecision?.("Approved", { scope: "expense_ids", expense_ids: [item.expense_id] });
+                                          }
+                                        }} 
+                                        title="Approve"
+                                      >
                                         <CheckCircle2 size={13} />
                                       </Button>
-                                      <Button type="button" size="icon" variant="outline" className="h-7 w-7 rounded-lg border-amber-200 text-amber-600 hover:bg-amber-50" disabled={submitting} onClick={() => void onSubmitTargetDecision("With Concern", { scope: "expense_ids", expense_ids: [item.expense_id] })} title="Concern">
+                                      <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        className={`h-7 w-7 rounded-lg ${item.status.toLowerCase().includes('concern') ? 'bg-amber-500 text-white border-amber-500 shadow-md' : 'border-amber-200 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20'}`}
+                                        disabled={submitting}
+                                        onClick={() => void onSubmitTargetDecision("With Concern", { scope: "expense_ids", expense_ids: [item.expense_id] })}
+                                        title="Concern"
+                                      >
                                         <AlertTriangle size={12} />
                                       </Button>
-                                      <Button type="button" size="icon" variant="outline" className="h-7 w-7 rounded-lg border-rose-200 text-rose-600 hover:bg-rose-50" disabled={submitting} onClick={() => void onSubmitTargetDecision("Rejected", { scope: "expense_ids", expense_ids: [item.expense_id] })} title="Reject">
+                                      <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        className={`h-7 w-7 rounded-lg ${item.status.toLowerCase() === 'rejected' ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'border-rose-200 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20'}`}
+                                        disabled={submitting}
+                                        onClick={() => void onSubmitTargetDecision("Rejected", { scope: "expense_ids", expense_ids: [item.expense_id] })}
+                                        title="Reject"
+                                      >
                                         <XCircle size={13} />
                                       </Button>
                                     </>
@@ -559,7 +621,8 @@ export default function AuditeeDetailSplitModal({
                                 </div>
                               </TableCell>
                             </TableRow>
-                          ))}
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </div>

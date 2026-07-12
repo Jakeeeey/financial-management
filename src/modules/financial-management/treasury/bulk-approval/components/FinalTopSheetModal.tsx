@@ -49,7 +49,7 @@ type Props = {
   open: boolean;
   group: FinalHeaderGroup | null;
   onOpenChange: (open: boolean) => void;
-  onSubmitted: () => void | Promise<void>;
+  onSubmitted: (shouldClose?: boolean) => void | Promise<void>;
 };
 
 type ApprovalMeta = {
@@ -167,6 +167,11 @@ function getDetailsForTarget(
   details: FinalTopSheetDetail[],
   target: FinalDecisionTarget
 ) {
+  if (target.scope === "expense_ids") {
+    const expenseIdSet = new Set(target.expense_ids);
+    return details.filter((detail) => expenseIdSet.has(detail.expense_id));
+  }
+
   const actionableDetails = details.filter((d) => {
     const s = (d.status ?? "").toLowerCase();
     return !s.includes("concern") && s !== "rejected";
@@ -189,8 +194,7 @@ function getDetailsForTarget(
     );
   }
 
-  const expenseIdSet = new Set(target.expense_ids);
-  return actionableDetails.filter((detail) => expenseIdSet.has(detail.expense_id));
+  return [];
 }
 
 function requiresLineRemarks(status: FinalHeaderDecisionStatus) {
@@ -492,6 +496,7 @@ export default function FinalTopSheetModal({
     if (target.scope === "encoder") return `encoder:${target.employee_id}`;
     if (target.scope === "coa") return `coa:${target.coa_id}`;
     if (target.scope === "cell") return `cell:${target.employee_id}:${target.coa_id}`;
+    if (target.scope === "expense_ids" && target.expense_ids?.length) return `expense:${target.expense_ids[0]}`;
     return "unknown";
   }
 
@@ -605,17 +610,19 @@ export default function FinalTopSheetModal({
     setLineRemarks((current) => ({ ...current, [expenseId]: value }));
   }
 
-  async function refreshAfterDecision() {
+  async function refreshAfterDecision(shouldClose: boolean = false) {
     if (!group) return;
 
-    await onSubmitted();
+    await onSubmitted(shouldClose);
 
-    const refreshed = await api.getFinalTopSheet({
-      division_id: group.division_id,
-      period_from: group.period_from,
-      period_to: group.period_to,
-    });
-    setData(refreshed);
+    if (!shouldClose) {
+      const refreshed = await api.getFinalTopSheet({
+        division_id: group.division_id,
+        period_from: group.period_from,
+        period_to: group.period_to,
+      });
+      setData(refreshed);
+    }
   }
 
   async function submitSingleDecisionRequest(params: {
@@ -705,9 +712,11 @@ export default function FinalTopSheetModal({
     status: FinalHeaderDecisionStatus,
     target: FinalDecisionTarget
   ) {
+    console.log("[submitTargetDecision] Clicked:", { status, target, canSubmitFinalAction, group });
     if (!group) return;
 
     if (!canSubmitFinalAction) {
+      console.log("[submitTargetDecision] canSubmitFinalAction is false");
       toast.warning("This top sheet is view-only for the final approver right now.", {
         description: approvalInfo.description,
       });
@@ -715,6 +724,7 @@ export default function FinalTopSheetModal({
     }
 
     const affectedDetails = getDetailsForTarget(data?.details ?? [], target);
+    console.log("[submitTargetDecision] affectedDetails:", affectedDetails);
 
     if (affectedDetails.length === 0) {
       toast.error("The selected action has no expense lines to update.");
@@ -793,7 +803,7 @@ export default function FinalTopSheetModal({
       setStagedDecisions({});
       setFinalConfirmOpen(false);
       setRemarks("");
-      await refreshAfterDecision();
+      await refreshAfterDecision(true);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Batch submission failed.");
     } finally {
@@ -1037,7 +1047,6 @@ export default function FinalTopSheetModal({
                     data={data}
                     submitting={submitting}
                     canAct={canSubmitFinalAction}
-                    isApprovedHistory={isApprovedHistory}
                     readOnlyReason={actionDisabledReason}
                     stagedDecisions={Object.fromEntries(
                       Object.entries(stagedDecisions).map(([k, v]) => [k, v.status])
@@ -1151,6 +1160,8 @@ export default function FinalTopSheetModal({
         onSubmitTargetDecision={(status, target) =>
           void submitTargetDecision(status, target)
         }
+        onToggleDecision={handleToggleDecision}
+        stagedDecisions={stagedDecisions}
         onPreviewUrl={setPreviewUrl}
       />
 
