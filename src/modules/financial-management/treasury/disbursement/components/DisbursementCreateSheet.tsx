@@ -207,7 +207,7 @@ export function DisbursementCreateSheet({
         }
     }, [open, editData, departmentId, departments]);
 
-    const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: today, amount: 0, remarks: "", divisionId: divisionId || undefined}]), [today, divisionId]);
+    const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: "", amount: 0, remarks: "", divisionId: undefined}]), []);
 
     // Pre-fill payment amount with the outstanding balance; auto-select COA if only one payment option exists
     const handleAddPayment = useCallback(() => {
@@ -371,7 +371,6 @@ export function DisbursementCreateSheet({
     const handleSubmit = async () => {
         if (!transactionTypeId) return toast.error("Transaction Type is required.");
         if (!payeeId) return toast.error("Please select a Payee.");
-        if (!divisionId) return toast.error("Division is required.");
         if (!departmentId) return toast.error("Department is required.");
         if (totalAmount <= 0) return toast.error("Voucher total must be greater than 0.");
 
@@ -384,7 +383,7 @@ export function DisbursementCreateSheet({
             docNo: editData ? editData.docNo : undefined,
             transactionTypeId: Number(transactionTypeId),
             payeeId: Number(payeeId),
-            divisionId: Number(divisionId),
+            divisionId: divisionId ? Number(divisionId) : undefined,
             departmentId: Number(departmentId),
             remarks,
             supportingDocumentsUrl: supportingDocumentsUrl ? (supportingDocumentsUrl.includes("/") ? (supportingDocumentsUrl.split("/").pop()?.split("?")[0] || "") : supportingDocumentsUrl) : "",
@@ -594,18 +593,22 @@ export function DisbursementCreateSheet({
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2
                                         className="w-5 h-5 animate-spin mx-auto mb-2"/> Loading
                                         Records...</TableCell></TableRow>
-                                ) : unpaidPos.filter(po =>
-                                    po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
-                                    (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()))
-                                ).length === 0 ? (
+                                ) : unpaidPos.filter(po => {
+                                    const matchesSearch = po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
+                                        (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()));
+                                    const isAlreadyImported = payables.some(p => p.referenceNo.startsWith(`${po.poNo} / ${po.receiptNo}`));
+                                    return matchesSearch && !isAlreadyImported;
+                                }).length === 0 ? (
                                     <TableRow><TableCell colSpan={5}
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground">No
                                         matching records found.</TableCell></TableRow>
                                 ) : (
-                                    unpaidPos.filter(po =>
-                                        po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
-                                        (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()))
-                                    ).map(po => (
+                                    unpaidPos.filter(po => {
+                                        const matchesSearch = po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
+                                            (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()));
+                                        const isAlreadyImported = payables.some(p => p.referenceNo.startsWith(`${po.poNo} / ${po.receiptNo}`));
+                                        return matchesSearch && !isAlreadyImported;
+                                    }).map(po => (
                                         <TableRow key={po.uniqueKey}
                                                   className="cursor-pointer hover:bg-muted/50 border-border"
                                                   onClick={() => {
@@ -615,17 +618,17 @@ export function DisbursementCreateSheet({
                                                           setTaxTypes(prev => ({...prev, [po.uniqueKey]: "VAT"}));
                                                       }
                                                   }}>
-                                            <TableCell className="text-center">
+                                            <TableCell className="text-center" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                                                 <Checkbox checked={selectedPoIds.includes(po.uniqueKey)}
                                                           onCheckedChange={(checked: boolean | "indeterminate") => {
                                                               if (checked === true) {
-                                                                  setSelectedPoIds([...selectedPoIds, po.uniqueKey]);
+                                                                  setSelectedPoIds(prev => prev.includes(po.uniqueKey) ? prev : [...prev, po.uniqueKey]);
                                                                   if (!taxTypes[po.uniqueKey]) setTaxTypes(prev => ({
                                                                       ...prev,
                                                                       [po.uniqueKey]: "VAT"
                                                                   }));
                                                               } else {
-                                                                  setSelectedPoIds(selectedPoIds.filter(id => id !== po.uniqueKey));
+                                                                  setSelectedPoIds(prev => prev.filter(id => id !== po.uniqueKey));
                                                               }
                                                           }}/>
                                             </TableCell>
@@ -713,12 +716,12 @@ export function DisbursementCreateSheet({
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2
                                         className="w-5 h-5 animate-spin mx-auto mb-2"/> Fetching
                                         Memos...</TableCell></TableRow>
-                                ) : memos.length === 0 ? (
+                                ) : memos.filter(memo => !payables.some(p => p.referenceNo === memo.memo_number)).length === 0 ? (
                                     <TableRow><TableCell colSpan={5}
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground">No
                                         available memos found for this supplier.</TableCell></TableRow>
                                 ) : (
-                                    memos.map(memo => (
+                                    memos.filter(memo => !payables.some(p => p.referenceNo === memo.memo_number)).map(memo => (
                                         <TableRow key={memo.id} className="hover:bg-muted/50 border-border">
                                             <TableCell
                                                 className="font-bold text-xs uppercase text-foreground">{memo.memo_number}</TableCell>

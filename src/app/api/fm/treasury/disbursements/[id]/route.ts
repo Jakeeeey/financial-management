@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap } from "../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId } from "../route";
 
 export const runtime = "nodejs";
 
@@ -18,6 +18,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const decoded = decodeJwtPayload(token);
     const encoderEmail = decoded?.email || decoded?.sub || null;
     const currentUserId = await resolveEncoderId(encoderEmail);
+
+    if (!currentUserId) {
+        return NextResponse.json({
+            message: "User Profile Not Found",
+            detail: "Your account is not registered in the system user directory. Voucher updates are blocked."
+        }, { status: 403 });
+    }
 
     try {
         const body = await request.json();
@@ -45,8 +52,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             return NextResponse.json({ message: "Cannot modify a transaction that is already Posted to the GL. This record is immutable." }, { status: 400 });
         }
 
-        if (currentDis.status !== "Draft" && currentDis.status !== "Approved" && currentDis.status !== "Returned for Revision") {
-            return NextResponse.json({ message: "Only Draft, Approved, or Returned for Revision disbursements can be edited." }, { status: 400 });
+        if (currentDis.status !== "Draft" && currentDis.status !== "Submitted" && currentDis.status !== "Approved" && currentDis.status !== "Returned for Revision" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
+            return NextResponse.json({ message: "Only Draft, Submitted, Approved, Returned, Released, or Partially Released disbursements can be edited." }, { status: 400 });
         }
 
         // 2. Fetch existing payables & payments to clear them (matching Spring Boot's behavior)
@@ -86,14 +93,23 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const APPROVAL_THRESHOLD = 1000.00;
         const isBelowThreshold = Number(body.totalAmount) < APPROVAL_THRESHOLD;
         let newStatus = currentDis.status;
-        let approverId = currentDis.approver_id;
+        let approverId: number | null | undefined = relationId(currentDis.approver_id, "user_id");
         let dateApproved = currentDis.date_approved;
+
+        const currentPayeeId = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
+            ? Number(currentDis.payee.id)
+            : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
+
+        const isHeaderOrPayableModified = 
+            (body.totalAmount != null && Number(body.totalAmount) !== Number(currentDis.total_amount)) ||
+            (body.payeeId != null && Number(body.payeeId) !== currentPayeeId) ||
+            (body.transactionTypeId != null && Number(body.transactionTypeId) !== Number(currentDis.transaction_type));
 
         if (isBelowThreshold) {
             newStatus = "Approved";
             approverId = currentUserId;
             dateApproved = new Date().toISOString();
-        } else if (currentDis.status === "Approved") {
+        } else if (currentDis.status === "Approved" && isHeaderOrPayableModified) {
             // Resubmit if it was approved and now edited to be over threshold
             newStatus = "Submitted";
             approverId = null;
@@ -148,17 +164,34 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
         const paymentLines = (body.payments || [])
             .filter((line: PaymentInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo && line.checkNo.trim() !== ""))
-            .map((line: PaymentInput) => ({
-                disbursement_id: id,
-                coa_id: line.coaId ? Number(line.coaId) : null,
-                bank_id: line.bankId ? Number(line.bankId) : null,
-                check_no: line.checkNo || "",
-                date: line.date,
-                amount: Number(line.amount) || 0,
-                remarks: line.remarks || "",
-                released_by: line.releasedBy ? Number(line.releasedBy) : null,
-                released_date: line.releasedDate || null
-            }));
+            .map((line: PaymentInput) => {
+                const payload: {
+                    disbursement_id: number;
+                    coa_id: number | null;
+                    bank_id: number | null;
+                    check_no: string;
+                    date: string | undefined;
+                    amount: number;
+                    remarks: string;
+                    released_by?: number;
+                    released_date?: string;
+                } = {
+                    disbursement_id: id,
+                    coa_id: line.coaId ? Number(line.coaId) : null,
+                    bank_id: line.bankId ? Number(line.bankId) : null,
+                    check_no: line.checkNo || "",
+                    date: line.date,
+                    amount: Number(line.amount) || 0,
+                    remarks: line.remarks || ""
+                };
+                if (line.releasedBy != null && line.releasedBy !== "") {
+                    payload.released_by = Number(line.releasedBy);
+                }
+                if (line.releasedDate != null && line.releasedDate !== "") {
+                    payload.released_date = line.releasedDate;
+                }
+                return payload;
+            });
 
         const lineRes = await Promise.all([
             payableLines.length > 0
@@ -185,7 +218,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
         // 6. Fetch full line items structure, user maps, coa maps and map back to response DTO format
         const lineItems = await getLineItems([id]);
-        const userMap = await getUserMap(token);
+
         const coaMap = await getCoaMap();
         const divisionMap = await getDivisionMap();
         const bankMap = await getBankMap();
@@ -232,6 +265,24 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         if (!freshRes.ok) throw new Error("Failed to fetch fresh disbursement header");
         const freshDis = (await freshRes.json()).data;
 
+        const userIdsToFetch: number[] = [];
+        const addId = (val: number | undefined) => {
+            if (typeof val === "number" && Number.isFinite(val)) {
+                userIdsToFetch.push(val);
+            }
+        };
+        addId(relationId(freshDis.encoder_id, "user_id"));
+        addId(relationId(freshDis.submitted_by, "user_id"));
+        addId(relationId(freshDis.approver_id, "user_id"));
+        addId(relationId(freshDis.released_by, "user_id"));
+        addId(relationId(freshDis.posted_by, "user_id"));
+        const payments = lineItems.payments.get(Number(id)) || [];
+        payments.forEach(p => {
+            addId(relationId(p.released_by, "user_id"));
+        });
+
+        const userMap = await getUserMap(token, userIdsToFetch);
+
         return NextResponse.json(
             normalizeDisbursement(freshDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap)
         );
@@ -255,6 +306,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const decoded = decodeJwtPayload(token);
     const encoderEmail = decoded?.email || decoded?.sub || null;
     const currentUserId = await resolveEncoderId(encoderEmail);
+
+    if (!currentUserId) {
+        return NextResponse.json({
+            message: "User Profile Not Found",
+            detail: "Your account is not registered in the system user directory. Voucher deletion is blocked."
+        }, { status: 403 });
+    }
 
     try {
         const directusToken = process.env.DIRECTUS_STATIC_TOKEN || "";

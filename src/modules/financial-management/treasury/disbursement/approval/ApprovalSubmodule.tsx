@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import {
     Loader2, CheckCircle, Wallet, Building2, AlertTriangle, FileText,
     CheckCircle2, CircleDashed, ChevronRight, ChevronDown, Paperclip, ExternalLink,
-    Search, X, ArrowLeftRight
+    Search, ArrowLeftRight
 } from "lucide-react";
 import { Disbursement } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
@@ -22,7 +22,8 @@ import { cn } from "@/lib/utils";
 function AttachmentPreview({ docUrl }: { docUrl: string }) {
     const [contentType, setContentType] = useState<string>("");
     const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
-    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}`;
+    const token = process.env.NEXT_PUBLIC_DIRECTUS_STATIC_TOKEN || "AAKv73dkIV8DfAIA5vEt3eXVdIebzmBW";
+    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}?access_token=${token}`;
 
     useEffect(() => {
         if (!viewUrl) return;
@@ -125,7 +126,12 @@ function TreeNode({ title, icon, defaultExpanded = true, children }: TreeNodePro
 export default function ApprovalSubmodule() {
     const {
         data, loading, changeStatus, actionLoading, refresh,
-        docNoSearch, setDocNoSearch, applyFilters, clearFilters
+        docNoSearch, setDocNoSearch,
+        startDate, setStartDate,
+        endDate, setEndDate,
+        supplierSearch, setSupplierSearch,
+        filterSuppliers,
+        applyFilters, clearFilters
     } = useDisbursement();
 
     // Limit approval workspace to 'Submitted' vouchers primarily, but support selecting others
@@ -197,22 +203,62 @@ export default function ApprovalSubmodule() {
 
                     {/* Quick Filters */}
                     <div className="p-3 bg-muted/10 border-b border-border space-y-2">
-                        <div className="flex gap-2">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                            <Input
+                                placeholder="VOUCHER NO..."
+                                value={docNoSearch}
+                                onChange={(e) => setDocNoSearch(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+                                className="pl-8 h-8 text-[10px] font-bold uppercase bg-background"
+                            />
+                        </div>
+
+                        {/* Date Range Filters */}
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                                <Label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80">Start Date</Label>
                                 <Input
-                                    placeholder="VOUCHER NO..."
-                                    value={docNoSearch}
-                                    onChange={(e) => setDocNoSearch(e.target.value)}
+                                    type="date"
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
                                     onKeyDown={(e) => e.key === "Enter" && applyFilters()}
-                                    className="pl-8 h-8 text-[10px] font-bold uppercase bg-background"
+                                    className="h-8 text-[9px] font-bold bg-background border-border/60"
                                 />
                             </div>
-                            <Button onClick={applyFilters} size="sm" className="h-8 px-3 text-[10px] font-black uppercase tracking-widest">
-                                Filter
+                            <div className="space-y-1">
+                                <Label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80">End Date</Label>
+                                <Input
+                                    type="date"
+                                    value={endDate}
+                                    onChange={(e) => setEndDate(e.target.value)}
+                                    onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+                                    className="h-8 text-[9px] font-bold bg-background border-border/60"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Payee Filter */}
+                        <div className="space-y-1">
+                            <Label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground/80">Filter Payee</Label>
+                            <select
+                                className="h-8 w-full rounded-md border border-border/60 bg-background px-2 text-[9px] font-bold uppercase outline-none focus:ring-1 focus:ring-primary/20 cursor-pointer text-foreground"
+                                value={supplierSearch}
+                                onChange={(e) => setSupplierSearch(e.target.value)}
+                            >
+                                <option value="">All Payees</option>
+                                {filterSuppliers.map(s => (
+                                    <option key={s.id} value={s.supplier_name}>{s.supplier_name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="flex gap-2 pt-1">
+                            <Button onClick={applyFilters} size="sm" className="flex-1 h-8 text-[10px] font-black uppercase tracking-widest bg-primary hover:bg-primary/95 text-white">
+                                Apply Filters
                             </Button>
-                            <Button onClick={clearFilters} variant="outline" size="icon" className="h-8 w-8 text-destructive border-border">
-                                <X className="w-3.5 h-3.5" />
+                            <Button onClick={clearFilters} variant="outline" size="sm" className="h-8 px-3 text-[10px] font-bold uppercase tracking-widest text-destructive hover:bg-destructive/5 border-border">
+                                Clear
                             </Button>
                         </div>
                     </div>
@@ -346,11 +392,23 @@ export default function ApprovalSubmodule() {
                                             <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
                                         </div>
                                     </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-1">Prepared By</span>
+                                            <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.submittedByName || selectedDisbursement.encoderName || "N/A"}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-1">Date Prepared</span>
+                                            <span className="text-xs font-bold text-foreground uppercase">
+                                                {selectedDisbursement.dateSubmitted ? format(new Date(selectedDisbursement.dateSubmitted), "MMM dd, yyyy HH:mm") : "Draft"}
+                                            </span>
+                                        </div>
+                                    </div>
                                     <div>
                                         <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-1">Particulars / Remarks</span>
-                                        <p className="text-xs font-semibold text-foreground bg-background p-2 rounded border border-border/80">
-                                            {selectedDisbursement.remarks || "No remarks provided."}
-                                        </p>
+                                         <p className="text-xs font-semibold text-foreground bg-background p-2 rounded border border-border/80 break-words whitespace-pre-wrap">
+                                             {selectedDisbursement.remarks || "No remarks provided."}
+                                         </p>
                                     </div>
                                 </div>
                             </div>

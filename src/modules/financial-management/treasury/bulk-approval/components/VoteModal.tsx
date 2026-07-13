@@ -5,9 +5,9 @@ import * as React from "react";
 import {
   Loader2, FileText, CheckCircle2,
   ShieldCheck, X,
-  ExternalLink, CheckSquare, Info,
+  ExternalLink, Info,
   AlertTriangle, RefreshCw, Send, Check, User, Building2, Wallet,
-  Maximize2, ZoomIn, ZoomOut, RotateCcw, Move
+  Maximize2, ZoomIn, ZoomOut, RotateCcw, RotateCw, Move
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -77,8 +77,14 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [zoom, setZoom] = React.useState(1);
+  const [rotation, setRotation] = React.useState(0);
   const [inlineZoom, setInlineZoom] = React.useState(1);
+  const [inlineRotation, setInlineRotation] = React.useState(0);
   const [showConcernWarning, setShowConcernWarning] = React.useState(false);
+  const [showRejectWarning, setShowRejectWarning] = React.useState(false);
+  const pendingRemarks = React.useRef<string>("");
+  const [sidebarWidth, setSidebarWidth] = React.useState(350);
+  const isDraggingSidebar = React.useRef(false);
 
   // State-based callback refs: the element becomes a proper effect dependency,
   // so the listener is attached only after the DOM node actually mounts
@@ -114,7 +120,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     setCurrentSlide(carouselApi.selectedScrollSnap());
     carouselApi.on("select", () => {
       setCurrentSlide(carouselApi.selectedScrollSnap());
-      setInlineZoom(1); // Reset zoom on slide change
+      setInlineZoom(1);
+      setInlineRotation(0);
     });
   }, [carouselApi]);
 
@@ -170,13 +177,20 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       is_concern: p.is_concern || false,
       feedback: p.feedback || null
     }));
-    const existingIds = new Set(items.map((i: { id: number }) => i.id));
+    const existingExpenseIds = new Set(items.map((i) => i.expense_id).filter(Boolean));
     (detail.concern_items || []).forEach((ci: import("../type").ConcernItemResponse) => {
-      const negId = -ci.expense_id;
-      if (!existingIds.has(negId)) {
+      if (!existingExpenseIds.has(ci.expense_id)) {
+        const negId = -ci.expense_id;
         items.push({
-          id: negId, coa_id: -1, coa_name: ci.coa_name, amount: ci.amount, remarks: ci.remarks,
-          date: ci.transaction_date, reference_no: null, attachment_url: ci.attachment_url,
+          id: negId,
+          expense_id: ci.expense_id,
+          coa_id: -1,
+          coa_name: ci.coa_name,
+          amount: ci.amount,
+          remarks: ci.remarks,
+          date: ci.transaction_date,
+          reference_no: null,
+          attachment_url: ci.attachment_url,
           is_concern: ci.status === "With Concern",
           is_rejected: ci.status === "Rejected",
           feedback: ci.feedback
@@ -206,37 +220,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     setItemDecisions(prev => ({ ...prev, [id]: prev[id] === status ? "PENDING" : status }));
   };
 
-  const toggleGroupStatus = (groupItems: DraftPayable[], status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
-    setItemDecisions(prev => {
-      const next = { ...prev };
-      groupItems.forEach(item => {
-        const isPersistentLocked = item.is_concern || item.is_rejected;
-        // Don't override if persistent lock exists OR if we are doing a mass "APPROVED" but item is locally REJECTED/CONCERN
-        const isLocallyLocked = (status === "APPROVED" && (next[item.id] === "REJECTED" || next[item.id] === "WITH_CONCERN"));
 
-        if (!isPersistentLocked && !isLocallyLocked) {
-          next[item.id] = status;
-        }
-      });
-      return next;
-    });
-  };
-
-  const approveAll = () => {
-    setItemDecisions(prev => {
-      const next = { ...prev };
-      combinedItems.forEach(item => {
-        // Skip items that are already concerns or rejected (persistent or local)
-        const isCurrentlyConcern = next[item.id] === "WITH_CONCERN" || item.is_concern;
-        const isCurrentlyRejected = next[item.id] === "REJECTED" || item.is_rejected;
-
-        if (item.id > 0 && !isCurrentlyConcern && !isCurrentlyRejected) {
-          next[item.id] = "APPROVED";
-        }
-      });
-      return next;
-    });
-  };
 
   const uncheckAll = () => {
     const next = { ...itemDecisions };
@@ -318,16 +302,27 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       return toast.warning("Feedback is required for this decision.");
     }
 
-    // Keep this as a local staging action only. The backend vote endpoint is
-    // intentionally submitted once per draft/version by the main Submit Decision
-    // button; calling it per line creates an approver vote immediately and causes
-    // the next line to fail with “Already voted”.
+    // Single-item batch: auto-post the full vote immediately.
+    // Pass the item feedback as batch remarks so the user doesn't have
+    // to fill two separate fields for a single-line decision.
+    if (combinedItems.length === 1) {
+      const batchRemarks = remarks.trim() || feedback?.trim() || "";
+      setRemarks(batchRemarks);
+      handleVote(batchRemarks);
+      return;
+    }
+
+    // Multi-item batch: local staging only. The backend vote endpoint is
+    // submitted once per draft by the main Submit Decision button;
+    // calling it per line would cause subsequent lines to fail with "Already voted".
     toast.success(`Decision for item #${p.id} staged. Submit the batch to finalize.`);
   };
 
-  async function handleVote() {
+  async function handleVote(overrideRemarks?: string) {
     if (!detail) return;
-    if (!remarks.trim()) return toast.warning("Approval remarks are required for the audit trail.");
+    const cleanOverride = typeof overrideRemarks === "string" ? overrideRemarks : undefined;
+    const effectiveRemarks = cleanOverride ?? remarks;
+    if (!effectiveRemarks.trim()) return toast.warning("Approval remarks are required for the audit trail.");
 
     const missingFeedback = combinedItems
       .filter((p: { id: number }) => (itemDecisions[p.id] === "REJECTED" || itemDecisions[p.id] === "WITH_CONCERN"))
@@ -339,18 +334,30 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       return;
     }
 
+    // Store remarks for use by confirmation dialogs
+    pendingRemarks.current = effectiveRemarks;
+
     const hasWithConcern = combinedItems.some(p => itemDecisions[p.id] === "WITH_CONCERN");
     if (hasWithConcern) {
       setShowConcernWarning(true);
       return;
     }
 
-    executeSubmit();
+    const hasRejected = combinedItems.some(p => itemDecisions[p.id] === "REJECTED");
+    if (hasRejected) {
+      setShowRejectWarning(true);
+      return;
+    }
+
+    executeSubmit(effectiveRemarks);
   }
 
-  async function executeSubmit() {
+  async function executeSubmit(overrideRemarks?: string) {
     setSubmitting(true);
     setShowConcernWarning(false);
+    setShowRejectWarning(false);
+    const cleanOverride = typeof overrideRemarks === "string" ? overrideRemarks : undefined;
+    const effectiveRemarks = cleanOverride ?? pendingRemarks.current ?? remarks;
     try {
       const payloadEditedPayables = payables
         .map((p) => {
@@ -381,7 +388,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       const result = await api.submitVote({
         draft_id: draft.id,
         status: derivedStatus,
-        remarks: remarks.trim(),
+        remarks: effectiveRemarks.trim(),
         edited_payables: payloadEditedPayables.length > 0 ? payloadEditedPayables : undefined,
         item_decisions: Object.keys(payloadItemDecisions).length > 0 ? payloadItemDecisions : undefined,
       });
@@ -449,7 +456,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                               drag={inlineZoom > 1}
                               dragMomentum={false}
                               className="relative flex items-center justify-center w-full h-full select-none"
-                              style={{ scale: inlineZoom }}
+                              style={{ scale: inlineZoom, rotate: inlineRotation }}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
@@ -467,8 +474,11 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(prev => Math.max(prev - 0.25, 1))} title="Zoom Out">
                                 <ZoomOut size={16} />
                               </Button>
-                              {inlineZoom > 1 && (
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineZoom(1)} title="Reset">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setInlineRotation(prev => (prev + 90) % 360)} title="Rotate Clockwise">
+                                <RotateCw size={16} />
+                              </Button>
+                              {(inlineZoom > 1 || inlineRotation !== 0) && (
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/10" onClick={() => { setInlineZoom(1); setInlineRotation(0); }} title="Reset">
                                   <RotateCcw size={16} />
                                 </Button>
                               )}
@@ -567,7 +577,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
               </div>
             </div>
             {/* Stats Bar Section */}
-            <div className="grid grid-cols-4 gap-4 px-[1.5vw] py-[2vh] bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm shrink-0">
+            <div className="grid grid-cols-5 gap-4 px-[1.5vw] py-[2vh] bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm shrink-0">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800 shadow-inner">
                   <User size={20} />
@@ -598,6 +608,30 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                   <p className="text-[9px] text-muted-foreground dark:text-slate-500 italic">Target Value</p>
                 </div>
               </div>
+              {/* Current Tier Approvers Card */}
+              <div className="flex items-center gap-3 pl-4 border-l border-muted/50 dark:border-slate-800">
+                <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800 shadow-inner shrink-0">
+                  <ShieldCheck size={20} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[8px] uppercase font-black text-muted-foreground dark:text-slate-500 tracking-widest leading-none mb-1.5">Current Approver</p>
+                  <div className="flex flex-col gap-0.5">
+                    {(detail?.approvers_by_level?.[currentTier] ?? []).length > 0
+                      ? (detail?.approvers_by_level?.[currentTier] ?? []).map((a) => (
+                          <div key={a.approver_id} className="flex items-center gap-1.5">
+                            <span className="font-black text-[10px] text-indigo-700 dark:text-indigo-400 truncate max-w-[10vw]">{a.name}</span>
+                            {a.vote
+                              ? <Badge className="text-[8px] px-1 py-0 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 font-black shrink-0">Voted</Badge>
+                              : <Badge className="text-[8px] px-1 py-0 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 font-black shrink-0">Pending</Badge>
+                            }
+                          </div>
+                        ))
+                      : <span className="text-[10px] text-muted-foreground dark:text-slate-500">—</span>
+                    }
+                  </div>
+                </div>
+              </div>
+              {/* Progress Card */}
               <div className="flex items-center gap-3 pl-4 border-l border-muted/50 dark:border-slate-800">
                 <div className="flex flex-col gap-1 w-full">
                   <p className="text-[8px] uppercase font-black text-muted-foreground dark:text-slate-500 tracking-widest leading-none mb-1 text-right">Progress</p>
@@ -624,14 +658,14 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                       Verification Registry
                     </h3>
                     <div className="flex items-center gap-3">
-                      <button
+                      {/* <button
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40"}`}
                         onClick={() => !isInteractionDisabled && approveAll()}
                         disabled={isInteractionDisabled}
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         <span className="text-[10px] font-black uppercase tracking-widest">Approve All</span>
-                      </button>
+                      </button> */}
                       <button
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"}`}
                         onClick={() => !isInteractionDisabled && uncheckAll()}
@@ -649,13 +683,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
                 <div className="flex-1 flex min-h-0 bg-slate-50/50">
                   {/* Sidebar: COA Groups */}
-                  <div className="w-[20vw] border-r dark:border-slate-800 bg-white dark:bg-slate-950 overflow-y-auto shrink-0">
+                  <div style={{ width: sidebarWidth, minWidth: 200, maxWidth: "50vw" }} className="bg-white dark:bg-slate-950 overflow-y-auto shrink-0 relative flex flex-col">
                     <Table>
                       <TableHeader className="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10 shadow-sm">
                         <TableRow>
                           <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 pl-8 text-slate-800 dark:text-slate-400">Account / Period</TableHead>
                           <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-right pr-4 text-slate-800 dark:text-slate-400">Amount</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-center text-slate-800 dark:text-slate-400">Action</TableHead>
+                          {/* <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-center text-slate-800 dark:text-slate-400">Action</TableHead> */}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -663,7 +697,6 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                           const gid = `${g.coa_name}-${w.weekKey}`;
                           const isSelected = selectedGroupId === gid;
                           const total = w.items.reduce((acc, p) => acc + Number(p.amount), 0);
-                          const isVerified = w.items.every(i => itemDecisions[i.id] !== "PENDING");
                           return (
                             <TableRow key={gid}
                               className={`cursor-pointer group transition-all ${isSelected ? "bg-blue-50 dark:bg-blue-900/40" : "hover:bg-slate-50 dark:hover:bg-slate-900/50"}`}
@@ -685,7 +718,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                 <p className="text-[10px] font-black tabular-nums text-slate-800 dark:text-slate-200">{formatCurrency(total)}</p>
                                 <p className="text-[8px] text-muted-foreground dark:text-slate-500 font-bold italic">{w.items.length} units</p>
                               </TableCell>
-                              <TableCell className="text-center py-3">
+                              {/* <TableCell className="text-center py-3">
                                 <Button
                                   variant="ghost"
                                   className={`h-7 px-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${isVerified ? "bg-emerald-500/10 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 dark:border-emerald-800" : "bg-blue-600 dark:bg-blue-700 text-white hover:bg-blue-700 dark:hover:bg-blue-600"}`}
@@ -699,13 +732,35 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                 >
                                   {isVerified ? <CheckCircle2 size={12} /> : <CheckSquare size={12} />}
                                 </Button>
-                              </TableCell>
+                              </TableCell> */}
                             </TableRow>
                           );
                         }))}
                       </TableBody>
                     </Table>
                   </div>
+
+                  {/* Vertical Drag Resizer */}
+                  <div
+                    className="w-1 cursor-col-resize bg-slate-200 dark:bg-slate-800 hover:bg-blue-500 active:bg-blue-600 shrink-0 z-20 transition-colors"
+                    onMouseDown={(e) => {
+                      isDraggingSidebar.current = true;
+                      const startX = e.clientX;
+                      const startWidth = sidebarWidth;
+                      const onMouseMove = (moveEvent: MouseEvent) => {
+                        if (!isDraggingSidebar.current) return;
+                        const newWidth = Math.min(Math.max(startWidth + (moveEvent.clientX - startX), 200), window.innerWidth * 0.5);
+                        setSidebarWidth(newWidth);
+                      };
+                      const onMouseUp = () => {
+                        isDraggingSidebar.current = false;
+                        document.removeEventListener("mousemove", onMouseMove);
+                        document.removeEventListener("mouseup", onMouseUp);
+                      };
+                      document.addEventListener("mousemove", onMouseMove);
+                      document.addEventListener("mouseup", onMouseUp);
+                    }}
+                  />
 
                   {/* Detail Table Area */}
                   <div className="flex-1 bg-white dark:bg-slate-950 flex flex-col overflow-hidden">
@@ -726,7 +781,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                           {activeGroup?.items.map((p, idx) => {
                             const status = itemDecisions[p.id] || "PENDING";
                             const isPersistentLocked = p.is_concern || p.is_rejected;
-                            const isStatusLocked = isPersistentLocked || (status !== "PENDING" && status !== "APPROVED") || isInteractionDisabled;
+                            const isStatusLocked = isPersistentLocked || isInteractionDisabled;
                             return (
                               <React.Fragment key={p.id}>
                                 <TableRow className="group hover:bg-slate-50/50 dark:hover:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800">
@@ -791,7 +846,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                         />
                                         <Button
                                           size="sm"
-                                          className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2"
+                                          className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2 disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
                                           disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isPersistentLocked}
                                           onClick={() => handleSingleItemVote(p)}
                                         >
@@ -819,10 +874,10 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                         <Textarea
                           rows={4}
                           className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl p-4 text-sm font-medium shadow-inner resize-none focus:ring-2 focus:ring-blue-500/20"
-                          placeholder={approvedCount === 0 ? "Approve at least one item to provide remarks..." : "State your approval remarks for this batch..."}
+                          placeholder={hasPendingItems ? "Resolve all pending items first..." : "State your decision remarks for this batch..."}
                           value={remarks}
                           onChange={(e) => setRemarks(e.target.value)}
-                          disabled={approvedCount === 0 || submitting || isInteractionDisabled}
+                          disabled={submitting || isInteractionDisabled}
                         />
                         <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 italic">
                           Your remarks will be saved in the approval audit trail.
@@ -841,9 +896,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             <span className="text-2xl font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
                           </div>
                           <Button
-                            disabled={submitting || hasPendingItems || hasMissingFeedback || !remarks.trim() || approvedCount === 0 || !!detail.my_vote || !detail.can_vote}
-                            className="w-full h-14 relative bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-lg border-t border-white/20 gap-3 active:scale-[0.98] transition-all disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none"
-                            onClick={handleVote}
+                            disabled={submitting || hasPendingItems || hasMissingFeedback || !remarks.trim() || !!detail.my_vote || !detail.can_vote}
+                            className="w-full h-14 relative bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-lg border-t border-white/20 gap-3 active:scale-[0.98] transition-all disabled:bg-slate-100 dark:disabled:bg-slate-850 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
+                            onClick={() => handleVote()}
                           >
                             {submitting ? (
                               <Loader2 className="animate-spin h-5 w-5" />
@@ -866,7 +921,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!previewUrl} onOpenChange={(v) => { if (!v) { setPreviewUrl(null); setZoom(1); } }}>
+      <Dialog open={!!previewUrl} onOpenChange={(v) => { if (!v) { setPreviewUrl(null); setZoom(1); setRotation(0); } }}>
         <DialogContent showCloseButton={false} className="max-w-[95vw] w-[95vw] h-[90vh] p-0 overflow-hidden bg-[#020617] border-none shadow-2xl flex flex-col">
           <DialogTitle className="sr-only">Evidence Preview</DialogTitle>
           <DialogDescription className="sr-only">Detailed view of the attached evidence document</DialogDescription>
@@ -879,8 +934,11 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
             <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => handleZoom(-0.25)} title="Zoom Out">
               <ZoomOut size={20} />
             </Button>
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setRotation(prev => (prev + 90) % 360)} title="Rotate Clockwise">
+              <RotateCw size={20} />
+            </Button>
             <div className="w-px h-6 bg-white/10 mx-1" />
-            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setZoom(1)} title="Reset View">
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => { setZoom(1); setRotation(0); }} title="Reset View">
               <RotateCcw size={20} />
             </Button>
             <div className="px-3 text-[10px] font-black text-white/40 uppercase tracking-widest border-l border-white/10 ml-1">
@@ -910,7 +968,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                     drag
                     dragMomentum={false}
                     className="relative select-none"
-                    style={{ scale: zoom }}
+                    style={{ scale: zoom, rotate: rotation }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -933,24 +991,44 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       </Dialog>
 
       <Dialog open={showConcernWarning} onOpenChange={(v) => !v && setShowConcernWarning(false)}>
-        <DialogContent className="max-w-md p-6 bg-white dark:bg-slate-900 border-rose-200 dark:border-rose-900/50 shadow-2xl rounded-2xl">
-          <DialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400 text-lg font-black tracking-tight">
-            <AlertTriangle size={24} />
-            Permanent Exclusion Warning
+        <DialogContent className="max-w-sm p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-2xl">
+          <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-slate-100 text-base font-semibold">
+            <AlertTriangle size={16} className="text-amber-500 shrink-0" />
+            Confirm Submission
           </DialogTitle>
-          <DialogDescription className="text-slate-600 dark:text-slate-300 font-medium leading-relaxed mt-4">
-            You are about to submit this batch while some line items are marked as <strong className="text-amber-600 dark:text-amber-400">With Concern</strong>.
+          <DialogDescription className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed mt-2">
+            Some items are marked as <span className="text-amber-600 dark:text-amber-400 font-medium">With Concern</span> and will be routed separately. The remaining approved items will proceed through the approval flow.
             <br /><br />
-            Items marked with concern will be excluded from the approved payable set and routed according to the configured approval flow.
-            <br /><br />
-            Do you wish to proceed with these concern items excluded from approval?
+            Do you want to continue?
           </DialogDescription>
-          <div className="flex items-center justify-end gap-3 mt-8">
-            <Button variant="ghost" onClick={() => setShowConcernWarning(false)} className="text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-100 dark:hover:bg-slate-800">
-              Cancel & Review
+          <div className="flex items-center justify-end gap-2 mt-6">
+            <Button variant="ghost" onClick={() => setShowConcernWarning(false)} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+              Go Back
             </Button>
-            <Button onClick={executeSubmit} className="bg-rose-600 dark:bg-rose-500 hover:bg-rose-700 dark:hover:bg-rose-600 text-white font-black uppercase tracking-widest shadow-lg shadow-rose-500/30">
+            <Button onClick={() => executeSubmit(pendingRemarks.current)} className="bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-sm font-semibold px-5 rounded-lg shadow-sm">
               Confirm & Submit
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showRejectWarning} onOpenChange={(v) => !v && setShowRejectWarning(false)}>
+        <DialogContent className="max-w-sm p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-2xl">
+          <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-slate-100 text-base font-semibold">
+            <X size={16} className="text-rose-500 shrink-0" />
+            Confirm Rejection
+          </DialogTitle>
+          <DialogDescription className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed mt-2">
+            You are about to <span className="text-rose-600 dark:text-rose-400 font-medium">reject</span> one or more items in this batch. This action will be recorded in the audit trail and cannot be undone without re-submitting.
+            <br /><br />
+            Do you want to proceed?
+          </DialogDescription>
+          <div className="flex items-center justify-end gap-2 mt-6">
+            <Button variant="ghost" onClick={() => setShowRejectWarning(false)} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+              Go Back
+            </Button>
+            <Button onClick={() => executeSubmit(pendingRemarks.current)} className="bg-rose-600 hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-700 text-white text-sm font-semibold px-5 rounded-lg shadow-sm">
+              Confirm Rejection
             </Button>
           </div>
         </DialogContent>

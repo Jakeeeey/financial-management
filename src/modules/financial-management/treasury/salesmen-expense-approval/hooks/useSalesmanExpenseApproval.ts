@@ -103,6 +103,9 @@ export function useSalesmanExpenseApproval() {
     setDetailLoading(true);
     try {
       const detail = await api.getSalesmanExpenses(row.id);
+      if (detail && detail.expenses) {
+        detail.expenses = detail.expenses.filter((e) => Number(e.is_supervisor) !== 1);
+      }
       setSalesmanDetail(detail);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load expenses");

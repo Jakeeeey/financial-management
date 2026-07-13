@@ -13,6 +13,11 @@ import {
   ShieldCheck,
   Users,
   XCircle,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  RotateCw,
+  Move,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
@@ -44,7 +49,7 @@ type Props = {
   open: boolean;
   group: FinalHeaderGroup | null;
   onOpenChange: (open: boolean) => void;
-  onSubmitted: () => void | Promise<void>;
+  onSubmitted: (shouldClose?: boolean) => void | Promise<void>;
 };
 
 type ApprovalMeta = {
@@ -54,6 +59,7 @@ type ApprovalMeta = {
   is_finalized?: boolean;
   current_tier?: number;
   required_approver_level?: number;
+  current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
 };
 
 function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null | undefined): ApprovalMeta {
@@ -64,6 +70,7 @@ function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null
     is_finalized: source?.is_finalized,
     current_tier: source?.current_tier,
     required_approver_level: source?.required_approver_level,
+    current_tier_approvers: source?.current_tier_approvers ?? [],
   };
 }
 
@@ -73,7 +80,14 @@ function formatDraftStatusList(statuses?: string[]) {
 }
 
 function getApprovalInfo(meta: ApprovalMeta) {
-  const currentLevel = meta.current_tier ? `Level ${meta.current_tier}` : "not yet routed";
+  const pendingApprovers = (meta.current_tier_approvers ?? [])
+    .filter((a) => !a.voted)
+    .map((a) => a.name);
+  const pendingText = pendingApprovers.length > 0
+    ? ` (pending: ${pendingApprovers.join(", ")})`
+    : "";
+
+  const currentLevel = meta.current_tier ? `Level ${meta.current_tier}${pendingText}` : "not yet routed";
   const requiredLevel = meta.required_approver_level ? `Level ${meta.required_approver_level}` : "final approver level";
   const currentStatuses = formatDraftStatusList(meta.draft_statuses);
   const isApproved = (meta.draft_statuses?.length ?? 0) > 0 && meta.draft_statuses?.every((s) => s === "Approved");
@@ -153,6 +167,11 @@ function getDetailsForTarget(
   details: FinalTopSheetDetail[],
   target: FinalDecisionTarget
 ) {
+  if (target.scope === "expense_ids") {
+    const expenseIdSet = new Set(target.expense_ids);
+    return details.filter((detail) => expenseIdSet.has(detail.expense_id));
+  }
+
   const actionableDetails = details.filter((d) => {
     const s = (d.status ?? "").toLowerCase();
     return !s.includes("concern") && s !== "rejected";
@@ -175,8 +194,7 @@ function getDetailsForTarget(
     );
   }
 
-  const expenseIdSet = new Set(target.expense_ids);
-  return actionableDetails.filter((detail) => expenseIdSet.has(detail.expense_id));
+  return [];
 }
 
 function requiresLineRemarks(status: FinalHeaderDecisionStatus) {
@@ -374,6 +392,33 @@ export default function FinalTopSheetModal({
   const [selectedAuditeeId, setSelectedAuditeeId] = React.useState<number | null>(null);
   const [auditeeDetailOpen, setAuditeeDetailOpen] = React.useState(false);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+  const [zoom, setZoom] = React.useState(1);
+  const [rotation, setRotation] = React.useState(0);
+  const [fullScreenEl, setFullScreenEl] = React.useState<HTMLDivElement | null>(null);
+
+  // Native wheel handler to prevent page scroll (non-passive)
+  React.useEffect(() => {
+    if (!fullScreenEl) return;
+    const handleFullScreenWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.deltaY < 0) setZoom(prev => Math.min(Math.max(prev + 0.1, 0.5), 5));
+      else setZoom(prev => Math.max(prev - 0.1, 0.5));
+    };
+    fullScreenEl.addEventListener("wheel", handleFullScreenWheel, { passive: false });
+    return () => fullScreenEl.removeEventListener("wheel", handleFullScreenWheel);
+  }, [fullScreenEl]);
+
+  React.useEffect(() => {
+    if (!previewUrl) {
+      setZoom(1);
+      setRotation(0);
+    }
+  }, [previewUrl]);
+
+  const handleZoom = (delta: number) => {
+    setZoom(prev => Math.min(Math.max(prev + delta, 0.5), 5));
+  };
+
 
   const activeApprovalMeta = React.useMemo(() => {
     return getApprovalMeta((data?.group ?? group) as (ApprovalMeta & Record<string, unknown>) | null | undefined);
@@ -451,6 +496,7 @@ export default function FinalTopSheetModal({
     if (target.scope === "encoder") return `encoder:${target.employee_id}`;
     if (target.scope === "coa") return `coa:${target.coa_id}`;
     if (target.scope === "cell") return `cell:${target.employee_id}:${target.coa_id}`;
+    if (target.scope === "expense_ids" && target.expense_ids?.length) return `expense:${target.expense_ids[0]}`;
     return "unknown";
   }
 
@@ -564,17 +610,19 @@ export default function FinalTopSheetModal({
     setLineRemarks((current) => ({ ...current, [expenseId]: value }));
   }
 
-  async function refreshAfterDecision() {
+  async function refreshAfterDecision(shouldClose: boolean = false) {
     if (!group) return;
 
-    await onSubmitted();
+    await onSubmitted(shouldClose);
 
-    const refreshed = await api.getFinalTopSheet({
-      division_id: group.division_id,
-      period_from: group.period_from,
-      period_to: group.period_to,
-    });
-    setData(refreshed);
+    if (!shouldClose) {
+      const refreshed = await api.getFinalTopSheet({
+        division_id: group.division_id,
+        period_from: group.period_from,
+        period_to: group.period_to,
+      });
+      setData(refreshed);
+    }
   }
 
   async function submitSingleDecisionRequest(params: {
@@ -664,9 +712,11 @@ export default function FinalTopSheetModal({
     status: FinalHeaderDecisionStatus,
     target: FinalDecisionTarget
   ) {
+    console.log("[submitTargetDecision] Clicked:", { status, target, canSubmitFinalAction, group });
     if (!group) return;
 
     if (!canSubmitFinalAction) {
+      console.log("[submitTargetDecision] canSubmitFinalAction is false");
       toast.warning("This top sheet is view-only for the final approver right now.", {
         description: approvalInfo.description,
       });
@@ -674,6 +724,7 @@ export default function FinalTopSheetModal({
     }
 
     const affectedDetails = getDetailsForTarget(data?.details ?? [], target);
+    console.log("[submitTargetDecision] affectedDetails:", affectedDetails);
 
     if (affectedDetails.length === 0) {
       toast.error("The selected action has no expense lines to update.");
@@ -752,7 +803,7 @@ export default function FinalTopSheetModal({
       setStagedDecisions({});
       setFinalConfirmOpen(false);
       setRemarks("");
-      await refreshAfterDecision();
+      await refreshAfterDecision(true);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Batch submission failed.");
     } finally {
@@ -772,7 +823,7 @@ export default function FinalTopSheetModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex !h-screen !w-screen !max-w-none !max-h-none flex-col overflow-hidden border-none p-0 sm:rounded-none">
+        <DialogContent showCloseButton={false} className="flex !h-screen !w-screen !max-w-none !max-h-none flex-col overflow-hidden border-none p-0 sm:rounded-none">
           <div className="shrink-0 bg-slate-50 dark:bg-gradient-to-r dark:from-slate-950 dark:via-slate-900 dark:to-[#1e1e2e] border-b dark:border-none px-5 py-3 text-slate-900 dark:text-white shadow-xl relative">
             <div className="flex items-center justify-between gap-4 relative z-10">
               <DialogTitle className="flex items-center gap-3 text-base font-black tracking-tight text-slate-900 dark:text-white">
@@ -797,20 +848,38 @@ export default function FinalTopSheetModal({
               </DialogTitle>
 
               <div className="flex items-center gap-2">
+                {/* Current Tier Approvers Pill */}
+                {(data?.group.current_tier_approvers ?? []).length > 0 && (
+                  <div className="hidden sm:flex items-center gap-2 rounded-xl border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-900/30 px-3 py-1.5 backdrop-blur-sm">
+                    <ShieldCheck className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <div className="flex flex-col leading-none gap-0.5">
+                      <span className="text-[8px] font-black uppercase tracking-[0.2em] text-indigo-700 dark:text-indigo-400">Current Approver</span>
+                      {(data?.group.current_tier_approvers ?? []).map((a) => (
+                        <div key={a.approver_id} className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-black text-slate-900 dark:text-indigo-200 truncate max-w-[12rem]">{a.name}</span>
+                          {a.voted
+                            ? <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 shrink-0">✓ Voted</span>
+                            : <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 shrink-0">Pending</span>
+                          }
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {group && (
-                  <div className="flex items-center gap-2 bg-white/5 p-1.5 rounded-xl border border-white/10">
+                  <div className="flex items-center gap-2 bg-slate-100 dark:bg-white/5 p-1.5 rounded-xl border border-slate-200 dark:border-white/10">
                     <Badge className="rounded-lg bg-primary/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-primary border border-primary/30">
                       {group.division_name ?? `Division #${group.division_id}`}
                     </Badge>
-                    <span className="text-[10px] font-bold text-white/50">
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-white/50">
                       {formatDate(group.period_from)} – {formatDate(group.period_to)}
                     </span>
                     <Badge className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${
                       isApprovedHistory
-                        ? "border border-emerald-500/30 bg-emerald-500/20 text-emerald-400"
+                        ? "border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                         : canSubmitFinalAction 
-                          ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-200" 
-                          : "border border-amber-300/40 bg-amber-400/15 text-amber-200"
+                          ? "border border-emerald-100 dark:border-emerald-300/40 bg-emerald-50 dark:bg-emerald-400/15 text-emerald-600 dark:text-emerald-200" 
+                          : "border border-amber-200 dark:border-amber-300/40 bg-amber-50 dark:bg-amber-400/15 text-amber-700 dark:text-amber-200"
                     }`}>
                       {isApprovedHistory ? "FINALIZED" : approvalInfo.shortLabel}
                     </Badge>
@@ -871,14 +940,14 @@ export default function FinalTopSheetModal({
                             ? "Ready for final approver action" 
                             : "View-only until previous approval tier is completed"}
                       </h3>
-                      <p className={`text-[11px] font-medium leading-none ${
+                      <p className={`text-[11px] font-medium leading-normal ${
                         isApprovedHistory || canSubmitFinalAction ? "text-emerald-700/70 dark:text-emerald-400/70" : "text-slate-500 dark:text-slate-400"
                       }`}>
                         {isApprovedHistory 
                           ? "This top-sheet has been successfully audited and posted to the live Disbursement table."
                           : canSubmitFinalAction 
                             ? `Current status: ${(data?.group.draft_statuses ?? []).join(", ")}. This top-sheet is ${toNumber(data?.group.current_tier) >= 999 ? "Finalized" : `on Level ${data?.group.current_tier}`}.` 
-                            : `Current status: ${(data?.group.draft_statuses ?? []).join(", ")}. Final approver actions are enabled only at Level ${data?.group.required_approver_level}.`}
+                            : approvalInfo.description}
                       </p>
                     </div>
                   </div>
@@ -978,7 +1047,6 @@ export default function FinalTopSheetModal({
                     data={data}
                     submitting={submitting}
                     canAct={canSubmitFinalAction}
-                    isApprovedHistory={isApprovedHistory}
                     readOnlyReason={actionDisabledReason}
                     stagedDecisions={Object.fromEntries(
                       Object.entries(stagedDecisions).map(([k, v]) => [k, v.status])
@@ -1092,6 +1160,8 @@ export default function FinalTopSheetModal({
         onSubmitTargetDecision={(status, target) =>
           void submitTargetDecision(status, target)
         }
+        onToggleDecision={handleToggleDecision}
+        stagedDecisions={stagedDecisions}
         onPreviewUrl={setPreviewUrl}
       />
 
@@ -1100,13 +1170,37 @@ export default function FinalTopSheetModal({
         <DialogContent showCloseButton={false} className="max-w-[95vw] w-[95vw] h-[90vh] p-0 overflow-hidden bg-[#020617] border-none shadow-2xl flex flex-col">
           <DialogTitle className="sr-only">Evidence Preview</DialogTitle>
           <DialogDescription className="sr-only">Full-screen view of the attached evidence document</DialogDescription>
+
+          {/* Preview Header */}
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-black/40 backdrop-blur-xl border border-white/10 p-2 rounded-2xl shadow-2xl">
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => handleZoom(0.25)} title="Zoom In">
+              <ZoomIn size={20} />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => handleZoom(-0.25)} title="Zoom Out">
+              <ZoomOut size={20} />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setRotation(prev => (prev + 90) % 360)} title="Rotate Clockwise">
+              <RotateCw size={20} />
+            </Button>
+            <div className="w-px h-6 bg-white/10 mx-1" />
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => { setZoom(1); setRotation(0); }} title="Reset View">
+              <RotateCcw size={20} />
+            </Button>
+            <div className="px-3 text-[10px] font-black text-white/40 uppercase tracking-widest border-l border-white/10 ml-1">
+              {Math.round(zoom * 100)}%
+            </div>
+          </div>
+
           <button
             className="absolute top-6 right-6 z-50 h-12 w-12 flex items-center justify-center text-white bg-white/5 hover:bg-rose-500/20 hover:text-rose-400 rounded-full border border-white/10 backdrop-blur-md transition-colors"
             onClick={() => setPreviewUrl(null)}
           >
             <XCircle size={24} />
           </button>
-          <div className="flex-1 relative overflow-hidden">
+          <div
+            ref={setFullScreenEl}
+            className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing"
+          >
             <AnimatePresence mode="wait">
               {previewUrl && (
                 <motion.div
@@ -1116,16 +1210,28 @@ export default function FinalTopSheetModal({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 1.1 }}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl}
-                    alt="Evidence"
-                    className="max-w-[85vw] max-h-[80vh] object-contain shadow-[0_0_80px_rgba(0,0,0,0.5)] rounded-lg pointer-events-none"
-                    draggable={false}
-                  />
+                  <motion.div
+                    drag
+                    dragMomentum={false}
+                    className="relative select-none"
+                    style={{ scale: zoom, rotate: rotation }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={previewUrl}
+                      alt="Evidence"
+                      className="max-w-[85vw] max-h-[80vh] object-contain shadow-[0_0_80px_rgba(0,0,0,0.5)] rounded-lg pointer-events-none"
+                      draggable={false}
+                    />
+                  </motion.div>
                 </motion.div>
               )}
             </AnimatePresence>
+
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/20 text-[9px] font-black uppercase tracking-[0.3em] flex items-center gap-3">
+              <Move size={12} />
+              Drag to Navigate • Scroll to Zoom
+            </div>
           </div>
         </DialogContent>
       </Dialog>

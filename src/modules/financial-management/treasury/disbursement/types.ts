@@ -41,7 +41,9 @@ export interface Disbursement {
     balance?: number;
 
     encoderName?: string;
+    submittedByName?: string;
     approverName?: string;
+    releasedByName?: string;
     postedByName?: string;
     encoderId?: number;
     approverId?: number;

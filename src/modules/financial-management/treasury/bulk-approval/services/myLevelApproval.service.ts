@@ -70,6 +70,9 @@ export async function handleMyLevelApprovalGetResource(params: {
 
       const filter: Record<string, unknown> = {
         division_id: filterDivId ? { _eq: filterDivId } : { _in: myDivisionIds },
+        status: {
+          _nin: ["Approved", "Rejected"],
+        },
       };
 
       const query = buildFilterQuery(
@@ -330,6 +333,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             is_concern: item.status === "With Concern",
             is_rejected: item.status === "Rejected",
             feedback: item.feedback ?? null,
+            expense_id: expenseId,
           };
         });
 
@@ -376,7 +380,7 @@ export async function handleMyLevelApprovalGetResource(params: {
       }
 
       const draftRes = await directusFetch(
-        `/items/disbursement_draft?filter[id][_eq]=${draftId}&fields=id,doc_no,payee,total_amount,remarks,status,approval_version,version,transaction_date,division_id,department_id,encoder_id,transaction_type,supporting_documents_url,date_created,date_updated&limit=1`
+        `/items/disbursement_draft?filter[id][_eq]=${draftId}&fields=id,doc_no,payee,total_amount,remarks,status,approval_version,version,transaction_date,division_id,department_id,encoder_id,transaction_type,supporting_documents_url,date_created,date_updated,is_supervisor&limit=1`
       );
 
       if (!draftRes.ok) return jsonResponse(draftRes.data, { status: draftRes.status });
@@ -394,7 +398,7 @@ export async function handleMyLevelApprovalGetResource(params: {
       }
 
       const pRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id.id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
       );
 
       const payablesRaw =
@@ -477,6 +481,7 @@ export async function handleMyLevelApprovalGetResource(params: {
           is_concern: expenseObj?.status === "With Concern",
           is_rejected: expenseObj?.status === "Rejected",
           feedback: expenseObj?.feedback ?? null,
+          expense_id: expenseObj ? (toNumericId(expenseObj.id) ?? 0) : (toNumericId(p.expense_id) ?? 0),
         };
       });
 
@@ -887,6 +892,8 @@ export async function submitMyLevelApprovalVote(params: {
         return sum;
       }, 0);
 
+      const hasSupervisor = resolved.items.some((item) => Number(item.is_supervisor) === 1);
+
       const createDraftRes = await directusFetch(`/items/disbursement_draft`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -903,6 +910,7 @@ export async function submitMyLevelApprovalVote(params: {
           remarks: `[Virtual Resubmission Round] Created from returned items at Level ${tier}.`,
           date_created: nowTs,
           date_updated: nowTs,
+          is_supervisor: hasSupervisor ? 1 : 0,
         }),
       });
 

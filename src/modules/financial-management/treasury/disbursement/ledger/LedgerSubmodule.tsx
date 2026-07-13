@@ -24,6 +24,57 @@ import { generateReportExcel } from "../utils/reportExcelGenerator";
 import { DisbursementViewSheet } from "../components/DisbursementViewSheet";
 import { StickyTableWrapper } from "../components/StickyTableWrapper";
 
+interface SearchSelectProps<T extends string | number> {
+    options: { label: string; value: T }[];
+    value: T | "";
+    onSelect: (val: T) => void;
+    placeholder: string;
+    className?: string;
+}
+
+function SearchSelect<T extends string | number>({ options, value, onSelect, placeholder, className }: SearchSelectProps<T>) {
+    const [open, setOpen] = useState(false);
+    const selectedLabel = options.find(o => String(o.value) === String(value))?.label || placeholder;
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" aria-expanded={open} className={cn("justify-between w-full h-9 text-xs font-bold uppercase bg-background px-2.5", className)}>
+                    <span className="truncate text-left">{selectedLabel}</span>
+                    <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-55" />
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[320px] p-0 shadow-lg border-border" align="start">
+                <Command filter={(val, search) => {
+                    if (val.toLowerCase().includes(search.toLowerCase())) return 1;
+                    return 0;
+                }}>
+                    <CommandInput placeholder="Search..." className="h-9 text-xs" />
+                    <CommandList className="max-h-[220px] scrollbar-thin">
+                        <CommandEmpty className="py-3 text-center text-xs text-muted-foreground font-bold">No matches found.</CommandEmpty>
+                        <CommandGroup>
+                            {options.map((opt, idx) => (
+                                <CommandItem
+                                    key={`${opt.value}-${idx}`}
+                                    value={opt.label}
+                                    onSelect={() => {
+                                        onSelect(opt.value);
+                                        setOpen(false);
+                                    }}
+                                    className="text-xs cursor-pointer py-2 font-bold uppercase"
+                                >
+                                    <Check className={cn("mr-2 h-4.5 w-4.5 text-primary", String(value) === String(opt.value) ? "opacity-100" : "opacity-0")} />
+                                    {opt.label}
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
+                    </CommandList>
+                </Command>
+            </PopoverContent>
+        </Popover>
+    );
+}
+
 export default function LedgerSubmodule() {
     // Grid type tabs
     const [viewMode, setViewMode] = useState<"journal" | "voucher">("journal");
@@ -614,25 +665,27 @@ export default function LedgerSubmodule() {
                         </div>
 
                         {/* Division */}
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 flex flex-col justify-end">
                             <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/85">Cost Division</Label>
-                            <select className="h-9 w-full rounded-lg border border-border/50 bg-background px-3 text-xs font-bold uppercase text-foreground shadow-sm focus:ring-1 focus:ring-primary/30 outline-none cursor-pointer" value={divisionFilter} onChange={e => setDivisionFilter(e.target.value)}>
-                                <option value="">All Divisions</option>
-                                {divisions.map(d => (
-                                    <option key={d.divisionId} value={d.divisionId}>{d.divisionName}</option>
-                                ))}
-                            </select>
+                            <SearchSelect
+                                options={divisions.map(d => ({ label: d.divisionName || "N/A", value: d.divisionId }))}
+                                value={divisionFilter !== "" ? Number(divisionFilter) : ""}
+                                onSelect={val => setDivisionFilter(String(val))}
+                                placeholder="All Divisions"
+                                className="h-9 text-xs font-bold bg-background border-border/50 rounded-lg shadow-sm"
+                            />
                         </div>
 
                         {/* Department */}
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 flex flex-col justify-end">
                             <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/85">Cost Department</Label>
-                            <select className="h-9 w-full rounded-lg border border-border/50 bg-background px-3 text-xs font-bold uppercase text-foreground shadow-sm focus:ring-1 focus:ring-primary/30 outline-none cursor-pointer" value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)}>
-                                <option value="">All Departments</option>
-                                {departments.map(d => (
-                                    <option key={d.departmentId} value={d.departmentId}>{d.departmentName}</option>
-                                ))}
-                            </select>
+                            <SearchSelect
+                                options={departments.map(d => ({ label: d.departmentName || "N/A", value: d.departmentId }))}
+                                value={departmentFilter !== "" ? Number(departmentFilter) : ""}
+                                onSelect={val => setDepartmentFilter(String(val))}
+                                placeholder="All Departments"
+                                className="h-9 text-xs font-bold bg-background border-border/50 rounded-lg shadow-sm"
+                            />
                         </div>
 
                         {/* Min / Max Amount */}
@@ -836,7 +889,7 @@ export default function LedgerSubmodule() {
                     )}
 
                     {/* Pagination */}
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-border/50">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-border/50 bg-card/95 backdrop-blur-md sticky bottom-0 z-10">
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Rows per page:</span>
                             <select 
@@ -900,6 +953,7 @@ export default function LedgerSubmodule() {
                 }}
                 onEdit={() => {}} // Read-only from Ledger submodule, edit not permitted
                 loading={false}
+                readOnly={true}
             />
         </div>
     );

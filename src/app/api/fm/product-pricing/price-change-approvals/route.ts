@@ -23,15 +23,15 @@ import {
     resolveSupplierIds,
 } from "../_supplierFilters";
 import {
-    fetchStreamTopRows,
-    MAX_UNIFIED_FETCH,
-    mergeUnifiedRows,
+    fetchMergedUnifiedPage,
 } from "../_unifiedApprovalMerge";
 import {
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
     mustBase,
 } from "../price-change-batches/_batch";
+
+const MAX_UNIFIED_PAGE_WINDOW = 10_000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,12 +54,20 @@ export async function GET(req: NextRequest) {
         const dateFrom = norm(searchParams.get("date_from"));
         const dateTo = norm(searchParams.get("date_to"));
         const scope = norm(searchParams.get("scope"));
-        const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-        const pageSize = Math.min(100, Math.max(10, Number(searchParams.get("page_size") ?? 50)));
+        const rawPage = Number(searchParams.get("page") ?? 1);
+        const rawPageSize = Number(searchParams.get("page_size") ?? 50);
+        const page = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1;
+        const pageSize = Math.min(100, Math.max(10,
+            Number.isFinite(rawPageSize) && rawPageSize >= 1 ? rawPageSize : 50,
+        ));
+
+        if ((page - 1) * pageSize >= MAX_UNIFIED_PAGE_WINDOW) {
+            return NextResponse.json({
+                error: "Requested page is too deep. Narrow the filters or search term and try again.",
+            }, { status: 400 });
+        }
 
         const filters: ApprovalFilters = { status, supplierIds, q, dateFrom, dateTo };
-        const offset = (page - 1) * pageSize;
-        let needed = offset + pageSize;
 
         const searchParse = q ? parseApprovalSearchQuery(q) : null;
         const includePriceScope = scope !== "cost";
@@ -129,90 +137,38 @@ export async function GET(req: NextRequest) {
             }
         }
 
-        const emptyStreamPage = () => Promise.resolve({ rows: [], total: 0 });
+        const sources = [
+            includeBatch
+                ? (streamOffset: number, streamLimit: number) =>
+                      fetchPriceBatchesPage(filters, streamOffset, streamLimit, priceBatchHeaderIds, batchHeaderIdsFromSearch)
+                : null,
+            includeStandalonePrice
+                ? (streamOffset: number, streamLimit: number) =>
+                      fetchPriceRequestsPage(filters, streamOffset, streamLimit, supplierProductIds)
+                : null,
+            includeCost
+                ? (streamOffset: number, streamLimit: number) =>
+                      fetchCostRequestsPage(filters, streamOffset, streamLimit, supplierProductIds)
+                : null,
+            includeCostBatch
+                ? (streamOffset: number, streamLimit: number) =>
+                      fetchCostBatchesPage(filters, streamOffset, streamLimit, costBatchHeaderIds, costHeaderIdsFromSearch)
+                : null,
+        ];
 
-        const fetchBatchTop = includeBatch
-            ? (fetchNeeded: number) =>
-                  fetchStreamTopRows(
-                      (streamOffset, streamLimit) =>
-                          fetchPriceBatchesPage(
-                              filters,
-                              streamOffset,
-                              streamLimit,
-                              priceBatchHeaderIds,
-                              batchHeaderIdsFromSearch,
-                          ),
-                      fetchNeeded,
-                  )
-            : emptyStreamPage;
-
-        const fetchPriceTop = includeStandalonePrice
-            ? (fetchNeeded: number) =>
-                  fetchStreamTopRows(
-                      (streamOffset, streamLimit) =>
-                          fetchPriceRequestsPage(filters, streamOffset, streamLimit, supplierProductIds),
-                      fetchNeeded,
-                  )
-            : emptyStreamPage;
-
-        const fetchCostTop = includeCost
-            ? (fetchNeeded: number) =>
-                  fetchStreamTopRows(
-                      (streamOffset, streamLimit) =>
-                          fetchCostRequestsPage(filters, streamOffset, streamLimit, supplierProductIds),
-                      fetchNeeded,
-                  )
-            : emptyStreamPage;
-
-        const fetchCostBatchTop = includeCostBatch
-            ? (fetchNeeded: number) =>
-                  fetchStreamTopRows(
-                      (streamOffset, streamLimit) =>
-                          fetchCostBatchesPage(
-                              filters,
-                              streamOffset,
-                              streamLimit,
-                              costBatchHeaderIds,
-                              costHeaderIdsFromSearch,
-                          ),
-                      fetchNeeded,
-                  )
-            : emptyStreamPage;
-
-        let [batchPage, pricePage, costBatchPage, costPage] = await Promise.all([
-            fetchBatchTop(needed),
-            fetchPriceTop(needed),
-            fetchCostBatchTop(needed),
-            fetchCostTop(needed),
-        ]);
-
-        let merged = mergeUnifiedRows(batchPage.rows, pricePage.rows, costBatchPage.rows, costPage.rows);
-        let data = merged.slice(offset, offset + pageSize);
-
-        const totalCount = batchPage.total + pricePage.total + costBatchPage.total + costPage.total;
-
-        if (
-            data.length < pageSize &&
-            offset + data.length < totalCount &&
-            needed < MAX_UNIFIED_FETCH
-        ) {
-            needed = Math.min(needed * 2, MAX_UNIFIED_FETCH);
-            [batchPage, pricePage, costBatchPage, costPage] = await Promise.all([
-                fetchBatchTop(needed),
-                fetchPriceTop(needed),
-                fetchCostBatchTop(needed),
-                fetchCostTop(needed),
-            ]);
-            merged = mergeUnifiedRows(batchPage.rows, pricePage.rows, costBatchPage.rows, costPage.rows);
-            data = merged.slice(offset, offset + pageSize);
-        }
-
-        let enrichedData = await addActorNames(data);
+        const { rows, total: actualTotalCount } = await fetchMergedUnifiedPage(page, pageSize, sources);
+        const pageableTotalCount = Math.min(actualTotalCount, MAX_UNIFIED_PAGE_WINDOW);
+        let enrichedData = await addActorNames(rows);
         enrichedData = await addSuppliersToRows(enrichedData);
 
         return NextResponse.json({
             data: enrichedData,
-            meta: { total_count: totalCount },
+            meta: {
+                total_count: pageableTotalCount,
+                actual_total_count: actualTotalCount,
+                result_window: MAX_UNIFIED_PAGE_WINDOW,
+                total_count_capped: actualTotalCount > MAX_UNIFIED_PAGE_WINDOW,
+            },
         });
     } catch (error: unknown) {
         return directusErrorResponse(error);

@@ -1,7 +1,7 @@
 // src/app/api/fm/treasury/bulk-approval/route.ts
 import { NextRequest } from "next/server";
 import { jsonResponse, serverErrorResponse } from "@/modules/financial-management/treasury/bulk-approval/services/http";
-import { createBulkApprovalContext, getApprovalContextsForUser } from "@/modules/financial-management/treasury/bulk-approval/services/bulkApproval.shared";
+import { createBulkApprovalContext, getApprovalContextsForUser, fetchUserMap } from "@/modules/financial-management/treasury/bulk-approval/services/bulkApproval.shared";
 import { handleFinalHeaderDecision, handleFinalTopSheetsGetResource } from "@/modules/financial-management/treasury/bulk-approval/services/finalTopSheets.service";
 import { handleMyLevelApprovalGetResource, submitMyLevelApprovalVote } from "@/modules/financial-management/treasury/bulk-approval/services/myLevelApproval.service";
 
@@ -28,7 +28,10 @@ export async function GET(req: NextRequest) {
         allApprovers: context.allApprovers,
       });
 
-      return jsonResponse({ data: contexts });
+      const userMap = await fetchUserMap([context.currentUserId]);
+      const currentUserName = userMap.get(context.currentUserId) ?? `User #${context.currentUserId}`;
+
+      return jsonResponse({ data: contexts, currentUserName });
     }
 
     const finalTopSheetResponse = await handleFinalTopSheetsGetResource({

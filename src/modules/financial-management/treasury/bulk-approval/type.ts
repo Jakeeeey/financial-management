@@ -108,6 +108,7 @@ export type DisbursementPayableDraftRow = {
     status?: string | null;
     feedback?: string | null;
     header_id?: number | string | null;
+    amount?: number | string | null;
     attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   }
   | null;
@@ -127,6 +128,7 @@ export type ExpenseDraftRow = {
   feedback?: string | null;
   status?: string | null;
   header_id?: number | string | null;
+  is_supervisor?: number | string | null;
 };
 
 export type ApprovalVoteRow = {
@@ -179,6 +181,7 @@ export type PayableResponse = {
   is_concern?: boolean;
   is_rejected?: boolean;
   feedback?: string | null;
+  expense_id?: number;
 };
 
 export type ConcernItemResponse = {
@@ -363,6 +366,7 @@ export type FinalTopSheetDetail = {
   remarks: string | null;
   status: string;
   attachment_url: string | null;
+  feedback?: string | null;
 };
 export type FinalTopSheetDetailResponse = FinalTopSheetDetail;
 
@@ -376,6 +380,7 @@ export type FinalTopSheetResponse = {
     header_id: number;
     file_url: string;
     file_name: string;
+    encoder_id?: number;
   }[];
 };
 
@@ -412,9 +417,18 @@ export type FinalTopSheetGroupMetaResponse = {
   is_waiting?: boolean;
   current_tier?: number;
   required_approver_level?: number;
+  current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  previous_tier_approver_names?: string[];
 };
 
 export type DraftPayable = PayableResponse;
+
+export type DraftApproverEntry = {
+  approver_id: number;
+  name: string;
+  level: number;
+  vote: { status: string; remarks: string | null; created_at: string; version: number } | null;
+};
 
 export type DraftDetail = {
   draft: DraftRow;
@@ -423,6 +437,7 @@ export type DraftDetail = {
   attachments?: { file_url: string; file_name: string }[];
   my_vote: { status: string; created_at: string; version: number } | null;
   can_vote: boolean;
+  approvers_by_level?: Record<number, DraftApproverEntry[]>;
 };
 
 export type FinalHeaderDecisionStatus = "Approved" | "Rejected" | "With Concern";

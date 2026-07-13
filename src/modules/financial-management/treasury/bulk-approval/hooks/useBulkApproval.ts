@@ -22,6 +22,7 @@ export function useBulkApproval() {
 
   const [approvalContexts, setApprovalContexts] = React.useState<ApprovalContext[]>([]);
   const [contextsLoading, setContextsLoading] = React.useState(true);
+  const [currentUserName, setCurrentUserName] = React.useState("");
 
   const [finalHeaderGroups, setFinalHeaderGroups] = React.useState<FinalHeaderGroup[]>([]);
   const [finalHeaderGroupsLoading, setFinalHeaderGroupsLoading] = React.useState(false);
@@ -65,8 +66,9 @@ export function useBulkApproval() {
   const loadApprovalContexts = React.useCallback(async () => {
     try {
       setContextsLoading(true);
-      const contexts = await api.getMyApprovalContexts();
+      const { contexts, currentUserName: name } = await api.getMyApprovalContexts();
       setApprovalContexts(contexts);
+      setCurrentUserName(name);
       if (contexts.length === 0) setUnauthorized(true);
     } catch (e: unknown) {
       if (e instanceof Error && e.message === "403_UNAUTHORIZED") {
@@ -245,6 +247,7 @@ export function useBulkApproval() {
     selectedDraftId,
     approvalContexts,
     contextsLoading,
+    currentUserName,
     normalApprovalContexts,
     finalApprovalContexts,
     canDoNormalApproval,
