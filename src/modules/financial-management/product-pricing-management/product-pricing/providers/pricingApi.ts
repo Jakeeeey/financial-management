@@ -7,7 +7,6 @@ import type {
     PriceType,
     ProductRow,
     Unit,
-    UpsertLine,
     Supplier,
     PriceChangeRequest,
     CostChangeRequest,
@@ -229,16 +228,6 @@ export async function getPricesForProducts(productIds: number[], init?: RequestI
     return { data };
 }
 
-/**
- * @deprecated Initializes missing matrix rows only. Existing rows must use createPriceChangeBatch.
- */
-export async function upsertPrices(lines: UpsertLine[]) {
-    return http<{ ok: boolean; affected: number }>(`/api/fm/product-pricing/prices-upsert`, {
-        method: "POST",
-        body: JSON.stringify({ lines }),
-    });
-}
-
 export async function setupPriceMatrixRow(input: {
     product_id: number;
     price_type_id: number;
@@ -258,7 +247,7 @@ export async function createPriceChangeBatch(
     lines: PriceChangeBatchLineInput[],
 ) {
     return http<{
-        data: { id: number; header_id: number; line_count?: number };
+        data?: { id: number; header_id: number; line_count?: number };
         created: number;
         initialized?: number;
         skipped_duplicates?: number;

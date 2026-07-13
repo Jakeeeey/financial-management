@@ -194,6 +194,11 @@ export async function POST(req: NextRequest) {
                 {
                     error: "Existing price-matrix records must be updated through a price-change request.",
                     code: "existing_price_requires_change_request",
+                    migration_required: true,
+                    successors: {
+                        initialize: "/api/fm/product-pricing/matrix-setup",
+                        request_change: "/api/fm/product-pricing/price-change-batches",
+                    },
                     targets: existingTargets,
                 },
                 { status: 409 },

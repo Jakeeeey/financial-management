@@ -1029,10 +1029,17 @@ export async function removePriceChangeBatchLine(headerId: number, requestId: nu
 
 export async function cancelPendingBatch(headerId: number, userId: number, reason: string) {
     const header = await getHeader(headerId);
-    if (!header) return;
+    if (!header) throw new Error(`Price batch ${headerId} was not found during rollback.`);
 
     const status = String(header.status ?? "");
-    if (status !== "PENDING") return;
+    if (status === "CANCELLED") {
+        const remainingDetails = await getDetails(headerId);
+        if (remainingDetails.length === 0) return;
+        throw new Error(`Price batch ${headerId} is cancelled but still has active lines.`);
+    }
+    if (status !== "PENDING") {
+        throw new Error(`Price batch ${headerId} cannot be rolled back from status ${status || "UNKNOWN"}.`);
+    }
 
     const lockId = await acquireBatchMutationLock(headerId);
     if (!lockId) throw new Error("This batch is currently being modified. Refresh and try again.");
@@ -1062,6 +1069,14 @@ export async function cancelPendingBatch(headerId: number, userId: number, reaso
                     }),
                 ),
         );
+
+        const [cancelledHeader, remainingDetails] = await Promise.all([
+            getHeader(headerId),
+            getDetails(headerId),
+        ]);
+        if (String(cancelledHeader?.status ?? "") !== "CANCELLED" || remainingDetails.length > 0) {
+            throw new Error(`Price batch ${headerId} rollback could not be verified.`);
+        }
     } finally {
         await releaseBatchMutationLock(headerId, lockId);
     }

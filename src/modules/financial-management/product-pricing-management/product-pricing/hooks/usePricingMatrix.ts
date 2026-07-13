@@ -651,13 +651,6 @@ export function usePricingMatrix(args: {
         }
 
         try {
-            type CreateResult = {
-                created?: number;
-                initialized?: number;
-                skipped_existing_pending?: number;
-                skipped_duplicates?: number;
-            };
-
             const isMixedSave = pcrItems.length > 0 && costPcrItems.length > 0;
 
             if (isMixedSave) {
@@ -715,7 +708,7 @@ export function usePricingMatrix(args: {
             let totalSkippedExistingPending = 0;
 
             if (pcrItems.length > 0) {
-                const priceRes = (await api.createPriceChangeBatch(batch!, pcrItems)) as CreateResult;
+                const priceRes = await api.createPriceChangeBatch(batch!, pcrItems);
                 priceCreated = priceRes.created ?? 0;
                 priceInitialized = priceRes.initialized ?? 0;
                 totalSkippedDuplicates += priceRes.skipped_duplicates ?? 0;
@@ -736,7 +729,7 @@ export function usePricingMatrix(args: {
             }
 
             if (costPcrItems.length > 0) {
-                const costRes = (await api.createCostChangeRequests(costPcrItems)) as CreateResult;
+                const costRes = await api.createCostChangeRequests(costPcrItems);
                 costCreated = costRes.created ?? 0;
                 totalSkippedDuplicates += costRes.skipped_duplicates ?? 0;
                 totalSkippedExistingPending += costRes.skipped_existing_pending ?? 0;

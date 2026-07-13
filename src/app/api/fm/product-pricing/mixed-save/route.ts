@@ -236,24 +236,36 @@ export async function POST(req: NextRequest) {
                     };
                 } catch (costError: unknown) {
                     if (isMixed && (priceResult.header_id || initializedReceipts.length > 0)) {
+                        let batchCancellationFailure: string | null = null;
                         if (priceResult.header_id) {
-                            await cancelPendingBatch(
-                                priceResult.header_id,
-                                userId,
-                                MIXED_SAVE_ROLLBACK_REASON,
-                            ).catch(() => undefined);
+                            try {
+                                await cancelPendingBatch(
+                                    priceResult.header_id,
+                                    userId,
+                                    MIXED_SAVE_ROLLBACK_REASON,
+                                );
+                            } catch (error: unknown) {
+                                batchCancellationFailure =
+                                    error instanceof Error ? error.message : String(error);
+                            }
                         }
                         const initializationRollbackFailures =
                             await rollbackPreparedInitializations(initializedReceipts);
 
                         const message =
                             costError instanceof Error ? costError.message : String(costError);
-                        if (initializationRollbackFailures.length > 0) {
+                        if (batchCancellationFailure || initializationRollbackFailures.length > 0) {
                             return NextResponse.json(
                                 {
                                     error: "Mixed save rollback was incomplete.",
                                     code: "mixed_save_partial_failure",
-                                    failures: initializationRollbackFailures,
+                                    header_id: priceResult.header_id ?? null,
+                                    batch_cancellation: batchCancellationFailure
+                                        ? { error: batchCancellationFailure }
+                                        : null,
+                                    initialization: {
+                                        failures: initializationRollbackFailures,
+                                    },
                                     details: message,
                                 },
                                 { status: 500 },

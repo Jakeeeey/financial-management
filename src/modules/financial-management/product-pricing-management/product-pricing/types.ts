@@ -103,15 +103,6 @@ export type PricingFilters = {
     show_list_price: boolean;
 };
 
-export type UpsertLine = {
-    product_id: number;
-    price_type_id: number;
-    price: number | null;
-    updated_by?: number | null;
-    created_by?: number | null;
-    status?: string;
-};
-
 export type PriceChangeRequest = {
     id: number;
     product_id: number | { product_id: number };

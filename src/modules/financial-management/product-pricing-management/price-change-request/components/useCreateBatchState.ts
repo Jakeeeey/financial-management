@@ -73,10 +73,12 @@ export function parseCostInput(value: string) {
 
 function summarizeCreated(result: {
     created: number;
+    initialized?: number;
     skipped_duplicates?: number;
     skipped_existing_pending?: number;
 }) {
     const details: string[] = [];
+    if (result.initialized) details.push(`${result.initialized} matrix row(s) initialized`);
     if (result.skipped_duplicates) details.push(`${result.skipped_duplicates} duplicate(s) skipped`);
     if (result.skipped_existing_pending) details.push(`${result.skipped_existing_pending} already pending`);
     return details.length ? ` ${details.join(", ")}.` : "";
@@ -556,13 +558,13 @@ export function useCreateBatchState({
             const bp = { supplier_id: selectedSupplierId, reference_no: referenceNo.trim() || undefined, remarks: trimmedRemarks };
             if (priceLines.length > 0 && costItems.length > 0) {
                 const r = await api.saveMixedPricingChanges({ batch: bp, price_lines: priceLines, cost_items: costItems });
-                if (Number(r.created ?? 0) > 0) { toast.success(`Created ${r.price.created ?? 0} price line(s) and ${r.cost.created ?? 0} list cost line(s).`); onCreated(); onOpenChange(false); }
+                if (Number(r.created ?? 0) > 0) { toast.success(`Created ${r.price.created ?? 0} pending price line(s), initialized ${r.price.initialized ?? 0} matrix row(s), and created ${r.cost.created ?? 0} list cost line(s).`); onCreated(); onOpenChange(false); }
                 else { toast.info("No pending records were created."); }
                 return;
             }
             if (priceLines.length > 0) {
                 const r = await api.createPriceChangeBatch({ ...bp, lines: priceLines });
-                if (Number(r.created ?? 0) > 0) { toast.success(`Created price change batch with ${r.created} line(s).${summarizeCreated(r)}`); onCreated(); onOpenChange(false); }
+                if (Number(r.created ?? 0) + Number(r.initialized ?? 0) > 0) { toast.success(`Created ${r.created} pending price line(s).${summarizeCreated(r)}`); onCreated(); onOpenChange(false); }
                 else { toast.info(`No batch was created.${summarizeCreated(r)}`); }
                 return;
             }

@@ -115,6 +115,7 @@ export async function saveMixedPricingChanges(payload: {
         created: number;
         price: {
             created: number;
+            initialized: number;
             skipped_duplicates?: number;
             skipped_existing_pending?: number;
             header_id?: number;
@@ -628,8 +629,9 @@ export async function removeListCostBatchLine(headerId: number, requestId: numbe
 
 export async function createPriceChangeBatch(payload: CreatePriceChangeBatchPayload) {
     return http<{
-        data: PriceChangeBatchHeader;
+        data?: PriceChangeBatchHeader;
         created: number;
+        initialized?: number;
         skipped_duplicates?: number;
         skipped_existing_pending?: number;
     }>(`/api/fm/product-pricing/price-change-batches`, {
