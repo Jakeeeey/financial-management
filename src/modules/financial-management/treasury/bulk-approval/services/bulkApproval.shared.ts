@@ -1621,6 +1621,10 @@ export async function processDraftApproval(params: {
     if (headersToUpdate.size > 0) {
       await updateParentHeaderStatuses(Array.from(headersToUpdate));
     }
+
+    if (headersToUpdate.size > 0) {
+      await updateParentHeaderStatuses(Array.from(headersToUpdate));
+    }
   }
 
   if (edited_payables && edited_payables.length > 0) {
@@ -1752,7 +1756,7 @@ export async function processDraftApproval(params: {
     }
   }
 
-  if (finalVoteStatus === "REJECTED" || remainingCount <= 0) {
+  if (finalVoteStatus === "REJECTED" || finalVoteStatus === "WITH_CONCERN" || remainingCount <= 0) {
     const draftStatus: DraftLifecycleStatus =
       finalVoteStatus === "REJECTED"
         ? "Rejected"
