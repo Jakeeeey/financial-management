@@ -13,6 +13,11 @@ import {
   ShieldCheck,
   Users,
   XCircle,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  RotateCw,
+  Move,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
@@ -374,6 +379,33 @@ export default function FinalTopSheetModal({
   const [selectedAuditeeId, setSelectedAuditeeId] = React.useState<number | null>(null);
   const [auditeeDetailOpen, setAuditeeDetailOpen] = React.useState(false);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+  const [zoom, setZoom] = React.useState(1);
+  const [rotation, setRotation] = React.useState(0);
+  const [fullScreenEl, setFullScreenEl] = React.useState<HTMLDivElement | null>(null);
+
+  // Native wheel handler to prevent page scroll (non-passive)
+  React.useEffect(() => {
+    if (!fullScreenEl) return;
+    const handleFullScreenWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.deltaY < 0) setZoom(prev => Math.min(Math.max(prev + 0.1, 0.5), 5));
+      else setZoom(prev => Math.max(prev - 0.1, 0.5));
+    };
+    fullScreenEl.addEventListener("wheel", handleFullScreenWheel, { passive: false });
+    return () => fullScreenEl.removeEventListener("wheel", handleFullScreenWheel);
+  }, [fullScreenEl]);
+
+  React.useEffect(() => {
+    if (!previewUrl) {
+      setZoom(1);
+      setRotation(0);
+    }
+  }, [previewUrl]);
+
+  const handleZoom = (delta: number) => {
+    setZoom(prev => Math.min(Math.max(prev + delta, 0.5), 5));
+  };
+
 
   const activeApprovalMeta = React.useMemo(() => {
     return getApprovalMeta((data?.group ?? group) as (ApprovalMeta & Record<string, unknown>) | null | undefined);
@@ -797,6 +829,24 @@ export default function FinalTopSheetModal({
               </DialogTitle>
 
               <div className="flex items-center gap-2">
+                {/* Current Tier Approvers Pill */}
+                {(data?.group.current_tier_approvers ?? []).length > 0 && (
+                  <div className="hidden sm:flex items-center gap-2 rounded-xl border border-indigo-400/30 dark:border-indigo-500/30 bg-white/10 dark:bg-indigo-900/30 px-3 py-1.5 backdrop-blur-sm">
+                    <ShieldCheck className="h-3.5 w-3.5 text-indigo-300 dark:text-indigo-400 shrink-0" />
+                    <div className="flex flex-col leading-none gap-0.5">
+                      <span className="text-[8px] font-black uppercase tracking-[0.2em] text-indigo-300/70 dark:text-indigo-500">Current Approver</span>
+                      {(data?.group.current_tier_approvers ?? []).map((a) => (
+                        <div key={a.approver_id} className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-black text-white dark:text-indigo-200 truncate max-w-[12rem]">{a.name}</span>
+                          {a.voted
+                            ? <span className="text-[8px] font-black text-emerald-400 shrink-0">✓ Voted</span>
+                            : <span className="text-[8px] font-black text-amber-400 shrink-0">Pending</span>
+                          }
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {group && (
                   <div className="flex items-center gap-2 bg-white/5 p-1.5 rounded-xl border border-white/10">
                     <Badge className="rounded-lg bg-primary/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-primary border border-primary/30">
@@ -1100,13 +1150,37 @@ export default function FinalTopSheetModal({
         <DialogContent showCloseButton={false} className="max-w-[95vw] w-[95vw] h-[90vh] p-0 overflow-hidden bg-[#020617] border-none shadow-2xl flex flex-col">
           <DialogTitle className="sr-only">Evidence Preview</DialogTitle>
           <DialogDescription className="sr-only">Full-screen view of the attached evidence document</DialogDescription>
+
+          {/* Preview Header */}
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-black/40 backdrop-blur-xl border border-white/10 p-2 rounded-2xl shadow-2xl">
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => handleZoom(0.25)} title="Zoom In">
+              <ZoomIn size={20} />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => handleZoom(-0.25)} title="Zoom Out">
+              <ZoomOut size={20} />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setRotation(prev => (prev + 90) % 360)} title="Rotate Clockwise">
+              <RotateCw size={20} />
+            </Button>
+            <div className="w-px h-6 bg-white/10 mx-1" />
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => { setZoom(1); setRotation(0); }} title="Reset View">
+              <RotateCcw size={20} />
+            </Button>
+            <div className="px-3 text-[10px] font-black text-white/40 uppercase tracking-widest border-l border-white/10 ml-1">
+              {Math.round(zoom * 100)}%
+            </div>
+          </div>
+
           <button
             className="absolute top-6 right-6 z-50 h-12 w-12 flex items-center justify-center text-white bg-white/5 hover:bg-rose-500/20 hover:text-rose-400 rounded-full border border-white/10 backdrop-blur-md transition-colors"
             onClick={() => setPreviewUrl(null)}
           >
             <XCircle size={24} />
           </button>
-          <div className="flex-1 relative overflow-hidden">
+          <div
+            ref={setFullScreenEl}
+            className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing"
+          >
             <AnimatePresence mode="wait">
               {previewUrl && (
                 <motion.div
@@ -1116,16 +1190,28 @@ export default function FinalTopSheetModal({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 1.1 }}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl}
-                    alt="Evidence"
-                    className="max-w-[85vw] max-h-[80vh] object-contain shadow-[0_0_80px_rgba(0,0,0,0.5)] rounded-lg pointer-events-none"
-                    draggable={false}
-                  />
+                  <motion.div
+                    drag
+                    dragMomentum={false}
+                    className="relative select-none"
+                    style={{ scale: zoom, rotate: rotation }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={previewUrl}
+                      alt="Evidence"
+                      className="max-w-[85vw] max-h-[80vh] object-contain shadow-[0_0_80px_rgba(0,0,0,0.5)] rounded-lg pointer-events-none"
+                      draggable={false}
+                    />
+                  </motion.div>
                 </motion.div>
               )}
             </AnimatePresence>
+
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/20 text-[9px] font-black uppercase tracking-[0.3em] flex items-center gap-3">
+              <Move size={12} />
+              Drag to Navigate • Scroll to Zoom
+            </div>
           </div>
         </DialogContent>
       </Dialog>

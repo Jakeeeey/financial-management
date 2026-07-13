@@ -89,6 +89,7 @@ export type DisbursementDraftRow = {
   supporting_documents_url?: string | null;
   date_created?: string | null;
   date_updated?: string | null;
+  is_supervisor?: number | string | null;
 };
 
 export type DisbursementPayableDraftRow = {
@@ -127,6 +128,7 @@ export type ExpenseDraftRow = {
   feedback?: string | null;
   status?: string | null;
   header_id?: number | string | null;
+  is_supervisor?: number | string | null;
 };
 
 export type ApprovalVoteRow = {
