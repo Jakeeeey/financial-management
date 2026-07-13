@@ -1752,15 +1752,11 @@ export async function processDraftApproval(params: {
     }
   }
 
-  if (finalVoteStatus === "REJECTED" || finalVoteStatus === "WITH_CONCERN" || remainingCount <= 0) {
+  if (finalVoteStatus === "REJECTED" || remainingCount <= 0) {
     const draftStatus: DraftLifecycleStatus =
-      finalVoteStatus === "WITH_CONCERN"
-        ? "With Concern"
-        : finalVoteStatus === "REJECTED"
+      finalVoteStatus === "REJECTED"
         ? "Rejected"
-        : remainingCount <= 0
-        ? "With Concern"
-        : "Rejected";
+        : "With Concern";
 
     await directusFetch(`/items/disbursement_draft/${draftId}`, {
       method: "PATCH",

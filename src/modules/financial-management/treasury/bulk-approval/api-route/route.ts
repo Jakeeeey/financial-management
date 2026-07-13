@@ -186,6 +186,7 @@ type PayableResponse = {
   is_concern?: boolean;
   is_rejected?: boolean;
   feedback?: string | null;
+  expense_id?: number;
 };
 
 type ConcernItemResponse = {
@@ -1444,6 +1445,7 @@ export async function GET(req: NextRequest) {
             is_concern: item.status === "With Concern",
             is_rejected: item.status === "Rejected",
             feedback: item.feedback ?? null,
+            expense_id: expenseId,
           };
         });
 
@@ -1500,7 +1502,7 @@ export async function GET(req: NextRequest) {
       }
 
       const pRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id.id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
       );
 
       const payablesRaw =
@@ -1584,6 +1586,7 @@ export async function GET(req: NextRequest) {
           is_concern: expenseObj?.status === "With Concern",
           is_rejected: expenseObj?.status === "Rejected",
           feedback: expenseObj?.feedback ?? null,
+          expense_id: expenseObj ? (toNumericId(expenseObj.id) ?? 0) : (toNumericId(p.expense_id) ?? 0),
         };
       });
 

@@ -177,13 +177,20 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       is_concern: p.is_concern || false,
       feedback: p.feedback || null
     }));
-    const existingIds = new Set(items.map((i: { id: number }) => i.id));
+    const existingExpenseIds = new Set(items.map((i) => i.expense_id).filter(Boolean));
     (detail.concern_items || []).forEach((ci: import("../type").ConcernItemResponse) => {
-      const negId = -ci.expense_id;
-      if (!existingIds.has(negId)) {
+      if (!existingExpenseIds.has(ci.expense_id)) {
+        const negId = -ci.expense_id;
         items.push({
-          id: negId, coa_id: -1, coa_name: ci.coa_name, amount: ci.amount, remarks: ci.remarks,
-          date: ci.transaction_date, reference_no: null, attachment_url: ci.attachment_url,
+          id: negId,
+          expense_id: ci.expense_id,
+          coa_id: -1,
+          coa_name: ci.coa_name,
+          amount: ci.amount,
+          remarks: ci.remarks,
+          date: ci.transaction_date,
+          reference_no: null,
+          attachment_url: ci.attachment_url,
           is_concern: ci.status === "With Concern",
           is_rejected: ci.status === "Rejected",
           feedback: ci.feedback
