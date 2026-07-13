@@ -142,9 +142,11 @@ export default function BulkApprovalModule() {
     setTopSheetOpen(true);
   }
 
-  async function handleTopSheetSubmitted() {
-    setTopSheetOpen(false);
-    setSelectedTopSheetGroup(null);
+  async function handleTopSheetSubmitted(shouldClose?: boolean) {
+    if (shouldClose !== false) {
+      setTopSheetOpen(false);
+      setSelectedTopSheetGroup(null);
+    }
     await refreshAll();
   }
 

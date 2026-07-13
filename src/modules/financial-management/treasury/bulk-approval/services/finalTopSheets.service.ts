@@ -38,6 +38,7 @@ import {
   toNumber,
   toNumericId,
   toStringOrNull,
+  updateParentHeaderStatuses,
 } from "./bulkApproval.shared";
 
 type FinalDecisionScope = "all" | "encoder" | "coa" | "cell" | "expense_ids";
@@ -46,6 +47,7 @@ type ExpenseAttachmentRow = {
   header_id?: number | string | null;
   file_url?: string | null;
   file_name?: string | null;
+  uploaded_by?: number | string | null;
 };
 
 function normalizeDecisionScope(value: unknown): FinalDecisionScope | null {
@@ -157,13 +159,13 @@ function getActionableStatusesForDivision(params: {
     const maxLevel = params.context.maxLevelByDivision[params.divisionId] ?? record.approver_heirarchy;
     const isFinalApprover = record.approver_heirarchy === maxLevel;
 
-    // In the Final Top Sheet matrix, "Actionable" strictly means the draft is at the final tier level.
-    // If the user also holds a non-final level for this division, those non-final actions
-    // should be handled via the "My Level Approvals" tab, not the Final Matrix.
+    // Only drafts sitting at the final approval tier are actionable.
+    // "Approved" and "Rejected" are terminal statuses — they must be locked (view-only).
     if (isFinalApprover) {
       statuses.add(tierStatus(record.approver_heirarchy));
       statuses.add("With Concern");
-      statuses.add("Approved");
+      // NOTE: "Approved" and "Rejected" are intentionally NOT added here.
+      // Those statuses are readable (history) but never actionable.
     }
   }
 
@@ -627,6 +629,18 @@ export async function buildFinalTopSheet(params: {
   periodTo: string;
   context: BulkApprovalContext;
 }) {
+  const initialLinked = await resolveLinkedTopSheetData({
+    divisionId: params.divisionId,
+    periodFrom: params.periodFrom,
+    periodTo: params.periodTo,
+    context: params.context,
+  });
+
+  // Sync all resolved drafts' payables and totals first
+  for (const draft of initialLinked.visibleDrafts) {
+    await recalcDraftTotal(draft.id);
+  }
+
   const linked = await resolveLinkedTopSheetData({
     divisionId: params.divisionId,
     periodFrom: params.periodFrom,
@@ -648,6 +662,7 @@ export async function buildFinalTopSheet(params: {
       current_tier: linked.currentTier,
       required_approver_level: linked.requiredApproverLevel,
       current_tier_approvers: [] as { approver_id: number; name: string; voted: boolean }[],
+      previous_tier_approver_names: [] as string[],
     },
     salesmen: [],
     coa_rows: [],
@@ -662,7 +677,7 @@ export async function buildFinalTopSheet(params: {
 
   const expenseQuery = buildFilterQuery(
     { header_id: { _in: linked.headerIds } },
-    "id,header_id,encoded_by,particulars,division_id,transaction_date,amount,status,remarks,payee,attachment_url",
+    "id,header_id,encoded_by,particulars,division_id,transaction_date,amount,status,remarks,payee,attachment_url,feedback",
     { sort: "particulars,encoded_by,transaction_date", limit: "-1" }
   );
 
@@ -720,12 +735,22 @@ export async function buildFinalTopSheet(params: {
         .filter((id): id is number => Boolean(id))
     )
   );
-  const tierApproverUserMap = tierApproverIds.length > 0 ? await fetchUserMap(tierApproverIds) : new Map<number, string>();
+  const prevTierApproverIds = Array.from(
+    new Set(
+      allApproverRows
+        .filter((r) => toNumber(r.approver_heirarchy) === (linked.currentTier - 1))
+        .map((r) => toNumericId(r.approver_id))
+        .filter((id): id is number => Boolean(id))
+    )
+  );
+  const allNeededUserIds = Array.from(new Set([...tierApproverIds, ...prevTierApproverIds]));
+  const tierApproverUserMap = allNeededUserIds.length > 0 ? await fetchUserMap(allNeededUserIds) : new Map<number, string>();
   const currentTierApprovers = tierApproverIds.map((id) => ({
     approver_id: id,
     name: tierApproverUserMap.get(id) ?? `User #${id}`,
     voted: votedApproverIds.has(id),
   }));
+  const prevTierApproverNames = prevTierApproverIds.map((id) => tierApproverUserMap.get(id) ?? `User #${id}`);
 
   const salesmen: FinalTopSheetSalesmanResponse[] = employeeIds
     .map((employeeId) => {
@@ -764,11 +789,12 @@ export async function buildFinalTopSheet(params: {
       remarks: expense.remarks ?? null,
       status: expense.status ?? "",
       attachment_url: resolveAttachmentId(expense.attachment_url),
+      feedback: expense.feedback ?? null,
     };
   });
 
   const attachmentsRes = await directusFetch<DirectusListResponse<ExpenseAttachmentRow>>(
-    `/items/expense_attachments?filter[header_id][_in]=${linked.headerIds.join(",")}&fields=header_id,file_url,file_name&limit=-1`
+    `/items/expense_attachments?filter[header_id][_in]=${linked.headerIds.join(",")}&fields=header_id,file_url,file_name,uploaded_by&limit=-1`
   );
 
   const attachments = attachmentsRes.ok ? attachmentsRes.data.data ?? [] : [];
@@ -821,6 +847,7 @@ export async function buildFinalTopSheet(params: {
         current_tier: linked.currentTier,
         required_approver_level: linked.requiredApproverLevel,
         current_tier_approvers: currentTierApprovers,
+        previous_tier_approver_names: prevTierApproverNames,
       },
       salesmen,
       coa_rows: coaRows,
@@ -830,6 +857,7 @@ export async function buildFinalTopSheet(params: {
         header_id: toNumericId(attachment.header_id) ?? 0,
         file_url: attachment.file_url ?? "",
         file_name: attachment.file_name ?? "Attachment",
+        encoder_id: toNumericId(attachment.uploaded_by) ?? 0,
       })),
     },
   };
@@ -946,18 +974,6 @@ export async function handleFinalHeaderDecision(params: {
     actionableStatuses.includes(draft.status)
   );
 
-  if (!hasActionableDraftForPeriod) {
-    return jsonResponse(
-      {
-        error: "Final Top Sheet is visible but not yet actionable for your approval level.",
-        message: "Please wait until the disbursement draft reaches your approval level.",
-        current_statuses: [...new Set(visibleDraftResult.drafts.map((draft) => draft.status))],
-        actionable_statuses: actionableStatuses,
-      },
-      { status: 409 }
-    );
-  }
-
   if ((status === "Rejected" || status === "With Concern") && !remarks.trim()) {
     return jsonResponse({ error: "Remarks are required for rejected or concern decisions" }, { status: 400 });
   }
@@ -967,10 +983,22 @@ export async function handleFinalHeaderDecision(params: {
     periodFrom,
     periodTo,
     context: params.context,
-    actionableOnly: true,
+    actionableOnly: hasActionableDraftForPeriod,
   });
 
   if (!linked.headerIds.length || !linked.expenseIds.length || !linked.payables.length) {
+    if (!hasActionableDraftForPeriod) {
+      return jsonResponse(
+        {
+          error: "Final Top Sheet is visible but not yet actionable for your approval level.",
+          message: "Please wait until the disbursement draft reaches your approval level.",
+          current_statuses: [...new Set(visibleDraftResult.drafts.map((draft) => draft.status))],
+          actionable_statuses: actionableStatuses,
+        },
+        { status: 409 }
+      );
+    }
+
     return jsonResponse(
       { error: "No linked payable draft expenses found for this final top sheet period" },
       { status: 404 }
@@ -1024,7 +1052,79 @@ export async function handleFinalHeaderDecision(params: {
   const rawTargetExpenses = expenseRes.data.data ?? [];
 
   if (!rawTargetExpenses.length) {
+    if (!hasActionableDraftForPeriod) {
+      return jsonResponse(
+        {
+          error: "Final Top Sheet is visible but not yet actionable for your approval level.",
+          message: "Please wait until the disbursement draft reaches your approval level.",
+          current_statuses: [...new Set(visibleDraftResult.drafts.map((draft) => draft.status))],
+          actionable_statuses: actionableStatuses,
+        },
+        { status: 409 }
+      );
+    }
     return jsonResponse({ error: "No matching expense rows found in the selected scope" }, { status: 404 });
+  }
+
+  const initialExpenseIds = rawTargetExpenses
+    .map((expense) => toNumericId(expense.id))
+    .filter((id): id is number => Boolean(id));
+
+  const initialExpenseIdSet = new Set(initialExpenseIds);
+  const initialPayableByExpenseId = new Map<number, number[]>();
+
+  for (const payable of linked.payables) {
+    if (!initialExpenseIdSet.has(payable.expense_id)) continue;
+    const existing = initialPayableByExpenseId.get(payable.expense_id) ?? [];
+    existing.push(payable.draft_id);
+    initialPayableByExpenseId.set(payable.expense_id, existing);
+  }
+
+  const initialLinkedDraftIds = [
+    ...new Set(
+      initialExpenseIds
+        .flatMap((expenseId) => initialPayableByExpenseId.get(expenseId) ?? [])
+        .filter((id): id is number => Boolean(id))
+    ),
+  ];
+
+  let allDraftsFinalized = false;
+  if (initialLinkedDraftIds.length > 0) {
+    const draftsRes = await directusFetch<DirectusListResponse<{ id: number; status: string }>>(
+      `/items/disbursement_draft?filter[id][_in]=${initialLinkedDraftIds.join(",")}&fields=id,status&limit=-1`
+    );
+    const drafts = draftsRes.ok ? draftsRes.data.data ?? [] : [];
+    allDraftsFinalized = drafts.length > 0 && drafts.every(d => d.status === "Approved" || d.status === "Rejected");
+  }
+
+  // Check if target expenses are already in the requested status
+  const allAlreadyMatching = rawTargetExpenses.every(
+    (expense) => (expense.status ?? "").toLowerCase() === status.toLowerCase()
+  );
+
+  if (allAlreadyMatching && allDraftsFinalized) {
+    return jsonResponse({
+      ok: true,
+      message: `No updates needed: target expenses are already in "${status}" status and parent drafts are already finalized.`,
+      updated_count: 0,
+      affected_encoder_count: 0,
+      affected_encoder_ids: [],
+      linked_draft_ids: initialLinkedDraftIds,
+      disbursement_draft_status_updated: false,
+      results: rawTargetExpenses.map(e => ({ id: toNumericId(e.id) || 0, ok: true }))
+    });
+  }
+
+  if (!hasActionableDraftForPeriod) {
+    return jsonResponse(
+      {
+        error: "Final Top Sheet is visible but not yet actionable for your approval level.",
+        message: "Please wait until the disbursement draft reaches your approval level.",
+        current_statuses: [...new Set(visibleDraftResult.drafts.map((draft) => draft.status))],
+        actionable_statuses: actionableStatuses,
+      },
+      { status: 409 }
+    );
   }
 
   if (scope === "expense_ids") {
@@ -1097,12 +1197,18 @@ export async function handleFinalHeaderDecision(params: {
 
   const results: { id: number; ok: boolean; error?: unknown }[] = [];
   const affectedEncoderIds = new Set<number>();
+  const affectedHeaderIds = new Set<number>();
+
   for (const expense of targetExpenses) {
     const expenseId = toNumericId(expense.id);
     if (!expenseId) continue;
 
     const encoderId = getExpenseEmployeeId(expense);
     if (encoderId > 0) affectedEncoderIds.add(encoderId);
+
+    // Track the parent header for post-loop status update
+    const headerId = toNumericId(expense.header_id);
+    if (headerId) affectedHeaderIds.add(headerId);
 
     const patchRes = await directusFetch(`/items/expense_draft/${expenseId}`, {
       method: "PATCH",
@@ -1115,23 +1221,9 @@ export async function handleFinalHeaderDecision(params: {
       continue;
     }
 
-    // --- NEW: Cull from payables draft if rejected/concern ---
-    if (status === "Rejected" || status === "With Concern") {
-      const payablesToCull = payableByExpenseId.get(expenseId) ?? [];
-      const cullIds = payablesToCull.map(p => toNumericId(p.id)).filter((id): id is number => id !== null);
-      if (cullIds.length > 0) {
-        await directusFetch(`/items/disbursement_payables_draft`, {
-          method: "DELETE",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(cullIds),
-        });
-        // Also recalc the draft totals for each affected draft
-        for (const p of payablesToCull) {
-          const dId = toNumericId(p.disbursement_id);
-          if (dId) await recalcDraftTotal(dId);
-        }
-      }
-    }
+    // NOTE: Do NOT delete disbursement_payables_draft records.
+    // The payable must remain intact so the salesman can correct the expense_draft
+    // and resubmit it for re-approval. The status change on expense_draft is sufficient.
 
     await createExpenseLog({
       expenseId,
@@ -1144,6 +1236,12 @@ export async function handleFinalHeaderDecision(params: {
     });
 
     results.push({ id: expenseId, ok: true });
+  }
+
+  // If any expense was rejected/with-concern, check if the parent header
+  // now has no remaining non-rejected items and mark it accordingly.
+  if ((status === "Rejected" || status === "With Concern") && affectedHeaderIds.size > 0) {
+    await updateParentHeaderStatuses(Array.from(affectedHeaderIds));
   }
 
   const successIds = results.filter((result) => result.ok).map((result) => result.id);
@@ -1184,19 +1282,21 @@ export async function handleFinalHeaderDecision(params: {
   if (isFinalLevel && status === "Approved") {
     for (const draftId of linkedDraftIds) {
       // Safety Check: Verify that ALL items remaining in the staging table are actually "Approved".
-      // This prevents premature finalization during a bulk batch submission where subsequent
-      // requests haven't processed yet, which would otherwise auto-reject the remaining pending items.
       const pRes = await directusFetch<DirectusListResponse<{ expense_id?: { status?: string } | null }>>(
         `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=expense_id.status&limit=-1`
       );
 
       const payables = pRes.ok ? pRes.data.data ?? [] : [];
-      const allApproved = payables.length > 0 && payables.every(p => {
+      const hasApproved = payables.some(p => {
         const s = String(p.expense_id?.status || "").toLowerCase();
         return s === "approved";
       });
+      const allDecided = payables.length > 0 && payables.every(p => {
+        const s = String(p.expense_id?.status || "").toLowerCase();
+        return s === "approved" || s === "with concern" || s === "rejected";
+      });
 
-      if (!allApproved) {
+      if (!hasApproved || !allDecided) {
         continue;
       }
 
@@ -1205,6 +1305,11 @@ export async function handleFinalHeaderDecision(params: {
       );
       const draft = draftRes.ok ? draftRes.data.data : null;
       if (!draft) continue;
+
+      // SAFETY: If the draft is already approved/finalized, do NOT finalize it again!
+      if (draft.status === "Approved") {
+        continue;
+      }
 
       const currentVersion = toNumber(draft.approval_version, 1);
 
@@ -1224,6 +1329,46 @@ export async function handleFinalHeaderDecision(params: {
       }
     }
   }
+
+  // When all payable-linked expense_drafts on a draft are rejected, mark the disbursement_draft as Rejected too.
+  if (isFinalLevel && status === "Rejected") {
+    for (const draftId of linkedDraftIds) {
+      // SAFETY: If the draft is already approved or rejected, skip it
+      const draftRes = await directusFetch<DirectusItemResponse<{ status: string }>>(
+        `/items/disbursement_draft/${draftId}?fields=status`
+      );
+      if (draftRes.ok && (draftRes.data.data?.status === "Rejected" || draftRes.data.data?.status === "Approved")) {
+        continue;
+      }
+
+      const pRes = await directusFetch<DirectusListResponse<{ expense_id?: { status?: string } | null }>>(
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=expense_id.status&limit=-1`
+      );
+      const payables = pRes.ok ? pRes.data.data ?? [] : [];
+      if (payables.length === 0) continue;
+
+      const allRejected = payables.every(p => {
+        const s = String(p.expense_id?.status || "").toLowerCase();
+        return s === "rejected";
+      });
+
+      if (!allRejected) continue;
+
+      // All line items are rejected — mark the disbursement_draft as Rejected
+      await directusFetch(`/items/disbursement_draft/${draftId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          status: "Rejected",
+          date_updated: nowTs,
+        }),
+      });
+
+      disbursement_draft_status_updated = true;
+      finalizationResults.push({ draft_id: draftId, result: "REJECTED" });
+    }
+  }
+
 
   return jsonResponse({
     ok: true,

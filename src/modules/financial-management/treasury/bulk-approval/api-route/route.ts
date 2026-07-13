@@ -117,6 +117,7 @@ type DisbursementPayableDraftRow = {
     status?: string | null;
     feedback?: string | null;
     header_id?: number | string | null;
+    amount?: number | string | null;
     attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   }
   | null;
@@ -185,6 +186,7 @@ type PayableResponse = {
   is_concern?: boolean;
   is_rejected?: boolean;
   feedback?: string | null;
+  expense_id?: number;
 };
 
 type ConcernItemResponse = {
@@ -1081,6 +1083,28 @@ async function insertExpenseIntoPayableDraft(params: {
     };
   }
 
+  // If a payable already exists for this expense (e.g. from a previous submission before
+  // a With Concern correction), update its amount/remarks from the current expense_draft
+  // instead of inserting a duplicate.
+  const existingRes = await directusFetch(
+    `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${params.draftId}&filter[expense_id][_eq]=${expenseId}&fields=id&limit=1`
+  );
+  const existing = (existingRes.data as DirectusListResponse<{ id: number }>)?.data?.[0];
+  if (existing) {
+    const newAmount = params.expense.amount ?? 0;
+    await directusFetch(`/items/disbursement_payables_draft/${existing.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        amount: newAmount,
+        remarks: params.expense.remarks ?? null,
+        date: params.expense.transaction_date ?? null,
+      }),
+    });
+    console.log(`[insertExpenseIntoPayableDraft] Updated existing payable ${existing.id} for expense ${expenseId} with new amount ${newAmount}.`);
+    return { ok: true, error: null };
+  }
+
   const res = await directusFetch(`/items/disbursement_payables_draft`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1421,6 +1445,7 @@ export async function GET(req: NextRequest) {
             is_concern: item.status === "With Concern",
             is_rejected: item.status === "Rejected",
             feedback: item.feedback ?? null,
+            expense_id: expenseId,
           };
         });
 
@@ -1477,7 +1502,7 @@ export async function GET(req: NextRequest) {
       }
 
       const pRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id.id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
       );
 
       const payablesRaw =
@@ -1561,6 +1586,7 @@ export async function GET(req: NextRequest) {
           is_concern: expenseObj?.status === "With Concern",
           is_rejected: expenseObj?.status === "Rejected",
           feedback: expenseObj?.feedback ?? null,
+          expense_id: expenseObj ? (toNumericId(expenseObj.id) ?? 0) : (toNumericId(p.expense_id) ?? 0),
         };
       });
 
@@ -2152,7 +2178,7 @@ export async function POST(req: NextRequest) {
 
     const finalRemarks = remarks?.trim() || null;
 
-    if (overallStatus === "WITH_CONCERN" && (!finalRemarks || finalRemarks.length < 5)) {
+    if (overallStatus === "WITH_CONCERN" && !finalRemarks) {
       return json({ error: "Remarks required for concerns" }, { status: 400 });
     }
 
@@ -2307,74 +2333,51 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const culledPayableIds = payableDecisions
-        .filter(([, decision]) => {
-          return decision.status === "REJECTED" || decision.status === "WITH_CONCERN";
-        })
-        .map(([id]) => Number(id))
-        .filter((id) => Number.isFinite(id) && id > 0);
 
-      if (culledPayableIds.length > 0) {
-        const pCullRes = await directusFetch(
-          `/items/disbursement_payables_draft?filter[id][_in]=${culledPayableIds.join(
-            ","
-          )}&fields=id,amount,expense_id,coa_id&limit=-1`
+      // Instead of deleting payable records, just update the underlying expense_draft status.
+      // Deleting disbursement_payables_draft would orphan the payable from the draft,
+      // preventing the salesman from correcting and resubmitting. The payable row stays intact.
+      for (const [idStr, decision] of payableDecisions) {
+        const payableId = Number(idStr);
+        if (!Number.isFinite(payableId) || payableId <= 0) continue;
+
+        if (decision.status !== "WITH_CONCERN" && decision.status !== "REJECTED") continue;
+
+        // Fetch the expense_id linked to this payable
+        const pRes = await directusFetch(
+          `/items/disbursement_payables_draft?filter[id][_eq]=${payableId}&fields=id,amount,expense_id&limit=1`
         );
+        const payable = ((pRes.data as DirectusListResponse<DisbursementPayableDraftRow>).data ?? [])[0];
+        if (!payable) continue;
 
-        const culledPayables =
-          (pCullRes.data as DirectusListResponse<DisbursementPayableDraftRow>)
-            .data ?? [];
+        const expenseId = toNumericId(payable.expense_id);
+        if (!expenseId) continue;
 
-        await directusFetch(`/items/disbursement_payables_draft`, {
-          method: "DELETE",
+        const targetStatus = decision.status === "WITH_CONCERN" ? "With Concern" : "Rejected";
+
+        await directusFetch(`/items/expense_draft/${expenseId}`, {
+          method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(culledPayableIds),
+          body: JSON.stringify({
+            status: targetStatus,
+            ...(targetStatus === "Rejected" ? { rejected_at: nowTs } : {}),
+            return_to: targetStatus === "With Concern" ? `L${currentTier}` : null,
+            feedback: decision.remarks || (targetStatus === "Rejected" ? "Item rejected." : "Concern raised."),
+          }),
         });
 
-        if (toNumber(draft.transaction_type) === 2) {
-          for (const payable of culledPayables) {
-            const payableId = toNumericId(payable.id);
-            const expenseId = toNumericId(payable.expense_id);
-            if (!payableId || !expenseId) continue;
-
-            const decision = item_decisions[String(payableId)];
-            if (!decision) continue;
-
-            const targetStatus =
-              decision.status === "WITH_CONCERN" ? "With Concern" : "Rejected";
-
-            await directusFetch(`/items/expense_draft/${expenseId}`, {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                status: targetStatus,
-                rejected_at: targetStatus === "Rejected" ? nowTs : undefined,
-                return_to: targetStatus === "With Concern" ? `L${currentTier}` : null,
-                feedback:
-                  decision.remarks ||
-                  (targetStatus === "Rejected"
-                    ? "Item rejected."
-                    : "Concern raised."),
-              }),
-            });
-
-            await createExpenseLog({
-              expenseId,
-              action: targetStatus,
-              changedBy: currentUserId,
-              changedAt: nowTs,
-              amount: payable.amount,
-              remarks:
-                decision.remarks ||
-                (targetStatus === "Rejected"
-                  ? "Item rejected."
-                  : "Concern raised."),
-              status: targetStatus,
-            });
-          }
-        }
+        await createExpenseLog({
+          expenseId,
+          action: targetStatus,
+          changedBy: currentUserId,
+          changedAt: nowTs,
+          amount: payable.amount,
+          remarks: decision.remarks || (targetStatus === "Rejected" ? "Item rejected." : "Concern raised."),
+          status: targetStatus,
+        });
       }
     }
+
 
     if (edited_payables && edited_payables.length > 0) {
       for (const edited of edited_payables) {
@@ -2690,6 +2693,23 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        const orphanPayableIds = payDraftRows
+          .filter((p) => {
+            const exp = p.expense_id as { status?: string | null } | null;
+            const s = String(exp?.status || "").toLowerCase();
+            return s !== "approved";
+          })
+          .map((p) => toNumericId(p.id))
+          .filter((id): id is number => Boolean(id));
+
+        if (orphanPayableIds.length > 0) {
+          await directusFetch(`/items/disbursement_payables_draft`, {
+            method: "DELETE",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(orphanPayableIds),
+          });
+        }
+
         // Recalculate total amount based ONLY on the items that actually made it to the live table
         const approvedTotal = livePayablesPayload.reduce((sum, p) => sum + toNumber(p.amount), 0);
 
@@ -2708,6 +2728,7 @@ export async function POST(req: NextRequest) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             status: "Approved",
+            isPosted: 1,
             doc_no: liveDocNo,
             total_amount: approvedTotal,
             approval_version: currentVersion,

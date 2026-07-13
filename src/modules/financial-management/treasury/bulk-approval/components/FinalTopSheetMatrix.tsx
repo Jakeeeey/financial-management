@@ -32,7 +32,6 @@ type Props = {
   data: FinalTopSheetResponse;
   submitting: boolean;
   canAct: boolean;
-  isApprovedHistory: boolean;
   readOnlyReason?: string;
   stagedDecisions: Record<string, FinalHeaderDecisionStatus>;
   onOpenAuditeeDetails: (employeeId: number) => void;
@@ -138,7 +137,6 @@ export default function FinalTopSheetMatrix({
   data,
   submitting,
   canAct,
-  isApprovedHistory,
   readOnlyReason,
   stagedDecisions,
   onOpenAuditeeDetails,
@@ -225,12 +223,12 @@ export default function FinalTopSheetMatrix({
                   </div>
                 </TableHead>
               ))}
-              <TableHead className="sticky right-[100px] z-40 w-[80px] bg-slate-50 dark:bg-slate-950 px-2 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
+              <TableHead className="sticky right-0 z-40 w-[80px] bg-slate-50 dark:bg-slate-950 px-2 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
                 Total
               </TableHead>
-              <TableHead className="sticky right-0 z-40 w-[100px] bg-slate-50 dark:bg-slate-950 px-3 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
+              {/* <TableHead className="sticky right-0 z-40 w-[100px] bg-slate-50 dark:bg-slate-950 px-3 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
                 Audit
-              </TableHead>
+              </TableHead> */}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -358,13 +356,13 @@ export default function FinalTopSheetMatrix({
                       );
                     })}
 
-                    <TableCell className="sticky right-[100px] z-20 bg-slate-50 dark:bg-slate-950 group-hover:bg-primary/5 backdrop-blur-sm px-2 py-1.5 text-right border-b dark:border-slate-800 transition-all">
+                    <TableCell className="sticky right-0 z-20 bg-slate-50 dark:bg-slate-950 group-hover:bg-primary/5 backdrop-blur-sm px-2 py-1.5 text-right border-b dark:border-slate-800 transition-all">
                       <p className="text-[10px] font-black text-slate-900 dark:text-slate-100 tabular-nums">
                         {formatCurrency(rowTotal)}
                       </p>
                     </TableCell>
 
-                    <TableCell
+                    {/* <TableCell
                       className={`sticky right-0 z-20 backdrop-blur-sm px-3 py-1.5 border-b dark:border-slate-800 transition-all ${
                         stagedDecisions[`encoder:${salesman.employee_id}`] ===
                         "Approved"
@@ -394,7 +392,7 @@ export default function FinalTopSheetMatrix({
                           })
                         }
                       />
-                    </TableCell>
+                    </TableCell> */}
                   </TableRow>
                 );
               })
@@ -414,12 +412,12 @@ export default function FinalTopSheetMatrix({
                   </p>
                 </TableCell>
               ))}
-              <TableCell className="sticky right-[120px] z-40 bg-emerald-600 px-3 py-2 text-right">
+              <TableCell className="sticky right-0 z-40 bg-emerald-600 px-3 py-2 text-right">
                 <p className="text-xs font-black text-white tabular-nums leading-none">
                   {formatCurrency(data.grand_total)}
                 </p>
               </TableCell>
-              <TableCell className="sticky right-0 z-40 bg-emerald-600 px-4 py-2 text-right">
+              {/* <TableCell className="sticky right-0 z-40 bg-emerald-600 px-4 py-2 text-right">
                 <span className="text-[9px] font-black uppercase text-white/60">
                   {isApprovedHistory
                     ? "Finalized"
@@ -427,7 +425,7 @@ export default function FinalTopSheetMatrix({
                       ? "Ready"
                       : "Waiting"}
                 </span>
-              </TableCell>
+              </TableCell> */}
             </TableRow>
           </TableBody>
         </Table>
