@@ -117,6 +117,8 @@ export default function BulkApprovalModule() {
     canDoFinalApproval,
     finalHeaderGroups,
     finalHeaderGroupsLoading,
+    finalHeaderStatus,
+    setFinalHeaderStatus,
     loadFinalHeaderGroups,
     refreshAll,
   } = useBulkApproval();
@@ -336,8 +338,13 @@ export default function BulkApprovalModule() {
               <FinalHeaderGroupsTable
                 groups={finalHeaderGroups}
                 loading={finalHeaderGroupsLoading}
+                statusFilter={finalHeaderStatus}
+                onStatusFilterChange={(status) => {
+                  setFinalHeaderStatus(status);
+                  void loadFinalHeaderGroups(status);
+                }}
                 onOpenTopSheet={openTopSheet}
-                onRefresh={() => void loadFinalHeaderGroups()}
+                onRefresh={() => void loadFinalHeaderGroups(finalHeaderStatus)}
               />
             ) : (
               <DraftListTable

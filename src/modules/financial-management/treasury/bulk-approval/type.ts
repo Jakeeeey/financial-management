@@ -325,6 +325,7 @@ export type FinalHeaderGroupResponse = {
   is_waiting?: boolean;
   current_tier?: number;
   required_approver_level?: number;
+  is_completed?: boolean;
 };
 export type FinalHeaderGroup = FinalHeaderGroupResponse;
 

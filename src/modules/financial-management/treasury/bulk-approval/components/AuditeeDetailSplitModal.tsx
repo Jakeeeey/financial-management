@@ -59,8 +59,6 @@ type Props = {
   employeeId: number | null;
   data: FinalTopSheetResponse | null;
   submitting: boolean;
-  lineRemarks: Record<number, string>;
-  onLineRemarkChange: (expenseId: number, value: string) => void;
   onSubmitTargetDecision: (
     status: FinalHeaderDecisionStatus,
     target: FinalDecisionTarget
@@ -87,8 +85,6 @@ export default function AuditeeDetailSplitModal({
   employeeId,
   data,
   submitting,
-  lineRemarks,
-  onLineRemarkChange,
   onSubmitTargetDecision,
   onToggleDecision,
   stagedDecisions,
@@ -554,19 +550,12 @@ export default function AuditeeDetailSplitModal({
                                 </div>
                               </TableCell>
                               <TableCell className="py-3 px-3">
-                                {canAct && (
-                                  <Input
-                                    placeholder="Feedback for rejection / concern..."
-                                    className={`h-7 text-[10px] font-medium border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-lg ${item.feedback ? 'mb-1' : ''}`}
-                                    value={lineRemarks[item.expense_id] ?? ""}
-                                    onChange={e => onLineRemarkChange(item.expense_id, e.target.value)}
-                                    disabled={submitting}
-                                  />
-                                )}
-                                {item.feedback && (
+                                {item.feedback ? (
                                   <p className="text-[9px] font-medium text-slate-600 dark:text-slate-400 bg-amber-50 dark:bg-amber-900/20 p-1.5 rounded-lg border border-amber-100 dark:border-amber-900/50 text-left">
                                     <span className="font-bold text-amber-700 dark:text-amber-500 uppercase">Prior Note:</span> {item.feedback}
                                   </p>
+                                ) : (
+                                  <span className="text-[10px] font-medium text-slate-400 dark:text-slate-600">—</span>
                                 )}
                               </TableCell>
                               <TableCell className="py-3 text-center">
