@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { MatrixSetupError } from "../_matrixSetup";
+import {
+    preparePriceSubmission,
+    rollbackPreparedInitializations,
+} from "../_priceSubmission";
+
 import { parseApprovalSearchQuery } from "../_approvalSearch";
 import { toInclusiveDateToEnd } from "../_dateFilters";
 import { appendBatchSuppliersFilter, resolveBatchSuppliersFilter, resolveSupplierIds } from "../_supplierFilters";
@@ -180,24 +186,58 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const result = await createPendingPriceBatch({
-            userId,
-            supplierId,
-            referenceNo,
-            remarks,
-            linesToCreate: plan.linesToCreate,
-        });
+        const prepared = await preparePriceSubmission({ userId, lines: plan.linesToCreate });
+        if (prepared.liveLines.length === 0) {
+            return NextResponse.json(
+                {
+                    created: 0,
+                    initialized: prepared.initialized.length,
+                    skipped_duplicates: plan.skippedDuplicates,
+                    skipped_existing_pending: plan.skippedExistingPending,
+                },
+                { status: 201 },
+            );
+        }
+
+        let result;
+        try {
+            result = await createPendingPriceBatch({
+                userId,
+                supplierId,
+                referenceNo,
+                remarks,
+                linesToCreate: prepared.liveLines,
+            });
+        } catch (error: unknown) {
+            const failures = await rollbackPreparedInitializations(prepared.initialized);
+            if (failures.length > 0) {
+                throw new MatrixSetupError(
+                    "Price batch creation failed and initialization rollback was incomplete.",
+                    "price_submission_partial_failure",
+                    500,
+                    { failures },
+                );
+            }
+            throw error;
+        }
 
         return NextResponse.json(
             {
                 data: mapBatchHeaderResponse(result.headerRow, result.created),
                 created: result.created,
+                initialized: prepared.initialized.length,
                 skipped_duplicates: plan.skippedDuplicates,
                 skipped_existing_pending: plan.skippedExistingPending,
             },
             { status: 201 },
         );
     } catch (error: unknown) {
+        if (error instanceof MatrixSetupError) {
+            return NextResponse.json(
+                { error: error.message, code: error.code, ...error.data },
+                { status: error.status },
+            );
+        }
         return directusErrorResponse(error);
     }
 }

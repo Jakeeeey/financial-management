@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
     HEADERS,
+    batchMutationStaleCutoff,
     directusHeaders,
     fetchDirectus,
     isFutureEffectiveAt,
@@ -169,6 +170,13 @@ export async function stageBatchApproval(args: {
                     _or: [
                         { application_status: { _null: true } },
                         { application_status: { _eq: "FAILED" } },
+                    ],
+                },
+                {
+                    _or: [
+                        { application_lock_id: { _null: true } },
+                        { application_started_at: { _null: true } },
+                        { application_started_at: { _lt: batchMutationStaleCutoff() } },
                     ],
                 },
             ],

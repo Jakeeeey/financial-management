@@ -319,6 +319,9 @@ export function ListCostBatchDetailDialog({
             await onRemoveLine(headerId, requestId);
             setConfirmingRemoveLine(null);
             await loadDetail({ silent: true });
+        } catch (error: unknown) {
+            await loadDetail({ silent: true });
+            throw error;
         } finally {
             setRemovingLine(false);
         }

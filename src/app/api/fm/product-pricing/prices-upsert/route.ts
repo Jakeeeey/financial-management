@@ -1,17 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-    type LegacyPriceTypeRow,
-    resolveLegacyProductsPatch,
-} from "../_legacyProductPriceSync";
+    MatrixSetupError,
+    initializeMissingMatrixRow,
+    rollbackMatrixInitialization,
+} from "../_matrixSetup";
 import { assertValidPriceValue, isInvalidPriceValueError } from "../_pricePrecision";
-import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
-import { batchAsyncOps, CHUNK_SIZE } from "../_supplierFilters";
+import { CHUNK_SIZE } from "../_supplierFilters";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const PRICE_TYPES = "price_types";
 const PRICES = "product_per_price_type";
-const PRODUCTS = "products";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function deprecatedJson(body: unknown, init?: ResponseInit) {
+    const response = NextResponse.json(body, init);
+    response.headers.set("Deprecation", "true");
+    response.headers.set("Link", '</api/fm/product-pricing/matrix-setup>; rel="successor-version"');
+    response.headers.set(
+        "Warning",
+        '299 - "prices-upsert is deprecated; use matrix-setup for initial records and price-change requests for updates."',
+    );
+    return response;
+}
 
 type UpsertLine = {
     product_id: number;
@@ -34,18 +47,6 @@ type ExistingPriceRow = {
     id?: number | string | null;
     product_id?: number | string | null;
     price_type_id?: number | string | null;
-};
-
-type PriceRecordPayload = {
-    status: string;
-    product_id: number;
-    price_type_id: number;
-    price: number | null;
-    updated_by: number;
-};
-
-type CreatePriceRecordPayload = PriceRecordPayload & {
-    created_by: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -88,19 +89,19 @@ function decodeUserIdFromJwtCookie(req: NextRequest, cookieName = "vos_access_to
 export async function POST(req: NextRequest) {
     try {
         if (!DIRECTUS_URL) {
-            return NextResponse.json({ error: "NEXT_PUBLIC_API_BASE_URL is not set" }, { status: 500 });
+            return deprecatedJson({ error: "NEXT_PUBLIC_API_BASE_URL is not set" }, { status: 500 });
         }
 
         const userId = decodeUserIdFromJwtCookie(req);
         if (!userId) {
-            return NextResponse.json({ error: "Unauthorized (missing/invalid token)" }, { status: 401 });
+            return deprecatedJson({ error: "Unauthorized (missing/invalid token)" }, { status: 401 });
         }
 
         const body = (await req.json()) as { lines?: UpsertLine[] };
         const lines = Array.isArray(body?.lines) ? body.lines : [];
 
         if (!lines.length) {
-            return NextResponse.json({ ok: true, affected: 0 });
+            return deprecatedJson({ ok: true, affected: 0 });
         }
 
         for (const line of lines) {
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
             const ptid = Number(line.price_type_id);
 
             if (!pid || Number.isNaN(pid) || !ptid || Number.isNaN(ptid)) {
-                return NextResponse.json({ error: "Invalid product_id / price_type_id" }, { status: 400 });
+                return deprecatedJson({ error: "Invalid product_id / price_type_id" }, { status: 400 });
             }
 
             if (line.price !== null && line.price !== undefined) {
@@ -124,24 +125,18 @@ export async function POST(req: NextRequest) {
         const priceTypeUrl = `${DIRECTUS_URL}/items/${PRICE_TYPES}?${priceTypeParams.toString()}`;
         const priceTypeJson = await fetchDirectus<{ data: PriceTypeRow[] }>(priceTypeUrl);
 
-        const priceTypeCatalog: LegacyPriceTypeRow[] = [];
         const idToTier = new Map<number, string>();
         for (const row of priceTypeJson.data ?? []) {
             const id = Number(row.price_type_id);
             const name = String(row.price_type_name ?? "").trim();
             if (Number.isFinite(id) && name) {
                 idToTier.set(id, name);
-                priceTypeCatalog.push({
-                    price_type_id: id,
-                    price_type_name: name,
-                    sort: row.sort,
-                });
             }
         }
 
         for (const line of lines) {
             if (!idToTier.has(Number(line.price_type_id))) {
-                return NextResponse.json(
+                return deprecatedJson(
                     { error: `price_type_id not found: ${line.price_type_id}` },
                     { status: 400 },
                 );
@@ -178,90 +173,92 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        const toCreate: CreatePriceRecordPayload[] = [];
-        const toUpdate: Array<{ id: number; payload: PriceRecordPayload }> = [];
-
-        for (const line of lines) {
-            const pid = Number(line.product_id);
-            const ptid = Number(line.price_type_id);
-            const key = `${pid}:${ptid}`;
-
-            const payload: PriceRecordPayload = {
-                status: (line.status ?? "draft").trim() || "draft",
-                product_id: pid,
-                price_type_id: ptid,
-                price: line.price === null || line.price === undefined
-                    ? null
-                    : assertValidPriceValue(line.price, "price"),
-                updated_by: userId,
-            };
-
-            const existingId = existingKeyToId.get(key);
-            if (existingId) {
-                toUpdate.push({ id: existingId, payload });
-            } else {
-                toCreate.push({ ...payload, created_by: userId });
-            }
-        }
-
-        let affected = 0;
-
-        if (toCreate.length) {
-            const createUrl = `${DIRECTUS_URL}/items/${PRICES}`;
-            const res = await fetchDirectus<{ data: ExistingPriceRow[] }>(createUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(toCreate),
-            });
-            affected += (res.data ?? []).length;
-        }
-
-        if (toUpdate.length) {
-            await batchAsyncOps(toUpdate, ({ id, payload }) =>
-                fetchDirectus<unknown>(`${DIRECTUS_URL}/items/${PRICES}/${id}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                }),
+        const existingTargets = Array.from(
+            new Map(
+                lines
+                    .map((line) => ({
+                        product_id: Number(line.product_id),
+                        price_type_id: Number(line.price_type_id),
+                    }))
+                    .filter((target) =>
+                        existingKeyToId.has(`${target.product_id}:${target.price_type_id}`),
+                    )
+                    .map((target) => [
+                        `${target.product_id}:${target.price_type_id}`,
+                        target,
+                    ]),
+            ).values(),
+        );
+        if (existingTargets.length > 0) {
+            return deprecatedJson(
+                {
+                    error: "Existing price-matrix records must be updated through a price-change request.",
+                    code: "existing_price_requires_change_request",
+                    targets: existingTargets,
+                },
+                { status: 409 },
             );
-            affected += toUpdate.length;
         }
 
-        const syncOps = lines
-            .map((line) => {
-                const pid = Number(line.product_id);
-                const ptid = Number(line.price_type_id);
-                const price =
-                    line.price === null || line.price === undefined ? null : Number(line.price);
-                const patch = resolveLegacyProductsPatch({
-                    priceTypeId: ptid,
-                    priceTypeName: idToTier.get(ptid) ?? "",
-                    price,
-                    catalog: priceTypeCatalog,
-                });
+        const uniqueLines = Array.from(
+            new Map(
+                lines.map((line) => [
+                    `${Number(line.product_id)}:${Number(line.price_type_id)}`,
+                    line,
+                ]),
+            ).values(),
+        );
+        const completed = [];
 
-                if (!patch) return null;
+        try {
+            for (const line of uniqueLines) {
+                completed.push(await initializeMissingMatrixRow({
+                    userId,
+                    productId: Number(line.product_id),
+                    priceTypeId: Number(line.price_type_id),
+                    initialPrice: line.price ?? null,
+                }));
+            }
+        } catch (setupError: unknown) {
+            const rollbackFailures: Array<{ id: number; product_id: number; error: string }> = [];
+            for (const receipt of [...completed].reverse()) {
+                try {
+                    await rollbackMatrixInitialization(receipt);
+                } catch (rollbackError: unknown) {
+                    rollbackFailures.push({
+                        id: receipt.id,
+                        product_id: receipt.productId,
+                        error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+                    });
+                }
+            }
 
-                return fetchDirectus<unknown>(`${DIRECTUS_URL}/items/${PRODUCTS}/${pid}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(patch),
-                });
-            })
-            .filter((op): op is Promise<unknown> => op !== null);
-
-        if (syncOps.length) {
-            await Promise.all(syncOps);
-            invalidateGroupIndexCacheOnCatalogChange();
+            if (rollbackFailures.length > 0) {
+                return deprecatedJson(
+                    {
+                        error: "Bulk matrix setup partially completed and requires reconciliation.",
+                        code: "price_matrix_bulk_partial_failure",
+                        failures: rollbackFailures,
+                    },
+                    { status: 500 },
+                );
+            }
+            if (setupError instanceof MatrixSetupError) {
+                return deprecatedJson(
+                    { error: setupError.message, code: setupError.code, ...setupError.data },
+                    { status: setupError.status },
+                );
+            }
+            throw setupError;
         }
 
-        return NextResponse.json({ ok: true, affected });
+        return deprecatedJson({ ok: true, affected: completed.length });
     } catch (error: unknown) {
         if (isInvalidPriceValueError(error)) {
-            return NextResponse.json({ error: error.message }, { status: 400 });
+            return deprecatedJson({ error: error.message }, { status: 400 });
         }
 
-        return NextResponse.json(
+        return deprecatedJson(
             {
                 error: "Unexpected error",
                 details: error instanceof Error ? error.message : String(error),

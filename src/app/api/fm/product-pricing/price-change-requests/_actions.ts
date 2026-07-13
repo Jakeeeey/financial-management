@@ -192,28 +192,23 @@ export async function applyProposedPrice(args: {
         loadPriceTypeCatalog(),
     ]);
 
+    if (!existingId) {
+        throw new Error(
+            `No live price matrix record exists for product ${productId} and price type ${priceTypeId}.`,
+        );
+    }
+
     const payload = {
-        status: "draft",
-        product_id: productId,
-        price_type_id: priceTypeId,
         price: validProposedPrice,
         updated_at: nowManila(),
         ...(userId ? { updated_by: userId } : {}),
     };
 
-    if (existingId) {
-        await fetchDirectus(`${mustBase()}/items/${PRICES}/${existingId}`, {
-            method: "PATCH",
-            headers: directusHeaders(),
-            body: JSON.stringify(payload),
-        });
-    } else {
-        await fetchDirectus(`${mustBase()}/items/${PRICES}`, {
-            method: "POST",
-            headers: directusHeaders(),
-            body: JSON.stringify({ ...payload, created_by: userId }),
-        });
-    }
+    await fetchDirectus(`${mustBase()}/items/${PRICES}/${existingId}`, {
+        method: "PATCH",
+        headers: directusHeaders(),
+        body: JSON.stringify(payload),
+    });
 
     const priceTypeName =
         priceTypeCatalog.find((row) => row.price_type_id === priceTypeId)?.price_type_name ?? "";

@@ -229,11 +229,28 @@ export async function getPricesForProducts(productIds: number[], init?: RequestI
     return { data };
 }
 
+/**
+ * @deprecated Initializes missing matrix rows only. Existing rows must use createPriceChangeBatch.
+ */
 export async function upsertPrices(lines: UpsertLine[]) {
     return http<{ ok: boolean; affected: number }>(`/api/fm/product-pricing/prices-upsert`, {
         method: "POST",
         body: JSON.stringify({ lines }),
     });
+}
+
+export async function setupPriceMatrixRow(input: {
+    product_id: number;
+    price_type_id: number;
+    initial_price: number;
+}) {
+    return http<{ data: PriceRow; id: number | null }>(
+        "/api/fm/product-pricing/matrix-setup",
+        {
+            method: "POST",
+            body: JSON.stringify(input),
+        },
+    );
 }
 
 export async function createPriceChangeBatch(
@@ -243,6 +260,7 @@ export async function createPriceChangeBatch(
     return http<{
         data: { id: number; header_id: number; line_count?: number };
         created: number;
+        initialized?: number;
         skipped_duplicates?: number;
         skipped_existing_pending?: number;
     }>(`/api/fm/product-pricing/price-change-batches`, {
@@ -291,6 +309,7 @@ export type MixedSaveResponse = {
     created: number;
     price: {
         created: number;
+        initialized?: number;
         skipped_duplicates?: number;
         skipped_existing_pending?: number;
         header_id?: number;

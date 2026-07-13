@@ -653,6 +653,7 @@ export function usePricingMatrix(args: {
         try {
             type CreateResult = {
                 created?: number;
+                initialized?: number;
                 skipped_existing_pending?: number;
                 skipped_duplicates?: number;
             };
@@ -686,7 +687,7 @@ export function usePricingMatrix(args: {
                     );
 
                     toast.success(
-                        `${mixedRes.created} price change request(s) submitted successfully.${
+                        `${mixedRes.created} pricing change(s) saved successfully.${
                             skippedMessages ? ` ${skippedMessages}` : ""
                         }`,
                     );
@@ -708,6 +709,7 @@ export function usePricingMatrix(args: {
             }
 
             let priceCreated = 0;
+            let priceInitialized = 0;
             let costCreated = 0;
             let totalSkippedDuplicates = 0;
             let totalSkippedExistingPending = 0;
@@ -715,10 +717,11 @@ export function usePricingMatrix(args: {
             if (pcrItems.length > 0) {
                 const priceRes = (await api.createPriceChangeBatch(batch!, pcrItems)) as CreateResult;
                 priceCreated = priceRes.created ?? 0;
+                priceInitialized = priceRes.initialized ?? 0;
                 totalSkippedDuplicates += priceRes.skipped_duplicates ?? 0;
                 totalSkippedExistingPending += priceRes.skipped_existing_pending ?? 0;
 
-                if (priceCreated === 0) {
+                if (priceCreated + priceInitialized === 0) {
                     if (totalSkippedExistingPending > 0) {
                         toast.message(
                             "No new price requests were created because these items already have pending requests.",
@@ -739,7 +742,7 @@ export function usePricingMatrix(args: {
                 totalSkippedExistingPending += costRes.skipped_existing_pending ?? 0;
             }
 
-            const totalCreated = priceCreated + costCreated;
+            const totalCreated = priceCreated + priceInitialized + costCreated;
 
             if (totalCreated > 0) {
                 setDirty(new Map());
@@ -754,7 +757,7 @@ export function usePricingMatrix(args: {
                 );
 
                 toast.success(
-                    `${totalCreated} price change request(s) submitted successfully.${
+                    `${totalCreated} pricing change(s) saved successfully.${
                         skippedMessages ? ` ${skippedMessages}` : ""
                     }`,
                 );
@@ -883,6 +886,17 @@ function parseDirtyProposedValue(raw: string): number | null {
 function formatSaveErrorMessage(error: unknown): string {
     const displayMessage = "Failed to save changes";
     if (!(error instanceof Error)) return displayMessage;
+    if (error instanceof ApiHttpError && error.payload && typeof error.payload === "object") {
+        const payload = error.payload as { targets?: Array<Record<string, unknown>> };
+        if (Array.isArray(payload.targets) && payload.targets.length > 0) {
+            const targets = payload.targets.slice(0, 3).map((target) => {
+                const status = typeof target.status === "string" ? ` (${target.status})` : "";
+                return `product ${target.product_id}, price type ${target.price_type_id}${status}`;
+            });
+            const remaining = payload.targets.length - targets.length;
+            return `Cannot submit ${targets.join("; ")}${remaining > 0 ? `; and ${remaining} more` : ""}.`;
+        }
+    }
 
     try {
         const parsed = JSON.parse(error.message) as Record<string, unknown>;
@@ -921,6 +935,15 @@ type MixedSaveErrorPayload = {
 
 function parseMixedSaveError(error: unknown): MixedSaveErrorPayload {
     if (!(error instanceof Error)) return {};
+
+    if (error instanceof ApiHttpError && error.payload && typeof error.payload === "object") {
+        const parsed = error.payload as Record<string, unknown>;
+        return {
+            code: typeof parsed.code === "string" ? parsed.code : undefined,
+            price: parsed.price as MixedSaveErrorPayload["price"],
+            cost: parsed.cost as MixedSaveErrorPayload["cost"],
+        };
+    }
 
     try {
         const parsed = JSON.parse(error.message) as Record<string, unknown>;

@@ -13,6 +13,7 @@ export const DETAILS = "price_change_requests";
 export const PRODUCTS = "products";
 export const PRICE_TYPES = "price_types";
 export const PRICES = "product_per_price_type";
+const BATCH_MUTATION_STALE_MINUTES = 5;
 
 type JwtPayload = {
     sub?: string | number | null;
@@ -291,6 +292,16 @@ export function directusErrorResponse(error: unknown) {
     if (isInvalidPriceValueError(error)) {
         return NextResponse.json({ error: error.message }, { status: 400 });
     }
+    if (error instanceof InvalidLivePriceTargetError) {
+        return NextResponse.json(
+            {
+                error: error.message,
+                code: "invalid_live_price_target",
+                targets: error.targets,
+            },
+            { status: 400 },
+        );
+    }
 
     const message = error instanceof Error ? error.message : String(error);
     const wrapped = parseWrappedError(message);
@@ -370,10 +381,115 @@ function batchLineKey(productId: number, priceTypeId: number) {
 }
 
 type LivePriceRow = {
+    id?: number | string | null;
     product_id?: number | string | null;
     price_type_id?: number | string | null;
     price?: number | string | null;
+    status?: string | null;
 };
+
+type BatchMutationLockRow = {
+    header_id?: number | string | null;
+    application_lock_id?: string | null;
+    application_started_at?: string | null;
+};
+
+
+export type LivePriceTarget = {
+    id: number;
+    price: number | null;
+    status: string;
+};
+
+type InvalidLivePriceTarget = {
+    product_id: number;
+    price_type_id: number;
+    reason: "missing";
+};
+
+export class InvalidLivePriceTargetError extends Error {
+    constructor(public readonly targets: InvalidLivePriceTarget[]) {
+        super("One or more price-change targets are missing price matrix records.");
+        this.name = "InvalidLivePriceTargetError";
+    }
+}
+
+export function batchMutationStaleCutoff(): string {
+    return new Date(Date.now() - BATCH_MUTATION_STALE_MINUTES * 60_000)
+        .toLocaleString("sv-SE", { timeZone: "Asia/Manila" })
+        .replace(" ", "T");
+}
+
+export async function patchFilteredRows<T>(
+    collection: string,
+    filter: Record<string, unknown>,
+    patch: Record<string, unknown>,
+    fields: string[],
+): Promise<T[]> {
+    const response = await fetchDirectus<DirectusList<T>>(`${mustBase()}/items/${collection}`, {
+        method: "PATCH",
+        headers: directusHeaders(),
+        body: JSON.stringify({ data: patch, query: { filter, fields } }),
+    });
+    return response.data ?? [];
+}
+
+export async function acquireBatchMutationLock(headerId: number): Promise<string | null> {
+    const lockId = crypto.randomUUID();
+    const rows = await patchFilteredRows<BatchMutationLockRow>(
+        HEADERS,
+        {
+            _and: [
+                { header_id: { _eq: headerId } },
+                { status: { _eq: "PENDING" } },
+                {
+                    _or: [
+                        { application_lock_id: { _null: true } },
+                        { application_started_at: { _null: true } },
+                        { application_started_at: { _lt: batchMutationStaleCutoff() } },
+                    ],
+                },
+            ],
+        },
+        {
+            application_lock_id: lockId,
+            application_started_at: nowManila(),
+        },
+        ["header_id", "application_lock_id", "application_started_at"],
+    );
+    return rows[0] ? lockId : null;
+}
+
+export async function releaseBatchMutationLock(headerId: number, lockId: string): Promise<void> {
+    try {
+        await patchFilteredRows(
+            HEADERS,
+            {
+                _and: [
+                    { header_id: { _eq: headerId } },
+                    { application_lock_id: { _eq: lockId } },
+                ],
+            },
+            { application_lock_id: null, application_started_at: null },
+            ["header_id"],
+        );
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(
+            `[releaseBatchMutationLock] Failed to release lock for header ${headerId} (${lockId}): ${message}`,
+        );
+    }
+}
+
+export function batchMutationConflictResponse() {
+    return NextResponse.json(
+        {
+            error: "This batch is currently being modified. Refresh and try again.",
+            code: "batch_mutation_conflict",
+        },
+        { status: 409 },
+    );
+}
 
 export type PriceSnapshotConflict = {
     request_id: number;
@@ -397,6 +513,40 @@ export function isPriceSnapshotConflictError(error: unknown): error is PriceSnap
     return error instanceof PriceSnapshotConflictError;
 }
 
+export async function fetchLivePriceTargets(
+    keys: Array<{ product_id: number; price_type_id: number }>,
+): Promise<Map<string, LivePriceTarget>> {
+    const productIds = Array.from(new Set(keys.map((key) => key.product_id).filter((id) => id > 0)));
+    const priceTypeIds = Array.from(new Set(keys.map((key) => key.price_type_id).filter((id) => id > 0)));
+    const targets = new Map<string, LivePriceTarget>();
+
+    if (productIds.length === 0 || priceTypeIds.length === 0) return targets;
+
+    for (const productChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
+        const rows = await fetchAllPagesLocal<LivePriceRow>(PRICES, () => {
+            const params = new URLSearchParams();
+            params.set("fields", "id,product_id,price_type_id,price,status");
+            params.set("filter[product_id][_in]", productChunk.join(","));
+            params.set("filter[price_type_id][_in]", priceTypeIds.join(","));
+            return params;
+        });
+
+        for (const row of rows) {
+            const id = pickId(row.id) ?? 0;
+            const productId = pickId(row.product_id) ?? 0;
+            const priceTypeId = pickId(row.price_type_id) ?? 0;
+            if (!id || !productId || !priceTypeId) continue;
+            targets.set(batchLineKey(productId, priceTypeId), {
+                id,
+                price: parseSnapshotPrice(row.price).value,
+                status: String(row.status ?? "").trim().toLowerCase(),
+            });
+        }
+    }
+
+    return targets;
+}
+
 function parseSnapshotPrice(value: unknown): { valid: boolean; value: number | null } {
     if (value === null || value === undefined) return { valid: true, value: null };
     const parsed = Number(value);
@@ -413,32 +563,11 @@ function snapshotPricesMatch(snapshot: number | null, live: number | null): bool
 export async function fetchLivePriceSnapshots(
     keys: Array<{ product_id: number; price_type_id: number }>,
 ): Promise<Map<string, number | null>> {
-    const productIds = Array.from(new Set(keys.map((key) => key.product_id).filter((id) => id > 0)));
-    const priceTypeIds = Array.from(new Set(keys.map((key) => key.price_type_id).filter((id) => id > 0)));
     const snapshots = new Map<string, number | null>();
-
-    if (productIds.length === 0 || priceTypeIds.length === 0) return snapshots;
-
-    for (const productChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
-        const rows = await fetchAllPagesLocal<LivePriceRow>(PRICES, () => {
-            const params = new URLSearchParams();
-            params.set("fields", "product_id,price_type_id,price");
-            params.set("filter[product_id][_in]", productChunk.join(","));
-            params.set("filter[price_type_id][_in]", priceTypeIds.join(","));
-            return params;
-        });
-
-        for (const row of rows) {
-            const productId = pickId(row.product_id) ?? 0;
-            const priceTypeId = pickId(row.price_type_id) ?? 0;
-            if (!productId || !priceTypeId) continue;
-            snapshots.set(
-                batchLineKey(productId, priceTypeId),
-                parseSnapshotPrice(row.price).value,
-            );
-        }
+    const targets = await fetchLivePriceTargets(keys);
+    for (const [key, target] of targets) {
+        snapshots.set(key, target.price);
     }
-
     return snapshots;
 }
 
@@ -646,10 +775,24 @@ export async function createPendingPriceBatch(args: {
         throw new Error("linesToCreate must be non-empty");
     }
 
-    const liveSnapshots = await fetchLivePriceSnapshots(linesToCreate);
+    const liveTargets = await fetchLivePriceTargets(linesToCreate);
+    const invalidTargets: InvalidLivePriceTarget[] = [];
+    for (const line of linesToCreate) {
+        const target = liveTargets.get(batchLineKey(line.product_id, line.price_type_id));
+        if (!target) {
+            invalidTargets.push({
+                product_id: line.product_id,
+                price_type_id: line.price_type_id,
+                reason: "missing",
+            });
+            continue;
+        }
+    }
+    if (invalidTargets.length > 0) throw new InvalidLivePriceTargetError(invalidTargets);
+
     const snapshottedLines = linesToCreate.map((line) => ({
         ...line,
-        current_price: liveSnapshots.get(batchLineKey(line.product_id, line.price_type_id)) ?? null,
+        current_price: liveTargets.get(batchLineKey(line.product_id, line.price_type_id))?.price ?? null,
     }));
 
     const headerPayload = {
@@ -822,32 +965,66 @@ export async function removePriceChangeBatchLine(headerId: number, requestId: nu
         return NextResponse.json({ error: "Only PENDING batches can have lines removed." }, { status: 400 });
     }
 
-    const details = await getDetails(headerId);
-    const pendingDetails = details.filter((line) => String(line.status ?? "PENDING") === "PENDING");
-    const target = pendingDetails.find((line) => pickId(line.request_id) === requestId);
+    const lockId = await acquireBatchMutationLock(headerId);
+    if (!lockId) return batchMutationConflictResponse();
 
-    if (!target) {
-        return NextResponse.json({ error: "Pending batch line not found." }, { status: 404 });
-    }
-    if (pendingDetails.length <= 1) {
-        return NextResponse.json(
-            { error: "Cannot remove the last pending line. Reject the batch instead." },
-            { status: 400 },
+    try {
+        const details = await getDetails(headerId);
+        const pendingDetails = details.filter((line) => String(line.status ?? "PENDING") === "PENDING");
+        const target = pendingDetails.find((line) => pickId(line.request_id) === requestId);
+
+        if (!target) {
+            return NextResponse.json({ error: "Pending batch line not found." }, { status: 404 });
+        }
+        if (pendingDetails.length <= 1) {
+            return NextResponse.json(
+                { error: "Cannot remove the last pending line. Reject the batch instead." },
+                { status: 400 },
+            );
+        }
+
+        const cancelled = await patchFilteredRows<BatchDetailRow>(
+            DETAILS,
+            {
+                _and: [
+                    { request_id: { _eq: requestId } },
+                    { header_id: { _eq: headerId } },
+                    { status: { _eq: "PENDING" } },
+                ],
+            },
+            { status: "CANCELLED" },
+            ["request_id", "header_id", "status"],
         );
+        if (!cancelled[0]) return batchMutationConflictResponse();
+
+        const remaining = (await getDetails(headerId)).filter(
+            (line) => String(line.status ?? "PENDING") === "PENDING",
+        ).length;
+        if (remaining === 0) {
+            await patchFilteredRows(
+                DETAILS,
+                {
+                    _and: [
+                        { request_id: { _eq: requestId } },
+                        { header_id: { _eq: headerId } },
+                        { status: { _eq: "CANCELLED" } },
+                    ],
+                },
+                { status: "PENDING" },
+                ["request_id"],
+            );
+            throw new Error("Batch line removal would leave the batch without a pending line.");
+        }
+
+        return NextResponse.json({
+            ok: true,
+            header_id: headerId,
+            request_id: requestId,
+            remaining,
+        });
+    } finally {
+        await releaseBatchMutationLock(headerId, lockId);
     }
-
-    await fetchDirectus(`${mustBase()}/items/${DETAILS}/${requestId}`, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({ status: "CANCELLED" }),
-    });
-
-    return NextResponse.json({
-        ok: true,
-        header_id: headerId,
-        request_id: requestId,
-        remaining: pendingDetails.length - 1,
-    });
 }
 
 export async function cancelPendingBatch(headerId: number, userId: number, reason: string) {
@@ -857,30 +1034,37 @@ export async function cancelPendingBatch(headerId: number, userId: number, reaso
     const status = String(header.status ?? "");
     if (status !== "PENDING") return;
 
-    await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({
-            status: "CANCELLED",
-            reject_reason: reason,
-            rejected_by: userId,
-            rejected_at: nowManila(),
-        }),
-    });
+    const lockId = await acquireBatchMutationLock(headerId);
+    if (!lockId) throw new Error("This batch is currently being modified. Refresh and try again.");
 
-    const details = await getDetails(headerId);
-    await Promise.all(
-        details
-            .map((line) => pickId(line.request_id))
-            .filter((lineId): lineId is number => Boolean(lineId))
-            .map((lineId) =>
-                fetchDirectus(`${mustBase()}/items/${DETAILS}/${lineId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders(),
-                    body: JSON.stringify({ status: "CANCELLED" }),
-                }),
-            ),
-    );
+    try {
+        await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
+            method: "PATCH",
+            headers: directusHeaders(),
+            body: JSON.stringify({
+                status: "CANCELLED",
+                reject_reason: reason,
+                rejected_by: userId,
+                rejected_at: nowManila(),
+            }),
+        });
+
+        const details = await getDetails(headerId);
+        await Promise.all(
+            details
+                .map((line) => pickId(line.request_id))
+                .filter((lineId): lineId is number => Boolean(lineId))
+                .map((lineId) =>
+                    fetchDirectus(`${mustBase()}/items/${DETAILS}/${lineId}`, {
+                        method: "PATCH",
+                        headers: directusHeaders(),
+                        body: JSON.stringify({ status: "CANCELLED" }),
+                    }),
+                ),
+        );
+    } finally {
+        await releaseBatchMutationLock(headerId, lockId);
+    }
 }
 
 export async function rejectPriceChangeBatch(headerId: number, userId: number, rejectReason: string) {
@@ -890,32 +1074,39 @@ export async function rejectPriceChangeBatch(headerId: number, userId: number, r
         return NextResponse.json({ error: "Only PENDING batches can be rejected." }, { status: 400 });
     }
 
-    await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({
-            status: "REJECTED",
-            rejected_by: userId,
-            rejected_at: nowManila(),
-            reject_reason: rejectReason,
-        }),
-    });
+    const lockId = await acquireBatchMutationLock(headerId);
+    if (!lockId) return batchMutationConflictResponse();
 
-    const details = await getDetails(headerId);
-    await Promise.all(
-        details
-            .map((line) => pickId(line.request_id))
-            .filter((lineId): lineId is number => Boolean(lineId))
-            .map((lineId) =>
-                fetchDirectus(`${mustBase()}/items/${DETAILS}/${lineId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders(),
-                    body: JSON.stringify({ status: "REJECTED" }),
-                }),
-            ),
-    );
+    try {
+        await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
+            method: "PATCH",
+            headers: directusHeaders(),
+            body: JSON.stringify({
+                status: "REJECTED",
+                rejected_by: userId,
+                rejected_at: nowManila(),
+                reject_reason: rejectReason,
+            }),
+        });
 
-    return NextResponse.json({ ok: true, header_id: headerId, rejected: details.length });
+        const details = await getDetails(headerId);
+        await Promise.all(
+            details
+                .map((line) => pickId(line.request_id))
+                .filter((lineId): lineId is number => Boolean(lineId))
+                .map((lineId) =>
+                    fetchDirectus(`${mustBase()}/items/${DETAILS}/${lineId}`, {
+                        method: "PATCH",
+                        headers: directusHeaders(),
+                        body: JSON.stringify({ status: "REJECTED" }),
+                    }),
+                ),
+        );
+
+        return NextResponse.json({ ok: true, header_id: headerId, rejected: details.length });
+    } finally {
+        await releaseBatchMutationLock(headerId, lockId);
+    }
 }
 
 export async function applyApprovedBatch(headerId: number, userId: number, effectiveAt?: string | null) {

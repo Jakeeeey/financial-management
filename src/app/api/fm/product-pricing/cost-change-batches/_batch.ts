@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 import {
+    acquireBatchMutationLock,
+    batchMutationConflictResponse,
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
     directusHeaders,
@@ -13,6 +15,8 @@ import {
     mustBase,
     nowManila,
     pickId,
+    patchFilteredRows,
+    releaseBatchMutationLock,
     resolveBatchDecisionUserNames,
     resolveUserDisplayName,
 } from "../price-change-batches/_batch";
@@ -380,32 +384,66 @@ export async function removeCostBatchLine(headerId: number, requestId: number) {
         return NextResponse.json({ error: "Only PENDING cost batches can have lines removed." }, { status: 400 });
     }
 
-    const details = await getCostDetails(headerId);
-    const pendingDetails = details.filter((line) => String(line.status ?? "PENDING") === "PENDING");
-    const target = pendingDetails.find((line) => pickId(line.request_id) === requestId);
+    const lockId = await acquireBatchMutationLock(headerId);
+    if (!lockId) return batchMutationConflictResponse();
 
-    if (!target) {
-        return NextResponse.json({ error: "Pending cost batch line not found." }, { status: 404 });
-    }
-    if (pendingDetails.length <= 1) {
-        return NextResponse.json(
-            { error: "Cannot remove the last pending line. Reject the batch instead." },
-            { status: 400 },
+    try {
+        const details = await getCostDetails(headerId);
+        const pendingDetails = details.filter((line) => String(line.status ?? "PENDING") === "PENDING");
+        const target = pendingDetails.find((line) => pickId(line.request_id) === requestId);
+
+        if (!target) {
+            return NextResponse.json({ error: "Pending cost batch line not found." }, { status: 404 });
+        }
+        if (pendingDetails.length <= 1) {
+            return NextResponse.json(
+                { error: "Cannot remove the last pending line. Reject the batch instead." },
+                { status: 400 },
+            );
+        }
+
+        const cancelled = await patchFilteredRows<CostDetailRow>(
+            COST_DETAILS,
+            {
+                _and: [
+                    { request_id: { _eq: requestId } },
+                    { header_id: { _eq: headerId } },
+                    { status: { _eq: "PENDING" } },
+                ],
+            },
+            { status: "CANCELLED" },
+            ["request_id", "header_id", "status"],
         );
+        if (!cancelled[0]) return batchMutationConflictResponse();
+
+        const remaining = (await getCostDetails(headerId)).filter(
+            (line) => String(line.status ?? "PENDING") === "PENDING",
+        ).length;
+        if (remaining === 0) {
+            await patchFilteredRows(
+                COST_DETAILS,
+                {
+                    _and: [
+                        { request_id: { _eq: requestId } },
+                        { header_id: { _eq: headerId } },
+                        { status: { _eq: "CANCELLED" } },
+                    ],
+                },
+                { status: "PENDING" },
+                ["request_id"],
+            );
+            throw new Error("Cost batch line removal would leave the batch without a pending line.");
+        }
+
+        return NextResponse.json({
+            ok: true,
+            header_id: headerId,
+            request_id: requestId,
+            remaining,
+        });
+    } finally {
+        await releaseBatchMutationLock(headerId, lockId);
     }
-
-    await fetchDirectus(`${mustBase()}/items/${COST_DETAILS}/${requestId}`, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({ status: "CANCELLED" }),
-    });
-
-    return NextResponse.json({
-        ok: true,
-        header_id: headerId,
-        request_id: requestId,
-        remaining: pendingDetails.length - 1,
-    });
 }
 
 export function normalizeEffectiveAt(value: unknown): string | null {
@@ -502,36 +540,43 @@ export async function rejectCostBatch(headerId: number, userId: number, rejectRe
         return NextResponse.json({ error: "Only PENDING cost batches can be rejected." }, { status: 400 });
     }
 
-    const details = await getCostDetails(headerId);
+    const lockId = await acquireBatchMutationLock(headerId);
+    if (!lockId) return batchMutationConflictResponse();
 
-    await fetchDirectus(`${mustBase()}/items/${COST_HEADERS}/${headerId}`, {
-        method: "PATCH",
-        headers: directusHeaders(),
-        body: JSON.stringify({
-            status: "REJECTED",
-            rejected_by: userId,
-            rejected_at: nowManila(),
-            reject_reason: rejectReason,
-        }),
-    });
+    try {
+        const details = await getCostDetails(headerId);
 
-    await Promise.all(
-        details
-            .map((line) => pickId(line.request_id))
-            .filter((lineId): lineId is number => Boolean(lineId))
-            .map((lineId) =>
-                fetchDirectus(`${mustBase()}/items/${COST_DETAILS}/${lineId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders(),
-                    body: JSON.stringify({
-                        status: "REJECTED",
-                        reject_reason: rejectReason,
+        await fetchDirectus(`${mustBase()}/items/${COST_HEADERS}/${headerId}`, {
+            method: "PATCH",
+            headers: directusHeaders(),
+            body: JSON.stringify({
+                status: "REJECTED",
+                rejected_by: userId,
+                rejected_at: nowManila(),
+                reject_reason: rejectReason,
+            }),
+        });
+
+        await Promise.all(
+            details
+                .map((line) => pickId(line.request_id))
+                .filter((lineId): lineId is number => Boolean(lineId))
+                .map((lineId) =>
+                    fetchDirectus(`${mustBase()}/items/${COST_DETAILS}/${lineId}`, {
+                        method: "PATCH",
+                        headers: directusHeaders(),
+                        body: JSON.stringify({
+                            status: "REJECTED",
+                            reject_reason: rejectReason,
+                        }),
                     }),
-                }),
-            ),
-    );
+                ),
+        );
 
-    return NextResponse.json({ ok: true, header_id: headerId, rejected: details.length });
+        return NextResponse.json({ ok: true, header_id: headerId, rejected: details.length });
+    } finally {
+        await releaseBatchMutationLock(headerId, lockId);
+    }
 }
 
 export function costBatchErrorResponse(error: unknown) {

@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { MatrixSetupError, type MatrixSetupReceipt } from "../_matrixSetup";
+import {
+    preparePriceSubmission,
+    rollbackPreparedInitializations,
+} from "../_priceSubmission";
 import {
     BatchCreateLineInput,
     cancelPendingBatch,
@@ -111,12 +116,14 @@ export async function POST(req: NextRequest) {
 
         let priceResult: {
             created: number;
+            initialized: number;
             skipped_duplicates: number;
             skipped_existing_pending: number;
             header_id?: number;
             data?: ReturnType<typeof mapBatchHeaderResponse>;
         } = {
             created: 0,
+            initialized: 0,
             skipped_duplicates: 0,
             skipped_existing_pending: 0,
         };
@@ -132,34 +139,61 @@ export async function POST(req: NextRequest) {
             skipped_existing_pending: 0,
         };
 
+        let initializedReceipts: MatrixSetupReceipt[] = [];
         if (pricePlan && priceLines.length > 0) {
             if (pricePlan.linesToCreate.length === 0) {
                 priceResult = {
                     created: 0,
+                    initialized: 0,
                     skipped_duplicates: pricePlan.skippedDuplicates,
                     skipped_existing_pending: pricePlan.skippedExistingPending,
                 };
             } else {
-                const created = await createPendingPriceBatch({
-                    userId,
-                    supplierId,
-                    referenceNo,
-                    remarks,
-                    linesToCreate: pricePlan.linesToCreate,
-                });
+                const prepared = await preparePriceSubmission({ userId, lines: pricePlan.linesToCreate });
+                initializedReceipts = prepared.initialized;
+                if (prepared.liveLines.length === 0) {
+                    priceResult = {
+                        created: 0,
+                        initialized: prepared.initialized.length,
+                        skipped_duplicates: pricePlan.skippedDuplicates,
+                        skipped_existing_pending: pricePlan.skippedExistingPending,
+                    };
+                } else {
+                    try {
+                        const created = await createPendingPriceBatch({
+                            userId,
+                            supplierId,
+                            referenceNo,
+                            remarks,
+                            linesToCreate: prepared.liveLines,
+                        });
 
-                priceResult = {
-                    created: created.created,
-                    skipped_duplicates: pricePlan.skippedDuplicates,
-                    skipped_existing_pending: pricePlan.skippedExistingPending,
-                    header_id: created.headerId,
-                    data: mapBatchHeaderResponse(created.headerRow, created.created),
-                };
+                        priceResult = {
+                            created: created.created,
+                            initialized: prepared.initialized.length,
+                            skipped_duplicates: pricePlan.skippedDuplicates,
+                            skipped_existing_pending: pricePlan.skippedExistingPending,
+                            header_id: created.headerId,
+                            data: mapBatchHeaderResponse(created.headerRow, created.created),
+                        };
+                    } catch (error: unknown) {
+                        const failures = await rollbackPreparedInitializations(initializedReceipts);
+                        if (failures.length > 0) {
+                            throw new MatrixSetupError(
+                                "Mixed save price initialization rollback was incomplete.",
+                                "price_submission_partial_failure",
+                                500,
+                                { failures },
+                            );
+                        }
+                        throw error;
+                    }
+                }
             }
         }
 
         if (costPlan && costItems.length > 0) {
-            if (isMixed && priceResult.created === 0) {
+            if (isMixed && priceResult.created + priceResult.initialized === 0) {
                 return NextResponse.json(
                     {
                         error: "Mixed save blocked",
@@ -201,15 +235,30 @@ export async function POST(req: NextRequest) {
                         header_id: created.headerId,
                     };
                 } catch (costError: unknown) {
-                    if (isMixed && priceResult.header_id) {
-                        await cancelPendingBatch(
-                            priceResult.header_id,
-                            userId,
-                            MIXED_SAVE_ROLLBACK_REASON,
-                        ).catch(() => undefined);
+                    if (isMixed && (priceResult.header_id || initializedReceipts.length > 0)) {
+                        if (priceResult.header_id) {
+                            await cancelPendingBatch(
+                                priceResult.header_id,
+                                userId,
+                                MIXED_SAVE_ROLLBACK_REASON,
+                            ).catch(() => undefined);
+                        }
+                        const initializationRollbackFailures =
+                            await rollbackPreparedInitializations(initializedReceipts);
 
                         const message =
                             costError instanceof Error ? costError.message : String(costError);
+                        if (initializationRollbackFailures.length > 0) {
+                            return NextResponse.json(
+                                {
+                                    error: "Mixed save rollback was incomplete.",
+                                    code: "mixed_save_partial_failure",
+                                    failures: initializationRollbackFailures,
+                                    details: message,
+                                },
+                                { status: 500 },
+                            );
+                        }
                         if (isCostBatchStorageSetupError(costError)) {
                             return costBatchStorageSetupResponse(message, true);
                         }
@@ -236,7 +285,7 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        const totalCreated = priceResult.created + costResult.created;
+        const totalCreated = priceResult.created + priceResult.initialized + costResult.created;
 
         if (totalCreated === 0) {
             return NextResponse.json(
@@ -258,6 +307,12 @@ export async function POST(req: NextRequest) {
             { status: 201 },
         );
     } catch (error: unknown) {
+        if (error instanceof MatrixSetupError) {
+            return NextResponse.json(
+                { error: error.message, code: error.code, ...error.data },
+                { status: error.status },
+            );
+        }
         if (isInvalidProposedCostError(error)) {
             return NextResponse.json({ error: error.message }, { status: 400 });
         }
