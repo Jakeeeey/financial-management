@@ -23,6 +23,7 @@ import {
   buildApproversByLevel,
   buildFilterQuery,
   buildVoteHistory,
+  buildVoteHistoryBulk,
   canUserVote,
   createExpenseLog,
   fetchCoaMap,
@@ -677,20 +678,24 @@ export async function handleMyLevelApprovalGetResource(params: {
         fetchCoaMap([...coaIds]),
       ]);
 
-      const rows = await Promise.all(
-        drafts.map(async (draft) => {
+      const bulkVoteHistories = await buildVoteHistoryBulk({
+        drafts: drafts.map((d) => ({
+          draftId: toNumericId(d.id) ?? 0,
+          currentVersion: toNumber(d.approval_version, 1),
+          draftStatus: d.status ?? "",
+          divisionId: toNumericId(d.division_id) ?? 0,
+        })),
+        divisionIds: [...divisionIds],
+      });
+
+      const rows = drafts.map((draft) => {
           const draftId = toNumericId(draft.id) ?? 0;
           const payeeId = toNumericId(draft.payee) ?? 0;
           const encoderId = toNumericId(draft.encoder_id) ?? 0;
           const divisionId = toNumericId(draft.division_id) ?? 0;
           const approvalVersion = toNumber(draft.approval_version, 1);
 
-          const rounds = await buildVoteHistory({
-            draftId,
-            currentVersion: approvalVersion,
-            draftStatus: draft.status ?? "",
-            divisionId,
-          });
+          const rounds = bulkVoteHistories.get(draftId) ?? [];
 
           const revisionLogs: DraftRevisionLogResponse[] = draftLogs
             .filter((logRow) => toNumericId(logRow.disbursement_id) === draftId)
@@ -755,8 +760,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             logs: revisionLogs,
             expense_logs: expenseRevisionLogs,
           };
-        })
-      );
+        });
 
       return jsonResponse({ data: rows });
     }

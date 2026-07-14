@@ -10,6 +10,7 @@ import {
   Maximize2,
   RotateCcw,
   RotateCw,
+  Send,
   ShieldCheck,
   X,
   XCircle,
@@ -26,6 +27,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -60,7 +62,8 @@ type Props = {
   submitting: boolean;
   onSubmitTargetDecision: (
     status: FinalHeaderDecisionStatus,
-    target: FinalDecisionTarget
+    target: FinalDecisionTarget,
+    remarks?: string
   ) => void | Promise<void>;
   onToggleDecision?: (status: FinalHeaderDecisionStatus, target: FinalDecisionTarget) => void;
   stagedDecisions?: Record<string, { target: FinalDecisionTarget; status: FinalHeaderDecisionStatus }>;
@@ -96,19 +99,80 @@ export default function AuditeeDetailSplitModal({
   const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
   const [showEvidence, setShowEvidence] = React.useState(true);
 
+  const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
+  const [dontShowAgain, setDontShowAgain] = React.useState(false);
+
+  const [submitDisbursementConfirmOpen, setSubmitDisbursementConfirmOpen] = React.useState(false);
+  const [disbursementRemarks, setDisbursementRemarks] = React.useState("");
+
+  const [rejectAllConfirmOpen, setRejectAllConfirmOpen] = React.useState(false);
+
+  // Read the dont-show-again preference from localStorage on mount
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("hide_staged_close_warning");
+      setDontShowAgain(saved === "true");
+    }
+  }, [open]);
+
+  const salesman = React.useMemo(() => {
+    if (!data || employeeId === null) return null;
+    return data.salesmen.find((s: FinalTopSheetSalesmanResponse) => s.employee_id === employeeId) ?? null;
+  }, [data, employeeId]);
+
+  const effectiveCurrentTier = React.useMemo(() => {
+    return salesman?.current_tier !== undefined ? salesman.current_tier : (data?.group?.current_tier ?? 1);
+  }, [salesman, data]);
+
+  const effectivePrevTierApproverNames = React.useMemo(() => {
+    return salesman?.previous_tier_approver_names ?? data?.group?.previous_tier_approver_names ?? [];
+  }, [salesman, data]);
+
+  const hasStagedDecisions = React.useMemo(() => {
+    if (!stagedDecisions) return false;
+    return Object.values(stagedDecisions).some((item) => {
+      if (item.target.scope === "cell" && item.target.employee_id === employeeId) {
+        return true;
+      }
+      if (item.target.scope === "encoder" && item.target.employee_id === employeeId) {
+        return true;
+      }
+      if (item.target.scope === "expense_ids" && item.target.expense_ids) {
+        return item.target.expense_ids.some(id => 
+          data?.details.some(d => d.expense_id === id && d.employee_id === employeeId)
+        );
+      }
+      return false;
+    });
+  }, [stagedDecisions, employeeId, data]);
+
+  const handleClose = React.useCallback(() => {
+    const isWarningSilenced = typeof window !== "undefined" && localStorage.getItem("hide_staged_close_warning") === "true";
+    
+    if (hasStagedDecisions && !isWarningSilenced) {
+      setShowCloseConfirm(true);
+    } else {
+      onOpenChange(false);
+    }
+  }, [hasStagedDecisions, onOpenChange]);
+
   const isApprovedHistory = React.useMemo(() => {
+    const statuses = salesman?.draft_statuses ?? data?.group?.draft_statuses;
     return (
-      Array.isArray(data?.group?.draft_statuses) &&
-      data.group.draft_statuses.length > 0 &&
-      data.group.draft_statuses.every((s) => s.toLowerCase() === "approved")
+      Array.isArray(statuses) &&
+      statuses.length > 0 &&
+      statuses.every((s) => s.toLowerCase() === "approved")
     );
-  }, [data]);
+  }, [salesman, data]);
 
   const isRejectedHistory = React.useMemo(() => {
-    const statuses = data?.group?.draft_statuses;
+    if (salesman && salesman.current_tier !== undefined && salesman.current_tier > 0) {
+      return false;
+    }
+    const statuses = salesman?.draft_statuses ?? data?.group?.draft_statuses;
     if (!Array.isArray(statuses) || statuses.length === 0) return false;
     return statuses.every((s) => s.toLowerCase() === "rejected");
-  }, [data]);
+  }, [salesman, data]);
 
   const isTerminalHistory = isApprovedHistory || isRejectedHistory;
 
@@ -151,17 +215,40 @@ export default function AuditeeDetailSplitModal({
     return data.details.filter((d: FinalTopSheetDetail) => d.employee_id === employeeId);
   }, [data, employeeId]);
 
-  const salesman = React.useMemo(() => {
-    if (!data || employeeId === null) return null;
-    return data.salesmen.find((s: FinalTopSheetSalesmanResponse) => s.employee_id === employeeId) ?? null;
-  }, [data, employeeId]);
+  const hasUnstagedActiveLines = React.useMemo(() => {
+    const activeLines = auditeeDetails.filter(
+      (item) => {
+        const s = (item.status ?? "").toLowerCase();
+        return !s.includes("concern") && s !== "rejected";
+      }
+    );
+
+    return activeLines.some((item) => {
+      const stagedKey = `expense:${item.expense_id}`;
+      const hasItemStaged = stagedDecisions && stagedDecisions[stagedKey];
+      if (hasItemStaged) return false;
+
+      const encoderKey = `encoder:${item.employee_id}`;
+      const cellKey = `cell:${item.employee_id}:${item.coa_id}`;
+      
+      const hasEncoderStaged = stagedDecisions && stagedDecisions[encoderKey];
+      const hasCellStaged = stagedDecisions && stagedDecisions[cellKey];
+
+      if (hasEncoderStaged || hasCellStaged) return false;
+
+      return true;
+    });
+  }, [auditeeDetails, stagedDecisions]);
+
+
 
   const pendingApproverNames = React.useMemo(() => {
-    if (!data?.group?.current_tier_approvers) return [];
-    return data.group.current_tier_approvers
+    const approvers = salesman?.current_tier_approvers ?? data?.group?.current_tier_approvers;
+    if (!approvers) return [];
+    return approvers
       .filter((a) => !a.voted)
       .map((a) => a.name);
-  }, [data]);
+  }, [salesman, data]);
 
   const attachments = React.useMemo(() => {
     if (!data) return [];
@@ -426,11 +513,26 @@ export default function AuditeeDetailSplitModal({
                     isRejectedHistory ? "text-rose-700/90 dark:text-rose-400/80" : "text-amber-700/90 dark:text-amber-400/80"
                   }`}>
                     You are viewing the details for <strong className="text-slate-900 dark:text-white font-bold">{salesmantName}</strong>.{" "}
-                    {isRejectedHistory
-                      ? "This submission was rejected by the final approver. No further actions can be taken on this record."
-                      : isApprovedHistory
-                      ? "This top-sheet has been finalized and posted. No further actions can be taken."
-                      : `Since the draft is currently at Level ${data?.group?.current_tier ?? 1}${pendingApproverNames.length > 0 ? ` (pending: ${pendingApproverNames.join(", ")})` : ""}, action items, staging buttons, and feedback updates are locked. They will become actionable once the draft reaches the required final approval tier (Level ${data?.group?.required_approver_level ?? 4}).`}
+                    {isRejectedHistory ? (
+                      "This submission was rejected by the final approver. No further actions can be taken on this record."
+                    ) : isApprovedHistory ? (
+                      "This top-sheet has been finalized and posted. No further actions can be taken."
+                    ) : (
+                      <>
+                        Since the draft is currently at Level <strong className="text-slate-900 dark:text-white font-bold">{effectiveCurrentTier}</strong>
+                        {pendingApproverNames.length > 0 && (
+                          <>
+                            {" "}
+                            (waiting for approver:{" "}
+                            <strong className="text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-lg font-black border border-rose-500/20 shadow-sm">
+                              {pendingApproverNames.join(", ")}
+                            </strong>
+                            )
+                          </>
+                        )}
+                        , action items, staging buttons, and feedback updates are locked. They will become actionable once the draft reaches the required final approval tier (Level {data?.group?.required_approver_level ?? 4}).
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
@@ -522,7 +624,7 @@ export default function AuditeeDetailSplitModal({
                                           ? "bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/50"
                                           : item.status.toLowerCase().includes("concern")
                                           ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/50"
-                                          : (data?.group?.current_tier ?? 1) === 1
+                                          : effectiveCurrentTier === 1
                                           ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50"
                                           : "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50"
                                       }`}
@@ -531,9 +633,9 @@ export default function AuditeeDetailSplitModal({
                                         ? "Rejected"
                                         : item.status.toLowerCase().includes("concern")
                                         ? "With Concern"
-                                        : (data?.group?.current_tier ?? 1) === 1
+                                        : effectiveCurrentTier === 1
                                         ? "Submitted"
-                                        : `L${(data?.group?.current_tier ?? 2) - 1} Approved (${data?.group?.previous_tier_approver_names?.length ? data.group.previous_tier_approver_names.join(', ') : 'System'})`}
+                                        : `L${Math.max(1, effectiveCurrentTier - 1)} Approved (${effectivePrevTierApproverNames.length ? effectivePrevTierApproverNames.join(', ') : 'System'})`}
                                     </Badge>
                                   </div>
                                   {canAct && !isAlreadyCulled && !stagedStatus && (
@@ -622,22 +724,295 @@ export default function AuditeeDetailSplitModal({
 
           {/* Footer */}
           <div className="shrink-0 border-t dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold">
-              <ShieldCheck size={14} className="text-emerald-500" />
-              Audit Consensus Engine — Immutable Trail
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold">
+                <ShieldCheck size={14} className="text-emerald-500" />
+                Audit Consensus Engine — Immutable Trail
+              </div>
+              {canAct && hasUnstagedActiveLines && (
+                <div className="text-[10px] font-bold text-amber-500 dark:text-amber-400 flex items-center gap-1.5 animate-pulse bg-amber-500/5 px-2.5 py-1 rounded-lg border border-amber-500/10">
+                  <AlertTriangle size={11} />
+                  <span>Stage decisions for all pending lines to enable submit</span>
+                </div>
+              )}
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 rounded-xl border-slate-200 dark:border-slate-700 px-5 text-[10px] font-black uppercase tracking-widest"
-              onClick={() => onOpenChange(false)}
-            >
-              Close
-            </Button>
+            <div className="flex items-center gap-3">
+              {canAct && employeeId !== null && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 rounded-xl border-rose-200/60 bg-rose-50/50 dark:bg-rose-950/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 px-5 text-[10px] font-black uppercase tracking-widest transition-all"
+                    disabled={submitting}
+                    onClick={() => {
+                      setRejectAllConfirmOpen(true);
+                    }}
+                  >
+                    Reject All
+                  </Button>
+                  <Button
+                    type="button"
+                    className="h-9 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 px-5 text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-600/10 disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:shadow-none"
+                    disabled={submitting || hasUnstagedActiveLines}
+                    onClick={() => {
+                      setDisbursementRemarks("");
+                      setSubmitDisbursementConfirmOpen(true);
+                    }}
+                    title={hasUnstagedActiveLines ? "Stage decisions for all pending lines first" : "Submit to disbursement"}
+                  >
+                    Submit to Disbursement
+                  </Button>
+                </>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 rounded-xl border-slate-200 dark:border-slate-700 px-5 text-[10px] font-black uppercase tracking-widest"
+                onClick={handleClose}
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
+
+      <Dialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
+        <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl z-[100]">
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <AlertTriangle size={20} />
+            </div>
+            <div className="flex flex-col leading-none">
+              <DialogTitle className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                Unsubmitted Staged Decisions
+              </DialogTitle>
+              <DialogDescription className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
+                Staged Decision Warning
+              </DialogDescription>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 pb-6 space-y-4">
+            <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
+              You have active staged decisions for <strong className="text-slate-900 dark:text-white font-bold">{salesmantName}</strong> that have not been submitted.
+            </p>
+            
+            <p className="text-[11px] text-slate-500 dark:text-slate-500 leading-normal">
+              You can submit to disbursement immediately inside this modal, close to keep them staged on the parent Top-Sheet, or cancel to stay and review.
+            </p>
+
+            <div className="flex items-center gap-2 pt-2">
+              <input
+                type="checkbox"
+                id="dontShowAgain"
+                checked={dontShowAgain}
+                className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/20 dark:border-slate-800 dark:bg-slate-950"
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setDontShowAgain(val);
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem("hide_staged_close_warning", val ? "true" : "false");
+                  }
+                }}
+              />
+              <label htmlFor="dontShowAgain" className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+                Don&apos;t show this warning again
+              </label>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-4 border-t dark:border-slate-800">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 h-10 rounded-xl border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
+                onClick={() => {
+                  setShowCloseConfirm(false);
+                  onOpenChange(false);
+                }}
+              >
+                Close Anyway
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 h-10 rounded-xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[10px] font-black uppercase tracking-widest hover:bg-slate-800"
+                onClick={() => setShowCloseConfirm(false)}
+              >
+                Cancel / Stay
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={submitDisbursementConfirmOpen} onOpenChange={setSubmitDisbursementConfirmOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl z-[100]">
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 flex items-center gap-3 bg-slate-50 dark:bg-slate-950 border-b dark:border-slate-800">
+            <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <ShieldCheck size={20} />
+            </div>
+            <div className="flex flex-col leading-none">
+              <DialogTitle className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                Disbursement Submission Confirmation
+              </DialogTitle>
+              <DialogDescription className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
+                Finalizing Payment Release
+              </DialogDescription>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 space-y-5">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Auditee</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">{salesmantName}</span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Affected Lines</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">{auditeeDetails.length} Lines</span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between bg-emerald-50/50 dark:bg-emerald-950/20 p-3 rounded-2xl border border-emerald-100/50 dark:border-emerald-900/30">
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 dark:text-emerald-400">Total Approved Amount</span>
+                <span className="text-sm font-black text-emerald-800 dark:text-emerald-400 tabular-nums">
+                  {formatCurrency(grandTotal)}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 flex items-center gap-2">
+                <FileText size={14} className="text-primary" />
+                Audit Remarks <span className="text-rose-500">*</span>
+              </label>
+              <Textarea
+                value={disbursementRemarks}
+                onChange={(e) => setDisbursementRemarks(e.target.value)}
+                placeholder="Provide mandatory audit remarks for this disbursement..."
+                rows={3}
+                className="resize-none rounded-2xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-medium shadow-inner dark:shadow-none focus:ring-2 focus:ring-primary/10"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-4 border-t dark:border-slate-800">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 h-10 rounded-xl border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
+                onClick={() => setSubmitDisbursementConfirmOpen(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 h-10 rounded-xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[10px] font-black uppercase tracking-widest hover:bg-slate-800"
+                onClick={async () => {
+                  setSubmitDisbursementConfirmOpen(false);
+                  await onSubmitTargetDecision("Approved", { scope: "encoder", employee_id: employeeId! }, disbursementRemarks);
+                  onOpenChange(false);
+                }}
+                disabled={submitting || !disbursementRemarks.trim()}
+              >
+                {submitting ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Confirm & Submit
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rejectAllConfirmOpen} onOpenChange={setRejectAllConfirmOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl z-[100]">
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 flex items-center gap-3 bg-slate-50 dark:bg-slate-950 border-b dark:border-slate-800">
+            <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+              <AlertTriangle size={20} />
+            </div>
+            <div className="flex flex-col leading-none">
+              <DialogTitle className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                Confirm Reject All
+              </DialogTitle>
+              <DialogDescription className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
+                Rejecting Auditee Scope
+              </DialogDescription>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 space-y-5">
+            <div className="bg-rose-50/40 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-2xl p-4 flex items-start gap-4">
+              <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-900 dark:text-rose-400 leading-none">Reject Action Required</p>
+                <p className="text-[11px] text-rose-700 dark:text-rose-400 font-medium leading-relaxed">
+                  Are you sure you want to reject all active expense lines for this auditee? This action will require you to provide a rejection remark for each affected line.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Auditee</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">{salesmantName}</span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Affected Lines</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">{auditeeDetails.length} Lines</span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between bg-rose-50/50 dark:bg-rose-950/20 p-3 rounded-2xl border border-rose-100/50 dark:border-rose-900/30">
+                <span className="text-[10px] font-black uppercase tracking-widest text-rose-800 dark:text-rose-400">Total Rejected Amount</span>
+                <span className="text-sm font-black text-rose-800 dark:text-rose-400 tabular-nums">
+                  {formatCurrency(grandTotal)}
+                </span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-4 border-t dark:border-slate-800">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 h-10 rounded-xl border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
+                onClick={() => setRejectAllConfirmOpen(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 h-10 rounded-xl bg-rose-600 text-white hover:bg-rose-700 text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-rose-600/10"
+                onClick={async () => {
+                  setRejectAllConfirmOpen(false);
+                  await onSubmitTargetDecision("Rejected", { scope: "encoder", employee_id: employeeId! });
+                }}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Confirm & Reject
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

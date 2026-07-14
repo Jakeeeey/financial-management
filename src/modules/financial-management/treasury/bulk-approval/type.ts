@@ -335,6 +335,11 @@ export type FinalTopSheetSalesmanResponse = {
   salesman_code: string | null;
   salesman_name: string;
   total_amount: number;
+  current_tier?: number;
+  current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  next_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  previous_tier_approver_names?: string[];
+  draft_statuses?: string[];
 };
 
 export type FinalTopSheetCellResponse = {

@@ -76,7 +76,7 @@ function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null
 
 function formatDraftStatusList(statuses?: string[]) {
   const clean = [...new Set((statuses ?? []).filter(Boolean))];
-  return clean.length > 0 ? clean.join(", ") : "No draft status";
+  return clean.length > 0 ? clean.map(s => s.replace(/Pending_L\d+/gi, "Pending Review").replace(/_/g, " ")).join(", ") : "No draft status";
 }
 
 function getApprovalInfo(meta: ApprovalMeta) {
@@ -84,7 +84,7 @@ function getApprovalInfo(meta: ApprovalMeta) {
     .filter((a) => !a.voted)
     .map((a) => a.name);
   const pendingText = pendingApprovers.length > 0
-    ? ` (pending: ${pendingApprovers.join(", ")})`
+    ? ` (waiting for approver: ${pendingApprovers.join(", ")})`
     : "";
 
   const currentLevel = meta.current_tier ? `Level ${meta.current_tier}${pendingText}` : "not yet routed";
@@ -106,8 +106,8 @@ function getApprovalInfo(meta: ApprovalMeta) {
 
   if (meta.can_act) {
     return {
-      title: "Ready for final approver action",
-      description: `Current status: ${currentStatuses}. This top sheet is already on ${requiredLevel}.`,
+      title: "Ready for your Final Top-Sheet Review",
+      description: `This top sheet has reached your level (${requiredLevel}) and is ready for your action. Current status: ${currentStatuses}.`,
       shortLabel: "Ready",
       tone: "ready" as const,
       currentLevel,
@@ -117,8 +117,8 @@ function getApprovalInfo(meta: ApprovalMeta) {
   }
 
   return {
-    title: "View-only until previous approval tier is completed",
-    description: `Current status: ${currentStatuses}. Current approval tier is ${currentLevel}; final approver actions are enabled only at ${requiredLevel}.`,
+    title: "Waiting for other approvers",
+    description: `This top sheet is currently being reviewed by ${currentLevel} approvers. You can only take action once it reaches your level (${requiredLevel}). Current status: ${currentStatuses}.`,
     shortLabel: "Waiting",
     tone: "waiting" as const,
     currentLevel,
@@ -692,6 +692,7 @@ export default function FinalTopSheetModal({
     status: Extract<FinalHeaderDecisionStatus, "Rejected" | "With Concern">,
     affectedDetails: FinalTopSheetDetail[]
   ) {
+    if (submitting) return;
     if (!group) return;
 
     if (!canSubmitFinalAction) {
@@ -737,8 +738,10 @@ export default function FinalTopSheetModal({
 
   async function submitTargetDecision(
     status: FinalHeaderDecisionStatus,
-    target: FinalDecisionTarget
+    target: FinalDecisionTarget,
+    customRemarks?: string
   ) {
+    if (submitting) return;
     console.log("[submitTargetDecision] Clicked:", { status, target, canSubmitFinalAction, group });
     if (!group) return;
 
@@ -763,6 +766,8 @@ export default function FinalTopSheetModal({
         (detail) => !getLineRemark(lineRemarks, detail.expense_id)
       );
 
+      setAuditeeDetailOpen(false);
+
       if (missingRemarks.length > 0) {
         setPendingRemarksDecision({ status, target, affectedDetails });
         setRemarksDialogOpen(true);
@@ -780,7 +785,7 @@ export default function FinalTopSheetModal({
       const result = await submitSingleDecisionRequest({
         status,
         target,
-        decisionRemarks: remarks.trim(),
+        decisionRemarks: customRemarks !== undefined ? customRemarks.trim() : remarks.trim(),
       });
 
       toast.success(
@@ -795,6 +800,7 @@ export default function FinalTopSheetModal({
   }
 
   async function submitStagedAuditBatch() {
+    if (submitting) return;
     if (stagedDecisionEntries.length === 0) {
       toast.warning("No staged COA/encoder actions to submit.");
       return;
@@ -840,6 +846,7 @@ export default function FinalTopSheetModal({
   }
 
   async function submitPendingRemarksDecision() {
+    if (submitting) return;
     if (!pendingRemarksDecision) return;
 
     await submitItemLevelDecisionBatch(
@@ -876,24 +883,7 @@ export default function FinalTopSheetModal({
               </DialogTitle>
 
               <div className="flex items-center gap-2">
-                {/* Current Tier Approvers Pill */}
-                {(data?.group.current_tier_approvers ?? []).length > 0 && (
-                  <div className="hidden sm:flex items-center gap-2 rounded-xl border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-900/30 px-3 py-1.5 backdrop-blur-sm">
-                    <ShieldCheck className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                    <div className="flex flex-col leading-none gap-0.5">
-                      <span className="text-[8px] font-black uppercase tracking-[0.2em] text-indigo-700 dark:text-indigo-400">Current Approver</span>
-                      {(data?.group.current_tier_approvers ?? []).map((a) => (
-                        <div key={a.approver_id} className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-black text-slate-900 dark:text-indigo-200 truncate max-w-[12rem]">{a.name}</span>
-                          {a.voted
-                            ? <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 shrink-0">✓ Voted</span>
-                            : <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 shrink-0">Pending</span>
-                          }
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+
                 {group && (
                   <div className="flex items-center gap-2 bg-slate-100 dark:bg-white/5 p-1.5 rounded-xl border border-slate-200 dark:border-white/10">
                     <Badge className="rounded-lg bg-primary/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-primary border border-primary/30">
@@ -965,8 +955,8 @@ export default function FinalTopSheetModal({
                         {isApprovedHistory 
                           ? "Audit Finalized & Posted" 
                           : canSubmitFinalAction 
-                            ? "Ready for final approver action" 
-                            : "View-only until previous approval tier is completed"}
+                            ? "Ready for your Final Top-Sheet Review" 
+                            : "Waiting for other approvers"}
                       </h3>
                       <p className={`text-[11px] font-medium leading-normal ${
                         isApprovedHistory || canSubmitFinalAction ? "text-emerald-700/70 dark:text-emerald-400/70" : "text-slate-500 dark:text-slate-400"
@@ -974,7 +964,7 @@ export default function FinalTopSheetModal({
                         {isApprovedHistory 
                           ? "This top-sheet has been successfully audited and posted to the live Disbursement table."
                           : canSubmitFinalAction 
-                            ? `Current status: ${(data?.group.draft_statuses ?? []).join(", ")}. This top-sheet is ${toNumber(data?.group.current_tier) >= 999 ? "Finalized" : `on Level ${data?.group.current_tier}`}.` 
+                            ? `This top sheet has reached your level and is ready for your action. Current status: ${formatDraftStatusList(data?.group.draft_statuses)}.` 
                             : approvalInfo.description}
                       </p>
                     </div>
@@ -984,7 +974,7 @@ export default function FinalTopSheetModal({
                     <div className="flex items-center gap-8">
                       <div className="text-center">
                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Status</p>
-                        <p className="text-[10px] font-black text-slate-900 dark:text-slate-200">{(data?.group.draft_statuses ?? []).join(", ")}</p>
+                        <p className="text-[10px] font-black text-slate-900 dark:text-slate-200">{formatDraftStatusList(data?.group.draft_statuses)}</p>
                       </div>
                       <div className="h-8 w-px bg-slate-200 dark:bg-slate-800" />
                       <div className="text-center">
@@ -1183,8 +1173,8 @@ export default function FinalTopSheetModal({
         employeeId={selectedAuditeeId}
         data={data}
         submitting={submitting}
-        onSubmitTargetDecision={(status, target) =>
-          void submitTargetDecision(status, target)
+        onSubmitTargetDecision={(status, target, remarks) =>
+          void submitTargetDecision(status, target, remarks)
         }
         onToggleDecision={handleToggleDecision}
         stagedDecisions={stagedDecisions}

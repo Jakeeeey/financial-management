@@ -353,6 +353,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   }
 
   async function executeSubmit(overrideRemarks?: string) {
+    if (submitting) return;
     setSubmitting(true);
     setShowConcernWarning(false);
     setShowRejectWarning(false);
@@ -507,7 +508,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           )}
 
           {/* Main Modal Pane */}
-          <div className={`flex flex-col bg-white dark:bg-slate-950 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] overflow-hidden h-full transition-all duration-500 border border-slate-200 dark:border-slate-800 ${showCoverage ? "w-[60vw]" : "w-[85vw]"}`}>
+          <div className={`relative flex flex-col bg-white dark:bg-slate-950 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] overflow-hidden h-full transition-all duration-500 border border-slate-200 dark:border-slate-800 ${showCoverage ? "w-[60vw]" : "w-[85vw]"}`}>
+            {submitting && (
+              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/60 dark:bg-slate-950/60 backdrop-blur-sm rounded-[2.5rem]">
+                <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-800 dark:text-slate-200">Processing Decision...</p>
+              </div>
+            )}
             {!loading && detail && (
               <div className="shrink-0">
                 {detail.my_vote ? (
@@ -847,7 +854,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                         <Button
                                           size="sm"
                                           className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2 disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
-                                          disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isPersistentLocked}
+                                          disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isPersistentLocked || submitting}
                                           onClick={() => handleSingleItemVote(p)}
                                         >
                                           {processingItem === p.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
@@ -1002,11 +1009,16 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
             Do you want to continue?
           </DialogDescription>
           <div className="flex items-center justify-end gap-2 mt-6">
-            <Button variant="ghost" onClick={() => setShowConcernWarning(false)} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+            <Button variant="ghost" onClick={() => setShowConcernWarning(false)} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" disabled={submitting}>
               Go Back
             </Button>
-            <Button onClick={() => executeSubmit(pendingRemarks.current)} className="bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-sm font-semibold px-5 rounded-lg shadow-sm">
-              Confirm & Submit
+            <Button 
+              onClick={() => executeSubmit(pendingRemarks.current)} 
+              disabled={submitting}
+              className="bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-sm font-semibold px-5 rounded-lg shadow-sm gap-2"
+            >
+              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
+              <span>Confirm & Submit</span>
             </Button>
           </div>
         </DialogContent>
@@ -1024,11 +1036,16 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
             Do you want to proceed?
           </DialogDescription>
           <div className="flex items-center justify-end gap-2 mt-6">
-            <Button variant="ghost" onClick={() => setShowRejectWarning(false)} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+            <Button variant="ghost" onClick={() => setShowRejectWarning(false)} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" disabled={submitting}>
               Go Back
             </Button>
-            <Button onClick={() => executeSubmit(pendingRemarks.current)} className="bg-rose-600 hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-700 text-white text-sm font-semibold px-5 rounded-lg shadow-sm">
-              Confirm Rejection
+            <Button 
+              onClick={() => executeSubmit(pendingRemarks.current)} 
+              disabled={submitting}
+              className="bg-rose-600 hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-700 text-white text-sm font-semibold px-5 rounded-lg shadow-sm gap-2"
+            >
+              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
+              <span>Confirm Rejection</span>
             </Button>
           </div>
         </DialogContent>
