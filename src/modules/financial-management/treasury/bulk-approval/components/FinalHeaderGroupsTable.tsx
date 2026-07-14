@@ -11,6 +11,10 @@ import {
   Layers3,
   RefreshCw,
   Search,
+  ChevronUp,
+  ChevronDown,
+  ArrowLeft,
+  ChevronRight,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +35,8 @@ import { formatCurrency, formatDate } from "../utils/format";
 type Props = {
   groups: FinalHeaderGroup[];
   loading: boolean;
+  statusFilter?: "ready" | "completed";
+  onStatusFilterChange?: (status: "ready" | "completed") => void;
   onOpenTopSheet: (group: FinalHeaderGroup) => void;
   onRefresh: () => void;
 };
@@ -45,6 +51,7 @@ type ApprovalAwareGroup = FinalHeaderGroup & {
   is_waiting?: boolean;
   current_tier?: number;
   required_approver_level?: number;
+  is_completed?: boolean;
 };
 
 function uniqueStatuses(group: ApprovalAwareGroup) {
@@ -63,7 +70,7 @@ function getApprovalTierText(group: ApprovalAwareGroup) {
 }
 
 function ApprovalStateBadge({ group }: { group: ApprovalAwareGroup }) {
-  const isApproved = group.draft_statuses?.includes("Approved");
+  const isApproved = Boolean(group.is_completed);
 
   if (isApproved) {
     return (
@@ -91,13 +98,45 @@ function ApprovalStateBadge({ group }: { group: ApprovalAwareGroup }) {
   );
 }
 
+type SortField = "period" | "division" | "metrics" | "amount" | "status";
+type SortOrder = "asc" | "desc";
+
 export default function FinalHeaderGroupsTable({
   groups,
   loading,
+  statusFilter,
+  onStatusFilterChange,
   onOpenTopSheet,
   onRefresh,
 }: Props) {
   const [query, setQuery] = React.useState("");
+  const [sortField, setSortField] = React.useState<SortField>("period");
+  const [sortOrder, setSortOrder] = React.useState<SortOrder>("desc");
+  const [page, setPage] = React.useState(1);
+  const pageSize = 8;
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [statusFilter, query]);
+
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+    setPage(1);
+  }
+
+  function renderSortIndicator(field: SortField) {
+    if (sortField !== field) return null;
+    return sortOrder === "asc" ? (
+      <ChevronUp className="h-3 w-3 text-primary shrink-0" />
+    ) : (
+      <ChevronDown className="h-3 w-3 text-primary shrink-0" />
+    );
+  }
 
   const filteredGroups = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -120,6 +159,58 @@ export default function FinalHeaderGroupsTable({
     });
   }, [groups, query]);
 
+  const sortedGroups = React.useMemo(() => {
+    return [...filteredGroups].sort((a, b) => {
+      let valA: string | number = "";
+      let valB: string | number = "";
+
+      switch (sortField) {
+        case "period":
+          valA = a.period_from;
+          valB = b.period_from;
+          break;
+        case "division":
+          valA = a.division_name ?? "";
+          valB = b.division_name ?? "";
+          break;
+        case "metrics":
+          valA = a.expense_count;
+          valB = b.expense_count;
+          break;
+        case "amount":
+          valA = a.total_amount;
+          valB = b.total_amount;
+          break;
+        case "status":
+          valA = (a as ApprovalAwareGroup).is_completed ? 0 : (a as ApprovalAwareGroup).can_act ? 2 : 1;
+          valB = (b as ApprovalAwareGroup).is_completed ? 0 : (b as ApprovalAwareGroup).can_act ? 2 : 1;
+          break;
+      }
+
+      if (valA === valB) {
+        const orderModifier = sortOrder === "asc" ? 1 : -1;
+        if (sortField !== "division") {
+          const divCompare = String(a.division_name ?? "").localeCompare(String(b.division_name ?? ""));
+          if (divCompare !== 0) return divCompare * orderModifier;
+        }
+        return String(a.group_key).localeCompare(String(b.group_key));
+      }
+      const orderModifier = sortOrder === "asc" ? 1 : -1;
+      if (typeof valA === "string" && typeof valB === "string") {
+        return valA.localeCompare(valB) * orderModifier;
+      }
+      return ((valA as number) < (valB as number) ? -1 : 1) * orderModifier;
+    });
+  }, [filteredGroups, sortField, sortOrder]);
+
+  const totalItems = sortedGroups.length;
+  const pageCount = Math.ceil(totalItems / pageSize) || 1;
+
+  const paginatedGroups = React.useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sortedGroups.slice(start, start + pageSize);
+  }, [sortedGroups, page]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex flex-col gap-3 rounded-2xl border dark:border-slate-800 bg-gradient-to-br from-white dark:from-slate-900 to-slate-50/50 dark:to-slate-900/50 px-5 py-3 shadow-md dark:shadow-none md:flex-row md:items-center md:justify-between">
@@ -128,14 +219,45 @@ export default function FinalHeaderGroupsTable({
           <p className="text-[10px] font-medium text-muted-foreground">Select a period group to review the aggregated matrix.</p>
         </div>
         
-        <div className="flex flex-1 flex-col gap-2 md:max-w-xl md:flex-row md:items-center">
-          <div className="relative flex-1">
+        <div className="flex flex-wrap items-center gap-2 flex-1 md:max-w-3xl md:justify-end">
+          <div className="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/80 p-0.5 rounded-xl border dark:border-slate-800">
+            <Button
+              type="button"
+              size="sm"
+              variant={statusFilter === "ready" ? "secondary" : "ghost"}
+              className={`h-7 px-3 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                statusFilter === "ready" 
+                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm" 
+                  : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              }`}
+              onClick={() => onStatusFilterChange?.("ready")}
+              disabled={loading}
+            >
+              Ready for Action
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={statusFilter === "completed" ? "secondary" : "ghost"}
+              className={`h-7 px-3 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                statusFilter === "completed" 
+                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm" 
+                  : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              }`}
+              onClick={() => onStatusFilterChange?.("completed")}
+              disabled={loading}
+            >
+              Completed / Posted
+            </Button>
+          </div>
+
+          <div className="relative min-w-[200px] flex-1">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-primary/50" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search groups..."
-              className="h-9 rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 pl-9 text-xs font-medium shadow-sm dark:shadow-none transition-all focus:ring-2 focus:ring-primary/5"
+              className="h-8 rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 pl-9 text-xs font-medium shadow-sm dark:shadow-none transition-all focus:ring-2 focus:ring-primary/5"
             />
           </div>
 
@@ -143,11 +265,11 @@ export default function FinalHeaderGroupsTable({
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 text-xs font-bold shadow-sm dark:shadow-none transition-all hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-95"
+            className="h-8 rounded-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-bold shadow-sm dark:shadow-none transition-all hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-95 shrink-0"
             onClick={onRefresh}
             disabled={loading}
           >
-            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 text-primary ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`mr-1.5 h-3 w-3 text-primary ${loading ? "animate-spin" : ""}`} />
             Sync
           </Button>
         </div>
@@ -166,11 +288,43 @@ export default function FinalHeaderGroupsTable({
             </colgroup>
             <TableHeader className="sticky top-0 z-10 border-b dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
               <TableRow className="hover:bg-transparent">
-                <TableHead className="text-center text-[9px] font-black uppercase tracking-[0.1em] text-slate-400">Ref</TableHead>
-                <TableHead className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5">Coverage Period</TableHead>
-                <TableHead className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5">Context</TableHead>
-                <TableHead className="text-center text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5">Metrics</TableHead>
-                <TableHead className="text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5">Aggregate Total</TableHead>
+                <TableHead className="text-center text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 w-[50px]">Ref</TableHead>
+                <TableHead 
+                  className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5 cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  onClick={() => toggleSort("period")}
+                >
+                  <span className="flex items-center gap-1">
+                    Coverage Period
+                    {renderSortIndicator("period")}
+                  </span>
+                </TableHead>
+                <TableHead 
+                  className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5 cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  onClick={() => toggleSort("division")}
+                >
+                  <span className="flex items-center gap-1">
+                    Context
+                    {renderSortIndicator("division")}
+                  </span>
+                </TableHead>
+                <TableHead 
+                  className="text-center text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5 cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  onClick={() => toggleSort("metrics")}
+                >
+                  <span className="flex items-center justify-center gap-1">
+                    Metrics
+                    {renderSortIndicator("metrics")}
+                  </span>
+                </TableHead>
+                <TableHead 
+                  className="text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5 cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  onClick={() => toggleSort("amount")}
+                >
+                  <span className="flex items-center justify-end gap-1">
+                    Aggregate Total
+                    {renderSortIndicator("amount")}
+                  </span>
+                </TableHead>
                 <TableHead className="text-center text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 px-4 py-2.5">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -187,7 +341,7 @@ export default function FinalHeaderGroupsTable({
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : filteredGroups.length === 0 ? (
+              ) : sortedGroups.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-[400px] text-center">
                     <div className="flex flex-col items-center justify-center gap-4 animate-in fade-in zoom-in-95 duration-500">
@@ -202,11 +356,11 @@ export default function FinalHeaderGroupsTable({
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredGroups.map((group, index) => (
+                paginatedGroups.map((group, index) => (
                   <TableRow key={group.group_key} className="group transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
                     <TableCell className="text-center px-2 py-3">
                       <span className="text-[9px] font-black tabular-nums text-slate-300">
-                        {(index + 1).toString().padStart(2, '0')}
+                        {((page - 1) * pageSize + index + 1).toString().padStart(2, '0')}
                       </span>
                     </TableCell>
                     <TableCell className="px-4 py-3">
@@ -280,6 +434,25 @@ export default function FinalHeaderGroupsTable({
               )}
             </TableBody>
           </Table>
+        </div>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between shrink-0 border-t pt-2">
+        <p className="text-[11px] text-muted-foreground">
+          Showing <span className="font-bold text-foreground">{paginatedGroups.length}</span> of{" "}
+          <span className="font-bold text-foreground">{totalItems}</span> groups
+        </p>
+        <div className="flex items-center gap-1.5">
+          <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPage(page - 1)} disabled={page <= 1}>
+             <ArrowLeft className="h-3 w-3" />
+          </Button>
+          <span className="text-[11px] font-bold">
+            {page} / {pageCount}
+          </span>
+          <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPage(page + 1)} disabled={page >= pageCount}>
+             <ChevronRight className="h-3 w-3" />
+          </Button>
         </div>
       </div>
     </div>

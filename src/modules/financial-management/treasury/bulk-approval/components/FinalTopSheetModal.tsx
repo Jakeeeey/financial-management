@@ -387,6 +387,7 @@ export default function FinalTopSheetModal({
   const [lineRemarks, setLineRemarks] = React.useState<LineRemarksMap>({});
   const [pendingRemarksDecision, setPendingRemarksDecision] = React.useState<PendingRemarksDecision>(null);
   const [remarksDialogOpen, setRemarksDialogOpen] = React.useState(false);
+  const [remarksConfirmOpen, setRemarksConfirmOpen] = React.useState(false);
   const [stagedDecisions, setStagedDecisions] = React.useState<Record<string, { target: FinalDecisionTarget; status: FinalHeaderDecisionStatus }>>({});
   const [finalConfirmOpen, setFinalConfirmOpen] = React.useState(false);
   const [selectedAuditeeId, setSelectedAuditeeId] = React.useState<number | null>(null);
@@ -441,6 +442,31 @@ export default function FinalTopSheetModal({
       { approved: 0, concern: 0, rejected: 0 }
     );
   }, [stagedDecisionEntries]);
+
+  const stagedApprovedStats = React.useMemo(() => {
+    if (!data) return { count: 0, amount: 0 };
+
+    const approvedDetailIds = new Set<number>();
+
+    for (const item of stagedDecisionEntries) {
+      if (item.status === "Approved") {
+        const details = getDetailsForTarget(data.details, item.target);
+        for (const d of details) {
+          approvedDetailIds.add(d.expense_id);
+        }
+      }
+    }
+
+    const totalAmount = data.details
+      .filter((d) => approvedDetailIds.has(d.expense_id))
+      .reduce((sum, d) => sum + d.amount, 0);
+
+    return {
+      count: approvedDetailIds.size,
+      amount: totalAmount,
+    };
+  }, [stagedDecisionEntries, data]);
+
   const isApprovedHistory = !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s === "Approved")) && !canSubmitFinalAction;
   const actionDisabledReason = canSubmitFinalAction ? undefined : approvalInfo.description;
 
@@ -700,6 +726,7 @@ export default function FinalTopSheetModal({
       );
       setPendingRemarksDecision(null);
       setRemarksDialogOpen(false);
+      setRemarksConfirmOpen(false);
       await refreshAfterDecision();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to submit final decision.");
@@ -743,7 +770,8 @@ export default function FinalTopSheetModal({
         return;
       }
 
-      await submitItemLevelDecisionBatch(status, affectedDetails);
+      setPendingRemarksDecision({ status, target, affectedDetails });
+      setRemarksConfirmOpen(true);
       return;
     }
 
@@ -1155,8 +1183,6 @@ export default function FinalTopSheetModal({
         employeeId={selectedAuditeeId}
         data={data}
         submitting={submitting}
-        lineRemarks={lineRemarks}
-        onLineRemarkChange={handleLineRemarkChange}
         onSubmitTargetDecision={(status, target) =>
           void submitTargetDecision(status, target)
         }
@@ -1246,8 +1272,85 @@ export default function FinalTopSheetModal({
           if (!nextOpen) setPendingRemarksDecision(null);
         }}
         onLineRemarkChange={handleLineRemarkChange}
-        onSubmit={submitPendingRemarksDecision}
+        onSubmit={() => setRemarksConfirmOpen(true)}
       />
+
+      <Dialog open={remarksConfirmOpen} onOpenChange={setRemarksConfirmOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl">
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 flex items-center gap-3">
+            <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
+              pendingRemarksDecision?.status === "Rejected" 
+                ? "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400" 
+                : "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400"
+            }`}>
+              {pendingRemarksDecision?.status === "Rejected" ? (
+                <XCircle size={20} />
+              ) : (
+                <AlertTriangle size={20} />
+              )}
+            </div>
+            <div className="flex flex-col leading-none">
+              <DialogTitle className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                Confirm {pendingRemarksDecision?.status} Decision
+              </DialogTitle>
+              <DialogDescription className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
+                Final Review Step
+              </DialogDescription>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 pb-6 space-y-5">
+            <div className={`p-4 rounded-2xl border text-xs font-semibold leading-relaxed ${
+              pendingRemarksDecision?.status === "Rejected"
+                ? "bg-rose-50/40 dark:bg-rose-950/10 border-rose-100 dark:border-rose-900/30 text-rose-800 dark:text-rose-300"
+                : "bg-amber-50/40 dark:bg-amber-950/10 border-amber-100 dark:border-amber-900/30 text-amber-800 dark:text-amber-300"
+            }`}>
+              {pendingRemarksDecision?.status === "Rejected" ? (
+                <span>
+                  You are about to <strong>reject</strong> {pendingRemarksDecision?.affectedDetails.length} line item(s). These will be excluded from final disbursement drafts.
+                </span>
+              ) : (
+                <span>
+                  You are about to flag {pendingRemarksDecision?.affectedDetails.length} line item(s) as <strong>With Concern</strong>. This returns them to the encoder for correction.
+                </span>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t dark:border-slate-800">
+              <Button
+                variant="ghost"
+                className="h-9 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-4"
+                onClick={() => setRemarksConfirmOpen(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className={`h-9 rounded-xl text-[10px] font-black uppercase tracking-widest text-white shadow-md dark:shadow-none gap-2 px-5 ${
+                  pendingRemarksDecision?.status === "Rejected"
+                    ? "bg-rose-600 hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-700"
+                    : "bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
+                }`}
+                disabled={submitting}
+                onClick={async () => {
+                  await submitPendingRemarksDecision();
+                }}
+              >
+                {submitting ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <ShieldCheck size={14} />
+                )}
+                <span>Confirm {pendingRemarksDecision?.status === "Rejected" ? "Reject" : "Concern"}</span>
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={finalConfirmOpen} onOpenChange={setFinalConfirmOpen}>
         <DialogContent className="max-w-lg p-0 overflow-hidden border-none dark:border-slate-800 rounded-[2.5rem] shadow-2xl dark:shadow-none">
@@ -1278,14 +1381,39 @@ export default function FinalTopSheetModal({
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Action Scope</span>
                 <Badge variant="outline" className="bg-slate-50 dark:bg-slate-800 text-[10px] font-black px-3 py-1 rounded-lg dark:border-slate-700">
-                  Staged COA/Encoder Batch
+                  {data?.group?.division_name || "Staged COA/Encoder Batch"}
                 </Badge>
+              </div>
+              {data?.group && (
+                <>
+                  <div className="h-px bg-slate-100 dark:bg-slate-800" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Period</span>
+                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                      {formatDate(data.group.period_from)} – {formatDate(data.group.period_to)}
+                    </span>
+                  </div>
+                </>
+              )}
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Staged Actions</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">
+                  {stagedDecisionCount} Staged Decision{stagedDecisionCount !== 1 ? "s" : ""}
+                </span>
               </div>
               <div className="h-px bg-slate-100 dark:bg-slate-800" />
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Decision</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Approved Lines</span>
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">
-                  {stagedDecisionCount} staged decision{stagedDecisionCount !== 1 ? "s" : ""}
+                  {stagedApprovedStats.count} Expense Line{stagedApprovedStats.count !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between bg-emerald-50/50 dark:bg-emerald-950/20 p-3 rounded-2xl border border-emerald-100/50 dark:border-emerald-900/30">
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 dark:text-emerald-400">Total Approved Amount</span>
+                <span className="text-sm font-black text-emerald-800 dark:text-emerald-400 tabular-nums">
+                  {formatCurrency(stagedApprovedStats.amount)}
                 </span>
               </div>
             </div>
