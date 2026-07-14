@@ -771,6 +771,100 @@ export async function buildVoteHistory(params: {
   return rounds;
 }
 
+export async function buildVoteHistoryBulk(params: {
+  drafts: { draftId: number; currentVersion: number; draftStatus: string; divisionId: number }[];
+  divisionIds: number[];
+}) {
+  if (!params.drafts.length) return new Map<number, LogRoundResponse[]>();
+
+  const draftIds = params.drafts.map((d) => d.draftId);
+  const divisionIds = [...new Set(params.divisionIds)];
+
+  const [approversRes, votesRes] = await Promise.all([
+    directusFetch(
+      `/items/disbursement_draft_approver?filter[division_id][_in]=${divisionIds.join(",")}&filter[is_deleted][_eq]=0&fields=approver_id,approver_heirarchy,division_id&limit=-1`
+    ),
+    directusFetch(
+      `/items/disbursement_draft_approvals?filter[draft_id][_in]=${draftIds.join(",")}&fields=id,draft_id,approver_id,status,remarks,version,created_at&sort=version,created_at&limit=-1`
+    ),
+  ]);
+
+  const approverRows = (approversRes.ok ? (approversRes.data as DirectusListResponse<DirectusApproverRow & { division_id: number }>)?.data : []) ?? [];
+  const allVotes = (votesRes.ok ? (votesRes.data as DirectusListResponse<ApprovalVoteRow>)?.data : []) ?? [];
+
+  const allUserIds = new Set<number>();
+  approverRows.forEach(a => allUserIds.add(toNumericId(a.approver_id) ?? 0));
+  allVotes.forEach(v => allUserIds.add(toNumericId(v.approver_id) ?? 0));
+  allUserIds.delete(0);
+
+  const userMap = await fetchUserMap([...allUserIds]);
+  const resultMap = new Map<number, LogRoundResponse[]>();
+
+  for (const draft of params.drafts) {
+    const approvers = approverRows
+      .filter((r) => toNumericId(r.division_id) === draft.divisionId)
+      .map((r) => ({
+        approver_id: toNumericId(r.approver_id) ?? 0,
+        level: toNumber(r.approver_heirarchy, 1),
+      }));
+
+    const levelByApprover = new Map<number, number>();
+    for (const a of approvers) levelByApprover.set(a.approver_id, a.level);
+
+    const votes = allVotes.filter((v) => toNumericId(v.draft_id) === draft.draftId);
+
+    const versionSet = new Set<number>();
+    versionSet.add(draft.currentVersion);
+    for (const v of votes) {
+      versionSet.add(toNumber(v.version, 1));
+    }
+
+    const rounds: LogRoundResponse[] = [...versionSet]
+      .sort((a, b) => a - b)
+      .map((version) => {
+        const roundVotes = votes
+          .filter((v) => toNumber(v.version, 1) === version)
+          .map((v) => {
+            const approverId = toNumericId(v.approver_id) ?? 0;
+            return {
+              approver_id: approverId,
+              name: userMap.get(approverId) ?? `User #${approverId}`,
+              level: levelByApprover.get(approverId) || 1,
+              status: v.status ?? "",
+              remarks: v.remarks ?? null,
+              created_at: v.created_at ?? "",
+            };
+          });
+
+        const isCurrent = version === draft.currentVersion;
+
+        let outcome = "IN_PROGRESS";
+        if (!isCurrent) {
+          if (roundVotes.some(v => v.status === "REJECTED")) outcome = "REJECTED";
+          else if (roundVotes.some(v => v.status === "WITH_CONCERN")) outcome = "WITH_CONCERN";
+          else outcome = "SUPERSEDED";
+        } else {
+          if (draft.draftStatus === "Approved") outcome = "FINAL_APPROVED";
+          else if (draft.draftStatus === "Rejected") outcome = "REJECTED";
+          else if (draft.draftStatus === "With Concern") outcome = "WITH_CONCERN";
+          else if (draft.draftStatus.startsWith("Pending_")) outcome = "IN_PROGRESS";
+          else outcome = "SUBMITTED";
+        }
+
+        return {
+          version,
+          is_current: isCurrent,
+          outcome,
+          votes: roundVotes,
+        };
+      });
+
+    resultMap.set(draft.draftId, rounds);
+  }
+
+  return resultMap;
+}
+
 export async function buildApproversByLevel(params: {
   divisionId: number;
   draftId: number;
