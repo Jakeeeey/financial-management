@@ -172,6 +172,15 @@ function getActionableStatusesForDivision(params: {
   return [...statuses];
 }
 
+type VisibleDraftItem = {
+  id: number;
+  division_id: number;
+  status: string;
+  isPosted: boolean;
+  can_act: boolean;
+  current_tier: number;
+};
+
 async function getVisibleDraftsForDivision(params: {
   divisionId: number;
   context: BulkApprovalContext;
@@ -181,7 +190,7 @@ async function getVisibleDraftsForDivision(params: {
 
   if (!readableStatuses.length) {
     return {
-      drafts: [] as { id: number; division_id: number; status: string; can_act: boolean; current_tier: number }[],
+      drafts: [] as VisibleDraftItem[],
       readableStatuses,
       actionableStatuses,
     };
@@ -190,14 +199,19 @@ async function getVisibleDraftsForDivision(params: {
   const draftQuery = new URLSearchParams({
     filter: JSON.stringify({
       division_id: { _eq: params.divisionId },
-      status: { _in: readableStatuses },
+      _or: [
+        { status: { _in: readableStatuses } },
+        { status: { _eq: "Approved" } },
+        { isPosted: { _eq: 1 } },
+        { isPosted: { _eq: true } },
+      ],
     }),
-    fields: "id,division_id,status",
+    fields: "id,division_id,status,isPosted",
     limit: "-1",
   }).toString();
 
   const draftRes = await directusFetch<
-    DirectusListResponse<{ id: number | string; division_id: number | string; status?: string | null }>
+    DirectusListResponse<{ id: number | string; division_id: number | string; status?: string | null; isPosted?: unknown }>
   >(`/items/disbursement_draft?${draftQuery}`);
 
   const actionableStatusSet = new Set(actionableStatuses);
@@ -208,6 +222,7 @@ async function getVisibleDraftsForDivision(params: {
         const id = toNumericId(draft.id);
         const divisionId = toNumericId(draft.division_id);
         const status = toStringOrNull(draft.status) ?? "";
+        const isPosted = toNumber(draft.isPosted) === 1 || Boolean(draft.isPosted);
 
         if (!id || !divisionId || !status) return null;
 
@@ -215,11 +230,12 @@ async function getVisibleDraftsForDivision(params: {
           id,
           division_id: divisionId,
           status,
-          can_act: actionableStatusSet.has(status),
+          isPosted,
+          can_act: actionableStatusSet.has(status) && !isPosted && status !== "Approved",
           current_tier: parseDraftTier(status),
         };
       })
-      .filter((draft): draft is { id: number; division_id: number; status: string; can_act: boolean; current_tier: number } => Boolean(draft)),
+      .filter((draft): draft is VisibleDraftItem => Boolean(draft)),
     readableStatuses,
     actionableStatuses,
   };
@@ -247,7 +263,7 @@ type LinkedTopSheetPayable = {
 };
 
 type LinkedTopSheetData = {
-  visibleDrafts: { id: number; division_id: number; status: string; can_act: boolean; current_tier: number }[];
+  visibleDrafts: VisibleDraftItem[];
   draftStatuses: string[];
   canAct: boolean;
   currentTier: number;
@@ -454,7 +470,7 @@ async function resolveLinkedTopSheetData(params: {
   const scopedDrafts = visibleDrafts.filter((d) => scopedDraftIds.has(d.id));
   const scopedStatuses = [...new Set(scopedDrafts.map((d) => d.status))];
   const scopedCanAct = scopedDrafts.some((d) => d.can_act);
-  const isApprovedHistory = scopedStatuses.every((s) => s === "Approved") && !scopedCanAct;
+  const isApprovedHistory = scopedDrafts.length > 0 && scopedDrafts.every((d) => d.status === "Approved" || d.isPosted) && !scopedCanAct;
   const scopedTier = scopedDrafts.reduce((max, d) => Math.max(max, d.current_tier), 0);
   const scopedRequired = params.context.maxLevelByDivision[params.divisionId] ?? scopedTier;
 
@@ -474,6 +490,7 @@ async function resolveLinkedTopSheetData(params: {
 
 export async function getExpenseHeaderGroups(params: {
   context: BulkApprovalContext;
+  statusFilter?: "ready" | "completed";
 }): Promise<FinalHeaderGroupResponse[]> {
   const { approverRecords, maxLevelByDivision } = params.context;
   const finalDivisionIds = [...new Set(
@@ -491,6 +508,7 @@ export async function getExpenseHeaderGroups(params: {
       header_ids: number[];
       draft_ids: number[];
       expense_ids: number[];
+      all_draft_rows: { id: number; status: string; isPosted?: boolean }[];
     }
   >();
 
@@ -526,7 +544,7 @@ export async function getExpenseHeaderGroups(params: {
       const relatedDraftIds = [...new Set(payablesForHeader.map((payable) => payable.draft_id))];
       const relatedDrafts = relatedDraftIds
         .map((draftId) => linked.visibleDrafts.find((draft) => draft.id === draftId))
-        .filter((draft): draft is { id: number; division_id: number; status: string; can_act: boolean; current_tier: number } => Boolean(draft));
+        .filter((draft): draft is VisibleDraftItem => Boolean(draft));
 
       if (!relatedDrafts.length) continue;
 
@@ -542,6 +560,12 @@ export async function getExpenseHeaderGroups(params: {
       const requiredLevel = maxLevelByDivision[approvalDivisionId] ?? currentTier;
       const linkedExpenseIds = [...new Set(payablesForHeader.map((payable) => payable.expense_id))];
 
+      const draftSummaryRows = relatedDrafts.map((d) => ({
+        id: d.id,
+        status: d.status,
+        isPosted: d.isPosted,
+      }));
+
       const existing = groupMap.get(key);
 
       if (existing) {
@@ -556,6 +580,7 @@ export async function getExpenseHeaderGroups(params: {
         existing.required_approver_level = Math.max(existing.required_approver_level || 0, requiredLevel);
         existing.is_final_ready = existing.can_act;
         existing.expense_ids = [...new Set([...existing.expense_ids, ...linkedExpenseIds])];
+        existing.all_draft_rows = [...existing.all_draft_rows, ...draftSummaryRows];
         continue;
       }
 
@@ -580,6 +605,7 @@ export async function getExpenseHeaderGroups(params: {
         current_tier: currentTier,
         required_approver_level: requiredLevel,
         expense_ids: linkedExpenseIds,
+        all_draft_rows: draftSummaryRows,
       });
     }
   }
@@ -607,20 +633,33 @@ export async function getExpenseHeaderGroups(params: {
     group.total_amount = groupExpenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
   }
 
-  return [...groupMap.values()]
+  const mappedGroups = [...groupMap.values()]
     .filter((group) => group.expense_count > 0 && group.draft_ids.length > 0)
     .map((group) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { header_ids, expense_ids, ...rest } = group;
-      return rest;
-    })
-    .sort((a, b) => {
-      if (a.can_act !== b.can_act) return a.can_act ? -1 : 1;
-      if (a.period_from === b.period_from) {
-        return String(a.division_name ?? "").localeCompare(String(b.division_name ?? ""));
-      }
-      return b.period_from.localeCompare(a.period_from);
+      const { header_ids, expense_ids, all_draft_rows, ...rest } = group;
+      const isCompleted = all_draft_rows.length > 0 && 
+                          all_draft_rows.every((d) => d.status === "Approved" || Boolean(d.isPosted)) && 
+                          !group.can_act;
+      return {
+        ...rest,
+        is_completed: isCompleted,
+      };
     });
+
+  const filteredGroups = params.statusFilter
+    ? mappedGroups.filter((g) => params.statusFilter === "completed" ? g.is_completed : !g.is_completed)
+    : mappedGroups;
+
+  return filteredGroups.sort((a, b) => {
+    if (a.can_act !== b.can_act) return a.can_act ? -1 : 1;
+    if (a.period_from === b.period_from) {
+      const divCompare = String(a.division_name ?? "").localeCompare(String(b.division_name ?? ""));
+      if (divCompare !== 0) return divCompare;
+      return String(a.group_key).localeCompare(String(b.group_key));
+    }
+    return b.period_from.localeCompare(a.period_from);
+  });
 }
 
 export async function buildFinalTopSheet(params: {
@@ -659,6 +698,8 @@ export async function buildFinalTopSheet(params: {
       draft_statuses: linked.draftStatuses,
       can_act: linked.canAct,
       is_waiting: !linked.canAct,
+      is_finalized: linked.isApprovedHistory,
+      is_completed: linked.isApprovedHistory,
       current_tier: linked.currentTier,
       required_approver_level: linked.requiredApproverLevel,
       current_tier_approvers: [] as { approver_id: number; name: string; voted: boolean }[],
@@ -844,6 +885,7 @@ export async function buildFinalTopSheet(params: {
         can_act: linked.canAct,
         is_waiting: !linked.canAct,
         is_finalized: linked.isApprovedHistory,
+        is_completed: linked.isApprovedHistory,
         current_tier: linked.currentTier,
         required_approver_level: linked.requiredApproverLevel,
         current_tier_approvers: currentTierApprovers,
@@ -869,7 +911,11 @@ export async function handleFinalTopSheetsGetResource(params: {
   context: BulkApprovalContext;
 }): Promise<NextResponse | null> {
   if (params.resource === "final-header-groups") {
-    const groups = await getExpenseHeaderGroups({ context: params.context });
+    const statusFilter = params.searchParams.get("status") as "ready" | "completed" | null;
+    const groups = await getExpenseHeaderGroups({
+      context: params.context,
+      statusFilter: statusFilter || undefined,
+    });
     return jsonResponse({ data: groups });
   }
 
