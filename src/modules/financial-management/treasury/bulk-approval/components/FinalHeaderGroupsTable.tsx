@@ -196,10 +196,10 @@ export default function FinalHeaderGroupsTable({
         return String(a.group_key).localeCompare(String(b.group_key));
       }
       const orderModifier = sortOrder === "asc" ? 1 : -1;
-      if (typeof valA === "string") {
+      if (typeof valA === "string" && typeof valB === "string") {
         return valA.localeCompare(valB) * orderModifier;
       }
-      return (valA < valB ? -1 : 1) * orderModifier;
+      return ((valA as number) < (valB as number) ? -1 : 1) * orderModifier;
     });
   }, [filteredGroups, sortField, sortOrder]);
 
