@@ -161,8 +161,8 @@ export default function FinalHeaderGroupsTable({
 
   const sortedGroups = React.useMemo(() => {
     return [...filteredGroups].sort((a, b) => {
-      let valA: any = "";
-      let valB: any = "";
+      let valA: string | number = "";
+      let valB: string | number = "";
 
       switch (sortField) {
         case "period":
