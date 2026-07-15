@@ -58,7 +58,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { item_tmpl_id, name, list_price, sku, active } = body;
+    const { item_tmpl_id, name, list_price, sku, active, valueIds } = body;
 
     const payload: Record<string, unknown> = {};
     if (item_tmpl_id !== undefined) payload.item_tmpl_id = Number(item_tmpl_id);
@@ -78,6 +78,57 @@ export async function PATCH(
     });
     if (!res.ok) throw new Error(await res.text());
     const json = await res.json();
+
+    // Sync attribute-value relations if provided
+    if (Array.isArray(valueIds) && Number(id) > 0) {
+      const variantId = Number(id);
+
+      // Get existing relations
+      const relParams = new URLSearchParams({
+        "filter[item_variant_id][_eq]": String(variantId),
+        fields: "id,item_attribute_value_id",
+      });
+      const relRes = await fetch(
+        `${DIRECTUS_URL}/items/item_attribute_value_item_variant_rel?${relParams.toString()}`,
+        { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+      );
+      let existingRels: Record<string, unknown>[] = [];
+      if (relRes.ok) {
+        const relJson = await relRes.json();
+        existingRels = (relJson.data || []) as Record<string, unknown>[];
+      }
+
+      const existingValueIds = new Set(
+        existingRels.map((r) => r.item_attribute_value_id as number)
+      );
+      const newValueIds = new Set(valueIds.filter((v: unknown) => typeof v === "number"));
+
+      // Delete removed relations
+      for (const rel of existingRels) {
+        if (!newValueIds.has(rel.item_attribute_value_id as number)) {
+          await fetch(
+            `${DIRECTUS_URL}/items/item_attribute_value_item_variant_rel/${rel.id}`,
+            { method: "DELETE", headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+          ).catch(() => {});
+        }
+      }
+
+      // Create new relations
+      for (const valueId of newValueIds) {
+        if (!existingValueIds.has(valueId)) {
+          await fetch(`${DIRECTUS_URL}/items/item_attribute_value_item_variant_rel`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ item_variant_id: variantId, item_attribute_value_id: valueId }),
+            cache: "no-store",
+          }).catch(() => {});
+        }
+      }
+    }
+
     return NextResponse.json({ data: json.data });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";

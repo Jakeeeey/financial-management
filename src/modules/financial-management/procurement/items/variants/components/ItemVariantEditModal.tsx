@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,13 +14,26 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
 import { getVariantById, updateVariant, listAttributes, listAttributeValues } from "../providers/item-variant-service";
 import type { ItemAttribute, ItemAttributeValue } from "../utils/types";
 
@@ -39,14 +52,15 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
   const [active, setActive] = useState(true);
   const [attributes, setAttributes] = useState<ItemAttribute[]>([]);
   const [attributeValues, setAttributeValues] = useState<ItemAttributeValue[]>([]);
-  const [selectedValueIds, setSelectedValueIds] = useState<number[]>([]);
+  const [selectedAttrs, setSelectedAttrs] = useState<{ attrId: number; valueId: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [attrOpen, setAttrOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    setSelectedValueIds([]);
+    setSelectedAttrs([]);
 
     Promise.all([
       getVariantById(id),
@@ -55,16 +69,23 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
     ])
       .then(([variantRes, attrRes, avRes]) => {
         const v = variantRes.data;
+        const attrs = (attrRes as { data: ItemAttribute[] }).data || [];
+        const avs = (avRes as { data: ItemAttributeValue[] }).data || [];
         setTemplateName(v._template_name ?? "");
         setName(v.name || "");
         setListPrice(v.list_price != null ? String(v.list_price) : "");
         setSku(v.sku || "");
         setActive(v.active !== false && v.active !== 0);
-        const attrs = (attrRes as { data: ItemAttribute[] }).data || [];
-        const avs = (avRes as { data: ItemAttributeValue[] }).data || [];
         setAttributes(attrs);
         setAttributeValues(avs);
-        setSelectedValueIds((v.valueIds || []) as number[]);
+        const existing = (v.valueIds || []) as number[];
+        const initial = existing
+          .map((vid) => {
+            const av = avs.find((a) => a.id === vid);
+            return av ? { attrId: Number(av.attribute_id), valueId: vid } : null;
+          })
+          .filter((x): x is { attrId: number; valueId: number } => x !== null && x.attrId > 0);
+        setSelectedAttrs(initial);
       })
       .catch((err) => {
         toast.error(err instanceof Error ? err.message : "Failed to load variant");
@@ -73,32 +94,34 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
       .finally(() => setLoading(false));
   }, [id, open, onOpenChange]);
 
+  const selectedValueIds = useCallback(
+    () => selectedAttrs.filter((a) => a.valueId > 0).map((a) => a.valueId),
+    [selectedAttrs]
+  );
+
   // Auto-generate variant name from template + selected attribute values
   useEffect(() => {
     if (!templateName) return;
-    const vals = selectedValueIds
-      .map((vid) => attributeValues.find((av) => av.id === vid))
+    const vals = selectedAttrs
+      .map((a) => attributeValues.find((av) => av.id === a.valueId))
       .filter((v): v is ItemAttributeValue => v !== undefined)
       .map((v) => v.name);
     setName([templateName, ...vals].filter(Boolean).join(" ").trim());
-  }, [templateName, selectedValueIds, attributeValues]);
+  }, [templateName, selectedAttrs, attributeValues]);
 
-  function handleValueSelect(attrId: number, valueId: number) {
-    setSelectedValueIds((prev) => {
-      const filtered = prev.filter((vid) => {
-        const av = attributeValues.find((v) => v.id === vid);
-        return Number(av?.attribute_id) !== attrId;
-      });
-      return valueId ? [...filtered, valueId] : filtered;
-    });
+  function handleAddAttribute(attrId: number) {
+    setSelectedAttrs((prev) => [...prev, { attrId, valueId: 0 }]);
+    setAttrOpen(false);
   }
 
-  function getSelectedValueId(attrId: number): number {
-    const found = selectedValueIds.find((vid) => {
-      const av = attributeValues.find((v) => v.id === vid);
-      return Number(av?.attribute_id) === attrId;
-    });
-    return found ?? 0;
+  function handleValueChange(attrId: number, valueId: number) {
+    setSelectedAttrs((prev) =>
+      prev.map((a) => (a.attrId === attrId ? { ...a, valueId } : a))
+    );
+  }
+
+  function handleRemoveAttribute(attrId: number) {
+    setSelectedAttrs((prev) => prev.filter((a) => a.attrId !== attrId));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -115,6 +138,7 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
         list_price: listPrice ? Number(listPrice) : null,
         sku: sku.trim() || null,
         active,
+        valueIds: selectedValueIds(),
       });
       toast.success("Variant updated");
       onSaved();
@@ -125,6 +149,10 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
       setSaving(false);
     }
   }
+
+  const unselectedAttrs = attributes.filter(
+    (a) => !selectedAttrs.some((sa) => sa.attrId === a.id)
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -184,37 +212,84 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
               />
             </div>
 
-            {attributes.map((attr) => {
-              const options = attributeValues.filter(
-                (av) => Number(av.attribute_id) === attr.id
-              );
-              return (
-                <div key={attr.id} className="space-y-2">
-                  <Label>{attr.name} (optional)</Label>
-                    <Select
-                      value={String(getSelectedValueId(attr.id))}
-                      onValueChange={(val) => handleValueSelect(attr.id, Number(val))}
-                    >
-                      <SelectTrigger className="w-full sm:max-w-md min-w-0 overflow-hidden cursor-not-allowed opacity-70" disabled>
-                        <SelectValue placeholder="-- None --" />
-                      </SelectTrigger>
-                      <SelectContent className="!max-h-[200px] overflow-y-auto">
-                        <SelectItem value="0">-- None --</SelectItem>
-                      {options.map((opt) => (
-                        <SelectItem key={opt.id} value={String(opt.id)}>
-                          <span className="truncate max-w-[240px] inline-block">
-                            {opt.name}
-                            {opt.extra_price && Number(opt.extra_price) > 0
-                              ? ` ( +${opt.extra_price} )`
-                              : ""}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              );
-            })}
+            <div className="space-y-2">
+              <Label>Attribute Assignments</Label>
+              <div className="space-y-3">
+                {selectedAttrs.map((sa) => {
+                  const attr = attributes.find((a) => a.id === sa.attrId);
+                  const options = attributeValues.filter(
+                    (av) => Number(av.attribute_id) === sa.attrId
+                  );
+                  return (
+                    <div key={sa.attrId} className="flex items-end gap-2">
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <p className="text-xs text-muted-foreground truncate">{attr?.name || "Unknown"}</p>
+                        <Select
+                          value={String(sa.valueId)}
+                          onValueChange={(val) => handleValueChange(sa.attrId, Number(val))}
+                        >
+                          <SelectTrigger className="w-full min-w-0 overflow-hidden">
+                            <SelectValue placeholder="Select value..." />
+                          </SelectTrigger>
+                          <SelectContent className="!max-h-[200px] overflow-y-auto">
+                            <SelectItem value="0">-- None --</SelectItem>
+                            {options.map((opt) => (
+                              <SelectItem key={opt.id} value={String(opt.id)}>
+                                <span className="truncate max-w-[200px] inline-block">
+                                  {opt.name}
+                                  {opt.extra_price && Number(opt.extra_price) > 0
+                                    ? ` ( +${opt.extra_price} )`
+                                    : ""}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveAttribute(sa.attrId)}
+                        className="shrink-0 h-10 w-10"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+
+                {unselectedAttrs.length > 0 && (
+                  <Popover open={attrOpen} onOpenChange={setAttrOpen}>
+                    <PopoverTrigger asChild>
+                      <Button type="button" variant="outline" size="sm" className="mt-1">
+                        <Plus className="mr-1 h-4 w-4" />
+                        Add Attribute
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-64" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search attribute..." className="h-9" />
+                        <CommandList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                          <CommandEmpty>No results</CommandEmpty>
+                          <CommandGroup>
+                            {unselectedAttrs.map((attr) => (
+                              <CommandItem
+                                key={attr.id}
+                                value={attr.name || ""}
+                                onSelect={() => handleAddAttribute(attr.id)}
+                              >
+                                <span className="truncate min-w-0">{attr.name}</span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                )}
+              </div>
+            </div>
 
             <div className="space-y-2">
               <Label>Status</Label>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Check, ChevronDown, Loader2 } from "lucide-react";
+import { Check, ChevronDown, Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createVariant, listTemplatesLookup, listAttributes, listAttributeValues } from "../providers/item-variant-service";
 import type { ItemTemplateLookup, ItemAttribute, ItemAttributeValue } from "../utils/types";
@@ -52,9 +52,10 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
   const [templates, setTemplates] = useState<ItemTemplateLookup[]>([]);
   const [attributes, setAttributes] = useState<ItemAttribute[]>([]);
   const [attributeValues, setAttributeValues] = useState<ItemAttributeValue[]>([]);
-  const [selectedValueIds, setSelectedValueIds] = useState<number[]>([]);
+  const [selectedAttrs, setSelectedAttrs] = useState<{ attrId: number; valueId: number }[]>([]);
   const [saving, setSaving] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [attrOpen, setAttrOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -62,7 +63,7 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
     setTemplateName("");
     setName("");
     setListPrice("");
-    setSelectedValueIds([]);
+    setSelectedAttrs([]);
     listTemplatesLookup()
       .then((res) => setTemplates(res.data || []))
       .catch(() => toast.error("Failed to load templates"));
@@ -74,6 +75,11 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
       .catch(() => {});
   }, [open]);
 
+  const selectedValueIds = useCallback(
+    () => selectedAttrs.filter((a) => a.valueId > 0).map((a) => a.valueId),
+    [selectedAttrs]
+  );
+
   // Auto-generate variant name from template + selected attribute values
   useEffect(() => {
     const tpl = templates.find((t) => String(t.id) === templateId);
@@ -81,29 +87,26 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
       setName("");
       return;
     }
-    const vals = selectedValueIds
-      .map((vid) => attributeValues.find((av) => av.id === vid))
+    const vals = selectedAttrs
+      .map((a) => attributeValues.find((av) => av.id === a.valueId))
       .filter((v): v is ItemAttributeValue => v !== undefined)
       .map((v) => v.name);
     setName([tpl.name, ...vals].filter(Boolean).join(" ").trim());
-  }, [templateId, selectedValueIds, templates, attributeValues]);
+  }, [templateId, selectedAttrs, templates, attributeValues]);
 
-  function handleValueSelect(attrId: number, valueId: number) {
-    setSelectedValueIds((prev) => {
-      const filtered = prev.filter((vid) => {
-        const av = attributeValues.find((v) => v.id === vid);
-        return Number(av?.attribute_id) !== attrId;
-      });
-      return valueId ? [...filtered, valueId] : filtered;
-    });
+  function handleAddAttribute(attrId: number) {
+    setSelectedAttrs((prev) => [...prev, { attrId, valueId: 0 }]);
+    setAttrOpen(false);
   }
 
-  function getSelectedValueId(attrId: number): number {
-    const found = selectedValueIds.find((vid) => {
-      const av = attributeValues.find((v) => v.id === vid);
-      return Number(av?.attribute_id) === attrId;
-    });
-    return found ?? 0;
+  function handleValueChange(attrId: number, valueId: number) {
+    setSelectedAttrs((prev) =>
+      prev.map((a) => (a.attrId === attrId ? { ...a, valueId } : a))
+    );
+  }
+
+  function handleRemoveAttribute(attrId: number) {
+    setSelectedAttrs((prev) => prev.filter((a) => a.attrId !== attrId));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -123,7 +126,7 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
         item_tmpl_id: Number(templateId),
         name: name.trim(),
         list_price: listPrice ? Number(listPrice) : null,
-        valueIds: selectedValueIds.filter(Boolean),
+        valueIds: selectedValueIds(),
       });
       toast.success("Variant created");
       onSaved();
@@ -134,6 +137,10 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
       setSaving(false);
     }
   }
+
+  const unselectedAttrs = attributes.filter(
+    (a) => !selectedAttrs.some((sa) => sa.attrId === a.id)
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -171,7 +178,7 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
                           onSelect={() => {
                             setTemplateId(String(t.id));
                             setTemplateName(t.name || "");
-                            setSelectedValueIds([]);
+                            setSelectedAttrs([]);
                             setTemplateOpen(false);
                           }}
                           className="w-full"
@@ -217,37 +224,84 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
             />
           </div>
 
-          {attributes.map((attr) => {
-            const options = attributeValues.filter(
-              (av) => Number(av.attribute_id) === attr.id
-            );
-            return (
-              <div key={attr.id} className="space-y-2">
-                <Label>{attr.name} (optional)</Label>
-                   <Select
-                  value={String(getSelectedValueId(attr.id))}
-                  onValueChange={(val) => handleValueSelect(attr.id, Number(val))}
-                >
-                  <SelectTrigger className="w-full sm:max-w-md min-w-0 overflow-hidden">
-                    <SelectValue placeholder="-- None --" />
-                  </SelectTrigger>
-                  <SelectContent className="!max-h-[200px] overflow-y-auto">
-                    <SelectItem value="0">-- None --</SelectItem>
-                    {options.map((opt) => (
-                      <SelectItem key={opt.id} value={String(opt.id)}>
-                        <span className="truncate max-w-[240px] inline-block">
-                          {opt.name}
-                          {opt.extra_price && Number(opt.extra_price) > 0
-                            ? ` ( +${opt.extra_price} )`
-                            : ""}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            );
-          })}
+          <div className="space-y-2">
+            <Label>Attribute Assignments</Label>
+            <div className="space-y-3">
+              {selectedAttrs.map((sa) => {
+                const attr = attributes.find((a) => a.id === sa.attrId);
+                const options = attributeValues.filter(
+                  (av) => Number(av.attribute_id) === sa.attrId
+                );
+                return (
+                  <div key={sa.attrId} className="flex items-end gap-2">
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <p className="text-xs text-muted-foreground truncate">{attr?.name || "Unknown"}</p>
+                      <Select
+                        value={String(sa.valueId)}
+                        onValueChange={(val) => handleValueChange(sa.attrId, Number(val))}
+                      >
+                        <SelectTrigger className="w-full min-w-0 overflow-hidden">
+                          <SelectValue placeholder="Select value..." />
+                        </SelectTrigger>
+                        <SelectContent className="!max-h-[200px] overflow-y-auto">
+                          <SelectItem value="0">-- None --</SelectItem>
+                          {options.map((opt) => (
+                            <SelectItem key={opt.id} value={String(opt.id)}>
+                              <span className="truncate max-w-[200px] inline-block">
+                                {opt.name}
+                                {opt.extra_price && Number(opt.extra_price) > 0
+                                  ? ` ( +${opt.extra_price} )`
+                                  : ""}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemoveAttribute(sa.attrId)}
+                      className="shrink-0 h-10 w-10"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+
+              {unselectedAttrs.length > 0 && (
+                <Popover open={attrOpen} onOpenChange={setAttrOpen}>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="mt-1">
+                      <Plus className="mr-1 h-4 w-4" />
+                      Add Attribute
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0 w-64" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search attribute..." className="h-9" />
+                      <CommandList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                        <CommandEmpty>No results</CommandEmpty>
+                        <CommandGroup>
+                          {unselectedAttrs.map((attr) => (
+                            <CommandItem
+                              key={attr.id}
+                              value={attr.name || ""}
+                              onSelect={() => handleAddAttribute(attr.id)}
+                            >
+                              <span className="truncate min-w-0">{attr.name}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
+          </div>
 
           <DialogFooter>
             <DialogClose asChild>
