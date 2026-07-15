@@ -21,7 +21,7 @@ export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
       <CardContent className="p-4 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold">{master.procurement_no}</h2>
+            <h2 className="text-xl font-semibold truncate max-w-[300px]">{master.procurement_no}</h2>
             <div className="text-sm text-muted-foreground">
               Created {formatDate(master.created_at)}
               {master.encoder_name && ` by ${master.encoder_name}`}
@@ -33,7 +33,7 @@ export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
           <div>
             <span className="text-muted-foreground block">Supplier</span>
-            <span className="font-medium">{master.supplier_name ?? `#${master.supplier_id}`}</span>
+            <span className="font-medium truncate block max-w-[240px]">{master.supplier_name ?? `#${master.supplier_id}`}</span>
           </div>
           <div>
             <span className="text-muted-foreground block">Lead Date</span>
@@ -45,7 +45,7 @@ export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
           </div>
           <div>
             <span className="text-muted-foreground block">Total Amount</span>
-            <span className="block font-mono font-semibold tabular-nums">{formatPHP(displayTotal)}</span>
+            <span className="block font-mono font-semibold tabular-nums max-w-[180px] truncate">{formatPHP(displayTotal)}</span>
           </div>
           {master.department_name && (
             <div>

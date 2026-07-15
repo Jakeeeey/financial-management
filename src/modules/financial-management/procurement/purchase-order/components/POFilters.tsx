@@ -20,14 +20,14 @@ interface POFiltersProps {
 
 export function POFilters({ search, onSearchChange, status, onStatusChange }: POFiltersProps) {
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <div className="flex flex-col lg:flex-row items-end gap-3">
       <div className="w-full sm:w-72">
         <label className="text-xs font-medium text-muted-foreground mb-1 block">PO No.</label>
         <Input
           placeholder="Search by PO number..."
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="h-9"
+          className="h-9 w-full"
         />
       </div>
       <div className="w-full sm:w-44">
@@ -36,7 +36,7 @@ export function POFilters({ search, onSearchChange, status, onStatusChange }: PO
           <SelectTrigger className="h-9">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
             {STATUS_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}
