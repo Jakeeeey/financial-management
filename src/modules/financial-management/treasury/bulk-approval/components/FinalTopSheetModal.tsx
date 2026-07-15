@@ -1113,6 +1113,7 @@ export default function FinalTopSheetModal({
                       Object.entries(stagedDecisions).map(([k, v]) => [k, v.status])
                     )}
                     onOpenAuditeeDetails={handleOpenAuditeeDetails}
+                    onToggleDecision={handleToggleDecision}
                     onSubmitStaged={handleInitiateFinalSubmit}
                   />
                 </div>

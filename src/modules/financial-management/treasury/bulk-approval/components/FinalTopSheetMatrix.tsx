@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 
 import type {
+  FinalDecisionTarget,
   FinalHeaderDecisionStatus,
   FinalTopSheetCellResponse,
   FinalTopSheetResponse,
@@ -35,6 +36,10 @@ type Props = {
   readOnlyReason?: string;
   stagedDecisions: Record<string, FinalHeaderDecisionStatus>;
   onOpenAuditeeDetails: (employeeId: number, headerId?: number) => void;
+  onToggleDecision: (
+    status: FinalHeaderDecisionStatus,
+    target: FinalDecisionTarget,
+  ) => void;
   onSubmitStaged: () => void | Promise<void>;
 };
 
@@ -73,7 +78,6 @@ function buildEncoderTotals(data: FinalTopSheetResponse) {
   return totals;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ActionButtonSet({
   disabled,
   label,
@@ -113,6 +117,7 @@ export default function FinalTopSheetMatrix({
   readOnlyReason,
   stagedDecisions,
   onOpenAuditeeDetails,
+  onToggleDecision,
   onSubmitStaged,
 }: Props) {
   const encoderTotals = React.useMemo(() => buildEncoderTotals(data), [data]);
@@ -402,7 +407,7 @@ export default function FinalTopSheetMatrix({
                       </p>
                     </TableCell>
  
-                    {/* <TableCell
+                    <TableCell
                       className={`sticky right-0 z-20 backdrop-blur-sm px-3 py-1.5 border-b dark:border-slate-800 transition-all ${
                         stagedDecisions[
                           salesman.header_id
