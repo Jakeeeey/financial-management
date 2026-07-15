@@ -58,6 +58,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   employeeId: number | null;
+  headerId?: number | null;
   data: FinalTopSheetResponse | null;
   submitting: boolean;
   onSubmitTargetDecision: (
@@ -85,6 +86,7 @@ export default function AuditeeDetailSplitModal({
   open,
   onOpenChange,
   employeeId,
+  headerId,
   data,
   submitting,
   onSubmitTargetDecision,
@@ -117,8 +119,12 @@ export default function AuditeeDetailSplitModal({
 
   const salesman = React.useMemo(() => {
     if (!data || employeeId === null) return null;
-    return data.salesmen.find((s: FinalTopSheetSalesmanResponse) => s.employee_id === employeeId) ?? null;
-  }, [data, employeeId]);
+    return data.salesmen.find((s: FinalTopSheetSalesmanResponse) => {
+      if (s.employee_id !== employeeId) return false;
+      if (headerId !== undefined && headerId !== null && s.header_id !== headerId) return false;
+      return true;
+    }) ?? null;
+  }, [data, employeeId, headerId]);
 
   const effectiveCurrentTier = React.useMemo(() => {
     return salesman?.current_tier !== undefined ? salesman.current_tier : (data?.group?.current_tier ?? 1);
@@ -158,11 +164,13 @@ export default function AuditeeDetailSplitModal({
 
   const isApprovedHistory = React.useMemo(() => {
     const statuses = salesman?.draft_statuses ?? data?.group?.draft_statuses;
-    return (
-      Array.isArray(statuses) &&
-      statuses.length > 0 &&
-      statuses.every((s) => s.toLowerCase() === "approved")
-    );
+    if (!Array.isArray(statuses) || statuses.length === 0) return false;
+    const allTerminal = statuses.every((s) => {
+      const lower = s.toLowerCase();
+      return lower === "approved" || lower === "rejected" || lower === "posted";
+    });
+    const allRejected = statuses.every((s) => s.toLowerCase() === "rejected");
+    return allTerminal && !allRejected;
   }, [salesman, data]);
 
   const isRejectedHistory = React.useMemo(() => {
@@ -174,7 +182,14 @@ export default function AuditeeDetailSplitModal({
     return statuses.every((s) => s.toLowerCase() === "rejected");
   }, [salesman, data]);
 
-  const isTerminalHistory = isApprovedHistory || isRejectedHistory;
+  const isTerminalHistory = React.useMemo(() => {
+    const statuses = salesman?.draft_statuses ?? data?.group?.draft_statuses;
+    if (!Array.isArray(statuses) || statuses.length === 0) return false;
+    return statuses.every((s) => {
+      const lower = s.toLowerCase();
+      return lower === "approved" || lower === "rejected" || lower === "posted";
+    });
+  }, [salesman, data]);
 
   const canAct = Boolean(data?.group?.can_act) && !isTerminalHistory;
 
@@ -212,8 +227,12 @@ export default function AuditeeDetailSplitModal({
 
   const auditeeDetails = React.useMemo<FinalTopSheetDetail[]>(() => {
     if (!data || employeeId === null) return [];
-    return data.details.filter((d: FinalTopSheetDetail) => d.employee_id === employeeId);
-  }, [data, employeeId]);
+    return data.details.filter((d: FinalTopSheetDetail) => {
+      if (d.employee_id !== employeeId) return false;
+      if (headerId !== undefined && headerId !== null && d.header_id !== headerId) return false;
+      return true;
+    });
+  }, [data, employeeId, headerId]);
 
   const hasUnstagedActiveLines = React.useMemo(() => {
     const activeLines = auditeeDetails.filter(
@@ -248,6 +267,12 @@ export default function AuditeeDetailSplitModal({
     return approvers
       .filter((a) => !a.voted)
       .map((a) => a.name);
+  }, [salesman, data]);
+
+  const nextApproverNames = React.useMemo(() => {
+    const approvers = salesman?.next_tier_approvers ?? data?.group?.next_tier_approvers;
+    if (!approvers) return [];
+    return approvers.map((a: { name: string }) => a.name);
   }, [salesman, data]);
 
   const attachments = React.useMemo(() => {
@@ -296,8 +321,40 @@ export default function AuditeeDetailSplitModal({
   }, [auditeeDetails, data, employeeId]);
 
   const coaGroups = React.useMemo(() => groupByCoa(auditeeDetails), [auditeeDetails]);
-  const grandTotal = auditeeDetails.reduce((sum, d) => sum + d.amount, 0);
-  const salesmantName = salesman?.salesman_name ?? `Employee #${employeeId}`;
+  const grandTotal = React.useMemo(() => {
+    return auditeeDetails
+      .filter((d) => {
+        const s = (d.status ?? "").toLowerCase();
+        return !s.includes("concern") && s !== "rejected";
+      })
+      .reduce((sum, d) => sum + d.amount, 0);
+  }, [auditeeDetails]);
+
+  // For the final-approval confirmation modal, only count expenses belonging to the
+  // currently actionable draft tier — a single encoder may have expenses across
+  // multiple drafts at different tiers (e.g. Pending_L4 and Pending_L2).
+  const actionableDetails = React.useMemo(() => {
+    const tier = salesman?.current_tier;
+    if (tier === undefined || tier === 0) return auditeeDetails;
+    const hasMixedTiers = auditeeDetails.some(
+      (d) => d.draft_tier !== undefined && d.draft_tier !== tier
+    );
+    if (!hasMixedTiers) return auditeeDetails;
+    return auditeeDetails.filter((d) => d.draft_tier === undefined || d.draft_tier === tier);
+  }, [auditeeDetails, salesman]);
+
+  const actionableTotal = React.useMemo(() => {
+    return actionableDetails
+      .filter((d) => {
+        const s = (d.status ?? "").toLowerCase();
+        return !s.includes("concern") && s !== "rejected";
+      })
+      .reduce((sum, d) => sum + d.amount, 0);
+  }, [actionableDetails]);
+
+  const salesmantName = salesman?.header_id
+    ? `${salesman.salesman_name} (Header #${salesman.header_id})`
+    : salesman?.salesman_name ?? `Employee #${employeeId}`;
 
   if (!open) return null;
 
@@ -311,6 +368,15 @@ export default function AuditeeDetailSplitModal({
         <DialogDescription className="sr-only">
           Detailed COA breakdown and supporting evidence for {salesmantName}
         </DialogDescription>
+
+        {submitting && (
+          <div className="absolute inset-0 z-[250] bg-slate-950/70 backdrop-blur-sm flex flex-col items-center justify-center gap-3 rounded-[2.5rem] animate-in fade-in duration-300">
+            <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
+            <p className="text-xs font-semibold text-white/95 tracking-wide">
+              Submitting...
+            </p>
+          </div>
+        )}
 
         {/* LEFT: Evidence Registry */}
         {showEvidence && attachments.length > 0 && (
@@ -469,7 +535,15 @@ export default function AuditeeDetailSplitModal({
               </div>
               <div>
                 <p className="text-[8px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Expense Lines</p>
-                <p className="font-black text-xs">{auditeeDetails.length}</p>
+                <p className="font-black text-xs">
+                  {actionableDetails.length}
+                  {actionableDetails.length < auditeeDetails.length && (
+                    <span className="ml-1.5 text-[9px] font-black text-amber-600 dark:text-amber-400">/{auditeeDetails.length}</span>
+                  )}
+                </p>
+                {actionableDetails.length < auditeeDetails.length && (
+                  <p className="text-[8px] text-amber-600 dark:text-amber-400 font-bold mt-0.5">{auditeeDetails.length - actionableDetails.length} pending lower tier</p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3 pl-4 border-l">
@@ -478,7 +552,7 @@ export default function AuditeeDetailSplitModal({
               </div>
               <div>
                 <p className="text-[8px] uppercase font-black text-muted-foreground tracking-widest leading-none mb-1">Total Amount</p>
-                <p className="font-black text-xs text-emerald-700">{formatCurrency(grandTotal)}</p>
+                <p className="font-black text-xs text-emerald-700">{formatCurrency(actionableTotal)}</p>
               </div>
             </div>
           </div>
@@ -520,7 +594,7 @@ export default function AuditeeDetailSplitModal({
                     ) : (
                       <>
                         Since the draft is currently at Level <strong className="text-slate-900 dark:text-white font-bold">{effectiveCurrentTier}</strong>
-                        {pendingApproverNames.length > 0 && (
+                        {pendingApproverNames.length > 0 ? (
                           <>
                             {" "}
                             (waiting for approver:{" "}
@@ -529,6 +603,17 @@ export default function AuditeeDetailSplitModal({
                             </strong>
                             )
                           </>
+                        ) : (
+                          nextApproverNames.length > 0 && (
+                            <>
+                              {" "}
+                              (processing to next tier:{" "}
+                              <strong className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg font-black border border-emerald-500/20 shadow-sm">
+                                {nextApproverNames.join(", ")}
+                              </strong>
+                              )
+                            </>
+                          )
                         )}
                         , action items, staging buttons, and feedback updates are locked. They will become actionable once the draft reaches the required final approval tier (Level {data?.group?.required_approver_level ?? 4}).
                       </>
@@ -559,7 +644,10 @@ export default function AuditeeDetailSplitModal({
               <div className="space-y-6">
                 {coaGroups.map(group => {
                   const coaTotal = group.items
-                    .filter(i => !i.status.toLowerCase().includes("concern"))
+                    .filter(i => {
+                      const s = (i.status ?? "").toLowerCase();
+                      return !s.includes("concern") && s !== "rejected";
+                    })
                     .reduce((s, i) => s + i.amount, 0);
                   return (
                     <div key={group.coa_id} className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
@@ -603,6 +691,15 @@ export default function AuditeeDetailSplitModal({
                           {group.items.map((item, idx) => {
                             const isAlreadyCulled = ["with concern", "rejected"].includes(item.status.toLowerCase());
                             const stagedStatus = stagedDecisions?.[`expense:${item.expense_id}`]?.status;
+                            const isLowerTierLocked = (
+                              item.draft_tier !== undefined &&
+                              item.draft_tier > 0 &&
+                              salesman?.current_tier !== undefined &&
+                              salesman.current_tier > 0 &&
+                              item.draft_tier !== salesman.current_tier
+                            );
+                            const isFinalized = item.draft_tier === 0;
+                            const itemTier = item.draft_tier !== undefined ? item.draft_tier : effectiveCurrentTier;
                             return (
                             <TableRow key={item.expense_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
                               <TableCell className="py-3 pl-5 text-[9px] font-black text-slate-300 dark:text-slate-600 italic">{String(idx + 1).padStart(2, "0")}</TableCell>
@@ -624,7 +721,7 @@ export default function AuditeeDetailSplitModal({
                                           ? "bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/50"
                                           : item.status.toLowerCase().includes("concern")
                                           ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/50"
-                                          : effectiveCurrentTier === 1
+                                          : itemTier === 1
                                           ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50"
                                           : "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50"
                                       }`}
@@ -633,14 +730,19 @@ export default function AuditeeDetailSplitModal({
                                         ? "Rejected"
                                         : item.status.toLowerCase().includes("concern")
                                         ? "With Concern"
-                                        : effectiveCurrentTier === 1
+                                        : itemTier === 1
                                         ? "Submitted"
-                                        : `L${Math.max(1, effectiveCurrentTier - 1)} Approved (${effectivePrevTierApproverNames.length ? effectivePrevTierApproverNames.join(', ') : 'System'})`}
+                                        : `L${Math.max(1, itemTier - 1)} Approved (${effectivePrevTierApproverNames.length ? effectivePrevTierApproverNames.join(', ') : 'System'})`}
                                     </Badge>
                                   </div>
-                                  {canAct && !isAlreadyCulled && !stagedStatus && (
+                                  {canAct && !isAlreadyCulled && !stagedStatus && !isLowerTierLocked && !isFinalized && (
                                     <Badge className="text-[8px] font-black border rounded-lg px-2 bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800 uppercase shadow-sm">
                                       Pending Your Action
+                                    </Badge>
+                                  )}
+                                  {isLowerTierLocked && (
+                                    <Badge className="text-[8px] font-black border rounded-lg px-2 bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800 uppercase shadow-sm">
+                                      Pending Lower Tier
                                     </Badge>
                                   )}
                                   {stagedStatus === "Approved" && (
@@ -661,48 +763,54 @@ export default function AuditeeDetailSplitModal({
                               </TableCell>
                               <TableCell className="py-3 text-center">
                                 <div className="flex items-center justify-center gap-1">
-                                  {canAct ? (
+                                  {canAct && !isLowerTierLocked && !isFinalized && (
                                     <>
-                                      <Button 
-                                        type="button" 
-                                        size="icon" 
-                                        className={`h-7 w-7 rounded-lg ${stagedStatus === 'Approved' ? 'bg-emerald-500 text-white shadow-md' : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white'}`} 
-                                        disabled={submitting} 
-                                        onClick={() => {
-                                          if (isAlreadyCulled) {
-                                            void onSubmitTargetDecision("Approved", { scope: "expense_ids", expense_ids: [item.expense_id] });
-                                          } else {
-                                            onToggleDecision?.("Approved", { scope: "expense_ids", expense_ids: [item.expense_id] });
-                                          }
-                                        }} 
-                                        title="Approve"
-                                      >
-                                        <CheckCircle2 size={13} />
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        size="icon"
-                                        variant="outline"
-                                        className={`h-7 w-7 rounded-lg ${item.status.toLowerCase().includes('concern') ? 'bg-amber-500 text-white border-amber-500 shadow-md' : 'border-amber-200 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20'}`}
-                                        disabled={submitting}
-                                        onClick={() => void onSubmitTargetDecision("With Concern", { scope: "expense_ids", expense_ids: [item.expense_id] })}
-                                        title="Concern"
-                                      >
-                                        <AlertTriangle size={12} />
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        size="icon"
-                                        variant="outline"
-                                        className={`h-7 w-7 rounded-lg ${item.status.toLowerCase() === 'rejected' ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'border-rose-200 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20'}`}
-                                        disabled={submitting}
-                                        onClick={() => void onSubmitTargetDecision("Rejected", { scope: "expense_ids", expense_ids: [item.expense_id] })}
-                                        title="Reject"
-                                      >
-                                        <XCircle size={13} />
-                                      </Button>
+                                      {!isAlreadyCulled && (
+                                        <>
+                                          <Button 
+                                            type="button" 
+                                            size="icon" 
+                                            className={`h-7 w-7 rounded-lg ${stagedStatus === 'Approved' ? 'bg-emerald-500 text-white shadow-md' : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white'}`} 
+                                            disabled={submitting} 
+                                            onClick={() => {
+                                              if (isAlreadyCulled) {
+                                                void onSubmitTargetDecision("Approved", { scope: "expense_ids", expense_ids: [item.expense_id] });
+                                              } else {
+                                                onToggleDecision?.("Approved", { scope: "expense_ids", expense_ids: [item.expense_id] });
+                                              }
+                                            }} 
+                                            title="Approve"
+                                          >
+                                            <CheckCircle2 size={13} />
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            size="icon"
+                                            variant="outline"
+                                            className={`h-7 w-7 rounded-lg ${item.status.toLowerCase().includes('concern') ? 'bg-amber-500 text-white border-amber-500 shadow-md' : 'border-amber-200 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20'}`}
+                                            disabled={submitting}
+                                            onClick={() => void onSubmitTargetDecision("With Concern", { scope: "expense_ids", expense_ids: [item.expense_id] })}
+                                            title="Concern"
+                                          >
+                                            <AlertTriangle size={12} />
+                                          </Button>
+                                        </>
+                                      )}
+                                      {(!isAlreadyCulled || item.status.toLowerCase().includes('concern')) && (
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="outline"
+                                          className={`h-7 w-7 rounded-lg ${item.status.toLowerCase() === 'rejected' ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'border-rose-200 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20'}`}
+                                          disabled={submitting}
+                                          onClick={() => void onSubmitTargetDecision("Rejected", { scope: "expense_ids", expense_ids: [item.expense_id] })}
+                                          title="Reject"
+                                        >
+                                          <XCircle size={13} />
+                                        </Button>
+                                      )}
                                     </>
-                                  ) : null}
+                                  )}
                                   {item.attachment_url && (
                                     <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => onPreviewUrl(`/api/fm/expense-assets?id=${item.attachment_url}`)} title="View document">
                                       <FileText size={12} />
@@ -876,13 +984,20 @@ export default function AuditeeDetailSplitModal({
               <div className="h-px bg-slate-100 dark:bg-slate-800" />
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Affected Lines</span>
-                <span className="text-xs font-bold text-slate-900 dark:text-white">{auditeeDetails.length} Lines</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">
+                  {actionableDetails.length} Lines
+                  {actionableDetails.length < auditeeDetails.length && (
+                    <span className="ml-1.5 text-[9px] font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+                      {auditeeDetails.length - actionableDetails.length} pending lower-tier approval
+                    </span>
+                  )}
+                </span>
               </div>
               <div className="h-px bg-slate-100 dark:bg-slate-800" />
               <div className="flex items-center justify-between bg-emerald-50/50 dark:bg-emerald-950/20 p-3 rounded-2xl border border-emerald-100/50 dark:border-emerald-900/30">
                 <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 dark:text-emerald-400">Total Approved Amount</span>
                 <span className="text-sm font-black text-emerald-800 dark:text-emerald-400 tabular-nums">
-                  {formatCurrency(grandTotal)}
+                  {formatCurrency(actionableTotal)}
                 </span>
               </div>
             </div>
@@ -917,7 +1032,7 @@ export default function AuditeeDetailSplitModal({
                 className="flex-1 h-10 rounded-xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[10px] font-black uppercase tracking-widest hover:bg-slate-800"
                 onClick={async () => {
                   setSubmitDisbursementConfirmOpen(false);
-                  await onSubmitTargetDecision("Approved", { scope: "encoder", employee_id: employeeId! }, disbursementRemarks);
+                  await onSubmitTargetDecision("Approved", { scope: "expense_ids", expense_ids: actionableDetails.map(d => d.expense_id) }, disbursementRemarks);
                   onOpenChange(false);
                 }}
                 disabled={submitting || !disbursementRemarks.trim()}
@@ -998,7 +1113,7 @@ export default function AuditeeDetailSplitModal({
                 className="flex-1 h-10 rounded-xl bg-rose-600 text-white hover:bg-rose-700 text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-rose-600/10"
                 onClick={async () => {
                   setRejectAllConfirmOpen(false);
-                  await onSubmitTargetDecision("Rejected", { scope: "encoder", employee_id: employeeId! });
+                  await onSubmitTargetDecision("Rejected", { scope: "encoder", employee_id: employeeId!, header_id: headerId ?? undefined });
                 }}
                 disabled={submitting}
               >

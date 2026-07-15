@@ -1264,6 +1264,18 @@ export async function POST(req: NextRequest) {
       return json({ error: "No matching expense rows found" }, { status: 404 });
     }
 
+    // Validate that none of the target rows are already approved in the database.
+    // If a row's status in the database is already 'Approved', it has already been processed.
+    for (const row of allDetailRows) {
+      const decision = itemDecisions[String(row.id)];
+      if (decision && String(row.status).trim().toLowerCase() === "approved") {
+        return json(
+          { error: `Expense draft #${row.id} has already been approved and consolidated.` },
+          { status: 400 }
+        );
+      }
+    }
+
     const editedIds: number[] = [];
 
     if (edited_amounts) {
