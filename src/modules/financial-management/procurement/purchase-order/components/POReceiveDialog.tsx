@@ -389,8 +389,6 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
                               (u) => Number(u.user_department ?? -1) === Number(split.department_id)
                             );
                             
-                            const selectedDept = departments.find((d) => d.department_id === split.department_id);
-                            const selectedUser = users.find((u) => u.user_id === split.user_id);
 
                             return (
                               <div key={idx} className="grid grid-cols-[1fr_1fr_100px_28px] gap-2 items-center">
@@ -420,7 +418,6 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
                                     <SelectValue placeholder="Unassigned" />
                                   </SelectTrigger>
                                   <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
-                                    <SelectItem value="">Unassigned</SelectItem>
                                     {filteredUsers.map((u) => (
                                       <SelectItem key={u.user_id} value={String(u.user_id)} className="text-xs">
                                         {u.full_name}

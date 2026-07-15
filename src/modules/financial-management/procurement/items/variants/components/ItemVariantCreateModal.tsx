@@ -26,13 +26,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+
 import { Check, ChevronDown, Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createVariant, listTemplatesLookup, listAttributes, listAttributeValues } from "../providers/item-variant-service";
