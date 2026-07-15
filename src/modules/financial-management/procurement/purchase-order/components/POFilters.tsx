@@ -36,7 +36,7 @@ export function POFilters({ search, onSearchChange, status, onStatusChange }: PO
           <SelectTrigger className="h-9">
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
-          <SelectContent className="!max-h-[200px] !overflow-y-auto">
+          <SelectContent className="!max-h-[160px] !overflow-y-auto">
             {STATUS_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}

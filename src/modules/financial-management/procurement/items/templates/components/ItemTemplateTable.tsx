@@ -38,15 +38,15 @@ export function ItemTemplateTable({ data, loading, error, onEdit }: ItemTemplate
   }
 
   return (
-    <div className="rounded-md border overflow-hidden">
-      <Table>
+    <div className="rounded-md border overflow-x-auto">
+      <Table className="min-w-[600px]">
         <TableHeader>
           <TableRow>
-            <TableHead className="min-w-[200px] max-w-[400px]">Name</TableHead>
-            <TableHead className="w-[100px]">UOM</TableHead>
-            <TableHead className="w-[150px]">Variants</TableHead>
-            <TableHead className="w-[150px] text-right">Base Price</TableHead>
-            <TableHead className="w-[100px]">Status</TableHead>
+            <TableHead className="min-w-[200px] max-w-[250px]">Name</TableHead>
+            <TableHead className="min-w-[100px]">UOM</TableHead>
+            <TableHead className="min-w-[100px]">Variants</TableHead>
+            <TableHead className="min-w-[100px] text-right">Base Price</TableHead>
+            <TableHead className="min-w-[100px]">Status</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -56,7 +56,7 @@ export function ItemTemplateTable({ data, loading, error, onEdit }: ItemTemplate
               className="cursor-pointer hover:bg-muted/50"
               onClick={() => onEdit(tmpl.id)}
             >
-              <TableCell className="font-medium truncate max-w-[400px]">{tmpl.name}</TableCell>
+              <TableCell className="font-medium truncate max-w-[250px]">{tmpl.name}</TableCell>
               <TableCell className="text-muted-foreground">{tmpl.uom || "\u2014"}</TableCell>
               <TableCell>
                 <Badge variant="secondary" className="font-mono">

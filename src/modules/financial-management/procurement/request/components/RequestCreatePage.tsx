@@ -203,7 +203,7 @@ export function RequestCreatePage() {
                       if (!e.target.value) setSelectedSupplier(null);
                     }}
                   />
-                          <ComboboxContent className="!max-h-[200px] !overflow-y-auto">
+                          <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
                             <ComboboxEmpty>{supplierSearchText.trim() ? "No results." : ""}</ComboboxEmpty>
                             <ComboboxList>{(name: string) => <ComboboxItem key={name} value={name}>{name}</ComboboxItem>}</ComboboxList>
                           </ComboboxContent>
@@ -274,7 +274,7 @@ export function RequestCreatePage() {
                           <ComboboxInput placeholder="Search item template..." showClear className="h-8 text-xs"
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setItemSearchText(e.target.value)}
                           />
-                          <ComboboxContent className="!max-h-[200px] !overflow-y-auto">
+                          <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
                             <ComboboxEmpty>No templates.</ComboboxEmpty>
                             <ComboboxList>{(name: string) => <ComboboxItem key={name} value={name}><div>{name}</div></ComboboxItem>}</ComboboxList>
                           </ComboboxContent>
@@ -291,7 +291,7 @@ export function RequestCreatePage() {
                             }}
                           >
                             <SelectTrigger className="h-8 text-xs w-full"><SelectValue placeholder="Select variant" /></SelectTrigger>
-                            <SelectContent className="!max-h-[200px] !overflow-y-auto">
+                            <SelectContent className="!max-h-[160px] !overflow-y-auto">
                               {variantOptions[line._key].map((vr) => <SelectItem key={vr.id} value={vr.name} className="text-xs">{vr.name}</SelectItem>)}
                             </SelectContent>
                           </Select>

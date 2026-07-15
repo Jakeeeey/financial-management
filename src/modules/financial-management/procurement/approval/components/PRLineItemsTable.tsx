@@ -101,7 +101,7 @@ function ItemTemplateCombobox({
           value={selectedValue && !searchText ? selectedLabel : searchText}
           onChange={(e) => { setSearchText(e.target.value); if (selectedValue) setSelectedValue(null); }}
         />
-        <ComboboxContent className="!max-h-[200px] !overflow-y-auto">
+        <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
           <ComboboxEmpty>{searchText.trim() ? "No results" : "No items found"}</ComboboxEmpty>
           <ComboboxList>
             {(item) => {
@@ -141,7 +141,7 @@ function VariantSelect({
       disabled={disabled}
     >
       <SelectTrigger className="h-7 text-xs w-full"><SelectValue placeholder="Select variant" /></SelectTrigger>
-      <SelectContent className="!max-h-[200px] !overflow-y-auto">
+      <SelectContent className="!max-h-[160px] !overflow-y-auto">
         {variants.map((v) => <SelectItem key={v.id} value={String(v.id)} className="text-xs">{v.name}</SelectItem>)}
       </SelectContent>
     </Select>
@@ -287,7 +287,7 @@ export function PRLineItemsTable({
             <tr className="border-b bg-muted/50">
               <th className="px-3 py-2 text-left font-medium min-w-[200px] max-w-[280px]">Item</th>
               <th className="px-3 py-2 text-left font-medium min-w-[200px]">Variant</th>
-              <th className="px-3 py-2 text-left font-medium w-[1%] whitespace-nowrap">UOM</th>
+              <th className="px-3 py-2 text-left font-medium w-[1%] whitespace-nowrap min-w-[80px]">UOM</th>
               <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[90px] max-w-[90px]">Qty</th>
               <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[130px] max-w-[160px]">Unit Price</th>
               <th className="px-3 py-2 text-right font-medium min-w-[120px] max-w-[160px]">Total</th>

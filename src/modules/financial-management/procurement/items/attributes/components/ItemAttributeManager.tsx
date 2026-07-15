@@ -22,7 +22,7 @@ export default function ItemAttributeManager() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <h2 className="text-2xl font-bold truncate">Attributes &amp; Values</h2>
+        <h2 className="text-2xl font-bold truncate max-w-[400px]">Attributes &amp; Values</h2>
         <Button onClick={() => setShowCreateModal(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Add Attribute

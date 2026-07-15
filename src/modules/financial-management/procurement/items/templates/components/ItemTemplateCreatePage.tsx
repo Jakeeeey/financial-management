@@ -55,7 +55,7 @@ export default function ItemTemplateCreatePage() {
         <Button variant="ghost" size="icon" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-xl font-semibold tracking-tight truncate">Create Item Template</h1>
+        <h1 className="text-xl font-semibold tracking-tight truncate max-w-[400px]">Create Item Template</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="max-w-xl space-y-5">
@@ -77,7 +77,7 @@ export default function ItemTemplateCreatePage() {
             <SelectTrigger id="uom" className="h-9">
               <SelectValue placeholder="Select UOM" />
             </SelectTrigger>
-            <SelectContent className="!max-h-[200px] !overflow-y-auto">
+            <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
               {units.map((u) => (
                 <SelectItem key={u.unit_id} value={u.unit_shortcut || u.unit_name}>
                   {u.unit_name}

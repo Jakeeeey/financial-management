@@ -21,7 +21,7 @@ export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
       <CardContent className="p-4 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold">{master.procurement_no}</h2>
+            <h2 className="text-xl font-semibold truncate max-w-[300px]">{master.procurement_no}</h2>
             <div className="text-sm text-muted-foreground">
               Created {formatDate(master.created_at)}
               {master.encoder_name && ` by ${master.encoder_name}`}

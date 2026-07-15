@@ -45,9 +45,9 @@ export function ItemVariantTable({ data, loading, error, onEdit }: ItemVariantTa
           <TableRow>
             <TableHead className="min-w-[200px] max-w-[250px]">Name</TableHead>
             <TableHead className="min-w-[150px] max-w-[250px] truncate">Template</TableHead>
-            <TableHead className="w-[100px]">SKU</TableHead>
-            <TableHead className="w-[150px] text-right">List Price</TableHead>
-            <TableHead className="w-[100px]">Status</TableHead>
+            <TableHead className="min-w-[100px]">SKU</TableHead>
+            <TableHead className="min-w-[100px] text-right">List Price</TableHead>
+            <TableHead className="min-w-[100px]">Status</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

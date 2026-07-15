@@ -40,15 +40,15 @@ export function POTable({ data, loading, error }: POTableProps) {
   }
 
   return (
-    <div className="rounded-md border overflow-hidden">
-      <Table>
+    <div className="rounded-md border overflow-x-auto">
+      <Table className="min-w-[600px]">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[180px]">PO No.</TableHead>
+            <TableHead className="min-w-[180px] max-w-[250px]">PO No.</TableHead>
             <TableHead className="min-w-[180px] max-w-[300px]">Supplier</TableHead>
-            <TableHead className="w-[120px]">Date</TableHead>
-            <TableHead className="w-[140px] text-right max-w-[140px]">Total</TableHead>
-            <TableHead className="w-[130px]">Status</TableHead>
+            <TableHead className="min-w-[120px]">Date</TableHead>
+            <TableHead className="min-w-[120px] text-right max-w-[160px]">Total</TableHead>
+            <TableHead className="min-w-[100px]">Status</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

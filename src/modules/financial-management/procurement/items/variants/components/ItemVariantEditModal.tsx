@@ -181,10 +181,10 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
               <Input
                 value={name}
                 readOnly
-                className="w-full sm:max-w-md min-w-0 overflow-hidden bg-muted text-muted-foreground cursor-not-allowed"
-                tabIndex={-1}
-              />
-              <p className="text-xs text-muted-foreground">Auto-generated from template and attribute values</p>
+              className="w-full sm:max-w-md truncate min-w-0 overflow-hidden bg-muted text-muted-foreground cursor-not-allowed"
+              tabIndex={-1}
+            />
+            <p className="text-xs text-muted-foreground">Auto-generated from template and attribute values</p>
             </div>
 
             <div className="space-y-2">
@@ -231,7 +231,7 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
                           <SelectTrigger className="w-full min-w-0 overflow-hidden">
                             <SelectValue placeholder="Select value..." />
                           </SelectTrigger>
-                          <SelectContent className="!max-h-[200px] overflow-y-auto">
+                          <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">
                             <SelectItem value="0">-- None --</SelectItem>
                             {options.map((opt) => (
                               <SelectItem key={opt.id} value={String(opt.id)}>

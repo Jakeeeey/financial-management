@@ -75,7 +75,7 @@ export function AttributeCreateModal({
               <SelectTrigger id="attr-type" className="w-full sm:max-w-[200px]">
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
-              <SelectContent className="!max-h-[200px] !overflow-y-auto">
+              <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
                 <SelectItem value="select">Select</SelectItem>
                 <SelectItem value="radio">Radio</SelectItem>
                 <SelectItem value="color">Color</SelectItem>

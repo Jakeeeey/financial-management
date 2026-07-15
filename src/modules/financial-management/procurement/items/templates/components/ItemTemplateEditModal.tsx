@@ -139,7 +139,7 @@ export function ItemTemplateEditModal({
                 <SelectTrigger id="modal-uom" className="h-9 w-full sm:max-w-md min-w-0 overflow-hidden">
                   <SelectValue placeholder="Select UOM" />
                 </SelectTrigger>
-                <SelectContent className="!max-h-[200px] !overflow-y-auto" position="popper">
+                <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
                   {units.map((u) => (
                     <SelectItem
                       key={u.unit_id}

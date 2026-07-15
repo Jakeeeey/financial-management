@@ -204,7 +204,7 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
             <Input
               value={name}
               readOnly
-              className="w-full sm:max-w-md min-w-0 overflow-hidden bg-muted text-muted-foreground cursor-not-allowed"
+              className="w-full sm:max-w-md truncate min-w-0 overflow-hidden bg-muted text-muted-foreground cursor-not-allowed"
               tabIndex={-1}
             />
             <p className="text-xs text-muted-foreground">Auto-generated from template and attribute values</p>
@@ -243,7 +243,7 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
                         <SelectTrigger className="w-full min-w-0 overflow-hidden">
                           <SelectValue placeholder="Select value..." />
                         </SelectTrigger>
-                        <SelectContent className="!max-h-[200px] overflow-y-auto">
+                        <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">
                           <SelectItem value="0">-- None --</SelectItem>
                           {options.map((opt) => (
                             <SelectItem key={opt.id} value={String(opt.id)}>

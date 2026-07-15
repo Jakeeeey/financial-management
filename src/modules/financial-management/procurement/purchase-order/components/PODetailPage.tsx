@@ -102,7 +102,7 @@ export default function PODetailPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">Supplier</span>
-              <p className="font-medium">{supplierName}</p>
+              <p className="font-medium truncate max-w-[300px]">{supplierName}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Total Amount</span>
@@ -153,10 +153,10 @@ export default function PODetailPage() {
               <TableRow>
                 <TableHead className="w-12">#</TableHead>
                 <TableHead className="min-w-[200px] max-w-[400px]">Item</TableHead>
-                <TableHead className="w-16">UOM</TableHead>
-                <TableHead className="w-20 text-right">Qty</TableHead>
-                <TableHead className="w-28 text-right">Unit Price</TableHead>
-                <TableHead className="w-28 text-right">Total</TableHead>
+                <TableHead className="min-w-[60px]">UOM</TableHead>
+                <TableHead className="min-w-[80px] text-right">Qty</TableHead>
+                <TableHead className="min-w-[100px] text-right">Unit Price</TableHead>
+                <TableHead className="min-w-[100px] text-right">Total</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
