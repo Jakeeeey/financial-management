@@ -12,24 +12,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { Loader2, Plus, X, AlertCircle, ChevronDown, ChevronRight, PackageCheck, Check } from "lucide-react";
+import { Loader2, Plus, X, AlertCircle, ChevronDown, ChevronRight, PackageCheck } from "lucide-react";
 import type { PurchaseOrderItem } from "../utils/types";
 import { toNum } from "../utils/po-utils";
-import { cn } from "@/lib/utils";
 
 interface Department {
   department_id: number;
@@ -407,114 +394,40 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
 
                             return (
                               <div key={idx} className="grid grid-cols-[1fr_1fr_100px_28px] gap-2 items-center">
-                                {/* Department Combobox */}
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      role="combobox"
-                                      className="truncate max-w-[240px] h-8 text-xs justify-between px-3 font-normal w-full"
-                                    >
-                                      <span className="truncate">
-                                        {selectedDept ? selectedDept.department_name : "Select Department..."}
-                                      </span>
-                                      <ChevronDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-[240px] p-0" align="start">
-                                    <Command>
-                                      <CommandInput placeholder="Search department..." className="h-8 text-xs" />
-                                      {/* ADD ONWHEEL HERE */}
-                      <CommandList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
-                        <CommandEmpty className="text-xs py-2 text-center text-muted-foreground">
-                          No department found.
-                        </CommandEmpty>
-                                        <CommandGroup>
-                                          {departments.map((d) => (
-                                            <CommandItem
-                                              key={d.department_id}
-                                              value={d.department_name}
-                                              onSelect={() => {
-                                                updateSplit(row.key, idx, { department_id: d.department_id });
-                                              }}
-                                              className="text-xs"
-                                            >
-                                              <Check
-                                                className={cn(
-                                                  "mr-2 h-3.5 w-3.5",
-                                                  split.department_id === d.department_id ? "opacity-100" : "opacity-0"
-                                                )}
-                                              />
-                                              <span className="truncate max-w-[200px] inline-block">{d.department_name}</span>
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup>
-                                      </CommandList>
-                                    </Command>
-                                  </PopoverContent>
-                                </Popover>
+                                {/* Department Select */}
+                                <Select
+                                  value={split.department_id ? String(split.department_id) : ""}
+                                  onValueChange={(val) => updateSplit(row.key, idx, { department_id: Number(val) })}
+                                >
+                                  <SelectTrigger className="truncate max-w-[240px] h-8 text-xs w-full">
+                                    <SelectValue placeholder="Select Department..." />
+                                  </SelectTrigger>
+                                  <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
+                                    {departments.map((d) => (
+                                      <SelectItem key={d.department_id} value={String(d.department_id)} className="text-xs">
+                                        {d.department_name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
 
-                                {/* User Combobox */}
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      role="combobox"
-                                      className="truncate max-w-[240px] h-8 text-xs justify-between px-3 font-normal w-full"
-                                    >
-                                      <span className="truncate">
-                                        {selectedUser ? selectedUser.full_name : "Unassigned"}
-                                      </span>
-                                      <ChevronDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-[240px] p-0" align="start">
-                                    <Command>
-                                      <CommandInput placeholder="Search user..." className="h-8 text-xs" />
-                                      {/* ADD ONWHEEL HERE */}
-                      <CommandList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
-                        <CommandEmpty className="text-xs py-2 text-center text-muted-foreground">
-                          No user found.
-                        </CommandEmpty>
-                                        <CommandGroup>
-                                          <CommandItem
-                                            value="unassigned"
-                                            onSelect={() => {
-                                              updateSplit(row.key, idx, { user_id: null });
-                                            }}
-                                            className="text-xs text-muted-foreground"
-                                          >
-                                            <Check
-                                              className={cn(
-                                                "mr-2 h-3.5 w-3.5",
-                                                split.user_id === null ? "opacity-100" : "opacity-0"
-                                              )}
-                                            />
-                                            Unassigned
-                                          </CommandItem>
-                                          {filteredUsers.map((u) => (
-                                            <CommandItem
-                                              key={u.user_id}
-                                              value={u.full_name}
-                                              onSelect={() => {
-                                                updateSplit(row.key, idx, { user_id: u.user_id });
-                                              }}
-                                              className="text-xs"
-                                            >
-                                              <Check
-                                                className={cn(
-                                                  "mr-2 h-3.5 w-3.5",
-                                                  split.user_id === u.user_id ? "opacity-100" : "opacity-0"
-                                                )}
-                                              />
-                                              <span className="truncate max-w-[200px] inline-block">{u.full_name}</span>
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup>
-                                      </CommandList>
-                                    </Command>
-                                  </PopoverContent>
-                                </Popover>
+                                {/* User Select */}
+                                <Select
+                                  value={split.user_id ? String(split.user_id) : ""}
+                                  onValueChange={(val) => updateSplit(row.key, idx, { user_id: val ? Number(val) : null })}
+                                >
+                                  <SelectTrigger className="truncate max-w-[240px] h-8 text-xs w-full">
+                                    <SelectValue placeholder="Unassigned" />
+                                  </SelectTrigger>
+                                  <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
+                                    <SelectItem value="">Unassigned</SelectItem>
+                                    {filteredUsers.map((u) => (
+                                      <SelectItem key={u.user_id} value={String(u.user_id)} className="text-xs">
+                                        {u.full_name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
 
                                 <Input
                                   type="number"

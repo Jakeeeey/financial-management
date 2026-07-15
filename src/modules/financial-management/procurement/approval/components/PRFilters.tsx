@@ -126,7 +126,7 @@ export function PRFilters({
             <SelectTrigger className="h-9 w-full">
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
-            <SelectContent className="!max-h-[160px] !overflow-y-auto">
+            <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
               <SelectItem value="all">All Statuses</SelectItem>
               <SelectItem value="draft">Draft</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
