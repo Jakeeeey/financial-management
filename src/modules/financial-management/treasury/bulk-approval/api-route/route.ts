@@ -2575,7 +2575,7 @@ export async function POST(req: NextRequest) {
 
       if (nextLevel > maxLevel) {
         const payDraftRes = await directusFetch(
-          `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,amount,coa_id,reference_no,date,remarks,expense_id.id,expense_id.status&limit=-1`
+          `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,division_id,amount,coa_id,reference_no,date,remarks,expense_id.id,expense_id.status&limit=-1`
         );
 
         const payDraftRows =
@@ -2621,17 +2621,34 @@ export async function POST(req: NextRequest) {
 
         const liveDocNo = `NT-${nextDocNum}`;
 
+        const livePayablesPayload = payDraftRows
+          .filter(p => {
+            const exp = p.expense_id as { id?: number | string; status?: string | null } | null;
+            return exp?.status === "Approved" || exp?.status === "APPROVED";
+          })
+          .map((p) => ({
+            disbursement_id: 0, // Placeholder, updated below
+            division_id: toNumericId(p.division_id),
+            amount: p.amount,
+            coa_id: toNumericId(p.coa_id),
+            reference_no: liveDocNo,
+            date: p.date,
+            remarks: p.remarks ?? null,
+          }));
+
+        const approvedTotal = livePayablesPayload.reduce((sum, p) => sum + toNumber(p.amount), 0);
+
         const liveRes = await directusFetch(`/items/disbursement`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             doc_no: liveDocNo,
-            total_amount: finalTotal,
+            total_amount: approvedTotal,
             division_id: toNumericId(draft.division_id),
             payee: toNumericId(draft.payee),
             encoder_id: toNumericId(draft.encoder_id),
             remarks: finalRemarks,
-            status: "Draft",
+            status: "Submitted",
             transaction_type: draft.transaction_type,
             transaction_date: draft.transaction_date,
           }),
@@ -2648,21 +2665,10 @@ export async function POST(req: NextRequest) {
           return json({ error: "Failed to create live disbursement." }, { status: 500 });
         }
 
-        // Filter: Only move APPROVED items to the live table. 
-        // Items with CONCERN or REJECTED are skipped here and handled below.
-        const livePayablesPayload = payDraftRows
-          .filter(p => {
-            const exp = p.expense_id as { id?: number | string; status?: string | null } | null;
-            return exp?.status === "Approved" || exp?.status === "APPROVED";
-          })
-          .map((p) => ({
-            disbursement_id: liveId,
-            amount: p.amount,
-            coa_id: toNumericId(p.coa_id),
-            reference_no: liveDocNo,
-            date: p.date,
-            remarks: p.remarks ?? null,
-          }));
+        const actualPayablesPayload = livePayablesPayload.map(p => ({
+          ...p,
+          disbursement_id: liveId
+        }));
 
         // Auto-Reject Logic: Any items that are NOT explicitly "Approved" 
         // (including Draft, With Concern, or already Rejected) are automatically 
@@ -2697,7 +2703,7 @@ export async function POST(req: NextRequest) {
           .filter((p) => {
             const exp = p.expense_id as { status?: string | null } | null;
             const s = String(exp?.status || "").toLowerCase();
-            return s !== "approved";
+            return s === "rejected";
           })
           .map((p) => toNumericId(p.id))
           .filter((id): id is number => Boolean(id));
@@ -2710,13 +2716,10 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        // Recalculate total amount based ONLY on the items that actually made it to the live table
-        const approvedTotal = livePayablesPayload.reduce((sum, p) => sum + toNumber(p.amount), 0);
-
         const livePayablesRes = await directusFetch(`/items/disbursement_payables`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(livePayablesPayload),
+          body: JSON.stringify(actualPayablesPayload),
         });
 
         if (!livePayablesRes.ok) {
@@ -2733,13 +2736,6 @@ export async function POST(req: NextRequest) {
             total_amount: approvedTotal,
             approval_version: currentVersion,
           }),
-        });
-
-        // Update the live disbursement total as well
-        await directusFetch(`/items/disbursement/${liveId}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ total_amount: approvedTotal }),
         });
 
         return json({

@@ -121,6 +121,11 @@ export default function ExpenseApprovalModal({
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [processingItem, setProcessingItem] = React.useState<number | null>(null);
 
+  const submittingRef = React.useRef(false);
+  const processingItemsRef = React.useRef<Set<number>>(new Set());
+
+  const isInteractionDisabled = submitting || processingItem !== null;
+
   const headerExpenses = React.useMemo(() => {
     if (!detail || !selectedHeader) return [];
     return detail.expenses.filter((expense) => Number(expense.header_id) === selectedHeader.id);
@@ -292,6 +297,10 @@ export default function ExpenseApprovalModal({
   const handleSingleItemSubmit = async (expense: ExpenseDraftRow) => {
     if (!detail) return;
 
+    if (submitting || processingItem !== null || processingItemsRef.current.has(expense.id)) {
+      return;
+    }
+
     if (!isDraftExpense(expense)) {
       toast.info("This expense is already processed and is view-only.");
       return;
@@ -306,6 +315,7 @@ export default function ExpenseApprovalModal({
       return toast.warning("Feedback is required for rejected or concern items.");
     }
 
+    processingItemsRef.current.add(expense.id);
     setProcessingItem(expense.id);
 
     try {
@@ -328,12 +338,17 @@ export default function ExpenseApprovalModal({
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to submit decision.");
     } finally {
+      processingItemsRef.current.delete(expense.id);
       setProcessingItem(null);
     }
   };
 
   const handleConfirm = async () => {
     if (!detail) return;
+
+    if (submitting || submittingRef.current || processingItem !== null) {
+      return;
+    }
 
     if (!hasEditableHeaderExpenses) {
       return toast.info("This submittal is view-only because there are no Drafts items.");
@@ -355,6 +370,7 @@ export default function ExpenseApprovalModal({
       );
     }
 
+    submittingRef.current = true;
     setSubmitting(true);
     setConfirmOpen(false);
 
@@ -396,6 +412,7 @@ export default function ExpenseApprovalModal({
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to submit approvals.");
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -539,7 +556,7 @@ export default function ExpenseApprovalModal({
                       type="button"
                       className="flex items-center gap-2 cursor-pointer group disabled:cursor-not-allowed disabled:opacity-50"
                       onClick={approveAll}
-                      disabled={submitting}
+                      disabled={isInteractionDisabled}
                     >
                       <span className="h-4 w-4 rounded border-2 border-primary flex items-center justify-center group-hover:bg-primary/10 transition-colors">
                         <Check className="h-3 w-3 text-primary" />
@@ -553,7 +570,7 @@ export default function ExpenseApprovalModal({
                       type="button"
                       className="flex items-center gap-2 cursor-pointer group disabled:cursor-not-allowed disabled:opacity-50"
                       onClick={uncheckAll}
-                      disabled={submitting}
+                      disabled={isInteractionDisabled}
                     >
                       <span className="h-4 w-4 rounded border-2 border-slate-300 flex items-center justify-center group-hover:border-primary transition-colors" />
                       <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
@@ -669,7 +686,7 @@ export default function ExpenseApprovalModal({
                             <Button
                               variant={allEditableApproved ? "default" : "outline"}
                               size="sm"
-                              disabled={submitting || editableGroupItems.length === 0}
+                              disabled={isInteractionDisabled || editableGroupItems.length === 0}
                               className={`h-7 px-3 rounded-full text-[9px] font-black uppercase tracking-tighter transition-all ${
                                 allEditableApproved
                                   ? "bg-emerald-500 hover:bg-emerald-600 text-white border-none shadow-md shadow-emerald-200 dark:shadow-none"
@@ -728,7 +745,7 @@ export default function ExpenseApprovalModal({
                       {activeGroup?.items.map((expense, index) => {
                         const status = itemDecisions[expense.id] || "PENDING";
                         const isReadOnly = !isDraftExpense(expense);
-                        const isBusy = processingItem === expense.id || submitting;
+                        const isBusy = isInteractionDisabled;
 
                         return (
                           <React.Fragment key={expense.id}>
@@ -912,7 +929,7 @@ export default function ExpenseApprovalModal({
                                         size="sm"
                                         className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2"
                                         disabled={
-                                          processingItem === expense.id ||
+                                          isInteractionDisabled ||
                                           !itemRemarks[expense.id]?.trim()
                                         }
                                         onClick={() => handleSingleItemSubmit(expense)}
@@ -955,7 +972,7 @@ export default function ExpenseApprovalModal({
                         </span>
                       </div>
                       <Button
-                        disabled={submitting || !hasEditableHeaderExpenses}
+                        disabled={isInteractionDisabled || !hasEditableHeaderExpenses}
                         className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-200 gap-3 active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
                         onClick={() => {
                           if (!hasEditableHeaderExpenses) {
@@ -1098,7 +1115,7 @@ export default function ExpenseApprovalModal({
             <div className="flex flex-col gap-3 pt-2">
               <Button
                 className="h-12 rounded-xl font-black uppercase tracking-widest shadow-lg shadow-blue-100"
-                disabled={!remarks.trim() || submitting || hasMissingFeedback}
+                disabled={!remarks.trim() || isInteractionDisabled || hasMissingFeedback}
                 onClick={handleConfirm}
               >
                 {submitting ? <Loader2 className="animate-spin mr-2" /> : "Confirm Submittal"}
