@@ -46,6 +46,7 @@ export function ItemTemplateEditModal({
   const [uom, setUom] = useState("");
   const [basePrice, setBasePrice] = useState("");
   const [description, setDescription] = useState("");
+  const [active, setActive] = useState(true);
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -57,6 +58,7 @@ export function ItemTemplateEditModal({
     setUom("");
     setBasePrice("");
     setDescription("");
+    setActive(true);
     listUnits()
       .then((res) => setUnits(res.data || []))
       .catch(() => {});
@@ -67,6 +69,7 @@ export function ItemTemplateEditModal({
         setUom(t.uom || "");
         setBasePrice(t.base_price != null ? String(t.base_price) : "");
         setDescription(t.description || "");
+        setActive(t.is_active !== false && t.is_active !== 0);
       })
       .catch((err) => {
         toast.error(
@@ -91,6 +94,7 @@ export function ItemTemplateEditModal({
         uom: uom || null,
         base_price: basePrice ? Number(basePrice) : null,
         description: description.trim() || null,
+        is_active: active,
       });
       toast.success("Template updated");
       onSaved();
@@ -173,6 +177,32 @@ export function ItemTemplateEditModal({
                 className="w-full max-h-[120px] overflow-y-auto"
                 style={{ overflowWrap: "anywhere" }}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="template-active"
+                    checked={active}
+                    onChange={() => setActive(true)}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-sm">Active</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="template-active"
+                    checked={!active}
+                    onChange={() => setActive(false)}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-sm">Inactive</span>
+                </label>
+              </div>
             </div>
 
             <DialogFooter className="gap-2 pt-2">
