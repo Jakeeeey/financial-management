@@ -217,7 +217,7 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
                   );
                   return (
                     <div key={sa.attrId} className="flex items-end gap-2">
-                      <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex-1 min-w-0 w-full max-w-[70vw] sm:max-w-[25.5rem] space-y-1">
                         <p className="text-xs text-muted-foreground truncate">{attr?.name || "Unknown"}</p>
                         <Popover>
                           <PopoverTrigger asChild>
@@ -298,7 +298,7 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
                 {unselectedAttrs.length > 0 && (
                   <Popover open={attrOpen} onOpenChange={setAttrOpen}>
                     <PopoverTrigger asChild>
-                      <Button type="button" variant="outline" size="sm" className="mt-1 w-full truncate min-w-0">
+                      <Button type="button" variant="outline" size="sm" className="mt-1 truncate min-w-0">
                         <Plus className="mr-1 h-4 w-4 shrink-0" />
                         <span className="truncate">Add Attribute</span>
                       </Button>
