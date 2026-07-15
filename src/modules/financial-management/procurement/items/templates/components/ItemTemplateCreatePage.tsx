@@ -55,7 +55,7 @@ export default function ItemTemplateCreatePage() {
         <Button variant="ghost" size="icon" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-xl font-semibold tracking-tight">Create Item Template</h1>
+        <h1 className="text-xl font-semibold tracking-tight truncate">Create Item Template</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="max-w-xl space-y-5">

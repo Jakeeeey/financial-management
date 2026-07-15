@@ -55,7 +55,6 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
   const [selectedValueIds, setSelectedValueIds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
-  const [searchText, setSearchText] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -88,13 +87,6 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
       .map((v) => v.name);
     setName([tpl.name, ...vals].filter(Boolean).join(" ").trim());
   }, [templateId, selectedValueIds, templates, attributeValues]);
-
-  const attributeList = attributes.filter(
-    (a) => selectedValueIds.some((vid) => {
-      const av = attributeValues.find((v) => v.id === vid);
-      return Number(av?.attribute_id) === a.id;
-    }) || !selectedValueIds.length
-  );
 
   function handleValueSelect(attrId: number, valueId: number) {
     setSelectedValueIds((prev) => {
@@ -158,15 +150,15 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
                 <Button
                   variant="outline"
                   role="combobox"
-                  className="w-full sm:max-w-md justify-between px-3 font-normal min-w-0 overflow-hidden"
+                  className="w-full max-w-[80vw] sm:max-w-md justify-between px-3 font-normal min-w-0 overflow-hidden"
                 >
-                  <span className="truncate">
+                  <span className="truncate min-w-0">
                     {templateName || "Select template..."}
                   </span>
                   <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="sm:max-w-lg p-0" align="start">
+              <PopoverContent className="max-w-md p-0" align="start">
                 <Command>
                   <CommandInput placeholder="Search template..." className="h-9" />
                   <CommandList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>

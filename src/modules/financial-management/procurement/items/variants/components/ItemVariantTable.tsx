@@ -39,8 +39,8 @@ export function ItemVariantTable({ data, loading, error, onEdit }: ItemVariantTa
   }
 
   return (
-    <div className="rounded-md border overflow-hidden">
-      <Table>
+    <div className="rounded-md border overflow-x-auto">
+      <Table className="min-w-[700px]">
         <TableHeader>
           <TableRow>
             <TableHead className="min-w-[200px] max-w-[250px]">Name</TableHead>

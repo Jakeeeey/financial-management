@@ -125,14 +125,14 @@ export function ItemTemplateEditModal({
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Enter item name"
                 required
-                className="w-full truncate min-w-0 overflow-hidden"
+                className="w-full sm:max-w-md truncate min-w-0 overflow-hidden"
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="modal-uom">Unit of Measure</Label>
               <Select value={uom} onValueChange={setUom}>
-                <SelectTrigger id="modal-uom" className="h-9">
+                <SelectTrigger id="modal-uom" className="h-9 w-full sm:max-w-md min-w-0 overflow-hidden">
                   <SelectValue placeholder="Select UOM" />
                 </SelectTrigger>
                 <SelectContent className="!max-h-[200px] !overflow-y-auto" position="popper">
