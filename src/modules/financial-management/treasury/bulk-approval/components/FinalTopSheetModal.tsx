@@ -60,6 +60,7 @@ type ApprovalMeta = {
   current_tier?: number;
   required_approver_level?: number;
   current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  next_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
 };
 
 function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null | undefined): ApprovalMeta {
@@ -71,6 +72,7 @@ function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null
     current_tier: source?.current_tier,
     required_approver_level: source?.required_approver_level,
     current_tier_approvers: source?.current_tier_approvers ?? [],
+    next_tier_approvers: source?.next_tier_approvers ?? [],
   };
 }
 
@@ -83,9 +85,12 @@ function getApprovalInfo(meta: ApprovalMeta) {
   const pendingApprovers = (meta.current_tier_approvers ?? [])
     .filter((a) => !a.voted)
     .map((a) => a.name);
+  
   const pendingText = pendingApprovers.length > 0
     ? ` (waiting for approver: ${pendingApprovers.join(", ")})`
-    : "";
+    : (meta.next_tier_approvers && meta.next_tier_approvers.length > 0
+      ? ` (processing to next tier: ${meta.next_tier_approvers.map(a => a.name).join(", ")})`
+      : "");
 
   const currentLevel = meta.current_tier ? `Level ${meta.current_tier}${pendingText}` : "not yet routed";
   const requiredLevel = meta.required_approver_level ? `Level ${meta.required_approver_level}` : "final approver level";
@@ -222,7 +227,7 @@ function buildDecisionPayload(params: {
   };
 
   if (params.target.scope === "encoder") {
-    return { ...base, employee_id: params.target.employee_id };
+    return { ...base, employee_id: params.target.employee_id, header_id: params.target.header_id };
   }
 
   if (params.target.scope === "coa") {
@@ -234,6 +239,7 @@ function buildDecisionPayload(params: {
       ...base,
       employee_id: params.target.employee_id,
       coa_id: params.target.coa_id,
+      header_id: params.target.header_id,
     };
   }
 
@@ -391,6 +397,7 @@ export default function FinalTopSheetModal({
   const [stagedDecisions, setStagedDecisions] = React.useState<Record<string, { target: FinalDecisionTarget; status: FinalHeaderDecisionStatus }>>({});
   const [finalConfirmOpen, setFinalConfirmOpen] = React.useState(false);
   const [selectedAuditeeId, setSelectedAuditeeId] = React.useState<number | null>(null);
+  const [selectedHeaderId, setSelectedHeaderId] = React.useState<number | null>(null);
   const [auditeeDetailOpen, setAuditeeDetailOpen] = React.useState(false);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
   const [zoom, setZoom] = React.useState(1);
@@ -467,7 +474,8 @@ export default function FinalTopSheetModal({
     };
   }, [stagedDecisionEntries, data]);
 
-  const isApprovedHistory = !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s === "Approved")) && !canSubmitFinalAction;
+  const isRejectedHistory = !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s.toLowerCase() === "rejected")) && !canSubmitFinalAction;
+  const isApprovedHistory = !isRejectedHistory && !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s === "Approved" || s === "Rejected" || s === "Posted")) && !canSubmitFinalAction;
   const actionDisabledReason = canSubmitFinalAction ? undefined : approvalInfo.description;
 
   React.useEffect(() => {
@@ -482,6 +490,7 @@ export default function FinalTopSheetModal({
         setLoading(true);
         setData(null);
         setSelectedAuditeeId(null);
+        setSelectedHeaderId(null);
         setAuditeeDetailOpen(false);
         setRemarks("");
         setLineRemarks({});
@@ -512,16 +521,25 @@ export default function FinalTopSheetModal({
     };
   }, [group, open]);
 
-  function handleOpenAuditeeDetails(employeeId: number) {
+  function handleOpenAuditeeDetails(employeeId: number, headerId?: number) {
     setSelectedAuditeeId(employeeId);
+    setSelectedHeaderId(headerId ?? null);
     setAuditeeDetailOpen(true);
   }
 
   function getTargetKey(target: FinalDecisionTarget) {
     if (target.scope === "all") return "all";
-    if (target.scope === "encoder") return `encoder:${target.employee_id}`;
+    if (target.scope === "encoder") {
+      return target.header_id
+        ? `encoder:${target.employee_id}:${target.header_id}`
+        : `encoder:${target.employee_id}`;
+    }
     if (target.scope === "coa") return `coa:${target.coa_id}`;
-    if (target.scope === "cell") return `cell:${target.employee_id}:${target.coa_id}`;
+    if (target.scope === "cell") {
+      return target.header_id
+        ? `cell:${target.employee_id}:${target.coa_id}:${target.header_id}`
+        : `cell:${target.employee_id}:${target.coa_id}`;
+    }
     if (target.scope === "expense_ids" && target.expense_ids?.length) return `expense:${target.expense_ids[0]}`;
     return "unknown";
   }
@@ -729,6 +747,9 @@ export default function FinalTopSheetModal({
       setRemarksDialogOpen(false);
       setRemarksConfirmOpen(false);
       await refreshAfterDecision();
+      if (selectedAuditeeId !== null) {
+        setTimeout(() => setAuditeeDetailOpen(true), 0);
+      }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to submit final decision.");
     } finally {
@@ -859,6 +880,14 @@ export default function FinalTopSheetModal({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent showCloseButton={false} className="flex !h-screen !w-screen !max-w-none !max-h-none flex-col overflow-hidden border-none p-0 sm:rounded-none">
+          {submitting && (
+            <div className="absolute inset-0 z-[250] bg-slate-950/70 backdrop-blur-sm flex flex-col items-center justify-center gap-3 animate-in fade-in duration-300">
+              <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
+              <p className="text-xs font-semibold text-white/95 tracking-wide text-center">
+                Submitting...
+              </p>
+            </div>
+          )}
           <div className="shrink-0 bg-slate-50 dark:bg-gradient-to-r dark:from-slate-950 dark:via-slate-900 dark:to-[#1e1e2e] border-b dark:border-none px-5 py-3 text-slate-900 dark:text-white shadow-xl relative">
             <div className="flex items-center justify-between gap-4 relative z-10">
               <DialogTitle className="flex items-center gap-3 text-base font-black tracking-tight text-slate-900 dark:text-white">
@@ -893,13 +922,15 @@ export default function FinalTopSheetModal({
                       {formatDate(group.period_from)} – {formatDate(group.period_to)}
                     </span>
                     <Badge className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${
-                      isApprovedHistory
-                        ? "border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                        : canSubmitFinalAction 
-                          ? "border border-emerald-100 dark:border-emerald-300/40 bg-emerald-50 dark:bg-emerald-400/15 text-emerald-600 dark:text-emerald-200" 
-                          : "border border-amber-200 dark:border-amber-300/40 bg-amber-50 dark:bg-amber-400/15 text-amber-700 dark:text-amber-200"
+                      isRejectedHistory
+                        ? "border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400"
+                        : isApprovedHistory
+                          ? "border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                          : canSubmitFinalAction 
+                            ? "border border-emerald-100 dark:border-emerald-300/40 bg-emerald-50 dark:bg-emerald-400/15 text-emerald-600 dark:text-emerald-200" 
+                            : "border border-amber-200 dark:border-amber-300/40 bg-amber-50 dark:bg-amber-400/15 text-amber-700 dark:text-amber-200"
                     }`}>
-                      {isApprovedHistory ? "FINALIZED" : approvalInfo.shortLabel}
+                      {isRejectedHistory ? "REJECTED" : isApprovedHistory ? "FINALIZED" : approvalInfo.shortLabel}
                     </Badge>
                   </div>
                 )}
@@ -932,45 +963,57 @@ export default function FinalTopSheetModal({
             ) : (
               <div className="flex h-full flex-col gap-4 animate-in fade-in duration-500 overflow-hidden">
                 <div className={`flex items-center justify-between gap-6 rounded-2xl border px-6 py-4 transition-all ${
-                  isApprovedHistory 
-                    ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50 shadow-sm dark:shadow-none shadow-emerald-100/20" 
-                    : canSubmitFinalAction 
+                  isRejectedHistory
+                    ? "bg-rose-50 dark:bg-rose-900/20 border-rose-100 dark:border-rose-800/50 shadow-sm dark:shadow-none shadow-rose-100/20"
+                    : isApprovedHistory || canSubmitFinalAction 
                       ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50 shadow-sm dark:shadow-none shadow-emerald-100/20" 
                       : "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"
                 }`}>
                   <div className="flex items-center gap-5">
                     <div className={`flex h-12 w-12 items-center justify-center rounded-full ring-4 ${
-                      isApprovedHistory
-                        ? "bg-emerald-500/10 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 ring-emerald-500/5 dark:ring-emerald-900/20"
-                        : canSubmitFinalAction 
+                      isRejectedHistory
+                        ? "bg-rose-500/10 dark:bg-rose-900/40 text-rose-600 dark:text-rose-500 ring-rose-500/5 dark:ring-rose-900/20"
+                        : isApprovedHistory || canSubmitFinalAction 
                           ? "bg-emerald-500/10 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 ring-emerald-500/5 dark:ring-emerald-900/20" 
                           : "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 ring-slate-100 dark:ring-slate-900"
                     }`}>
-                      {isApprovedHistory || canSubmitFinalAction ? <ShieldCheck className="h-6 w-6" /> : <ShieldAlert className="h-6 w-6" />}
+                      {isRejectedHistory ? <ShieldAlert className="h-6 w-6" /> : isApprovedHistory || canSubmitFinalAction ? <ShieldCheck className="h-6 w-6" /> : <ShieldAlert className="h-6 w-6" />}
                     </div>
                     <div className="space-y-1">
                       <h3 className={`text-sm font-black tracking-tight ${
-                        isApprovedHistory || canSubmitFinalAction ? "text-emerald-900 dark:text-emerald-400" : "text-slate-900 dark:text-slate-100"
+                        isRejectedHistory
+                          ? "text-rose-900 dark:text-rose-400"
+                          : isApprovedHistory || canSubmitFinalAction 
+                            ? "text-emerald-900 dark:text-emerald-400" 
+                            : "text-slate-900 dark:text-slate-100"
                       }`}>
-                        {isApprovedHistory 
-                          ? "Audit Finalized & Posted" 
-                          : canSubmitFinalAction 
-                            ? "Ready for your Final Top-Sheet Review" 
-                            : "Waiting for other approvers"}
+                        {isRejectedHistory
+                          ? "Audit Finalized & Rejected"
+                          : isApprovedHistory 
+                            ? "Audit Finalized & Posted" 
+                            : canSubmitFinalAction 
+                              ? "Ready for your Final Top-Sheet Review" 
+                              : "Waiting for other approvers"}
                       </h3>
                       <p className={`text-[11px] font-medium leading-normal ${
-                        isApprovedHistory || canSubmitFinalAction ? "text-emerald-700/70 dark:text-emerald-400/70" : "text-slate-500 dark:text-slate-400"
+                        isRejectedHistory
+                          ? "text-rose-700/70 dark:text-rose-400/70"
+                          : isApprovedHistory || canSubmitFinalAction 
+                            ? "text-emerald-700/70 dark:text-emerald-400/70" 
+                            : "text-slate-500 dark:text-slate-400"
                       }`}>
-                        {isApprovedHistory 
-                          ? "This top-sheet has been successfully audited and posted to the live Disbursement table."
-                          : canSubmitFinalAction 
-                            ? `This top sheet has reached your level and is ready for your action. Current status: ${formatDraftStatusList(data?.group.draft_statuses)}.` 
-                            : approvalInfo.description}
+                        {isRejectedHistory
+                          ? "This top-sheet has been successfully audited and fully rejected."
+                          : isApprovedHistory 
+                            ? "This top-sheet has been successfully audited and posted to the live Disbursement table."
+                            : canSubmitFinalAction 
+                              ? `This top sheet has reached your level and is ready for your action. Current status: ${formatDraftStatusList(data?.group.draft_statuses)}.` 
+                              : approvalInfo.description}
                       </p>
                     </div>
                   </div>
 
-                  {!isApprovedHistory && (
+                  {!isApprovedHistory && !isRejectedHistory && (
                     <div className="flex items-center gap-8">
                       <div className="text-center">
                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Status</p>
@@ -1070,7 +1113,6 @@ export default function FinalTopSheetModal({
                       Object.entries(stagedDecisions).map(([k, v]) => [k, v.status])
                     )}
                     onOpenAuditeeDetails={handleOpenAuditeeDetails}
-                    onToggleDecision={handleToggleDecision}
                     onSubmitStaged={handleInitiateFinalSubmit}
                   />
                 </div>
@@ -1078,7 +1120,7 @@ export default function FinalTopSheetModal({
             )}
           </div>
 
-          {!isApprovedHistory && (
+          {!isApprovedHistory && !isRejectedHistory && (
             <div className="shrink-0 border-t dark:border-slate-800 bg-white dark:bg-slate-950 px-6 py-4 shadow-[0_-10px_40px_-20px_rgba(0,0,0,0.1)] dark:shadow-none">
               <div className="flex items-center justify-between gap-6 max-w-7xl mx-auto">
                 <div className="flex items-center gap-5">
@@ -1137,7 +1179,7 @@ export default function FinalTopSheetModal({
             </div>
           )}
 
-          {isApprovedHistory && (
+          {(isApprovedHistory || isRejectedHistory) && (
             <div className="shrink-0 border-t dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-6 py-4">
               <div className="flex items-center justify-between gap-6 max-w-7xl mx-auto">
                 <div className="flex items-center gap-5">
@@ -1150,7 +1192,11 @@ export default function FinalTopSheetModal({
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <p className="text-[10px] font-bold text-slate-400 italic">This top-sheet has been finalized and is currently in read-only archive mode.</p>
+                  <p className="text-[10px] font-bold text-slate-400 italic">
+                    {isRejectedHistory
+                      ? "This top-sheet was fully rejected and is currently in read-only archive mode."
+                      : "This top-sheet has been finalized and is currently in read-only archive mode."}
+                  </p>
                   <Button 
                     variant="outline" 
                     size="sm" 
@@ -1171,6 +1217,7 @@ export default function FinalTopSheetModal({
         open={auditeeDetailOpen}
         onOpenChange={setAuditeeDetailOpen}
         employeeId={selectedAuditeeId}
+        headerId={selectedHeaderId}
         data={data}
         submitting={submitting}
         onSubmitTargetDecision={(status, target, remarks) =>
@@ -1259,13 +1306,26 @@ export default function FinalTopSheetModal({
         submitting={submitting}
         onOpenChange={(nextOpen) => {
           setRemarksDialogOpen(nextOpen);
-          if (!nextOpen) setPendingRemarksDecision(null);
+          if (!nextOpen) {
+            setPendingRemarksDecision(null);
+            if (selectedAuditeeId !== null) {
+              setTimeout(() => setAuditeeDetailOpen(true), 0);
+            }
+          }
         }}
         onLineRemarkChange={handleLineRemarkChange}
         onSubmit={() => setRemarksConfirmOpen(true)}
       />
 
-      <Dialog open={remarksConfirmOpen} onOpenChange={setRemarksConfirmOpen}>
+      <Dialog open={remarksConfirmOpen} onOpenChange={(nextOpen) => {
+        setRemarksConfirmOpen(nextOpen);
+        if (!nextOpen) {
+          setPendingRemarksDecision(null);
+          if (!remarksDialogOpen && selectedAuditeeId !== null) {
+            setTimeout(() => setAuditeeDetailOpen(true), 0);
+          }
+        }
+      }}>
         <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl">
           {/* Header */}
           <div className="px-6 pt-6 pb-4 flex items-center gap-3">

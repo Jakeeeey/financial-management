@@ -326,6 +326,9 @@ export type FinalHeaderGroupResponse = {
   current_tier?: number;
   required_approver_level?: number;
   is_completed?: boolean;
+  current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  next_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  previous_tier_approver_names?: string[];
 };
 export type FinalHeaderGroup = FinalHeaderGroupResponse;
 
@@ -340,10 +343,12 @@ export type FinalTopSheetSalesmanResponse = {
   next_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
   previous_tier_approver_names?: string[];
   draft_statuses?: string[];
+  header_id?: number;
 };
 
 export type FinalTopSheetCellResponse = {
   employee_id: number;
+  header_id?: number;
   amount: number;
   count: number;
   expense_ids: number[];
@@ -373,6 +378,7 @@ export type FinalTopSheetDetail = {
   status: string;
   attachment_url: string | null;
   feedback?: string | null;
+  draft_tier?: number;
 };
 export type FinalTopSheetDetailResponse = FinalTopSheetDetail;
 
@@ -395,6 +401,7 @@ export type FinalDecisionTarget = {
   employee_id?: number;
   coa_id?: number;
   expense_ids?: number[];
+  header_id?: number;
 };
 
 export type LogDraft = {
@@ -424,6 +431,7 @@ export type FinalTopSheetGroupMetaResponse = {
   current_tier?: number;
   required_approver_level?: number;
   current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  next_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
   previous_tier_approver_names?: string[];
 };
 
@@ -460,6 +468,7 @@ export type FinalHeaderDecisionBody = {
   coa_id?: number;
   expense_ids?: number[];
   concern_expense_ids?: number[]; // Legacy field, keeping for compatibility
+  header_id?: number;
 };
 export type FinalHeaderDecisionPayload = FinalHeaderDecisionBody;
 

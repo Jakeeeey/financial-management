@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ArrowLeft,
   ChevronRight,
+  XCircle,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +74,18 @@ function ApprovalStateBadge({ group }: { group: ApprovalAwareGroup }) {
   const isApproved = Boolean(group.is_completed);
 
   if (isApproved) {
+    const statuses = group.draft_statuses ?? [];
+    const allRejected = statuses.length > 0 && statuses.every((s) => s.toLowerCase() === "rejected");
+
+    if (allRejected) {
+      return (
+        <Badge className="w-fit rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-500/10 dark:bg-rose-900/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-rose-700 dark:text-rose-400 hover:bg-rose-500/15 dark:hover:bg-rose-900/40">
+          <XCircle className="mr-1 h-3 w-3" />
+          Rejected
+        </Badge>
+      );
+    }
+
     return (
       <Badge className="w-fit rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-500/10 dark:bg-emerald-900/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15 dark:hover:bg-emerald-900/40">
         <CheckCircle2 className="mr-1 h-3 w-3" />
