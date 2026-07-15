@@ -65,12 +65,12 @@ export default function ItemVariantCreatePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <h1 className="text-xl font-semibold tracking-tight">Create Item Variant</h1>
-      </div>
+        <div className="flex items-center gap-4 max-w-full">
+          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4 shrink-0" />
+          </Button>
+          <h1 className="text-xl font-semibold tracking-tight truncate">Create Item Variant</h1>
+        </div>
 
       <form onSubmit={handleSubmit} className="max-w-xl space-y-5">
         <div className="space-y-2">
@@ -78,22 +78,20 @@ export default function ItemVariantCreatePage() {
           <Combobox
             open={templatesOpen}
             onOpenChange={setTemplatesOpen}
-            items={templates.map((t) => String(t.id))}
+            items={templates.map((t) => t.name || String(t.id))}
           >
             <ComboboxInput
               placeholder="Search template..."
               className="w-full sm:max-w-md"
-              displayValue={(val) => {
-                if (val === templateId) return templateName;
-                const t = templates.find((x) => String(x.id) === val);
-                return t?.name ?? (templates.find((x) => String(x.id) === templateId)?.name ?? "");
-              }}
-              value={templateId}
+              value={templateName}
               onChange={(val) => {
-                setTemplateId(val);
-                const t = templates.find((x) => String(x.id) === val);
-                setTemplateName(t?.name ?? "");
-                setTemplatesOpen(false);
+                const v = (val.target as HTMLInputElement).value;
+                setTemplateName(v);
+                const t = templates.find((x) => x.name === v || String(x.id) === v);
+                if (t) {
+                  setTemplateId(String(t.id));
+                  setTemplatesOpen(false);
+                }
               }}
             />
             <ComboboxContent>
@@ -101,7 +99,7 @@ export default function ItemVariantCreatePage() {
               <ComboboxList>
                 {(item) => (
                   <ComboboxItem key={item} value={item}>
-                    {templates.find((t) => String(t.id) === item)?.name ?? item}
+                    {item}
                   </ComboboxItem>
                 )}
               </ComboboxList>
@@ -117,7 +115,7 @@ export default function ItemVariantCreatePage() {
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Office Chair - Black - Leather"
             required
-            className="w-full sm:max-w-md"
+            className="w-full sm:max-w-md min-w-0 overflow-hidden"
           />
         </div>
 
@@ -131,7 +129,7 @@ export default function ItemVariantCreatePage() {
             value={listPrice}
             onChange={(e) => setListPrice(e.target.value)}
             placeholder="0.00"
-            className="w-full sm:max-w-[200px]"
+            className="w-full sm:max-w-[200px] min-w-0 overflow-hidden"
           />
         </div>
 
@@ -142,7 +140,7 @@ export default function ItemVariantCreatePage() {
             value={sku}
             onChange={(e) => setSku(e.target.value)}
             placeholder="Optional stock keeping unit"
-            className="w-full sm:max-w-md"
+            className="w-full sm:max-w-md min-w-0 overflow-hidden"
           />
         </div>
 

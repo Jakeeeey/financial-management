@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "../utils/item-template-utils";
@@ -10,11 +9,10 @@ interface ItemTemplateTableProps {
   data: ItemTemplate[];
   loading: boolean;
   error: string | null;
+  onEdit: (id: number) => void;
 }
 
-export function ItemTemplateTable({ data, loading, error }: ItemTemplateTableProps) {
-  const router = useRouter();
-
+export function ItemTemplateTable({ data, loading, error, onEdit }: ItemTemplateTableProps) {
   if (error) {
     return <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>;
   }
@@ -56,7 +54,7 @@ export function ItemTemplateTable({ data, loading, error }: ItemTemplateTablePro
             <TableRow
               key={tmpl.id}
               className="cursor-pointer hover:bg-muted/50"
-              onClick={() => router.push(`/fm/procurement/items/templates/${tmpl.id}`)}
+              onClick={() => onEdit(tmpl.id)}
             >
               <TableCell className="font-medium truncate max-w-[400px]">{tmpl.name}</TableCell>
               <TableCell className="text-muted-foreground">{tmpl.uom || "\u2014"}</TableCell>

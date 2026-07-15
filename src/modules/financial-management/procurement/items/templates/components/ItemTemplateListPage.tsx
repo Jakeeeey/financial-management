@@ -7,12 +7,15 @@ import { Plus } from "lucide-react";
 import { useTemplates } from "../hooks/useItemTemplates";
 import { ItemTemplateFilters } from "./ItemTemplateFilters";
 import { ItemTemplateTable } from "./ItemTemplateTable";
+import { ItemTemplateEditModal } from "./ItemTemplateEditModal";
 
 export default function ItemTemplateListPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const handleSearchChange = useCallback((val: string) => {
     setSearch(val);
@@ -20,7 +23,12 @@ export default function ItemTemplateListPage() {
     debounceRef.current = setTimeout(() => setDebouncedSearch(val), 300);
   }, []);
 
-  const { data, loading, error } = useTemplates({ search: debouncedSearch || undefined });
+  const { data, loading, error, reload } = useTemplates({ search: debouncedSearch || undefined });
+
+  const handleEdit = useCallback((id: number) => {
+    setEditId(id);
+    setEditOpen(true);
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -32,7 +40,16 @@ export default function ItemTemplateListPage() {
         </Button>
       </div>
       <ItemTemplateFilters search={search} onSearchChange={handleSearchChange} />
-      <ItemTemplateTable data={data} loading={loading} error={error} />
+      <ItemTemplateTable data={data} loading={loading} error={error} onEdit={handleEdit} />
+      <ItemTemplateEditModal
+        id={editId}
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) setEditId(null);
+        }}
+        onSaved={reload}
+      />
     </div>
   );
 }

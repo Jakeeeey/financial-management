@@ -67,7 +67,7 @@ export default function ItemTemplateCreatePage() {
             onChange={(e) => setName(e.target.value)}
             placeholder="Enter item name"
             required
-            className="w-full sm:max-w-md"
+            className="w-full sm:max-w-md min-w-0 overflow-hidden"
           />
         </div>
 
@@ -97,7 +97,7 @@ export default function ItemTemplateCreatePage() {
             value={basePrice}
             onChange={(e) => setBasePrice(e.target.value)}
             placeholder="0.00"
-            className="w-full sm:max-w-[200px]"
+            className="w-full sm:max-w-[200px] min-w-0 overflow-hidden"
           />
         </div>
 
@@ -109,7 +109,8 @@ export default function ItemTemplateCreatePage() {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Optional description"
             rows={3}
-            className="w-full sm:max-w-lg max-h-[120px] overflow-y-auto overflow-wrap-anywhere"
+            className="w-full sm:max-w-lg max-h-[120px] overflow-y-auto"
+            style={{ overflowWrap: "anywhere" }}
           />
         </div>
 
