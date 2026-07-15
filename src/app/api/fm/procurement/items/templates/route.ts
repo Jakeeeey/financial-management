@@ -13,8 +13,14 @@ export async function GET(request: NextRequest) {
     const limit = rawLimit === "-1" ? -1 : Math.min(300, Math.max(1, Number(rawLimit) || 50));
     const offset = (page - 1) * limit;
 
+    const activeOnly = searchParams.get("active_only") === "true";
+
     const filter: Record<string, unknown> = {};
     const andConditions: Record<string, unknown>[] = [];
+
+    if (activeOnly) {
+      andConditions.push({ is_active: { _eq: 1 } });
+    }
 
     if (search) {
       andConditions.push({

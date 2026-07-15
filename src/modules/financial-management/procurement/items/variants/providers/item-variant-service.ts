@@ -51,7 +51,7 @@ export async function updateVariant(id: number, payload: Partial<import("../util
 }
 
 export async function listTemplatesLookup(signal?: AbortSignal) {
-  const res = await fetch("/api/fm/procurement/items/templates?limit=-1", { signal, cache: "no-store" });
+  const res = await fetch("/api/fm/procurement/items/templates?limit=-1&active_only=true", { signal, cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch templates");
   return res.json() as Promise<{ data: import("../utils/types").ItemTemplateLookup[]; total?: number }>;
 }

@@ -12,8 +12,14 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(300, Math.max(1, Number(searchParams.get("limit")) || 50));
     const offset = (page - 1) * limit;
 
+    const activeOnly = searchParams.get("active_only") === "true";
+
     const filter: Record<string, unknown> = {};
     const andConditions: Record<string, unknown>[] = [];
+
+    if (activeOnly) {
+      andConditions.push({ active: { _eq: true } });
+    }
 
     if (search) {
       andConditions.push({ name: { _icontains: search } });
