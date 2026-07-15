@@ -14,13 +14,18 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-} from "@/components/ui/combobox";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Select,
   SelectContent,
@@ -28,7 +33,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Check, ChevronDown, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { createVariant, listTemplatesLookup, listAttributes, listAttributeValues } from "../providers/item-variant-service";
 import type { ItemTemplateLookup, ItemAttribute, ItemAttributeValue } from "../utils/types";
 
@@ -48,7 +54,8 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
   const [attributeValues, setAttributeValues] = useState<ItemAttributeValue[]>([]);
   const [selectedValueIds, setSelectedValueIds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
-  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [searchText, setSearchText] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -146,45 +153,51 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
             <Label>Template *</Label>
-            <Combobox
-              open={templatesOpen}
-              onOpenChange={setTemplatesOpen}
-              items={templates.map((t) => `${t.id}:${t.name || ""}`)}
-            >
-              <ComboboxInput
-                placeholder="Search template..."
-                className="w-full sm:max-w-md min-w-0 overflow-hidden"
-                value={templateName}
-                onChange={(val) => {
-                  const v = (val.target as HTMLInputElement).value;
-                  setTemplateName(v);
-                }}
-              />
-              <ComboboxContent className="!max-h-[200px] !overflow-y-auto">
-                <ComboboxEmpty>No results</ComboboxEmpty>
-                <ComboboxList>
-                  {(item) => {
-                    const colonIdx = item.indexOf(":");
-                    const id = item.slice(0, colonIdx);
-                    const label = item.slice(colonIdx + 1);
-                    return (
-                      <ComboboxItem
-                        key={item}
-                        value={item}
-                        onSelect={() => {
-                          setTemplateId(id);
-                          setTemplateName(label);
-                          setSelectedValueIds([]);
-                          setTemplatesOpen(false);
-                        }}
-                      >
-                        {label || "(unnamed)"}
-                      </ComboboxItem>
-                    );
-                  }}
-                </ComboboxList>
-              </ComboboxContent>
-            </Combobox>
+            <Popover open={templateOpen} onOpenChange={setTemplateOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="w-full sm:max-w-md justify-between px-3 font-normal min-w-0 overflow-hidden"
+                >
+                  <span className="truncate">
+                    {templateName || "Select template..."}
+                  </span>
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="sm:max-w-lg p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search template..." className="h-9" />
+                  <CommandList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                    <CommandEmpty>No results</CommandEmpty>
+                    <CommandGroup>
+                      {templates.map((t) => (
+                        <CommandItem
+                          key={t.id}
+                          value={t.name || ""}
+                          onSelect={() => {
+                            setTemplateId(String(t.id));
+                            setTemplateName(t.name || "");
+                            setSelectedValueIds([]);
+                            setTemplateOpen(false);
+                          }}
+                          className="w-full"
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4 shrink-0",
+                              templateId === String(t.id) ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <span className="truncate min-w-0">{t.name || "(unnamed)"}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="space-y-2">

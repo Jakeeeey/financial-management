@@ -9,7 +9,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
-    const limit = Math.min(300, Math.max(1, Number(searchParams.get("limit")) || 50));
+    const rawLimit = searchParams.get("limit");
+    const limit = rawLimit === "-1" ? -1 : Math.min(300, Math.max(1, Number(rawLimit) || 50));
     const offset = (page - 1) * limit;
 
     const filter: Record<string, unknown> = {};
