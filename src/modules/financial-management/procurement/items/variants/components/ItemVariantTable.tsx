@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "../utils/item-variant-utils";
@@ -10,10 +9,10 @@ interface ItemVariantTableProps {
   data: ItemVariant[];
   loading: boolean;
   error: string | null;
+  onEdit?: (id: number) => void;
 }
 
-export function ItemVariantTable({ data, loading, error }: ItemVariantTableProps) {
-  const router = useRouter();
+export function ItemVariantTable({ data, loading, error, onEdit }: ItemVariantTableProps) {
 
   if (error) {
     return <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>;
@@ -56,7 +55,7 @@ export function ItemVariantTable({ data, loading, error }: ItemVariantTableProps
             <TableRow
               key={v.id}
               className="cursor-pointer hover:bg-muted/50"
-              onClick={() => router.push(`/fm/procurement/items/variants/${v.id}`)}
+              onClick={() => onEdit?.(v.id)}
             >
               <TableCell className="font-medium truncate max-w-[250px]">{v.name}</TableCell>
               <TableCell className="text-muted-foreground truncate max-w-[250px]">{v._template_name ?? "\u2014"}</TableCell>

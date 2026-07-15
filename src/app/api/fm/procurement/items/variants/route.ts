@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { item_tmpl_id, name, list_price, sku } = body;
+    const { item_tmpl_id, name, list_price, sku, valueIds } = body;
 
     if (!item_tmpl_id) {
       return NextResponse.json({ message: "Template is required" }, { status: 400 });
@@ -95,6 +95,79 @@ export async function POST(request: NextRequest) {
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
+    const variantId: number = data.data?.id;
+
+    // Process attribute value IDs → junction tables
+    if (Array.isArray(valueIds) && valueIds.length > 0 && typeof variantId === "number") {
+      for (const valueId of valueIds) {
+        // Fetch the attribute value to get its attribute_id
+        const avRes = await fetch(
+          `${DIRECTUS_URL}/items/item_attribute_value/${valueId}`,
+          { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+        );
+        if (!avRes.ok) continue;
+        const avJson = await avRes.json();
+        const attrValue = avJson.data as Record<string, unknown> | null;
+        const attributeId = attrValue?.attribute_id;
+        if (typeof attributeId !== "number") continue;
+
+        // Find or create the template line (item_tmpl_id + attribute_id)
+        const tlParams = new URLSearchParams({
+          "filter[item_tmpl_id][_eq]": String(item_tmpl_id),
+          "filter[attribute_id][_eq]": String(attributeId),
+        });
+        const tlRes = await fetch(
+          `${DIRECTUS_URL}/items/item_attribute_template_line?${tlParams.toString()}`,
+          { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+        );
+        let lineId: number | null = null;
+        if (tlRes.ok) {
+          const tlJson = await tlRes.json();
+          const lines = (tlJson.data || []) as Record<string, unknown>[];
+          lineId = (lines[0]?.id as number) ?? null;
+        }
+
+        if (typeof lineId !== "number") {
+          // Create the template line
+          const newLineRes = await fetch(`${DIRECTUS_URL}/items/item_attribute_template_line`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ item_tmpl_id: Number(item_tmpl_id), attribute_id: attributeId }),
+            cache: "no-store",
+          });
+          if (!newLineRes.ok) continue;
+          const newLineJson = await newLineRes.json();
+          lineId = newLineJson.data?.id as number;
+          if (typeof lineId !== "number") continue;
+        }
+
+        // Create the template value
+        await fetch(`${DIRECTUS_URL}/items/item_attribute_template_value`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ attribute_line_id: lineId, item_attribute_value_id: valueId }),
+          cache: "no-store",
+        }).catch(() => {});
+
+        // Create the variant → attribute value relation
+        await fetch(`${DIRECTUS_URL}/items/item_attribute_value_item_variant_rel`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ item_variant_id: variantId, item_attribute_value_id: valueId }),
+          cache: "no-store",
+        }).catch(() => {});
+      }
+    }
+
     return NextResponse.json({ data: data.data }, { status: 201 });
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown error";

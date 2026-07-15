@@ -10,6 +10,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+
+    // Fetch the variant
     const res = await fetch(`${DIRECTUS_URL}/items/item_variant/${id}?fields=*,item_tmpl_id.name`, {
       headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
       cache: "no-store",
@@ -18,10 +20,29 @@ export async function GET(
     const json = await res.json();
     const r = json.data as Record<string, unknown>;
     const tmpl = r.item_tmpl_id as Record<string, unknown> | null;
+
+    // Fetch the variant's attribute value relations
+    const relParams = new URLSearchParams({
+      "filter[item_variant_id][_eq]": id,
+      fields: "item_attribute_value_id",
+    });
+    const relRes = await fetch(
+      `${DIRECTUS_URL}/items/item_attribute_value_item_variant_rel?${relParams.toString()}`,
+      { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
+    );
+    let valueIds: number[] = [];
+    if (relRes.ok) {
+      const relJson = await relRes.json();
+      valueIds = ((relJson.data || []) as Record<string, unknown>[]).map(
+        (rel) => (typeof rel.item_attribute_value_id === "number" ? rel.item_attribute_value_id : 0)
+      ).filter(Boolean);
+    }
+
     const resolved = {
       ...r,
       item_tmpl_id: typeof r.item_tmpl_id === "number" ? r.item_tmpl_id : (tmpl?.id ?? r.item_tmpl_id ?? null),
       _template_name: tmpl?.name ?? "\u2014",
+      valueIds,
     };
     return NextResponse.json({ data: resolved });
   } catch (err) {

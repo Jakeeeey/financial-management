@@ -21,7 +21,7 @@ export async function getVariantById(id: number, signal?: AbortSignal) {
     const err = await res.json().catch(() => ({ message: "Failed to fetch variant" }));
     throw new Error(err.detail || err.message || `HTTP ${res.status}`);
   }
-  return res.json() as Promise<{ data: import("../utils/types").ItemVariant }>;
+  return res.json() as Promise<{ data: import("../utils/types").ItemVariant & { valueIds?: number[] } }>;
 }
 
 export async function createVariant(payload: import("../utils/types").CreateVariantInput) {
@@ -53,5 +53,17 @@ export async function updateVariant(id: number, payload: Partial<import("../util
 export async function listTemplatesLookup(signal?: AbortSignal) {
   const res = await fetch("/api/fm/procurement/items/templates?limit=-1", { signal, cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch templates");
-  return res.json() as Promise<{ data: import("../utils/types").ItemVariant[]; total?: number }>;
+  return res.json() as Promise<{ data: import("../utils/types").ItemTemplateLookup[]; total?: number }>;
+}
+
+export async function listAttributes(signal?: AbortSignal) {
+  const res = await fetch(`/api/fm/procurement/items/attributes?limit=-1`, { signal, cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch attributes");
+  return res.json() as Promise<{ data: import("../utils/types").ItemAttribute[] }>;
+}
+
+export async function listAttributeValues(signal?: AbortSignal) {
+  const res = await fetch(`/api/fm/procurement/items/attribute-values?limit=-1`, { signal, cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch attribute values");
+  return res.json() as Promise<{ data: import("../utils/types").ItemAttributeValue[] }>;
 }
