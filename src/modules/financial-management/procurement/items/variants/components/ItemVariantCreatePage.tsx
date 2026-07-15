@@ -69,7 +69,7 @@ export default function ItemVariantCreatePage() {
           <Button variant="ghost" size="icon" onClick={() => router.back()}>
             <ArrowLeft className="h-4 w-4 shrink-0" />
           </Button>
-          <h1 className="text-xl font-semibold tracking-tight truncate">Create Item Variant</h1>
+          <h1 className="text-xl font-semibold tracking-tight truncate max-w-[min(70vw,400px)]">Create Item Variant</h1>
         </div>
 
       <form onSubmit={handleSubmit} className="max-w-xl space-y-5">
@@ -94,7 +94,7 @@ export default function ItemVariantCreatePage() {
                 }
               }}
             />
-            <ComboboxContent>
+            <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
               <ComboboxEmpty>No results</ComboboxEmpty>
               <ComboboxList>
                 {(item) => (

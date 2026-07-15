@@ -41,7 +41,7 @@ export function POTable({ data, loading, error }: POTableProps) {
 
   return (
     <div className="rounded-md border overflow-x-auto">
-      <Table className="min-w-[600px]">
+      <Table className="min-w-[600px] table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead className="min-w-[180px] max-w-[250px]">PO No.</TableHead>

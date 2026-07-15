@@ -9,7 +9,7 @@ interface ItemVariantFiltersProps {
 
 export function ItemVariantFilters({ search, onSearchChange }: ItemVariantFiltersProps) {
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <div className="flex flex-col lg:flex-row items-end gap-3">
       <div className="w-full sm:w-72">
         <label className="text-xs font-medium text-muted-foreground mb-1 block">Search</label>
         <Input

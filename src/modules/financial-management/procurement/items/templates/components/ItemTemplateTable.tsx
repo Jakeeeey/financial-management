@@ -39,7 +39,7 @@ export function ItemTemplateTable({ data, loading, error, onEdit }: ItemTemplate
 
   return (
     <div className="rounded-md border overflow-x-auto">
-      <Table className="min-w-[600px]">
+      <Table className="min-w-[600px] table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead className="min-w-[200px] max-w-[250px]">Name</TableHead>

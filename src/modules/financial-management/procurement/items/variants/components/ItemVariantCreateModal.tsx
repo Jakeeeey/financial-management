@@ -26,7 +26,13 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Check, ChevronDown, Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createVariant, listTemplatesLookup, listAttributes, listAttributeValues } from "../providers/item-variant-service";
@@ -235,9 +241,9 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
                           <Button
                             variant="outline"
                             role="combobox"
-                            className="w-full justify-between font-normal truncate min-w-0"
+                            className="w-full justify-between font-normal truncate min-w-0 max-w-full"
                           >
-                            <span className="truncate">
+                            <span className="truncate min-w-0">
                               {sa.valueId > 0
                                 ? options.find((o) => o.id === sa.valueId)?.name || "Select value..."
                                 : "Select value..."}
@@ -246,7 +252,7 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent
-                          className="p-0 w-[--radix-popover-trigger-width] max-w-[300px]"
+                          className="p-0 w-[--radix-popover-trigger-width]"
                           align="start"
                           onWheel={(e) => e.stopPropagation()}
                         >
@@ -309,10 +315,10 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
               {unselectedAttrs.length > 0 && (
                 <Popover open={attrOpen} onOpenChange={setAttrOpen}>
                   <PopoverTrigger asChild>
-                    <Button type="button" variant="outline" size="sm" className="mt-1">
-                      <Plus className="mr-1 h-4 w-4" />
-                      Add Attribute
-                    </Button>
+                    <Button type="button" variant="outline" size="sm" className="mt-1 w-full truncate min-w-0">
+                        <Plus className="mr-1 h-4 w-4 shrink-0" />
+                        <span className="truncate">Add Attribute</span>
+                      </Button>
                   </PopoverTrigger>
                   <PopoverContent className="p-0 w-64" align="start">
                     <Command>

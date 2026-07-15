@@ -135,7 +135,8 @@ export default function ItemTemplateEditPage({ id }: ItemTemplateEditPageProps) 
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Optional description"
             rows={3}
-            className="w-full sm:max-w-lg max-h-[120px] overflow-y-auto overflow-wrap-anywhere"
+            className="w-full sm:max-w-lg max-h-[120px] overflow-y-auto"
+            style={{ overflowWrap: "anywhere" }}
           />
         </div>
 

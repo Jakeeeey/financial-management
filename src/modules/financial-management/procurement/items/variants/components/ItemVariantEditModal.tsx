@@ -221,18 +221,18 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
                         <p className="text-xs text-muted-foreground truncate">{attr?.name || "Unknown"}</p>
                         <Popover>
                           <PopoverTrigger asChild>
-                            <Button
-                              variant="outline"
-                              role="combobox"
-                              className="w-full justify-between font-normal truncate min-w-0"
-                            >
-                              <span className="truncate">
-                                {sa.valueId > 0
-                                  ? options.find((o) => o.id === sa.valueId)?.name || "Select value..."
-                                  : "Select value..."}
-                              </span>
-                              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className="w-full justify-between font-normal truncate min-w-0 max-w-full"
+                          >
+                            <span className="truncate min-w-0">
+                              {sa.valueId > 0
+                                ? options.find((o) => o.id === sa.valueId)?.name || "Select value..."
+                                : "Select value..."}
+                            </span>
+                            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
                           </PopoverTrigger>
                           <PopoverContent
                             className="p-0 w-[--radix-popover-trigger-width] max-w-[300px]"
@@ -298,9 +298,9 @@ export function ItemVariantEditModal({ id, open, onOpenChange, onSaved }: ItemVa
                 {unselectedAttrs.length > 0 && (
                   <Popover open={attrOpen} onOpenChange={setAttrOpen}>
                     <PopoverTrigger asChild>
-                      <Button type="button" variant="outline" size="sm" className="mt-1">
-                        <Plus className="mr-1 h-4 w-4" />
-                        Add Attribute
+                      <Button type="button" variant="outline" size="sm" className="mt-1 w-full truncate min-w-0">
+                        <Plus className="mr-1 h-4 w-4 shrink-0" />
+                        <span className="truncate">Add Attribute</span>
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="p-0 w-64" align="start">

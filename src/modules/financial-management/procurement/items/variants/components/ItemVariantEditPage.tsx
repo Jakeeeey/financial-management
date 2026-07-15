@@ -124,7 +124,7 @@ export default function ItemVariantEditPage({ id }: ItemVariantEditPageProps) {
                 }
               }}
             />
-            <ComboboxContent>
+            <ComboboxContent className="!max-h-[160px] !overflow-y-auto">
               <ComboboxEmpty>No results</ComboboxEmpty>
               <ComboboxList>
                 {(item) => (

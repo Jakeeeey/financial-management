@@ -151,7 +151,7 @@ export default function PODetailPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-12">#</TableHead>
+                <TableHead className="min-w-12 w-12">#</TableHead>
                 <TableHead className="min-w-[200px] max-w-[400px]">Item</TableHead>
                 <TableHead className="min-w-[60px]">UOM</TableHead>
                 <TableHead className="min-w-[80px] text-right">Qty</TableHead>

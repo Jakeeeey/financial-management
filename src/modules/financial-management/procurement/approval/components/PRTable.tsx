@@ -43,17 +43,17 @@ export function PRTable({ rows, loading, error, total, onView }: PRTableProps) {
   }
 
   return (
-    <div className="rounded-md border">
-      <Table>
+    <div className="rounded-md border overflow-x-auto">
+      <Table className="min-w-[800px] table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[160px]">PR No.</TableHead>
+            <TableHead className="min-w-[160px] max-w-[200px]">PR No.</TableHead>
             <TableHead className="min-w-[180px] max-w-[280px]">Supplier</TableHead>
-            <TableHead className="w-[120px]">Lead Date</TableHead>
-            <TableHead className="w-[110px]">Status</TableHead>
-            <TableHead className="w-[100px]">PO Ref</TableHead>
-            <TableHead className="w-[130px] text-right">Total</TableHead>
-            <TableHead className="w-[80px] text-right">Actions</TableHead>
+            <TableHead className="min-w-[120px] max-w-[140px]">Lead Date</TableHead>
+            <TableHead className="min-w-[110px] max-w-[130px]">Status</TableHead>
+            <TableHead className="min-w-[100px] max-w-[120px]">PO Ref</TableHead>
+            <TableHead className="min-w-[130px] max-w-[160px] text-right">Total</TableHead>
+            <TableHead className="min-w-[80px] max-w-[80px] text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
