@@ -72,9 +72,9 @@ export default function ApprovalPrintPage({ id }: ApprovalPrintPageProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left border-b">
-              <th className="py-2">Item Template</th>
-              <th className="py-2">Variant</th>
-              <th className="py-2">UOM</th>
+              <th className="py-2 w-2/5">Item Template</th>
+              <th className="py-2 w-1/5">Variant</th>
+              <th className="py-2 w-12">UOM</th>
               <th className="py-2 text-right">Qty</th>
               <th className="py-2 text-right">Unit Price</th>
               <th className="py-2 text-right">Total</th>

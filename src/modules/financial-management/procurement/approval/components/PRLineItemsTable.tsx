@@ -101,7 +101,7 @@ function ItemTemplateCombobox({
           value={selectedValue && !searchText ? selectedLabel : searchText}
           onChange={(e) => { setSearchText(e.target.value); if (selectedValue) setSelectedValue(null); }}
         />
-        <ComboboxContent>
+        <ComboboxContent className="!max-h-[200px] !overflow-y-auto">
           <ComboboxEmpty>{searchText.trim() ? "No results" : "No items found"}</ComboboxEmpty>
           <ComboboxList>
             {(item) => {
@@ -141,7 +141,7 @@ function VariantSelect({
       disabled={disabled}
     >
       <SelectTrigger className="h-7 text-xs w-full"><SelectValue placeholder="Select variant" /></SelectTrigger>
-      <SelectContent>
+      <SelectContent className="!max-h-[200px] !overflow-y-auto">
         {variants.map((v) => <SelectItem key={v.id} value={String(v.id)} className="text-xs">{v.name}</SelectItem>)}
       </SelectContent>
     </Select>
@@ -285,12 +285,12 @@ export function PRLineItemsTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
-              <th className="px-3 py-2 text-left font-medium">Item</th>
+              <th className="px-3 py-2 text-left font-medium min-w-[200px] max-w-[280px]">Item</th>
               <th className="px-3 py-2 text-left font-medium min-w-[200px]">Variant</th>
               <th className="px-3 py-2 text-left font-medium w-[1%] whitespace-nowrap">UOM</th>
               <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[90px] max-w-[90px]">Qty</th>
               <th className="px-3 py-2 text-right font-medium w-[1%] whitespace-nowrap min-w-[130px] max-w-[160px]">Unit Price</th>
-              <th className="px-3 py-2 text-right font-medium max-w-[160px]">Total</th>
+              <th className="px-3 py-2 text-right font-medium min-w-[120px] max-w-[160px]">Total</th>
               {!readOnly && <th className="px-3 py-2 text-right font-medium">Actions</th>}
             </tr>
           </thead>
@@ -309,7 +309,7 @@ export function PRLineItemsTable({
                   <td className="px-3 py-2 max-w-[240px] min-w-[200px]">
                     {isNew ? (
                       <ItemTemplateCombobox value={nr?.template_name ?? ""} templateId={nr?.item_template_id ?? null} onSelect={(tmpl) => handleTemplateSelect(d.id, tmpl)} />
-                    ) : <div className="font-medium truncate">{d.template_name ?? "—"}</div>}
+                    ) : <div className="font-medium truncate max-w-[260px]">{d.template_name ?? "—"}</div>}
                   </td>
                   <td className="px-3 py-2">
                     {isNew ? <VariantSelect templateId={nr?.item_template_id ?? null} variantId={nr?.item_variant_id ?? null} onChange={(v) => handleVariantSelect(d.id, v)} />
@@ -336,9 +336,9 @@ export function PRLineItemsTable({
                   <td className="px-3 py-2 text-right max-w-[160px]">
                     {isNew ? <Input type="number" min="0" step="0.01" value={nr?.unit_price ?? 0} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 9) return; updateNewRow(d.id, { unit_price: Number(e.target.value) || 0 }); }} className="h-8 w-24 text-xs text-right" />
                     : isEditing ? <Input type="number" min="0" step="0.01" value={editPrice} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 9) return; setEditPrice(Number(e.target.value) || 0); }} className="h-8 w-24 text-xs text-right" />
-                    :                     <div className="font-mono tabular-nums">{formatPHP(d.unit_price)}</div>}
+                    :                     <div className="font-mono tabular-nums truncate max-w-[140px]">{formatPHP(d.unit_price)}</div>}
                   </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">{formatPHP((d.qty || 0) * (d.unit_price || 0))}</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums max-w-[160px] truncate">{formatPHP((d.qty || 0) * (d.unit_price || 0))}</td>
                   {!readOnly && (
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       {isNew ? (
@@ -372,7 +372,7 @@ export function PRLineItemsTable({
           <tfoot>
             <tr className="border-t font-medium">
               <td colSpan={5} className="px-3 py-2 text-right">Grand Total</td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums">
+              <td className="px-3 py-2 text-right font-mono tabular-nums max-w-[160px] truncate">
                 {formatPHP(filtered.reduce((s, d) => s + Number((d.qty || 0) * (d.unit_price || 0)), 0))}
               </td>
               {!readOnly && <td></td>}

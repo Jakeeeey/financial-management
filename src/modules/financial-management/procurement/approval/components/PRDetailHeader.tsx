@@ -33,7 +33,7 @@ export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
           <div>
             <span className="text-muted-foreground block">Supplier</span>
-            <span className="font-medium">{master.supplier_name ?? `#${master.supplier_id}`}</span>
+            <span className="font-medium truncate block max-w-[240px]">{master.supplier_name ?? `#${master.supplier_id}`}</span>
           </div>
           <div>
             <span className="text-muted-foreground block">Lead Date</span>
@@ -45,7 +45,7 @@ export function PRDetailHeader({ master, computedTotal }: PRDetailHeaderProps) {
           </div>
           <div>
             <span className="text-muted-foreground block">Total Amount</span>
-            <span className="block font-mono font-semibold tabular-nums">{formatPHP(displayTotal)}</span>
+            <span className="block font-mono font-semibold tabular-nums max-w-[180px] truncate">{formatPHP(displayTotal)}</span>
           </div>
           {master.department_name && (
             <div>

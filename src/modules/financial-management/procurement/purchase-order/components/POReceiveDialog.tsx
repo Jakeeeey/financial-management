@@ -328,11 +328,11 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
         <div className="flex flex-col gap-2 px-6 pt-4 pb-3 sm:flex-row">
           <div className="sm:w-56">
             <Label htmlFor="reference-no" className="text-xs">Reference No.</Label>
-            <Input id="reference-no" placeholder="DR / SI number" className="h-8 text-sm" value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} />
+            <Input id="reference-no" placeholder="DR / SI number" className="h-8 text-sm w-full" value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} />
           </div>
           <div className="flex-1">
             <Label htmlFor="notes" className="text-xs">Notes / Remarks</Label>
-            <Input id="notes" placeholder="Optional remarks..." className="h-8 text-sm" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <Input id="notes" placeholder="Optional remarks..." className="h-8 text-sm w-full" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
         </div>
 
@@ -376,15 +376,15 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
                       <div className="flex flex-wrap items-end gap-3">
                         <div className="w-36 min-w-[120px] max-w-[180px]">
                           <Label className="text-xs font-medium">Receive Qty</Label>
-                          <Input
-                            type="number"
-                            min={0}
-                            max={row.remaining}
-                            step="0.0001"
-                            className="h-8 text-sm font-mono text-right"
-                            value={row.received_today || ""}
-                            onChange={(e) => patchRow(row.key, { received_today: Number(e.target.value || 0) })}
-                          />
+                           <Input
+                             type="number"
+                             min={0}
+                             max={row.remaining}
+                             step="0.0001"
+                             className="h-8 text-sm font-mono text-right w-full"
+                             value={row.received_today || ""}
+                             onChange={(e) => patchRow(row.key, { received_today: Number(e.target.value || 0) })}
+                           />
                         </div>
                       </div>
 
@@ -425,10 +425,10 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
                                     <Command>
                                       <CommandInput placeholder="Search department..." className="h-8 text-xs" />
                                       {/* ADD ONWHEEL HERE */}
-                                      <CommandList onWheel={(e) => e.stopPropagation()}>
-                                        <CommandEmpty className="text-xs py-2 text-center text-muted-foreground">
-                                          No department found.
-                                        </CommandEmpty>
+                      <CommandList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                        <CommandEmpty className="text-xs py-2 text-center text-muted-foreground">
+                          No department found.
+                        </CommandEmpty>
                                         <CommandGroup>
                                           {departments.map((d) => (
                                             <CommandItem
@@ -472,10 +472,10 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
                                     <Command>
                                       <CommandInput placeholder="Search user..." className="h-8 text-xs" />
                                       {/* ADD ONWHEEL HERE */}
-                                      <CommandList onWheel={(e) => e.stopPropagation()}>
-                                        <CommandEmpty className="text-xs py-2 text-center text-muted-foreground">
-                                          No user found.
-                                        </CommandEmpty>
+                      <CommandList className="max-h-[200px] overflow-y-auto" onWheel={(e) => e.stopPropagation()}>
+                        <CommandEmpty className="text-xs py-2 text-center text-muted-foreground">
+                          No user found.
+                        </CommandEmpty>
                                         <CommandGroup>
                                           <CommandItem
                                             value="unassigned"
@@ -521,7 +521,7 @@ export function POReceiveDialog({ open, onOpenChange, poId, poItems, onSaveSucce
                                   min={0}
                                   max={row.received_today}
                                   step="0.0001"
-                                  className="h-8 text-xs font-mono text-right"
+                                  className="h-8 text-xs font-mono text-right w-full"
                                   value={split.qty || ""}
                                   onChange={(e) => {
                                     const value = Number(e.target.value || 0);

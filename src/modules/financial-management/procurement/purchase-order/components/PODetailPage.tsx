@@ -152,7 +152,7 @@ export default function PODetailPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">#</TableHead>
-                <TableHead>Item</TableHead>
+                <TableHead className="min-w-[200px] max-w-[400px]">Item</TableHead>
                 <TableHead className="w-16">UOM</TableHead>
                 <TableHead className="w-20 text-right">Qty</TableHead>
                 <TableHead className="w-28 text-right">Unit Price</TableHead>
@@ -175,11 +175,11 @@ export default function PODetailPage() {
                 return (
                   <TableRow key={item.id ?? item.po_item_id ?? i}>
                     <TableCell>{item.line_no ?? i + 1}</TableCell>
-                    <TableCell className="font-medium">{resolveName()}</TableCell>
+                    <TableCell className="font-medium truncate max-w-[400px]">{resolveName()}</TableCell>
                     <TableCell>{item.uom || "—"}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">{toNum(item.qty).toFixed(2)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">{formatCurrency(item.unit_price)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">{formatCurrency(item.total_amount ?? item.line_total ?? toNum(item.qty) * toNum(item.unit_price))}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums max-w-[130px] truncate">{formatCurrency(item.unit_price)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums max-w-[150px] truncate">{formatCurrency(item.total_amount ?? item.line_total ?? toNum(item.qty) * toNum(item.unit_price))}</TableCell>
                   </TableRow>
                 );
               })}

@@ -45,9 +45,9 @@ export function POTable({ data, loading, error }: POTableProps) {
         <TableHeader>
           <TableRow>
             <TableHead className="w-[180px]">PO No.</TableHead>
-            <TableHead>Supplier</TableHead>
+            <TableHead className="min-w-[180px] max-w-[300px]">Supplier</TableHead>
             <TableHead className="w-[120px]">Date</TableHead>
-            <TableHead className="w-[140px] text-right">Total</TableHead>
+            <TableHead className="w-[140px] text-right max-w-[140px]">Total</TableHead>
             <TableHead className="w-[130px]">Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -58,10 +58,10 @@ export function POTable({ data, loading, error }: POTableProps) {
               className="cursor-pointer hover:bg-muted/50"
               onClick={() => router.push(`/fm/procurement/purchase-order/${po.id ?? po.purchase_order_id}`)}
             >
-              <TableCell className="font-medium">{po.purchase_order_no || "—"}</TableCell>
-              <TableCell className="text-muted-foreground">{(po as unknown as Record<string, unknown>)._supplier_name as string || "—"}</TableCell>
+              <TableCell className="font-medium truncate max-w-[180px]">{po.purchase_order_no || "—"}</TableCell>
+              <TableCell className="text-muted-foreground truncate max-w-[300px]">{(po as unknown as Record<string, unknown>)._supplier_name as string || "—"}</TableCell>
               <TableCell>{formatDate(po.lead_date || po.date)}</TableCell>
-              <TableCell className="text-right font-mono tabular-nums">{formatCurrency(po.total_amount)}</TableCell>
+              <TableCell className="text-right font-mono tabular-nums max-w-[140px] truncate">{formatCurrency(po.total_amount)}</TableCell>
               <TableCell><POStatusBadge status={po.inventory_status} /></TableCell>
             </TableRow>
           ))}
