@@ -305,7 +305,7 @@ export function RequestCreatePage() {
                       </td>
                     <td className="px-3 py-2 max-w-[90px]"><Input type="number" min="0" step="1" value={line.qty} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 7) return; updateLine(line._key, { qty: Number(e.target.value) || 0 }); }} className="h-8 w-full text-xs text-right" /></td>
                      <td className="px-3 py-2 max-w-[160px]"><Input type="number" min="0" step="0.01" value={line.unit_price} onChange={(e) => { if (e.target.value.replace(/\D/g, "").length > 9) return; updateLine(line._key, { unit_price: Number(e.target.value) || 0 }); }} className="h-8 w-24 text-xs text-right" /></td>
-                        <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">{formatPHP(line.qty * line.unit_price)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-xs tabular-nums truncate max-w-[160px]">{formatPHP(line.qty * line.unit_price)}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeLine(line._key)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
                         </td>
@@ -316,7 +316,7 @@ export function RequestCreatePage() {
                 <tfoot>
                   <tr className="border-t font-medium">
                     <td colSpan={5} className="px-3 py-2 text-right">Grand Total</td>
-                    <td className="px-3 py-2 text-right font-mono tabular-nums">{formatPHP(lineItems.reduce((s, li) => s + li.qty * li.unit_price, 0))}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums truncate max-w-[160px]">{formatPHP(lineItems.reduce((s, li) => s + li.qty * li.unit_price, 0))}</td>
                     <td></td>
                   </tr>
                 </tfoot>
