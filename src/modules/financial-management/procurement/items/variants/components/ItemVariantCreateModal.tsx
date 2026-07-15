@@ -26,13 +26,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+
 import { Check, ChevronDown, Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createVariant, listTemplatesLookup, listAttributes, listAttributeValues } from "../providers/item-variant-service";
@@ -236,27 +230,68 @@ export function ItemVariantCreateModal({ open, onOpenChange, onSaved }: ItemVari
                   <div key={sa.attrId} className="flex items-end gap-2">
                     <div className="flex-1 min-w-0 space-y-1">
                       <p className="text-xs text-muted-foreground truncate">{attr?.name || "Unknown"}</p>
-                      <Select
-                        value={String(sa.valueId)}
-                        onValueChange={(val) => handleValueChange(sa.attrId, Number(val))}
-                      >
-                        <SelectTrigger className="w-full min-w-0 overflow-hidden">
-                          <SelectValue placeholder="Select value..." />
-                        </SelectTrigger>
-                        <SelectContent className="!max-h-[160px] overflow-y-auto" position="popper">
-                          <SelectItem value="0">-- None --</SelectItem>
-                          {options.map((opt) => (
-                            <SelectItem key={opt.id} value={String(opt.id)}>
-                              <span className="truncate max-w-[200px] inline-block">
-                                {opt.name}
-                                {opt.extra_price && Number(opt.extra_price) > 0
-                                  ? ` ( +${opt.extra_price} )`
-                                  : ""}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className="w-full justify-between font-normal truncate min-w-0"
+                          >
+                            <span className="truncate">
+                              {sa.valueId > 0
+                                ? options.find((o) => o.id === sa.valueId)?.name || "Select value..."
+                                : "Select value..."}
+                            </span>
+                            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          className="p-0 w-[--radix-popover-trigger-width] max-w-[300px]"
+                          align="start"
+                          onWheel={(e) => e.stopPropagation()}
+                        >
+                          <Command>
+                            <CommandInput placeholder="Search..." className="h-9" />
+                            <CommandList className="max-h-[160px] overflow-y-auto">
+                              <CommandEmpty>No results</CommandEmpty>
+                              <CommandGroup>
+                                <CommandItem
+                                  value="--none--"
+                                  onSelect={() => handleValueChange(sa.attrId, 0)}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      sa.valueId === 0 ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  -- None --
+                                </CommandItem>
+                                {options.map((opt) => (
+                                  <CommandItem
+                                    key={opt.id}
+                                    value={opt.name || ""}
+                                    onSelect={() => handleValueChange(sa.attrId, opt.id)}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        sa.valueId === opt.id ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                    <span className="truncate min-w-0">
+                                      {opt.name}
+                                      {opt.extra_price && Number(opt.extra_price) > 0
+                                        ? ` ( +${opt.extra_price} )`
+                                        : ""}
+                                    </span>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <Button
                       type="button"
