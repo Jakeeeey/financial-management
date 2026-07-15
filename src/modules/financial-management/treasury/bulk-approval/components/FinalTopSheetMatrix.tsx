@@ -264,9 +264,9 @@ export default function FinalTopSheetMatrix({
               <TableHead className="sticky right-0 z-40 w-[80px] bg-slate-50 dark:bg-slate-950 px-2 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
                 Total
               </TableHead>
-              {/* <TableHead className="sticky right-0 z-40 w-[100px] bg-slate-50 dark:bg-slate-950 px-3 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
+              <TableHead className="sticky right-0 z-40 w-[100px] bg-slate-50 dark:bg-slate-950 px-3 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
                 Audit
-              </TableHead> */}
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -443,7 +443,7 @@ export default function FinalTopSheetMatrix({
                           })
                         }
                       />
-                    </TableCell> */}
+                    </TableCell>
                   </TableRow>
                 );
               })

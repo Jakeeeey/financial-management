@@ -1,8 +1,8 @@
-export const MAX_LIST_COST = 99_999_999.99;
+export const MAX_LIST_COST = 99_999_999.9999;
 
 export class InvalidProposedCostError extends Error {
     constructor(public readonly field = "proposed_cost") {
-        super(`${field} must be between 0.00 and 99999999.99 with at most 2 decimal places.`);
+        super(`${field} must be between 0.00 and 99999999.9999 with at most 4 decimal places.`);
         this.name = "InvalidProposedCostError";
     }
 }
@@ -26,12 +26,12 @@ export function assertValidProposedCost(value: unknown, field = "proposed_cost")
         throw new InvalidProposedCostError(field);
     }
 
-    const scaled = cost * 100;
+    const scaled = cost * 10000;
     const nearestCent = Math.round(scaled);
     const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 8;
     if (Math.abs(scaled - nearestCent) > tolerance) {
         throw new InvalidProposedCostError(field);
     }
 
-    return nearestCent / 100;
+    return nearestCent / 10000;
 }
