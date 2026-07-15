@@ -10,6 +10,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -32,7 +33,6 @@ type Props = {
   data: FinalTopSheetResponse;
   submitting: boolean;
   canAct: boolean;
-  isApprovedHistory: boolean;
   readOnlyReason?: string;
   stagedDecisions: Record<string, FinalHeaderDecisionStatus>;
   onOpenAuditeeDetails: (employeeId: number) => void;
@@ -89,35 +89,6 @@ function ActionButtonSet({
       <Button
         type="button"
         size="icon"
-        className={`h-7 w-7 rounded-lg transition-all ${
-          activeStatus === "Approved"
-            ? "bg-emerald-600 text-white shadow-sm"
-            : "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
-        }`}
-        disabled={disabled}
-        onClick={() => onToggle("Approved")}
-        title={`Stage Approval for ${label}`}
-      >
-        <CheckCircle2 className="h-4 w-4" />
-      </Button>
-      <Button
-        type="button"
-        size="icon"
-        variant="outline"
-        className={`h-7 w-7 rounded-lg transition-all ${
-          activeStatus === "With Concern"
-            ? "bg-amber-500 text-white border-amber-500 shadow-sm"
-            : "border-amber-200 text-amber-600 hover:bg-amber-50"
-        }`}
-        disabled={disabled}
-        onClick={() => onToggle("With Concern")}
-        title={`Stage Concern for ${label}`}
-      >
-        <AlertTriangle className="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        type="button"
-        size="icon"
         variant="outline"
         className={`h-7 w-7 rounded-lg transition-all ${
           activeStatus === "Rejected"
@@ -138,7 +109,6 @@ export default function FinalTopSheetMatrix({
   data,
   submitting,
   canAct,
-  isApprovedHistory,
   readOnlyReason,
   stagedDecisions,
   onOpenAuditeeDetails,
@@ -190,7 +160,17 @@ export default function FinalTopSheetMatrix({
                   View Only
                 </span>
               </div>
-            ) : null}
+            ) : (
+              <div className="flex items-center gap-3 pr-3 mr-1 border-r border-slate-200 dark:border-slate-800">
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Global Actions:</span>
+                <ActionButtonSet
+                  disabled={submitting}
+                  label="Entire Top Sheet"
+                  activeStatus={stagedDecisions["all"] ?? null}
+                  onToggle={(status) => onToggleDecision(status, { scope: "all" })}
+                />
+              </div>
+            )}
             <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-800/50">
               <span className="text-[9px] font-black uppercase tracking-widest text-emerald-800/60 dark:text-emerald-400/60">
                 Total
@@ -225,7 +205,7 @@ export default function FinalTopSheetMatrix({
                   </div>
                 </TableHead>
               ))}
-              <TableHead className="sticky right-[100px] z-40 w-[80px] bg-slate-50 dark:bg-slate-950 px-2 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
+              <TableHead className="sticky right-0 z-40 w-[80px] bg-slate-50 dark:bg-slate-950 px-2 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
                 Total
               </TableHead>
               <TableHead className="sticky right-0 z-40 w-[100px] bg-slate-50 dark:bg-slate-950 px-3 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
@@ -253,6 +233,10 @@ export default function FinalTopSheetMatrix({
                 const rowTotal = encoderTotals.get(salesman.employee_id) ?? 0;
                 const encoderLabel =
                   salesman.salesman_name || `Employee #${salesman.employee_id}`;
+                
+                const salesmanDetails = data.details.filter(d => d.employee_id === salesman.employee_id);
+                const isFullyRejected = salesmanDetails.length > 0 && salesmanDetails.every(d => d.status.toLowerCase() === "rejected");
+                const isFullyApproved = salesman.draft_statuses && salesman.draft_statuses.length > 0 && salesman.draft_statuses.every(s => s.toLowerCase() === "approved");
 
                 return (
                   <TableRow
@@ -260,7 +244,7 @@ export default function FinalTopSheetMatrix({
                     role="button"
                     tabIndex={0}
                     title={`Inspect expenses for ${encoderLabel}`}
-                    className="group cursor-pointer transition-colors hover:bg-primary/5 focus-visible:bg-primary/5 focus-visible:outline-none"
+                    className={`group cursor-pointer transition-colors hover:bg-primary/5 focus-visible:bg-primary/5 focus-visible:outline-none ${isFullyRejected ? "opacity-30 grayscale" : ""} ${isFullyApproved ? "bg-emerald-500/[0.02] dark:bg-emerald-500/[0.01]" : ""}`}
                     onClick={() => onOpenAuditeeDetails(salesman.employee_id)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
@@ -275,12 +259,19 @@ export default function FinalTopSheetMatrix({
                           {salesman.salesman_code?.slice(-2) || "??"}
                         </div>
                         <div className="min-w-0 flex-1 text-left">
-                          <p
-                            className="truncate text-[10px] font-black text-slate-800 dark:text-slate-200 group-hover/auditee:text-primary transition-colors"
-                            title={encoderLabel}
-                          >
-                            {encoderLabel}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <p
+                              className="truncate text-[10px] font-black text-slate-800 dark:text-slate-200 group-hover/auditee:text-primary transition-colors"
+                              title={encoderLabel}
+                            >
+                              {encoderLabel}
+                            </p>
+                            {isFullyApproved && (
+                              <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/10 text-[8px] h-3.5 px-1 py-0 font-bold shrink-0">
+                                Approved
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-[8px] text-primary/60 font-bold opacity-0 group-hover/auditee:opacity-100 transition-opacity leading-none">
                             Click row to inspect →
                           </p>
@@ -291,11 +282,6 @@ export default function FinalTopSheetMatrix({
 
                     {data.coa_rows.map((coaRow) => {
                       const cell = getCell(coaRow.cells, salesman.employee_id);
-                      const target: FinalDecisionTarget = {
-                        scope: "cell",
-                        employee_id: salesman.employee_id,
-                        coa_id: coaRow.coa_id,
-                      };
                       const targetKey = `cell:${salesman.employee_id}:${coaRow.coa_id}`;
                       const activeStatus = stagedDecisions[targetKey] ?? null;
 
@@ -316,13 +302,13 @@ export default function FinalTopSheetMatrix({
                             <div className="flex h-full min-h-[70px] w-full flex-col items-end justify-between gap-2 px-2 py-2">
                               <div className="flex w-full flex-col items-end justify-start">
                                 <span
-                                  className={`text-[10px] font-black tabular-nums ${cell.amount > 0 ? "text-slate-800 dark:text-slate-200" : "text-slate-300 dark:text-slate-600"}`}
+                                  className={`text-xs font-black tabular-nums ${cell.amount > 0 ? "text-slate-800 dark:text-slate-200" : "text-slate-300 dark:text-slate-600"}`}
                                 >
                                   {formatCurrency(cell.amount)}
                                 </span>
                                 <div className="flex items-center gap-1">
-                                  <span className="text-[8px] font-bold text-slate-400">
-                                    {cell.count} line
+                                  <span className="text-[10px] font-bold text-slate-400">
+                                    {cell.count} line item
                                     {cell.count !== 1 ? "s" : ""}
                                   </span>
                                   {cell.has_concern && (
@@ -337,15 +323,6 @@ export default function FinalTopSheetMatrix({
                                   )}
                                 </div>
                               </div>
-
-                              <ActionButtonSet
-                                disabled={submitting || !canAct}
-                                label={`${encoderLabel} / ${coaRow.account_title}`}
-                                activeStatus={activeStatus}
-                                onToggle={(status) =>
-                                  onToggleDecision(status, target)
-                                }
-                              />
                             </div>
                           ) : (
                             <div className="h-full w-full px-2 py-2 text-right">
@@ -358,8 +335,8 @@ export default function FinalTopSheetMatrix({
                       );
                     })}
 
-                    <TableCell className="sticky right-[100px] z-20 bg-slate-50 dark:bg-slate-950 group-hover:bg-primary/5 backdrop-blur-sm px-2 py-1.5 text-right border-b dark:border-slate-800 transition-all">
-                      <p className="text-[10px] font-black text-slate-900 dark:text-slate-100 tabular-nums">
+                    <TableCell className="sticky right-0 z-20 bg-slate-50 dark:bg-slate-950 group-hover:bg-primary/5 backdrop-blur-sm px-2 py-1.5 text-right border-b dark:border-slate-800 transition-all">
+                      <p className="text-xs font-black text-slate-900 dark:text-slate-100 tabular-nums">
                         {formatCurrency(rowTotal)}
                       </p>
                     </TableCell>
@@ -414,18 +391,14 @@ export default function FinalTopSheetMatrix({
                   </p>
                 </TableCell>
               ))}
-              <TableCell className="sticky right-[120px] z-40 bg-emerald-600 px-3 py-2 text-right">
+              <TableCell className="sticky right-0 z-40 bg-emerald-600 px-3 py-2 text-right">
                 <p className="text-xs font-black text-white tabular-nums leading-none">
                   {formatCurrency(data.grand_total)}
                 </p>
               </TableCell>
               <TableCell className="sticky right-0 z-40 bg-emerald-600 px-4 py-2 text-right">
                 <span className="text-[9px] font-black uppercase text-white/60">
-                  {isApprovedHistory
-                    ? "Finalized"
-                    : canAct
-                      ? "Ready"
-                      : "Waiting"}
+                  {canAct ? "Ready" : "Waiting"}
                 </span>
               </TableCell>
             </TableRow>

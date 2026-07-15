@@ -23,6 +23,7 @@ import {
   buildApproversByLevel,
   buildFilterQuery,
   buildVoteHistory,
+  buildVoteHistoryBulk,
   canUserVote,
   createExpenseLog,
   fetchCoaMap,
@@ -333,6 +334,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             is_concern: item.status === "With Concern",
             is_rejected: item.status === "Rejected",
             feedback: item.feedback ?? null,
+            expense_id: expenseId,
           };
         });
 
@@ -397,7 +399,7 @@ export async function handleMyLevelApprovalGetResource(params: {
       }
 
       const pRes = await directusFetch(
-        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
+        `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,coa_id,amount,reference_no,remarks,date,expense_id.id,expense_id.status,expense_id.feedback,expense_id.attachment_url,expense_id.return_to,expense_id.header_id&limit=-1`
       );
 
       const payablesRaw =
@@ -480,6 +482,7 @@ export async function handleMyLevelApprovalGetResource(params: {
           is_concern: expenseObj?.status === "With Concern",
           is_rejected: expenseObj?.status === "Rejected",
           feedback: expenseObj?.feedback ?? null,
+          expense_id: expenseObj ? (toNumericId(expenseObj.id) ?? 0) : (toNumericId(p.expense_id) ?? 0),
         };
       });
 
@@ -675,20 +678,24 @@ export async function handleMyLevelApprovalGetResource(params: {
         fetchCoaMap([...coaIds]),
       ]);
 
-      const rows = await Promise.all(
-        drafts.map(async (draft) => {
+      const bulkVoteHistories = await buildVoteHistoryBulk({
+        drafts: drafts.map((d) => ({
+          draftId: toNumericId(d.id) ?? 0,
+          currentVersion: toNumber(d.approval_version, 1),
+          draftStatus: d.status ?? "",
+          divisionId: toNumericId(d.division_id) ?? 0,
+        })),
+        divisionIds: [...divisionIds],
+      });
+
+      const rows = drafts.map((draft) => {
           const draftId = toNumericId(draft.id) ?? 0;
           const payeeId = toNumericId(draft.payee) ?? 0;
           const encoderId = toNumericId(draft.encoder_id) ?? 0;
           const divisionId = toNumericId(draft.division_id) ?? 0;
           const approvalVersion = toNumber(draft.approval_version, 1);
 
-          const rounds = await buildVoteHistory({
-            draftId,
-            currentVersion: approvalVersion,
-            draftStatus: draft.status ?? "",
-            divisionId,
-          });
+          const rounds = bulkVoteHistories.get(draftId) ?? [];
 
           const revisionLogs: DraftRevisionLogResponse[] = draftLogs
             .filter((logRow) => toNumericId(logRow.disbursement_id) === draftId)
@@ -753,8 +760,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             logs: revisionLogs,
             expense_logs: expenseRevisionLogs,
           };
-        })
-      );
+        });
 
       return jsonResponse({ data: rows });
     }

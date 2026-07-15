@@ -10,6 +10,7 @@ import {
   Maximize2,
   RotateCcw,
   RotateCw,
+  Send,
   ShieldCheck,
   X,
   XCircle,
@@ -26,7 +27,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -59,12 +60,13 @@ type Props = {
   employeeId: number | null;
   data: FinalTopSheetResponse | null;
   submitting: boolean;
-  lineRemarks: Record<number, string>;
-  onLineRemarkChange: (expenseId: number, value: string) => void;
   onSubmitTargetDecision: (
     status: FinalHeaderDecisionStatus,
-    target: FinalDecisionTarget
+    target: FinalDecisionTarget,
+    remarks?: string
   ) => void | Promise<void>;
+  onToggleDecision?: (status: FinalHeaderDecisionStatus, target: FinalDecisionTarget) => void;
+  stagedDecisions?: Record<string, { target: FinalDecisionTarget; status: FinalHeaderDecisionStatus }>;
   onPreviewUrl: (url: string) => void;
 };
 
@@ -79,23 +81,15 @@ function groupByCoa(details: FinalTopSheetDetail[]) {
   return Array.from(map.values());
 }
 
-function statusBadgeClass(status: string) {
-  const s = status.toLowerCase();
-  if (s === "approved") return "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50";
-  if (s === "rejected") return "bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/50";
-  if (s.includes("concern")) return "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/50";
-  return "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700";
-}
-
 export default function AuditeeDetailSplitModal({
   open,
   onOpenChange,
   employeeId,
   data,
   submitting,
-  lineRemarks,
-  onLineRemarkChange,
   onSubmitTargetDecision,
+  onToggleDecision,
+  stagedDecisions,
   onPreviewUrl,
 }: Props) {
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
@@ -104,6 +98,85 @@ export default function AuditeeDetailSplitModal({
   const [inlineRotation, setInlineRotation] = React.useState(0);
   const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
   const [showEvidence, setShowEvidence] = React.useState(true);
+
+  const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
+  const [dontShowAgain, setDontShowAgain] = React.useState(false);
+
+  const [submitDisbursementConfirmOpen, setSubmitDisbursementConfirmOpen] = React.useState(false);
+  const [disbursementRemarks, setDisbursementRemarks] = React.useState("");
+
+  const [rejectAllConfirmOpen, setRejectAllConfirmOpen] = React.useState(false);
+
+  // Read the dont-show-again preference from localStorage on mount
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("hide_staged_close_warning");
+      setDontShowAgain(saved === "true");
+    }
+  }, [open]);
+
+  const salesman = React.useMemo(() => {
+    if (!data || employeeId === null) return null;
+    return data.salesmen.find((s: FinalTopSheetSalesmanResponse) => s.employee_id === employeeId) ?? null;
+  }, [data, employeeId]);
+
+  const effectiveCurrentTier = React.useMemo(() => {
+    return salesman?.current_tier !== undefined ? salesman.current_tier : (data?.group?.current_tier ?? 1);
+  }, [salesman, data]);
+
+  const effectivePrevTierApproverNames = React.useMemo(() => {
+    return salesman?.previous_tier_approver_names ?? data?.group?.previous_tier_approver_names ?? [];
+  }, [salesman, data]);
+
+  const hasStagedDecisions = React.useMemo(() => {
+    if (!stagedDecisions) return false;
+    return Object.values(stagedDecisions).some((item) => {
+      if (item.target.scope === "cell" && item.target.employee_id === employeeId) {
+        return true;
+      }
+      if (item.target.scope === "encoder" && item.target.employee_id === employeeId) {
+        return true;
+      }
+      if (item.target.scope === "expense_ids" && item.target.expense_ids) {
+        return item.target.expense_ids.some(id => 
+          data?.details.some(d => d.expense_id === id && d.employee_id === employeeId)
+        );
+      }
+      return false;
+    });
+  }, [stagedDecisions, employeeId, data]);
+
+  const handleClose = React.useCallback(() => {
+    const isWarningSilenced = typeof window !== "undefined" && localStorage.getItem("hide_staged_close_warning") === "true";
+    
+    if (hasStagedDecisions && !isWarningSilenced) {
+      setShowCloseConfirm(true);
+    } else {
+      onOpenChange(false);
+    }
+  }, [hasStagedDecisions, onOpenChange]);
+
+  const isApprovedHistory = React.useMemo(() => {
+    const statuses = salesman?.draft_statuses ?? data?.group?.draft_statuses;
+    return (
+      Array.isArray(statuses) &&
+      statuses.length > 0 &&
+      statuses.every((s) => s.toLowerCase() === "approved")
+    );
+  }, [salesman, data]);
+
+  const isRejectedHistory = React.useMemo(() => {
+    if (salesman && salesman.current_tier !== undefined && salesman.current_tier > 0) {
+      return false;
+    }
+    const statuses = salesman?.draft_statuses ?? data?.group?.draft_statuses;
+    if (!Array.isArray(statuses) || statuses.length === 0) return false;
+    return statuses.every((s) => s.toLowerCase() === "rejected");
+  }, [salesman, data]);
+
+  const isTerminalHistory = isApprovedHistory || isRejectedHistory;
+
+  const canAct = Boolean(data?.group?.can_act) && !isTerminalHistory;
 
   // Non-passive wheel zoom for inline viewer
   React.useEffect(() => {
@@ -142,33 +215,85 @@ export default function AuditeeDetailSplitModal({
     return data.details.filter((d: FinalTopSheetDetail) => d.employee_id === employeeId);
   }, [data, employeeId]);
 
-  const salesman = React.useMemo(() => {
-    if (!data || employeeId === null) return null;
-    return data.salesmen.find((s: FinalTopSheetSalesmanResponse) => s.employee_id === employeeId) ?? null;
-  }, [data, employeeId]);
+  const hasUnstagedActiveLines = React.useMemo(() => {
+    const activeLines = auditeeDetails.filter(
+      (item) => {
+        const s = (item.status ?? "").toLowerCase();
+        return !s.includes("concern") && s !== "rejected";
+      }
+    );
+
+    return activeLines.some((item) => {
+      const stagedKey = `expense:${item.expense_id}`;
+      const hasItemStaged = stagedDecisions && stagedDecisions[stagedKey];
+      if (hasItemStaged) return false;
+
+      const encoderKey = `encoder:${item.employee_id}`;
+      const cellKey = `cell:${item.employee_id}:${item.coa_id}`;
+      
+      const hasEncoderStaged = stagedDecisions && stagedDecisions[encoderKey];
+      const hasCellStaged = stagedDecisions && stagedDecisions[cellKey];
+
+      if (hasEncoderStaged || hasCellStaged) return false;
+
+      return true;
+    });
+  }, [auditeeDetails, stagedDecisions]);
+
+
+
+  const pendingApproverNames = React.useMemo(() => {
+    const approvers = salesman?.current_tier_approvers ?? data?.group?.current_tier_approvers;
+    if (!approvers) return [];
+    return approvers
+      .filter((a) => !a.voted)
+      .map((a) => a.name);
+  }, [salesman, data]);
 
   const attachments = React.useMemo(() => {
     if (!data) return [];
-    // 1. Get header-level attachments from the newly added data.attachments
-    const headerIds = [...new Set(auditeeDetails.map(d => d.header_id))];
-    const headerAttachments = (data.attachments || [])
-      .filter((at: { header_id: number; file_url: string; file_name: string }) => headerIds.includes(at.header_id))
-      .map((at: { header_id: number; file_url: string; file_name: string }) => ({ url: at.file_url, label: at.file_name }));
 
-    // 2. Get line-level attachment fallbacks
-    const lineAttachments = auditeeDetails
-      .filter(d => !!d.attachment_url)
-      .map(d => ({ url: d.attachment_url!, label: `${d.account_title} (Line Item)` }));
+    const list: { url: string; label: string }[] = [];
 
-    // Merge and de-duplicate by URL
-    const combined = [...headerAttachments, ...lineAttachments];
+    // Flatten details to match the exact table render order in the registry
+    const orderedDetails = groupByCoa(auditeeDetails).flatMap((g) => g.items);
+
+    // 1. Collect line-level attachments in the exact order of the items
+    for (const d of orderedDetails) {
+      if (d.attachment_url) {
+        list.push({
+          url: d.attachment_url,
+          label: d.remarks ? `${d.remarks} (${d.account_title})` : `${d.account_title} (Line Item)`,
+        });
+      }
+    }
+
+    // 2. If no line-level attachments exist, fallback to header-level attachments
+    if (list.length === 0) {
+      const addedHeaderIds = new Set<number>();
+      for (const d of orderedDetails) {
+        if (d.header_id && d.header_id !== 0 && !addedHeaderIds.has(d.header_id)) {
+          const headerAtts = (data.attachments || []).filter(
+            (at: { header_id: number; file_url: string; file_name: string; encoder_id?: number }) => 
+              at.header_id === d.header_id &&
+              (at.encoder_id === undefined || at.encoder_id === employeeId)
+          );
+          for (const at of headerAtts) {
+            list.push({ url: at.file_url, label: at.file_name });
+          }
+          addedHeaderIds.add(d.header_id);
+        }
+      }
+    }
+
+    // De-duplicate by URL to prevent rendering duplicate images
     const seen = new Set<string>();
-    return combined.filter(at => {
+    return list.filter((at) => {
       if (!at.url || seen.has(at.url)) return false;
       seen.add(at.url);
       return true;
     });
-  }, [auditeeDetails, data]);
+  }, [auditeeDetails, data, employeeId]);
 
   const coaGroups = React.useMemo(() => groupByCoa(auditeeDetails), [auditeeDetails]);
   const grandTotal = auditeeDetails.reduce((sum, d) => sum + d.amount, 0);
@@ -358,28 +483,69 @@ export default function AuditeeDetailSplitModal({
             </div>
           </div>
 
+          {/* View-Only Context Banner */}
+          {!canAct && (
+            <div className={`mx-[1.5vw] mt-4 relative overflow-hidden rounded-2xl border p-4 animate-in fade-in slide-in-from-top-2 duration-300 ${
+              isRejectedHistory
+                ? "border-rose-200/60 dark:border-rose-900/30 bg-rose-50/40 dark:bg-rose-950/10"
+                : "border-amber-200/60 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-950/10"
+            }`}>
+              <div className={`absolute inset-0 ${
+                isRejectedHistory
+                  ? "bg-[radial-gradient(circle_at_top_left,rgba(239,68,68,0.06),transparent_40%)]"
+                  : "bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.06),transparent_40%)]"
+              }`} />
+              <div className="relative flex gap-3.5 items-start">
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-sm ${
+                  isRejectedHistory
+                    ? "bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-500 shadow-rose-500/5"
+                    : "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-500 shadow-amber-500/5"
+                }`}>
+                  <AlertTriangle className="h-4.5 w-4.5" />
+                </div>
+                <div className="space-y-1 text-left min-w-0 flex-1">
+                  <h4 className={`text-[11px] font-black uppercase tracking-wider leading-none ${
+                    isRejectedHistory ? "text-rose-800 dark:text-rose-400" : "text-amber-800 dark:text-amber-500"
+                  }`}>
+                    {isRejectedHistory ? "Rejected — View Only" : isApprovedHistory ? "Finalized — View Only" : "View-Only Staging Mode"}
+                  </h4>
+                  <p className={`text-xs font-medium leading-relaxed max-w-4xl ${
+                    isRejectedHistory ? "text-rose-700/90 dark:text-rose-400/80" : "text-amber-700/90 dark:text-amber-400/80"
+                  }`}>
+                    You are viewing the details for <strong className="text-slate-900 dark:text-white font-bold">{salesmantName}</strong>.{" "}
+                    {isRejectedHistory ? (
+                      "This submission was rejected by the final approver. No further actions can be taken on this record."
+                    ) : isApprovedHistory ? (
+                      "This top-sheet has been finalized and posted. No further actions can be taken."
+                    ) : (
+                      <>
+                        Since the draft is currently at Level <strong className="text-slate-900 dark:text-white font-bold">{effectiveCurrentTier}</strong>
+                        {pendingApproverNames.length > 0 && (
+                          <>
+                            {" "}
+                            (waiting for approver:{" "}
+                            <strong className="text-rose-600 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-lg font-black border border-rose-500/20 shadow-sm">
+                              {pendingApproverNames.join(", ")}
+                            </strong>
+                            )
+                          </>
+                        )}
+                        , action items, staging buttons, and feedback updates are locked. They will become actionable once the draft reaches the required final approval tier (Level {data?.group?.required_approver_level ?? 4}).
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+
           {/* Toolbar */}
           <div className="px-[2vw] py-3 bg-muted/5 dark:bg-slate-900/50 border-b dark:border-slate-800 flex items-center justify-between shrink-0">
             <h3 className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-800 dark:text-slate-200">
               <FileText className="h-4 w-4 text-primary" />
               Verification Registry — Grouped by COA
             </h3>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 rounded-full text-[10px] font-black uppercase tracking-widest gap-2"
-              disabled={submitting}
-              onClick={() =>
-                void onSubmitTargetDecision("Approved", {
-                  scope: "encoder",
-                  employee_id: employeeId!,
-                })
-              }
-            >
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-              Approve All for {salesmantName.split(" ")[0]}
-            </Button>
           </div>
 
           {/* COA-Grouped Table */}
@@ -405,8 +571,7 @@ export default function AuditeeDetailSplitModal({
                         </div>
                         <div className="flex items-center gap-3">
                           <p className="text-sm font-black text-emerald-400">{formatCurrency(coaTotal)}</p>
-                          {/* COA-level actions */}
-                          <div className="flex items-center gap-1">
+                          {/* <div className="flex items-center gap-1">
                             <Button type="button" size="icon" className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white" disabled={submitting} onClick={() => void onSubmitTargetDecision("Approved", { scope: "coa", coa_id: group.coa_id })} title="Approve entire COA">
                               <CheckCircle2 className="h-4 w-4" />
                             </Button>
@@ -416,7 +581,7 @@ export default function AuditeeDetailSplitModal({
                             <Button type="button" size="icon" variant="outline" className="h-7 w-7 rounded-lg border-rose-500/30 text-rose-400 hover:bg-rose-500/20" disabled={submitting} onClick={() => void onSubmitTargetDecision("Rejected", { scope: "coa", coa_id: group.coa_id })} title="Reject entire COA">
                               <XCircle className="h-3.5 w-3.5" />
                             </Button>
-                          </div>
+                          </div> */}
                         </div>
                       </div>
 
@@ -435,7 +600,10 @@ export default function AuditeeDetailSplitModal({
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {group.items.map((item, idx) => (
+                          {group.items.map((item, idx) => {
+                            const isAlreadyCulled = ["with concern", "rejected"].includes(item.status.toLowerCase());
+                            const stagedStatus = stagedDecisions?.[`expense:${item.expense_id}`]?.status;
+                            return (
                             <TableRow key={item.expense_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
                               <TableCell className="py-3 pl-5 text-[9px] font-black text-slate-300 dark:text-slate-600 italic">{String(idx + 1).padStart(2, "0")}</TableCell>
                               <TableCell className="py-3">
@@ -445,30 +613,96 @@ export default function AuditeeDetailSplitModal({
                               <TableCell className="py-3 text-center text-[10px] font-bold text-slate-500 uppercase tabular-nums">{formatDate(item.transaction_date)}</TableCell>
                               <TableCell className="py-3 text-right text-[10px] font-black text-slate-800 dark:text-slate-200 tabular-nums">{formatCurrency(item.amount)}</TableCell>
                               <TableCell className="py-3 text-center">
-                                <Badge className={`text-[9px] font-black border rounded-lg px-2 ${statusBadgeClass(item.status)}`}>
-                                  {item.status}
-                                </Badge>
+                                <div className="flex flex-col items-center justify-center gap-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <Badge className="text-[9px] font-black border rounded-lg px-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700">
+                                      Draft
+                                    </Badge>
+                                    <Badge
+                                      className={`text-[8px] font-bold border rounded-lg px-1.5 py-0.5 ${
+                                        item.status.toLowerCase() === "rejected"
+                                          ? "bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/50"
+                                          : item.status.toLowerCase().includes("concern")
+                                          ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/50"
+                                          : effectiveCurrentTier === 1
+                                          ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50"
+                                          : "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50"
+                                      }`}
+                                    >
+                                      {item.status.toLowerCase() === "rejected"
+                                        ? "Rejected"
+                                        : item.status.toLowerCase().includes("concern")
+                                        ? "With Concern"
+                                        : effectiveCurrentTier === 1
+                                        ? "Submitted"
+                                        : `L${Math.max(1, effectiveCurrentTier - 1)} Approved (${effectivePrevTierApproverNames.length ? effectivePrevTierApproverNames.join(', ') : 'System'})`}
+                                    </Badge>
+                                  </div>
+                                  {canAct && !isAlreadyCulled && !stagedStatus && (
+                                    <Badge className="text-[8px] font-black border rounded-lg px-2 bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800 uppercase shadow-sm">
+                                      Pending Your Action
+                                    </Badge>
+                                  )}
+                                  {stagedStatus === "Approved" && (
+                                    <Badge className="text-[8px] font-black border rounded-lg px-2 bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800 uppercase shadow-sm mt-0.5">
+                                      Approved (Staged)
+                                    </Badge>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell className="py-3 px-3">
-                                <Input
-                                  placeholder="Feedback for rejection / concern..."
-                                  className="h-7 text-[10px] font-medium border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-lg"
-                                  value={lineRemarks[item.expense_id] ?? ""}
-                                  onChange={e => onLineRemarkChange(item.expense_id, e.target.value)}
-                                  disabled={submitting}
-                                />
+                                {item.feedback ? (
+                                  <p className="text-[9px] font-medium text-slate-600 dark:text-slate-400 bg-amber-50 dark:bg-amber-900/20 p-1.5 rounded-lg border border-amber-100 dark:border-amber-900/50 text-left">
+                                    <span className="font-bold text-amber-700 dark:text-amber-500 uppercase">Prior Note:</span> {item.feedback}
+                                  </p>
+                                ) : (
+                                  <span className="text-[10px] font-medium text-slate-400 dark:text-slate-600">—</span>
+                                )}
                               </TableCell>
                               <TableCell className="py-3 text-center">
                                 <div className="flex items-center justify-center gap-1">
-                                  <Button type="button" size="icon" className="h-7 w-7 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white" disabled={submitting} onClick={() => void onSubmitTargetDecision("Approved", { scope: "expense_ids", expense_ids: [item.expense_id] })} title="Approve">
-                                    <CheckCircle2 size={13} />
-                                  </Button>
-                                  <Button type="button" size="icon" variant="outline" className="h-7 w-7 rounded-lg border-amber-200 text-amber-600 hover:bg-amber-50" disabled={submitting} onClick={() => void onSubmitTargetDecision("With Concern", { scope: "expense_ids", expense_ids: [item.expense_id] })} title="Concern">
-                                    <AlertTriangle size={12} />
-                                  </Button>
-                                  <Button type="button" size="icon" variant="outline" className="h-7 w-7 rounded-lg border-rose-200 text-rose-600 hover:bg-rose-50" disabled={submitting} onClick={() => void onSubmitTargetDecision("Rejected", { scope: "expense_ids", expense_ids: [item.expense_id] })} title="Reject">
-                                    <XCircle size={13} />
-                                  </Button>
+                                  {canAct ? (
+                                    <>
+                                      <Button 
+                                        type="button" 
+                                        size="icon" 
+                                        className={`h-7 w-7 rounded-lg ${stagedStatus === 'Approved' ? 'bg-emerald-500 text-white shadow-md' : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white'}`} 
+                                        disabled={submitting} 
+                                        onClick={() => {
+                                          if (isAlreadyCulled) {
+                                            void onSubmitTargetDecision("Approved", { scope: "expense_ids", expense_ids: [item.expense_id] });
+                                          } else {
+                                            onToggleDecision?.("Approved", { scope: "expense_ids", expense_ids: [item.expense_id] });
+                                          }
+                                        }} 
+                                        title="Approve"
+                                      >
+                                        <CheckCircle2 size={13} />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        className={`h-7 w-7 rounded-lg ${item.status.toLowerCase().includes('concern') ? 'bg-amber-500 text-white border-amber-500 shadow-md' : 'border-amber-200 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20'}`}
+                                        disabled={submitting}
+                                        onClick={() => void onSubmitTargetDecision("With Concern", { scope: "expense_ids", expense_ids: [item.expense_id] })}
+                                        title="Concern"
+                                      >
+                                        <AlertTriangle size={12} />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        className={`h-7 w-7 rounded-lg ${item.status.toLowerCase() === 'rejected' ? 'bg-rose-500 text-white border-rose-500 shadow-md' : 'border-rose-200 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20'}`}
+                                        disabled={submitting}
+                                        onClick={() => void onSubmitTargetDecision("Rejected", { scope: "expense_ids", expense_ids: [item.expense_id] })}
+                                        title="Reject"
+                                      >
+                                        <XCircle size={13} />
+                                      </Button>
+                                    </>
+                                  ) : null}
                                   {item.attachment_url && (
                                     <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => onPreviewUrl(`/api/fm/expense-assets?id=${item.attachment_url}`)} title="View document">
                                       <FileText size={12} />
@@ -477,7 +711,8 @@ export default function AuditeeDetailSplitModal({
                                 </div>
                               </TableCell>
                             </TableRow>
-                          ))}
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </div>
@@ -489,22 +724,295 @@ export default function AuditeeDetailSplitModal({
 
           {/* Footer */}
           <div className="shrink-0 border-t dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold">
-              <ShieldCheck size={14} className="text-emerald-500" />
-              Audit Consensus Engine — Immutable Trail
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold">
+                <ShieldCheck size={14} className="text-emerald-500" />
+                Audit Consensus Engine — Immutable Trail
+              </div>
+              {canAct && hasUnstagedActiveLines && (
+                <div className="text-[10px] font-bold text-amber-500 dark:text-amber-400 flex items-center gap-1.5 animate-pulse bg-amber-500/5 px-2.5 py-1 rounded-lg border border-amber-500/10">
+                  <AlertTriangle size={11} />
+                  <span>Stage decisions for all pending lines to enable submit</span>
+                </div>
+              )}
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 rounded-xl border-slate-200 dark:border-slate-700 px-5 text-[10px] font-black uppercase tracking-widest"
-              onClick={() => onOpenChange(false)}
-            >
-              Close
-            </Button>
+            <div className="flex items-center gap-3">
+              {canAct && employeeId !== null && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 rounded-xl border-rose-200/60 bg-rose-50/50 dark:bg-rose-950/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 px-5 text-[10px] font-black uppercase tracking-widest transition-all"
+                    disabled={submitting}
+                    onClick={() => {
+                      setRejectAllConfirmOpen(true);
+                    }}
+                  >
+                    Reject All
+                  </Button>
+                  <Button
+                    type="button"
+                    className="h-9 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 px-5 text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-600/10 disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:shadow-none"
+                    disabled={submitting || hasUnstagedActiveLines}
+                    onClick={() => {
+                      setDisbursementRemarks("");
+                      setSubmitDisbursementConfirmOpen(true);
+                    }}
+                    title={hasUnstagedActiveLines ? "Stage decisions for all pending lines first" : "Submit to disbursement"}
+                  >
+                    Submit to Disbursement
+                  </Button>
+                </>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 rounded-xl border-slate-200 dark:border-slate-700 px-5 text-[10px] font-black uppercase tracking-widest"
+                onClick={handleClose}
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
+
+      <Dialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
+        <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl z-[100]">
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <AlertTriangle size={20} />
+            </div>
+            <div className="flex flex-col leading-none">
+              <DialogTitle className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                Unsubmitted Staged Decisions
+              </DialogTitle>
+              <DialogDescription className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
+                Staged Decision Warning
+              </DialogDescription>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 pb-6 space-y-4">
+            <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
+              You have active staged decisions for <strong className="text-slate-900 dark:text-white font-bold">{salesmantName}</strong> that have not been submitted.
+            </p>
+            
+            <p className="text-[11px] text-slate-500 dark:text-slate-500 leading-normal">
+              You can submit to disbursement immediately inside this modal, close to keep them staged on the parent Top-Sheet, or cancel to stay and review.
+            </p>
+
+            <div className="flex items-center gap-2 pt-2">
+              <input
+                type="checkbox"
+                id="dontShowAgain"
+                checked={dontShowAgain}
+                className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/20 dark:border-slate-800 dark:bg-slate-950"
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setDontShowAgain(val);
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem("hide_staged_close_warning", val ? "true" : "false");
+                  }
+                }}
+              />
+              <label htmlFor="dontShowAgain" className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+                Don&apos;t show this warning again
+              </label>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-4 border-t dark:border-slate-800">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 h-10 rounded-xl border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
+                onClick={() => {
+                  setShowCloseConfirm(false);
+                  onOpenChange(false);
+                }}
+              >
+                Close Anyway
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 h-10 rounded-xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[10px] font-black uppercase tracking-widest hover:bg-slate-800"
+                onClick={() => setShowCloseConfirm(false)}
+              >
+                Cancel / Stay
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={submitDisbursementConfirmOpen} onOpenChange={setSubmitDisbursementConfirmOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl z-[100]">
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 flex items-center gap-3 bg-slate-50 dark:bg-slate-950 border-b dark:border-slate-800">
+            <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <ShieldCheck size={20} />
+            </div>
+            <div className="flex flex-col leading-none">
+              <DialogTitle className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                Disbursement Submission Confirmation
+              </DialogTitle>
+              <DialogDescription className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
+                Finalizing Payment Release
+              </DialogDescription>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 space-y-5">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Auditee</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">{salesmantName}</span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Affected Lines</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">{auditeeDetails.length} Lines</span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between bg-emerald-50/50 dark:bg-emerald-950/20 p-3 rounded-2xl border border-emerald-100/50 dark:border-emerald-900/30">
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 dark:text-emerald-400">Total Approved Amount</span>
+                <span className="text-sm font-black text-emerald-800 dark:text-emerald-400 tabular-nums">
+                  {formatCurrency(grandTotal)}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 flex items-center gap-2">
+                <FileText size={14} className="text-primary" />
+                Audit Remarks <span className="text-rose-500">*</span>
+              </label>
+              <Textarea
+                value={disbursementRemarks}
+                onChange={(e) => setDisbursementRemarks(e.target.value)}
+                placeholder="Provide mandatory audit remarks for this disbursement..."
+                rows={3}
+                className="resize-none rounded-2xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs font-medium shadow-inner dark:shadow-none focus:ring-2 focus:ring-primary/10"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-4 border-t dark:border-slate-800">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 h-10 rounded-xl border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
+                onClick={() => setSubmitDisbursementConfirmOpen(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 h-10 rounded-xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[10px] font-black uppercase tracking-widest hover:bg-slate-800"
+                onClick={async () => {
+                  setSubmitDisbursementConfirmOpen(false);
+                  await onSubmitTargetDecision("Approved", { scope: "encoder", employee_id: employeeId! }, disbursementRemarks);
+                  onOpenChange(false);
+                }}
+                disabled={submitting || !disbursementRemarks.trim()}
+              >
+                {submitting ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Confirm & Submit
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rejectAllConfirmOpen} onOpenChange={setRejectAllConfirmOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl z-[100]">
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 flex items-center gap-3 bg-slate-50 dark:bg-slate-950 border-b dark:border-slate-800">
+            <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+              <AlertTriangle size={20} />
+            </div>
+            <div className="flex flex-col leading-none">
+              <DialogTitle className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                Confirm Reject All
+              </DialogTitle>
+              <DialogDescription className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
+                Rejecting Auditee Scope
+              </DialogDescription>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 space-y-5">
+            <div className="bg-rose-50/40 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-2xl p-4 flex items-start gap-4">
+              <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-900 dark:text-rose-400 leading-none">Reject Action Required</p>
+                <p className="text-[11px] text-rose-700 dark:text-rose-400 font-medium leading-relaxed">
+                  Are you sure you want to reject all active expense lines for this auditee? This action will require you to provide a rejection remark for each affected line.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Auditee</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">{salesmantName}</span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Affected Lines</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">{auditeeDetails.length} Lines</span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between bg-rose-50/50 dark:bg-rose-950/20 p-3 rounded-2xl border border-rose-100/50 dark:border-rose-900/30">
+                <span className="text-[10px] font-black uppercase tracking-widest text-rose-800 dark:text-rose-400">Total Rejected Amount</span>
+                <span className="text-sm font-black text-rose-800 dark:text-rose-400 tabular-nums">
+                  {formatCurrency(grandTotal)}
+                </span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-4 border-t dark:border-slate-800">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 h-10 rounded-xl border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
+                onClick={() => setRejectAllConfirmOpen(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 h-10 rounded-xl bg-rose-600 text-white hover:bg-rose-700 text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-rose-600/10"
+                onClick={async () => {
+                  setRejectAllConfirmOpen(false);
+                  await onSubmitTargetDecision("Rejected", { scope: "encoder", employee_id: employeeId! });
+                }}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Confirm & Reject
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

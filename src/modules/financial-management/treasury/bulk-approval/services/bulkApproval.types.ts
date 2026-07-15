@@ -109,6 +109,7 @@ export type DisbursementPayableDraftRow = {
     status?: string | null;
     feedback?: string | null;
     header_id?: number | string | null;
+    amount?: number | string | null;
     attachment_url?: string | number | { id?: string; uuid?: string; directus_files_id?: string } | null;
   }
   | null;
@@ -180,6 +181,7 @@ export type PayableResponse = {
   is_concern?: boolean;
   is_rejected?: boolean;
   feedback?: string | null;
+  expense_id?: number;
 };
 
 export type ConcernItemResponse = {
@@ -326,6 +328,11 @@ export type FinalTopSheetSalesmanResponse = {
   salesman_code: string | null;
   salesman_name: string;
   total_amount: number;
+  current_tier?: number;
+  current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  next_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  previous_tier_approver_names?: string[];
+  draft_statuses?: string[];
 };
 
 export type FinalTopSheetCellResponse = {
@@ -370,6 +377,7 @@ export type FinalTopSheetGroupMetaResponse = {
   is_waiting?: boolean;
   current_tier?: number;
   required_approver_level?: number;
+  previous_tier_approver_names?: string[];
 };
 
 export type FinalHeaderDecisionStatus = "Approved" | "Rejected" | "With Concern";

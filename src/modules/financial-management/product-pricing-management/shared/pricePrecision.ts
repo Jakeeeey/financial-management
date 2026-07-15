@@ -1,5 +1,5 @@
 export const PRICE_MAX_DECIMAL_PLACES = 4;
-export const COST_MAX_DECIMAL_PLACES = 2;
+export const COST_MAX_DECIMAL_PLACES = 4;
 
 function numericValue(value: unknown): number | null {
     if (value === null || value === undefined || value === "") return null;
