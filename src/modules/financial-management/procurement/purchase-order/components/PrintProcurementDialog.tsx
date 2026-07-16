@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, FileText, Download, X } from "lucide-react";
 import { toast } from "sonner";
 import { pdfTemplateService, type PdfTemplate } from "@/components/pdf-layout-design/services/pdf-template";
@@ -107,19 +106,18 @@ export default function PrintProcurementDialog({
             <DialogTitle>Print Purchase Order</DialogTitle>
           </DialogHeader>
           <div className="space-y-6 py-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Layout Template</label>
-              <Select value={selectedTemplateName} onValueChange={setSelectedTemplateName}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a template" />
-                </SelectTrigger>
-                <SelectContent className="!max-h-[200px] overflow-y-auto">
-                  <SelectItem value="__none__">Standard Header</SelectItem>
-                  {templates.map((t) => (
-                    <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Select Layout</label>
+              <select
+                className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-100 outline-none w-full"
+                value={selectedTemplateName}
+                onChange={(e) => setSelectedTemplateName(e.target.value)}
+              >
+                <option value="__none__">Standard Header</option>
+                {templates.map(t => (
+                  <option key={t.id} value={t.name}>{t.name}</option>
+                ))}
+              </select>
             </div>
           </div>
           <DialogFooter>
@@ -132,24 +130,33 @@ export default function PrintProcurementDialog({
       </Dialog>
 
       {isPreviewOpen && pdfUrl && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8 bg-slate-900/60 backdrop-blur-md">
-          <div className="bg-white w-full max-w-6xl h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-            <div className="p-4 border-b flex items-center justify-between shrink-0">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300"
+          onClick={() => setIsPreviewOpen(false)}
+        >
+          <div
+            className="bg-white w-full max-w-6xl h-full rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
               <div>
-                <h3 className="text-lg font-bold">Print Preview</h3>
-                <p className="text-xs text-muted-foreground">{po.purchase_order_no}</p>
+                <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Print Preview</h3>
+                <p className="text-xs text-slate-400 font-medium mt-1">{po.purchase_order_no}</p>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={handleDownloadFromPreview}>
                   <Download className="h-4 w-4 mr-1" /> Download
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => setIsPreviewOpen(false)}>
-                  <X className="h-5 w-5" />
-                </Button>
+                <button
+                  onClick={() => setIsPreviewOpen(false)}
+                  className="p-2 hover:bg-slate-100 rounded-2xl transition-all text-slate-400 hover:text-red-500"
+                >
+                  <X size={24} />
+                </button>
               </div>
             </div>
-            <div className="flex-1 bg-slate-100 p-4 flex items-center justify-center">
-              <iframe src={pdfUrl} className="w-full h-full rounded-lg border shadow-sm bg-white" title="PDF Preview" />
+            <div className="flex-1 bg-slate-100 p-8 flex items-center justify-center">
+              <iframe src={pdfUrl} className="w-full h-full rounded-2xl border border-slate-200 shadow-xl bg-white" title="PDF Preview" />
             </div>
           </div>
         </div>

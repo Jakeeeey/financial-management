@@ -4,6 +4,23 @@ import { PAPER_SIZES } from "@/components/pdf-layout-design/constants";
 import type { CompanyData } from "@/components/pdf-layout-design/types";
 import type { ProcurementDetail } from "./types";
 
+function toNum(val: unknown): number {
+  if (typeof val === "string") return Number(val.replace(/,/g, ""));
+  return Number(val ?? 0);
+}
+
+function fmt(val: number): string {
+  if (!Number.isFinite(val)) return "PHP 0.00";
+  const parts = val.toFixed(2).split(".");
+  const intPart = Number(parts[0]).toLocaleString("en-US");
+  return `PHP ${intPart}.${parts[1]}`;
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + "\u2026";
+}
+
 export interface ApprovalPrintOptions {
   supplier: {
     supplier_name?: string | null;
@@ -43,13 +60,14 @@ export async function generateApprovalPdf(
       const leftX = margins.left;
       const rightX = pageWidth - margins.right;
 
-      doc.setFontSize(22);
+      doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text("PROCUREMENT", leftX, startY, { baseline: "top" });
+      doc.text("PROCUREMENT ORDER", leftX, startY, { baseline: "top" });
 
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
-      const leftColY = startY + 10;
+      const leftColY = startY + 8;
+      const lineH = 5;
       const leftLines = [
         `PR No.: ${procurementNo}`,
         `Lead Date: ${leadDate || "---"}`,
@@ -57,7 +75,7 @@ export async function generateApprovalPdf(
         `Status: ${status || "---"}${isApproved ? " (Approved)" : ""}`,
       ];
       leftLines.forEach((line, i) => {
-        doc.text(line, leftX, leftColY + i * 5, { baseline: "top" });
+        doc.text(line, leftX, leftColY + i * lineH, { baseline: "top" });
       });
 
       const sup = options.supplier;
@@ -72,24 +90,27 @@ export async function generateApprovalPdf(
           `Terms: ${sup.payment_terms || "---"}`,
         ];
         rightLines.forEach((line, i) => {
-          doc.text(line.trim(), rightX, leftColY + (i + 1) * 5, { baseline: "top", align: "right" });
+          doc.text(line.trim(), rightX, leftColY + (i + 1) * lineH, { baseline: "top", align: "right" });
         });
       }
 
-      const dividerY = leftColY + leftLines.length * 5 + 4;
+      const dividerY = leftColY + leftLines.length * lineH + 4;
       doc.setDrawColor(200);
       doc.line(margins.left, dividerY, rightX, dividerY);
 
-      const headRows = [["Item Template", "Variant", "UOM", "Qty", "Unit Price", "Total"]];
+      const availableWidth = rightX - margins.left;
+      const colWeights = [50, 40, 14, 16, 26, 30];
+      const totalWeight = colWeights.reduce((a, b) => a + b, 0);
+      const colWidths = colWeights.map((w) => (w / totalWeight) * availableWidth);
+
+      const headRows = [["Item", "Variant", "UOM", "Qty", "Unit Price", "Total"]];
       const bodyRows = details.map((d) => [
-        d.template_name || "---",
-        d.variant_name || "---",
+        truncate(d.template_name || "---", 22),
+        truncate(d.variant_name || "---", 16),
         d.uom || "---",
         String(d.qty || 0),
-        new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 2 }).format(Number(d.unit_price || 0)),
-        new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 2 }).format(
-          Number(d.total_amount || (d.qty || 0) * (d.unit_price || 0))
-        ),
+        fmt(toNum(d.unit_price)),
+        fmt(toNum(d.total_amount) || toNum(d.qty) * toNum(d.unit_price)),
       ]);
 
       if (details.length === 0) {
@@ -106,26 +127,40 @@ export async function generateApprovalPdf(
               [
                 { content: "Grand Total", colSpan: 5, styles: { halign: "right", fontStyle: "bold" } },
                 {
-                  content: new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 2 }).format(total),
+                  content: fmt(total),
                   styles: { fontStyle: "bold" },
                 },
               ],
             ]
           : undefined,
         theme: "grid",
-        headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 8, fontStyle: "bold" },
-        styles: { fontSize: 8 },
-        footStyles: { fontSize: 8, fontStyle: "bold" },
+        headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 9, fontStyle: "bold" },
+        styles: { fontSize: 9 },
+        footStyles: { fontSize: 9, fontStyle: "bold" },
+        columnStyles: {
+          0: { cellWidth: colWidths[0] },
+          1: { cellWidth: colWidths[1] },
+          2: { cellWidth: colWidths[2] },
+          3: { cellWidth: colWidths[3] },
+          4: { cellWidth: colWidths[4] },
+          5: { cellWidth: colWidths[5] },
+        },
       });
 
       const signatureY = (doc as any).lastAutoTable?.finalY || dividerY + 30;
-      doc.setFontSize(9);
+      doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
       doc.text("Prepared By", leftX, signatureY + 20, { baseline: "top" });
       doc.text("Approved By", rightX, signatureY + 20, { baseline: "top", align: "right" });
       doc.setDrawColor(0);
       doc.line(leftX, signatureY + 32, leftX + 60, signatureY + 32);
       doc.line(rightX - 60, signatureY + 32, rightX, signatureY + 32);
+
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "italic");
+      doc.setTextColor(120);
+      doc.text("This is a system-generated document.", leftX, signatureY + 50, { baseline: "top" });
+      doc.setTextColor(0);
     }
   );
 
