@@ -30,11 +30,11 @@ export function POFilters({ search, onSearchChange, status, onStatusChange }: PO
           className="h-9 w-full"
         />
       </div>
-      <div className="flex items-end gap-2 sm:ml-auto">
-        <div className="w-full sm:w-44">
+          <div className="flex items-end gap-2 ml-auto w-full lg:w-auto">
+        <div className="w-full lg:w-44 shrink-0">
           <label className="text-xs font-medium text-muted-foreground mb-1 block">Status</label>
           <Select value={status} onValueChange={onStatusChange}>
-            <SelectTrigger className="h-9">
+            <SelectTrigger className="h-9 w-full">
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent className="!max-h-[160px] !overflow-y-auto" position="popper">
