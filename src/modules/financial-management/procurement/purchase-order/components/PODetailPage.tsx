@@ -200,11 +200,11 @@ export default function PODetailPage() {
         items={items}
         supplierName={supplierName}
         supplier={{
-          address: (po as any)._supplier_address,
-          email_address: (po as any)._supplier_email,
-          phone_number: (po as any)._supplier_phone,
-          tin_number: (po as any)._supplier_tin,
-          payment_terms: (po as any)._supplier_payment_terms,
+          address: po._supplier_address,
+          email_address: po._supplier_email,
+          phone_number: po._supplier_phone,
+          tin_number: po._supplier_tin,
+          payment_terms: po._supplier_payment_terms,
         }}
       />
 
