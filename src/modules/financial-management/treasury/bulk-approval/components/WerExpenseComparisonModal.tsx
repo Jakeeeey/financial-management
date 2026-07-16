@@ -61,8 +61,8 @@ function EvidenceImage({ item, title, onPreviewUrl }: {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-3xl border border-border bg-card text-card-foreground shadow-sm">
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4">
+    <div className="flex h-[68vh] min-h-0 flex-col overflow-hidden rounded-3xl border border-border bg-card text-card-foreground shadow-sm">
+      <div className="flex h-[5.25rem] shrink-0 items-center justify-between border-b border-border px-5 py-3">
         <div>
           <Badge className={item.category === "wer-summary" ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300" : "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"}>
             {title}
@@ -90,7 +90,7 @@ function EvidenceImage({ item, title, onPreviewUrl }: {
           </Button>
         </div>
       </div>
-      <div ref={setViewerEl} className="group relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-slate-950 p-4">
+      <div ref={setViewerEl} className="group relative flex h-[calc(68vh-5.25rem)] min-h-0 shrink-0 items-center justify-center overflow-hidden bg-slate-950 p-4">
         <motion.div
           drag={zoom > 1}
           dragMomentum={false}
@@ -136,7 +136,7 @@ export default function WerExpenseComparisonModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} className="flex h-[90vh] w-[96vw] max-w-[96vw] sm:!w-[90vw] sm:!max-w-[90vw] flex-col overflow-hidden rounded-[2rem] border-border bg-muted/40 p-0 text-foreground shadow-2xl">
+      <DialogContent showCloseButton={false} className="flex h-[86vh] w-[96vw] max-w-[96vw] sm:!w-[90vw] sm:!max-w-[90vw] flex-col overflow-hidden rounded-[2rem] border-border bg-muted/40 p-0 text-foreground shadow-2xl">
         <DialogTitle className="sr-only">WER and expense attachment comparison</DialogTitle>
         <DialogDescription className="sr-only">Compare weekly expense report summaries with the selected expense attachment.</DialogDescription>
 
@@ -150,8 +150,8 @@ export default function WerExpenseComparisonModal({
           </Button>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-auto p-5 md:grid-cols-2 md:overflow-hidden">
-          <div className="min-h-0">
+        <div className="grid min-h-0 flex-1 grid-cols-1 content-start gap-5 overflow-auto p-5 md:grid-cols-2 md:overflow-hidden">
+          <div className="h-[68vh] min-h-0">
             {werItems.length > 0 ? (
               <Carousel setApi={setWerCarouselApi} className="h-full w-full" opts={{ watchDrag: false }}>
                 <CarouselContent className="h-full">
@@ -184,7 +184,7 @@ export default function WerExpenseComparisonModal({
             )}
           </div>
 
-          <div className="min-h-0">
+          <div className="h-[68vh] min-h-0">
             {expenseItem ? (
               <EvidenceImage item={expenseItem} title="Expense Attachment" onPreviewUrl={onPreviewUrl} />
             ) : (
