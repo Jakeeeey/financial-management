@@ -101,7 +101,7 @@ export default function AuditeeDetailSplitModal({
   const [inlineZoom, setInlineZoom] = React.useState(1);
   const [inlineRotation, setInlineRotation] = React.useState(0);
   const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
-  const [showEvidence, setShowEvidence] = React.useState(false);
+  const [showEvidence, setShowEvidence] = React.useState(true);
   const [evidenceMode, setEvidenceMode] = React.useState<{ kind: "all" } | { kind: "line"; expenseId: number }>({ kind: "all" });
   const [comparisonExpenseId, setComparisonExpenseId] = React.useState<number | null>(null);
 
@@ -225,7 +225,7 @@ export default function AuditeeDetailSplitModal({
       setInlineZoom(1);
       setInlineRotation(0);
       setCurrentSlide(0);
-      setShowEvidence(false);
+      setShowEvidence(true);
       setEvidenceMode({ kind: "all" });
       setComparisonExpenseId(null);
     }
