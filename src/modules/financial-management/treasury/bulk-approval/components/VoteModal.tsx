@@ -75,7 +75,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const [editedAmounts, setEditedAmounts] = React.useState<Record<number, string>>({});
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
-  const [showCoverage, setShowCoverage] = React.useState(false);
+  const [showCoverage, setShowCoverage] = React.useState(true);
   const [evidenceMode, setEvidenceMode] = React.useState<{ kind: "all" } | { kind: "line"; expenseId: number }>({ kind: "all" });
   const [comparisonExpenseId, setComparisonExpenseId] = React.useState<number | null>(null);
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
@@ -142,7 +142,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     if (open && detail) {
       setRemarks("");
       setEditedAmounts({});
-      setShowCoverage(false);
+      setShowCoverage(true);
       setEvidenceMode({ kind: "all" });
       setComparisonExpenseId(null);
       setCurrentSlide(0);
