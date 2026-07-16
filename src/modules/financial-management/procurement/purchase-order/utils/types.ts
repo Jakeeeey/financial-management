@@ -17,6 +17,11 @@ export interface PurchaseOrder {
   date_received?: string | null;
   payment_status?: number | null;
   remark?: string | null;
+  _supplier_address?: string | null;
+  _supplier_email?: string | null;
+  _supplier_phone?: string | null;
+  _supplier_tin?: string | null;
+  _supplier_payment_terms?: string | null;
 }
 
 export interface PurchaseOrderItem {

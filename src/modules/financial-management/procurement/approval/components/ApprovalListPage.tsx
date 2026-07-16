@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PRFilters } from "./PRFilters";
 import { PRTable } from "./PRTable";
 import { usePRList } from "../hooks/usePRList";
@@ -33,7 +35,7 @@ export default function ApprovalListPage() {
     [debouncedProcurementNo, status, supplierLabel, dateFrom, dateTo]
   );
 
-  const { rows, total, loading, error } = usePRList(query);
+  const { rows, total, loading, error, reload } = usePRList(query);
 
   const tableSupplierOptions = React.useMemo(() => {
     if (!rows || rows.length === 0) return [];
@@ -51,9 +53,15 @@ export default function ApprovalListPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">Procurement Approval</h1>
-        <p className="text-sm text-muted-foreground">Review and approve purchase requests</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">Procurement Approval</h1>
+          <p className="text-sm text-muted-foreground">Review and approve purchase requests</p>
+        </div>
+        <Button variant="default" size="sm" onClick={() => reload()} className="gap-2">
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
       </div>
 
       <PRFilters

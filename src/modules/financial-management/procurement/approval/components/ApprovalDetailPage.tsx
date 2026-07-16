@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,108 +11,24 @@ import { usePRDetail } from "../hooks/usePRDetail";
 import { PRDetailHeader } from "./PRDetailHeader";
 import { PRLineItemsTable } from "./PRLineItemsTable";
 import type { ProcurementDetail } from "../utils/types";
-import { formatPHP } from "../utils/format";
 import { toBoolLike } from "../utils/parse";
 import { approvePR, generatePOFromPR } from "../providers/approvalService";
 import { toast } from "sonner";
+import PrintProcurementDialog from "./PrintProcurementDialog";
 
 type ApprovalDetailPageProps = {
   id: number;
 };
 
-function PrintContent({ master, details, total }: {
-  master: NonNullable<ReturnType<typeof usePRDetail>["master"]>;
-  details: NonNullable<ReturnType<typeof usePRDetail>["details"]>;
-  total: number;
-}) {
-  return (
-    <div id="print-root" style={{display:"none"}}>
-      <style>{`
-        @media print {
-          #print-root { display: block !important; }
-          @page { size: A4; margin: 10mm 12mm; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
-          body > :not(#print-root) { display: none !important; }
-          #print-root { display: block !important; overflow: visible; background: white; z-index: 9999; padding: 0; }
-          #print-root table { border-collapse: collapse; width: 100%; page-break-inside: auto; }
-          #print-root thead { display: table-header-group; }
-          #print-root tfoot { display: table-row-group; }
-          #print-root tr { page-break-inside: avoid; }
-          #print-root tbody { page-break-inside: auto; }
-          #print-root th, #print-root td { border-top: 1px solid #ccc; padding: 6px 8px; font-size: 11px; vertical-align: top; }
-          #print-root th { background: #F8FAFC !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; text-align: left; }
-        }
-      `}</style>
-      <div style={{ maxWidth: "900px", margin: "0 auto", padding: "24px" }}>
-        <header style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ fontSize: "22px", fontWeight: 700 }}>PROCUREMENT</div>
-            <div style={{ fontSize: "13px", color: "#475569" }}>Reference: {master.procurement_no}</div>
-            <div style={{ fontSize: "13px", color: "#475569" }}>Lead Date: {master.lead_date ?? "\u2014"}</div>
-            <div style={{ fontSize: "13px", color: "#475569" }}>Status: {master.status}{master.isApproved ? " (Approved)" : ""}</div>
-          </div>
-          <div style={{ textAlign: "right", fontSize: "13px" }}>
-            <div style={{ fontWeight: 600 }}>{master.supplier_name ?? `Supplier #${master.supplier_id ?? ""}`}</div>
-            <div>{master.supplier_address}</div>
-            <div>{master.supplier_email} {master.supplier_phone ? ` \u00B7 ${master.supplier_phone}` : ""}</div>
-            <div>TIN: {master.supplier_tin}</div>
-            <div>Terms: {master.supplier_payment_terms}</div>
-          </div>
-        </header>
-        <hr style={{ margin: "16px 0" }} />
-        <table style={{ width: "100%", fontSize: "13px" }}>
-          <thead>
-            <tr style={{ textAlign: "left", borderBottom: "1px solid #ccc" }}>
-              <th style={{ padding: "6px 8px" }}>Item Template</th>
-              <th style={{ padding: "6px 8px" }}>Variant</th>
-              <th style={{ padding: "6px 8px" }}>UOM</th>
-              <th style={{ padding: "6px 8px", textAlign: "right" }}>Qty</th>
-              <th style={{ padding: "6px 8px", textAlign: "right" }}>Unit Price</th>
-              <th style={{ padding: "6px 8px", textAlign: "right" }}>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {details.map((l: Record<string, unknown>) => {
-              const uom = (l.uom as string) || "\u2014";
-              return (
-                <tr key={l.id as number} style={{ borderBottom: "1px solid #ccc" }}>
-                  <td style={{ padding: "6px 8px" }}>{(l.template_name as string) ?? "\u2014"}</td>
-                  <td style={{ padding: "6px 8px" }}>{(l.variant_name as string) ?? "\u2014"}</td>
-                  <td style={{ padding: "6px 8px" }}>{uom}</td>
-                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{l.qty as string}</td>
-                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{formatPHP(l.unit_price as number)}</td>
-                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{formatPHP(Number(l.total_amount || (l.qty as number || 0) * (l.unit_price as number || 0)))}</td>
-                </tr>
-              );
-            })}
-            {details.length === 0 && <tr><td colSpan={6} style={{ padding: "16px", textAlign: "center", color: "#64748b" }}>No lines.</td></tr>}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={5} style={{ paddingTop: "12px", textAlign: "right", fontWeight: 600 }}>Grand Total</td>
-              <td style={{ paddingTop: "12px", textAlign: "right", fontWeight: 700 }}>{formatPHP(total)}</td>
-            </tr>
-          </tfoot>
-        </table>
-        <div style={{ marginTop: "32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", fontSize: "13px" }}>
-          <div><div style={{ fontWeight: 600 }}>Prepared By</div><div style={{ marginTop: "48px", borderTop: "1px solid #000", width: "200px" }}></div></div>
-          <div><div style={{ fontWeight: 600 }}>Approved By</div><div style={{ marginTop: "48px", borderTop: "1px solid #000", width: "200px" }}></div></div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function ApprovalDetailPage({ id }: ApprovalDetailPageProps) {
   const router = useRouter();
   const { master, details, loading, error, reload } = usePRDetail(id);
   const [localDetails, setLocalDetails] = useState<ProcurementDetail[]>([]);
-  const [mounted, setMounted] = useState(false);
   const [approving, setApproving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
   useEffect(() => { setLocalDetails(details); }, [details]);
 
   const handleDetailUpdated = useCallback((detailId: number, changes: Partial<ProcurementDetail>) => {
@@ -130,7 +45,7 @@ export default function ApprovalDetailPage({ id }: ApprovalDetailPageProps) {
 
   const computedTotal = localDetails.reduce((a, b) => a + Number((b.qty || 0) * (b.unit_price || 0)), 0);
 
-  const handlePrint = useCallback(() => { window.print(); }, []);
+  const handlePrint = useCallback(() => { setPrintDialogOpen(true); }, []);
 
   async function handleApprove() {
     setApproving(true);
@@ -240,7 +155,25 @@ export default function ApprovalDetailPage({ id }: ApprovalDetailPageProps) {
         </DialogContent>
       </Dialog>
 
-      {mounted && createPortal(<PrintContent master={master} details={localDetails} total={computedTotal} />, document.body)}
+      <PrintProcurementDialog
+        open={printDialogOpen}
+        onOpenChange={setPrintDialogOpen}
+        procurementNo={master.procurement_no}
+        leadDate={master.lead_date}
+        status={master.status}
+        isApproved={master.isApproved}
+        poNo={master.po_no}
+        details={localDetails}
+        total={computedTotal}
+        supplier={{
+          supplier_name: master.supplier_name,
+          address: master.supplier_address,
+          email_address: master.supplier_email,
+          phone_number: master.supplier_phone,
+          tin_number: master.supplier_tin,
+          payment_terms: master.supplier_payment_terms,
+        }}
+      />
     </div>
   );
 }
