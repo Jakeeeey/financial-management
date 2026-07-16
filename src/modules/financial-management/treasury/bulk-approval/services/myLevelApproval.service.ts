@@ -335,6 +335,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             is_rejected: item.status === "Rejected",
             feedback: item.feedback ?? null,
             expense_id: expenseId,
+            header_id: toNumericId(item.header_id) ?? 0,
           };
         });
 
@@ -495,6 +496,7 @@ export async function handleMyLevelApprovalGetResource(params: {
 
         return {
           expense_id: expenseId,
+          header_id: toNumericId(c.header_id) ?? 0,
           status: c.status ?? "With Concern",
           feedback: c.feedback ?? null,
           return_to: c.return_to ?? null,

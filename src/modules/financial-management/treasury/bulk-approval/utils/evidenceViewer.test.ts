@@ -17,11 +17,11 @@ type Expect<Value extends true> = Value;
 
 type DraftAttachmentsQueryOkContract = Expect<Equal<DraftDetail["attachments_query_ok"], boolean>>;
 type DraftAttachmentHeaderContract = Expect<Equal<NonNullable<DraftDetail["attachments"]>[number]["header_id"], number>>;
-type DraftPayableHeaderContract = Expect<Equal<DraftDetail["payables"][number]["header_id"], number | undefined>>;
+type DraftPayableHeaderContract = Expect<Equal<DraftDetail["payables"][number]["header_id"], number>>;
 type FinalAttachmentsQueryOkContract = Expect<Equal<FinalTopSheetResponse["attachments_query_ok"], boolean>>;
 type ServiceDraftAttachmentsQueryOkContract = Expect<Equal<ServiceDraftDetail["attachments_query_ok"], boolean>>;
 type ServiceDraftAttachmentHeaderContract = Expect<Equal<NonNullable<ServiceDraftDetail["attachments"]>[number]["header_id"], number>>;
-type ServiceDraftPayableHeaderContract = Expect<Equal<ServiceDraftDetail["payables"][number]["header_id"], number | undefined>>;
+type ServiceDraftPayableHeaderContract = Expect<Equal<ServiceDraftDetail["payables"][number]["header_id"], number>>;
 type ServiceFinalAttachmentsQueryOkContract = Expect<Equal<ServiceFinalTopSheetResponse["attachments_query_ok"], boolean>>;
 
 void ({} as DraftAttachmentsQueryOkContract);
@@ -110,4 +110,30 @@ test("returns empty collections for empty inputs", () => {
   assert.deepEqual(state.allItems, []);
   assert.equal(state.lineItemsByExpenseId.size, 0);
   assert.deepEqual(state.missingHeaders, []);
+});
+
+test("keeps all top-sheet WER summaries when reviewing one expense line", () => {
+  const state = buildEvidenceViewerState({
+    headers: [
+      { headerId: 10, label: "Alice — Header #10" },
+      { headerId: 20, label: "Bob — Header #20" },
+      { headerId: 30, label: "Alice — Header #30" },
+    ],
+    werAttachments: [
+      { headerId: 10, url: "wer-10", label: "WER 10" },
+      { headerId: 20, url: "wer-20", label: "WER 20" },
+      { headerId: 30, url: "wer-30", label: "WER 30" },
+    ],
+    expenseAttachments: [
+      { expenseId: 101, headerId: 10, url: "expense-101", label: "Meal" },
+      { expenseId: 202, headerId: 20, url: "expense-202", label: "Fuel" },
+    ],
+  });
+
+  assert.deepEqual(state.lineItemsByExpenseId.get(101)?.map(({ url }) => url), [
+    "wer-10",
+    "wer-20",
+    "wer-30",
+    "expense-101",
+  ]);
 });

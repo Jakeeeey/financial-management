@@ -182,11 +182,12 @@ export type PayableResponse = {
   is_rejected?: boolean;
   feedback?: string | null;
   expense_id?: number;
-  header_id?: number;
+  header_id: number;
 };
 
 export type ConcernItemResponse = {
   expense_id: number;
+  header_id: number;
   status: string;
   feedback: string | null;
   return_to: string | null;
