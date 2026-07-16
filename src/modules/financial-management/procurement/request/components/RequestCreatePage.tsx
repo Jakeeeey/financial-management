@@ -231,9 +231,9 @@ export function RequestCreatePage() {
             <div className="rounded-md border bg-muted/30 p-3 text-sm grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               <div><span className="text-muted-foreground text-xs block">Type</span><span className="font-medium">{selectedSupplier.supplier_type ?? "\u2014"}</span></div>
               {selectedSupplier.email_address && <div><span className="text-muted-foreground text-xs block">Email</span><span className="truncate">{selectedSupplier.email_address}</span></div>}
-              {selectedSupplier.phone_number && <div><span className="text-muted-foreground text-xs block">Phone</span><span>{selectedSupplier.phone_number}</span></div>}
-              {selectedSupplier.tin_number && <div><span className="text-muted-foreground text-xs block">TIN</span><span className="font-mono text-xs">{selectedSupplier.tin_number}</span></div>}
-              {selectedSupplier.payment_terms && <div><span className="text-muted-foreground text-xs block">Payment Terms</span><span>{selectedSupplier.payment_terms}</span></div>}
+              {selectedSupplier.phone_number && <div><span className="text-muted-foreground text-xs block">Phone</span><span className="truncate block">{selectedSupplier.phone_number}</span></div>}
+              {selectedSupplier.tin_number && <div><span className="text-muted-foreground text-xs block">TIN</span><span className="truncate font-mono text-xs">{selectedSupplier.tin_number}</span></div>}
+              {selectedSupplier.payment_terms && <div><span className="text-muted-foreground text-xs block">Payment Terms</span><span className="truncate block">{selectedSupplier.payment_terms}</span></div>}
               {selectedSupplier.address && <div className="sm:col-span-2"><span className="text-muted-foreground text-xs block">Address</span><span className="truncate block">{selectedSupplier.address}</span></div>}
             </div>
           )}
