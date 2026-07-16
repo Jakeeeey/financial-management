@@ -7,7 +7,9 @@ const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 export async function GET(request: NextRequest) {
   try {
     const q = request.nextUrl.searchParams.get("q") || "";
-    const filter = q ? { name: { _icontains: q } } : {};
+    const filter = q
+      ? { _and: [{ name: { _icontains: q } }, { is_active: { _eq: 1 } }] }
+      : { is_active: { _eq: 1 } };
     const res = await fetch(
       `${DIRECTUS_URL}/items/item_template?filter=${encodeURIComponent(JSON.stringify(filter))}`,
       { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }

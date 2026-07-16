@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const tmplId = request.nextUrl.searchParams.get("item_tmpl_id") || "";
     if (!tmplId) return NextResponse.json({ data: [] });
-    const filter = { item_tmpl_id: { _eq: Number(tmplId) } };
+    const filter = { _and: [{ item_tmpl_id: { _eq: Number(tmplId) } }, { active: { _eq: true } }] };
     const res = await fetch(
       `${DIRECTUS_URL}/items/item_variant?filter=${encodeURIComponent(JSON.stringify(filter))}`,
       { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }, cache: "no-store" }
