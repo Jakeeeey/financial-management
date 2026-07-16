@@ -100,7 +100,7 @@ export default function AuditeeDetailSplitModal({
   const [inlineZoom, setInlineZoom] = React.useState(1);
   const [inlineRotation, setInlineRotation] = React.useState(0);
   const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
-  const [showEvidence, setShowEvidence] = React.useState(true);
+  const [showEvidence, setShowEvidence] = React.useState(false);
   const [evidenceMode, setEvidenceMode] = React.useState<{ kind: "all" } | { kind: "line"; expenseId: number }>({ kind: "all" });
 
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
@@ -223,7 +223,7 @@ export default function AuditeeDetailSplitModal({
       setInlineZoom(1);
       setInlineRotation(0);
       setCurrentSlide(0);
-      setShowEvidence(true);
+      setShowEvidence(false);
       setEvidenceMode({ kind: "all" });
     }
   }, [open]);
@@ -833,7 +833,7 @@ export default function AuditeeDetailSplitModal({
                                     </>
                                   )}
                                   {item.attachment_url && (
-                                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => openEvidence({ kind: "line", expenseId: item.expense_id })} title="Compare WER summary and expense document">
+                                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 cursor-pointer rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => openEvidence({ kind: "line", expenseId: item.expense_id })} title="Compare WER summary and expense document">
                                       <FileText size={12} />
                                     </Button>
                                   )}

@@ -877,7 +877,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                         variant="ghost"
                                         className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40"
                                         onClick={() => p.expense_id && openEvidence({ kind: "line", expenseId: p.expense_id })}
-                                        disabled={processingItem === p.id || submitting || isStatusLocked}
+                                        aria-label="Compare WER summary and expense document"
+                                        title="Compare WER summary and expense document"
                                       >
                                         <ExternalLink size={14} />
                                       </Button>
