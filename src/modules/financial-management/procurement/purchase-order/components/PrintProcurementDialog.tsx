@@ -79,6 +79,7 @@ export default function PrintProcurementDialog({
       );
       setPdfUrl(url);
       setIsPreviewOpen(true);
+      onOpenChange(false);
     } catch (error) {
       console.error("Error generating PDF:", error);
       toast.error("Failed to generate PDF.");
