@@ -126,7 +126,6 @@ export default function PrintProcurementDialog({
                 value={selectedTemplateName}
                 onChange={(e) => setSelectedTemplateName(e.target.value)}
               >
-                <option value="__none__">Standard Header</option>
                 {templates.map(t => (
                   <option key={t.id} value={t.name}>{t.name}</option>
                 ))}

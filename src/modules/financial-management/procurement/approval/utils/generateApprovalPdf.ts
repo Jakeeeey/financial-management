@@ -44,7 +44,7 @@ export async function generateApprovalPdf(
   companyData: CompanyData | null,
   options: ApprovalPrintOptions
 ): Promise<{ blob: Blob; url: string }> {
-  const templateName = options.selectedTemplate === "__none__" ? "" : (options.selectedTemplate || "");
+  const templateName = options.selectedTemplate || "";
 
   const doc = await PdfEngine.generateWithFrame(
     templateName,
@@ -53,7 +53,7 @@ export async function generateApprovalPdf(
       const margins = config.margins || { top: 10, bottom: 10, left: 10, right: 10 };
 
       const baseSize = config.paperSize === 'Custom' ? config.customSize : (PAPER_SIZES[config.paperSize] || PAPER_SIZES.A4);
-      const pageWidth = baseSize.width;
+      const pageWidth = config.orientation === 'landscape' ? baseSize.height : baseSize.width;
       const pageHeight = config.orientation === 'landscape' ? baseSize.width : baseSize.height;
       const bottomMargin = config.bodyEnd ? (pageHeight - config.bodyEnd) : margins.bottom;
 
@@ -103,10 +103,14 @@ export async function generateApprovalPdf(
       const totalWeight = colWeights.reduce((a, b) => a + b, 0);
       const colWidths = colWeights.map((w) => (w / totalWeight) * availableWidth);
 
+      const fontSize = 9;
+      const approxCharWidth = 0.22 * fontSize;
+      const maxChars = (colIdx: number) => Math.floor(colWidths[colIdx] / approxCharWidth);
+
       const headRows = [["Item", "Variant", "UOM", "Qty", "Unit Price", "Total"]];
       const bodyRows = details.map((d) => [
-        truncate(d.template_name || "---", 22),
-        truncate(d.variant_name || "---", 16),
+        truncate(d.template_name || "---", maxChars(0)),
+        truncate(d.variant_name || "---", maxChars(1)),
         d.uom || "---",
         String(d.qty || 0),
         fmt(toNum(d.unit_price)),

@@ -35,7 +35,7 @@ export async function generatePurchaseOrderPdf(
   companyData: CompanyData | null,
   options: POPrintOptions
 ): Promise<{ blob: Blob; url: string }> {
-  const templateName = options.selectedTemplate === "__none__" ? "" : (options.selectedTemplate || "");
+  const templateName = options.selectedTemplate || "";
 
   const doc = await PdfEngine.generateWithFrame(
     templateName,
@@ -44,7 +44,7 @@ export async function generatePurchaseOrderPdf(
       const margins = config.margins || { top: 10, bottom: 10, left: 10, right: 10 };
 
       const baseSize = config.paperSize === 'Custom' ? config.customSize : (PAPER_SIZES[config.paperSize] || PAPER_SIZES.A4);
-      const pageWidth = baseSize.width;
+      const pageWidth = config.orientation === 'landscape' ? baseSize.height : baseSize.width;
       const pageHeight = config.orientation === 'landscape' ? baseSize.width : baseSize.height;
       const bottomMargin = config.bodyEnd ? (pageHeight - config.bodyEnd) : margins.bottom;
 
@@ -109,10 +109,14 @@ export async function generatePurchaseOrderPdf(
       const totalWeight = colWeights.reduce((a, b) => a + b, 0);
       const colWidths = colWeights.map((w) => (w / totalWeight) * availableWidth);
 
+      const fontSize = 9;
+      const approxCharWidth = 0.22 * fontSize;
+      const maxChars = (colIdx: number) => Math.floor(colWidths[colIdx] / approxCharWidth);
+
       const headRows = [["#", "Item", "UOM", "Qty", "Unit Price", "Total"]];
       const bodyRows = items.map((item, i) => [
         String(item.line_no || i + 1),
-        truncate(resolveName(item), 36),
+        truncate(resolveName(item), maxChars(1)),
         item.uom || "---",
         toNum(item.qty).toFixed(2),
         fmt(toNum(item.unit_price)),
