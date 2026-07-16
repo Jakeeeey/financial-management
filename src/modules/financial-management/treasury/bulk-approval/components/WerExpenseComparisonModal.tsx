@@ -12,6 +12,7 @@ import {
   CarouselItem,
   CarouselNext,
   CarouselPrevious,
+  type CarouselApi,
 } from "@/components/ui/carousel";
 import {
   Dialog,
@@ -114,6 +115,25 @@ export default function WerExpenseComparisonModal({
   expenseItem,
   onPreviewUrl,
 }: Props) {
+  const [werCarouselApi, setWerCarouselApi] = React.useState<CarouselApi>();
+  const [currentWerSlide, setCurrentWerSlide] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!werCarouselApi) return;
+    const updateSlide = () => setCurrentWerSlide(werCarouselApi.selectedScrollSnap());
+    updateSlide();
+    werCarouselApi.on("select", updateSlide);
+    return () => {
+      werCarouselApi.off("select", updateSlide);
+    };
+  }, [werCarouselApi]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setCurrentWerSlide(0);
+    werCarouselApi?.scrollTo(0);
+  }, [open, werCarouselApi]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent showCloseButton={false} className="flex h-[95vh] sm:!w-[98vw] sm:!max-w-[98vw] flex-col overflow-hidden rounded-[2rem] border-slate-200 bg-slate-100 p-0 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
@@ -133,11 +153,18 @@ export default function WerExpenseComparisonModal({
         <div className="grid min-h-0 flex-1 grid-cols-2 gap-5 p-5">
           <div className="min-h-0">
             {werItems.length > 0 ? (
-              <Carousel className="h-full w-full" opts={{ watchDrag: false }}>
+              <Carousel setApi={setWerCarouselApi} className="h-full w-full" opts={{ watchDrag: false }}>
                 <CarouselContent className="h-full">
-                  {werItems.map((item) => (
+                  {werItems.map((item, index) => (
                     <CarouselItem key={item.url} className="h-full">
-                      <EvidenceImage item={item} title="WER Summary Attachment" onPreviewUrl={onPreviewUrl} />
+                      <div className="relative h-full">
+                        <EvidenceImage item={item} title={`WER Summary Attachment ${index + 1}`} onPreviewUrl={onPreviewUrl} />
+                        {werItems.length > 1 && (
+                          <Badge className="absolute right-5 top-20 z-20 border-white/10 bg-slate-950/80 text-white shadow-lg backdrop-blur">
+                            WER {currentWerSlide + 1} of {werItems.length}
+                          </Badge>
+                        )}
+                      </div>
                     </CarouselItem>
                   ))}
                 </CarouselContent>
