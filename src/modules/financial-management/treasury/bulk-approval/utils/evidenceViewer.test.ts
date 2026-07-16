@@ -1,6 +1,37 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
+import type {
+  DraftDetail,
+  FinalTopSheetResponse,
+} from "../type";
+import type {
+  DraftDetail as ServiceDraftDetail,
+  FinalTopSheetResponse as ServiceFinalTopSheetResponse,
+} from "../services/bulkApproval.types";
+
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends
+  (<Value>() => Value extends Right ? 1 : 2) ? true : false;
+type Expect<Value extends true> = Value;
+
+type DraftAttachmentsQueryOkContract = Expect<Equal<DraftDetail["attachments_query_ok"], boolean>>;
+type DraftAttachmentHeaderContract = Expect<Equal<NonNullable<DraftDetail["attachments"]>[number]["header_id"], number>>;
+type DraftPayableHeaderContract = Expect<Equal<DraftDetail["payables"][number]["header_id"], number | undefined>>;
+type FinalAttachmentsQueryOkContract = Expect<Equal<FinalTopSheetResponse["attachments_query_ok"], boolean>>;
+type ServiceDraftAttachmentsQueryOkContract = Expect<Equal<ServiceDraftDetail["attachments_query_ok"], boolean>>;
+type ServiceDraftAttachmentHeaderContract = Expect<Equal<NonNullable<ServiceDraftDetail["attachments"]>[number]["header_id"], number>>;
+type ServiceDraftPayableHeaderContract = Expect<Equal<ServiceDraftDetail["payables"][number]["header_id"], number | undefined>>;
+type ServiceFinalAttachmentsQueryOkContract = Expect<Equal<ServiceFinalTopSheetResponse["attachments_query_ok"], boolean>>;
+
+void ({} as DraftAttachmentsQueryOkContract);
+void ({} as DraftAttachmentHeaderContract);
+void ({} as DraftPayableHeaderContract);
+void ({} as FinalAttachmentsQueryOkContract);
+void ({} as ServiceDraftAttachmentsQueryOkContract);
+void ({} as ServiceDraftAttachmentHeaderContract);
+void ({} as ServiceDraftPayableHeaderContract);
+void ({} as ServiceFinalAttachmentsQueryOkContract);
 
 const require = createRequire(import.meta.url);
 const { buildEvidenceViewerState } = require("./evidenceViewer.ts") as typeof import("./evidenceViewer");

@@ -452,11 +452,13 @@ export async function handleMyLevelApprovalGetResource(params: {
             currentVersion: toNumber(draft.approval_version, 1),
           }),
           headerIds.length > 0 
-            ? directusFetch(`/items/expense_attachments?filter[header_id][_in]=${headerIds.join(",")}&fields=id,file_url,file_name&limit=-1`)
+            ? directusFetch(`/items/expense_attachments?filter[header_id][_in]=${headerIds.join(",")}&fields=id,header_id,file_url,file_name&limit=-1`)
             : Promise.resolve({ ok: true, data: { data: [] } })
         ]);
 
-      const attachments = (attachmentsRes.data as DirectusListResponse<{ file_url?: string | null; file_name?: string | null }>)?.data ?? [];
+      const attachments = attachmentsRes.ok
+        ? (attachmentsRes.data as DirectusListResponse<{ header_id?: number | string | null; file_url?: string | null; file_name?: string | null }>)?.data ?? []
+        : [];
 
       const currentTier = parseTier(draft.status ?? "Submitted");
       const approvalVersion = toNumber(draft.approval_version, 1);
@@ -483,6 +485,7 @@ export async function handleMyLevelApprovalGetResource(params: {
           is_rejected: expenseObj?.status === "Rejected",
           feedback: expenseObj?.feedback ?? null,
           expense_id: expenseObj ? (toNumericId(expenseObj.id) ?? 0) : (toNumericId(p.expense_id) ?? 0),
+          header_id: expenseObj ? (toNumericId(expenseObj.header_id) ?? 0) : 0,
         };
       });
 
@@ -558,9 +561,11 @@ export async function handleMyLevelApprovalGetResource(params: {
             myVote,
           }),
         attachments: attachments.map((a) => ({
+          header_id: toNumericId(a.header_id) ?? 0,
           file_url: a.file_url ?? "",
           file_name: a.file_name ?? "Attachment",
         })),
+        attachments_query_ok: attachmentsRes.ok,
       });
     }
 

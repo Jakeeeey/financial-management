@@ -182,6 +182,7 @@ export type PayableResponse = {
   is_rejected?: boolean;
   feedback?: string | null;
   expense_id?: number;
+  header_id?: number;
 };
 
 export type ConcernItemResponse = {
@@ -386,6 +387,31 @@ export type FinalTopSheetGroupMetaResponse = {
   current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
   next_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
   previous_tier_approver_names?: string[];
+};
+
+export type FinalTopSheetResponse = {
+  group: FinalTopSheetGroupMetaResponse;
+  salesmen: FinalTopSheetSalesmanResponse[];
+  coa_rows: FinalTopSheetCoaRowResponse[];
+  details: FinalTopSheetDetailResponse[];
+  grand_total: number;
+  attachments_query_ok: boolean;
+  attachments?: {
+    header_id: number;
+    file_url: string;
+    file_name: string;
+    encoder_id?: number;
+  }[];
+};
+
+export type DraftDetail = {
+  draft: DraftRowResponse;
+  payables: PayableResponse[];
+  concern_items?: ConcernItemResponse[];
+  attachments_query_ok: boolean;
+  attachments?: { header_id: number; file_url: string; file_name: string }[];
+  my_vote: { status: string; created_at: string; version: number } | null;
+  can_vote: boolean;
 };
 
 export type FinalHeaderDecisionStatus = "Approved" | "Rejected" | "With Concern";
