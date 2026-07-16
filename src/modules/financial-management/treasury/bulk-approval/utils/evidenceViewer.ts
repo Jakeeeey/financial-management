@@ -34,6 +34,14 @@ export function buildWerExpenseComparison(input: {
   };
 }
 
+export function clampEvidenceZoom(value: number): number {
+  return Math.min(3, Math.max(1, value));
+}
+
+export function rotateEvidenceClockwise(rotation: number): number {
+  return (rotation + 90) % 360;
+}
+
 export function buildEvidenceViewerState(input: {
   headers: EvidenceHeader[];
   werAttachments: WerSummaryAttachment[];

@@ -34,7 +34,7 @@ void ({} as ServiceDraftPayableHeaderContract);
 void ({} as ServiceFinalAttachmentsQueryOkContract);
 
 const require = createRequire(import.meta.url);
-const { buildEvidenceViewerState, buildWerExpenseComparison } = require("./evidenceViewer.ts") as typeof import("./evidenceViewer");
+const { buildEvidenceViewerState, buildWerExpenseComparison, clampEvidenceZoom, rotateEvidenceClockwise } = require("./evidenceViewer.ts") as typeof import("./evidenceViewer");
 
 test("orders WER evidence before expense evidence and identifies missing headers", () => {
   const state = buildEvidenceViewerState({
@@ -151,4 +151,11 @@ test("builds a side-by-side comparison from all WER summaries and one selected e
 
   assert.deepEqual(comparison.werItems.map(({ url }) => url), ["wer-10", "wer-20"]);
   assert.equal(comparison.expenseItem?.url, "expense-202");
+});
+
+test("constrains comparison zoom and rotates images in quarter turns", () => {
+  assert.equal(clampEvidenceZoom(0.5), 1);
+  assert.equal(clampEvidenceZoom(2.25), 2.25);
+  assert.equal(clampEvidenceZoom(4), 3);
+  assert.equal(rotateEvidenceClockwise(270), 0);
 });
