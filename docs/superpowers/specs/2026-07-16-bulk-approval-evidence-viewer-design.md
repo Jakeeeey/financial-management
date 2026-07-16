@@ -52,6 +52,14 @@ Every carousel slide displays a prominent category tag:
 
 The existing file name or line description remains visible as the document label. The document count reflects the active viewing mode rather than the total number of documents available in other modes.
 
+## Missing WER Summary Warning
+
+Both modals display a visible warning whenever one or more in-scope expense headers has no record in `expense_attachments`. The warning is visible in the main review pane near the document controls, even while the evidence pane is closed, so an approver cannot miss the absence merely by choosing not to open Show Docs.
+
+The warning identifies every affected header using the best available human-readable salesman or header label and includes the numeric header ID as a fallback. In a multi-header final top-sheet, headers with WER summaries remain available in the carousel while the warning lists only the headers that are missing summaries.
+
+The warning is informational: it does not disable line decisions, approval submission, or other existing actions. No warning is shown when every in-scope header has at least one WER summary attachment.
+
 ## Data Flow
 
 The existing bulk-approval detail endpoints remain responsible for querying `expense_attachments`. Their responses must retain enough header metadata to scope WER summaries correctly.
@@ -77,6 +85,7 @@ Changing modes resets the carousel index and image transformations so stale zoom
 - If a row has no expense attachment, its line-item document action remains hidden; WER summaries remain available through Show Docs.
 - If neither category has a document, Show Docs is hidden and no empty split pane is opened.
 - A failure to fetch `expense_attachments` must not prevent the approval detail itself from loading; expense attachments remain usable when available.
+- If the WER attachment query fails, the UI displays an attachment-loading warning instead of incorrectly asserting that specific headers have no WER summary.
 
 ## Testing
 
@@ -90,6 +99,8 @@ Focused tests will verify:
 6. Category tags and document counts match the active list.
 7. Missing WER summaries, missing line attachments, and both-missing states behave as specified.
 8. Switching viewing modes resets the carousel and image transformations.
+9. The missing-WER warning lists each in-scope header without a summary, remains informational, and disappears when all headers are covered.
+10. An attachment-query failure is distinguished from a successful query that returns no WER summary records.
 
 ## Out of Scope
 
