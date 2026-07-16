@@ -34,7 +34,7 @@ void ({} as ServiceDraftPayableHeaderContract);
 void ({} as ServiceFinalAttachmentsQueryOkContract);
 
 const require = createRequire(import.meta.url);
-const { buildEvidenceViewerState } = require("./evidenceViewer.ts") as typeof import("./evidenceViewer");
+const { buildEvidenceViewerState, buildWerExpenseComparison } = require("./evidenceViewer.ts") as typeof import("./evidenceViewer");
 
 test("orders WER evidence before expense evidence and identifies missing headers", () => {
   const state = buildEvidenceViewerState({
@@ -136,4 +136,19 @@ test("keeps all top-sheet WER summaries when reviewing one expense line", () => 
     "wer-30",
     "expense-101",
   ]);
+});
+
+test("builds a side-by-side comparison from all WER summaries and one selected expense", () => {
+  const comparison = buildWerExpenseComparison({
+    items: [
+      { category: "wer-summary", headerId: 10, url: "wer-10", label: "WER 10" },
+      { category: "wer-summary", headerId: 20, url: "wer-20", label: "WER 20" },
+      { category: "expense", headerId: 10, expenseId: 101, url: "expense-101", label: "Meal" },
+      { category: "expense", headerId: 20, expenseId: 202, url: "expense-202", label: "Fuel" },
+    ],
+    expenseId: 202,
+  });
+
+  assert.deepEqual(comparison.werItems.map(({ url }) => url), ["wer-10", "wer-20"]);
+  assert.equal(comparison.expenseItem?.url, "expense-202");
 });

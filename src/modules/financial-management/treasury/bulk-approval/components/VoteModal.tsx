@@ -43,7 +43,8 @@ import {
 
 import type { DraftDetail, DraftPayable, ConcernItemResponse } from "../type";
 import * as api from "../providers/fetchProvider";
-import { buildEvidenceViewerState } from "../utils/evidenceViewer";
+import { buildEvidenceViewerState, buildWerExpenseComparison } from "../utils/evidenceViewer";
+import WerExpenseComparisonModal from "./WerExpenseComparisonModal";
 
 interface Props {
   open: boolean;
@@ -76,6 +77,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [showCoverage, setShowCoverage] = React.useState(false);
   const [evidenceMode, setEvidenceMode] = React.useState<{ kind: "all" } | { kind: "line"; expenseId: number }>({ kind: "all" });
+  const [comparisonExpenseId, setComparisonExpenseId] = React.useState<number | null>(null);
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [zoom, setZoom] = React.useState(1);
@@ -142,6 +144,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       setEditedAmounts({});
       setShowCoverage(false);
       setEvidenceMode({ kind: "all" });
+      setComparisonExpenseId(null);
       setCurrentSlide(0);
       setInlineZoom(1);
       setInlineRotation(0);
@@ -236,6 +239,11 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const activeEvidenceItems = evidenceMode.kind === "all"
     ? evidenceState.allItems
     : evidenceState.lineItemsByExpenseId.get(evidenceMode.expenseId) ?? [];
+
+  const comparison = buildWerExpenseComparison({
+    items: evidenceState.allItems,
+    expenseId: comparisonExpenseId ?? -1,
+  });
 
   const openEvidence = React.useCallback((mode: { kind: "all" } | { kind: "line"; expenseId: number }) => {
     setEvidenceMode(mode);
@@ -876,7 +884,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                         size="icon"
                                         variant="ghost"
                                         className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40"
-                                        onClick={() => p.expense_id && openEvidence({ kind: "line", expenseId: p.expense_id })}
+                                        onClick={() => p.expense_id && setComparisonExpenseId(p.expense_id)}
                                         aria-label="Compare WER summary and expense document"
                                         title="Compare WER summary and expense document"
                                       >
@@ -992,6 +1000,14 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           </div>
         </DialogContent>
       </Dialog>
+
+      <WerExpenseComparisonModal
+        open={comparisonExpenseId !== null}
+        onOpenChange={(nextOpen) => { if (!nextOpen) setComparisonExpenseId(null); }}
+        werItems={comparison.werItems}
+        expenseItem={comparison.expenseItem}
+        onPreviewUrl={setPreviewUrl}
+      />
 
       <Dialog open={!!previewUrl} onOpenChange={(v) => { if (!v) { setPreviewUrl(null); setZoom(1); setRotation(0); } }}>
         <DialogContent showCloseButton={false} className="max-w-[95vw] w-[95vw] h-[90vh] p-0 overflow-hidden bg-[#020617] border-none shadow-2xl flex flex-col">

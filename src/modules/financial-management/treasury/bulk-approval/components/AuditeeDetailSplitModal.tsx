@@ -53,7 +53,8 @@ import type {
   FinalTopSheetSalesmanResponse,
 } from "../type";
 import { formatCurrency, formatDate } from "../utils/format";
-import { buildEvidenceViewerState } from "../utils/evidenceViewer";
+import { buildEvidenceViewerState, buildWerExpenseComparison } from "../utils/evidenceViewer";
+import WerExpenseComparisonModal from "./WerExpenseComparisonModal";
 
 type Props = {
   open: boolean;
@@ -102,6 +103,7 @@ export default function AuditeeDetailSplitModal({
   const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
   const [showEvidence, setShowEvidence] = React.useState(false);
   const [evidenceMode, setEvidenceMode] = React.useState<{ kind: "all" } | { kind: "line"; expenseId: number }>({ kind: "all" });
+  const [comparisonExpenseId, setComparisonExpenseId] = React.useState<number | null>(null);
 
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
   const [dontShowAgain, setDontShowAgain] = React.useState(false);
@@ -225,6 +227,7 @@ export default function AuditeeDetailSplitModal({
       setCurrentSlide(0);
       setShowEvidence(false);
       setEvidenceMode({ kind: "all" });
+      setComparisonExpenseId(null);
     }
   }, [open]);
 
@@ -313,6 +316,11 @@ export default function AuditeeDetailSplitModal({
   const activeEvidenceItems = evidenceMode.kind === "all"
     ? evidenceState.allItems
     : evidenceState.lineItemsByExpenseId.get(evidenceMode.expenseId) ?? [];
+
+  const comparison = buildWerExpenseComparison({
+    items: evidenceState.allItems,
+    expenseId: comparisonExpenseId ?? -1,
+  });
 
   const openEvidence = React.useCallback((mode: { kind: "all" } | { kind: "line"; expenseId: number }) => {
     setEvidenceMode(mode);
@@ -833,7 +841,7 @@ export default function AuditeeDetailSplitModal({
                                     </>
                                   )}
                                   {item.attachment_url && (
-                                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 cursor-pointer rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => openEvidence({ kind: "line", expenseId: item.expense_id })} title="Compare WER summary and expense document">
+                                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 cursor-pointer rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => setComparisonExpenseId(item.expense_id)} title="Compare WER summary and expense document">
                                       <FileText size={12} />
                                     </Button>
                                   )}
@@ -906,6 +914,14 @@ export default function AuditeeDetailSplitModal({
           </div>
         </div>
       </DialogContent>
+
+      <WerExpenseComparisonModal
+        open={comparisonExpenseId !== null}
+        onOpenChange={(nextOpen) => { if (!nextOpen) setComparisonExpenseId(null); }}
+        werItems={comparison.werItems}
+        expenseItem={comparison.expenseItem}
+        onPreviewUrl={onPreviewUrl}
+      />
 
       <Dialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
         <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl z-[100]">

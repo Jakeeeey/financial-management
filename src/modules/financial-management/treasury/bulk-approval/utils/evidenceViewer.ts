@@ -19,6 +19,21 @@ export type EvidenceViewerItem = {
   label: string;
 };
 
+export function buildWerExpenseComparison(input: {
+  items: EvidenceViewerItem[];
+  expenseId: number;
+}): {
+  werItems: EvidenceViewerItem[];
+  expenseItem: EvidenceViewerItem | null;
+} {
+  return {
+    werItems: input.items.filter((item) => item.category === "wer-summary"),
+    expenseItem: input.items.find(
+      (item) => item.category === "expense" && item.expenseId === input.expenseId
+    ) ?? null,
+  };
+}
+
 export function buildEvidenceViewerState(input: {
   headers: EvidenceHeader[];
   werAttachments: WerSummaryAttachment[];
