@@ -53,6 +53,8 @@ import type {
   FinalTopSheetSalesmanResponse,
 } from "../type";
 import { formatCurrency, formatDate } from "../utils/format";
+import { buildEvidenceViewerState, buildWerExpenseComparison } from "../utils/evidenceViewer";
+import WerExpenseComparisonModal from "./WerExpenseComparisonModal";
 
 type Props = {
   open: boolean;
@@ -100,6 +102,8 @@ export default function AuditeeDetailSplitModal({
   const [inlineRotation, setInlineRotation] = React.useState(0);
   const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
   const [showEvidence, setShowEvidence] = React.useState(true);
+  const [evidenceMode, setEvidenceMode] = React.useState<{ kind: "all" } | { kind: "line"; expenseId: number }>({ kind: "all" });
+  const [comparisonExpenseId, setComparisonExpenseId] = React.useState<number | null>(null);
 
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
   const [dontShowAgain, setDontShowAgain] = React.useState(false);
@@ -222,13 +226,15 @@ export default function AuditeeDetailSplitModal({
       setInlineRotation(0);
       setCurrentSlide(0);
       setShowEvidence(true);
+      setEvidenceMode({ kind: "all" });
+      setComparisonExpenseId(null);
     }
   }, [open]);
 
   const auditeeDetails = React.useMemo<FinalTopSheetDetail[]>(() => {
-    if (!data || employeeId === null) return [];
+    if (!data) return [];
     return data.details.filter((d: FinalTopSheetDetail) => {
-      if (d.employee_id !== employeeId) return false;
+      if (employeeId !== null && d.employee_id !== employeeId) return false;
       if (headerId !== undefined && headerId !== null && d.header_id !== headerId) return false;
       return true;
     });
@@ -275,50 +281,55 @@ export default function AuditeeDetailSplitModal({
     return approvers.map((a: { name: string }) => a.name);
   }, [salesman, data]);
 
-  const attachments = React.useMemo(() => {
-    if (!data) return [];
-
-    const list: { url: string; label: string }[] = [];
-
-    // Flatten details to match the exact table render order in the registry
-    const orderedDetails = groupByCoa(auditeeDetails).flatMap((g) => g.items);
-
-    // 1. Collect line-level attachments in the exact order of the items
-    for (const d of orderedDetails) {
-      if (d.attachment_url) {
-        list.push({
-          url: d.attachment_url,
-          label: d.remarks ? `${d.remarks} (${d.account_title})` : `${d.account_title} (Line Item)`,
-        });
-      }
-    }
-
-    // 2. If no line-level attachments exist, fallback to header-level attachments
-    if (list.length === 0) {
-      const addedHeaderIds = new Set<number>();
-      for (const d of orderedDetails) {
-        if (d.header_id && d.header_id !== 0 && !addedHeaderIds.has(d.header_id)) {
-          const headerAtts = (data.attachments || []).filter(
-            (at: { header_id: number; file_url: string; file_name: string; encoder_id?: number }) => 
-              at.header_id === d.header_id &&
-              (at.encoder_id === undefined || at.encoder_id === employeeId)
-          );
-          for (const at of headerAtts) {
-            list.push({ url: at.file_url, label: at.file_name });
-          }
-          addedHeaderIds.add(d.header_id);
-        }
-      }
-    }
-
-    // De-duplicate by URL to prevent rendering duplicate images
-    const seen = new Set<string>();
-    return list.filter((at) => {
-      if (!at.url || seen.has(at.url)) return false;
-      seen.add(at.url);
-      return true;
+  const evidenceState = React.useMemo(() => {
+    if (!data) return buildEvidenceViewerState({ headers: [], werAttachments: [], expenseAttachments: [] });
+    const headerIds = [...new Set(data.details.map((detail) => detail.header_id).filter((id) => id > 0))];
+    const salesmanByHeader = new Map(
+      data.salesmen
+        .filter((entry) => Boolean(entry.header_id))
+        .map((entry) => [entry.header_id!, entry.salesman_name])
+    );
+    const orderedDetails = groupByCoa(auditeeDetails).flatMap((group) => group.items);
+    return buildEvidenceViewerState({
+      headers: headerIds.map((currentHeaderId) => ({
+        headerId: currentHeaderId,
+        label: salesmanByHeader.has(currentHeaderId)
+          ? `${salesmanByHeader.get(currentHeaderId)} — Header #${currentHeaderId}`
+          : `Header #${currentHeaderId}`,
+      })),
+      werAttachments: (data.attachments ?? []).map((attachment) => ({
+        headerId: attachment.header_id,
+        url: attachment.file_url,
+        label: attachment.file_name,
+      })),
+      expenseAttachments: orderedDetails
+        .filter((detail) => Boolean(detail.attachment_url))
+        .map((detail) => ({
+          expenseId: detail.expense_id,
+          headerId: detail.header_id,
+          url: detail.attachment_url!,
+          label: detail.remarks ? `${detail.remarks} (${detail.account_title})` : `${detail.account_title} (Line Item)`,
+        })),
     });
-  }, [auditeeDetails, data, employeeId]);
+  }, [auditeeDetails, data]);
+
+  const activeEvidenceItems = evidenceMode.kind === "all"
+    ? evidenceState.allItems
+    : evidenceState.lineItemsByExpenseId.get(evidenceMode.expenseId) ?? [];
+
+  const comparison = buildWerExpenseComparison({
+    items: evidenceState.allItems,
+    expenseId: comparisonExpenseId ?? -1,
+  });
+
+  const openEvidence = React.useCallback((mode: { kind: "all" } | { kind: "line"; expenseId: number }) => {
+    setEvidenceMode(mode);
+    setCurrentSlide(0);
+    setInlineZoom(1);
+    setInlineRotation(0);
+    setShowEvidence(true);
+    carouselApi?.scrollTo(0);
+  }, [carouselApi]);
 
   const coaGroups = React.useMemo(() => groupByCoa(auditeeDetails), [auditeeDetails]);
   const grandTotal = React.useMemo(() => {
@@ -379,7 +390,7 @@ export default function AuditeeDetailSplitModal({
         )}
 
         {/* LEFT: Evidence Registry */}
-        {showEvidence && attachments.length > 0 && (
+        {showEvidence && activeEvidenceItems.length > 0 && (
           <div className="w-[35vw] h-full bg-[#0f172a] rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] border border-white/5 flex flex-col overflow-hidden animate-in slide-in-from-left duration-500 relative">
             <div className="p-8 pb-4 flex items-center justify-between">
               <div>
@@ -395,7 +406,7 @@ export default function AuditeeDetailSplitModal({
                   size="icon"
                   className="text-white/40 hover:text-white hover:bg-white/10 rounded-full"
                   onClick={() => {
-                    const at = attachments[currentSlide];
+                    const at = activeEvidenceItems[currentSlide];
                     if (at) onPreviewUrl(`/api/fm/expense-assets?id=${at.url}`);
                   }}
                   title="View Full Screen"
@@ -416,8 +427,8 @@ export default function AuditeeDetailSplitModal({
             <div ref={setInlineEl} className="flex-1 relative flex items-center justify-center p-8">
               <Carousel setApi={setCarouselApi} opts={{ watchDrag: false }} className="w-full h-full">
                 <CarouselContent className="h-full">
-                  {attachments.map((at, i) => (
-                    <CarouselItem key={i} className="flex items-center justify-center h-full">
+                  {activeEvidenceItems.map((at, i) => (
+                    <CarouselItem key={`${at.category}:${at.url}`} className="flex items-center justify-center h-full">
                       <div className="relative w-full h-full flex flex-col items-center justify-center gap-6">
                         <div className="relative group/img max-w-full h-[65vh] w-full flex items-center justify-center bg-black/40 rounded-3xl overflow-hidden border border-white/10 shadow-2xl select-none">                           <motion.div
                             drag={inlineZoom > 1}
@@ -452,8 +463,11 @@ export default function AuditeeDetailSplitModal({
                           </div>
                         </div>
                         <div className="flex flex-col items-center">
+                          <Badge className={at.category === "wer-summary" ? "mb-2 border-emerald-500/30 bg-emerald-500/15 text-emerald-300" : "mb-2 border-blue-500/30 bg-blue-500/15 text-blue-300"}>
+                            {at.category === "wer-summary" ? "WER Summary Attachment" : "Expense Attachment"}
+                          </Badge>
                           <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{at.label}</p>
-                          <p className="text-white/30 text-[9px] font-medium mt-1">ATTACHMENT {i + 1} OF {attachments.length}</p>
+                          <p className="text-white/30 text-[9px] font-medium mt-1">ATTACHMENT {i + 1} OF {activeEvidenceItems.length}</p>
                         </div>
                       </div>
                     </CarouselItem>
@@ -474,7 +488,7 @@ export default function AuditeeDetailSplitModal({
         )}
 
         {/* RIGHT: Main Detail Pane */}
-        <div className={`flex flex-col bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_0_50px_-12px_rgba(0,0,0,0.8)] overflow-hidden h-full transition-all duration-500 border border-slate-200 dark:border-slate-800 ${showEvidence && attachments.length > 0 ? "w-[60vw]" : "w-[85vw]"}`}>
+        <div className={`flex flex-col bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_0_50px_-12px_rgba(0,0,0,0.8)] overflow-hidden h-full transition-all duration-500 border border-slate-200 dark:border-slate-800 ${showEvidence && activeEvidenceItems.length > 0 ? "w-[60vw]" : "w-[85vw]"}`}>
 
           {/* Blue Header */}
           <div className="px-[2vw] py-[2.5vh] bg-[#1e40af] text-white shrink-0 relative overflow-hidden">
@@ -491,19 +505,19 @@ export default function AuditeeDetailSplitModal({
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                {attachments.length > 0 && (
+                {evidenceState.allItems.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
                     className={`bg-white/10 text-white border-white/20 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest gap-2 h-10 px-6 rounded-2xl transition-all ${showEvidence ? "bg-white/30 border-white/40" : ""}`}
-                    onClick={() => setShowEvidence(!showEvidence)}
+                    onClick={() => showEvidence ? setShowEvidence(false) : openEvidence({ kind: "all" })}
                   >
                     <FileText size={16} />
                     {showEvidence ? "Hide Attachments" : "Show Evidence"}
                   </Button>
                 )}
                 <Badge className="bg-white/20 text-white border-white/30 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest backdrop-blur-sm shadow-xl h-10 flex items-center justify-center rounded-2xl">
-                  {attachments.length} Docs
+                  {activeEvidenceItems.length} Docs
                 </Badge>
                 <Button
                   variant="ghost"
@@ -516,6 +530,21 @@ export default function AuditeeDetailSplitModal({
               </div>
             </div>
           </div>
+          {data && (
+            <div className="shrink-0 px-[2vw] pt-3">
+              {!data.attachments_query_ok ? (
+                <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p className="text-[10px] font-bold">WER summaries could not be loaded. Expense attachments remain available for review.</p>
+                </div>
+              ) : evidenceState.missingHeaders.length > 0 ? (
+                <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p className="text-[10px] font-bold">No WER summary attached for {evidenceState.missingHeaders.map((header) => header.label).join(", ")}.</p>
+                </div>
+              ) : null}
+            </div>
+          )}
 
           {/* Stats Bar */}
           <div className="grid grid-cols-3 gap-4 px-[1.5vw] py-[2vh] bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm shrink-0">
@@ -812,7 +841,7 @@ export default function AuditeeDetailSplitModal({
                                     </>
                                   )}
                                   {item.attachment_url && (
-                                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => onPreviewUrl(`/api/fm/expense-assets?id=${item.attachment_url}`)} title="View document">
+                                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 cursor-pointer rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => setComparisonExpenseId(item.expense_id)} title="Compare WER summary and expense document">
                                       <FileText size={12} />
                                     </Button>
                                   )}
@@ -885,6 +914,14 @@ export default function AuditeeDetailSplitModal({
           </div>
         </div>
       </DialogContent>
+
+      <WerExpenseComparisonModal
+        open={comparisonExpenseId !== null}
+        onOpenChange={(nextOpen) => { if (!nextOpen) setComparisonExpenseId(null); }}
+        werItems={comparison.werItems}
+        expenseItem={comparison.expenseItem}
+        onPreviewUrl={onPreviewUrl}
+      />
 
       <Dialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
         <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl z-[100]">
