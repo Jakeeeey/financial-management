@@ -43,6 +43,8 @@ import {
 
 import type { DraftDetail, DraftPayable, ConcernItemResponse } from "../type";
 import * as api from "../providers/fetchProvider";
+import { buildEvidenceViewerState, buildWerExpenseComparison } from "../utils/evidenceViewer";
+import WerExpenseComparisonModal from "./WerExpenseComparisonModal";
 
 interface Props {
   open: boolean;
@@ -73,7 +75,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const [editedAmounts, setEditedAmounts] = React.useState<Record<number, string>>({});
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
-  const [showCoverage, setShowCoverage] = React.useState(false);
+  const [showCoverage, setShowCoverage] = React.useState(true);
+  const [evidenceMode, setEvidenceMode] = React.useState<{ kind: "all" } | { kind: "line"; expenseId: number }>({ kind: "all" });
+  const [comparisonExpenseId, setComparisonExpenseId] = React.useState<number | null>(null);
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [zoom, setZoom] = React.useState(1);
@@ -138,6 +142,12 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     if (open && detail) {
       setRemarks("");
       setEditedAmounts({});
+      setShowCoverage(true);
+      setEvidenceMode({ kind: "all" });
+      setComparisonExpenseId(null);
+      setCurrentSlide(0);
+      setInlineZoom(1);
+      setInlineRotation(0);
 
       const initialRemarks: Record<number, string> = {};
 
@@ -184,6 +194,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         items.push({
           id: negId,
           expense_id: ci.expense_id,
+          header_id: ci.header_id,
           coa_id: -1,
           coa_name: ci.coa_name,
           amount: ci.amount,
@@ -199,6 +210,49 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     });
     return items as (DraftPayable & { is_concern: boolean; is_rejected?: boolean; feedback: string | null })[];
   }, [detail]);
+
+  const evidenceState = React.useMemo(() => {
+    const headerIds = [...new Set(combinedItems.map((item) => item.header_id).filter((id) => id > 0))];
+    return buildEvidenceViewerState({
+      headers: headerIds.map((headerId) => ({
+        headerId,
+        label: detail?.draft.encoder_name
+          ? `${detail.draft.encoder_name} — Header #${headerId}`
+          : `Header #${headerId}`,
+      })),
+      werAttachments: (detail?.attachments ?? []).map((attachment) => ({
+        headerId: attachment.header_id,
+        url: attachment.file_url,
+        label: attachment.file_name,
+      })),
+      expenseAttachments: combinedItems
+        .filter((item) => Boolean(item.attachment_url) && Boolean(item.expense_id) && item.header_id > 0)
+        .map((item) => ({
+          expenseId: item.expense_id!,
+          headerId: item.header_id,
+          url: item.attachment_url!,
+          label: item.remarks || item.reference_no || `Expense #${item.expense_id}`,
+        })),
+    });
+  }, [combinedItems, detail]);
+
+  const activeEvidenceItems = evidenceMode.kind === "all"
+    ? evidenceState.allItems
+    : evidenceState.lineItemsByExpenseId.get(evidenceMode.expenseId) ?? [];
+
+  const comparison = buildWerExpenseComparison({
+    items: evidenceState.allItems,
+    expenseId: comparisonExpenseId ?? -1,
+  });
+
+  const openEvidence = React.useCallback((mode: { kind: "all" } | { kind: "line"; expenseId: number }) => {
+    setEvidenceMode(mode);
+    setCurrentSlide(0);
+    setInlineZoom(1);
+    setInlineRotation(0);
+    setShowCoverage(true);
+    carouselApi?.scrollTo(0);
+  }, [carouselApi]);
 
   // Total amount ONLY for APPROVED items (Verified Only)
   const currentTotalAmount = React.useMemo(() => {
@@ -410,7 +464,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           <DialogDescription className="sr-only">Review and verify expense items before submitting your decision</DialogDescription>
 
           {/* Supporting Evidence Pane (Outside main modal but in split view) */}
-          {showCoverage && detail?.attachments && detail.attachments.length > 0 && (
+          {showCoverage && activeEvidenceItems.length > 0 && (
             <div className="w-[35vw] h-full bg-[#0f172a] rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] border border-white/5 flex flex-col overflow-hidden animate-in slide-in-from-left duration-500 relative">
               <div className="p-8 pb-4 flex items-center justify-between">
                 <div>
@@ -425,8 +479,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                     size="icon"
                     className="text-white/40 hover:text-white hover:bg-white/10 rounded-full"
                     onClick={() => {
-                      if (detail?.attachments?.[currentSlide]) {
-                        setPreviewUrl(`/api/fm/expense-assets?id=${detail.attachments[currentSlide].file_url}`);
+                      if (activeEvidenceItems[currentSlide]) {
+                        setPreviewUrl(`/api/fm/expense-assets?id=${activeEvidenceItems[currentSlide].url}`);
                       }
                     }}
                     title="View Full Screen"
@@ -447,8 +501,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
               <div ref={setInlineEl} className="flex-1 relative flex items-center justify-center p-8">
                 <Carousel setApi={setCarouselApi} opts={{ watchDrag: false }} className="w-full h-full">
                   <CarouselContent className="h-full">
-                    {detail.attachments.map((at: { file_url: string; file_name: string }, i: number) => (
-                      <CarouselItem key={i} className="flex items-center justify-center h-full">
+                    {activeEvidenceItems.map((at, i) => (
+                      <CarouselItem key={`${at.category}:${at.url}`} className="flex items-center justify-center h-full">
                         <div className="relative w-full h-full flex flex-col items-center justify-center gap-6">
                           <div
                             className="relative group/img max-w-full h-[65vh] w-full flex items-center justify-center bg-black/40 rounded-3xl overflow-hidden border border-white/10 shadow-2xl select-none"
@@ -461,8 +515,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={`/api/fm/expense-assets?id=${at.file_url}`}
-                                alt={at.file_name}
+                                src={`/api/fm/expense-assets?id=${at.url}`}
+                                alt={at.label}
                                 className="max-w-full max-h-full object-contain pointer-events-none"
                                 draggable={false}
                               />
@@ -486,8 +540,11 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             </div>
                           </div>
                           <div className="flex flex-col items-center">
-                            <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{at.file_name}</p>
-                            <p className="text-white/30 text-[9px] font-medium mt-1">ATTACHMENT {i + 1} OF {detail.attachments?.length}</p>
+                            <Badge className={at.category === "wer-summary" ? "mb-2 border-emerald-500/30 bg-emerald-500/15 text-emerald-300" : "mb-2 border-blue-500/30 bg-blue-500/15 text-blue-300"}>
+                              {at.category === "wer-summary" ? "WER Summary Attachment" : "Expense Attachment"}
+                            </Badge>
+                            <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{at.label}</p>
+                            <p className="text-white/30 text-[9px] font-medium mt-1">ATTACHMENT {i + 1} OF {activeEvidenceItems.length}</p>
                           </div>
                         </div>
                       </CarouselItem>
@@ -508,7 +565,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           )}
 
           {/* Main Modal Pane */}
-          <div className={`relative flex flex-col bg-white dark:bg-slate-950 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] overflow-hidden h-full transition-all duration-500 border border-slate-200 dark:border-slate-800 ${showCoverage ? "w-[60vw]" : "w-[85vw]"}`}>
+          <div className={`relative flex flex-col bg-white dark:bg-slate-950 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] overflow-hidden h-full transition-all duration-500 border border-slate-200 dark:border-slate-800 ${showCoverage && activeEvidenceItems.length > 0 ? "w-[60vw]" : "w-[85vw]"}`}>
             {submitting && (
               <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/60 dark:bg-slate-950/60 backdrop-blur-sm rounded-[2.5rem]">
                 <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -555,12 +612,12 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
-                  {detail?.attachments && detail.attachments.length > 0 && (
+                  {evidenceState.allItems.length > 0 && (
                     <Button
                       variant="outline"
                       size="sm"
                       className={`bg-white/10 text-white border-white/20 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest gap-2 h-10 px-6 rounded-2xl transition-all ${showCoverage ? "bg-white/30 border-white/40" : ""}`}
-                      onClick={() => setShowCoverage(!showCoverage)}
+                      onClick={() => showCoverage ? setShowCoverage(false) : openEvidence({ kind: "all" })}
                     >
                       <FileText size={16} />
                       {showCoverage ? "Hide Attachments" : "Show Supporting Evidence"}
@@ -572,6 +629,21 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                 </div>
               </div>
             </div>
+            {detail && (
+              <div className="shrink-0 px-[2vw] pt-3">
+                {!detail.attachments_query_ok ? (
+                  <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p className="text-[10px] font-bold">WER summaries could not be loaded. Expense attachments remain available for review.</p>
+                  </div>
+                ) : evidenceState.missingHeaders.length > 0 ? (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p className="text-[10px] font-bold">No WER summary attached for {evidenceState.missingHeaders.map((header) => header.label).join(", ")}.</p>
+                  </div>
+                ) : null}
+              </div>
+            )}
             <div className="bg-blue-600/10 dark:bg-blue-900/20 border-b border-blue-600/20 dark:border-blue-800/50 px-6 py-2.5 flex items-center gap-3 animate-in slide-in-from-top duration-300">
               <div className="h-8 w-8 rounded-full bg-blue-600/20 dark:bg-blue-900/40 flex items-center justify-center text-blue-600 dark:text-blue-400">
                 <ShieldCheck size={18} />
@@ -812,8 +884,9 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                         size="icon"
                                         variant="ghost"
                                         className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40"
-                                        onClick={() => setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`)}
-                                        disabled={processingItem === p.id || submitting || isStatusLocked}
+                                        onClick={() => p.expense_id && setComparisonExpenseId(p.expense_id)}
+                                        aria-label="Compare WER summary and expense document"
+                                        title="Compare WER summary and expense document"
                                       >
                                         <ExternalLink size={14} />
                                       </Button>
@@ -927,6 +1000,14 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           </div>
         </DialogContent>
       </Dialog>
+
+      <WerExpenseComparisonModal
+        open={comparisonExpenseId !== null}
+        onOpenChange={(nextOpen) => { if (!nextOpen) setComparisonExpenseId(null); }}
+        werItems={comparison.werItems}
+        expenseItem={comparison.expenseItem}
+        onPreviewUrl={setPreviewUrl}
+      />
 
       <Dialog open={!!previewUrl} onOpenChange={(v) => { if (!v) { setPreviewUrl(null); setZoom(1); setRotation(0); } }}>
         <DialogContent showCloseButton={false} className="max-w-[95vw] w-[95vw] h-[90vh] p-0 overflow-hidden bg-[#020617] border-none shadow-2xl flex flex-col">
