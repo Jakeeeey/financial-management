@@ -182,12 +182,10 @@ export type PayableResponse = {
   is_rejected?: boolean;
   feedback?: string | null;
   expense_id?: number;
-  header_id: number;
 };
 
 export type ConcernItemResponse = {
   expense_id: number;
-  header_id: number;
   status: string;
   feedback: string | null;
   return_to: string | null;
@@ -390,7 +388,6 @@ export type FinalTopSheetResponse = {
   coa_rows: FinalTopSheetCoaRowResponse[];
   details: FinalTopSheetDetail[];
   grand_total: number;
-  attachments_query_ok: boolean;
   attachments?: {
     header_id: number;
     file_url: string;
@@ -451,8 +448,7 @@ export type DraftDetail = {
   draft: DraftRow;
   payables: DraftPayable[];
   concern_items?: ConcernItemResponse[];
-  attachments_query_ok: boolean;
-  attachments?: { header_id: number; file_url: string; file_name: string }[];
+  attachments?: { file_url: string; file_name: string }[];
   my_vote: { status: string; created_at: string; version: number } | null;
   can_vote: boolean;
   approvers_by_level?: Record<number, DraftApproverEntry[]>;
