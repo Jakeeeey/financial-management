@@ -1,12 +1,18 @@
 import {
-    Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "@/components/shared/app-sidebar/nav-user";
+
 import { cookies } from "next/headers";
 
-import ApprovalPrintPage from "@/modules/financial-management/procurement/approval/components/ApprovalPrintPage";
+import ItemTemplateListPage from "@/modules/financial-management/procurement/items/templates/components/ItemTemplateListPage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,8 +26,11 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
     const p = parts[1];
     const b64 = p.replace(/-/g, "+").replace(/_/g, "/");
     const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-  } catch { return null; }
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
 }
 
 function pickString(obj: Record<string, unknown> | null | undefined, keys: string[]): string {
@@ -35,17 +44,16 @@ function pickString(obj: Record<string, unknown> | null | undefined, keys: strin
 function buildHeaderUserFromToken(token: string | null | undefined) {
   const payload = token ? decodeJwtPayload(token) : null;
   const first = pickString(payload, ["Firstname", "FirstName", "firstName", "firstname", "first_name"]);
-  const last = pickString(payload, ["Lastname", "lastName", "lastname", "last_name"]);
+  const last = pickString(payload, ["LastName", "Lastname", "lastName", "lastname", "last_name"]);
   const email = pickString(payload, ["email", "Email"]);
   const name = [first, last].filter(Boolean).join(" ") || email || "User";
   return { name, email: email || "", avatar: "/avatars/shadcn.jpg" };
 }
 
-export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+export default async function Page() {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
   const headerUser = buildHeaderUserFromToken(token);
-  const { id } = await params;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -57,16 +65,20 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             <Breadcrumb>
               <BreadcrumbList className="min-w-0 overflow-hidden">
                 <BreadcrumbItem className="hidden md:block shrink-0">
-                  <BreadcrumbLink href="/fm/procurement/approval">FM</BreadcrumbLink>
+                  <BreadcrumbLink href="#">FM</BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                 <BreadcrumbItem className="hidden md:block shrink-0">
-                  <BreadcrumbLink href="/fm/procurement/approval">Procurement Approval</BreadcrumbLink>
+                  <BreadcrumbLink href="#">Procurement</BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator className="hidden md:block shrink-0" />
+                <BreadcrumbItem className="hidden md:block shrink-0">
+                  <BreadcrumbLink href="#">Items</BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                   <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                    Print {id}
+                    Templates
                   </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
@@ -78,7 +90,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         </div>
       </header>
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-        <ApprovalPrintPage id={Number(id)} />
+        <ItemTemplateListPage />
       </main>
     </div>
   );

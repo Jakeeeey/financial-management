@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
             const key = `${pid}:${ptid}`;
 
             const payload: PriceRecordPayload = {
-                status: (line.status ?? "draft").trim() || "draft",
+                status: (line.status ?? "approved").trim() || "approved",
                 product_id: pid,
                 price_type_id: ptid,
                 price: line.price === null || line.price === undefined

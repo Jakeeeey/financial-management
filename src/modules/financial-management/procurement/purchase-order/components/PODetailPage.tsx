@@ -1,28 +1,24 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { usePODetail } from "../hooks/usePurchaseOrders";
 import { POStatusBadge } from "./POStatusBadge";
-import { POPrintContent } from "./POPrintContent";
 import { POReceiveDialog } from "./POReceiveDialog";
 import { formatCurrency, formatDate, formatDateTime,  toNum } from "../utils/po-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Printer, Loader2, PackagePlus } from "lucide-react";
-import { createPortal } from "react-dom";
+import PrintProcurementDialog from "./PrintProcurementDialog";
 
 export default function PODetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const id = Number(params?.id);
   const { po, items, received, loading, error, refetch } = usePODetail(id);
-  const [mounted, setMounted] = useState(false);
-  const [printing, setPrinting] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
-
-  useEffect(() => { setMounted(true); }, []); // eslint-disable-line react-hooks/set-state-in-effect
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
 
   const supplierName = po ? (po as unknown as Record<string, unknown>)?._supplier_name as string : "—";
 
@@ -35,11 +31,7 @@ export default function PODetailPage() {
   const progress = orderedTotal > 0 ? Math.min(1, receivedTotal / orderedTotal) : 0;
 
   const handlePrint = () => {
-    setPrinting(true);
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => setPrinting(false), 500);
-    }, 100);
+    setPrintDialogOpen(true);
   };
 
   const handleReceiveSuccess = () => {
@@ -80,8 +72,8 @@ export default function PODetailPage() {
           <Button variant="outline" size="sm" onClick={() => setReceiveOpen(true)} disabled={items.length === 0}>
             <PackagePlus className="h-4 w-4 mr-1" /> Receive &amp; Assign
           </Button>
-          <Button variant="outline" size="sm" onClick={handlePrint} disabled={printing}>
-            <Printer className="h-4 w-4 mr-1" /> {printing ? "Preparing..." : "Print"}
+          <Button variant="outline" size="sm" onClick={handlePrint}>
+            <Printer className="h-4 w-4 mr-1" /> Print
           </Button>
         </div>
       </div>
@@ -102,7 +94,7 @@ export default function PODetailPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">Supplier</span>
-              <p className="font-medium">{supplierName}</p>
+              <p className="font-medium truncate max-w-[300px]">{supplierName}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Total Amount</span>
@@ -151,12 +143,12 @@ export default function PODetailPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-12">#</TableHead>
-                <TableHead>Item</TableHead>
-                <TableHead className="w-16">UOM</TableHead>
-                <TableHead className="w-20 text-right">Qty</TableHead>
-                <TableHead className="w-28 text-right">Unit Price</TableHead>
-                <TableHead className="w-28 text-right">Total</TableHead>
+                <TableHead className="min-w-12 w-12">#</TableHead>
+                <TableHead className="min-w-[200px] max-w-[400px]">Item</TableHead>
+                <TableHead className="min-w-[60px]">UOM</TableHead>
+                <TableHead className="min-w-[80px] text-right">Qty</TableHead>
+                <TableHead className="min-w-[100px] text-right">Unit Price</TableHead>
+                <TableHead className="min-w-[100px] text-right">Total</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -175,11 +167,11 @@ export default function PODetailPage() {
                 return (
                   <TableRow key={item.id ?? item.po_item_id ?? i}>
                     <TableCell>{item.line_no ?? i + 1}</TableCell>
-                    <TableCell className="font-medium">{resolveName()}</TableCell>
+                    <TableCell className="font-medium truncate max-w-[400px]">{resolveName()}</TableCell>
                     <TableCell>{item.uom || "—"}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">{toNum(item.qty).toFixed(2)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">{formatCurrency(item.unit_price)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">{formatCurrency(item.total_amount ?? item.line_total ?? toNum(item.qty) * toNum(item.unit_price))}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums max-w-[130px] truncate">{formatCurrency(item.unit_price)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums max-w-[150px] truncate">{formatCurrency(item.total_amount ?? item.line_total ?? toNum(item.qty) * toNum(item.unit_price))}</TableCell>
                   </TableRow>
                 );
               })}
@@ -201,7 +193,20 @@ export default function PODetailPage() {
         </Card>
       )}
 
-      {mounted && createPortal(<POPrintContent po={po} items={items} supplierName={supplierName} />, document.body)}
+      <PrintProcurementDialog
+        open={printDialogOpen}
+        onOpenChange={setPrintDialogOpen}
+        po={po}
+        items={items}
+        supplierName={supplierName}
+        supplier={{
+          address: po._supplier_address,
+          email_address: po._supplier_email,
+          phone_number: po._supplier_phone,
+          tin_number: po._supplier_tin,
+          payment_terms: po._supplier_payment_terms,
+        }}
+      />
 
       <POReceiveDialog
         open={receiveOpen}

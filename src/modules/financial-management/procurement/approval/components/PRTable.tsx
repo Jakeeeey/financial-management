@@ -43,24 +43,24 @@ export function PRTable({ rows, loading, error, total, onView }: PRTableProps) {
   }
 
   return (
-    <div className="rounded-md border">
-      <Table>
+    <div className="rounded-md border overflow-x-auto">
+      <Table className="min-w-[800px] table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead>PR No.</TableHead>
-            <TableHead>Supplier</TableHead>
-            <TableHead>Lead Date</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>PO Ref</TableHead>
-            <TableHead className="text-right">Total</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead className="min-w-[160px] max-w-[200px]">PR No.</TableHead>
+            <TableHead className="min-w-[180px] max-w-[280px]">Supplier</TableHead>
+            <TableHead className="min-w-[120px] max-w-[140px]">Lead Date</TableHead>
+            <TableHead className="min-w-[110px] max-w-[130px]">Status</TableHead>
+            <TableHead className="min-w-[100px] max-w-[120px]">PO Ref</TableHead>
+            <TableHead className="min-w-[130px] max-w-[160px] text-right">Total</TableHead>
+            <TableHead className="min-w-[80px] max-w-[80px] text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.id}>
-              <TableCell className="font-mono text-xs font-medium">{row.procurement_no}</TableCell>
-              <TableCell className="max-w-[200px] truncate">{row.supplier_name ?? `Supplier #${row.supplier_id}`}</TableCell>
+              <TableCell className="font-mono text-xs font-medium truncate max-w-[160px]">{row.procurement_no}</TableCell>
+              <TableCell className="truncate max-w-[280px]">{row.supplier_name ?? `Supplier #${row.supplier_id}`}</TableCell>
               <TableCell>{formatDate(row.lead_date)}</TableCell>
               <TableCell><PRStatusBadge status={row.status} /></TableCell>
               <TableCell>
@@ -73,7 +73,7 @@ export function PRTable({ rows, loading, error, total, onView }: PRTableProps) {
                   </button>
                 ) : "—"}
               </TableCell>
-              <TableCell className="text-right font-mono tabular-nums">{formatPHP(row.total_amount)}</TableCell>
+              <TableCell className="text-right font-mono tabular-nums max-w-[130px] truncate">{formatPHP(row.total_amount ?? 0)}</TableCell>
               <TableCell className="text-right">
                 <Button variant="ghost" size="icon" onClick={() => onView(row.id)}><Eye className="h-4 w-4" /></Button>
               </TableCell>

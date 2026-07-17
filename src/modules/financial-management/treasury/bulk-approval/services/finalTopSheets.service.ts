@@ -470,7 +470,7 @@ async function resolveLinkedTopSheetData(params: {
   const scopedDrafts = visibleDrafts.filter((d) => scopedDraftIds.has(d.id));
   const scopedStatuses = [...new Set(scopedDrafts.map((d) => d.status))];
   const scopedCanAct = scopedDrafts.some((d) => d.can_act);
-  const isApprovedHistory = scopedDrafts.length > 0 && scopedDrafts.every((d) => d.status === "Approved" || d.isPosted) && !scopedCanAct;
+  const isApprovedHistory = scopedDrafts.length > 0 && scopedDrafts.every((d) => d.status === "Approved" || d.status === "Rejected" || d.isPosted) && !scopedCanAct;
   const scopedTier = scopedDrafts.reduce((max, d) => Math.max(max, d.current_tier), 0);
   const scopedRequired = params.context.maxLevelByDivision[params.divisionId] ?? scopedTier;
 
@@ -610,20 +610,43 @@ export async function getExpenseHeaderGroups(params: {
     }
   }
 
+  // Pre-fetch all expenses concurrently
+  const allExpenseIds = [...new Set([...groupMap.values()].flatMap(g => g.expense_ids))].filter(id => id > 0);
+  const expenseMap = new Map<number, ExpenseDraftRow>();
+
+  if (allExpenseIds.length > 0) {
+    const chunkSize = 150;
+    const chunks = [];
+    for (let i = 0; i < allExpenseIds.length; i += chunkSize) {
+      chunks.push(allExpenseIds.slice(i, i + chunkSize));
+    }
+
+    await Promise.all(
+      chunks.map(async (chunk) => {
+        const expenseQuery = buildFilterQuery(
+          { id: { _in: chunk } },
+          "id,header_id,encoded_by,particulars,amount",
+          { limit: "-1" }
+        );
+        const res = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
+          `/items/expense_draft?${expenseQuery}`
+        );
+        if (res.ok) {
+          for (const row of res.data.data ?? []) {
+            const id = toNumericId(row.id);
+            if (id) expenseMap.set(id, row);
+          }
+        }
+      })
+    );
+  }
+
   for (const group of groupMap.values()) {
     if (!group.expense_ids.length) continue;
 
-    const expenseQuery = buildFilterQuery(
-      { id: { _in: group.expense_ids } },
-      "id,header_id,encoded_by,particulars,amount",
-      { limit: "-1" }
-    );
-
-    const expenseRes = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
-      `/items/expense_draft?${expenseQuery}`
-    );
-
-    const groupExpenses = expenseRes.ok ? expenseRes.data.data ?? [] : [];
+    const groupExpenses = group.expense_ids
+      .map(id => expenseMap.get(id))
+      .filter((r): r is ExpenseDraftRow => Boolean(r));
 
     group.expense_count = groupExpenses.length;
     group.salesman_count = new Set(groupExpenses.map(getExpenseEmployeeId).filter((id) => id > 0)).size;
@@ -639,7 +662,7 @@ export async function getExpenseHeaderGroups(params: {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { header_ids, expense_ids, all_draft_rows, ...rest } = group;
       const isCompleted = all_draft_rows.length > 0 && 
-                          all_draft_rows.every((d) => d.status === "Approved" || Boolean(d.isPosted)) && 
+                          all_draft_rows.every((d) => d.status === "Approved" || d.status === "Rejected" || Boolean(d.isPosted)) && 
                           !group.can_act;
       return {
         ...rest,
@@ -675,9 +698,12 @@ export async function buildFinalTopSheet(params: {
     context: params.context,
   });
 
-  // Sync all resolved drafts' payables and totals first
-  for (const draft of initialLinked.visibleDrafts) {
-    await recalcDraftTotal(draft.id);
+  // Sync all resolved drafts' payables and totals concurrently in chunks
+  const draftIdsToRecalc = initialLinked.visibleDrafts.map(d => d.id);
+  const chunkSize = 15;
+  for (let i = 0; i < draftIdsToRecalc.length; i += chunkSize) {
+    const chunk = draftIdsToRecalc.slice(i, i + chunkSize);
+    await Promise.all(chunk.map(id => recalcDraftTotal(id)));
   }
 
   const linked = await resolveLinkedTopSheetData({
@@ -710,6 +736,7 @@ export async function buildFinalTopSheet(params: {
     grand_total: 0,
     details: [],
     attachments: [],
+    attachments_query_ok: true,
   };
 
   if (!linked.visibleDrafts.length || !linked.payables.length || !linked.expenseIds.length || !linked.headerIds.length) {
@@ -730,10 +757,7 @@ export async function buildFinalTopSheet(params: {
   const allowedExpenseIdSet = new Set(linked.expenseIds);
   const expenses = (expenseRes.data.data ?? []).filter((expense) => {
     const expenseId = toNumericId(expense.id);
-    const status = (expense.status ?? "").toLowerCase();
-    const isCulledButRelevant = status === "with concern" || status === "rejected";
-    
-    return Boolean(expenseId && (allowedExpenseIdSet.has(expenseId) || isCulledButRelevant));
+    return Boolean(expenseId && allowedExpenseIdSet.has(expenseId));
   });
 
   if (!expenses.length) {
@@ -764,7 +788,7 @@ export async function buildFinalTopSheet(params: {
 
   // Build current-tier approver list with voted/pending status
   type ApproverRow = { approver_id?: number | string | null; approver_heirarchy?: number | string | null };
-  type VoteRow = { approver_id?: number | string | null; status?: string | null };
+  type VoteRow = { approver_id?: number | string | null; status?: string | null; draft_id?: number | string | null };
   const allApproverRows: ApproverRow[] = (approversRes.ok ? (approversRes.data as { data?: ApproverRow[] }).data ?? [] : []);
   const allVoteRows: VoteRow[] = (votesRes.ok ? (votesRes.data as { data?: VoteRow[] }).data ?? [] : []);
   const votedApproverIds = new Set(allVoteRows.map((v) => toNumericId(v.approver_id)).filter((id): id is number => Boolean(id)));
@@ -784,7 +808,7 @@ export async function buildFinalTopSheet(params: {
         .filter((id): id is number => Boolean(id))
     )
   );
-  const allNeededUserIds = Array.from(new Set([...tierApproverIds, ...prevTierApproverIds]));
+  const allNeededUserIds = Array.from(new Set(allApproverRows.map(r => toNumericId(r.approver_id)).filter(id => id) as number[]));
   const tierApproverUserMap = allNeededUserIds.length > 0 ? await fetchUserMap(allNeededUserIds) : new Map<number, string>();
   const currentTierApprovers = tierApproverIds.map((id) => ({
     approver_id: id,
@@ -792,14 +816,102 @@ export async function buildFinalTopSheet(params: {
     voted: votedApproverIds.has(id),
   }));
   const prevTierApproverNames = prevTierApproverIds.map((id) => tierApproverUserMap.get(id) ?? `User #${id}`);
+  const nextTier = (linked.currentTier !== undefined && linked.currentTier !== 999) ? linked.currentTier + 1 : undefined;
+  const nextTierApproverIds = nextTier !== undefined ? Array.from(
+    new Set(
+      allApproverRows
+        .filter((r) => toNumber(r.approver_heirarchy) === nextTier)
+        .map((r) => toNumericId(r.approver_id))
+        .filter((id): id is number => Boolean(id))
+    )
+  ) : [];
+  const nextTierApprovers = nextTierApproverIds.map((id) => ({
+    approver_id: id,
+    name: tierApproverUserMap.get(id) ?? `User #${id}`,
+    voted: false,
+  }));
 
-  const salesmen: FinalTopSheetSalesmanResponse[] = employeeIds
-    .map((employeeId) => {
+  const employeeHeaderCombos = Array.from(
+    new Map(
+      expenses.map((expense) => {
+        const employeeId = getExpenseEmployeeId(expense);
+        const headerId = toNumericId(expense.header_id) ?? 0;
+        const key = `${employeeId}-${headerId}`;
+        return [key, { employeeId, headerId }] as const;
+      })
+    ).values()
+  );
+
+  const salesmen: FinalTopSheetSalesmanResponse[] = employeeHeaderCombos
+    .map(({ employeeId, headerId }) => {
       const salesman = salesmanMap.get(employeeId);
       const name = salesman?.salesman_name?.trim() || userMap.get(employeeId) || `User #${employeeId}`;
-      const total = expenses
-        .filter((expense) => getExpenseEmployeeId(expense) === employeeId)
-        .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+      const salesmanExpenses = expenses.filter(
+        (expense) => getExpenseEmployeeId(expense) === employeeId && (toNumericId(expense.header_id) ?? 0) === headerId
+      );
+      const total = salesmanExpenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+
+      const salesmanDraftIds = new Set(linked.payables.filter((p) => p.header_id === headerId).map((p) => p.draft_id));
+      const salesmanDrafts = linked.visibleDrafts.filter(d => salesmanDraftIds.has(d.id));
+      const activeSalesmanDrafts = salesmanDrafts.filter(d => d.current_tier > 0);
+      const salesmanCurrentTier = activeSalesmanDrafts.length > 0
+        ? activeSalesmanDrafts.reduce((min, d) => Math.min(min, d.current_tier), 999)
+        : (salesmanDrafts.length > 0 ? 0 : undefined);
+      
+      const draftsAtCurrentTier = salesmanDrafts.filter(d => d.current_tier === salesmanCurrentTier);
+      const draftIdsAtCurrentTier = new Set(draftsAtCurrentTier.map(d => d.id));
+      const activeSalesmanDraftIds = new Set(activeSalesmanDrafts.map(d => d.id));
+
+      const salesmanTierApproverIds = salesmanCurrentTier !== undefined ? Array.from(
+        new Set(
+          allApproverRows
+            .filter((r) => toNumber(r.approver_heirarchy) === salesmanCurrentTier)
+            .map((r) => toNumericId(r.approver_id))
+            .filter((id): id is number => Boolean(id))
+        )
+      ) : [];
+
+      const salesmanTierApprovers = salesmanTierApproverIds.map(id => {
+        const voted = allVoteRows.some(v => toNumericId(v.approver_id) === id && draftIdsAtCurrentTier.has(toNumericId(v.draft_id) || 0));
+        return {
+          approver_id: id,
+          name: tierApproverUserMap.get(id) ?? `User #${id}`,
+          voted
+        };
+      });
+
+      const salesmanNextTier = (salesmanCurrentTier !== undefined && salesmanCurrentTier !== 999) ? salesmanCurrentTier + 1 : undefined;
+
+      const salesmanNextTierApproverIds = salesmanNextTier !== undefined ? Array.from(
+        new Set(
+          allApproverRows
+            .filter((r) => toNumber(r.approver_heirarchy) === salesmanNextTier)
+            .map((r) => toNumericId(r.approver_id))
+            .filter((id): id is number => Boolean(id))
+        )
+      ) : [];
+
+      const salesmanNextTierApprovers = salesmanNextTierApproverIds.map(id => {
+        const voted = allVoteRows.some(v => toNumericId(v.approver_id) === id && activeSalesmanDraftIds.has(toNumericId(v.draft_id) || 0));
+        return {
+          approver_id: id,
+          name: tierApproverUserMap.get(id) ?? `User #${id}`,
+          voted
+        };
+      });
+
+      const salesmanPrevTier = (salesmanCurrentTier !== undefined && salesmanCurrentTier > 1 && salesmanCurrentTier !== 999) ? salesmanCurrentTier - 1 : undefined;
+
+      const salesmanPrevTierApproverIds = salesmanPrevTier !== undefined ? Array.from(
+        new Set(
+          allApproverRows
+            .filter((r) => toNumber(r.approver_heirarchy) === salesmanPrevTier)
+            .map((r) => toNumericId(r.approver_id))
+            .filter((id): id is number => Boolean(id))
+        )
+      ) : [];
+
+      const salesmanPrevTierApproverNames = salesmanPrevTierApproverIds.map(id => tierApproverUserMap.get(id) ?? `User #${id}`);
 
       return {
         employee_id: employeeId,
@@ -807,18 +919,40 @@ export async function buildFinalTopSheet(params: {
         salesman_code: salesman?.salesman_code ?? null,
         salesman_name: name,
         total_amount: total,
+        current_tier: salesmanCurrentTier === 999 ? undefined : salesmanCurrentTier,
+        current_tier_approvers: salesmanTierApprovers,
+        next_tier_approvers: salesmanNextTierApprovers,
+        previous_tier_approver_names: salesmanPrevTierApproverNames,
+        draft_statuses: salesmanDrafts.map(d => d.status),
+        header_id: headerId,
       };
     })
     .sort((a, b) => a.salesman_name.localeCompare(b.salesman_name));
+
+  // Build a map of expenseId → draft tier so the UI can distinguish actionable vs. non-actionable items
+  const draftIdToTier = new Map<number, number>(
+    linked.visibleDrafts.map((d) => [d.id, d.current_tier])
+  );
+  const expenseIdToDraftTier = new Map<number, number>();
+  for (const payable of linked.payables) {
+    const tier = draftIdToTier.get(payable.draft_id);
+    if (tier !== undefined) {
+      const existing = expenseIdToDraftTier.get(payable.expense_id);
+      if (existing === undefined || tier > existing) {
+        expenseIdToDraftTier.set(payable.expense_id, tier);
+      }
+    }
+  }
 
   const details: FinalTopSheetDetailResponse[] = expenses.map((expense) => {
     const employeeId = getExpenseEmployeeId(expense);
     const salesman = salesmanMap.get(employeeId);
     const coaId = toNumericId(expense.particulars) ?? 0;
     const coa = coaMap.get(coaId);
+    const expenseId = toNumericId(expense.id) ?? 0;
 
     return {
-      expense_id: toNumericId(expense.id) ?? 0,
+      expense_id: expenseId,
       header_id: toNumericId(expense.header_id) ?? 0,
       employee_id: employeeId,
       salesman_name: salesman?.salesman_name?.trim() || userMap.get(employeeId) || `User #${employeeId}`,
@@ -831,6 +965,7 @@ export async function buildFinalTopSheet(params: {
       status: expense.status ?? "",
       attachment_url: resolveAttachmentId(expense.attachment_url),
       feedback: expense.feedback ?? null,
+      draft_tier: expenseIdToDraftTier.get(expenseId),
     };
   });
 
@@ -846,10 +981,15 @@ export async function buildFinalTopSheet(params: {
       const rowDetails = details.filter((detail) => detail.coa_id === coaId);
       const cells: FinalTopSheetCellResponse[] = salesmen
         .map((salesman) => {
-          const cellDetails = rowDetails.filter((detail) => detail.employee_id === salesman.employee_id);
+          const cellDetails = rowDetails.filter(
+            (detail) =>
+              detail.employee_id === salesman.employee_id &&
+              detail.header_id === salesman.header_id
+          );
           return {
             employee_id: salesman.employee_id,
-            amount: cellDetails.reduce((sum, detail) => sum + detail.amount, 0),
+            header_id: salesman.header_id,
+            amount: cellDetails.reduce((sum, detail) => detail.status.toLowerCase() !== "rejected" ? sum + detail.amount : sum, 0),
             count: cellDetails.length,
             expense_ids: cellDetails.map((detail) => detail.expense_id).filter((id) => id > 0),
             has_concern: cellDetails.some((detail) => detail.status.toLowerCase().includes("concern")),
@@ -862,13 +1002,13 @@ export async function buildFinalTopSheet(params: {
         coa_id: coaId,
         account_title: coa?.account_title ?? `COA #${coaId}`,
         gl_code: coa?.gl_code ?? null,
-        row_total: rowDetails.reduce((sum, detail) => sum + detail.amount, 0),
+        row_total: rowDetails.reduce((sum, detail) => detail.status.toLowerCase() !== "rejected" ? sum + detail.amount : sum, 0),
         cells,
       };
     })
     .sort((a, b) => a.account_title.localeCompare(b.account_title));
 
-  const grandTotal = details.reduce((sum, detail) => sum + detail.amount, 0);
+  const grandTotal = details.reduce((sum, detail) => detail.status.toLowerCase() !== "rejected" ? sum + detail.amount : sum, 0);
 
   return {
     ok: true as const,
@@ -889,6 +1029,7 @@ export async function buildFinalTopSheet(params: {
         current_tier: linked.currentTier,
         required_approver_level: linked.requiredApproverLevel,
         current_tier_approvers: currentTierApprovers,
+        next_tier_approvers: nextTierApprovers,
         previous_tier_approver_names: prevTierApproverNames,
       },
       salesmen,
@@ -901,6 +1042,7 @@ export async function buildFinalTopSheet(params: {
         file_name: attachment.file_name ?? "Attachment",
         encoder_id: toNumericId(attachment.uploaded_by) ?? 0,
       })),
+      attachments_query_ok: attachmentsRes.ok,
     },
   };
 }
@@ -974,6 +1116,7 @@ export async function handleFinalHeaderDecision(params: {
   let scope = normalizeDecisionScope(body.target_scope);
   const employeeId = toNumber(body.employee_id);
   const coaId = toNumber(body.coa_id);
+  const headerId = toNumber(body.header_id);
   let expenseIds = getNumberArray(body.expense_ids);
   const legacyConcernExpenseIds = getNumberArray(body.concern_expense_ids);
 
@@ -1055,6 +1198,10 @@ export async function handleFinalHeaderDecision(params: {
     id: { _in: linked.expenseIds },
   };
 
+  if (status === "Approved" && scope !== "expense_ids") {
+    filters.status = { _nin: ["Rejected", "With Concern"] };
+  }
+
   if (scope === "expense_ids") {
     if (!expenseIds.length) {
       return jsonResponse({ error: "expense_ids are required for expense_ids target scope" }, { status: 400 });
@@ -1074,6 +1221,9 @@ export async function handleFinalHeaderDecision(params: {
   } else if (scope === "encoder") {
     if (!employeeId) return jsonResponse({ error: "employee_id is required for encoder target scope" }, { status: 400 });
     filters.encoded_by = { _eq: employeeId };
+    if (headerId) {
+      filters.header_id = { _eq: headerId };
+    }
   } else if (scope === "coa") {
     if (!coaId) return jsonResponse({ error: "coa_id is required for coa target scope" }, { status: 400 });
     filters.particulars = { _eq: coaId };
@@ -1083,6 +1233,9 @@ export async function handleFinalHeaderDecision(params: {
     }
     filters.encoded_by = { _eq: employeeId };
     filters.particulars = { _eq: coaId };
+    if (headerId) {
+      filters.header_id = { _eq: headerId };
+    }
   }
 
   const expenseQuery = buildFilterQuery(
@@ -1372,6 +1525,9 @@ export async function handleFinalHeaderDecision(params: {
       if (fRes.ok) {
         disbursement_draft_status_updated = true;
         finalizationResults.push({ draft_id: draftId, result: "result" in fRes ? String(fRes.result) : "UNKNOWN", doc_no: (fRes as { doc_no?: string }).doc_no });
+      } else {
+        console.error(`[finalTopSheets.service] Failed to finalize draft ${draftId}:`, fRes.data);
+        return jsonResponse(fRes.data || { error: "Failed to finalize draft" }, { status: fRes.status || 500 });
       }
     }
   }

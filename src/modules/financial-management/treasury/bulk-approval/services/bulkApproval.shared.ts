@@ -771,6 +771,100 @@ export async function buildVoteHistory(params: {
   return rounds;
 }
 
+export async function buildVoteHistoryBulk(params: {
+  drafts: { draftId: number; currentVersion: number; draftStatus: string; divisionId: number }[];
+  divisionIds: number[];
+}) {
+  if (!params.drafts.length) return new Map<number, LogRoundResponse[]>();
+
+  const draftIds = params.drafts.map((d) => d.draftId);
+  const divisionIds = [...new Set(params.divisionIds)];
+
+  const [approversRes, votesRes] = await Promise.all([
+    directusFetch(
+      `/items/disbursement_draft_approver?filter[division_id][_in]=${divisionIds.join(",")}&filter[is_deleted][_eq]=0&fields=approver_id,approver_heirarchy,division_id&limit=-1`
+    ),
+    directusFetch(
+      `/items/disbursement_draft_approvals?filter[draft_id][_in]=${draftIds.join(",")}&fields=id,draft_id,approver_id,status,remarks,version,created_at&sort=version,created_at&limit=-1`
+    ),
+  ]);
+
+  const approverRows = (approversRes.ok ? (approversRes.data as DirectusListResponse<DirectusApproverRow & { division_id: number }>)?.data : []) ?? [];
+  const allVotes = (votesRes.ok ? (votesRes.data as DirectusListResponse<ApprovalVoteRow>)?.data : []) ?? [];
+
+  const allUserIds = new Set<number>();
+  approverRows.forEach(a => allUserIds.add(toNumericId(a.approver_id) ?? 0));
+  allVotes.forEach(v => allUserIds.add(toNumericId(v.approver_id) ?? 0));
+  allUserIds.delete(0);
+
+  const userMap = await fetchUserMap([...allUserIds]);
+  const resultMap = new Map<number, LogRoundResponse[]>();
+
+  for (const draft of params.drafts) {
+    const approvers = approverRows
+      .filter((r) => toNumericId(r.division_id) === draft.divisionId)
+      .map((r) => ({
+        approver_id: toNumericId(r.approver_id) ?? 0,
+        level: toNumber(r.approver_heirarchy, 1),
+      }));
+
+    const levelByApprover = new Map<number, number>();
+    for (const a of approvers) levelByApprover.set(a.approver_id, a.level);
+
+    const votes = allVotes.filter((v) => toNumericId(v.draft_id) === draft.draftId);
+
+    const versionSet = new Set<number>();
+    versionSet.add(draft.currentVersion);
+    for (const v of votes) {
+      versionSet.add(toNumber(v.version, 1));
+    }
+
+    const rounds: LogRoundResponse[] = [...versionSet]
+      .sort((a, b) => a - b)
+      .map((version) => {
+        const roundVotes = votes
+          .filter((v) => toNumber(v.version, 1) === version)
+          .map((v) => {
+            const approverId = toNumericId(v.approver_id) ?? 0;
+            return {
+              approver_id: approverId,
+              name: userMap.get(approverId) ?? `User #${approverId}`,
+              level: levelByApprover.get(approverId) || 1,
+              status: v.status ?? "",
+              remarks: v.remarks ?? null,
+              created_at: v.created_at ?? "",
+            };
+          });
+
+        const isCurrent = version === draft.currentVersion;
+
+        let outcome = "IN_PROGRESS";
+        if (!isCurrent) {
+          if (roundVotes.some(v => v.status === "REJECTED")) outcome = "REJECTED";
+          else if (roundVotes.some(v => v.status === "WITH_CONCERN")) outcome = "WITH_CONCERN";
+          else outcome = "SUPERSEDED";
+        } else {
+          if (draft.draftStatus === "Approved") outcome = "FINAL_APPROVED";
+          else if (draft.draftStatus === "Rejected") outcome = "REJECTED";
+          else if (draft.draftStatus === "With Concern") outcome = "WITH_CONCERN";
+          else if (draft.draftStatus.startsWith("Pending_")) outcome = "IN_PROGRESS";
+          else outcome = "SUBMITTED";
+        }
+
+        return {
+          version,
+          is_current: isCurrent,
+          outcome,
+          votes: roundVotes,
+        };
+      });
+
+    resultMap.set(draft.draftId, rounds);
+  }
+
+  return resultMap;
+}
+
 export async function buildApproversByLevel(params: {
   divisionId: number;
   draftId: number;
@@ -1104,6 +1198,8 @@ export async function createBulkApprovalContext(req: NextRequest): Promise<AuthC
 }
 
 
+const finalizingDraftLocks = new Set<number>();
+
 export async function finalizeDisbursementDraft(params: {
   draftId: number;
   draft: DisbursementDraftRow;
@@ -1113,194 +1209,253 @@ export async function finalizeDisbursementDraft(params: {
   finalRemarks: string | null;
   nowTs: string;
 }) {
-  const { draftId, draft, currentUserId, currentVersion, finalTotal, finalRemarks, nowTs } = params;
+  const { draftId, draft, currentUserId, currentVersion, finalRemarks, nowTs } = params;
 
-  const payDraftRes = await directusFetch(
-    `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,amount,coa_id,reference_no,date,remarks,expense_id.id,expense_id.status,expense_id.amount&limit=-1`
+  if (finalizingDraftLocks.has(draftId)) {
+    return {
+      ok: true,
+      result: "APPROVED" as const,
+      message: "Disbursement creation already in progress concurrently.",
+    };
+  }
+
+  // Double Check: Verify if another concurrent request already approved/posted the draft
+  const checkRes = await directusFetch<DirectusListResponse<{ status: string; isPosted?: number }>>(
+    `/items/disbursement_draft?filter[id][_eq]=${draftId}&fields=status,isPosted&limit=1`
   );
+  const latestDraft = (checkRes.ok ? checkRes.data?.data?.[0] : null);
+  if (latestDraft && (latestDraft.status === "Approved" || latestDraft.isPosted === 1)) {
+    return {
+      ok: true,
+      result: "APPROVED" as const,
+      message: "Disbursement was already finalized and posted.",
+    };
+  }
 
-  const payDraftRows = (payDraftRes.data as DirectusListResponse<DisbursementPayableDraftRow>).data ?? [];
+  finalizingDraftLocks.add(draftId);
 
-  // Sync amount of disbursement_payables_draft with expense_draft if they differ
-  for (const row of payDraftRows) {
-    if (row.expense_id && typeof row.expense_id === "object") {
-      const exp = row.expense_id as { id?: number | string; status?: string | null; amount?: number | string | null };
-      if (exp.amount !== undefined && exp.amount !== null) {
-        const expenseAmount = toNumber(exp.amount);
-        const payableAmount = toNumber(row.amount);
-        if (expenseAmount !== payableAmount) {
-          await directusFetch(`/items/disbursement_payables_draft/${row.id}`, {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ amount: expenseAmount }),
-          });
-          row.amount = expenseAmount;
+  try {
+    const payDraftRes = await directusFetch(
+      `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=id,division_id,amount,coa_id,reference_no,date,remarks,expense_id.id,expense_id.status,expense_id.amount&limit=-1`
+    );
+
+    const payDraftRows = (payDraftRes.data as DirectusListResponse<DisbursementPayableDraftRow>).data ?? [];
+
+    // Sync amount of disbursement_payables_draft with expense_draft if they differ
+    for (const row of payDraftRows) {
+      if (row.expense_id && typeof row.expense_id === "object") {
+        const exp = row.expense_id as { id?: number | string; status?: string | null; amount?: number | string | null };
+        if (exp.amount !== undefined && exp.amount !== null) {
+          const expenseAmount = toNumber(exp.amount);
+          const payableAmount = toNumber(row.amount);
+          if (expenseAmount !== payableAmount) {
+            await directusFetch(`/items/disbursement_payables_draft/${row.id}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ amount: expenseAmount }),
+            });
+            row.amount = expenseAmount;
+          }
         }
       }
     }
-  }
 
-  if (!payDraftRows.length) {
+    if (!payDraftRows.length) {
+      await directusFetch(`/items/disbursement_draft/${draftId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          status: "With Concern",
+          approval_version: currentVersion + 1,
+        }),
+      });
+
+      return {
+        ok: true,
+        result: "WITH_CONCERN" as const,
+        message: "No payable items remained after verification.",
+      };
+    }
+
+    const latestLiveRes = await directusFetch(`/items/disbursement?sort=-id&limit=1&fields=id,doc_no`);
+
+    let nextDocNum = 1000;
+    const last = (latestLiveRes.data as DirectusListResponse<{ doc_no?: string | null }>).data?.[0];
+
+    if (last?.doc_no) {
+      nextDocNum = (parseInt(last.doc_no.match(/\d+/)?.[0] || "0", 10) || 1000) + 1;
+    }
+
+    const liveDocNo = `NT-${nextDocNum}`;
+
+    const livePayablesPayload = payDraftRows
+      .filter((p) => {
+        if (!p.expense_id) return true;
+        const exp = p.expense_id as { id?: number | string; status?: string | null } | null;
+        const s = String(exp?.status || "").toLowerCase();
+        return s === "approved";
+      })
+      .map((p) => ({
+        disbursement_id: 0, // Placeholder, updated below
+        division_id: toNumericId(p.division_id),
+        amount: p.amount,
+        coa_id: toNumericId(p.coa_id),
+        reference_no: liveDocNo,
+        date: p.date,
+        remarks: p.remarks ?? null,
+      }));
+
+    const approvedTotal = livePayablesPayload.reduce((sum, p) => sum + toNumber(p.amount), 0);
+
+    if (!livePayablesPayload.length) {
+      const draftStatus = payDraftRows.every(p => {
+        const exp = p.expense_id as { status?: string | null } | null;
+        return String(exp?.status || "").toLowerCase() === "rejected";
+      }) ? "Rejected" : "With Concern";
+
+      await directusFetch(`/items/disbursement_draft/${draftId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          status: draftStatus,
+          approval_version: currentVersion + 1,
+          date_updated: nowTs,
+        }),
+      });
+
+      return {
+        ok: true,
+        result: draftStatus === "Rejected" ? ("REJECTED" as const) : ("WITH_CONCERN" as const),
+        message: "No approved payable items remained after verification.",
+      };
+    }
+
+    const liveRes = await directusFetch(`/items/disbursement`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        doc_no: liveDocNo,
+        total_amount: approvedTotal,
+        division_id: toNumericId(draft.division_id),
+        payee: toNumericId(draft.payee),
+        encoder_id: toNumericId(draft.encoder_id),
+        remarks: finalRemarks,
+        status: "Submitted",
+        transaction_type: draft.transaction_type,
+        transaction_date: draft.transaction_date,
+        date_created: nowTs,
+        date_updated: nowTs,
+      }),
+    });
+
+    if (!liveRes.ok) return { ok: false, status: liveRes.status, data: liveRes.data };
+
+    const liveId = toNumericId((liveRes.data as DirectusItemResponse<{ id?: number | string }>).data?.id);
+
+    if (!liveId) {
+      return { ok: false, status: 500, data: { error: "Failed to create live disbursement." } };
+    }
+
+    const actualPayablesPayload = livePayablesPayload.map(p => ({
+      ...p,
+      disbursement_id: liveId
+    }));
+
+    // --- Auto-Reject "With Concern" orphans ---
+    // 1. Get all header IDs linked to this draft from the logs
+    const draftLogLinksRes = await directusFetch<DirectusListResponse<{ expense_id?: { header_id?: number | string } | null }>>(
+      `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=expense_id.header_id&limit=-1`
+    );
+    const headerIds = [...new Set((draftLogLinksRes.ok ? draftLogLinksRes.data.data ?? [] : [])
+      .map(p => toNumericId(p.expense_id?.header_id))
+      .filter((id): id is number => Boolean(id)))];
+
+    if (headerIds.length > 0) {
+      const nonApprovedRes = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
+        `/items/expense_draft?filter[header_id][_in]=${headerIds.join(",")}&filter[status][_nin]=Approved,Rejected&fields=id,amount,status&limit=-1`
+      );
+      const nonApprovedItems = (nonApprovedRes.ok ? nonApprovedRes.data.data ?? [] : []);
+      for (const item of nonApprovedItems) {
+        const expId = toNumericId(item.id);
+        if (expId) {
+          const currentStatus = item.status || "Draft";
+          await directusFetch(`/items/expense_draft/${expId}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ status: "Rejected", feedback: `[Auto-Rejected] Item remained in "${currentStatus}" status during final batch approval.` }),
+          });
+          await createExpenseLog({
+            expenseId: expId,
+            action: "Rejected",
+            changedBy: currentUserId,
+            changedAt: nowTs,
+            amount: item.amount,
+            remarks: `[Auto-Rejected] Item remained in "${currentStatus}" status during final batch approval.`,
+            status: "Rejected",
+          });
+        }
+      }
+    }
+
+    const orphanPayableIds = payDraftRows
+      .filter((p) => {
+        if (!p.expense_id) return false;
+        const exp = p.expense_id as { status?: string | null } | null;
+        const s = String(exp?.status || "").toLowerCase();
+        return s === "rejected";
+      })
+      .map((p) => toNumericId(p.id))
+      .filter((id): id is number => Boolean(id));
+
+    if (orphanPayableIds.length > 0) {
+      await directusFetch(`/items/disbursement_payables_draft`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(orphanPayableIds),
+      });
+    }
+
+    const livePayablesRes = await directusFetch(`/items/disbursement_payables`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(actualPayablesPayload),
+    });
+
+    if (!livePayablesRes.ok) {
+      console.error("[finalizeDisbursementDraft] Failed to batch insert live payables:", livePayablesRes.data);
+      return { ok: false, status: livePayablesRes.status, data: livePayablesRes.data };
+    }
+
     await directusFetch(`/items/disbursement_draft/${draftId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        status: "With Concern",
-        approval_version: currentVersion + 1,
+        status: "Approved",
+        isPosted: 1,
+        doc_no: liveDocNo,
+        total_amount: approvedTotal,
+        approval_version: currentVersion,
+        date_updated: nowTs,
       }),
     });
 
     return {
       ok: true,
-      result: "WITH_CONCERN",
-      message: "No payable items remained after verification.",
+      result: "APPROVED" as const,
+      message: "Disbursement created.",
+      doc_no: liveDocNo,
     };
+  } catch (error) {
+    const err = error as Error;
+    console.error("[finalizeDisbursementDraft] Unhandled exception occurred:", err);
+    return {
+      ok: false,
+      status: 500,
+      data: { error: err.message || String(err), details: err.stack || "" },
+    };
+  } finally {
+    finalizingDraftLocks.delete(draftId);
   }
-
-  const latestLiveRes = await directusFetch(`/items/disbursement?sort=-id&limit=1&fields=id,doc_no`);
-
-  let nextDocNum = 1000;
-  const last = (latestLiveRes.data as DirectusListResponse<{ doc_no?: string | null }>).data?.[0];
-
-  if (last?.doc_no) {
-    nextDocNum = (parseInt(last.doc_no.match(/\d+/)?.[0] || "0", 10) || 1000) + 1;
-  }
-
-  const liveDocNo = `NT-${nextDocNum}`;
-
-  const liveRes = await directusFetch(`/items/disbursement`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      doc_no: liveDocNo,
-      total_amount: finalTotal,
-      division_id: toNumericId(draft.division_id),
-      payee: toNumericId(draft.payee),
-      encoder_id: toNumericId(draft.encoder_id),
-      remarks: finalRemarks,
-      status: "Draft",
-      transaction_type: draft.transaction_type,
-      transaction_date: draft.transaction_date,
-      date_created: nowTs,
-      date_updated: nowTs,
-    }),
-  });
-
-  if (!liveRes.ok) return { ok: false, status: liveRes.status, data: liveRes.data };
-
-  const liveId = toNumericId((liveRes.data as DirectusItemResponse<{ id?: number | string }>).data?.id);
-
-  if (!liveId) {
-    return { ok: false, status: 500, data: { error: "Failed to create live disbursement." } };
-  }
-
-  const livePayablesPayload = payDraftRows
-    .filter((p) => {
-      if (!p.expense_id) return true;
-      const exp = p.expense_id as { id?: number | string; status?: string | null } | null;
-      const s = String(exp?.status || "").toLowerCase();
-      return s === "approved";
-    })
-    .map((p) => ({
-      disbursement_id: liveId,
-      amount: p.amount,
-      coa_id: toNumericId(p.coa_id),
-      reference_no: liveDocNo,
-      date: p.date,
-      remarks: p.remarks ?? null,
-    }));
-
-
-
-  // --- Auto-Reject "With Concern" orphans ---
-  // 1. Get all header IDs linked to this draft from the logs
-  const draftLogLinksRes = await directusFetch<DirectusListResponse<{ expense_id?: { header_id?: number | string } | null }>>(
-    `/items/disbursement_payables_draft?filter[disbursement_id][_eq]=${draftId}&fields=expense_id.header_id&limit=-1`
-  );
-  const headerIds = [...new Set((draftLogLinksRes.ok ? draftLogLinksRes.data.data ?? [] : [])
-    .map(p => toNumericId(p.expense_id?.header_id))
-    .filter((id): id is number => Boolean(id)))];
-
-  if (headerIds.length > 0) {
-    const nonApprovedRes = await directusFetch<DirectusListResponse<ExpenseDraftRow>>(
-      `/items/expense_draft?filter[header_id][_in]=${headerIds.join(",")}&filter[status][_nin]=Approved,Rejected&fields=id,amount,status&limit=-1`
-    );
-    const nonApprovedItems = (nonApprovedRes.ok ? nonApprovedRes.data.data ?? [] : []);
-    for (const item of nonApprovedItems) {
-      const expId = toNumericId(item.id);
-      if (expId) {
-        const currentStatus = item.status || "Draft";
-        await directusFetch(`/items/expense_draft/${expId}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ status: "Rejected", feedback: `[Auto-Rejected] Item remained in "${currentStatus}" status during final batch approval.` }),
-        });
-        await createExpenseLog({
-          expenseId: expId,
-          action: "Rejected",
-          changedBy: currentUserId,
-          changedAt: nowTs,
-          amount: item.amount,
-          remarks: `[Auto-Rejected] Item remained in "${currentStatus}" status during final batch approval.`,
-          status: "Rejected",
-        });
-      }
-    }
-  }
-
-  const orphanPayableIds = payDraftRows
-    .filter((p) => {
-      if (!p.expense_id) return false;
-      const exp = p.expense_id as { status?: string | null } | null;
-      const s = String(exp?.status || "").toLowerCase();
-      return s !== "approved";
-    })
-    .map((p) => toNumericId(p.id))
-    .filter((id): id is number => Boolean(id));
-
-  if (orphanPayableIds.length > 0) {
-    await directusFetch(`/items/disbursement_payables_draft`, {
-      method: "DELETE",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(orphanPayableIds),
-    });
-  }
-
-  const approvedTotal = livePayablesPayload.reduce((sum, p) => sum + toNumber(p.amount), 0);
-
-  const livePayablesRes = await directusFetch(`/items/disbursement_payables`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(livePayablesPayload),
-  });
-
-  if (!livePayablesRes.ok) return { ok: false, status: livePayablesRes.status, data: livePayablesRes.data };
-
-  await directusFetch(`/items/disbursement_draft/${draftId}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      status: "Approved",
-      isPosted: 1,
-      doc_no: liveDocNo,
-      total_amount: approvedTotal,
-      approval_version: currentVersion,
-      date_updated: nowTs,
-    }),
-  });
-
-  await directusFetch(`/items/disbursement/${liveId}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ total_amount: approvedTotal }),
-  });
-
-  return {
-    ok: true,
-    result: "APPROVED",
-    message: "Disbursement created.",
-    doc_no: liveDocNo,
-  };
 }
 
 export async function processDraftApproval(params: {

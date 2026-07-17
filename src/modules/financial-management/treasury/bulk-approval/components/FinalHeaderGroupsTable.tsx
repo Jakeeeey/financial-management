@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ArrowLeft,
   ChevronRight,
+  XCircle,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -60,19 +61,31 @@ function uniqueStatuses(group: ApprovalAwareGroup) {
 
 function formatStatusText(group: ApprovalAwareGroup) {
   const statuses = uniqueStatuses(group);
-  return statuses.length > 0 ? statuses.join(", ") : "No draft status";
+  return statuses.length > 0 ? statuses.map(s => s.replace(/Pending_L\d+/gi, "Pending Review").replace(/_/g, " ")).join(", ") : "No draft status";
 }
 
 function getApprovalTierText(group: ApprovalAwareGroup) {
-  const current = group.current_tier ? `L${group.current_tier}` : "Pending";
-  const required = group.required_approver_level ? `L${group.required_approver_level}` : "Final";
-  return `${current} / ${required}`;
+  const current = group.current_tier ? `Level ${group.current_tier}` : "Pending";
+  const required = group.required_approver_level ? `Level ${group.required_approver_level}` : "Final";
+  return `${current} of ${required}`;
 }
 
 function ApprovalStateBadge({ group }: { group: ApprovalAwareGroup }) {
   const isApproved = Boolean(group.is_completed);
 
   if (isApproved) {
+    const statuses = group.draft_statuses ?? [];
+    const allRejected = statuses.length > 0 && statuses.every((s) => s.toLowerCase() === "rejected");
+
+    if (allRejected) {
+      return (
+        <Badge className="w-fit rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-500/10 dark:bg-rose-900/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-rose-700 dark:text-rose-400 hover:bg-rose-500/15 dark:hover:bg-rose-900/40">
+          <XCircle className="mr-1 h-3 w-3" />
+          Rejected
+        </Badge>
+      );
+    }
+
     return (
       <Badge className="w-fit rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-500/10 dark:bg-emerald-900/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15 dark:hover:bg-emerald-900/40">
         <CheckCircle2 className="mr-1 h-3 w-3" />
@@ -85,7 +98,7 @@ function ApprovalStateBadge({ group }: { group: ApprovalAwareGroup }) {
     return (
       <Badge className="w-fit rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/40">
         <CheckCircle2 className="mr-1 h-3 w-3" />
-        Ready for Action
+        Ready for Approval
       </Badge>
     );
   }
@@ -233,7 +246,7 @@ export default function FinalHeaderGroupsTable({
               onClick={() => onStatusFilterChange?.("ready")}
               disabled={loading}
             >
-              Ready for Action
+              Ready for Approval
             </Button>
             <Button
               type="button"
@@ -378,16 +391,15 @@ export default function FinalHeaderGroupsTable({
                     </TableCell>
                     <TableCell className="px-4 py-3">
                       <div className="flex flex-col gap-1.5">
-                        <Badge variant="secondary" className="w-fit rounded-lg bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700">
-                          {group.division_name ?? `Division #${group.division_id}`}
-                        </Badge>
-                        <ApprovalStateBadge group={group as ApprovalAwareGroup} />
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge variant="secondary" className="w-fit rounded-lg bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700">
+                            {group.division_name ?? `Division #${group.division_id}`}
+                          </Badge>
+                          <ApprovalStateBadge group={group as ApprovalAwareGroup} />
+                        </div>
                         <div className="space-y-0.5">
                           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
                             Approval Tier: <span className="text-slate-700 dark:text-slate-300">{getApprovalTierText(group as ApprovalAwareGroup)}</span>
-                          </p>
-                          <p className="text-[9px] font-semibold text-slate-500 dark:text-slate-400">
-                            Status: {formatStatusText(group as ApprovalAwareGroup)}
                           </p>
                         </div>
                       </div>

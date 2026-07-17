@@ -23,6 +23,7 @@ import {
   buildApproversByLevel,
   buildFilterQuery,
   buildVoteHistory,
+  buildVoteHistoryBulk,
   canUserVote,
   createExpenseLog,
   fetchCoaMap,
@@ -334,6 +335,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             is_rejected: item.status === "Rejected",
             feedback: item.feedback ?? null,
             expense_id: expenseId,
+            header_id: toNumericId(item.header_id) ?? 0,
           };
         });
 
@@ -451,11 +453,13 @@ export async function handleMyLevelApprovalGetResource(params: {
             currentVersion: toNumber(draft.approval_version, 1),
           }),
           headerIds.length > 0 
-            ? directusFetch(`/items/expense_attachments?filter[header_id][_in]=${headerIds.join(",")}&fields=id,file_url,file_name&limit=-1`)
+            ? directusFetch(`/items/expense_attachments?filter[header_id][_in]=${headerIds.join(",")}&fields=id,header_id,file_url,file_name&limit=-1`)
             : Promise.resolve({ ok: true, data: { data: [] } })
         ]);
 
-      const attachments = (attachmentsRes.data as DirectusListResponse<{ file_url?: string | null; file_name?: string | null }>)?.data ?? [];
+      const attachments = attachmentsRes.ok
+        ? (attachmentsRes.data as DirectusListResponse<{ header_id?: number | string | null; file_url?: string | null; file_name?: string | null }>)?.data ?? []
+        : [];
 
       const currentTier = parseTier(draft.status ?? "Submitted");
       const approvalVersion = toNumber(draft.approval_version, 1);
@@ -482,6 +486,7 @@ export async function handleMyLevelApprovalGetResource(params: {
           is_rejected: expenseObj?.status === "Rejected",
           feedback: expenseObj?.feedback ?? null,
           expense_id: expenseObj ? (toNumericId(expenseObj.id) ?? 0) : (toNumericId(p.expense_id) ?? 0),
+          header_id: expenseObj ? (toNumericId(expenseObj.header_id) ?? 0) : 0,
         };
       });
 
@@ -491,6 +496,7 @@ export async function handleMyLevelApprovalGetResource(params: {
 
         return {
           expense_id: expenseId,
+          header_id: toNumericId(c.header_id) ?? 0,
           status: c.status ?? "With Concern",
           feedback: c.feedback ?? null,
           return_to: c.return_to ?? null,
@@ -557,9 +563,11 @@ export async function handleMyLevelApprovalGetResource(params: {
             myVote,
           }),
         attachments: attachments.map((a) => ({
+          header_id: toNumericId(a.header_id) ?? 0,
           file_url: a.file_url ?? "",
           file_name: a.file_name ?? "Attachment",
         })),
+        attachments_query_ok: attachmentsRes.ok,
       });
     }
 
@@ -677,20 +685,24 @@ export async function handleMyLevelApprovalGetResource(params: {
         fetchCoaMap([...coaIds]),
       ]);
 
-      const rows = await Promise.all(
-        drafts.map(async (draft) => {
+      const bulkVoteHistories = await buildVoteHistoryBulk({
+        drafts: drafts.map((d) => ({
+          draftId: toNumericId(d.id) ?? 0,
+          currentVersion: toNumber(d.approval_version, 1),
+          draftStatus: d.status ?? "",
+          divisionId: toNumericId(d.division_id) ?? 0,
+        })),
+        divisionIds: [...divisionIds],
+      });
+
+      const rows = drafts.map((draft) => {
           const draftId = toNumericId(draft.id) ?? 0;
           const payeeId = toNumericId(draft.payee) ?? 0;
           const encoderId = toNumericId(draft.encoder_id) ?? 0;
           const divisionId = toNumericId(draft.division_id) ?? 0;
           const approvalVersion = toNumber(draft.approval_version, 1);
 
-          const rounds = await buildVoteHistory({
-            draftId,
-            currentVersion: approvalVersion,
-            draftStatus: draft.status ?? "",
-            divisionId,
-          });
+          const rounds = bulkVoteHistories.get(draftId) ?? [];
 
           const revisionLogs: DraftRevisionLogResponse[] = draftLogs
             .filter((logRow) => toNumericId(logRow.disbursement_id) === draftId)
@@ -755,8 +767,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             logs: revisionLogs,
             expense_logs: expenseRevisionLogs,
           };
-        })
-      );
+        });
 
       return jsonResponse({ data: rows });
     }
