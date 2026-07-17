@@ -42,7 +42,6 @@ next-env.d.ts
 
 # agent workflow
 /.agent
-/.worktrees/
 
 .idea
 .aider*

@@ -736,7 +736,6 @@ export async function buildFinalTopSheet(params: {
     grand_total: 0,
     details: [],
     attachments: [],
-    attachments_query_ok: true,
   };
 
   if (!linked.visibleDrafts.length || !linked.payables.length || !linked.expenseIds.length || !linked.headerIds.length) {
@@ -1042,7 +1041,6 @@ export async function buildFinalTopSheet(params: {
         file_name: attachment.file_name ?? "Attachment",
         encoder_id: toNumericId(attachment.uploaded_by) ?? 0,
       })),
-      attachments_query_ok: attachmentsRes.ok,
     },
   };
 }
