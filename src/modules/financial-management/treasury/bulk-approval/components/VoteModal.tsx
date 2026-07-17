@@ -138,6 +138,10 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     if (open && detail) {
       setRemarks("");
       setEditedAmounts({});
+      setShowCoverage(Boolean(detail.attachments?.length));
+      setCurrentSlide(0);
+      setInlineZoom(1);
+      setInlineRotation(0);
 
       const initialRemarks: Record<number, string> = {};
 
@@ -251,14 +255,6 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       }).sort((a, b) => (b.weekStart?.getTime() ?? 0) - (a.weekStart?.getTime() ?? 0)),
     }));
   }, [combinedItems]);
-
-  const activeGroup = React.useMemo(() => {
-    if (!selectedGroupId) return null;
-    for (const g of groupedPayables)
-      for (const w of g.weeks)
-        if (`${g.coa_name}-${w.weekKey}` === selectedGroupId) return { ...w, coa_name: g.coa_name };
-    return null;
-  }, [selectedGroupId, groupedPayables]);
 
   React.useEffect(() => {
     if (!selectedGroupId && groupedPayables.length > 0) {
@@ -690,7 +686,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
                 <div className="flex-1 flex min-h-0 bg-slate-50/50">
                   {/* Sidebar: COA Groups */}
-                  <div style={{ width: sidebarWidth, minWidth: 200, maxWidth: "50vw" }} className="bg-white dark:bg-slate-950 overflow-y-auto shrink-0 relative flex flex-col">
+                  <div style={{ width: sidebarWidth }} className="hidden">
                     <Table>
                       <TableHeader className="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10 shadow-sm">
                         <TableRow>
@@ -749,7 +745,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
                   {/* Vertical Drag Resizer */}
                   <div
-                    className="w-1 cursor-col-resize bg-slate-200 dark:bg-slate-800 hover:bg-blue-500 active:bg-blue-600 shrink-0 z-20 transition-colors"
+                    className="hidden"
                     onMouseDown={(e) => {
                       isDraggingSidebar.current = true;
                       const startX = e.clientX;
@@ -771,13 +767,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
                   {/* Detail Table Area */}
                   <div className="flex-1 bg-white dark:bg-slate-950 flex flex-col overflow-hidden">
-                    <div className="flex-1 overflow-auto p-8 pt-0">
-                      <Table className="border dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="flex-1 overflow-auto p-3 sm:p-5">
+                      <Table className="min-w-[840px] border dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
                         <TableHeader className="bg-slate-50/50 dark:bg-slate-900/50 sticky top-0 z-10 backdrop-blur-sm border-b dark:border-slate-800">
                           <TableRow>
-                            <TableHead className="w-10 text-center text-[9px] font-black text-slate-800 dark:text-slate-400">#</TableHead>
-                            <TableHead className="text-[9px] font-black uppercase tracking-widest py-3 text-slate-800 dark:text-slate-400">Remarks</TableHead>
-                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-24 text-slate-800 dark:text-slate-400">Amount</TableHead>
+                            <TableHead className="w-8 text-center text-[9px] font-black text-slate-800 dark:text-slate-400">#</TableHead>
+                            <TableHead className="min-w-[180px] text-[9px] font-black uppercase tracking-widest py-3 text-slate-800 dark:text-slate-400">Remarks</TableHead>
+                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-20 text-slate-800 dark:text-slate-400">Amount</TableHead>
                             <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-12 text-slate-800 dark:text-slate-400">Docs</TableHead>
                             <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-24 text-slate-800 dark:text-slate-400">Date</TableHead>
                             <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-20 text-slate-800 dark:text-slate-400">Status</TableHead>
@@ -785,7 +781,30 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {activeGroup?.items.map((p, idx) => {
+                          {groupedPayables.map((group) =>
+                            group.weeks.map((week) => {
+                              const groupTotal = week.items.reduce(
+                                (sum, payable) => sum + Number(editedAmounts[payable.id] || payable.amount),
+                                0
+                              );
+
+                              return (
+                                <React.Fragment key={`${group.coa_name}-${week.weekKey}`}>
+                                  <TableRow className="border-none bg-slate-950 hover:bg-slate-950 dark:bg-slate-950">
+                                    <TableCell colSpan={7} className="px-5 py-3 text-white">
+                                      <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Account</p>
+                                          <p className="truncate text-sm font-black">{group.coa_name}</p>
+                                          <p className="text-[9px] font-bold text-slate-400">{week.weekLabel}</p>
+                                        </div>
+                                        <span className="text-sm font-black tabular-nums text-emerald-400">
+                                          {formatCurrency(groupTotal)}
+                                        </span>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                  {week.items.map((p, idx) => {
                             const status = itemDecisions[p.id] || "PENDING";
                             const isPersistentLocked = p.is_concern || p.is_rejected;
                             const isStatusLocked = isPersistentLocked || isInteractionDisabled;
@@ -866,45 +885,48 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                 )}
                               </React.Fragment>
                             );
-                          })}
+                                  })}
+                                </React.Fragment>
+                              );
+                            })
+                          )}
                         </TableBody>
                       </Table>
                     </div>
 
                     {/* Footer Section Pattern */}
-                    <div className="p-8 border-t dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-end justify-between gap-12 relative">
-                      <div className="flex-1 space-y-3">
+                    <div className="sticky bottom-0 z-20 flex flex-col gap-3 border-t bg-slate-50/95 px-5 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 lg:flex-row lg:items-center">
+                      <div className="min-w-0 flex-1 space-y-1">
                         <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 flex items-center gap-2">
                           <Info size={14} className="text-blue-500 dark:text-blue-400" />
                           Approval Remarks <span className="text-red-500 font-black">*</span>
                         </label>
                         <Textarea
-                          rows={4}
-                          className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl p-4 text-sm font-medium shadow-inner resize-none focus:ring-2 focus:ring-blue-500/20"
+                          rows={2}
+                          className="min-h-10 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-2 text-sm font-medium shadow-inner resize-none focus:ring-2 focus:ring-blue-500/20"
                           placeholder={hasPendingItems ? "Resolve all pending items first..." : "State your decision remarks for this batch..."}
                           value={remarks}
                           onChange={(e) => setRemarks(e.target.value)}
                           disabled={submitting || isInteractionDisabled}
                         />
-                        <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 italic">
+                        <p className="hidden text-[9px] font-bold text-slate-400 dark:text-slate-500 italic xl:block">
                           Your remarks will be saved in the approval audit trail.
                         </p>
                       </div>
 
-                      <div className="w-80 flex flex-col gap-4">
-                        <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-950">
                           <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
                             <span>Decision Summary</span>
                             <span className="text-blue-600 dark:text-blue-400">{approvedCount} units</span>
                           </div>
-                          <div className="h-[1px] bg-slate-100 dark:bg-slate-800 w-full" />
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Total Value:</span>
-                            <span className="text-2xl font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
+                            <span className="ml-2 text-lg font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
                           </div>
                           <Button
                             disabled={submitting || hasPendingItems || hasMissingFeedback || !remarks.trim() || !!detail.my_vote || !detail.can_vote}
-                            className="w-full h-14 relative bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-lg border-t border-white/20 gap-3 active:scale-[0.98] transition-all disabled:bg-slate-100 dark:disabled:bg-slate-850 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
+                            className="h-10 shrink-0 bg-blue-600 px-5 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-[0.16em] shadow-lg border-t border-white/20 gap-2 active:scale-[0.98] transition-all disabled:bg-slate-100 dark:disabled:bg-slate-850 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
                             onClick={() => handleVote()}
                           >
                             {submitting ? (
@@ -915,7 +937,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             <span>Submit Decision</span>
                           </Button>
                         </div>
-                        <button className="w-full py-2 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 hover:text-slate-600 transition-colors" onClick={onClose}>
+                        <button className="shrink-0 px-3 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-slate-600 transition-colors" onClick={onClose}>
                           Cancel Review
                         </button>
                       </div>

@@ -16,6 +16,13 @@ import {
   CheckCircle2,
   Send,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  RotateCcw,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -118,6 +125,9 @@ export default function ExpenseApprovalModal({
   const [localAmounts, setLocalAmounts] = React.useState<Record<number, string>>({});
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+  const [currentAttachmentIndex, setCurrentAttachmentIndex] = React.useState(0);
+  const [inlineZoom, setInlineZoom] = React.useState(1);
+  const [inlineRotation, setInlineRotation] = React.useState(0);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [processingItem, setProcessingItem] = React.useState<number | null>(null);
 
@@ -169,10 +179,30 @@ export default function ExpenseApprovalModal({
       }));
   }, [headerExpenses]);
 
-  const activeGroup = React.useMemo(() => {
-    if (!selectedGroupId) return null;
-    return groupedExpenses.find((group) => String(group.particulars) === selectedGroupId) || null;
-  }, [selectedGroupId, groupedExpenses]);
+  const attachments = React.useMemo(
+    () =>
+      headerExpenses
+        .filter((expense) => Boolean(expense.attachment_url))
+        .map((expense) => ({
+          expenseId: expense.id,
+          fileUrl: String(expense.attachment_url),
+          label: expense.particulars_name || `Expense #${expense.id}`,
+          remarks: expense.remarks || "No remarks provided",
+        })),
+    [headerExpenses]
+  );
+
+  const showAttachment = React.useCallback(
+    (index: number) => {
+      if (attachments.length === 0) return;
+      const normalizedIndex = (index + attachments.length) % attachments.length;
+      setCurrentAttachmentIndex(normalizedIndex);
+      setPreviewUrl(`/api/fm/expense-assets?id=${attachments[normalizedIndex].fileUrl}`);
+      setInlineZoom(1);
+      setInlineRotation(0);
+    },
+    [attachments]
+  );
 
   React.useEffect(() => {
     if (!open || !detail) return;
@@ -180,6 +210,19 @@ export default function ExpenseApprovalModal({
     setRemarks("");
     setConfirmOpen(false);
     setProcessingItem(null);
+    setCurrentAttachmentIndex(0);
+    const firstAttachment = detail.expenses.find(
+      (expense) =>
+        Number(expense.header_id) === selectedHeader?.id &&
+        Boolean(expense.attachment_url)
+    );
+    setPreviewUrl(
+      firstAttachment?.attachment_url
+        ? `/api/fm/expense-assets?id=${String(firstAttachment.attachment_url)}`
+        : null
+    );
+    setInlineZoom(1);
+    setInlineRotation(0);
 
     const initialAmounts: Record<number, string> = {};
     const initialDecisions: Record<number, UiDecisionStatus> = {};
@@ -195,12 +238,7 @@ export default function ExpenseApprovalModal({
     setItemDecisions(initialDecisions);
     setItemRemarks(initialRemarks);
 
-    if (groupedExpenses.length > 0) {
-      setSelectedGroupId(String(groupedExpenses[0].particulars));
-    } else {
-      setSelectedGroupId(null);
-    }
-  }, [open, detail, groupedExpenses]);
+  }, [open, detail, selectedHeader]);
 
   const setItemStatus = (expense: ExpenseDraftRow, status: UiDecisionStatus) => {
     if (!isDraftExpense(expense)) {
@@ -423,11 +461,112 @@ export default function ExpenseApprovalModal({
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent className="sm:!max-w-[95vw] sm:!w-[95vw] h-[95vh] flex flex-col gap-0 p-0 overflow-hidden border-none shadow-2xl rounded-2xl">
+      <DialogContent showCloseButton={false} className="sm:!max-w-[98vw] sm:!w-[98vw] h-[95vh] flex items-center justify-center gap-4 bg-transparent p-0 overflow-visible border-none shadow-none">
         <DialogTitle className="sr-only">Salesman Expense Verification</DialogTitle>
         <DialogDescription className="sr-only">
           Batch review and disbursement processing
         </DialogDescription>
+
+        {previewUrl && attachments.length > 0 && (
+          <aside className="absolute inset-0 z-50 flex flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950 shadow-2xl lg:relative lg:inset-auto lg:h-full lg:w-[36vw]">
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+              <div className="min-w-0">
+                <Badge className="mb-2 border-blue-500/30 bg-blue-500/20 text-[9px] font-black uppercase tracking-[0.18em] text-blue-300">
+                  Evidence Registry
+                </Badge>
+                <h3 className="text-lg font-black text-white">Supporting Evidence</h3>
+                <p className="truncate text-[10px] font-medium text-white/40">
+                  {attachments[currentAttachmentIndex]?.label}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full text-white/50 hover:bg-white/10 hover:text-white"
+                onClick={() => {
+                  setPreviewUrl(null);
+                  setInlineZoom(1);
+                  setInlineRotation(0);
+                }}
+                title="Hide attachments"
+              >
+                <X size={20} />
+              </Button>
+            </div>
+
+            <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/30 p-5">
+              <div
+                className="flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/40"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  key={previewUrl}
+                  src={previewUrl}
+                  alt={attachments[currentAttachmentIndex]?.label || "Supporting evidence"}
+                  className="max-h-full max-w-full object-contain transition-transform duration-200"
+                  style={{
+                    transform: `scale(${inlineZoom}) rotate(${inlineRotation}deg)`,
+                  }}
+                  draggable={false}
+                />
+              </div>
+
+              {attachments.length > 1 && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute left-7 rounded-full border border-white/10 bg-black/50 text-white hover:bg-black/70"
+                    onClick={() => showAttachment(currentAttachmentIndex - 1)}
+                    title="Previous attachment"
+                  >
+                    <ChevronLeft size={22} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-7 rounded-full border border-white/10 bg-black/50 text-white hover:bg-black/70"
+                    onClick={() => showAttachment(currentAttachmentIndex + 1)}
+                    title="Next attachment"
+                  >
+                    <ChevronRight size={22} />
+                  </Button>
+                </>
+              )}
+
+              <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/10 bg-black/60 p-1.5 backdrop-blur">
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setInlineZoom((value) => Math.min(value + 0.25, 3))} title="Zoom in">
+                  <ZoomIn size={16} />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setInlineZoom((value) => Math.max(value - 0.25, 1))} title="Zoom out">
+                  <ZoomOut size={16} />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setInlineRotation((value) => (value + 90) % 360)} title="Rotate">
+                  <RotateCw size={16} />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-white/70 hover:bg-white/10 hover:text-white" onClick={() => { setInlineZoom(1); setInlineRotation(0); }} title="Reset view">
+                  <RotateCcw size={16} />
+                </Button>
+              </div>
+            </div>
+
+            <div className="border-t border-white/10 px-5 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="truncate text-[10px] font-black uppercase tracking-wider text-blue-300">
+                    {attachments[currentAttachmentIndex]?.remarks}
+                  </p>
+                  <p className="mt-1 text-[9px] font-bold text-white/30">
+                    Attachment {currentAttachmentIndex + 1} of {attachments.length}
+                  </p>
+                </div>
+                <FileText size={18} className="shrink-0 text-emerald-400" />
+              </div>
+            </div>
+          </aside>
+        )}
+
+        <div className={`flex h-full flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl transition-all duration-300 dark:bg-slate-950 ${previewUrl ? "w-full lg:w-[60vw]" : "w-[95vw]"}`}>
 
         <div className="px-[2vw] py-[2.5vh] bg-[#1a4f95] text-white shrink-0 relative overflow-hidden">
           <div className="flex items-center justify-between relative z-10">
@@ -602,7 +741,7 @@ export default function ExpenseApprovalModal({
             </div>
 
             <div className="flex-1 flex min-h-0 bg-slate-50/50 dark:bg-slate-950/50">
-              <div className="w-[25vw] border-r dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto shadow-[5px_0_15px_rgba(0,0,0,0.02)] dark:shadow-none">
+              <div className="hidden">
                 <Table>
                   <TableHeader className="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10 shadow-sm dark:shadow-none border-b dark:border-slate-800">
                     <TableRow>
@@ -717,23 +856,23 @@ export default function ExpenseApprovalModal({
               </div>
 
               <div className="flex-1 bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
-                <div className="flex-1 overflow-auto p-8 pt-0">
-                  <Table className="border dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none">
+                <div className="flex-1 overflow-auto p-3 sm:p-5">
+                  <Table className="min-w-[760px] border dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none">
                     <TableHeader className="bg-slate-50/50 dark:bg-slate-900/80 sticky top-0 z-10 backdrop-blur-sm border-b dark:border-slate-800">
                       <TableRow>
-                        <TableHead className="w-12 text-center text-[10px] font-black">
+                        <TableHead className="w-8 text-center text-[10px] font-black">
                           #
                         </TableHead>
-                        <TableHead className="text-[10px] font-black uppercase tracking-widest py-4">
+                        <TableHead className="min-w-[180px] text-[10px] font-black uppercase tracking-widest py-4">
                           Encoded Particulars & Remarks
                         </TableHead>
-                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4">
+                        <TableHead className="w-20 text-center text-[10px] font-black uppercase tracking-widest py-4">
                           Verify Amount
                         </TableHead>
-                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4 w-16">
+                        <TableHead className="w-12 text-center text-[10px] font-black uppercase tracking-widest py-4">
                           Docs
                         </TableHead>
-                        <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4 w-28">
+                        <TableHead className="w-20 text-center text-[10px] font-black uppercase tracking-widest py-4">
                           Date
                         </TableHead>
                         <TableHead className="text-center text-[10px] font-black uppercase tracking-widest py-4 w-40">
@@ -742,7 +881,47 @@ export default function ExpenseApprovalModal({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {activeGroup?.items.map((expense, index) => {
+                      {groupedExpenses.map((group) => {
+                        const groupTotal = group.items.reduce(
+                          (sum, expense) => sum + Number(localAmounts[expense.id] || 0),
+                          0
+                        );
+                        const editableGroupItems = group.items.filter(isDraftExpense);
+                        const allEditableApproved =
+                          editableGroupItems.length > 0 &&
+                          editableGroupItems.every(
+                            (item) => itemDecisions[item.id] === "Approved"
+                          );
+
+                        return (
+                          <React.Fragment key={group.particulars}>
+                            <TableRow className="border-none bg-slate-950 hover:bg-slate-950 dark:bg-slate-950">
+                              <TableCell colSpan={6} className="px-5 py-3 text-white">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Account</p>
+                                    <p className="truncate text-sm font-black">{group.particulars_name}</p>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-sm font-black tabular-nums text-emerald-400">
+                                      {formatCurrency(groupTotal)}
+                                    </span>
+                                    {editableGroupItems.length > 0 && (
+                                      <Button
+                                        size="sm"
+                                        variant={allEditableApproved ? "default" : "secondary"}
+                                        disabled={isInteractionDisabled}
+                                        className="h-7 rounded-full px-3 text-[9px] font-black uppercase tracking-wider"
+                                        onClick={() => toggleGroupStatus(group.items, "Approved")}
+                                      >
+                                        {allEditableApproved ? "Approved" : "Approve Group"}
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            {group.items.map((expense, index) => {
                         const status = itemDecisions[expense.id] || "PENDING";
                         const isReadOnly = !isDraftExpense(expense);
                         const isBusy = isInteractionDisabled;
@@ -766,23 +945,25 @@ export default function ExpenseApprovalModal({
                                 {(index + 1).toString().padStart(2, "0")}
                               </TableCell>
                               <TableCell className="py-4">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
+                                <div className="space-y-1">
+                                  <div className="min-w-0">
                                     <p className="text-xs font-black text-slate-800 dark:text-slate-200 leading-none mb-1">
                                       {expense.remarks || "No remarks provided"}
                                     </p>
-                                    <p className="text-[9px] text-muted-foreground font-mono uppercase">
-                                      Batch: {expense.header_id}
-                                    </p>
                                   </div>
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-[9px] font-black uppercase tracking-widest ${getStatusBadgeClass(
-                                      status
-                                    )}`}
-                                  >
-                                    {isReadOnly ? expense.status : status === "PENDING" ? "Drafts" : status}
-                                  </Badge>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-[9px] text-muted-foreground font-mono uppercase">
+                                      Batch: {expense.header_id}
+                                    </span>
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-[9px] font-black uppercase tracking-widest ${getStatusBadgeClass(
+                                        status
+                                      )}`}
+                                    >
+                                      {isReadOnly ? expense.status : status === "PENDING" ? "Drafts" : status}
+                                    </Badge>
+                                  </div>
                                 </div>
                               </TableCell>
                               <TableCell className="py-4 text-center">
@@ -813,11 +994,12 @@ export default function ExpenseApprovalModal({
                                     size="icon"
                                     variant="ghost"
                                     className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-600 hover:text-white transition-all shadow-sm dark:shadow-none"
-                                    onClick={() =>
-                                      setPreviewUrl(
-                                        `/api/fm/expense-assets?id=${expense.attachment_url}`
-                                      )
-                                    }
+                                    onClick={() => {
+                                      const attachmentIndex = attachments.findIndex(
+                                        (attachment) => attachment.expenseId === expense.id
+                                      );
+                                      showAttachment(attachmentIndex >= 0 ? attachmentIndex : 0);
+                                    }}
                                     disabled={isBusy}
                                   >
                                     <ExternalLink size={14} />
@@ -948,32 +1130,34 @@ export default function ExpenseApprovalModal({
                             )}
                           </React.Fragment>
                         );
+                            })}
+                          </React.Fragment>
+                        );
                       })}
                     </TableBody>
                   </Table>
                 </div>
 
-                <div className="p-8 border-t dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-end gap-12 relative shadow-[0_-5px_15px_rgba(0,0,0,0.02)] dark:shadow-none">
-                  <div className="w-80 flex flex-col gap-4">
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-xl dark:shadow-none space-y-4">
+                <div className="sticky bottom-0 z-20 flex items-center border-t bg-slate-50/95 px-5 py-3 shadow-[0_-5px_15px_rgba(0,0,0,0.04)] backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+                  <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="flex flex-1 flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2 dark:border-slate-700 dark:bg-slate-800">
                       <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
                         <span>Consolidation Summary</span>
                         <span className="text-blue-600">
                           {approvedCount} Draft Line{approvedCount !== 1 ? "s" : ""} Verified
                         </span>
                       </div>
-                      <div className="h-[1px] bg-slate-100 dark:bg-slate-700 w-full" />
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                           Approved Draft Total:
                         </span>
-                        <span className="text-2xl font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">
+                        <span className="ml-3 text-lg font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">
                           {formatCurrency(totalSelected)}
                         </span>
                       </div>
                       <Button
                         disabled={isInteractionDisabled || !hasEditableHeaderExpenses}
-                        className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-200 gap-3 active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
+                        className="h-10 shrink-0 bg-blue-600 px-5 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-[0.16em] shadow-lg shadow-blue-200 gap-2 active:scale-[0.98] transition-all disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
                         onClick={() => {
                           if (!hasEditableHeaderExpenses) {
                             return toast.info(
@@ -1000,7 +1184,7 @@ export default function ExpenseApprovalModal({
                     </div>
                     <button
                       type="button"
-                      className="w-full py-2 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 hover:text-slate-600 transition-colors"
+                      className="shrink-0 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-slate-600 transition-colors"
                       onClick={onClose}
                     >
                       {hasEditableHeaderExpenses ? "Discard Changes" : "Close"}
@@ -1011,6 +1195,7 @@ export default function ExpenseApprovalModal({
             </div>
           </>
         )}
+        </div>
       </DialogContent>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -1129,27 +1314,6 @@ export default function ExpenseApprovalModal({
               </Button>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!previewUrl} onOpenChange={(value) => !value && setPreviewUrl(null)}>
-        <DialogContent className="max-w-[90vw] max-h-[85vh] p-0 overflow-hidden bg-black border-none shadow-2xl flex items-center justify-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute top-4 right-4 text-white hover:bg-white/20"
-            onClick={() => setPreviewUrl(null)}
-          >
-            <X size={24} />
-          </Button>
-          {previewUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={previewUrl}
-              alt="Preview"
-              className="max-w-[90vw] max-h-[85vh] object-contain mx-auto"
-            />
-          )}
         </DialogContent>
       </Dialog>
     </Dialog>

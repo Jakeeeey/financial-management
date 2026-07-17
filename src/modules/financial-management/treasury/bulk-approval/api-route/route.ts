@@ -1538,7 +1538,7 @@ export async function GET(req: NextRequest) {
       const payeeId = toNumericId(draft.payee) ?? 0;
       const encoderId = toNumericId(draft.encoder_id) ?? 0;
 
-      const [coaMap, supplierMap, userMap, divisionMap, voteHistory, approversByLevel, attachmentsRes] =
+      const [coaMap, supplierMap, userMap, divisionMap, voteHistory, approversByLevel] =
         await Promise.all([
           fetchCoaMap([...coaIds, ...concernCoaIds]),
           fetchSupplierMap([payeeId]),
@@ -1555,12 +1555,7 @@ export async function GET(req: NextRequest) {
             draftId,
             currentVersion: toNumber(draft.approval_version, 1),
           }),
-          headerIds.length > 0 
-            ? directusFetch(`/items/expense_attachments?filter[header_id][_in]=${headerIds.join(",")}&fields=id,file_url,file_name&limit=-1`)
-            : Promise.resolve({ ok: true, data: { data: [] } })
         ]);
-
-      const attachments = (attachmentsRes.data as DirectusListResponse<{ file_url?: string | null; file_name?: string | null }>)?.data ?? [];
 
       const currentTier = parseTier(draft.status ?? "Submitted");
       const approvalVersion = toNumber(draft.approval_version, 1);
@@ -1609,6 +1604,15 @@ export async function GET(req: NextRequest) {
         };
       });
 
+      const attachments = [...payables, ...concernItems].flatMap((item) =>
+        item.attachment_url
+          ? [{
+              file_url: item.attachment_url,
+              file_name: `Expense #${item.expense_id}`,
+            }]
+          : []
+      );
+
       return json({
         draft: {
           id: draftId,
@@ -1641,10 +1645,7 @@ export async function GET(req: NextRequest) {
           currentTier,
           myVote,
         }),
-        attachments: attachments.map((a) => ({
-          file_url: a.file_url ?? "",
-          file_name: a.file_name ?? "Attachment",
-        })),
+        attachments,
       });
     }
 
