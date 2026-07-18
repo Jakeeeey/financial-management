@@ -365,33 +365,7 @@ export async function searchProducts(params: {
         .filter((row): row is ProductSearchRow => row !== null);
 }
 
-export type VariantGroupIndexRow = {
-    group_id: number;
-    variant_product_ids: number[];
-};
-
 const PRODUCT_IDS_CHUNK_SIZE = 200;
-
-export async function getVariantGroups(params: {
-    supplier_ids: string;
-    supplier_scope?: "ALL" | "LINKED_ONLY";
-    active_only?: "0" | "1";
-}) {
-    const sp = new URLSearchParams();
-    sp.set("supplier_ids", params.supplier_ids);
-    if (params.supplier_scope) sp.set("supplier_scope", params.supplier_scope);
-    if (params.active_only) sp.set("active_only", params.active_only);
-
-    const res = await http<{
-        groups: VariantGroupIndexRow[];
-        meta?: { total_groups?: number; total_variants?: number };
-    }>(`/api/fm/product-pricing/products/variant-groups?${sp.toString()}`);
-
-    return {
-        groups: res.groups ?? [],
-        meta: res.meta ?? null,
-    };
-}
 
 export async function getProductsByIds(
     productIds: number[],
