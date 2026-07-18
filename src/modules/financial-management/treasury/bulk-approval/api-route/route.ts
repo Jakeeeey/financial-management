@@ -154,6 +154,7 @@ type DraftRowResponse = {
   doc_no: string;
   payee_user_id: number;
   payee_name: string;
+  encoder_user_id?: number;
   encoder_name: string;
   total_amount: number;
   remarks: string | null;
@@ -1455,6 +1456,7 @@ export async function GET(req: NextRequest) {
             doc_no: `RETURNED-${Math.abs(draftId)}`,
             payee_user_id: encoderId,
             payee_name: userMap.get(encoderId) ?? `User #${encoderId}`,
+            encoder_user_id: encoderId,
             encoder_name: userMap.get(encoderId) ?? `User #${encoderId}`,
             total_amount: total,
             remarks: `[Virtual Returned Batch] ${resolved.items.length} item(s) for re-verification.`,
@@ -1619,6 +1621,7 @@ export async function GET(req: NextRequest) {
           doc_no: draft.doc_no ?? `DRAFT-${draftId}`,
           payee_user_id: payeeId,
           payee_name: supplierMap.get(payeeId) ?? `Supplier #${payeeId}`,
+          encoder_user_id: encoderId,
           encoder_name: userMap.get(encoderId) ?? `User #${encoderId}`,
           total_amount: toNumber(draft.total_amount),
           remarks: draft.remarks ?? null,

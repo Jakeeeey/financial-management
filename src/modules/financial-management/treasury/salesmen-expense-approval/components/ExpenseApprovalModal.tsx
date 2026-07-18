@@ -125,10 +125,12 @@ export default function ExpenseApprovalModal({
   const [localAmounts, setLocalAmounts] = React.useState<Record<number, string>>({});
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+  const [focusedPreviewUrl, setFocusedPreviewUrl] = React.useState<string | null>(null);
   const [currentAttachmentIndex, setCurrentAttachmentIndex] = React.useState(0);
   const [inlineZoom, setInlineZoom] = React.useState(1);
   const [inlineRotation, setInlineRotation] = React.useState(0);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [finalConfirmOpen, setFinalConfirmOpen] = React.useState(false);
   const [processingItem, setProcessingItem] = React.useState<number | null>(null);
 
   const submittingRef = React.useRef(false);
@@ -209,7 +211,9 @@ export default function ExpenseApprovalModal({
 
     setRemarks("");
     setConfirmOpen(false);
+    setFinalConfirmOpen(false);
     setProcessingItem(null);
+    setFocusedPreviewUrl(null);
     setCurrentAttachmentIndex(0);
     const firstAttachment = detail.expenses.find(
       (expense) =>
@@ -411,6 +415,7 @@ export default function ExpenseApprovalModal({
     submittingRef.current = true;
     setSubmitting(true);
     setConfirmOpen(false);
+    setFinalConfirmOpen(false);
 
     try {
       const payloadDecisions: Record<number, ItemDecision> = {};
@@ -989,8 +994,9 @@ export default function ExpenseApprovalModal({
                                 />
                               </TableCell>
                               <TableCell className="py-4 text-center">
-                                {expense.attachment_url && (
+                                {expense.attachment_url ? (
                                   <Button
+                                    type="button"
                                     size="icon"
                                     variant="ghost"
                                     className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-600 hover:text-white transition-all shadow-sm dark:shadow-none"
@@ -999,11 +1005,22 @@ export default function ExpenseApprovalModal({
                                         (attachment) => attachment.expenseId === expense.id
                                       );
                                       showAttachment(attachmentIndex >= 0 ? attachmentIndex : 0);
+                                      setFocusedPreviewUrl(
+                                        `/api/fm/expense-assets?id=${String(expense.attachment_url)}`
+                                      );
                                     }}
-                                    disabled={isBusy}
+                                    aria-label={`Preview evidence for expense ${expense.id}`}
+                                    title="Preview supporting evidence"
                                   >
                                     <ExternalLink size={14} />
                                   </Button>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="whitespace-nowrap border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-slate-400 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-500"
+                                  >
+                                    No attachment
+                                  </Badge>
                                 )}
                               </TableCell>
                               <TableCell className="py-4 text-center text-[10px] font-bold text-slate-500 uppercase">
@@ -1179,7 +1196,7 @@ export default function ExpenseApprovalModal({
                         ) : (
                           <ShieldCheck size={20} />
                         )}
-                        {hasEditableHeaderExpenses ? "Finalize Batch" : "View Only"}
+                        {hasEditableHeaderExpenses ? "Submit Decision" : "View Only"}
                       </Button>
                     </div>
                     <button
@@ -1198,6 +1215,55 @@ export default function ExpenseApprovalModal({
         </div>
       </DialogContent>
 
+      <Dialog
+        open={Boolean(focusedPreviewUrl)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setFocusedPreviewUrl(null);
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="h-[92vh] w-[94vw] max-w-[94vw] overflow-hidden border-white/10 bg-slate-950 p-0 shadow-2xl"
+        >
+          <DialogTitle className="sr-only">Supporting Evidence Preview</DialogTitle>
+          <DialogDescription className="sr-only">
+            Full-size preview of the selected expense line attachment
+          </DialogDescription>
+          <div className="flex h-full flex-col">
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400">
+                  Supporting Evidence
+                </p>
+                <p className="mt-1 text-xs font-semibold text-white/50">
+                  Selected line-item document
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="rounded-full text-white/60 hover:bg-white/10 hover:text-white"
+                onClick={() => setFocusedPreviewUrl(null)}
+                aria-label="Close evidence preview"
+              >
+                <X size={20} />
+              </Button>
+            </div>
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-black/30 p-6">
+              {focusedPreviewUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={focusedPreviewUrl}
+                  alt="Selected supporting evidence"
+                  className="max-h-full max-w-full object-contain"
+                />
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="max-w-lg rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl dark:bg-slate-900">
           <div className="p-8 space-y-6">
@@ -1207,11 +1273,10 @@ export default function ExpenseApprovalModal({
               </div>
               <div>
                 <DialogTitle className="text-xl font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">
-                  Finalize Batch Submittal
+                  Approval Remarks
                 </DialogTitle>
                 <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
-                  You are about to consolidate {approvedCount} Drafts item
-                  {approvedCount !== 1 ? "s" : ""}.
+                  Provide the final audit justification before reviewing your decision.
                 </DialogDescription>
               </div>
             </div>
@@ -1219,7 +1284,7 @@ export default function ExpenseApprovalModal({
             <div className="space-y-6">
               <div className="space-y-3">
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">
-                  Batch Submission Remarks <span className="text-red-500">*</span>
+                  Approval Remarks <span className="text-red-500">*</span>
                 </label>
                 <Textarea
                   rows={4}
@@ -1301,9 +1366,12 @@ export default function ExpenseApprovalModal({
               <Button
                 className="h-12 rounded-xl font-black uppercase tracking-widest shadow-lg shadow-blue-100"
                 disabled={!remarks.trim() || isInteractionDisabled || hasMissingFeedback}
-                onClick={handleConfirm}
+                onClick={() => {
+                  setConfirmOpen(false);
+                  setFinalConfirmOpen(true);
+                }}
               >
-                {submitting ? <Loader2 className="animate-spin mr-2" /> : "Confirm Submittal"}
+                Finalize Decision
               </Button>
               <Button
                 variant="ghost"
@@ -1313,6 +1381,55 @@ export default function ExpenseApprovalModal({
                 Back to Workspace
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={finalConfirmOpen}
+        onOpenChange={(value) => {
+          setFinalConfirmOpen(value);
+          if (!value && !submitting) setConfirmOpen(true);
+        }}
+      >
+        <DialogContent className="max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold text-slate-800 dark:text-slate-100">
+            <ShieldCheck size={17} className="shrink-0 text-blue-600 dark:text-blue-400" />
+            Confirm Decision
+          </DialogTitle>
+          <DialogDescription className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+            You are about to submit decisions for {approvedCount} approved Draft item
+            {approvedCount !== 1 ? "s" : ""}. The decisions and approval remarks will be recorded in the audit trail.
+          </DialogDescription>
+
+          <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-950">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+              Approval Remarks
+            </p>
+            <p className="mt-1 line-clamp-3 text-sm font-medium text-slate-700 dark:text-slate-300">
+              {remarks}
+            </p>
+          </div>
+
+          <div className="mt-6 flex items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              disabled={submitting}
+              onClick={() => {
+                setFinalConfirmOpen(false);
+                setConfirmOpen(true);
+              }}
+            >
+              Go Back
+            </Button>
+            <Button
+              className="gap-2 bg-blue-600 px-5 font-semibold text-white hover:bg-blue-700"
+              disabled={submitting}
+              onClick={handleConfirm}
+            >
+              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
+              Confirm Decision
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
