@@ -84,6 +84,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const [rotation, setRotation] = React.useState(0);
   const [inlineZoom, setInlineZoom] = React.useState(1);
   const [inlineRotation, setInlineRotation] = React.useState(0);
+  const [remarksOpen, setRemarksOpen] = React.useState(false);
+  const [showApproveConfirm, setShowApproveConfirm] = React.useState(false);
   const [showConcernWarning, setShowConcernWarning] = React.useState(false);
   const [showRejectWarning, setShowRejectWarning] = React.useState(false);
   const pendingRemarks = React.useRef<string>("");
@@ -142,9 +144,11 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     if (open && detail) {
       setRemarks("");
       setEditedAmounts({});
-      setShowCoverage(true);
-      setEvidenceMode({ kind: "all" });
-      setComparisonExpenseId(null);
+      setRemarksOpen(false);
+      setShowApproveConfirm(false);
+      setShowConcernWarning(false);
+      setShowRejectWarning(false);
+      setShowCoverage(Boolean(detail.attachments?.length));
       setCurrentSlide(0);
       setInlineZoom(1);
       setInlineRotation(0);
@@ -306,14 +310,6 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     }));
   }, [combinedItems]);
 
-  const activeGroup = React.useMemo(() => {
-    if (!selectedGroupId) return null;
-    for (const g of groupedPayables)
-      for (const w of g.weeks)
-        if (`${g.coa_name}-${w.weekKey}` === selectedGroupId) return { ...w, coa_name: g.coa_name };
-    return null;
-  }, [selectedGroupId, groupedPayables]);
-
   React.useEffect(() => {
     if (!selectedGroupId && groupedPayables.length > 0) {
       const firstGroup = groupedPayables[0];
@@ -362,7 +358,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     if (combinedItems.length === 1) {
       const batchRemarks = remarks.trim() || feedback?.trim() || "";
       setRemarks(batchRemarks);
-      handleVote(batchRemarks);
+      setRemarksOpen(true);
       return;
     }
 
@@ -390,6 +386,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
     // Store remarks for use by confirmation dialogs
     pendingRemarks.current = effectiveRemarks;
+    setRemarksOpen(false);
 
     const hasWithConcern = combinedItems.some(p => itemDecisions[p.id] === "WITH_CONCERN");
     if (hasWithConcern) {
@@ -403,12 +400,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       return;
     }
 
-    executeSubmit(effectiveRemarks);
+    setShowApproveConfirm(true);
   }
 
   async function executeSubmit(overrideRemarks?: string) {
     if (submitting) return;
     setSubmitting(true);
+    setShowApproveConfirm(false);
     setShowConcernWarning(false);
     setShowRejectWarning(false);
     const cleanOverride = typeof overrideRemarks === "string" ? overrideRemarks : undefined;
@@ -663,8 +661,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                 </div>
                 <div>
                   <p className="text-[8px] uppercase font-black text-muted-foreground dark:text-slate-500 tracking-widest leading-none mb-1">Salesman</p>
-                  <p className="font-black text-xs text-foreground dark:text-slate-200 truncate max-w-[12vw]">{draft.payee_name || "Unknown"}</p>
-                  <p className="text-[9px] text-muted-foreground dark:text-slate-500 font-mono">ID: {draft.payee_user_id || "N/A"}</p>
+                  <p className="font-black text-xs text-foreground dark:text-slate-200 truncate max-w-[12vw]">{draft.encoder_name || "Unknown"}</p>
+                  <p className="text-[9px] text-muted-foreground dark:text-slate-500 font-mono">ID: {draft.encoder_user_id || "N/A"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 pl-4 border-l border-muted/50 dark:border-slate-800">
@@ -762,7 +760,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
                 <div className="flex-1 flex min-h-0 bg-slate-50/50">
                   {/* Sidebar: COA Groups */}
-                  <div style={{ width: sidebarWidth, minWidth: 200, maxWidth: "50vw" }} className="bg-white dark:bg-slate-950 overflow-y-auto shrink-0 relative flex flex-col">
+                  <div style={{ width: sidebarWidth }} className="hidden">
                     <Table>
                       <TableHeader className="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10 shadow-sm">
                         <TableRow>
@@ -821,7 +819,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
                   {/* Vertical Drag Resizer */}
                   <div
-                    className="w-1 cursor-col-resize bg-slate-200 dark:bg-slate-800 hover:bg-blue-500 active:bg-blue-600 shrink-0 z-20 transition-colors"
+                    className="hidden"
                     onMouseDown={(e) => {
                       isDraggingSidebar.current = true;
                       const startX = e.clientX;
@@ -843,13 +841,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
                   {/* Detail Table Area */}
                   <div className="flex-1 bg-white dark:bg-slate-950 flex flex-col overflow-hidden">
-                    <div className="flex-1 overflow-auto p-8 pt-0">
-                      <Table className="border dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="flex-1 overflow-auto p-3 sm:p-5">
+                      <Table className="min-w-[840px] border dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
                         <TableHeader className="bg-slate-50/50 dark:bg-slate-900/50 sticky top-0 z-10 backdrop-blur-sm border-b dark:border-slate-800">
                           <TableRow>
-                            <TableHead className="w-10 text-center text-[9px] font-black text-slate-800 dark:text-slate-400">#</TableHead>
-                            <TableHead className="text-[9px] font-black uppercase tracking-widest py-3 text-slate-800 dark:text-slate-400">Remarks</TableHead>
-                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-24 text-slate-800 dark:text-slate-400">Amount</TableHead>
+                            <TableHead className="w-8 text-center text-[9px] font-black text-slate-800 dark:text-slate-400">#</TableHead>
+                            <TableHead className="min-w-[180px] text-[9px] font-black uppercase tracking-widest py-3 text-slate-800 dark:text-slate-400">Remarks</TableHead>
+                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-20 text-slate-800 dark:text-slate-400">Amount</TableHead>
                             <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-12 text-slate-800 dark:text-slate-400">Docs</TableHead>
                             <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-24 text-slate-800 dark:text-slate-400">Date</TableHead>
                             <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-20 text-slate-800 dark:text-slate-400">Status</TableHead>
@@ -857,7 +855,30 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {activeGroup?.items.map((p, idx) => {
+                          {groupedPayables.map((group) =>
+                            group.weeks.map((week) => {
+                              const groupTotal = week.items.reduce(
+                                (sum, payable) => sum + Number(editedAmounts[payable.id] || payable.amount),
+                                0
+                              );
+
+                              return (
+                                <React.Fragment key={`${group.coa_name}-${week.weekKey}`}>
+                                  <TableRow className="border-none bg-slate-950 hover:bg-slate-950 dark:bg-slate-950">
+                                    <TableCell colSpan={7} className="px-5 py-3 text-white">
+                                      <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Account</p>
+                                          <p className="truncate text-sm font-black">{group.coa_name}</p>
+                                          <p className="text-[9px] font-bold text-slate-400">{week.weekLabel}</p>
+                                        </div>
+                                        <span className="text-sm font-black tabular-nums text-emerald-400">
+                                          {formatCurrency(groupTotal)}
+                                        </span>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                  {week.items.map((p, idx) => {
                             const status = itemDecisions[p.id] || "PENDING";
                             const isPersistentLocked = p.is_concern || p.is_rejected;
                             const isStatusLocked = isPersistentLocked || isInteractionDisabled;
@@ -879,17 +900,25 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                     />
                                   </TableCell>
                                   <TableCell className="py-4 text-center">
-                                    {p.attachment_url && (
+                                    {p.attachment_url ? (
                                       <Button
+                                        type="button"
                                         size="icon"
                                         variant="ghost"
                                         className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40"
-                                        onClick={() => p.expense_id && setComparisonExpenseId(p.expense_id)}
-                                        aria-label="Compare WER summary and expense document"
-                                        title="Compare WER summary and expense document"
+                                        onClick={() => setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`)}
+                                        aria-label={`Preview evidence for expense ${p.expense_id}`}
+                                        title="Preview supporting evidence"
                                       >
                                         <ExternalLink size={14} />
                                       </Button>
+                                    ) : (
+                                      <Badge
+                                        variant="outline"
+                                        className="whitespace-nowrap border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-slate-400 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-500"
+                                      >
+                                        No attachment
+                                      </Badge>
                                     )}
                                   </TableCell>
                                   <TableCell className="py-4 text-center text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">{formatDate(p.date)}</TableCell>
@@ -939,46 +968,31 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                 )}
                               </React.Fragment>
                             );
-                          })}
+                                  })}
+                                </React.Fragment>
+                              );
+                            })
+                          )}
                         </TableBody>
                       </Table>
                     </div>
 
                     {/* Footer Section Pattern */}
-                    <div className="p-8 border-t dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-end justify-between gap-12 relative">
-                      <div className="flex-1 space-y-3">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 flex items-center gap-2">
-                          <Info size={14} className="text-blue-500 dark:text-blue-400" />
-                          Approval Remarks <span className="text-red-500 font-black">*</span>
-                        </label>
-                        <Textarea
-                          rows={4}
-                          className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl p-4 text-sm font-medium shadow-inner resize-none focus:ring-2 focus:ring-blue-500/20"
-                          placeholder={hasPendingItems ? "Resolve all pending items first..." : "State your decision remarks for this batch..."}
-                          value={remarks}
-                          onChange={(e) => setRemarks(e.target.value)}
-                          disabled={submitting || isInteractionDisabled}
-                        />
-                        <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 italic">
-                          Your remarks will be saved in the approval audit trail.
-                        </p>
-                      </div>
-
-                      <div className="w-80 flex flex-col gap-4">
-                        <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                    <div className="sticky bottom-0 z-20 flex items-center justify-end gap-3 border-t bg-slate-50/95 px-5 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-950">
                           <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
                             <span>Decision Summary</span>
                             <span className="text-blue-600 dark:text-blue-400">{approvedCount} units</span>
                           </div>
-                          <div className="h-[1px] bg-slate-100 dark:bg-slate-800 w-full" />
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Total Value:</span>
-                            <span className="text-2xl font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
+                            <span className="ml-2 text-lg font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
                           </div>
                           <Button
-                            disabled={submitting || hasPendingItems || hasMissingFeedback || !remarks.trim() || !!detail.my_vote || !detail.can_vote}
-                            className="w-full h-14 relative bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-lg border-t border-white/20 gap-3 active:scale-[0.98] transition-all disabled:bg-slate-100 dark:disabled:bg-slate-850 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
-                            onClick={() => handleVote()}
+                            disabled={submitting || hasPendingItems || hasMissingFeedback || !!detail.my_vote || !detail.can_vote}
+                            className="h-10 shrink-0 bg-blue-600 px-5 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-[0.16em] shadow-lg border-t border-white/20 gap-2 active:scale-[0.98] transition-all disabled:bg-slate-100 dark:disabled:bg-slate-850 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
+                            onClick={() => setRemarksOpen(true)}
                           >
                             {submitting ? (
                               <Loader2 className="animate-spin h-5 w-5" />
@@ -988,7 +1002,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             <span>Submit Decision</span>
                           </Button>
                         </div>
-                        <button className="w-full py-2 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 hover:text-slate-600 transition-colors" onClick={onClose}>
+                        <button className="shrink-0 px-3 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-slate-600 transition-colors" onClick={onClose}>
                           Cancel Review
                         </button>
                       </div>
@@ -1078,7 +1092,94 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showConcernWarning} onOpenChange={(v) => !v && setShowConcernWarning(false)}>
+      <Dialog open={remarksOpen} onOpenChange={setRemarksOpen}>
+        <DialogContent className="max-w-lg overflow-hidden rounded-[2rem] border-none bg-white p-0 shadow-2xl dark:bg-slate-900">
+          <div className="space-y-6 p-7">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400">
+                <Info size={22} />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-black text-slate-900 dark:text-slate-100">
+                  Approval Remarks
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Add the final justification that will be saved in the approval audit trail.
+                </DialogDescription>
+              </div>
+            </div>
+
+            <Textarea
+              rows={5}
+              className="min-h-32 resize-none rounded-2xl border-slate-200 bg-slate-50 p-4 text-sm font-medium shadow-inner focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950"
+              placeholder="State your decision remarks for this batch..."
+              value={remarks}
+              onChange={(event) => setRemarks(event.target.value)}
+              disabled={submitting}
+              autoFocus
+            />
+
+            <div className="flex items-center justify-end gap-3">
+              <Button variant="ghost" onClick={() => setRemarksOpen(false)} disabled={submitting}>
+                Back to Review
+              </Button>
+              <Button
+                className="bg-blue-600 px-6 font-black uppercase tracking-wider text-white hover:bg-blue-700"
+                disabled={!remarks.trim() || submitting}
+                onClick={() => handleVote()}
+              >
+                Finalize Decision
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showApproveConfirm}
+        onOpenChange={(value) => {
+          setShowApproveConfirm(value);
+          if (!value && !submitting) setRemarksOpen(true);
+        }}
+      >
+        <DialogContent className="max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold text-slate-800 dark:text-slate-100">
+            <ShieldCheck size={17} className="shrink-0 text-emerald-500" />
+            Confirm Decision
+          </DialogTitle>
+          <DialogDescription className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+            You are about to submit this approval decision. The decision and remarks will be recorded in the audit trail.
+          </DialogDescription>
+          <div className="mt-6 flex items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              disabled={submitting}
+              onClick={() => {
+                setShowApproveConfirm(false);
+                setRemarksOpen(true);
+              }}
+            >
+              Go Back
+            </Button>
+            <Button
+              onClick={() => executeSubmit(pendingRemarks.current)}
+              disabled={submitting}
+              className="gap-2 bg-emerald-600 px-5 font-semibold text-white hover:bg-emerald-700"
+            >
+              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
+              Confirm Decision
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showConcernWarning}
+        onOpenChange={(value) => {
+          setShowConcernWarning(value);
+          if (!value && !submitting) setRemarksOpen(true);
+        }}
+      >
         <DialogContent className="max-w-sm p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-2xl">
           <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-slate-100 text-base font-semibold">
             <AlertTriangle size={16} className="text-amber-500 shrink-0" />
@@ -1090,7 +1191,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
             Do you want to continue?
           </DialogDescription>
           <div className="flex items-center justify-end gap-2 mt-6">
-            <Button variant="ghost" onClick={() => setShowConcernWarning(false)} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" disabled={submitting}>
+            <Button variant="ghost" onClick={() => { setShowConcernWarning(false); setRemarksOpen(true); }} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" disabled={submitting}>
               Go Back
             </Button>
             <Button 
@@ -1105,7 +1206,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showRejectWarning} onOpenChange={(v) => !v && setShowRejectWarning(false)}>
+      <Dialog
+        open={showRejectWarning}
+        onOpenChange={(value) => {
+          setShowRejectWarning(value);
+          if (!value && !submitting) setRemarksOpen(true);
+        }}
+      >
         <DialogContent className="max-w-sm p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-2xl">
           <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-slate-100 text-base font-semibold">
             <X size={16} className="text-rose-500 shrink-0" />
@@ -1117,7 +1224,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
             Do you want to proceed?
           </DialogDescription>
           <div className="flex items-center justify-end gap-2 mt-6">
-            <Button variant="ghost" onClick={() => setShowRejectWarning(false)} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" disabled={submitting}>
+            <Button variant="ghost" onClick={() => { setShowRejectWarning(false); setRemarksOpen(true); }} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" disabled={submitting}>
               Go Back
             </Button>
             <Button 

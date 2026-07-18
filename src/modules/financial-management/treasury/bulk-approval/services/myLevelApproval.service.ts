@@ -345,6 +345,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             doc_no: `RETURNED-${Math.abs(draftId)}`,
             payee_user_id: encoderId,
             payee_name: userMap.get(encoderId) ?? `User #${encoderId}`,
+            encoder_user_id: encoderId,
             encoder_name: userMap.get(encoderId) ?? `User #${encoderId}`,
             total_amount: total,
             remarks: `[Virtual Returned Batch] ${resolved.items.length} item(s) for re-verification.`,
@@ -428,14 +429,7 @@ export async function handleMyLevelApprovalGetResource(params: {
         .map((c) => toNumericId(c.particulars))
         .filter((id): id is number => Boolean(id));
 
-      const headerIds = [
-        ...new Set([
-          ...payablesRaw.map(p => typeof p.expense_id === "object" ? toNumericId(p.expense_id?.header_id) : null),
-          ...rawConcerns.map(c => typeof c === "object" ? toNumericId(c.header_id) : null)
-        ].filter((id): id is number => Boolean(id)))
-      ];
-
-      const [coaMap, supplierMap, userMap, divisionMap, voteHistory, approversByLevel, attachmentsRes] =
+      const [coaMap, supplierMap, userMap, divisionMap, voteHistory, approversByLevel] =
         await Promise.all([
           fetchCoaMap([...coaIds, ...concernCoaIds]),
           fetchSupplierMap([payeeId]),
@@ -452,14 +446,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             draftId,
             currentVersion: toNumber(draft.approval_version, 1),
           }),
-          headerIds.length > 0 
-            ? directusFetch(`/items/expense_attachments?filter[header_id][_in]=${headerIds.join(",")}&fields=id,header_id,file_url,file_name&limit=-1`)
-            : Promise.resolve({ ok: true, data: { data: [] } })
         ]);
-
-      const attachments = attachmentsRes.ok
-        ? (attachmentsRes.data as DirectusListResponse<{ header_id?: number | string | null; file_url?: string | null; file_name?: string | null }>)?.data ?? []
-        : [];
 
       const currentTier = parseTier(draft.status ?? "Submitted");
       const approvalVersion = toNumber(draft.approval_version, 1);
@@ -510,12 +497,22 @@ export async function handleMyLevelApprovalGetResource(params: {
         };
       });
 
+      const attachments = [...payables, ...concernItems].flatMap((item) =>
+        item.attachment_url
+          ? [{
+              file_url: item.attachment_url,
+              file_name: `Expense #${item.expense_id}`,
+            }]
+          : []
+      );
+
       return jsonResponse({
         draft: {
           id: draftId,
           doc_no: draft.doc_no ?? `DRAFT-${draftId}`,
           payee_user_id: payeeId,
           payee_name: supplierMap.get(payeeId) ?? `Supplier #${payeeId}`,
+          encoder_user_id: encoderId,
           encoder_name: userMap.get(encoderId) ?? `User #${encoderId}`,
           total_amount: toNumber(draft.total_amount),
           remarks: draft.remarks ?? null,
@@ -562,12 +559,7 @@ export async function handleMyLevelApprovalGetResource(params: {
             status: draft.status ?? "Submitted",
             myVote,
           }),
-        attachments: attachments.map((a) => ({
-          header_id: toNumericId(a.header_id) ?? 0,
-          file_url: a.file_url ?? "",
-          file_name: a.file_name ?? "Attachment",
-        })),
-        attachments_query_ok: attachmentsRes.ok,
+        attachments,
       });
     }
 
