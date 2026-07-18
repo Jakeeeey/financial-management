@@ -154,6 +154,7 @@ type DraftRowResponse = {
   doc_no: string;
   payee_user_id: number;
   payee_name: string;
+  encoder_user_id?: number;
   encoder_name: string;
   total_amount: number;
   remarks: string | null;
@@ -1455,6 +1456,7 @@ export async function GET(req: NextRequest) {
             doc_no: `RETURNED-${Math.abs(draftId)}`,
             payee_user_id: encoderId,
             payee_name: userMap.get(encoderId) ?? `User #${encoderId}`,
+            encoder_user_id: encoderId,
             encoder_name: userMap.get(encoderId) ?? `User #${encoderId}`,
             total_amount: total,
             remarks: `[Virtual Returned Batch] ${resolved.items.length} item(s) for re-verification.`,
@@ -1538,7 +1540,7 @@ export async function GET(req: NextRequest) {
       const payeeId = toNumericId(draft.payee) ?? 0;
       const encoderId = toNumericId(draft.encoder_id) ?? 0;
 
-      const [coaMap, supplierMap, userMap, divisionMap, voteHistory, approversByLevel, attachmentsRes] =
+      const [coaMap, supplierMap, userMap, divisionMap, voteHistory, approversByLevel] =
         await Promise.all([
           fetchCoaMap([...coaIds, ...concernCoaIds]),
           fetchSupplierMap([payeeId]),
@@ -1555,12 +1557,7 @@ export async function GET(req: NextRequest) {
             draftId,
             currentVersion: toNumber(draft.approval_version, 1),
           }),
-          headerIds.length > 0 
-            ? directusFetch(`/items/expense_attachments?filter[header_id][_in]=${headerIds.join(",")}&fields=id,file_url,file_name&limit=-1`)
-            : Promise.resolve({ ok: true, data: { data: [] } })
         ]);
-
-      const attachments = (attachmentsRes.data as DirectusListResponse<{ file_url?: string | null; file_name?: string | null }>)?.data ?? [];
 
       const currentTier = parseTier(draft.status ?? "Submitted");
       const approvalVersion = toNumber(draft.approval_version, 1);
@@ -1609,12 +1606,22 @@ export async function GET(req: NextRequest) {
         };
       });
 
+      const attachments = [...payables, ...concernItems].flatMap((item) =>
+        item.attachment_url
+          ? [{
+              file_url: item.attachment_url,
+              file_name: `Expense #${item.expense_id}`,
+            }]
+          : []
+      );
+
       return json({
         draft: {
           id: draftId,
           doc_no: draft.doc_no ?? `DRAFT-${draftId}`,
           payee_user_id: payeeId,
           payee_name: supplierMap.get(payeeId) ?? `Supplier #${payeeId}`,
+          encoder_user_id: encoderId,
           encoder_name: userMap.get(encoderId) ?? `User #${encoderId}`,
           total_amount: toNumber(draft.total_amount),
           remarks: draft.remarks ?? null,
@@ -1641,10 +1648,7 @@ export async function GET(req: NextRequest) {
           currentTier,
           myVote,
         }),
-        attachments: attachments.map((a) => ({
-          file_url: a.file_url ?? "",
-          file_name: a.file_name ?? "Attachment",
-        })),
+        attachments,
       });
     }
 

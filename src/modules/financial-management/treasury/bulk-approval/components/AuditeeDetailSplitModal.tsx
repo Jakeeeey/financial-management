@@ -53,8 +53,6 @@ import type {
   FinalTopSheetSalesmanResponse,
 } from "../type";
 import { formatCurrency, formatDate } from "../utils/format";
-import { buildEvidenceViewerState, buildWerExpenseComparison } from "../utils/evidenceViewer";
-import WerExpenseComparisonModal from "./WerExpenseComparisonModal";
 
 type Props = {
   open: boolean;
@@ -103,7 +101,6 @@ export default function AuditeeDetailSplitModal({
   const [inlineEl, setInlineEl] = React.useState<HTMLDivElement | null>(null);
   const [showEvidence, setShowEvidence] = React.useState(true);
   const [evidenceMode, setEvidenceMode] = React.useState<{ kind: "all" } | { kind: "line"; expenseId: number }>({ kind: "all" });
-  const [comparisonExpenseId, setComparisonExpenseId] = React.useState<number | null>(null);
 
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
   const [dontShowAgain, setDontShowAgain] = React.useState(false);
@@ -227,7 +224,6 @@ export default function AuditeeDetailSplitModal({
       setCurrentSlide(0);
       setShowEvidence(true);
       setEvidenceMode({ kind: "all" });
-      setComparisonExpenseId(null);
     }
   }, [open]);
 
@@ -281,46 +277,23 @@ export default function AuditeeDetailSplitModal({
     return approvers.map((a: { name: string }) => a.name);
   }, [salesman, data]);
 
-  const evidenceState = React.useMemo(() => {
-    if (!data) return buildEvidenceViewerState({ headers: [], werAttachments: [], expenseAttachments: [] });
-    const headerIds = [...new Set(data.details.map((detail) => detail.header_id).filter((id) => id > 0))];
-    const salesmanByHeader = new Map(
-      data.salesmen
-        .filter((entry) => Boolean(entry.header_id))
-        .map((entry) => [entry.header_id!, entry.salesman_name])
-    );
+  const expenseEvidenceItems = React.useMemo(() => {
+    if (!data) return [];
     const orderedDetails = groupByCoa(auditeeDetails).flatMap((group) => group.items);
-    return buildEvidenceViewerState({
-      headers: headerIds.map((currentHeaderId) => ({
-        headerId: currentHeaderId,
-        label: salesmanByHeader.has(currentHeaderId)
-          ? `${salesmanByHeader.get(currentHeaderId)} — Header #${currentHeaderId}`
-          : `Header #${currentHeaderId}`,
-      })),
-      werAttachments: (data.attachments ?? []).map((attachment) => ({
-        headerId: attachment.header_id,
-        url: attachment.file_url,
-        label: attachment.file_name,
-      })),
-      expenseAttachments: orderedDetails
-        .filter((detail) => Boolean(detail.attachment_url))
-        .map((detail) => ({
-          expenseId: detail.expense_id,
-          headerId: detail.header_id,
-          url: detail.attachment_url!,
-          label: detail.remarks ? `${detail.remarks} (${detail.account_title})` : `${detail.account_title} (Line Item)`,
-        })),
-    });
+    return orderedDetails
+      .filter((detail) => Boolean(detail.attachment_url))
+      .map((detail) => ({
+        category: "expense" as const,
+        expenseId: detail.expense_id,
+        headerId: detail.header_id,
+        url: detail.attachment_url!,
+        label: detail.remarks ? `${detail.remarks} (${detail.account_title})` : `${detail.account_title} (Line Item)`,
+      }));
   }, [auditeeDetails, data]);
 
   const activeEvidenceItems = evidenceMode.kind === "all"
-    ? evidenceState.allItems
-    : evidenceState.lineItemsByExpenseId.get(evidenceMode.expenseId) ?? [];
-
-  const comparison = buildWerExpenseComparison({
-    items: evidenceState.allItems,
-    expenseId: comparisonExpenseId ?? -1,
-  });
+    ? expenseEvidenceItems
+    : expenseEvidenceItems.filter((item) => item.expenseId === evidenceMode.expenseId);
 
   const openEvidence = React.useCallback((mode: { kind: "all" } | { kind: "line"; expenseId: number }) => {
     setEvidenceMode(mode);
@@ -463,8 +436,8 @@ export default function AuditeeDetailSplitModal({
                           </div>
                         </div>
                         <div className="flex flex-col items-center">
-                          <Badge className={at.category === "wer-summary" ? "mb-2 border-emerald-500/30 bg-emerald-500/15 text-emerald-300" : "mb-2 border-blue-500/30 bg-blue-500/15 text-blue-300"}>
-                            {at.category === "wer-summary" ? "WER Summary Attachment" : "Expense Attachment"}
+                          <Badge className="mb-2 border-blue-500/30 bg-blue-500/15 text-blue-300">
+                            Expense Attachment
                           </Badge>
                           <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{at.label}</p>
                           <p className="text-white/30 text-[9px] font-medium mt-1">ATTACHMENT {i + 1} OF {activeEvidenceItems.length}</p>
@@ -505,7 +478,7 @@ export default function AuditeeDetailSplitModal({
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                {evidenceState.allItems.length > 0 && (
+                {expenseEvidenceItems.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -530,21 +503,6 @@ export default function AuditeeDetailSplitModal({
               </div>
             </div>
           </div>
-          {data && (
-            <div className="shrink-0 px-[2vw] pt-3">
-              {!data.attachments_query_ok ? (
-                <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <p className="text-[10px] font-bold">WER summaries could not be loaded. Expense attachments remain available for review.</p>
-                </div>
-              ) : evidenceState.missingHeaders.length > 0 ? (
-                <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <p className="text-[10px] font-bold">No WER summary attached for {evidenceState.missingHeaders.map((header) => header.label).join(", ")}.</p>
-                </div>
-              ) : null}
-            </div>
-          )}
 
           {/* Stats Bar */}
           <div className="grid grid-cols-3 gap-4 px-[1.5vw] py-[2vh] bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm shrink-0">
@@ -841,7 +799,7 @@ export default function AuditeeDetailSplitModal({
                                     </>
                                   )}
                                   {item.attachment_url && (
-                                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 cursor-pointer rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => setComparisonExpenseId(item.expense_id)} title="Compare WER summary and expense document">
+                                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 cursor-pointer rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" onClick={() => openEvidence({ kind: "line", expenseId: item.expense_id })} title="View expense attachment">
                                       <FileText size={12} />
                                     </Button>
                                   )}
@@ -914,14 +872,6 @@ export default function AuditeeDetailSplitModal({
           </div>
         </div>
       </DialogContent>
-
-      <WerExpenseComparisonModal
-        open={comparisonExpenseId !== null}
-        onOpenChange={(nextOpen) => { if (!nextOpen) setComparisonExpenseId(null); }}
-        werItems={comparison.werItems}
-        expenseItem={comparison.expenseItem}
-        onPreviewUrl={onPreviewUrl}
-      />
 
       <Dialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
         <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl z-[100]">
