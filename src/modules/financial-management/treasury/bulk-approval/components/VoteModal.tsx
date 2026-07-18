@@ -43,8 +43,6 @@ import {
 
 import type { DraftDetail, DraftPayable, ConcernItemResponse } from "../type";
 import * as api from "../providers/fetchProvider";
-import { buildEvidenceViewerState, buildWerExpenseComparison } from "../utils/evidenceViewer";
-import WerExpenseComparisonModal from "./WerExpenseComparisonModal";
 
 interface Props {
   open: boolean;
@@ -77,7 +75,6 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
   const [showCoverage, setShowCoverage] = React.useState(true);
   const [evidenceMode, setEvidenceMode] = React.useState<{ kind: "all" } | { kind: "line"; expenseId: number }>({ kind: "all" });
-  const [comparisonExpenseId, setComparisonExpenseId] = React.useState<number | null>(null);
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [zoom, setZoom] = React.useState(1);
@@ -215,39 +212,21 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     return items as (DraftPayable & { is_concern: boolean; is_rejected?: boolean; feedback: string | null })[];
   }, [detail]);
 
-  const evidenceState = React.useMemo(() => {
-    const headerIds = [...new Set(combinedItems.map((item) => item.header_id).filter((id) => id > 0))];
-    return buildEvidenceViewerState({
-      headers: headerIds.map((headerId) => ({
-        headerId,
-        label: detail?.draft.encoder_name
-          ? `${detail.draft.encoder_name} — Header #${headerId}`
-          : `Header #${headerId}`,
-      })),
-      werAttachments: (detail?.attachments ?? []).map((attachment) => ({
-        headerId: attachment.header_id,
-        url: attachment.file_url,
-        label: attachment.file_name,
-      })),
-      expenseAttachments: combinedItems
-        .filter((item) => Boolean(item.attachment_url) && Boolean(item.expense_id) && item.header_id > 0)
-        .map((item) => ({
-          expenseId: item.expense_id!,
-          headerId: item.header_id,
-          url: item.attachment_url!,
-          label: item.remarks || item.reference_no || `Expense #${item.expense_id}`,
-        })),
-    });
-  }, [combinedItems, detail]);
+  const expenseEvidenceItems = React.useMemo(() => {
+    return combinedItems
+      .filter((item) => Boolean(item.attachment_url) && Boolean(item.expense_id))
+      .map((item) => ({
+        category: "expense" as const,
+        headerId: item.header_id,
+        expenseId: item.expense_id!,
+        url: item.attachment_url!,
+        label: item.remarks || item.reference_no || `Expense #${item.expense_id}`,
+      }));
+  }, [combinedItems]);
 
   const activeEvidenceItems = evidenceMode.kind === "all"
-    ? evidenceState.allItems
-    : evidenceState.lineItemsByExpenseId.get(evidenceMode.expenseId) ?? [];
-
-  const comparison = buildWerExpenseComparison({
-    items: evidenceState.allItems,
-    expenseId: comparisonExpenseId ?? -1,
-  });
+    ? expenseEvidenceItems
+    : expenseEvidenceItems.filter((item) => item.expenseId === evidenceMode.expenseId);
 
   const openEvidence = React.useCallback((mode: { kind: "all" } | { kind: "line"; expenseId: number }) => {
     setEvidenceMode(mode);
@@ -538,8 +517,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             </div>
                           </div>
                           <div className="flex flex-col items-center">
-                            <Badge className={at.category === "wer-summary" ? "mb-2 border-emerald-500/30 bg-emerald-500/15 text-emerald-300" : "mb-2 border-blue-500/30 bg-blue-500/15 text-blue-300"}>
-                              {at.category === "wer-summary" ? "WER Summary Attachment" : "Expense Attachment"}
+                            <Badge className="mb-2 border-blue-500/30 bg-blue-500/15 text-blue-300">
+                              Expense Attachment
                             </Badge>
                             <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{at.label}</p>
                             <p className="text-white/30 text-[9px] font-medium mt-1">ATTACHMENT {i + 1} OF {activeEvidenceItems.length}</p>
@@ -610,7 +589,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
-                  {evidenceState.allItems.length > 0 && (
+                  {expenseEvidenceItems.length > 0 && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -627,21 +606,6 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                 </div>
               </div>
             </div>
-            {detail && (
-              <div className="shrink-0 px-[2vw] pt-3">
-                {!detail.attachments_query_ok ? (
-                  <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <p className="text-[10px] font-bold">WER summaries could not be loaded. Expense attachments remain available for review.</p>
-                  </div>
-                ) : evidenceState.missingHeaders.length > 0 ? (
-                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <p className="text-[10px] font-bold">No WER summary attached for {evidenceState.missingHeaders.map((header) => header.label).join(", ")}.</p>
-                  </div>
-                ) : null}
-              </div>
-            )}
             <div className="bg-blue-600/10 dark:bg-blue-900/20 border-b border-blue-600/20 dark:border-blue-800/50 px-6 py-2.5 flex items-center gap-3 animate-in slide-in-from-top duration-300">
               <div className="h-8 w-8 rounded-full bg-blue-600/20 dark:bg-blue-900/40 flex items-center justify-center text-blue-600 dark:text-blue-400">
                 <ShieldCheck size={18} />
@@ -1014,14 +978,6 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           </div>
         </DialogContent>
       </Dialog>
-
-      <WerExpenseComparisonModal
-        open={comparisonExpenseId !== null}
-        onOpenChange={(nextOpen) => { if (!nextOpen) setComparisonExpenseId(null); }}
-        werItems={comparison.werItems}
-        expenseItem={comparison.expenseItem}
-        onPreviewUrl={setPreviewUrl}
-      />
 
       <Dialog open={!!previewUrl} onOpenChange={(v) => { if (!v) { setPreviewUrl(null); setZoom(1); setRotation(0); } }}>
         <DialogContent showCloseButton={false} className="max-w-[95vw] w-[95vw] h-[90vh] p-0 overflow-hidden bg-[#020617] border-none shadow-2xl flex flex-col">
