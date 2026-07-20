@@ -1,6 +1,14 @@
 // src/app/api/fm/treasury/salesman-expense-approval/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { aggregateExpensesByEmployee } from "./summaryAggregation";
+import {
+  deriveTerminalHeaderStatus,
+  filterHeadersByScope,
+  getEffectiveHeaderStatus,
+  isTerminalHeaderStatus,
+  type HeaderScope,
+} from "./headerLifecycle";
 
 export const runtime = "nodejs";
 
@@ -9,12 +17,13 @@ const DIRECTUS_BASE =
 const STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 const COOKIE_NAME = "vos_access_token";
 
-const PENDING_EXPENSE_STATUSES = ["Drafts", "Rejected", "With Concern"] as const;
+const PENDING_EXPENSE_STATUSES = ["Drafts", "With Concern"] as const;
 const ALL_EXPENSE_STATUSES = [
   "Drafts",
   "Rejected",
   "With Concern",
   "Approved",
+  "Posted",
 ] as const;
 
 
@@ -179,19 +188,13 @@ type SalesmanSummaryRow = {
   employee_id: number;
   division_id: number | null;
   division_name: string | null;
+  division_names: string[];
+  header_statuses: string[];
   draft_count: number;
   rejected_count: number;
   concern_count: number;
   pending_amount: number;
   header_count: number;
-};
-
-type CountBucket = {
-  draft: number;
-  rejected: number;
-  concern: number;
-  amount: number;
-  headers: Set<number>;
 };
 
 function json(body: unknown, init?: ResponseInit) {
@@ -461,6 +464,47 @@ async function resolveSalesmanFromParam(salesmanIdParam: string): Promise<{
   };
 }
 
+async function synchronizeExpenseDraftHeaders(
+  headerIds: number[]
+): Promise<DirectusFetchResult | null> {
+  if (headerIds.length === 0) return null;
+
+  const expensesRes = await directusFetch(
+    `/items/expense_draft?filter[header_id][_in]=${headerIds.join(",")}&fields=header_id,status&limit=-1`
+  );
+
+  if (!expensesRes.ok) return expensesRes;
+
+  const statusesByHeader = new Map<number, string[]>();
+
+  for (const expense of getListData<ExpenseDraftRow>(expensesRes.data)) {
+    const headerId = getRelationId(expense.header_id);
+    if (headerId <= 0) continue;
+
+    const statuses = statusesByHeader.get(headerId) ?? [];
+    statuses.push(String(expense.status ?? ""));
+    statusesByHeader.set(headerId, statuses);
+  }
+
+  for (const headerId of headerIds) {
+    const terminalStatus = deriveTerminalHeaderStatus(
+      statusesByHeader.get(headerId) ?? []
+    );
+
+    if (!terminalStatus) continue;
+
+    const patchRes = await directusFetch(`/items/expense_draft_header/${headerId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: terminalStatus }),
+    });
+
+    if (!patchRes.ok) return patchRes;
+  }
+
+  return null;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const rbac = await getRbacFilters();
@@ -483,6 +527,11 @@ export async function GET(req: NextRequest) {
 
     if (resource === "expenses") {
       const salesmanId = sp.get("salesman_id");
+      const requestedHeaderScope = sp.get("header_scope");
+      const headerScope: HeaderScope =
+        requestedHeaderScope === "history" || requestedHeaderScope === "all"
+          ? requestedHeaderScope
+          : "pending";
 
       if (!salesmanId) {
         return json({ error: "Missing salesman_id" }, { status: 400 });
@@ -597,14 +646,29 @@ export async function GET(req: NextRequest) {
           `/items/expense_draft_header?filter[id][_in]=${headerIds.join(",")}&fields=id,period_from,period_to,remarks,status&limit=-1`
         );
 
-        headers = getListData<ExpenseDraftHeaderRow>(hRes.data).map((header) => ({
-          id: toNumber(header.id),
-          period_from: String(header.period_from ?? ""),
-          period_to: String(header.period_to ?? ""),
-          remarks: header.remarks ? String(header.remarks) : null,
-          status: String(header.status ?? ""),
-        }));
+        const formattedHeaders = getListData<ExpenseDraftHeaderRow>(hRes.data)
+          .map((header) => {
+            const headerId = toNumber(header.id);
+            const itemStatuses = enriched
+              .filter((expense) => getRelationId(expense.header_id) === headerId)
+              .map((expense) => expense.status);
+
+            return {
+              id: headerId,
+              period_from: String(header.period_from ?? ""),
+              period_to: String(header.period_to ?? ""),
+              remarks: header.remarks ? String(header.remarks) : null,
+              status: getEffectiveHeaderStatus(header.status, itemStatuses),
+            };
+          });
+
+        headers = filterHeadersByScope(formattedHeaders, enriched, headerScope);
       }
+
+      const activeHeaderIds = new Set(headers.map((header) => header.id));
+      const activeHeaderExpenses = enriched.filter((expense) =>
+        activeHeaderIds.has(getRelationId(expense.header_id))
+      );
 
       const fallbackSalesmanName = getUserFullName(userInfo) || `User #${employeeId}`;
 
@@ -620,7 +684,7 @@ export async function GET(req: NextRequest) {
           division_name: divisionName,
         },
         expense_limit: expenseLimit,
-        expenses: enriched,
+        expenses: activeHeaderExpenses,
         headers,
       });
     }
@@ -890,8 +954,17 @@ export async function GET(req: NextRequest) {
       return json({ data: formattedPayables });
     }
 
-    let expFilterBase =
-      `/items/expense_draft?filter[status][_in]=${directusIn(PENDING_EXPENSE_STATUSES)}`;
+    const listView = sp.get("view") === "history" ? "history" : "pending";
+    const headerStatusMap = new Map<number, string>();
+    let expFilterBase: string;
+
+    if (listView === "history") {
+      expFilterBase =
+        `/items/expense_draft?filter[status][_in]=${directusIn(ALL_EXPENSE_STATUSES)}`;
+    } else {
+      expFilterBase =
+        `/items/expense_draft?filter[status][_in]=${directusIn(PENDING_EXPENSE_STATUSES)}`;
+    }
 
     expFilterBase = withDateFilters(expFilterBase, startDate, endDate);
 
@@ -904,11 +977,46 @@ export async function GET(req: NextRequest) {
     }
 
     const rawExpenses = getListData<ExpenseDraftRow>(allExpRes.data);
+    const pendingHeaderIds = uniquePositiveNumbers(
+      rawExpenses.map((expense) => getRelationId(expense.header_id))
+    );
+    if (pendingHeaderIds.length > 0) {
+      const headerRes = await directusFetch(
+        `/items/expense_draft_header?filter[id][_in]=${pendingHeaderIds.join(",")}&fields=id,status&limit=-1`
+      );
+
+      if (!headerRes.ok) {
+        return json(headerRes.data, { status: headerRes.status });
+      }
+
+      for (const header of getListData<ExpenseDraftHeaderRow>(headerRes.data)) {
+        const headerId = toNumber(header.id);
+        const itemStatuses = rawExpenses
+          .filter((expense) => getRelationId(expense.header_id) === headerId)
+          .map((expense) => expense.status);
+
+        headerStatusMap.set(
+          headerId,
+          getEffectiveHeaderStatus(header.status, itemStatuses)
+        );
+      }
+    }
+
     const encodedByIds = uniquePositiveNumbers(rawExpenses.map((expense) => expense.encoded_by));
     const userMap = await fetchUserMap(encodedByIds);
 
     const allExpenses = rawExpenses.filter((expense) => {
       if (Number(expense.is_supervisor) === 1) return false;
+
+      const headerId = getRelationId(expense.header_id);
+      if (
+        headerId <= 0 ||
+        (listView === "history"
+          ? !isTerminalHeaderStatus(headerStatusMap.get(headerId))
+          : isTerminalHeaderStatus(headerStatusMap.get(headerId)))
+      ) {
+        return false;
+      }
 
       const encoderId = toNumber(expense.encoded_by);
       const encoderDepartmentId = toNumber(userMap[encoderId]?.user_department);
@@ -926,39 +1034,10 @@ export async function GET(req: NextRequest) {
     );
     const salesmanMap = await fetchSalesmenByEmployeeIds(visibleEncodedByIds);
 
-    const countMap: Record<string, CountBucket> = {};
-
-    for (const expense of allExpenses) {
-      const encodedBy = toNumber(expense.encoded_by);
-      const divisionId = toNumber(expense.division_id);
-      const key = `${encodedBy}_${divisionId}`;
-
-      if (!countMap[key]) {
-        countMap[key] = {
-          draft: 0,
-          rejected: 0,
-          concern: 0,
-          amount: 0,
-          headers: new Set<number>(),
-        };
-      }
-
-      if (expense.status === "Drafts") {
-        countMap[key].draft += 1;
-      } else if (expense.status === "With Concern") {
-        countMap[key].concern += 1;
-      } else if (expense.status === "Rejected") {
-        countMap[key].rejected += 1;
-      }
-
-      countMap[key].amount += toNumber(expense.amount);
-
-      const headerId = getRelationId(expense.header_id);
-      if (headerId > 0) countMap[key].headers.add(headerId);
-    }
+    const countMap = aggregateExpensesByEmployee(allExpenses);
 
     const divisionIds = uniquePositiveNumbers([
-      ...allExpenses.map((expense) => expense.division_id),
+      ...Object.values(countMap).flatMap((bucket) => [...bucket.divisions]),
       ...Object.values(salesmanMap).map((salesman) => salesman.division_id),
     ]);
 
@@ -966,13 +1045,21 @@ export async function GET(req: NextRequest) {
 
     const result: SalesmanSummaryRow[] = Object.entries(countMap)
       .map(([key, bucket]) => {
-        const [encodedByRaw, divisionRaw] = key.split("_");
-        const employeeId = toNumber(encodedByRaw);
-        const expenseDivisionId = toNumber(divisionRaw);
+        const employeeId = toNumber(key);
         const salesman = salesmanMap[employeeId];
         const user = userMap[employeeId];
         const salesmanDivisionId = toNumber(salesman?.division_id);
-        const finalDivisionId = expenseDivisionId || salesmanDivisionId || null;
+        const divisionIds = [...bucket.divisions];
+        if (divisionIds.length === 0 && salesmanDivisionId > 0) {
+          divisionIds.push(salesmanDivisionId);
+        }
+        const divisionNames = divisionIds
+          .map((divisionId) => divisionNameMap[divisionId])
+          .filter((name): name is string => Boolean(name));
+        const finalDivisionId = divisionIds[0] ?? null;
+        const headerStatuses = [...bucket.headers]
+          .map((headerId) => headerStatusMap.get(headerId))
+          .filter((status): status is string => Boolean(status));
         const fallbackName = getUserFullName(user) || `User #${employeeId}`;
 
         return {
@@ -982,6 +1069,8 @@ export async function GET(req: NextRequest) {
           employee_id: employeeId,
           division_id: finalDivisionId,
           division_name: finalDivisionId ? divisionNameMap[finalDivisionId] ?? null : null,
+          division_names: divisionNames,
+          header_statuses: [...new Set(headerStatuses)],
           draft_count: bucket.draft,
           rejected_count: bucket.rejected,
           concern_count: bucket.concern,
@@ -1264,6 +1353,18 @@ export async function POST(req: NextRequest) {
       return json({ error: "No matching expense rows found" }, { status: 404 });
     }
 
+    // Validate that none of the target rows are already approved in the database.
+    // If a row's status in the database is already 'Approved', it has already been processed.
+    for (const row of allDetailRows) {
+      const decision = itemDecisions[String(row.id)];
+      if (decision && String(row.status).trim().toLowerCase() === "approved") {
+        return json(
+          { error: `Expense draft #${row.id} has already been approved and consolidated.` },
+          { status: 400 }
+        );
+      }
+    }
+
     const editedIds: number[] = [];
 
     if (edited_amounts) {
@@ -1397,6 +1498,23 @@ export async function POST(req: NextRequest) {
       original.feedback = decision.status !== "Approved" ? decision.remarks : null;
       original.approved_at = decision.status === "Approved" ? nowTs : null;
       original.rejected_at = decision.status === "Rejected" ? nowTs : null;
+    }
+
+    const affectedHeaderIds = uniquePositiveNumbers(
+      allDetailRows
+        .filter((expense) => Boolean(itemDecisions[String(expense.id)]))
+        .map((expense) => getRelationId(expense.header_id))
+    );
+    const headerSyncError = await synchronizeExpenseDraftHeaders(affectedHeaderIds);
+
+    if (headerSyncError) {
+      return json(
+        {
+          error: "Failed to synchronize expense draft header status",
+          details: headerSyncError.data,
+        },
+        { status: headerSyncError.status }
+      );
     }
 
     const selectedExpenses = allDetailRows.filter((row) => {

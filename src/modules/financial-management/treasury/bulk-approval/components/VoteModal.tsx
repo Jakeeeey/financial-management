@@ -5,7 +5,7 @@ import * as React from "react";
 import {
   Loader2, FileText, CheckCircle2,
   ShieldCheck, X,
-  ExternalLink, CheckSquare, Info,
+  ExternalLink, Info,
   AlertTriangle, RefreshCw, Send, Check, User, Building2, Wallet,
   Maximize2, ZoomIn, ZoomOut, RotateCcw, RotateCw, Move
 } from "lucide-react";
@@ -73,16 +73,21 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
   const [editedAmounts, setEditedAmounts] = React.useState<Record<number, string>>({});
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
-  const [showCoverage, setShowCoverage] = React.useState(false);
+  const [showCoverage, setShowCoverage] = React.useState(true);
+  const [evidenceMode, setEvidenceMode] = React.useState<{ kind: "all" } | { kind: "line"; expenseId: number }>({ kind: "all" });
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [zoom, setZoom] = React.useState(1);
   const [rotation, setRotation] = React.useState(0);
   const [inlineZoom, setInlineZoom] = React.useState(1);
   const [inlineRotation, setInlineRotation] = React.useState(0);
+  const [remarksOpen, setRemarksOpen] = React.useState(false);
+  const [showApproveConfirm, setShowApproveConfirm] = React.useState(false);
   const [showConcernWarning, setShowConcernWarning] = React.useState(false);
   const [showRejectWarning, setShowRejectWarning] = React.useState(false);
   const pendingRemarks = React.useRef<string>("");
+  const [sidebarWidth, setSidebarWidth] = React.useState(350);
+  const isDraggingSidebar = React.useRef(false);
 
   // State-based callback refs: the element becomes a proper effect dependency,
   // so the listener is attached only after the DOM node actually mounts
@@ -136,6 +141,14 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     if (open && detail) {
       setRemarks("");
       setEditedAmounts({});
+      setRemarksOpen(false);
+      setShowApproveConfirm(false);
+      setShowConcernWarning(false);
+      setShowRejectWarning(false);
+      setShowCoverage(Boolean(detail.attachments?.length));
+      setCurrentSlide(0);
+      setInlineZoom(1);
+      setInlineRotation(0);
 
       const initialRemarks: Record<number, string> = {};
 
@@ -175,13 +188,21 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       is_concern: p.is_concern || false,
       feedback: p.feedback || null
     }));
-    const existingIds = new Set(items.map((i: { id: number }) => i.id));
+    const existingExpenseIds = new Set(items.map((i) => i.expense_id).filter(Boolean));
     (detail.concern_items || []).forEach((ci: import("../type").ConcernItemResponse) => {
-      const negId = -ci.expense_id;
-      if (!existingIds.has(negId)) {
+      if (!existingExpenseIds.has(ci.expense_id)) {
+        const negId = -ci.expense_id;
         items.push({
-          id: negId, coa_id: -1, coa_name: ci.coa_name, amount: ci.amount, remarks: ci.remarks,
-          date: ci.transaction_date, reference_no: null, attachment_url: ci.attachment_url,
+          id: negId,
+          expense_id: ci.expense_id,
+          header_id: ci.header_id,
+          coa_id: -1,
+          coa_name: ci.coa_name,
+          amount: ci.amount,
+          remarks: ci.remarks,
+          date: ci.transaction_date,
+          reference_no: null,
+          attachment_url: ci.attachment_url,
           is_concern: ci.status === "With Concern",
           is_rejected: ci.status === "Rejected",
           feedback: ci.feedback
@@ -190,6 +211,31 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     });
     return items as (DraftPayable & { is_concern: boolean; is_rejected?: boolean; feedback: string | null })[];
   }, [detail]);
+
+  const expenseEvidenceItems = React.useMemo(() => {
+    return combinedItems
+      .filter((item) => Boolean(item.attachment_url) && Boolean(item.expense_id))
+      .map((item) => ({
+        category: "expense" as const,
+        headerId: item.header_id,
+        expenseId: item.expense_id!,
+        url: item.attachment_url!,
+        label: item.remarks || item.reference_no || `Expense #${item.expense_id}`,
+      }));
+  }, [combinedItems]);
+
+  const activeEvidenceItems = evidenceMode.kind === "all"
+    ? expenseEvidenceItems
+    : expenseEvidenceItems.filter((item) => item.expenseId === evidenceMode.expenseId);
+
+  const openEvidence = React.useCallback((mode: { kind: "all" } | { kind: "line"; expenseId: number }) => {
+    setEvidenceMode(mode);
+    setCurrentSlide(0);
+    setInlineZoom(1);
+    setInlineRotation(0);
+    setShowCoverage(true);
+    carouselApi?.scrollTo(0);
+  }, [carouselApi]);
 
   // Total amount ONLY for APPROVED items (Verified Only)
   const currentTotalAmount = React.useMemo(() => {
@@ -211,37 +257,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     setItemDecisions(prev => ({ ...prev, [id]: prev[id] === status ? "PENDING" : status }));
   };
 
-  const toggleGroupStatus = (groupItems: DraftPayable[], status: "APPROVED" | "REJECTED" | "WITH_CONCERN" | "PENDING") => {
-    setItemDecisions(prev => {
-      const next = { ...prev };
-      groupItems.forEach(item => {
-        const isPersistentLocked = item.is_concern || item.is_rejected;
-        // Don't override if persistent lock exists OR if we are doing a mass "APPROVED" but item is locally REJECTED/CONCERN
-        const isLocallyLocked = (status === "APPROVED" && (next[item.id] === "REJECTED" || next[item.id] === "WITH_CONCERN"));
 
-        if (!isPersistentLocked && !isLocallyLocked) {
-          next[item.id] = status;
-        }
-      });
-      return next;
-    });
-  };
-
-  const approveAll = () => {
-    setItemDecisions(prev => {
-      const next = { ...prev };
-      combinedItems.forEach(item => {
-        // Skip items that are already concerns or rejected (persistent or local)
-        const isCurrentlyConcern = next[item.id] === "WITH_CONCERN" || item.is_concern;
-        const isCurrentlyRejected = next[item.id] === "REJECTED" || item.is_rejected;
-
-        if (item.id > 0 && !isCurrentlyConcern && !isCurrentlyRejected) {
-          next[item.id] = "APPROVED";
-        }
-      });
-      return next;
-    });
-  };
 
   const uncheckAll = () => {
     const next = { ...itemDecisions };
@@ -272,14 +288,6 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       }).sort((a, b) => (b.weekStart?.getTime() ?? 0) - (a.weekStart?.getTime() ?? 0)),
     }));
   }, [combinedItems]);
-
-  const activeGroup = React.useMemo(() => {
-    if (!selectedGroupId) return null;
-    for (const g of groupedPayables)
-      for (const w of g.weeks)
-        if (`${g.coa_name}-${w.weekKey}` === selectedGroupId) return { ...w, coa_name: g.coa_name };
-    return null;
-  }, [selectedGroupId, groupedPayables]);
 
   React.useEffect(() => {
     if (!selectedGroupId && groupedPayables.length > 0) {
@@ -329,7 +337,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
     if (combinedItems.length === 1) {
       const batchRemarks = remarks.trim() || feedback?.trim() || "";
       setRemarks(batchRemarks);
-      handleVote(batchRemarks);
+      setRemarksOpen(true);
       return;
     }
 
@@ -357,6 +365,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
     // Store remarks for use by confirmation dialogs
     pendingRemarks.current = effectiveRemarks;
+    setRemarksOpen(false);
 
     const hasWithConcern = combinedItems.some(p => itemDecisions[p.id] === "WITH_CONCERN");
     if (hasWithConcern) {
@@ -370,11 +379,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
       return;
     }
 
-    executeSubmit(effectiveRemarks);
+    setShowApproveConfirm(true);
   }
 
   async function executeSubmit(overrideRemarks?: string) {
+    if (submitting) return;
     setSubmitting(true);
+    setShowApproveConfirm(false);
     setShowConcernWarning(false);
     setShowRejectWarning(false);
     const cleanOverride = typeof overrideRemarks === "string" ? overrideRemarks : undefined;
@@ -430,7 +441,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           <DialogDescription className="sr-only">Review and verify expense items before submitting your decision</DialogDescription>
 
           {/* Supporting Evidence Pane (Outside main modal but in split view) */}
-          {showCoverage && detail?.attachments && detail.attachments.length > 0 && (
+          {showCoverage && activeEvidenceItems.length > 0 && (
             <div className="w-[35vw] h-full bg-[#0f172a] rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] border border-white/5 flex flex-col overflow-hidden animate-in slide-in-from-left duration-500 relative">
               <div className="p-8 pb-4 flex items-center justify-between">
                 <div>
@@ -445,8 +456,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                     size="icon"
                     className="text-white/40 hover:text-white hover:bg-white/10 rounded-full"
                     onClick={() => {
-                      if (detail?.attachments?.[currentSlide]) {
-                        setPreviewUrl(`/api/fm/expense-assets?id=${detail.attachments[currentSlide].file_url}`);
+                      if (activeEvidenceItems[currentSlide]) {
+                        setPreviewUrl(`/api/fm/expense-assets?id=${activeEvidenceItems[currentSlide].url}`);
                       }
                     }}
                     title="View Full Screen"
@@ -467,8 +478,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
               <div ref={setInlineEl} className="flex-1 relative flex items-center justify-center p-8">
                 <Carousel setApi={setCarouselApi} opts={{ watchDrag: false }} className="w-full h-full">
                   <CarouselContent className="h-full">
-                    {detail.attachments.map((at: { file_url: string; file_name: string }, i: number) => (
-                      <CarouselItem key={i} className="flex items-center justify-center h-full">
+                    {activeEvidenceItems.map((at, i) => (
+                      <CarouselItem key={`${at.category}:${at.url}`} className="flex items-center justify-center h-full">
                         <div className="relative w-full h-full flex flex-col items-center justify-center gap-6">
                           <div
                             className="relative group/img max-w-full h-[65vh] w-full flex items-center justify-center bg-black/40 rounded-3xl overflow-hidden border border-white/10 shadow-2xl select-none"
@@ -481,8 +492,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={`/api/fm/expense-assets?id=${at.file_url}`}
-                                alt={at.file_name}
+                                src={`/api/fm/expense-assets?id=${at.url}`}
+                                alt={at.label}
                                 className="max-w-full max-h-full object-contain pointer-events-none"
                                 draggable={false}
                               />
@@ -506,8 +517,11 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             </div>
                           </div>
                           <div className="flex flex-col items-center">
-                            <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{at.file_name}</p>
-                            <p className="text-white/30 text-[9px] font-medium mt-1">ATTACHMENT {i + 1} OF {detail.attachments?.length}</p>
+                            <Badge className="mb-2 border-blue-500/30 bg-blue-500/15 text-blue-300">
+                              Expense Attachment
+                            </Badge>
+                            <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{at.label}</p>
+                            <p className="text-white/30 text-[9px] font-medium mt-1">ATTACHMENT {i + 1} OF {activeEvidenceItems.length}</p>
                           </div>
                         </div>
                       </CarouselItem>
@@ -528,7 +542,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
           )}
 
           {/* Main Modal Pane */}
-          <div className={`flex flex-col bg-white dark:bg-slate-950 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] overflow-hidden h-full transition-all duration-500 border border-slate-200 dark:border-slate-800 ${showCoverage ? "w-[60vw]" : "w-[85vw]"}`}>
+          <div className={`relative flex flex-col bg-white dark:bg-slate-950 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.25)] overflow-hidden h-full transition-all duration-500 border border-slate-200 dark:border-slate-800 ${showCoverage && activeEvidenceItems.length > 0 ? "w-[60vw]" : "w-[85vw]"}`}>
+            {submitting && (
+              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/60 dark:bg-slate-950/60 backdrop-blur-sm rounded-[2.5rem]">
+                <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-800 dark:text-slate-200">Processing Decision...</p>
+              </div>
+            )}
             {!loading && detail && (
               <div className="shrink-0">
                 {detail.my_vote ? (
@@ -569,12 +589,12 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
-                  {detail?.attachments && detail.attachments.length > 0 && (
+                  {expenseEvidenceItems.length > 0 && (
                     <Button
                       variant="outline"
                       size="sm"
                       className={`bg-white/10 text-white border-white/20 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest gap-2 h-10 px-6 rounded-2xl transition-all ${showCoverage ? "bg-white/30 border-white/40" : ""}`}
-                      onClick={() => setShowCoverage(!showCoverage)}
+                      onClick={() => showCoverage ? setShowCoverage(false) : openEvidence({ kind: "all" })}
                     >
                       <FileText size={16} />
                       {showCoverage ? "Hide Attachments" : "Show Supporting Evidence"}
@@ -605,8 +625,8 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                 </div>
                 <div>
                   <p className="text-[8px] uppercase font-black text-muted-foreground dark:text-slate-500 tracking-widest leading-none mb-1">Salesman</p>
-                  <p className="font-black text-xs text-foreground dark:text-slate-200 truncate max-w-[12vw]">{draft.payee_name || "Unknown"}</p>
-                  <p className="text-[9px] text-muted-foreground dark:text-slate-500 font-mono">ID: {draft.payee_user_id || "N/A"}</p>
+                  <p className="font-black text-xs text-foreground dark:text-slate-200 truncate max-w-[12vw]">{draft.encoder_name || "Unknown"}</p>
+                  <p className="text-[9px] text-muted-foreground dark:text-slate-500 font-mono">ID: {draft.encoder_user_id || "N/A"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 pl-4 border-l border-muted/50 dark:border-slate-800">
@@ -679,14 +699,14 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                       Verification Registry
                     </h3>
                     <div className="flex items-center gap-3">
-                      <button
+                      {/* <button
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40"}`}
                         onClick={() => !isInteractionDisabled && approveAll()}
                         disabled={isInteractionDisabled}
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         <span className="text-[10px] font-black uppercase tracking-widest">Approve All</span>
-                      </button>
+                      </button> */}
                       <button
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${isInteractionDisabled ? "opacity-30 cursor-not-allowed" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"}`}
                         onClick={() => !isInteractionDisabled && uncheckAll()}
@@ -704,13 +724,13 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
 
                 <div className="flex-1 flex min-h-0 bg-slate-50/50">
                   {/* Sidebar: COA Groups */}
-                  <div className="w-[20vw] border-r dark:border-slate-800 bg-white dark:bg-slate-950 overflow-y-auto shrink-0">
+                  <div style={{ width: sidebarWidth }} className="hidden">
                     <Table>
                       <TableHeader className="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10 shadow-sm">
                         <TableRow>
                           <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 pl-8 text-slate-800 dark:text-slate-400">Account / Period</TableHead>
                           <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-right pr-4 text-slate-800 dark:text-slate-400">Amount</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-center text-slate-800 dark:text-slate-400">Action</TableHead>
+                          {/* <TableHead className="text-[10px] font-black uppercase tracking-widest py-4 text-center text-slate-800 dark:text-slate-400">Action</TableHead> */}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -718,7 +738,6 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                           const gid = `${g.coa_name}-${w.weekKey}`;
                           const isSelected = selectedGroupId === gid;
                           const total = w.items.reduce((acc, p) => acc + Number(p.amount), 0);
-                          const isVerified = w.items.every(i => itemDecisions[i.id] !== "PENDING");
                           return (
                             <TableRow key={gid}
                               className={`cursor-pointer group transition-all ${isSelected ? "bg-blue-50 dark:bg-blue-900/40" : "hover:bg-slate-50 dark:hover:bg-slate-900/50"}`}
@@ -740,7 +759,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                 <p className="text-[10px] font-black tabular-nums text-slate-800 dark:text-slate-200">{formatCurrency(total)}</p>
                                 <p className="text-[8px] text-muted-foreground dark:text-slate-500 font-bold italic">{w.items.length} units</p>
                               </TableCell>
-                              <TableCell className="text-center py-3">
+                              {/* <TableCell className="text-center py-3">
                                 <Button
                                   variant="ghost"
                                   className={`h-7 px-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${isVerified ? "bg-emerald-500/10 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 dark:border-emerald-800" : "bg-blue-600 dark:bg-blue-700 text-white hover:bg-blue-700 dark:hover:bg-blue-600"}`}
@@ -754,7 +773,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                 >
                                   {isVerified ? <CheckCircle2 size={12} /> : <CheckSquare size={12} />}
                                 </Button>
-                              </TableCell>
+                              </TableCell> */}
                             </TableRow>
                           );
                         }))}
@@ -762,15 +781,37 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                     </Table>
                   </div>
 
+                  {/* Vertical Drag Resizer */}
+                  <div
+                    className="hidden"
+                    onMouseDown={(e) => {
+                      isDraggingSidebar.current = true;
+                      const startX = e.clientX;
+                      const startWidth = sidebarWidth;
+                      const onMouseMove = (moveEvent: MouseEvent) => {
+                        if (!isDraggingSidebar.current) return;
+                        const newWidth = Math.min(Math.max(startWidth + (moveEvent.clientX - startX), 200), window.innerWidth * 0.5);
+                        setSidebarWidth(newWidth);
+                      };
+                      const onMouseUp = () => {
+                        isDraggingSidebar.current = false;
+                        document.removeEventListener("mousemove", onMouseMove);
+                        document.removeEventListener("mouseup", onMouseUp);
+                      };
+                      document.addEventListener("mousemove", onMouseMove);
+                      document.addEventListener("mouseup", onMouseUp);
+                    }}
+                  />
+
                   {/* Detail Table Area */}
                   <div className="flex-1 bg-white dark:bg-slate-950 flex flex-col overflow-hidden">
-                    <div className="flex-1 overflow-auto p-8 pt-0">
-                      <Table className="border dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="flex-1 overflow-auto p-3 sm:p-5">
+                      <Table className="min-w-[840px] border dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
                         <TableHeader className="bg-slate-50/50 dark:bg-slate-900/50 sticky top-0 z-10 backdrop-blur-sm border-b dark:border-slate-800">
                           <TableRow>
-                            <TableHead className="w-10 text-center text-[9px] font-black text-slate-800 dark:text-slate-400">#</TableHead>
-                            <TableHead className="text-[9px] font-black uppercase tracking-widest py-3 text-slate-800 dark:text-slate-400">Remarks</TableHead>
-                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-24 text-slate-800 dark:text-slate-400">Amount</TableHead>
+                            <TableHead className="w-8 text-center text-[9px] font-black text-slate-800 dark:text-slate-400">#</TableHead>
+                            <TableHead className="min-w-[180px] text-[9px] font-black uppercase tracking-widest py-3 text-slate-800 dark:text-slate-400">Remarks</TableHead>
+                            <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-20 text-slate-800 dark:text-slate-400">Amount</TableHead>
                             <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-12 text-slate-800 dark:text-slate-400">Docs</TableHead>
                             <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-24 text-slate-800 dark:text-slate-400">Date</TableHead>
                             <TableHead className="text-center text-[9px] font-black uppercase tracking-widest py-3 w-20 text-slate-800 dark:text-slate-400">Status</TableHead>
@@ -778,7 +819,30 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {activeGroup?.items.map((p, idx) => {
+                          {groupedPayables.map((group) =>
+                            group.weeks.map((week) => {
+                              const groupTotal = week.items.reduce(
+                                (sum, payable) => sum + Number(editedAmounts[payable.id] || payable.amount),
+                                0
+                              );
+
+                              return (
+                                <React.Fragment key={`${group.coa_name}-${week.weekKey}`}>
+                                  <TableRow className="border-none bg-slate-950 hover:bg-slate-950 dark:bg-slate-950">
+                                    <TableCell colSpan={7} className="px-5 py-3 text-white">
+                                      <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Account</p>
+                                          <p className="truncate text-sm font-black">{group.coa_name}</p>
+                                          <p className="text-[9px] font-bold text-slate-400">{week.weekLabel}</p>
+                                        </div>
+                                        <span className="text-sm font-black tabular-nums text-emerald-400">
+                                          {formatCurrency(groupTotal)}
+                                        </span>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                  {week.items.map((p, idx) => {
                             const status = itemDecisions[p.id] || "PENDING";
                             const isPersistentLocked = p.is_concern || p.is_rejected;
                             const isStatusLocked = isPersistentLocked || isInteractionDisabled;
@@ -800,16 +864,25 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                     />
                                   </TableCell>
                                   <TableCell className="py-4 text-center">
-                                    {p.attachment_url && (
+                                    {p.attachment_url ? (
                                       <Button
+                                        type="button"
                                         size="icon"
                                         variant="ghost"
                                         className="h-8 w-8 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40"
                                         onClick={() => setPreviewUrl(`/api/fm/expense-assets?id=${p.attachment_url}`)}
-                                        disabled={processingItem === p.id || submitting || isStatusLocked}
+                                        aria-label={`Preview evidence for expense ${p.expense_id}`}
+                                        title="Preview supporting evidence"
                                       >
                                         <ExternalLink size={14} />
                                       </Button>
+                                    ) : (
+                                      <Badge
+                                        variant="outline"
+                                        className="whitespace-nowrap border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-slate-400 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-500"
+                                      >
+                                        No attachment
+                                      </Badge>
                                     )}
                                   </TableCell>
                                   <TableCell className="py-4 text-center text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">{formatDate(p.date)}</TableCell>
@@ -847,7 +920,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                         <Button
                                           size="sm"
                                           className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-widest rounded-lg shadow-md gap-2 disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
-                                          disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isPersistentLocked}
+                                          disabled={processingItem === p.id || !showItemRemarks[p.id]?.trim() || isPersistentLocked || submitting}
                                           onClick={() => handleSingleItemVote(p)}
                                         >
                                           {processingItem === p.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
@@ -859,46 +932,31 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                                 )}
                               </React.Fragment>
                             );
-                          })}
+                                  })}
+                                </React.Fragment>
+                              );
+                            })
+                          )}
                         </TableBody>
                       </Table>
                     </div>
 
                     {/* Footer Section Pattern */}
-                    <div className="p-8 border-t dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-end justify-between gap-12 relative">
-                      <div className="flex-1 space-y-3">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 flex items-center gap-2">
-                          <Info size={14} className="text-blue-500 dark:text-blue-400" />
-                          Approval Remarks <span className="text-red-500 font-black">*</span>
-                        </label>
-                        <Textarea
-                          rows={4}
-                          className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl p-4 text-sm font-medium shadow-inner resize-none focus:ring-2 focus:ring-blue-500/20"
-                          placeholder={hasPendingItems ? "Resolve all pending items first..." : "State your decision remarks for this batch..."}
-                          value={remarks}
-                          onChange={(e) => setRemarks(e.target.value)}
-                          disabled={submitting || isInteractionDisabled}
-                        />
-                        <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 italic">
-                          Your remarks will be saved in the approval audit trail.
-                        </p>
-                      </div>
-
-                      <div className="w-80 flex flex-col gap-4">
-                        <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                    <div className="sticky bottom-0 z-20 flex items-center justify-end gap-3 border-t bg-slate-50/95 px-5 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-950">
                           <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
                             <span>Decision Summary</span>
                             <span className="text-blue-600 dark:text-blue-400">{approvedCount} units</span>
                           </div>
-                          <div className="h-[1px] bg-slate-100 dark:bg-slate-800 w-full" />
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Total Value:</span>
-                            <span className="text-2xl font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
+                            <span className="ml-2 text-lg font-black tabular-nums text-blue-700 dark:text-blue-400 tracking-tighter">{formatCurrency(currentTotalAmount)}</span>
                           </div>
                           <Button
-                            disabled={submitting || hasPendingItems || hasMissingFeedback || !remarks.trim() || !!detail.my_vote || !detail.can_vote}
-                            className="w-full h-14 relative bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-lg border-t border-white/20 gap-3 active:scale-[0.98] transition-all disabled:bg-slate-100 dark:disabled:bg-slate-850 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
-                            onClick={() => handleVote()}
+                            disabled={submitting || hasPendingItems || hasMissingFeedback || !!detail.my_vote || !detail.can_vote}
+                            className="h-10 shrink-0 bg-blue-600 px-5 hover:bg-blue-700 text-white rounded-xl font-black uppercase tracking-[0.16em] shadow-lg border-t border-white/20 gap-2 active:scale-[0.98] transition-all disabled:bg-slate-100 dark:disabled:bg-slate-850 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:border-none disabled:shadow-none disabled:cursor-not-allowed"
+                            onClick={() => setRemarksOpen(true)}
                           >
                             {submitting ? (
                               <Loader2 className="animate-spin h-5 w-5" />
@@ -908,7 +966,7 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
                             <span>Submit Decision</span>
                           </Button>
                         </div>
-                        <button className="w-full py-2 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 hover:text-slate-600 transition-colors" onClick={onClose}>
+                        <button className="shrink-0 px-3 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-slate-600 transition-colors" onClick={onClose}>
                           Cancel Review
                         </button>
                       </div>
@@ -990,7 +1048,94 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showConcernWarning} onOpenChange={(v) => !v && setShowConcernWarning(false)}>
+      <Dialog open={remarksOpen} onOpenChange={setRemarksOpen}>
+        <DialogContent className="max-w-lg overflow-hidden rounded-[2rem] border-none bg-white p-0 shadow-2xl dark:bg-slate-900">
+          <div className="space-y-6 p-7">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400">
+                <Info size={22} />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-black text-slate-900 dark:text-slate-100">
+                  Approval Remarks
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Add the final justification that will be saved in the approval audit trail.
+                </DialogDescription>
+              </div>
+            </div>
+
+            <Textarea
+              rows={5}
+              className="min-h-32 resize-none rounded-2xl border-slate-200 bg-slate-50 p-4 text-sm font-medium shadow-inner focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950"
+              placeholder="State your decision remarks for this batch..."
+              value={remarks}
+              onChange={(event) => setRemarks(event.target.value)}
+              disabled={submitting}
+              autoFocus
+            />
+
+            <div className="flex items-center justify-end gap-3">
+              <Button variant="ghost" onClick={() => setRemarksOpen(false)} disabled={submitting}>
+                Back to Review
+              </Button>
+              <Button
+                className="bg-blue-600 px-6 font-black uppercase tracking-wider text-white hover:bg-blue-700"
+                disabled={!remarks.trim() || submitting}
+                onClick={() => handleVote()}
+              >
+                Finalize Decision
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showApproveConfirm}
+        onOpenChange={(value) => {
+          setShowApproveConfirm(value);
+          if (!value && !submitting) setRemarksOpen(true);
+        }}
+      >
+        <DialogContent className="max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold text-slate-800 dark:text-slate-100">
+            <ShieldCheck size={17} className="shrink-0 text-emerald-500" />
+            Confirm Decision
+          </DialogTitle>
+          <DialogDescription className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+            You are about to submit this approval decision. The decision and remarks will be recorded in the audit trail.
+          </DialogDescription>
+          <div className="mt-6 flex items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              disabled={submitting}
+              onClick={() => {
+                setShowApproveConfirm(false);
+                setRemarksOpen(true);
+              }}
+            >
+              Go Back
+            </Button>
+            <Button
+              onClick={() => executeSubmit(pendingRemarks.current)}
+              disabled={submitting}
+              className="gap-2 bg-emerald-600 px-5 font-semibold text-white hover:bg-emerald-700"
+            >
+              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
+              Confirm Decision
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showConcernWarning}
+        onOpenChange={(value) => {
+          setShowConcernWarning(value);
+          if (!value && !submitting) setRemarksOpen(true);
+        }}
+      >
         <DialogContent className="max-w-sm p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-2xl">
           <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-slate-100 text-base font-semibold">
             <AlertTriangle size={16} className="text-amber-500 shrink-0" />
@@ -1002,17 +1147,28 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
             Do you want to continue?
           </DialogDescription>
           <div className="flex items-center justify-end gap-2 mt-6">
-            <Button variant="ghost" onClick={() => setShowConcernWarning(false)} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+            <Button variant="ghost" onClick={() => { setShowConcernWarning(false); setRemarksOpen(true); }} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" disabled={submitting}>
               Go Back
             </Button>
-            <Button onClick={() => executeSubmit(pendingRemarks.current)} className="bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-sm font-semibold px-5 rounded-lg shadow-sm">
-              Confirm & Submit
+            <Button 
+              onClick={() => executeSubmit(pendingRemarks.current)} 
+              disabled={submitting}
+              className="bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-sm font-semibold px-5 rounded-lg shadow-sm gap-2"
+            >
+              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
+              <span>Confirm & Submit</span>
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showRejectWarning} onOpenChange={(v) => !v && setShowRejectWarning(false)}>
+      <Dialog
+        open={showRejectWarning}
+        onOpenChange={(value) => {
+          setShowRejectWarning(value);
+          if (!value && !submitting) setRemarksOpen(true);
+        }}
+      >
         <DialogContent className="max-w-sm p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-2xl">
           <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-slate-100 text-base font-semibold">
             <X size={16} className="text-rose-500 shrink-0" />
@@ -1024,11 +1180,16 @@ export default function VoteModal({ open, loading, detail, onClose, onVoteComple
             Do you want to proceed?
           </DialogDescription>
           <div className="flex items-center justify-end gap-2 mt-6">
-            <Button variant="ghost" onClick={() => setShowRejectWarning(false)} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+            <Button variant="ghost" onClick={() => { setShowRejectWarning(false); setRemarksOpen(true); }} className="text-slate-500 dark:text-slate-400 text-sm hover:bg-slate-100 dark:hover:bg-slate-800" disabled={submitting}>
               Go Back
             </Button>
-            <Button onClick={() => executeSubmit(pendingRemarks.current)} className="bg-rose-600 hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-700 text-white text-sm font-semibold px-5 rounded-lg shadow-sm">
-              Confirm Rejection
+            <Button 
+              onClick={() => executeSubmit(pendingRemarks.current)} 
+              disabled={submitting}
+              className="bg-rose-600 hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-700 text-white text-sm font-semibold px-5 rounded-lg shadow-sm gap-2"
+            >
+              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
+              <span>Confirm Rejection</span>
             </Button>
           </div>
         </DialogContent>

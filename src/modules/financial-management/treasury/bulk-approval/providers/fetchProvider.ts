@@ -155,10 +155,9 @@ export async function getActivityLogDetail(
   return data.data;
 }
 
-export async function getFinalHeaderGroups(): Promise<FinalHeaderGroup[]> {
-  const data = await apiFetch<{ data: FinalHeaderGroup[] }>(
-    `${BASE}?resource=final-header-groups`
-  );
+export async function getFinalHeaderGroups(status?: "ready" | "completed"): Promise<FinalHeaderGroup[]> {
+  const url = `${BASE}?resource=final-header-groups${status ? `&status=${status}` : ""}`;
+  const data = await apiFetch<{ data: FinalHeaderGroup[] }>(url);
 
   return data.data ?? [];
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { usePOList } from "../hooks/usePurchaseOrders";
 import { POFilters } from "./POFilters";
 import { POTable } from "./POTable";
@@ -17,12 +19,16 @@ export default function POListPage() {
     debounceRef.current = setTimeout(() => setDebouncedSearch(val), 300);
   }, []);
 
-  const { data, loading, error } = usePOList({ search: debouncedSearch || undefined, status: status || undefined });
+  const { data, loading, error, refetch } = usePOList({ search: debouncedSearch || undefined, status: status || undefined });
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight">Purchase Orders</h1>
+        <Button variant="default" size="sm" onClick={() => refetch()} className="gap-2">
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
       </div>
       <POFilters
         search={search}

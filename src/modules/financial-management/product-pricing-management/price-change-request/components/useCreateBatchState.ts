@@ -14,12 +14,6 @@ import {
     formatPriceNumber,
     parseDecimalInput,
 } from "../../shared/pricePrecision";
-import {
-    buildVariantGroupIndex,
-    childVariantIdsForGroup,
-    groupIdFor,
-    isChildVariant,
-} from "../utils/variantPropagation";
 import { useEditableGridNavigation } from "./useEditableGridNavigation";
 
 type FieldErrors = Partial<Record<"supplier_id" | "remarks" | "lines", string>>;
@@ -120,7 +114,6 @@ export function useCreateBatchState({
     const [referenceNo, setReferenceNo] = React.useState("");
     const [remarks, setRemarks] = React.useState("");
     const [errors, setErrors] = React.useState<FieldErrors>({});
-    const [applyParentPriceToChildren, setApplyParentPriceToChildren] = React.useState(false);
     const [priceTypes, setPriceTypes] = React.useState<api.PriceTypeOption[]>([]);
     const [unitLabelMap, setUnitLabelMap] = React.useState<Map<number, string>>(new Map());
     const [products, setProducts] = React.useState<api.ProductSearchRow[]>([]);
@@ -137,10 +130,8 @@ export function useCreateBatchState({
     const [catalogTotalPages, setCatalogTotalPages] = React.useState(0);
     const [catalogQuery, setCatalogQuery] = React.useState("");
     const [localCatalogQ, setLocalCatalogQ] = React.useState("");
-    const [variantGroupIndex, setVariantGroupIndex] = React.useState<Map<number, number[]>>(new Map());
     const [loadingPriceTypes, setLoadingPriceTypes] = React.useState(false);
     const [loadingProducts, setLoadingProducts] = React.useState(false);
-    const [loadingVariantIndex, setLoadingVariantIndex] = React.useState(false);
     const [loadError, setLoadError] = React.useState<string | null>(null);
     const [saving, setSaving] = React.useState(false);
     const [importedProductIds, setImportedProductIds] = React.useState<number[]>([]);
@@ -161,7 +152,6 @@ export function useCreateBatchState({
         setDraftCosts(new Map());
         setCurrentCostMap(new Map());
         setPendingValues(new Map());
-        setVariantGroupIndex(new Map());
         setCatalogPage(1);
         setCatalogPageSize(DEFAULT_CATALOG_PAGE_SIZE);
         setCatalogTotal(0);
@@ -191,7 +181,6 @@ export function useCreateBatchState({
             setReferenceNo("");
             setRemarks("");
             setErrors({});
-            setApplyParentPriceToChildren(false);
             resetCatalogState();
             setLoadError(null);
             setSaving(false);
@@ -304,51 +293,6 @@ export function useCreateBatchState({
         return () => { alive = false; };
     }, [open, supplierId, catalogPage, catalogPageSize, catalogQuery]);
 
-    React.useEffect(() => {
-        if (!open || !supplierId) { setVariantGroupIndex(new Map()); return; }
-        let alive = true;
-        setLoadingVariantIndex(true);
-        api.getVariantGroups({ supplier_ids: supplierId, supplier_scope: "LINKED_ONLY", active_only: "1" })
-            .then((result) => { if (!alive) return; setVariantGroupIndex(buildVariantGroupIndex(result.groups)); })
-            .catch((error: unknown) => {
-                if (!alive) return;
-                setVariantGroupIndex(new Map());
-                setLoadError(error instanceof Error ? error.message : "Failed to load product variant groups");
-            })
-            .finally(() => { if (alive) setLoadingVariantIndex(false); });
-        return () => { alive = false; };
-    }, [open, supplierId]);
-
-    const ensureCatalogHydrated = React.useCallback(async (productIds: number[]) => {
-        const missing = productIds.filter((id) => !productCatalogRef.current.has(id));
-        if (missing.length === 0) return;
-        const [rows, priceResult, pendingPriceResult, pendingCostResult] = await Promise.all([
-            api.getProductsByIds(missing), api.getPricesForProducts(missing),
-            api.getPendingPriceRequestsForProducts(missing), api.getPendingCostRequestsForProducts(missing),
-        ]);
-        setProductCatalog((prev) => {
-            const next = new Map(prev);
-            for (const row of rows) { next.set(row.product_id, row); productCatalogRef.current.set(row.product_id, row); }
-            return next;
-        });
-        setCurrentCostMap((prev) => {
-            const next = new Map(prev);
-            for (const row of rows) next.set(row.product_id, row.cost_per_unit ?? null);
-            return next;
-        });
-        setTierPriceMap((prev) => {
-            const next = new Map(prev);
-            for (const [key, value] of buildTierPriceMap(priceResult.data)) { next.set(key, value); tierPriceMapRef.current.set(key, value); }
-            return next;
-        });
-        setPendingValues((prev) => {
-            const next = new Map(prev);
-            applyPendingRows(next, pendingPriceResult.data, pendingCostResult.data);
-            pendingValuesRef.current = next;
-            return next;
-        });
-    }, []);
-
     const handleSupplierChange = React.useCallback((value: string) => {
         setSupplierId(value);
         setErrors((prev) => ({ ...prev, supplier_id: undefined }));
@@ -387,21 +331,6 @@ export function useCreateBatchState({
         (product: api.ProductSearchRow, pt: api.PriceTypeOption) =>
             lookupTierPrice(tierPriceMapRef.current, product.product_id, pt.price_type_id),
         [],
-    );
-
-    const collectChildIdsForPropagation = React.useCallback(
-        (drafts: Map<string, string>) => {
-            const childIds = new Set<number>();
-            for (const [key] of drafts) {
-                const pid = Number(key.split(":")[0]);
-                const product = productCatalogRef.current.get(Number(pid));
-                if (!product || isChildVariant(product)) continue;
-                for (const cid of childVariantIdsForGroup(variantGroupIndex, Number(groupIdFor(product)), Number(pid)))
-                    childIds.add(cid);
-            }
-            return Array.from(childIds);
-        },
-        [variantGroupIndex],
     );
 
     const validation = React.useMemo(() => {
@@ -445,23 +374,16 @@ export function useCreateBatchState({
 
     const setDraftPrice = React.useCallback(
         (product: api.ProductSearchRow, priceTypeId: number, value: string) => {
-            let hydrateIds: number[] = [];
             setDraftPrices((prev) => {
                 const next = new Map(prev);
-                const keysToUpdate = [cellKey(product.product_id, priceTypeId)].filter((k) => !pendingValuesRef.current.has(k));
-                if (applyParentPriceToChildren && !isChildVariant(product)) {
-                    for (const cid of childVariantIdsForGroup(variantGroupIndex, Number(groupIdFor(product)), product.product_id))
-                        if (!pendingValuesRef.current.has(cellKey(cid, priceTypeId))) keysToUpdate.push(cellKey(cid, priceTypeId));
-                }
-                for (const k of keysToUpdate) { if (value.trim()) next.set(k, value); else next.delete(k); }
-                if (applyParentPriceToChildren && !isChildVariant(product) && value.trim())
-                    hydrateIds = childVariantIdsForGroup(variantGroupIndex, Number(groupIdFor(product)), product.product_id);
+                const key = cellKey(product.product_id, priceTypeId);
+                if (pendingValuesRef.current.has(key)) return prev;
+                if (value.trim()) next.set(key, value); else next.delete(key);
                 return next;
             });
-            if (hydrateIds.length > 0) void ensureCatalogHydrated(hydrateIds);
             setErrors((prev) => ({ ...prev, lines: undefined }));
         },
-        [applyParentPriceToChildren, ensureCatalogHydrated, variantGroupIndex],
+        [],
     );
 
     const buildLines = React.useCallback((): CreatePriceChangeBatchPayload["lines"] => {
@@ -479,17 +401,8 @@ export function useCreateBatchState({
             lines.push({ product_id: pid, price_type_id: ptid, current_price: currentPriceFor(product, pt), proposed_price: parsed.value });
         };
         for (const [key, raw] of draftPrices) { const [p, t] = key.split(":"); addLine(Number(p), Number(t), raw); }
-        if (applyParentPriceToChildren) {
-            for (const [key, raw] of draftPrices) {
-                const [p, t] = key.split(":");
-                const product = catalog.get(Number(p));
-                if (!product || isChildVariant(product)) continue;
-                for (const cid of childVariantIdsForGroup(variantGroupIndex, Number(groupIdFor(product)), Number(p)))
-                    if (!draftPrices.has(cellKey(cid, Number(t)))) addLine(cid, Number(t), raw);
-            }
-        }
         return lines;
-    }, [applyParentPriceToChildren, currentPriceFor, draftPrices, priceTypesById, variantGroupIndex]);
+    }, [currentPriceFor, draftPrices, priceTypesById]);
 
     const buildCostLines = React.useCallback((): CreateCCRPayload[] => {
         const items: CreateCCRPayload[] = [];
@@ -504,28 +417,6 @@ export function useCreateBatchState({
         return items;
     }, [currentCostMap, draftCosts]);
 
-    React.useEffect(() => {
-        if (!applyParentPriceToChildren || variantGroupIndex.size === 0 || draftPrices.size === 0) return;
-        let hydrateIds: number[] = [];
-        setDraftPrices((prev) => {
-            const next = new Map(prev);
-            let changed = false;
-            for (const [key, raw] of prev) {
-                const [p, t] = key.split(":");
-                const product = productCatalogRef.current.get(Number(p));
-                if (!product || isChildVariant(product)) continue;
-                for (const cid of childVariantIdsForGroup(variantGroupIndex, Number(groupIdFor(product)), Number(p))) {
-                    const ck = cellKey(cid, Number(t));
-                    if (pendingValuesRef.current.has(ck)) continue;
-                    if (!next.has(ck)) { next.set(ck, raw); changed = true; }
-                }
-            }
-            if (changed) hydrateIds = collectChildIdsForPropagation(next);
-            return changed ? next : prev;
-        });
-        if (hydrateIds.length > 0) void ensureCatalogHydrated(hydrateIds);
-    }, [applyParentPriceToChildren, collectChildIdsForPropagation, draftPrices.size, ensureCatalogHydrated, variantGroupIndex]);
-
     const gridNav = useEditableGridNavigation({
         rowCount: gridProducts.length,
         colCount: priceTypes.length + (showListCost ? 1 : 0),
@@ -533,7 +424,7 @@ export function useCreateBatchState({
         onPasteSkipped: (count) => toast.warning(`${count} pasted cell(s) skipped. Only non-negative numbers are accepted.`),
     });
 
-    const catalogLoading = loadingPriceTypes || loadingProducts || loadingVariantIndex;
+    const catalogLoading = loadingPriceTypes || loadingProducts;
 
     const canSubmit =
         !saving && !catalogLoading && Boolean(supplierId) && Boolean(remarks.trim()) &&
@@ -551,7 +442,6 @@ export function useCreateBatchState({
 
         setSaving(true);
         try {
-            if (applyParentPriceToChildren) await ensureCatalogHydrated(collectChildIdsForPropagation(draftPrices));
             const priceLines = buildLines();
             const costItems = buildCostLines();
             if (priceLines.length === 0 && costItems.length === 0) { setErrors({ lines: "Enter at least one proposed price or list cost." }); return; }
@@ -574,17 +464,16 @@ export function useCreateBatchState({
         } catch (error: unknown) {
             toast.error(error instanceof Error ? error.message : "Failed to create price change batch");
         } finally { setSaving(false); }
-    }, [applyParentPriceToChildren, buildCostLines, buildLines, collectChildIdsForPropagation, draftPrices, ensureCatalogHydrated, onCreated, onOpenChange, referenceNo, remarks, supplierId, validation.invalidCostIds.size, validation.invalidPriceKeys.size]);
+    }, [buildCostLines, buildLines, onCreated, onOpenChange, referenceNo, remarks, supplierId, validation.invalidCostIds.size, validation.invalidPriceKeys.size]);
 
     return {
         supplierId, referenceNo, remarks, errors, setErrors, setRemarks,
-        applyParentPriceToChildren, setApplyParentPriceToChildren,
         priceTypes, unitLabelMap, products, productCatalog, tierPriceMap,
         draftPrices, draftCosts, currentCostMap, pendingValues,
         catalogPage, setCatalogPage, catalogPageSize, setCatalogPageSize,
         catalogTotal, catalogTotalVariants, catalogTotalPages,
         catalogQuery, localCatalogQ, setLocalCatalogQ,
-        variantGroupIndex, loadingPriceTypes, loadingProducts, loadingVariantIndex,
+        loadingPriceTypes, loadingProducts,
         loadError, saving, importedProductIds, catalogViewMode, setCatalogViewMode,
         handleSupplierChange, applyCatalogSearch,
         gridProducts, showingImportedView,

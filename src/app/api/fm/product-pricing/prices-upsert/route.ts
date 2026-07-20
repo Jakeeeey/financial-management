@@ -173,6 +173,7 @@ export async function POST(req: NextRequest) {
             }
         }
 
+<<<<<<< HEAD
         const existingTargets = Array.from(
             new Map(
                 lines
@@ -202,6 +203,53 @@ export async function POST(req: NextRequest) {
                     targets: existingTargets,
                 },
                 { status: 409 },
+=======
+        const toCreate: CreatePriceRecordPayload[] = [];
+        const toUpdate: Array<{ id: number; payload: PriceRecordPayload }> = [];
+
+        for (const line of lines) {
+            const pid = Number(line.product_id);
+            const ptid = Number(line.price_type_id);
+            const key = `${pid}:${ptid}`;
+
+            const payload: PriceRecordPayload = {
+                status: (line.status ?? "approved").trim() || "approved",
+                product_id: pid,
+                price_type_id: ptid,
+                price: line.price === null || line.price === undefined
+                    ? null
+                    : assertValidPriceValue(line.price, "price"),
+                updated_by: userId,
+            };
+
+            const existingId = existingKeyToId.get(key);
+            if (existingId) {
+                toUpdate.push({ id: existingId, payload });
+            } else {
+                toCreate.push({ ...payload, created_by: userId });
+            }
+        }
+
+        let affected = 0;
+
+        if (toCreate.length) {
+            const createUrl = `${DIRECTUS_URL}/items/${PRICES}`;
+            const res = await fetchDirectus<{ data: ExistingPriceRow[] }>(createUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(toCreate),
+            });
+            affected += (res.data ?? []).length;
+        }
+
+        if (toUpdate.length) {
+            await batchAsyncOps(toUpdate, ({ id, payload }) =>
+                fetchDirectus<unknown>(`${DIRECTUS_URL}/items/${PRICES}/${id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                }),
+>>>>>>> 8db1519f4617ef1354ca9e9088a3f556108697fd
             );
         }
 

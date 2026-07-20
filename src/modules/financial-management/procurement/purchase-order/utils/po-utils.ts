@@ -18,6 +18,7 @@ export function formatCurrency(val: number | string | null | undefined): string 
 }
 
 export function toNum(val: unknown): number {
+  if (typeof val === "string") return Number(val.replace(/,/g, ""));
   return Number(val ?? 0);
 }
 
