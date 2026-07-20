@@ -27,6 +27,14 @@ interface DirectusCustomer {
   customer_name: string;
 }
 
+interface DirectusCollectionCheck {
+  id: number;
+  customer_code: string | null;
+  check_no: string | null;
+  amount: number | null;
+  invoice_id: number | null;
+}
+
 interface DirectusPayment   { invoice_id: number; paid_amount: number | null; }
 interface DirectusReturn    { invoice_no: number; amount: number | null; }
 interface DirectusMemo      {
@@ -107,6 +115,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const rawQuery = searchParams.get("query");
   const searchTerm = rawQuery ? rawQuery.trim() : "";
+  const rawPouchId = searchParams.get("pouchId");
+  const pouchId = rawPouchId ? rawPouchId.trim() : "";
 
   // 3. Fetch a small candidate set of unpaid (and unposted) invoices.
   //
@@ -140,25 +150,49 @@ export async function GET(request: NextRequest) {
   const lowerQuery = searchTerm.toLowerCase();
 
   try {
+    const matchingCustomers = searchTerm
+      ? await fetchAll<DirectusCustomer>(
+        `/items/customer?filter[customer_name][_contains]=${encodeURIComponent(searchTerm)}&fields=customer_code`
+      ).catch(() => [] as DirectusCustomer[])
+      : [];
+
+    const matchedChecks = searchTerm && pouchId
+      ? await fetchAll<DirectusCollectionCheck>(
+        `/items/collection_details?limit=25&fields=id,customer_code,check_no,amount,invoice_id&filter[_and][0][collection_id][_eq]=${encodeURIComponent(pouchId)}&filter[_and][1][check_no][_contains]=${encodeURIComponent(searchTerm)}`
+      ).catch(() => [] as DirectusCollectionCheck[])
+      : [];
+
+    const matchingCustomerCodes = matchingCustomers.map(c => c.customer_code).filter(Boolean);
+    const checkCustomerCodes = Array.from(new Set(
+      matchedChecks.map(check => check.customer_code).filter((code): code is string => !!code)
+    ));
+    const checkInvoiceIds = Array.from(new Set(
+      matchedChecks.map(check => check.invoice_id).filter((id): id is number => id !== null && id !== undefined)
+    ));
+
     let candidateFilter =
       `filter[_and][0][payment_status][_neq]=Paid` +
       `&filter[_and][1][_or][0][isPosted][_null]=true` +
       `&filter[_and][1][_or][1][isPosted][_eq]=false`;
 
     if (searchTerm) {
-      // Pre-fetch matching customers to check their codes
-      const matchingCustomers = await fetchAll<DirectusCustomer>(
-        `/items/customer?filter[customer_name][_contains]=${encodeURIComponent(searchTerm)}&fields=customer_code`
-      ).catch(() => [] as DirectusCustomer[]);
-      const matchingCustomerCodes = matchingCustomers.map(c => c.customer_code).filter(Boolean);
+      let searchOr = "";
+      let orIndex = 0;
 
-      let searchOr = `&filter[_and][2][_or][0][invoice_no][_contains]=${encodeURIComponent(searchTerm)}`;
-      searchOr += `&filter[_and][2][_or][1][customer_code][_contains]=${encodeURIComponent(searchTerm)}`;
-      
-      matchingCustomerCodes.forEach((code, idx) => {
-        searchOr += `&filter[_and][2][_or][${idx + 2}][customer_code][_eq]=${encodeURIComponent(code)}`;
+      searchOr += `&filter[_and][2][_or][${orIndex}][invoice_no][_contains]=${encodeURIComponent(searchTerm)}`;
+      orIndex += 1;
+      searchOr += `&filter[_and][2][_or][${orIndex}][customer_code][_contains]=${encodeURIComponent(searchTerm)}`;
+      orIndex += 1;
+
+      [...matchingCustomerCodes, ...checkCustomerCodes].forEach((code) => {
+        searchOr += `&filter[_and][2][_or][${orIndex}][customer_code][_eq]=${encodeURIComponent(code)}`;
+        orIndex += 1;
       });
-      candidateFilter += searchOr;
+      checkInvoiceIds.forEach((invoiceId) => {
+        searchOr += `&filter[_and][2][_or][${orIndex}][invoice_id][_eq]=${invoiceId}`;
+        orIndex += 1;
+      });
+      if (searchOr) candidateFilter += searchOr;
     }
 
     candidateFilter += `&limit=${CANDIDATE_LIMIT}&fields=${invoiceFields}&sort=-invoice_id`;
@@ -171,12 +205,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json([]);
     }
 
+    const checkByCustomer = new Map<string, DirectusCollectionCheck>();
+    const checkByInvoice = new Map<number, DirectusCollectionCheck>();
+    for (const check of matchedChecks) {
+      if (check.invoice_id !== null && check.invoice_id !== undefined && !checkByInvoice.has(check.invoice_id)) {
+        checkByInvoice.set(check.invoice_id, check);
+      }
+      if (check.customer_code && !checkByCustomer.has(check.customer_code)) {
+        checkByCustomer.set(check.customer_code, check);
+      }
+    }
+
     const invoiceIds = candidates.map(inv => inv.invoice_id);
     const customerCodes = Array.from(
       new Set(
-        candidates
+        [
+          ...candidates
           .map(inv => inv.customer_code)
-          .filter((c): c is string => !!c)
+          .filter((c): c is string => !!c),
+          ...checkCustomerCodes,
+        ]
       )
     );
 
@@ -314,34 +362,57 @@ export async function GET(request: NextRequest) {
         if (lowerQuery) {
           const matchesInvoice  = (row.inv.invoice_no || "").toLowerCase().includes(lowerQuery);
           const matchesCustomer = (row.customerName || "").toLowerCase().includes(lowerQuery);
-          if (!matchesInvoice && !matchesCustomer) return false;
+          const matchesCollectionCheck =
+            !!checkByInvoice.get(row.inv.invoice_id) ||
+            !!(row.inv.customer_code && checkByCustomer.get(row.inv.customer_code));
+          if (!matchesInvoice && !matchesCustomer && !matchesCollectionCheck) return false;
         }
         // JPA filter: remainingBalance > 0.01
         if (row.remainingBalance <= 0.01) return false;
         return true;
       })
+      .sort((a, b) => {
+        const aCheckMatch = !!checkByInvoice.get(a.inv.invoice_id) || !!(a.inv.customer_code && checkByCustomer.get(a.inv.customer_code));
+        const bCheckMatch = !!checkByInvoice.get(b.inv.invoice_id) || !!(b.inv.customer_code && checkByCustomer.get(b.inv.customer_code));
+        if (aCheckMatch !== bCheckMatch) return aCheckMatch ? -1 : 1;
+        return b.inv.invoice_id - a.inv.invoice_id;
+      })
       .slice(0, 10) // Mirrors PageRequest.of(0, 10)
-      .map(row => ({
-        id: row.inv.invoice_id,
-        invoiceId: row.inv.invoice_id,
-        invoiceNo: row.inv.invoice_no,
-        customerName: row.customerName,
-        transactionDate: row.inv.invoice_date,
-        dueDate: row.inv.due_date,
-        agingDays: row.agingDays,
-        originalAmount: row.netReceivable,
-        totalPayments: row.totalPaid,
-        totalMemos: row.creditMemos + row.debitMemos,
-        totalReturns: row.returnAmount,
-        remainingBalance: row.remainingBalance,
-        // Detailed forensic breakdown (optional fields used by SettlementAllocation)
-        grossAmount: row.grossAmount,
-        discountAmount: row.discountAmount,
-        returnAmount: row.returnAmount,
-        appliedCreditMemos: row.creditMemos,
-        appliedDebitMemos: row.debitMemos,
-        unfulfilledAmount: row.unfulfilledAmt,
-      }));
+      .map(row => {
+        const matchedCheck =
+          checkByInvoice.get(row.inv.invoice_id) ||
+          (row.inv.customer_code ? checkByCustomer.get(row.inv.customer_code) : undefined);
+        const matchedCollectionCustomerName = matchedCheck?.customer_code
+          ? customerMap.get(matchedCheck.customer_code) || matchedCheck.customer_code
+          : undefined;
+
+        return {
+          id: row.inv.invoice_id,
+          invoiceId: row.inv.invoice_id,
+          invoiceNo: row.inv.invoice_no,
+          customerName: row.customerName,
+          transactionDate: row.inv.invoice_date,
+          dueDate: row.inv.due_date,
+          agingDays: row.agingDays,
+          originalAmount: row.netReceivable,
+          totalPayments: row.totalPaid,
+          totalMemos: row.creditMemos + row.debitMemos,
+          totalReturns: row.returnAmount,
+          remainingBalance: row.remainingBalance,
+          matchSource: matchedCheck ? "collection_check" : "invoice",
+          matchedCheckNo: matchedCheck?.check_no || undefined,
+          matchedCheckAmount: matchedCheck?.amount ?? undefined,
+          matchedCollectionDetailId: matchedCheck?.id,
+          matchedCollectionCustomerName,
+          // Detailed forensic breakdown (optional fields used by SettlementAllocation)
+          grossAmount: row.grossAmount,
+          discountAmount: row.discountAmount,
+          returnAmount: row.returnAmount,
+          appliedCreditMemos: row.creditMemos,
+          appliedDebitMemos: row.debitMemos,
+          unfulfilledAmount: row.unfulfilledAmt,
+        };
+      });
 
     return NextResponse.json(results);
   } catch (err: unknown) {
