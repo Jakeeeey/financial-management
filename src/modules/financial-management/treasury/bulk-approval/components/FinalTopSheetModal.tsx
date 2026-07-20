@@ -13,6 +13,11 @@ import {
   ShieldCheck,
   Users,
   XCircle,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  RotateCw,
+  Move,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
@@ -44,7 +49,7 @@ type Props = {
   open: boolean;
   group: FinalHeaderGroup | null;
   onOpenChange: (open: boolean) => void;
-  onSubmitted: () => void | Promise<void>;
+  onSubmitted: (shouldClose?: boolean) => void | Promise<void>;
 };
 
 type ApprovalMeta = {
@@ -54,6 +59,8 @@ type ApprovalMeta = {
   is_finalized?: boolean;
   current_tier?: number;
   required_approver_level?: number;
+  current_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
+  next_tier_approvers?: { approver_id: number; name: string; voted: boolean }[];
 };
 
 function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null | undefined): ApprovalMeta {
@@ -64,16 +71,28 @@ function getApprovalMeta(source: (ApprovalMeta & Record<string, unknown>) | null
     is_finalized: source?.is_finalized,
     current_tier: source?.current_tier,
     required_approver_level: source?.required_approver_level,
+    current_tier_approvers: source?.current_tier_approvers ?? [],
+    next_tier_approvers: source?.next_tier_approvers ?? [],
   };
 }
 
 function formatDraftStatusList(statuses?: string[]) {
   const clean = [...new Set((statuses ?? []).filter(Boolean))];
-  return clean.length > 0 ? clean.join(", ") : "No draft status";
+  return clean.length > 0 ? clean.map(s => s.replace(/Pending_L\d+/gi, "Pending Review").replace(/_/g, " ")).join(", ") : "No draft status";
 }
 
 function getApprovalInfo(meta: ApprovalMeta) {
-  const currentLevel = meta.current_tier ? `Level ${meta.current_tier}` : "not yet routed";
+  const pendingApprovers = (meta.current_tier_approvers ?? [])
+    .filter((a) => !a.voted)
+    .map((a) => a.name);
+  
+  const pendingText = pendingApprovers.length > 0
+    ? ` (waiting for approver: ${pendingApprovers.join(", ")})`
+    : (meta.next_tier_approvers && meta.next_tier_approvers.length > 0
+      ? ` (processing to next tier: ${meta.next_tier_approvers.map(a => a.name).join(", ")})`
+      : "");
+
+  const currentLevel = meta.current_tier ? `Level ${meta.current_tier}${pendingText}` : "not yet routed";
   const requiredLevel = meta.required_approver_level ? `Level ${meta.required_approver_level}` : "final approver level";
   const currentStatuses = formatDraftStatusList(meta.draft_statuses);
   const isApproved = (meta.draft_statuses?.length ?? 0) > 0 && meta.draft_statuses?.every((s) => s === "Approved");
@@ -92,8 +111,8 @@ function getApprovalInfo(meta: ApprovalMeta) {
 
   if (meta.can_act) {
     return {
-      title: "Ready for final approver action",
-      description: `Current status: ${currentStatuses}. This top sheet is already on ${requiredLevel}.`,
+      title: "Ready for your Final Top-Sheet Review",
+      description: `This top sheet has reached your level (${requiredLevel}) and is ready for your action. Current status: ${currentStatuses}.`,
       shortLabel: "Ready",
       tone: "ready" as const,
       currentLevel,
@@ -103,8 +122,8 @@ function getApprovalInfo(meta: ApprovalMeta) {
   }
 
   return {
-    title: "View-only until previous approval tier is completed",
-    description: `Current status: ${currentStatuses}. Current approval tier is ${currentLevel}; final approver actions are enabled only at ${requiredLevel}.`,
+    title: "Waiting for other approvers",
+    description: `This top sheet is currently being reviewed by ${currentLevel} approvers. You can only take action once it reaches your level (${requiredLevel}). Current status: ${currentStatuses}.`,
     shortLabel: "Waiting",
     tone: "waiting" as const,
     currentLevel,
@@ -153,6 +172,11 @@ function getDetailsForTarget(
   details: FinalTopSheetDetail[],
   target: FinalDecisionTarget
 ) {
+  if (target.scope === "expense_ids") {
+    const expenseIdSet = new Set(target.expense_ids);
+    return details.filter((detail) => expenseIdSet.has(detail.expense_id));
+  }
+
   const actionableDetails = details.filter((d) => {
     const s = (d.status ?? "").toLowerCase();
     return !s.includes("concern") && s !== "rejected";
@@ -175,8 +199,7 @@ function getDetailsForTarget(
     );
   }
 
-  const expenseIdSet = new Set(target.expense_ids);
-  return actionableDetails.filter((detail) => expenseIdSet.has(detail.expense_id));
+  return [];
 }
 
 function requiresLineRemarks(status: FinalHeaderDecisionStatus) {
@@ -204,7 +227,7 @@ function buildDecisionPayload(params: {
   };
 
   if (params.target.scope === "encoder") {
-    return { ...base, employee_id: params.target.employee_id };
+    return { ...base, employee_id: params.target.employee_id, header_id: params.target.header_id };
   }
 
   if (params.target.scope === "coa") {
@@ -216,6 +239,7 @@ function buildDecisionPayload(params: {
       ...base,
       employee_id: params.target.employee_id,
       coa_id: params.target.coa_id,
+      header_id: params.target.header_id,
     };
   }
 
@@ -369,11 +393,40 @@ export default function FinalTopSheetModal({
   const [lineRemarks, setLineRemarks] = React.useState<LineRemarksMap>({});
   const [pendingRemarksDecision, setPendingRemarksDecision] = React.useState<PendingRemarksDecision>(null);
   const [remarksDialogOpen, setRemarksDialogOpen] = React.useState(false);
+  const [remarksConfirmOpen, setRemarksConfirmOpen] = React.useState(false);
   const [stagedDecisions, setStagedDecisions] = React.useState<Record<string, { target: FinalDecisionTarget; status: FinalHeaderDecisionStatus }>>({});
   const [finalConfirmOpen, setFinalConfirmOpen] = React.useState(false);
   const [selectedAuditeeId, setSelectedAuditeeId] = React.useState<number | null>(null);
+  const [selectedHeaderId, setSelectedHeaderId] = React.useState<number | null>(null);
   const [auditeeDetailOpen, setAuditeeDetailOpen] = React.useState(false);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+  const [zoom, setZoom] = React.useState(1);
+  const [rotation, setRotation] = React.useState(0);
+  const [fullScreenEl, setFullScreenEl] = React.useState<HTMLDivElement | null>(null);
+
+  // Native wheel handler to prevent page scroll (non-passive)
+  React.useEffect(() => {
+    if (!fullScreenEl) return;
+    const handleFullScreenWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.deltaY < 0) setZoom(prev => Math.min(Math.max(prev + 0.1, 0.5), 5));
+      else setZoom(prev => Math.max(prev - 0.1, 0.5));
+    };
+    fullScreenEl.addEventListener("wheel", handleFullScreenWheel, { passive: false });
+    return () => fullScreenEl.removeEventListener("wheel", handleFullScreenWheel);
+  }, [fullScreenEl]);
+
+  React.useEffect(() => {
+    if (!previewUrl) {
+      setZoom(1);
+      setRotation(0);
+    }
+  }, [previewUrl]);
+
+  const handleZoom = (delta: number) => {
+    setZoom(prev => Math.min(Math.max(prev + delta, 0.5), 5));
+  };
+
 
   const activeApprovalMeta = React.useMemo(() => {
     return getApprovalMeta((data?.group ?? group) as (ApprovalMeta & Record<string, unknown>) | null | undefined);
@@ -396,7 +449,33 @@ export default function FinalTopSheetModal({
       { approved: 0, concern: 0, rejected: 0 }
     );
   }, [stagedDecisionEntries]);
-  const isApprovedHistory = !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s === "Approved")) && !canSubmitFinalAction;
+
+  const stagedApprovedStats = React.useMemo(() => {
+    if (!data) return { count: 0, amount: 0 };
+
+    const approvedDetailIds = new Set<number>();
+
+    for (const item of stagedDecisionEntries) {
+      if (item.status === "Approved") {
+        const details = getDetailsForTarget(data.details, item.target);
+        for (const d of details) {
+          approvedDetailIds.add(d.expense_id);
+        }
+      }
+    }
+
+    const totalAmount = data.details
+      .filter((d) => approvedDetailIds.has(d.expense_id))
+      .reduce((sum, d) => sum + d.amount, 0);
+
+    return {
+      count: approvedDetailIds.size,
+      amount: totalAmount,
+    };
+  }, [stagedDecisionEntries, data]);
+
+  const isRejectedHistory = !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s.toLowerCase() === "rejected")) && !canSubmitFinalAction;
+  const isApprovedHistory = !isRejectedHistory && !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s === "Approved" || s === "Rejected" || s === "Posted")) && !canSubmitFinalAction;
   const actionDisabledReason = canSubmitFinalAction ? undefined : approvalInfo.description;
 
   React.useEffect(() => {
@@ -411,6 +490,7 @@ export default function FinalTopSheetModal({
         setLoading(true);
         setData(null);
         setSelectedAuditeeId(null);
+        setSelectedHeaderId(null);
         setAuditeeDetailOpen(false);
         setRemarks("");
         setLineRemarks({});
@@ -441,16 +521,26 @@ export default function FinalTopSheetModal({
     };
   }, [group, open]);
 
-  function handleOpenAuditeeDetails(employeeId: number) {
+  function handleOpenAuditeeDetails(employeeId: number, headerId?: number) {
     setSelectedAuditeeId(employeeId);
+    setSelectedHeaderId(headerId ?? null);
     setAuditeeDetailOpen(true);
   }
 
   function getTargetKey(target: FinalDecisionTarget) {
     if (target.scope === "all") return "all";
-    if (target.scope === "encoder") return `encoder:${target.employee_id}`;
+    if (target.scope === "encoder") {
+      return target.header_id
+        ? `encoder:${target.employee_id}:${target.header_id}`
+        : `encoder:${target.employee_id}`;
+    }
     if (target.scope === "coa") return `coa:${target.coa_id}`;
-    if (target.scope === "cell") return `cell:${target.employee_id}:${target.coa_id}`;
+    if (target.scope === "cell") {
+      return target.header_id
+        ? `cell:${target.employee_id}:${target.coa_id}:${target.header_id}`
+        : `cell:${target.employee_id}:${target.coa_id}`;
+    }
+    if (target.scope === "expense_ids" && target.expense_ids?.length) return `expense:${target.expense_ids[0]}`;
     return "unknown";
   }
 
@@ -564,17 +654,19 @@ export default function FinalTopSheetModal({
     setLineRemarks((current) => ({ ...current, [expenseId]: value }));
   }
 
-  async function refreshAfterDecision() {
+  async function refreshAfterDecision(shouldClose: boolean = false) {
     if (!group) return;
 
-    await onSubmitted();
+    await onSubmitted(shouldClose);
 
-    const refreshed = await api.getFinalTopSheet({
-      division_id: group.division_id,
-      period_from: group.period_from,
-      period_to: group.period_to,
-    });
-    setData(refreshed);
+    if (!shouldClose) {
+      const refreshed = await api.getFinalTopSheet({
+        division_id: group.division_id,
+        period_from: group.period_from,
+        period_to: group.period_to,
+      });
+      setData(refreshed);
+    }
   }
 
   async function submitSingleDecisionRequest(params: {
@@ -618,6 +710,7 @@ export default function FinalTopSheetModal({
     status: Extract<FinalHeaderDecisionStatus, "Rejected" | "With Concern">,
     affectedDetails: FinalTopSheetDetail[]
   ) {
+    if (submitting) return;
     if (!group) return;
 
     if (!canSubmitFinalAction) {
@@ -652,7 +745,11 @@ export default function FinalTopSheetModal({
       );
       setPendingRemarksDecision(null);
       setRemarksDialogOpen(false);
+      setRemarksConfirmOpen(false);
       await refreshAfterDecision();
+      if (selectedAuditeeId !== null) {
+        setTimeout(() => setAuditeeDetailOpen(true), 0);
+      }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to submit final decision.");
     } finally {
@@ -662,11 +759,15 @@ export default function FinalTopSheetModal({
 
   async function submitTargetDecision(
     status: FinalHeaderDecisionStatus,
-    target: FinalDecisionTarget
+    target: FinalDecisionTarget,
+    customRemarks?: string
   ) {
+    if (submitting) return;
+    console.log("[submitTargetDecision] Clicked:", { status, target, canSubmitFinalAction, group });
     if (!group) return;
 
     if (!canSubmitFinalAction) {
+      console.log("[submitTargetDecision] canSubmitFinalAction is false");
       toast.warning("This top sheet is view-only for the final approver right now.", {
         description: approvalInfo.description,
       });
@@ -674,6 +775,7 @@ export default function FinalTopSheetModal({
     }
 
     const affectedDetails = getDetailsForTarget(data?.details ?? [], target);
+    console.log("[submitTargetDecision] affectedDetails:", affectedDetails);
 
     if (affectedDetails.length === 0) {
       toast.error("The selected action has no expense lines to update.");
@@ -685,6 +787,8 @@ export default function FinalTopSheetModal({
         (detail) => !getLineRemark(lineRemarks, detail.expense_id)
       );
 
+      setAuditeeDetailOpen(false);
+
       if (missingRemarks.length > 0) {
         setPendingRemarksDecision({ status, target, affectedDetails });
         setRemarksDialogOpen(true);
@@ -692,7 +796,8 @@ export default function FinalTopSheetModal({
         return;
       }
 
-      await submitItemLevelDecisionBatch(status, affectedDetails);
+      setPendingRemarksDecision({ status, target, affectedDetails });
+      setRemarksConfirmOpen(true);
       return;
     }
 
@@ -701,7 +806,7 @@ export default function FinalTopSheetModal({
       const result = await submitSingleDecisionRequest({
         status,
         target,
-        decisionRemarks: remarks.trim(),
+        decisionRemarks: customRemarks !== undefined ? customRemarks.trim() : remarks.trim(),
       });
 
       toast.success(
@@ -716,6 +821,7 @@ export default function FinalTopSheetModal({
   }
 
   async function submitStagedAuditBatch() {
+    if (submitting) return;
     if (stagedDecisionEntries.length === 0) {
       toast.warning("No staged COA/encoder actions to submit.");
       return;
@@ -752,7 +858,7 @@ export default function FinalTopSheetModal({
       setStagedDecisions({});
       setFinalConfirmOpen(false);
       setRemarks("");
-      await refreshAfterDecision();
+      await refreshAfterDecision(true);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Batch submission failed.");
     } finally {
@@ -761,6 +867,7 @@ export default function FinalTopSheetModal({
   }
 
   async function submitPendingRemarksDecision() {
+    if (submitting) return;
     if (!pendingRemarksDecision) return;
 
     await submitItemLevelDecisionBatch(
@@ -772,7 +879,15 @@ export default function FinalTopSheetModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex !h-screen !w-screen !max-w-none !max-h-none flex-col overflow-hidden border-none p-0 sm:rounded-none">
+        <DialogContent showCloseButton={false} className="flex !h-screen !w-screen !max-w-none !max-h-none flex-col overflow-hidden border-none p-0 sm:rounded-none">
+          {submitting && (
+            <div className="absolute inset-0 z-[250] bg-slate-950/70 backdrop-blur-sm flex flex-col items-center justify-center gap-3 animate-in fade-in duration-300">
+              <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
+              <p className="text-xs font-semibold text-white/95 tracking-wide text-center">
+                Submitting...
+              </p>
+            </div>
+          )}
           <div className="shrink-0 bg-slate-50 dark:bg-gradient-to-r dark:from-slate-950 dark:via-slate-900 dark:to-[#1e1e2e] border-b dark:border-none px-5 py-3 text-slate-900 dark:text-white shadow-xl relative">
             <div className="flex items-center justify-between gap-4 relative z-10">
               <DialogTitle className="flex items-center gap-3 text-base font-black tracking-tight text-slate-900 dark:text-white">
@@ -797,22 +912,25 @@ export default function FinalTopSheetModal({
               </DialogTitle>
 
               <div className="flex items-center gap-2">
+
                 {group && (
-                  <div className="flex items-center gap-2 bg-white/5 p-1.5 rounded-xl border border-white/10">
+                  <div className="flex items-center gap-2 bg-slate-100 dark:bg-white/5 p-1.5 rounded-xl border border-slate-200 dark:border-white/10">
                     <Badge className="rounded-lg bg-primary/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-primary border border-primary/30">
                       {group.division_name ?? `Division #${group.division_id}`}
                     </Badge>
-                    <span className="text-[10px] font-bold text-white/50">
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-white/50">
                       {formatDate(group.period_from)} – {formatDate(group.period_to)}
                     </span>
                     <Badge className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${
-                      isApprovedHistory
-                        ? "border border-emerald-500/30 bg-emerald-500/20 text-emerald-400"
-                        : canSubmitFinalAction 
-                          ? "border border-emerald-300/40 bg-emerald-400/15 text-emerald-200" 
-                          : "border border-amber-300/40 bg-amber-400/15 text-amber-200"
+                      isRejectedHistory
+                        ? "border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400"
+                        : isApprovedHistory
+                          ? "border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                          : canSubmitFinalAction 
+                            ? "border border-emerald-100 dark:border-emerald-300/40 bg-emerald-50 dark:bg-emerald-400/15 text-emerald-600 dark:text-emerald-200" 
+                            : "border border-amber-200 dark:border-amber-300/40 bg-amber-50 dark:bg-amber-400/15 text-amber-700 dark:text-amber-200"
                     }`}>
-                      {isApprovedHistory ? "FINALIZED" : approvalInfo.shortLabel}
+                      {isRejectedHistory ? "REJECTED" : isApprovedHistory ? "FINALIZED" : approvalInfo.shortLabel}
                     </Badge>
                   </div>
                 )}
@@ -845,49 +963,61 @@ export default function FinalTopSheetModal({
             ) : (
               <div className="flex h-full flex-col gap-4 animate-in fade-in duration-500 overflow-hidden">
                 <div className={`flex items-center justify-between gap-6 rounded-2xl border px-6 py-4 transition-all ${
-                  isApprovedHistory 
-                    ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50 shadow-sm dark:shadow-none shadow-emerald-100/20" 
-                    : canSubmitFinalAction 
+                  isRejectedHistory
+                    ? "bg-rose-50 dark:bg-rose-900/20 border-rose-100 dark:border-rose-800/50 shadow-sm dark:shadow-none shadow-rose-100/20"
+                    : isApprovedHistory || canSubmitFinalAction 
                       ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50 shadow-sm dark:shadow-none shadow-emerald-100/20" 
                       : "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"
                 }`}>
                   <div className="flex items-center gap-5">
                     <div className={`flex h-12 w-12 items-center justify-center rounded-full ring-4 ${
-                      isApprovedHistory
-                        ? "bg-emerald-500/10 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 ring-emerald-500/5 dark:ring-emerald-900/20"
-                        : canSubmitFinalAction 
+                      isRejectedHistory
+                        ? "bg-rose-500/10 dark:bg-rose-900/40 text-rose-600 dark:text-rose-500 ring-rose-500/5 dark:ring-rose-900/20"
+                        : isApprovedHistory || canSubmitFinalAction 
                           ? "bg-emerald-500/10 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 ring-emerald-500/5 dark:ring-emerald-900/20" 
                           : "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 ring-slate-100 dark:ring-slate-900"
                     }`}>
-                      {isApprovedHistory || canSubmitFinalAction ? <ShieldCheck className="h-6 w-6" /> : <ShieldAlert className="h-6 w-6" />}
+                      {isRejectedHistory ? <ShieldAlert className="h-6 w-6" /> : isApprovedHistory || canSubmitFinalAction ? <ShieldCheck className="h-6 w-6" /> : <ShieldAlert className="h-6 w-6" />}
                     </div>
                     <div className="space-y-1">
                       <h3 className={`text-sm font-black tracking-tight ${
-                        isApprovedHistory || canSubmitFinalAction ? "text-emerald-900 dark:text-emerald-400" : "text-slate-900 dark:text-slate-100"
+                        isRejectedHistory
+                          ? "text-rose-900 dark:text-rose-400"
+                          : isApprovedHistory || canSubmitFinalAction 
+                            ? "text-emerald-900 dark:text-emerald-400" 
+                            : "text-slate-900 dark:text-slate-100"
                       }`}>
-                        {isApprovedHistory 
-                          ? "Audit Finalized & Posted" 
-                          : canSubmitFinalAction 
-                            ? "Ready for final approver action" 
-                            : "View-only until previous approval tier is completed"}
+                        {isRejectedHistory
+                          ? "Audit Finalized & Rejected"
+                          : isApprovedHistory 
+                            ? "Audit Finalized & Posted" 
+                            : canSubmitFinalAction 
+                              ? "Ready for your Final Top-Sheet Review" 
+                              : "Waiting for other approvers"}
                       </h3>
-                      <p className={`text-[11px] font-medium leading-none ${
-                        isApprovedHistory || canSubmitFinalAction ? "text-emerald-700/70 dark:text-emerald-400/70" : "text-slate-500 dark:text-slate-400"
+                      <p className={`text-[11px] font-medium leading-normal ${
+                        isRejectedHistory
+                          ? "text-rose-700/70 dark:text-rose-400/70"
+                          : isApprovedHistory || canSubmitFinalAction 
+                            ? "text-emerald-700/70 dark:text-emerald-400/70" 
+                            : "text-slate-500 dark:text-slate-400"
                       }`}>
-                        {isApprovedHistory 
-                          ? "This top-sheet has been successfully audited and posted to the live Disbursement table."
-                          : canSubmitFinalAction 
-                            ? `Current status: ${(data?.group.draft_statuses ?? []).join(", ")}. This top-sheet is ${toNumber(data?.group.current_tier) >= 999 ? "Finalized" : `on Level ${data?.group.current_tier}`}.` 
-                            : `Current status: ${(data?.group.draft_statuses ?? []).join(", ")}. Final approver actions are enabled only at Level ${data?.group.required_approver_level}.`}
+                        {isRejectedHistory
+                          ? "This top-sheet has been successfully audited and fully rejected."
+                          : isApprovedHistory 
+                            ? "This top-sheet has been successfully audited and posted to the live Disbursement table."
+                            : canSubmitFinalAction 
+                              ? `This top sheet has reached your level and is ready for your action. Current status: ${formatDraftStatusList(data?.group.draft_statuses)}.` 
+                              : approvalInfo.description}
                       </p>
                     </div>
                   </div>
 
-                  {!isApprovedHistory && (
+                  {!isApprovedHistory && !isRejectedHistory && (
                     <div className="flex items-center gap-8">
                       <div className="text-center">
                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Status</p>
-                        <p className="text-[10px] font-black text-slate-900 dark:text-slate-200">{(data?.group.draft_statuses ?? []).join(", ")}</p>
+                        <p className="text-[10px] font-black text-slate-900 dark:text-slate-200">{formatDraftStatusList(data?.group.draft_statuses)}</p>
                       </div>
                       <div className="h-8 w-px bg-slate-200 dark:bg-slate-800" />
                       <div className="text-center">
@@ -978,7 +1108,6 @@ export default function FinalTopSheetModal({
                     data={data}
                     submitting={submitting}
                     canAct={canSubmitFinalAction}
-                    isApprovedHistory={isApprovedHistory}
                     readOnlyReason={actionDisabledReason}
                     stagedDecisions={Object.fromEntries(
                       Object.entries(stagedDecisions).map(([k, v]) => [k, v.status])
@@ -992,7 +1121,7 @@ export default function FinalTopSheetModal({
             )}
           </div>
 
-          {!isApprovedHistory && (
+          {!isApprovedHistory && !isRejectedHistory && (
             <div className="shrink-0 border-t dark:border-slate-800 bg-white dark:bg-slate-950 px-6 py-4 shadow-[0_-10px_40px_-20px_rgba(0,0,0,0.1)] dark:shadow-none">
               <div className="flex items-center justify-between gap-6 max-w-7xl mx-auto">
                 <div className="flex items-center gap-5">
@@ -1051,7 +1180,7 @@ export default function FinalTopSheetModal({
             </div>
           )}
 
-          {isApprovedHistory && (
+          {(isApprovedHistory || isRejectedHistory) && (
             <div className="shrink-0 border-t dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-6 py-4">
               <div className="flex items-center justify-between gap-6 max-w-7xl mx-auto">
                 <div className="flex items-center gap-5">
@@ -1064,7 +1193,11 @@ export default function FinalTopSheetModal({
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <p className="text-[10px] font-bold text-slate-400 italic">This top-sheet has been finalized and is currently in read-only archive mode.</p>
+                  <p className="text-[10px] font-bold text-slate-400 italic">
+                    {isRejectedHistory
+                      ? "This top-sheet was fully rejected and is currently in read-only archive mode."
+                      : "This top-sheet has been finalized and is currently in read-only archive mode."}
+                  </p>
                   <Button 
                     variant="outline" 
                     size="sm" 
@@ -1085,13 +1218,14 @@ export default function FinalTopSheetModal({
         open={auditeeDetailOpen}
         onOpenChange={setAuditeeDetailOpen}
         employeeId={selectedAuditeeId}
+        headerId={selectedHeaderId}
         data={data}
         submitting={submitting}
-        lineRemarks={lineRemarks}
-        onLineRemarkChange={handleLineRemarkChange}
-        onSubmitTargetDecision={(status, target) =>
-          void submitTargetDecision(status, target)
+        onSubmitTargetDecision={(status, target, remarks) =>
+          void submitTargetDecision(status, target, remarks)
         }
+        onToggleDecision={handleToggleDecision}
+        stagedDecisions={stagedDecisions}
         onPreviewUrl={setPreviewUrl}
       />
 
@@ -1100,13 +1234,37 @@ export default function FinalTopSheetModal({
         <DialogContent showCloseButton={false} className="max-w-[95vw] w-[95vw] h-[90vh] p-0 overflow-hidden bg-[#020617] border-none shadow-2xl flex flex-col">
           <DialogTitle className="sr-only">Evidence Preview</DialogTitle>
           <DialogDescription className="sr-only">Full-screen view of the attached evidence document</DialogDescription>
+
+          {/* Preview Header */}
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-black/40 backdrop-blur-xl border border-white/10 p-2 rounded-2xl shadow-2xl">
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => handleZoom(0.25)} title="Zoom In">
+              <ZoomIn size={20} />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => handleZoom(-0.25)} title="Zoom Out">
+              <ZoomOut size={20} />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => setRotation(prev => (prev + 90) % 360)} title="Rotate Clockwise">
+              <RotateCw size={20} />
+            </Button>
+            <div className="w-px h-6 bg-white/10 mx-1" />
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-white/70 hover:text-white hover:bg-white/10" onClick={() => { setZoom(1); setRotation(0); }} title="Reset View">
+              <RotateCcw size={20} />
+            </Button>
+            <div className="px-3 text-[10px] font-black text-white/40 uppercase tracking-widest border-l border-white/10 ml-1">
+              {Math.round(zoom * 100)}%
+            </div>
+          </div>
+
           <button
             className="absolute top-6 right-6 z-50 h-12 w-12 flex items-center justify-center text-white bg-white/5 hover:bg-rose-500/20 hover:text-rose-400 rounded-full border border-white/10 backdrop-blur-md transition-colors"
             onClick={() => setPreviewUrl(null)}
           >
             <XCircle size={24} />
           </button>
-          <div className="flex-1 relative overflow-hidden">
+          <div
+            ref={setFullScreenEl}
+            className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing"
+          >
             <AnimatePresence mode="wait">
               {previewUrl && (
                 <motion.div
@@ -1116,16 +1274,28 @@ export default function FinalTopSheetModal({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 1.1 }}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl}
-                    alt="Evidence"
-                    className="max-w-[85vw] max-h-[80vh] object-contain shadow-[0_0_80px_rgba(0,0,0,0.5)] rounded-lg pointer-events-none"
-                    draggable={false}
-                  />
+                  <motion.div
+                    drag
+                    dragMomentum={false}
+                    className="relative select-none"
+                    style={{ scale: zoom, rotate: rotation }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={previewUrl}
+                      alt="Evidence"
+                      className="max-w-[85vw] max-h-[80vh] object-contain shadow-[0_0_80px_rgba(0,0,0,0.5)] rounded-lg pointer-events-none"
+                      draggable={false}
+                    />
+                  </motion.div>
                 </motion.div>
               )}
             </AnimatePresence>
+
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/20 text-[9px] font-black uppercase tracking-[0.3em] flex items-center gap-3">
+              <Move size={12} />
+              Drag to Navigate • Scroll to Zoom
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -1137,11 +1307,101 @@ export default function FinalTopSheetModal({
         submitting={submitting}
         onOpenChange={(nextOpen) => {
           setRemarksDialogOpen(nextOpen);
-          if (!nextOpen) setPendingRemarksDecision(null);
+          if (!nextOpen) {
+            setPendingRemarksDecision(null);
+            if (selectedAuditeeId !== null) {
+              setTimeout(() => setAuditeeDetailOpen(true), 0);
+            }
+          }
         }}
         onLineRemarkChange={handleLineRemarkChange}
-        onSubmit={submitPendingRemarksDecision}
+        onSubmit={() => setRemarksConfirmOpen(true)}
       />
+
+      <Dialog open={remarksConfirmOpen} onOpenChange={(nextOpen) => {
+        setRemarksConfirmOpen(nextOpen);
+        if (!nextOpen) {
+          setPendingRemarksDecision(null);
+          if (!remarksDialogOpen && selectedAuditeeId !== null) {
+            setTimeout(() => setAuditeeDetailOpen(true), 0);
+          }
+        }
+      }}>
+        <DialogContent className="max-w-md p-0 overflow-hidden border border-slate-100 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900 shadow-2xl">
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 flex items-center gap-3">
+            <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
+              pendingRemarksDecision?.status === "Rejected" 
+                ? "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400" 
+                : "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400"
+            }`}>
+              {pendingRemarksDecision?.status === "Rejected" ? (
+                <XCircle size={20} />
+              ) : (
+                <AlertTriangle size={20} />
+              )}
+            </div>
+            <div className="flex flex-col leading-none">
+              <DialogTitle className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                Confirm {pendingRemarksDecision?.status} Decision
+              </DialogTitle>
+              <DialogDescription className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
+                Final Review Step
+              </DialogDescription>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 pb-6 space-y-5">
+            <div className={`p-4 rounded-2xl border text-xs font-semibold leading-relaxed ${
+              pendingRemarksDecision?.status === "Rejected"
+                ? "bg-rose-50/40 dark:bg-rose-950/10 border-rose-100 dark:border-rose-900/30 text-rose-800 dark:text-rose-300"
+                : "bg-amber-50/40 dark:bg-amber-950/10 border-amber-100 dark:border-amber-900/30 text-amber-800 dark:text-amber-300"
+            }`}>
+              {pendingRemarksDecision?.status === "Rejected" ? (
+                <span>
+                  You are about to <strong>reject</strong> {pendingRemarksDecision?.affectedDetails.length} line item(s). These will be excluded from final disbursement drafts.
+                </span>
+              ) : (
+                <span>
+                  You are about to flag {pendingRemarksDecision?.affectedDetails.length} line item(s) as <strong>With Concern</strong>. This returns them to the encoder for correction.
+                </span>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t dark:border-slate-800">
+              <Button
+                variant="ghost"
+                className="h-9 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-4"
+                onClick={() => setRemarksConfirmOpen(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className={`h-9 rounded-xl text-[10px] font-black uppercase tracking-widest text-white shadow-md dark:shadow-none gap-2 px-5 ${
+                  pendingRemarksDecision?.status === "Rejected"
+                    ? "bg-rose-600 hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-700"
+                    : "bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
+                }`}
+                disabled={submitting}
+                onClick={async () => {
+                  await submitPendingRemarksDecision();
+                }}
+              >
+                {submitting ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <ShieldCheck size={14} />
+                )}
+                <span>Confirm {pendingRemarksDecision?.status === "Rejected" ? "Reject" : "Concern"}</span>
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={finalConfirmOpen} onOpenChange={setFinalConfirmOpen}>
         <DialogContent className="max-w-lg p-0 overflow-hidden border-none dark:border-slate-800 rounded-[2.5rem] shadow-2xl dark:shadow-none">
@@ -1172,14 +1432,39 @@ export default function FinalTopSheetModal({
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Action Scope</span>
                 <Badge variant="outline" className="bg-slate-50 dark:bg-slate-800 text-[10px] font-black px-3 py-1 rounded-lg dark:border-slate-700">
-                  Staged COA/Encoder Batch
+                  {data?.group?.division_name || "Staged COA/Encoder Batch"}
                 </Badge>
+              </div>
+              {data?.group && (
+                <>
+                  <div className="h-px bg-slate-100 dark:bg-slate-800" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Period</span>
+                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                      {formatDate(data.group.period_from)} – {formatDate(data.group.period_to)}
+                    </span>
+                  </div>
+                </>
+              )}
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Staged Actions</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">
+                  {stagedDecisionCount} Staged Decision{stagedDecisionCount !== 1 ? "s" : ""}
+                </span>
               </div>
               <div className="h-px bg-slate-100 dark:bg-slate-800" />
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Decision</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Approved Lines</span>
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">
-                  {stagedDecisionCount} staged decision{stagedDecisionCount !== 1 ? "s" : ""}
+                  {stagedApprovedStats.count} Expense Line{stagedApprovedStats.count !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="flex items-center justify-between bg-emerald-50/50 dark:bg-emerald-950/20 p-3 rounded-2xl border border-emerald-100/50 dark:border-emerald-900/30">
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 dark:text-emerald-400">Total Approved Amount</span>
+                <span className="text-sm font-black text-emerald-800 dark:text-emerald-400 tabular-nums">
+                  {formatCurrency(stagedApprovedStats.amount)}
                 </span>
               </div>
             </div>

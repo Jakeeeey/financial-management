@@ -31,6 +31,7 @@ type RelationValue = number | string | null | {
     division_id?: unknown;
     department_id?: unknown;
     coa_id?: unknown;
+    user_id?: unknown;
     supplier_name?: unknown;
     division_name?: unknown;
     department_name?: unknown;
@@ -45,11 +46,11 @@ export type DisbursementRow = {
     remarks?: unknown;
     total_amount?: unknown;
     paid_amount?: unknown;
-    encoder_id?: unknown;
-    submitted_by?: unknown;
-    approver_id?: unknown;
-    released_by?: unknown;
-    posted_by?: unknown;
+    encoder_id?: RelationValue;
+    submitted_by?: RelationValue;
+    approver_id?: RelationValue;
+    released_by?: RelationValue;
+    posted_by?: RelationValue;
     isPosted?: unknown;
     transaction_date?: unknown;
     date_created?: unknown;
@@ -84,7 +85,7 @@ export type PaymentRow = {
     date?: unknown;
     amount?: unknown;
     remarks?: unknown;
-    released_by?: unknown;
+    released_by?: RelationValue;
     released_date?: unknown;
 };
 
@@ -137,12 +138,12 @@ function asNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function relationId(
+export function relationId(
     value: RelationValue | undefined,
-    key: "id" | "division_id" | "department_id" | "coa_id" = "id",
+    key: "id" | "division_id" | "department_id" | "coa_id" | "user_id" = "id",
 ) {
     if (value == null || typeof value !== "object") return asNumber(value);
-    return asNumber(value[key] ?? value.id);
+    return asNumber((value as Record<string, unknown>)[key] ?? value.id);
 }
 
 function relationLabel(
@@ -392,7 +393,7 @@ function normalizePayment(
         accountTitle = coaMap.get(rawCoaId) || `Account #${rawCoaId}`;
     }
 
-    const releasedByVal = asNumber(row.released_by);
+    const releasedByVal = relationId(row.released_by, "user_id");
     const releasedByName = releasedByVal ? (userMap?.get(String(releasedByVal)) || `User #${releasedByVal}`) : "";
 
     const rawBankId = asNumber(row.bank_id);
@@ -438,11 +439,11 @@ export function normalizeDisbursement(
     const totalDebit = roundMoney(payables.reduce((sum, line) => sum + line.amount, 0));
     const totalCredit = roundMoney(payments.reduce((sum, line) => sum + line.amount, 0));
 
-    const encoderIdVal = asNumber(row.encoder_id);
-    const submittedByVal = asNumber(row.submitted_by);
-    const approverIdVal = asNumber(row.approver_id);
-    const releasedByVal = asNumber(row.released_by);
-    const postedByVal = asNumber(row.posted_by);
+    const encoderIdVal = relationId(row.encoder_id, "user_id");
+    const submittedByVal = relationId(row.submitted_by, "user_id");
+    const approverIdVal = relationId(row.approver_id, "user_id");
+    const releasedByVal = relationId(row.released_by, "user_id");
+    const postedByVal = relationId(row.posted_by, "user_id");
 
     const encoderName = encoderIdVal ? (userMap?.get(String(encoderIdVal)) || `User #${encoderIdVal}`) : "";
     const submittedByName = submittedByVal ? (userMap?.get(String(submittedByVal)) || `User #${submittedByVal}`) : "";
@@ -549,13 +550,17 @@ export async function getBankMap() {
     return map;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function getUserMap(token: string) {
+export async function getUserMap(token: string, userIds?: number[]) {
     const map = new Map<string, string>();
     try {
-        const res = await directusFetch<DirectusList<{ user_id?: number; user_fname?: string; user_lname?: string }>>(
-            "/items/user?limit=-1&fields=user_id,user_fname,user_lname"
-        );
+        let path = "/items/user?limit=-1&fields=user_id,user_fname,user_lname";
+        if (userIds && userIds.length > 0) {
+            const uniqueIds = Array.from(new Set(userIds.filter(Boolean)));
+            if (uniqueIds.length > 0) {
+                path = `/items/user?limit=-1&fields=user_id,user_fname,user_lname&filter[user_id][_in]=${uniqueIds.join(",")}`;
+            }
+        }
+        const res = await directusFetch<DirectusList<{ user_id?: number; user_fname?: string; user_lname?: string }>>(path);
         if (res.data && Array.isArray(res.data)) {
             res.data.forEach((u) => {
                 const id = String(u.user_id);
@@ -588,7 +593,25 @@ export async function resolveEncoderId(emailOrSub: string | null): Promise<numbe
         params.set("limit", "1");
         const res = await directusFetch<DirectusList<{ user_id?: number }>>(`/items/user?${params.toString()}`);
         const userId = res.data?.[0]?.user_id;
-        return userId ? Number(userId) : null;
+        if (userId) return Number(userId);
+
+        // Fallback: If not found by email, try matching username format (e.g. dev_vertex or clyde_pm)
+        // by splitting by _, -, or . and matching first/last name
+        const clean = emailOrSub.toLowerCase();
+        const parts = clean.split(/[._-]/);
+        if (parts.length >= 2) {
+            const fname = parts[0];
+            const lname = parts[1];
+            const fallbackParams = new URLSearchParams();
+            fallbackParams.set("filter[user_fname][_icontains]", fname);
+            fallbackParams.set("filter[user_lname][_icontains]", lname);
+            fallbackParams.set("fields", "user_id");
+            fallbackParams.set("limit", "1");
+            const fallbackRes = await directusFetch<DirectusList<{ user_id?: number }>>(`/items/user?${fallbackParams.toString()}`);
+            const fbUserId = fallbackRes.data?.[0]?.user_id;
+            if (fbUserId) return Number(fbUserId);
+        }
+        return null;
     } catch {
         return null;
     }
@@ -751,7 +774,26 @@ export async function GET(request: NextRequest) {
         const ids = rows.map((row) => asNumber(row.id) ?? 0).filter(Boolean);
         const lineItems = await getLineItems(ids);
         const totalElements = asNumber(disbursementsRes.meta?.filter_count) ?? rows.length;
-        const userMap = await getUserMap(token);
+
+        const userIdsToFetch: number[] = [];
+        const addId = (val: number | undefined) => {
+            if (typeof val === "number" && Number.isFinite(val)) {
+                userIdsToFetch.push(val);
+            }
+        };
+        rows.forEach(row => {
+            addId(relationId(row.encoder_id, "user_id"));
+            addId(relationId(row.submitted_by, "user_id"));
+            addId(relationId(row.approver_id, "user_id"));
+            addId(relationId(row.released_by, "user_id"));
+            addId(relationId(row.posted_by, "user_id"));
+            const payments = lineItems.payments.get(Number(row.id)) || [];
+            payments.forEach(p => {
+                addId(relationId(p.released_by, "user_id"));
+            });
+        });
+
+        const userMap = await getUserMap(token, userIdsToFetch);
         const coaMap = await getCoaMap();
         const divisionMap = await getDivisionMap();
         const bankMap = await getBankMap();
@@ -778,6 +820,13 @@ export async function POST(request: NextRequest) {
     const decoded = decodeJwtPayload(token);
     const encoderEmail = decoded?.email || decoded?.sub || null;
     const currentUserId = await resolveEncoderId(encoderEmail);
+
+    if (!currentUserId) {
+        return NextResponse.json({
+            message: "User Profile Not Found",
+            detail: "Your account is not registered in the system user directory. Voucher creation is blocked."
+        }, { status: 403 });
+    }
 
     try {
         const body = await request.json();
@@ -857,17 +906,34 @@ export async function POST(request: NextRequest) {
 
         const paymentLines = (body.payments || [])
             .filter((line: PaymentInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo && line.checkNo.trim() !== ""))
-            .map((line: PaymentInput) => ({
-                disbursement_id: createdId,
-                coa_id: line.coaId ? Number(line.coaId) : null,
-                bank_id: line.bankId ? Number(line.bankId) : null,
-                check_no: line.checkNo || "",
-                date: line.date,
-                amount: Number(line.amount) || 0,
-                remarks: line.remarks || "",
-                released_by: line.releasedBy ? Number(line.releasedBy) : null,
-                released_date: line.releasedDate || null
-            }));
+            .map((line: PaymentInput) => {
+                const payload: {
+                    disbursement_id: number;
+                    coa_id: number | null;
+                    bank_id: number | null;
+                    check_no: string;
+                    date: string | undefined;
+                    amount: number;
+                    remarks: string;
+                    released_by?: number;
+                    released_date?: string;
+                } = {
+                    disbursement_id: createdId,
+                    coa_id: line.coaId ? Number(line.coaId) : null,
+                    bank_id: line.bankId ? Number(line.bankId) : null,
+                    check_no: line.checkNo || "",
+                    date: line.date,
+                    amount: Number(line.amount) || 0,
+                    remarks: line.remarks || ""
+                };
+                if (line.releasedBy != null && line.releasedBy !== "") {
+                    payload.released_by = Number(line.releasedBy);
+                }
+                if (line.releasedDate != null && line.releasedDate !== "") {
+                    payload.released_date = line.releasedDate;
+                }
+                return payload;
+            });
 
         await Promise.all([
             payableLines.length > 0
@@ -887,7 +953,23 @@ export async function POST(request: NextRequest) {
         const freshDis = (await freshHeaderRes.json()).data;
 
         const lineItems = await getLineItems([createdId]);
-        const userMap = await getUserMap(token);
+        const userIdsToFetch: number[] = [];
+        const addId = (val: number | undefined) => {
+            if (typeof val === "number" && Number.isFinite(val)) {
+                userIdsToFetch.push(val);
+            }
+        };
+        addId(relationId(freshDis.encoder_id, "user_id"));
+        addId(relationId(freshDis.submitted_by, "user_id"));
+        addId(relationId(freshDis.approver_id, "user_id"));
+        addId(relationId(freshDis.released_by, "user_id"));
+        addId(relationId(freshDis.posted_by, "user_id"));
+        const payments = lineItems.payments.get(Number(createdId)) || [];
+        payments.forEach(p => {
+            addId(relationId(p.released_by, "user_id"));
+        });
+
+        const userMap = await getUserMap(token, userIdsToFetch);
         const coaMap = await getCoaMap();
         const divisionMap = await getDivisionMap();
         const bankMap = await getBankMap();

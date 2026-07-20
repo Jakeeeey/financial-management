@@ -130,6 +130,12 @@ export interface UnpaidInvoice {
 
     // AUDIT TRAIL
     history?: PaymentHistory[];
+
+    matchSource?: "invoice" | "customer" | "collection_check";
+    matchedCheckNo?: string;
+    matchedCheckAmount?: number;
+    matchedCollectionDetailId?: number;
+    matchedCollectionCustomerName?: string;
 }
 
 export interface SettlementAllocation {

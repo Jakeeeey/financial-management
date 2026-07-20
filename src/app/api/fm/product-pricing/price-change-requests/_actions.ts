@@ -195,7 +195,11 @@ export async function applyProposedPrice(args: {
     ]);
 
     const payload = {
+<<<<<<< HEAD
         status: "published",
+=======
+        status: "approved",
+>>>>>>> 8db1519f4617ef1354ca9e9088a3f556108697fd
         product_id: productId,
         price_type_id: priceTypeId,
         price: validProposedPrice,

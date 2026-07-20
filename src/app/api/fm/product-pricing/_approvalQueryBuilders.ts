@@ -16,7 +16,7 @@ export function createApprovalListParams({
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, limit)));
     params.set("offset", String(Math.max(0, offset)));
-    params.set("meta", "total_count");
+    params.set("meta", "filter_count,total_count");
     params.set("sort", sort);
     params.set("fields", fields.join(","));
     return params;
