@@ -14,7 +14,8 @@ export function isInvalidPriceValueError(error: unknown): error is InvalidPriceV
 function hasAtMostDecimalPlaces(value: number, places: number): boolean {
     const factor = 10 ** places;
     const scaled = value * factor;
-    return Math.abs(scaled - Math.round(scaled)) < 1e-8;
+    const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 2;
+    return Math.abs(scaled - Math.round(scaled)) <= tolerance;
 }
 
 export function assertValidPriceValue(value: unknown, fieldName = "price"): number {
