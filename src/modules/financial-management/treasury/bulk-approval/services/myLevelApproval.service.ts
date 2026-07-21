@@ -264,7 +264,11 @@ export async function handleMyLevelApprovalGetResource(params: {
             has_concern: true,
           };
         })
-        .filter(() => true)
+        .filter((row) => {
+          if (row.requires_final_top_sheet) return false;
+          if (row.my_vote !== null) return false;
+          return true;
+        })
         .sort((a, b) => {
           const aDate = a.transaction_date ?? "";
           const bDate = b.transaction_date ?? "";

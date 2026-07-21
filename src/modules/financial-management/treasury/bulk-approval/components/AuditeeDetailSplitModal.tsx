@@ -810,6 +810,7 @@ export default function AuditeeDetailSplitModal({
                           })}
                         </TableBody>
                       </Table>
+
                     </div>
                   );
                 })}
@@ -895,7 +896,7 @@ export default function AuditeeDetailSplitModal({
             <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
               You have active staged decisions for <strong className="text-slate-900 dark:text-white font-bold">{salesmantName}</strong> that have not been submitted.
             </p>
-            
+
             <p className="text-[11px] text-slate-500 dark:text-slate-500 leading-normal">
               You can submit to disbursement immediately inside this modal, close to keep them staged on the parent Top-Sheet, or cancel to stay and review.
             </p>
@@ -963,6 +964,20 @@ export default function AuditeeDetailSplitModal({
 
           {/* Body */}
           <div className="p-6 space-y-5">
+            {auditeeDetails.some((d) => (d.status ?? "").toLowerCase() === "with concern") && (
+              <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-2xl p-4 flex items-start gap-3.5 shadow-sm">
+                <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-900 dark:text-rose-300 leading-none">
+                    Automatic Rejection Warning
+                  </p>
+                  <p className="text-[11px] text-rose-700 dark:text-rose-400 font-medium leading-relaxed">
+                    Item(s) currently marked <strong>&quot;With Concern&quot;</strong> will be <strong>automatically rejected</strong> upon submitting to disbursement so that only clean, verified expenses are posted.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Auditee</span>

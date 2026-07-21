@@ -19,12 +19,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+import { toast } from "sonner";
 import { ActivityFeed } from "./components/ActivityFeed";
 import DraftListTable from "./components/DraftListTable";
 import FinalHeaderGroupsTable from "./components/FinalHeaderGroupsTable";
 import FinalTopSheetModal from "./components/FinalTopSheetModal";
 import VoteModal from "./components/VoteModal";
 import { useBulkApproval } from "./hooks/useBulkApproval";
+import * as api from "./providers/fetchProvider";
 import type { DraftRow, FinalHeaderGroup } from "./type";
 
 type ApprovalTab = "level-approval" | "final-approval";
@@ -183,16 +185,46 @@ export default function BulkApprovalModule() {
         groups = await loadFinalHeaderGroups();
       }
 
-      const matchingGroup =
-        groups.find(
+      let matchingGroup = groups.find(
+        (group) =>
+          group.division_id === draft.division_id &&
+          Array.isArray(group.draft_ids) &&
+          group.draft_ids.includes(draft.id)
+      );
+
+      if (!matchingGroup && draft.transaction_date) {
+        matchingGroup = groups.find(
           (group) =>
             group.division_id === draft.division_id &&
-            Array.isArray(group.draft_ids) &&
-            group.draft_ids.includes(draft.id)
-        ) ?? groups.find((group) => group.division_id === draft.division_id);
+            draft.transaction_date! >= group.period_from &&
+            draft.transaction_date! <= group.period_to
+        );
+      }
+
+      if (!matchingGroup && finalHeaderStatus !== "completed") {
+        const completedGroups = await api.getFinalHeaderGroups("completed");
+        matchingGroup =
+          completedGroups.find(
+            (group) =>
+              group.division_id === draft.division_id &&
+              Array.isArray(group.draft_ids) &&
+              group.draft_ids.includes(draft.id)
+          ) ??
+          completedGroups.find(
+            (group) =>
+              group.division_id === draft.division_id &&
+              draft.transaction_date &&
+              draft.transaction_date >= group.period_from &&
+              draft.transaction_date <= group.period_to
+          );
+      }
 
       if (matchingGroup) {
         openTopSheet(matchingGroup);
+      } else {
+        toast.error(
+          `No Final Top Sheet matrix found for draft ${draft.doc_no} (Period: ${draft.transaction_date || "N/A"}).`
+        );
       }
     } finally {
       setTopSheetRedirect(null);
