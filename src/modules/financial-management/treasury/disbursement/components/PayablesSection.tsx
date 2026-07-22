@@ -8,6 +8,7 @@ import { Plus, Trash2, FileSpreadsheet } from "lucide-react";
 import { SearchableDropdown } from "./SearchableDropdown";
 import { StickyTableWrapper } from "./StickyTableWrapper";
 import { PayableLine, COADto, DivisionDto } from "../types";
+import { isInheritedVatSplitLine, updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
 
 interface PayablesSectionProps {
     payables: PayableLine[];
@@ -108,14 +109,14 @@ export function PayablesSection({
                                     {/* Division */}
                                     <TableCell className="p-1 align-middle">
                                         <select
-                                            disabled={disabled}
+                                            disabled={disabled || isInheritedVatSplitLine(payables, i)}
                                             className="h-7 w-full bg-transparent border border-transparent hover:border-input focus:border-primary focus:bg-background rounded-sm text-xs px-2 focus:outline-none transition-all disabled:bg-transparent disabled:cursor-not-allowed text-foreground"
                                             value={p.divisionId || ""}
-                                            onChange={e => {
-                                                const n = [...payables];
-                                                n[i].divisionId = e.target.value ? Number(e.target.value) : undefined;
-                                                setPayables(n);
-                                            }}
+                                            onChange={e => setPayables(updateVatSplitDivision(
+                                                payables,
+                                                i,
+                                                e.target.value ? Number(e.target.value) : undefined,
+                                            ))}
                                         >
                                             <option value="">(Select Division)</option>
                                             {divisions.map(d => (
