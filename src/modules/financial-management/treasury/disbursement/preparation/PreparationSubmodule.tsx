@@ -24,6 +24,7 @@ import { disbursementProvider } from "../providers/fetchProvider";
 import { formatCurrency } from "../utils/disbursement-utils";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { StickyTableWrapper } from "../components/StickyTableWrapper";
+import { isInheritedVatSplitLine, updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
 import {
     DisbursementPayload, PayableLine, SupplierDto, COADto, DivisionDto, DepartmentDto, Disbursement,
     UnpaidPoDto, MemoDto
@@ -44,16 +45,17 @@ interface SearchSelectProps<T extends string | number> {
     onSelect: (val: T) => void;
     placeholder: string;
     className?: string;
+    disabled?: boolean;
 }
 
-function SearchSelect<T extends string | number>({ options, value, onSelect, placeholder, className }: SearchSelectProps<T>) {
+function SearchSelect<T extends string | number>({ options, value, onSelect, placeholder, className, disabled }: SearchSelectProps<T>) {
     const [open, setOpen] = useState(false);
     const selectedLabel = options.find(o => String(o.value) === String(value))?.label || placeholder;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
-                <Button variant="outline" role="combobox" aria-expanded={open} className={cn("justify-between w-full h-9 text-xs font-bold uppercase bg-background px-2.5", className)}>
+                <Button disabled={disabled} variant="outline" role="combobox" aria-expanded={open} className={cn("justify-between w-full h-9 text-xs font-bold uppercase bg-background px-2.5", className)}>
                     <span className="truncate text-left">{selectedLabel}</span>
                     <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-55" />
                 </Button>
@@ -988,8 +990,9 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                     <SearchSelect
                                                         options={divisionOptions}
                                                         value={line.divisionId != null ? line.divisionId : ""}
-                                                        onSelect={val => handlePayableChange(idx, "divisionId", val)}
+                                                        onSelect={val => setPayables(updateVatSplitDivision(payables, idx, Number(val)))}
                                                         placeholder="Select Division..."
+                                                        disabled={isInheritedVatSplitLine(payables, idx)}
                                                         className="h-9 font-bold text-xs bg-background"
                                                     />
                                                 </TableCell>

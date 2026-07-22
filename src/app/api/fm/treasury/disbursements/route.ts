@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
+import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
 
 export const runtime = "nodejs";
 
@@ -831,6 +832,12 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json();
+        const requestedPayables = (body.payables || []) as PayableInput[];
+        const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
+        if (missingPrincipalDivisionError) {
+            return NextResponse.json({ message: missingPrincipalDivisionError }, { status: 400 });
+        }
+        const normalizedPayables = normalizeVatSplitDivisions(requestedPayables);
 
         // 1. Fetch payee supplier type to determine prefix (Trade / Non-Trade)
         if (!body.payeeId) {
@@ -838,7 +845,7 @@ export async function POST(request: NextRequest) {
         }
 
         const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
-            (body.payables || []).map((line: PayableInput) => line.referenceNo),
+            requestedPayables.map((line) => line.referenceNo),
             Number(body.payeeId),
         );
         if (unpostedPoReferences.length > 0) {
@@ -905,7 +912,7 @@ export async function POST(request: NextRequest) {
         if (!createdId) throw new Error("Disbursement created but returned no ID.");
 
         // 6. Batch-create payable lines and payment lines in parallel
-        const payableLines = (body.payables || [])
+        const payableLines = normalizedPayables
             .filter((line: PayableInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== ""))
             .map((line: PayableInput) => ({
                 disbursement_id: createdId,
