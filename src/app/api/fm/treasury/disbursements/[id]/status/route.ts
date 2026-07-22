@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap, relationId } from "../../route";
 import { findUnpostedPurchaseOrderReferences } from "../../_purchase-order-eligibility";
+import { findVatSplitDivisionError } from "../../_payable-split-integrity";
 
 export const runtime = "nodejs";
 
@@ -240,6 +241,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 }
 
                 // Submission Integrity Constraint: disbursement.total_amount = sum(disbursement_payables.amount)
+                const vatSplitDivisionError = findVatSplitDivisionError(payables.map((line) => ({
+                    referenceNo: line.reference_no,
+                    divisionId: relationId(line.division_id, "division_id"),
+                    remarks: line.remarks,
+                })));
+                if (vatSplitDivisionError) {
+                    return NextResponse.json({
+                        message: "VAT split Cost Division mismatch",
+                        detail: vatSplitDivisionError,
+                    }, { status: 400 });
+                }
+
                 const totalPayableLinesSum = payables.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
                 const roundedPayables = Math.round(totalPayableLinesSum * 100) / 100;
                 const roundedTotalAmount = Math.round(Number(currentDis.total_amount) * 100) / 100;

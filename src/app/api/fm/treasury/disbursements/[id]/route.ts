@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId } from "../route";
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
+import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     try {
         const body = await request.json();
+        const requestedPayables = (body.payables || []) as PayableInput[];
+        const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
+        if (missingPrincipalDivisionError) {
+            return NextResponse.json({ message: missingPrincipalDivisionError }, { status: 400 });
+        }
+        const normalizedPayables = normalizeVatSplitDivisions(requestedPayables);
 
         // 1. Fetch current status from Directus
         const directusUrl = `${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/items/disbursement/${id}`;
@@ -61,7 +68,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             ? Number(currentDis.payee.id)
             : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
         const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
-            (body.payables || []).map((line: PayableInput) => line.referenceNo),
+            requestedPayables.map((line) => line.referenceNo),
             body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
         );
         if (unpostedPoReferences.length > 0) {
@@ -166,7 +173,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         await updateRes.json();
 
         // 5b. Batch insert new line items
-        const payableLines = (body.payables || [])
+        const payableLines = normalizedPayables
             .filter((line: PayableInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== ""))
             .map((line: PayableInput) => ({
                 disbursement_id: id,
