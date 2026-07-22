@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
+import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
 
 export const runtime = "nodejs";
 
@@ -834,6 +835,18 @@ export async function POST(request: NextRequest) {
         // 1. Fetch payee supplier type to determine prefix (Trade / Non-Trade)
         if (!body.payeeId) {
             return NextResponse.json({ message: "Payee (Supplier ID) is required." }, { status: 400 });
+        }
+
+        const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
+            (body.payables || []).map((line: PayableInput) => line.referenceNo),
+            Number(body.payeeId),
+        );
+        if (unpostedPoReferences.length > 0) {
+            return NextResponse.json({
+                message: "Disbursement cannot include purchase-order amounts that have not been posted.",
+                detail: `Unposted or ineligible references: ${unpostedPoReferences.join(", ")}`,
+                references: unpostedPoReferences,
+            }, { status: 409 });
         }
 
         const supplierRes = await directusFetch<DirectusSupplierResponse>(`/items/suppliers/${body.payeeId}?fields=supplier_type`);

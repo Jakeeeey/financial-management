@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap, relationId } from "../../route";
+import { findUnpostedPurchaseOrderReferences } from "../../_purchase-order-eligibility";
 
 export const runtime = "nodejs";
 
@@ -224,6 +225,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             case "Submitted": {
                 if (currentDis.status !== "Draft" && currentDis.status !== "Returned for Revision") {
                     return NextResponse.json({ message: "Can only submit from Draft or Returned status." }, { status: 400 });
+                }
+
+                const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
+                    payables.map((line) => line.reference_no),
+                    relationId(currentDis.payee, "id"),
+                );
+                if (unpostedPoReferences.length > 0) {
+                    return NextResponse.json({
+                        message: "Disbursement cannot include purchase-order amounts that have not been posted.",
+                        detail: `Unposted or ineligible references: ${unpostedPoReferences.join(", ")}`,
+                        references: unpostedPoReferences,
+                    }, { status: 409 });
                 }
 
                 // Submission Integrity Constraint: disbursement.total_amount = sum(disbursement_payables.amount)

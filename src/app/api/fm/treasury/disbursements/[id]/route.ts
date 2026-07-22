@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId } from "../route";
+import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
         if (currentDis.status !== "Draft" && currentDis.status !== "Submitted" && currentDis.status !== "Approved" && currentDis.status !== "Returned for Revision" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
             return NextResponse.json({ message: "Only Draft, Submitted, Approved, Returned, Released, or Partially Released disbursements can be edited." }, { status: 400 });
+        }
+
+        const currentPayeeIdForEligibility = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
+            ? Number(currentDis.payee.id)
+            : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
+        const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
+            (body.payables || []).map((line: PayableInput) => line.referenceNo),
+            body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
+        );
+        if (unpostedPoReferences.length > 0) {
+            return NextResponse.json({
+                message: "Disbursement cannot include purchase-order amounts that have not been posted.",
+                detail: `Unposted or ineligible references: ${unpostedPoReferences.join(", ")}`,
+                references: unpostedPoReferences,
+            }, { status: 409 });
         }
 
         // 2. Fetch existing payables & payments to clear them (matching Spring Boot's behavior)
