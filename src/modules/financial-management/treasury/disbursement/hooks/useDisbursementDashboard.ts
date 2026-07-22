@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 // 🚀 FIXED: Pointing directly to your existing provider!
 import { disbursementProvider } from "../providers/fetchProvider";
 import { DisbursementDashboardData, DashboardFilters } from "../types";
@@ -8,6 +8,7 @@ import { DisbursementDashboardData, DashboardFilters } from "../types";
 export function useDisbursementDashboard() {
     const [data, setData] = useState<DisbursementDashboardData | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const requestIdRef = useRef(0);
 
     // Default filters: Current month up to today
     const [filters, setFilters] = useState<DashboardFilters>({
@@ -17,32 +18,29 @@ export function useDisbursementDashboard() {
     });
 
     const fetchDashboard = useCallback(async (currentFilters: DashboardFilters) => {
+        const requestId = ++requestIdRef.current;
         setIsLoading(true);
         try {
             // 🚀 FIXED: Calling the getDashboardData method we added to your provider
             const result = await disbursementProvider.getDashboardData(currentFilters);
-            if (result) {
+            if (requestId === requestIdRef.current && result) {
                 setData(result);
             }
         } catch (err) {
-            console.error("Failed to fetch dashboard data", err);
+            if (requestId === requestIdRef.current) {
+                console.error("Failed to fetch dashboard data", err);
+            }
         } finally {
-            setIsLoading(false);
+            if (requestId === requestIdRef.current) {
+                setIsLoading(false);
+            }
         }
     }, []);
 
     // Initial load and refetch when filters change
     useEffect(() => {
         fetchDashboard(filters);
-
-        const timer = setInterval(() => {
-            if (typeof window !== "undefined" && document.hasFocus() && !isLoading) {
-                fetchDashboard(filters);
-            }
-        }, 10000); // 10s poll
-
-        return () => clearInterval(timer);
-    }, [fetchDashboard, filters, isLoading]);
+    }, [fetchDashboard, filters]);
 
     const handleApplyFilters = () => {
         fetchDashboard(filters);
