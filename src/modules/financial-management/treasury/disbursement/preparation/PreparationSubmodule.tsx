@@ -142,6 +142,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     // Memo state
     const [memos, setMemos] = useState<MemoDto[]>([]);
+    const [memoAmounts, setMemoAmounts] = useState<Record<string, string>>({});
     const [loadingMemos, setLoadingMemos] = useState(false);
     const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
 
@@ -394,6 +395,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
         try {
             const fetchedMemos = await disbursementProvider.getSupplierMemos(Number(payeeId));
             setMemos(fetchedMemos);
+            setMemoAmounts(Object.fromEntries(fetchedMemos.map((memo) => [String(memo.id), String(memo.remaining_amount ?? memo.amount)])));
         } catch {
             toast.error("Failed to load supplier memos");
             setIsMemoModalOpen(false);
@@ -404,7 +406,12 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     const handleApplyMemo = (memo: MemoDto) => {
         const isCredit = memo.type === 1;
-        const finalAmount = isCredit ? -Math.abs(memo.amount) : Math.abs(memo.amount);
+        const remainingAmount = Number(memo.remaining_amount ?? memo.amount) || 0;
+        const requestedAmount = Number(memoAmounts[String(memo.id)] ?? remainingAmount);
+        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > remainingAmount + 0.01) {
+            return toast.error(`Memo ${memo.memo_number} can only use up to ${remainingAmount.toFixed(2)}.`);
+        }
+        const finalAmount = isCredit ? -Math.abs(requestedAmount) : Math.abs(requestedAmount);
 
         setPayables([...payables, {
             referenceNo: memo.memo_number,
@@ -1293,7 +1300,17 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                 <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[180px]">{memo.reason || "N/A"}</div>
                                             </TableCell>
                                             <TableCell className={`text-xs font-black text-right ${memo.type === 1 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                {memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                                                <div>{memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
+                                                <div className="text-[9px] font-bold text-muted-foreground">Remaining: ₱{(memo.remaining_amount ?? memo.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
+                                                <Input
+                                                    type="number"
+                                                    min="0.01"
+                                                    max={memo.remaining_amount ?? memo.amount}
+                                                    step="0.01"
+                                                    value={memoAmounts[String(memo.id)] ?? String(memo.remaining_amount ?? memo.amount)}
+                                                    onChange={(event) => setMemoAmounts((current) => ({ ...current, [String(memo.id)]: event.target.value }))}
+                                                    className="h-7 w-28 ml-auto mt-1 text-right text-xs"
+                                                />
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 <Button size="sm" onClick={() => handleApplyMemo(memo)} className="h-7 text-[10px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white">
