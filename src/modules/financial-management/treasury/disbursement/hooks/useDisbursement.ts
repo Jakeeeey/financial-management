@@ -1,6 +1,6 @@
 "use client";
 
-import {useState, useCallback, useEffect} from "react";
+import {useState, useCallback, useEffect, useRef} from "react";
 import {Disbursement, DisbursementPayload, SupplierDto, DivisionDto, DepartmentDto} from "../types";
 import {disbursementProvider} from "../providers/fetchProvider";
 import {toast} from "sonner";
@@ -28,6 +28,7 @@ export function useDisbursement() {
     const [filterSuppliers, setFilterSuppliers] = useState<SupplierDto[]>([]);
     const [divisions, setDivisions] = useState<DivisionDto[]>([]);
     const [departments, setDepartments] = useState<DepartmentDto[]>([]);
+    const listRequestIdRef = useRef(0);
 
     useEffect(() => {
         const fetchFilterData = async () => {
@@ -52,29 +53,26 @@ export function useDisbursement() {
         pageNum: number, type: string, search: string, start: string, end: string,
         status: string, divId: string, deptId: string, docNo: string
     ) => {
+        const requestId = ++listRequestIdRef.current;
         setLoading(true);
         try {
             const response = await disbursementProvider.getDisbursements(pageNum, size, type, search, start, end, status, divId, deptId, docNo);
+            if (requestId !== listRequestIdRef.current) return;
             setData(response.content);
             setTotalPages(response.totalPages);
         } catch {
+            if (requestId !== listRequestIdRef.current) return;
             toast.error("Failed to load disbursements");
         } finally {
-            setLoading(false);
+            if (requestId === listRequestIdRef.current) {
+                setLoading(false);
+            }
         }
     }, [size]);
 
     useEffect(() => {
         fetchList(page, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
-        
-        const timer = setInterval(() => {
-            if (typeof window !== "undefined" && document.hasFocus() && !actionLoading) {
-                fetchList(page, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
-            }
-        }, 10000); // 10s poll
-
-        return () => clearInterval(timer);
-    }, [page, activeType, size, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch, actionLoading, fetchList]);
+    }, [page, activeType, size, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch, fetchList]);
 
     const applyFilters = () => {
         setPage(0);
