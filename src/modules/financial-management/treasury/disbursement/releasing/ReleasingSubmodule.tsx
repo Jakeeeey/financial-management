@@ -436,15 +436,9 @@ export default function ReleasingSubmodule() {
                                     </div>
                                 </div>
                                 <div className="space-y-3">
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Division</span>
-                                            <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.divisionName || "N/A"}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Department</span>
-                                            <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
-                                        </div>
+                                    <div>
+                                        <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Department</span>
+                                        <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
