@@ -4,6 +4,7 @@ import { decodeJwtPayload } from "@/lib/auth-utils";
 import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
 import { validateSupplierMemoCaps } from "./_memo-cap-integrity";
+import { isPettyCashAccount, validatePaymentLine } from "@/lib/financial-management/payment-method";
 
 export const runtime = "nodejs";
 
@@ -1007,7 +1008,23 @@ export async function POST(request: NextRequest) {
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
         const paymentLinesInput = requestedPayments.filter((line: PaymentInput) =>
-            !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo && line.checkNo.trim() !== "")
+            !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
+        );
+        const coaMap = await getCoaMap();
+        for (let index = 0; index < paymentLinesInput.length; index++) {
+            const line = paymentLinesInput[index];
+            const validationError = validatePaymentLine(line, coaMap.get(Number(line.coaId)));
+            if (validationError) {
+                return NextResponse.json({
+                    message: validationError,
+                    detail: `Payment row ${index + 1} is invalid.`,
+                }, { status: 400 });
+            }
+        }
+        const normalizedPaymentLines = paymentLinesInput.map((line) =>
+            isPettyCashAccount(coaMap.get(Number(line.coaId)))
+                ? { ...line, bankId: undefined, checkNo: "" }
+                : line
         );
 
         // 1. Fetch payee supplier type to determine prefix (Trade / Non-Trade)
@@ -1034,7 +1051,7 @@ export async function POST(request: NextRequest) {
             fundSourceId: body.fundSourceId,
             supportingDocumentsUrl: body.supportingDocumentsUrl,
             payables: payableLinesInput,
-            payments: paymentLinesInput,
+            payments: normalizedPaymentLines,
         });
 
         const existingSnapshot = await findDisbursementSnapshotByDocNo(docNo);
@@ -1086,7 +1103,7 @@ export async function POST(request: NextRequest) {
         const isAutoApprove = Number(body.totalAmount) < APPROVAL_THRESHOLD;
 
         // 4. Calculate paid amount (sum of payments)
-        const calculatedPaidAmount = requestedPayments.reduce(
+        const calculatedPaidAmount = normalizedPaymentLines.reduce(
             (sum: number, p: PaymentInput) => sum + (Number(p.amount) || 0),
             0
         );
@@ -1132,7 +1149,7 @@ export async function POST(request: NextRequest) {
                 remarks: line.remarks || ""
             }));
 
-        const paymentLines = paymentLinesInput
+        const paymentLines = normalizedPaymentLines
             .map((line: PaymentInput) => {
                 const payload: {
                     disbursement_id: number;

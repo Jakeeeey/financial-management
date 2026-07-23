@@ -5,6 +5,7 @@ import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, Disburseme
 import { findUnpostedPurchaseOrderReferences } from "../../_purchase-order-eligibility";
 import { findVatSplitDivisionError } from "../../_payable-split-integrity";
 import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../../_memo-cap-integrity";
+import { validatePaymentLine } from "@/lib/financial-management/payment-method";
 
 export const runtime = "nodejs";
 
@@ -176,6 +177,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const lineItems = await getLineItems([id]);
         const payables = lineItems.payables.get(id) || [];
         const payments = lineItems.payments.get(id) || [];
+        const coaMap = await getCoaMap();
 
         const currentPayeeId = relationId(currentDis.payee, "id") || 0;
         const memoCapError = currentPayeeId
@@ -296,6 +298,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             case "Partially Released": {
                 if (currentDis.status !== "Approved" && currentDis.status !== "Released" && currentDis.status !== "Partially Released" && currentDis.status !== "Submitted") {
                     return NextResponse.json({ message: "Can only release Approved, Submitted, or already Released disbursements." }, { status: 400 });
+                }
+
+                for (let index = 0; index < payments.length; index++) {
+                    const line = payments[index];
+                    const validationError = validatePaymentLine({
+                        coaId: relationId(line.coa_id, "coa_id"),
+                        bankId: relationId(line.bank_id as never),
+                        checkNo: line.check_no,
+                    }, coaMap.get(relationId(line.coa_id, "coa_id") || 0));
+                    if (validationError) {
+                        return NextResponse.json({
+                            message: validationError,
+                            detail: `Payment row ${index + 1} is invalid.`,
+                        }, { status: 400 });
+                    }
                 }
 
                 releasedBy = currentUserId;
@@ -427,7 +444,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         });
 
         const userMap = await getUserMap(token, userIdsToFetch);
-        const coaMap = await getCoaMap();
         const divisionMap = await getDivisionMap();
         const bankMap = await getBankMap();
         const normalized = normalizeDisbursement(updatedDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap);
