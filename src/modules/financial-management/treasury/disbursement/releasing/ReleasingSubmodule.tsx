@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -97,10 +97,12 @@ export default function ReleasingSubmodule() {
 
     // Releasing prompt state
     const [releasingPromptOpen, setReleasingPromptOpen] = useState(false);
+    const [actionLocked, setActionLocked] = useState(false);
+    const actionLockRef = useRef(false);
+    const saveLockRef = useRef(false);
 
     // Fetch active banks and COAs
     useEffect(() => {
-        /* eslint-disable react-hooks/set-state-in-effect */
         setLoadingMetadata(true);
         Promise.all([
             disbursementProvider.getBanks().catch(() => []),
@@ -111,12 +113,10 @@ export default function ReleasingSubmodule() {
         }).finally(() => {
             setLoadingMetadata(false);
         });
-        /* eslint-enable react-hooks/set-state-in-effect */
     }, []);
 
     // Set local payments state on voucher select
     useEffect(() => {
-        /* eslint-disable react-hooks/set-state-in-effect */
         if (selectedDisbursement) {
             setPayments(selectedDisbursement.payments?.map(p => ({
                 id: p.id,
@@ -130,7 +130,6 @@ export default function ReleasingSubmodule() {
         } else {
             setPayments([]);
         }
-        /* eslint-enable react-hooks/set-state-in-effect */
     }, [selectedDisbursement]);
 
     // Derived states
@@ -171,88 +170,110 @@ export default function ReleasingSubmodule() {
 
     // Save checks allocation to backend
     const handleSavePayments = async () => {
-        if (!selectedDisbursement) return false;
+        if (!selectedDisbursement || actionLoading || saveLockRef.current) return false;
+        saveLockRef.current = true;
 
-        // validate payments
-        for (let i = 0; i < payments.length; i++) {
-            const p = payments[i];
-            const selectedCoa = coas.find(c => c.coaId === p.coaId);
-            const accountTitle = selectedCoa?.accountTitle || "";
-            const isCashOrPetty = accountTitle.toLowerCase().includes("petty cash") || 
-                                  accountTitle.toLowerCase().includes("cash") || 
-                                  accountTitle.toLowerCase().includes("revolving");
+        try {
+            // validate payments
+            for (let i = 0; i < payments.length; i++) {
+                const p = payments[i];
+                const selectedCoa = coas.find(c => c.coaId === p.coaId);
+                const accountTitle = selectedCoa?.accountTitle || "";
+                const isCashOrPetty = accountTitle.toLowerCase().includes("petty cash") ||
+                                      accountTitle.toLowerCase().includes("cash") ||
+                                      accountTitle.toLowerCase().includes("revolving");
 
-            if (!isCashOrPetty && !p.checkNo) {
-                toast.error(`Please provide a check number on check row ${i + 1}`);
-                return false;
+                if (!isCashOrPetty && !p.checkNo) {
+                    toast.error(`Please provide a check number on check row ${i + 1}`);
+                    return false;
+                }
+                if (!p.bankId) {
+                    toast.error(`Please select a bank account on check row ${i + 1}`);
+                    return false;
+                }
+                if (!p.coaId) {
+                    toast.error(`Please select a GL COA account on check row ${i + 1}`);
+                    return false;
+                }
             }
-            if (!p.bankId) {
-                toast.error(`Please select a bank account on check row ${i + 1}`);
-                return false;
+
+            const payload: DisbursementPayload = {
+                docNo: selectedDisbursement.docNo,
+                payeeId: selectedDisbursement.payeeId || 0,
+                remarks: selectedDisbursement.remarks,
+                totalAmount: selectedDisbursement.totalAmount,
+                transactionDate: selectedDisbursement.transactionDate,
+                divisionId: selectedDisbursement.divisionId,
+                departmentId: selectedDisbursement.departmentId,
+                supportingDocumentsUrl: selectedDisbursement.supportingDocumentsUrl,
+                payables: selectedDisbursement.payables,
+                payments: payments.map(p => ({
+                    ...p,
+                    coaId: Number(p.coaId),
+                    bankId: Number(p.bankId)
+                }))
+            };
+
+            const success = await update(selectedDisbursement.id, payload);
+            if (success) {
+                refresh();
+                const updated = data.find(v => v.id === selectedDisbursement.id);
+                if (updated) setSelectedDisbursement(updated);
+                return true;
             }
-            if (!p.coaId) {
-                toast.error(`Please select a GL COA account on check row ${i + 1}`);
-                return false;
-            }
+            return false;
+        } finally {
+            saveLockRef.current = false;
         }
-
-        const payload: DisbursementPayload = {
-            payeeId: selectedDisbursement.payeeId || 0,
-            remarks: selectedDisbursement.remarks,
-            totalAmount: selectedDisbursement.totalAmount,
-            transactionDate: selectedDisbursement.transactionDate,
-            divisionId: selectedDisbursement.divisionId,
-            departmentId: selectedDisbursement.departmentId,
-            supportingDocumentsUrl: selectedDisbursement.supportingDocumentsUrl,
-            payables: selectedDisbursement.payables,
-            payments: payments.map(p => ({
-                ...p,
-                coaId: Number(p.coaId),
-                bankId: Number(p.bankId)
-            }))
-        };
-
-        const success = await update(selectedDisbursement.id, payload);
-        if (success) {
-            refresh();
-            // Reload the selected voucher from updated data list
-            const updated = data.find(v => v.id === selectedDisbursement.id);
-            if (updated) setSelectedDisbursement(updated);
-            return true;
-        }
-        return false;
     };
 
     // Release Check button logic
     const handleReleaseVoucher = async () => {
-        if (!selectedDisbursement) return;
+        if (!selectedDisbursement || actionLoading || actionLockRef.current) return;
+        actionLockRef.current = true;
+        setActionLocked(true);
 
-        // Save current payments state first to avoid stale release
-        const saved = await handleSavePayments();
-        if (!saved) return; // Halt if validation or save fails!
+        try {
+            // Save current payments state first to avoid stale release
+            const saved = await handleSavePayments();
+            if (!saved) return;
 
-        // Compute total amount directly from fresh payments to avoid stale closure state
-        const freshTotalPaymentsAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-        const diff = Math.abs(selectedDisbursement.totalAmount - freshTotalPaymentsAmount);
-        
-        if (diff < 0.01) {
-            // Condition A: Balanced payment match
-            await handleCommitRelease("Released");
-        } else {
-            // Condition B: Mismatched payments amount
-            setReleasingPromptOpen(true);
+            const freshTotalPaymentsAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+            const diff = Math.abs(selectedDisbursement.totalAmount - freshTotalPaymentsAmount);
+
+            if (diff < 0.01) {
+                await handleCommitRelease("Released", true);
+            } else {
+                setReleasingPromptOpen(true);
+            }
+        } finally {
+            actionLockRef.current = false;
+            setActionLocked(false);
         }
     };
 
-    const handleCommitRelease = async (status: string) => {
+    const handleCommitRelease = async (status: string, lockAlreadyHeld = false) => {
         setReleasingPromptOpen(false);
-        if (!selectedDisbursement) return;
-        const success = await changeStatus(selectedDisbursement.id, status);
-        if (success) {
-            setSelectedDisbursement(null);
-            refresh();
+        if (!selectedDisbursement || actionLoading || (!lockAlreadyHeld && actionLockRef.current)) return;
+        if (!lockAlreadyHeld) {
+            actionLockRef.current = true;
+            setActionLocked(true);
+        }
+        try {
+            const success = await changeStatus(selectedDisbursement.id, status);
+            if (success) {
+                setSelectedDisbursement(null);
+                refresh();
+            }
+        } finally {
+            if (!lockAlreadyHeld) {
+                actionLockRef.current = false;
+                setActionLocked(false);
+            }
         }
     };
+
+    const isActionBusy = actionLoading || actionLocked;
 
     const handlePrintCheck = (p: PaymentLine) => {
         setActivePrintCheck(p);
@@ -261,14 +282,12 @@ export default function ReleasingSubmodule() {
 
     // Load calibration from localStorage on mount
     useEffect(() => {
-        /* eslint-disable react-hooks/set-state-in-effect */
         if (typeof window !== "undefined") {
             const savedX = localStorage.getItem("check_print_calibration_x");
             const savedY = localStorage.getItem("check_print_calibration_y");
             if (savedX !== null) setCalibrationX(Number(savedX));
             if (savedY !== null) setCalibrationY(Number(savedY));
         }
-        /* eslint-enable react-hooks/set-state-in-effect */
     }, []);
 
     // Spaced out boxed check date (MM-DD-YYYY) parsing
@@ -631,7 +650,7 @@ export default function ReleasingSubmodule() {
                             <Button 
                                 variant="outline" 
                                 onClick={handleSavePayments} 
-                                disabled={actionLoading}
+                                disabled={isActionBusy}
                                 className="h-11 px-6 text-xs font-black uppercase tracking-widest border-border/80"
                             >
                                 Save Checks Allocation
@@ -639,10 +658,10 @@ export default function ReleasingSubmodule() {
 
                             <Button 
                                 onClick={handleReleaseVoucher} 
-                                disabled={actionLoading || payments.length === 0}
+                                disabled={isActionBusy || payments.length === 0}
                                 className="h-11 px-10 text-xs font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-500/10 disabled:opacity-50"
                             >
-                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowUpFromLine className="w-4 h-4 mr-2" />}
+                                {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowUpFromLine className="w-4 h-4 mr-2" />}
                                 Release Checks
                             </Button>
                         </div>
@@ -686,12 +705,14 @@ export default function ReleasingSubmodule() {
                     <DialogFooter className="sm:justify-center flex flex-col sm:flex-row gap-3">
                         <Button 
                             onClick={() => handleCommitRelease("Released")}
+                            disabled={isActionBusy}
                             className="h-11 px-5 text-xs font-black uppercase bg-destructive hover:bg-destructive/90 text-white"
                         >
                             Force &apos;Released&apos;
                         </Button>
                         <Button 
                             onClick={() => handleCommitRelease("Partially Released")}
+                            disabled={isActionBusy}
                             className="h-11 px-5 text-xs font-black uppercase bg-amber-500 hover:bg-amber-600 text-white"
                         >
                             Flag &apos;Partially Released&apos;

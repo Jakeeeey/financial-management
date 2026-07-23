@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -129,6 +129,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     const [departmentId, setDepartmentId] = useState<number | "">("");
     const [supportingDocumentsUrl, setSupportingDocumentsUrl] = useState("");
     const [payables, setPayables] = useState<PayableLine[]>([]);
+    const [previewDocNo, setPreviewDocNo] = useState("");
 
     const isNonTradeVoucher = transactionTypeId === 2;
 
@@ -159,6 +160,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     // Loaders
     const [loadingData, setLoadingData] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const submitLockRef = useRef(false);
     const [uploading, setUploading] = useState(false);
 
     // Print Success Modal
@@ -300,6 +302,18 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             setShowValidationErrors(false);
         }
     }, [activeVoucher, today]);
+
+    useEffect(() => {
+        if (activeVoucher) {
+            setPreviewDocNo("");
+            return;
+        }
+
+        const supplierType = transactionTypeId === 2 ? "Non-Trade" : "Trade";
+        disbursementProvider.getNextDocNo(supplierType)
+            .then(setPreviewDocNo)
+            .catch(() => setPreviewDocNo(""));
+    }, [activeVoucher, transactionTypeId]);
 
     const handleOpenPoModal = useCallback(async (supplierIdOverride?: number) => {
         const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
@@ -483,6 +497,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     // Submit for approval (Draft -> Submitted)
     const handleSave = async (submitImmediate: boolean) => {
+        if (submitting || submitLockRef.current) return;
         let hasError = false;
         if (!payeeId) hasError = true;
         if (!departmentId) hasError = true;
@@ -519,9 +534,15 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             toast.error("Submission blocked: Calculated total amount does not equal the sum of payable lines.");
             return;
         }
+        if (!activeVoucher && !previewDocNo) {
+            toast.error("Document number is still loading. Please try again.");
+            return;
+        }
 
+        submitLockRef.current = true;
         setSubmitting(true);
         const payload: DisbursementPayload = {
+            docNo: activeVoucher ? activeVoucher.docNo : (previewDocNo || undefined),
             transactionTypeId,
             payeeId: Number(payeeId),
             remarks,
@@ -559,6 +580,16 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             
             // Clear current editor selection and refresh the list
             setLocalEditVoucher(null);
+            setTransactionTypeId(1);
+            setPreviewDocNo("");
+            setPayeeId("");
+            setRemarks("");
+            setTransactionDate(today);
+            setDivisionId("");
+            setDepartmentId("");
+            setSupportingDocumentsUrl("");
+            setPayables([]);
+            setShowValidationErrors(false);
             fetchEditableVouchers();
 
             if (onSuccess) onSuccess();
@@ -566,6 +597,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             console.error(err);
             toast.error(err instanceof Error ? err.message : "Failed to save disbursement voucher.");
         } finally {
+            submitLockRef.current = false;
             setSubmitting(false);
         }
     };
