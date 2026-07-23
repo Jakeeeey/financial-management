@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +24,7 @@ import { disbursementProvider } from "../providers/fetchProvider";
 import { formatCurrency } from "../utils/disbursement-utils";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { StickyTableWrapper } from "../components/StickyTableWrapper";
+import { isInheritedVatSplitLine, updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
 import {
     DisbursementPayload, PayableLine, SupplierDto, COADto, DivisionDto, DepartmentDto, Disbursement,
     UnpaidPoDto, MemoDto
@@ -44,16 +45,17 @@ interface SearchSelectProps<T extends string | number> {
     onSelect: (val: T) => void;
     placeholder: string;
     className?: string;
+    disabled?: boolean;
 }
 
-function SearchSelect<T extends string | number>({ options, value, onSelect, placeholder, className }: SearchSelectProps<T>) {
+function SearchSelect<T extends string | number>({ options, value, onSelect, placeholder, className, disabled }: SearchSelectProps<T>) {
     const [open, setOpen] = useState(false);
     const selectedLabel = options.find(o => String(o.value) === String(value))?.label || placeholder;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
-                <Button variant="outline" role="combobox" aria-expanded={open} className={cn("justify-between w-full h-9 text-xs font-bold uppercase bg-background px-2.5", className)}>
+                <Button disabled={disabled} variant="outline" role="combobox" aria-expanded={open} className={cn("justify-between w-full h-9 text-xs font-bold uppercase bg-background px-2.5", className)}>
                     <span className="truncate text-left">{selectedLabel}</span>
                     <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-55" />
                 </Button>
@@ -127,6 +129,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     const [departmentId, setDepartmentId] = useState<number | "">("");
     const [supportingDocumentsUrl, setSupportingDocumentsUrl] = useState("");
     const [payables, setPayables] = useState<PayableLine[]>([]);
+    const [previewDocNo, setPreviewDocNo] = useState("");
 
     const isNonTradeVoucher = transactionTypeId === 2;
 
@@ -140,6 +143,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     // Memo state
     const [memos, setMemos] = useState<MemoDto[]>([]);
+    const [memoAmounts, setMemoAmounts] = useState<Record<string, string>>({});
     const [loadingMemos, setLoadingMemos] = useState(false);
     const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
 
@@ -156,6 +160,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     // Loaders
     const [loadingData, setLoadingData] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const submitLockRef = useRef(false);
     const [uploading, setUploading] = useState(false);
 
     // Print Success Modal
@@ -298,6 +303,18 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
         }
     }, [activeVoucher, today]);
 
+    useEffect(() => {
+        if (activeVoucher) {
+            setPreviewDocNo("");
+            return;
+        }
+
+        const supplierType = transactionTypeId === 2 ? "Non-Trade" : "Trade";
+        disbursementProvider.getNextDocNo(supplierType)
+            .then(setPreviewDocNo)
+            .catch(() => setPreviewDocNo(""));
+    }, [activeVoucher, transactionTypeId]);
+
     const handleOpenPoModal = useCallback(async (supplierIdOverride?: number) => {
         const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
         if (!sid) return toast.error("Please select a Payee first.");
@@ -392,6 +409,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
         try {
             const fetchedMemos = await disbursementProvider.getSupplierMemos(Number(payeeId));
             setMemos(fetchedMemos);
+            setMemoAmounts(Object.fromEntries(fetchedMemos.map((memo) => [String(memo.id), String(memo.remaining_amount ?? memo.amount)])));
         } catch {
             toast.error("Failed to load supplier memos");
             setIsMemoModalOpen(false);
@@ -402,7 +420,12 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     const handleApplyMemo = (memo: MemoDto) => {
         const isCredit = memo.type === 1;
-        const finalAmount = isCredit ? -Math.abs(memo.amount) : Math.abs(memo.amount);
+        const remainingAmount = Number(memo.remaining_amount ?? memo.amount) || 0;
+        const requestedAmount = Number(memoAmounts[String(memo.id)] ?? remainingAmount);
+        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > remainingAmount + 0.01) {
+            return toast.error(`Memo ${memo.memo_number} can only use up to ${remainingAmount.toFixed(2)}.`);
+        }
+        const finalAmount = isCredit ? -Math.abs(requestedAmount) : Math.abs(requestedAmount);
 
         setPayables([...payables, {
             referenceNo: memo.memo_number,
@@ -474,6 +497,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     // Submit for approval (Draft -> Submitted)
     const handleSave = async (submitImmediate: boolean) => {
+        if (submitting || submitLockRef.current) return;
         let hasError = false;
         if (!payeeId) hasError = true;
         if (!departmentId) hasError = true;
@@ -510,9 +534,15 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             toast.error("Submission blocked: Calculated total amount does not equal the sum of payable lines.");
             return;
         }
+        if (!activeVoucher && !previewDocNo) {
+            toast.error("Document number is still loading. Please try again.");
+            return;
+        }
 
+        submitLockRef.current = true;
         setSubmitting(true);
         const payload: DisbursementPayload = {
+            docNo: activeVoucher ? activeVoucher.docNo : (previewDocNo || undefined),
             transactionTypeId,
             payeeId: Number(payeeId),
             remarks,
@@ -550,6 +580,16 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             
             // Clear current editor selection and refresh the list
             setLocalEditVoucher(null);
+            setTransactionTypeId(1);
+            setPreviewDocNo("");
+            setPayeeId("");
+            setRemarks("");
+            setTransactionDate(today);
+            setDivisionId("");
+            setDepartmentId("");
+            setSupportingDocumentsUrl("");
+            setPayables([]);
+            setShowValidationErrors(false);
             fetchEditableVouchers();
 
             if (onSuccess) onSuccess();
@@ -557,6 +597,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             console.error(err);
             toast.error(err instanceof Error ? err.message : "Failed to save disbursement voucher.");
         } finally {
+            submitLockRef.current = false;
             setSubmitting(false);
         }
     };
@@ -988,8 +1029,9 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                     <SearchSelect
                                                         options={divisionOptions}
                                                         value={line.divisionId != null ? line.divisionId : ""}
-                                                        onSelect={val => handlePayableChange(idx, "divisionId", val)}
+                                                        onSelect={val => setPayables(updateVatSplitDivision(payables, idx, Number(val)))}
                                                         placeholder="Select Division..."
+                                                        disabled={isInheritedVatSplitLine(payables, idx)}
                                                         className="h-9 font-bold text-xs bg-background"
                                                     />
                                                 </TableCell>
@@ -1290,7 +1332,17 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                 <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[180px]">{memo.reason || "N/A"}</div>
                                             </TableCell>
                                             <TableCell className={`text-xs font-black text-right ${memo.type === 1 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                {memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                                                <div>{memo.type === 1 ? '-' : '+'} ₱{memo.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
+                                                <div className="text-[9px] font-bold text-muted-foreground">Remaining: ₱{(memo.remaining_amount ?? memo.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
+                                                <Input
+                                                    type="number"
+                                                    min="0.01"
+                                                    max={memo.remaining_amount ?? memo.amount}
+                                                    step="0.01"
+                                                    value={memoAmounts[String(memo.id)] ?? String(memo.remaining_amount ?? memo.amount)}
+                                                    onChange={(event) => setMemoAmounts((current) => ({ ...current, [String(memo.id)]: event.target.value }))}
+                                                    className="h-7 w-28 ml-auto mt-1 text-right text-xs"
+                                                />
                                             </TableCell>
                                             <TableCell className="text-right">
                                                 <Button size="sm" onClick={() => handleApplyMemo(memo)} className="h-7 text-[10px] font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white">

@@ -1911,7 +1911,7 @@ export async function processDraftApproval(params: {
     }
   }
 
-  if (finalVoteStatus === "REJECTED" || finalVoteStatus === "WITH_CONCERN" || remainingCount <= 0) {
+  if (finalVoteStatus === "REJECTED" || remainingCount <= 0) {
     const draftStatus: DraftLifecycleStatus =
       finalVoteStatus === "REJECTED"
         ? "Rejected"

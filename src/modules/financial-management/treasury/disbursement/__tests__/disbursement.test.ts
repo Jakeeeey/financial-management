@@ -5,6 +5,7 @@
 
 // Standard Jest typings mock or actual imports
 import { Disbursement, PaymentLine } from "../types";
+import { sumLineAmounts } from "../utils/disbursement-utils";
 
 // 1. Business Logic Code to Test (Usually resides in controllers/utilities)
 export function validateMutation(disbursement: Pick<Disbursement, "isPosted" | "status">) {
@@ -102,6 +103,20 @@ describe("Disbursement Module Core Business Rules", () => {
                 { amount: -5000 } // Full refund
             ];
             expect(calculatePaidAmount(payments)).toBe(0);
+        });
+    });
+
+    describe("Printable section totals", () => {
+        it("should sum payable and payment lines using signed amounts", () => {
+            expect(sumLineAmounts([{ amount: 1000 }, { amount: -125.5 }, { amount: 25.25 }])).toBe(899.75);
+        });
+
+        it("should return zero for an empty line collection", () => {
+            expect(sumLineAmounts([])).toBe(0);
+        });
+
+        it("should preserve decimal totals", () => {
+            expect(sumLineAmounts([{ amount: 0.1 }, { amount: 0.2 }])).toBeCloseTo(0.3);
         });
     });
 

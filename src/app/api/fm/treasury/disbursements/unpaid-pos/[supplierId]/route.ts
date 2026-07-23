@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import {
+    activeReceivingRowsByPurchaseOrder,
+    isFullyPostedPurchaseOrder,
+    postedReceivingRowsByPurchaseOrder,
+} from "../../_purchase-order-eligibility";
 
 export const runtime = "nodejs";
 
@@ -98,7 +103,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
         const receivingsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?limit=-1&filter=${encodeURIComponent(
             JSON.stringify({ purchase_order_id: { _in: poIds } })
-        )}&fields=purchase_order_id,receipt_no,receipt_date,total_amount,received_quantity,unit_price`;
+        )}&fields=purchase_order_id,receipt_no,receipt_date,total_amount,received_quantity,unit_price,isPosted,is_posted_amounts,is_reverted`;
 
         const [productsRes, receivingsRes] = await Promise.all([
             fetch(productsUrl, {
@@ -124,12 +129,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             productsByPoId[poId].push(p);
         }
 
-        const receivingsByPoId: Record<number, Array<{ receipt_no?: string; receipt_date?: string | null; total_amount?: string | number | null; received_quantity?: number; unit_price?: string | number }>> = {};
-        for (const r of receivingsData) {
-            const poId = Number(r.purchase_order_id);
-            if (!receivingsByPoId[poId]) receivingsByPoId[poId] = [];
-            receivingsByPoId[poId].push(r);
-        }
+        const activeReceivingsByPoId = activeReceivingRowsByPurchaseOrder(receivingsData);
+        const postedReceivingsByPoId = postedReceivingRowsByPurchaseOrder(receivingsData);
 
         const unpaidPos: Array<{
             uniqueKey: string;
@@ -147,6 +148,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
             if (Number(po.payment_type) === 1) {
                 // CWO (Cash With Order)
+                const activeReceivings = activeReceivingsByPoId.get(poId) || [];
+                // Product lines do not carry the financial posting marker. Keep
+                // CWO amounts hidden until every active receiving row is posted.
+                if (!isFullyPostedPurchaseOrder(activeReceivings)) continue;
+
                 const products = productsByPoId[poId] || [];
                 const totalLiability = products.reduce((sum: number, p) => {
                     const amt = p.total_amount !== null && p.total_amount !== undefined
@@ -172,7 +178,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 }
             } else {
                 // Non-CWO (RECEIPT)
-                const receivings = receivingsByPoId[poId] || [];
+                // Only receipt rows posted to inventory and to financial amounts
+                // may contribute to the disbursement selection list.
+                const receivings = postedReceivingsByPoId.get(poId) || [];
                 const grouped: Record<string, { transDate: string | null, totalLiability: number }> = {};
 
                 for (const por of receivings) {

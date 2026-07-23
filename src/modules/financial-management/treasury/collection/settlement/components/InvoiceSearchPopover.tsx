@@ -41,7 +41,16 @@ export default function InvoiceSearchPopover({
                         <CommandGroup heading={searchResults.length > 0 ? "Database Results" : ""}>
                             {searchResults.map((inv: UnpaidInvoice) => (
                                 <CommandItem key={`search-${inv.id}`} onSelect={() => { addToCart(inv); setSearchOpen(false); }} className="flex justify-between items-center cursor-pointer py-2 px-3 border-b border-muted/50 last:border-0">
-                                    <div className="flex flex-col"><span className="font-mono font-black text-primary text-xs">{inv.invoiceNo}</span><span className="text-[10px] text-muted-foreground font-medium leading-tight mt-0.5">{inv.customerName}</span></div>
+                                    <div className="flex flex-col">
+                                        <span className="font-mono font-black text-primary text-xs">{inv.invoiceNo}</span>
+                                        <span className="text-[10px] text-muted-foreground font-medium leading-tight mt-0.5">{inv.customerName}</span>
+                                        {inv.matchSource === "collection_check" && inv.matchedCheckNo && (
+                                            <span className="text-[9px] text-amber-700 font-bold leading-tight mt-0.5">
+                                                Matched check {inv.matchedCheckNo}
+                                                {inv.matchedCollectionCustomerName ? ` - ${inv.matchedCollectionCustomerName}` : ""}
+                                            </span>
+                                        )}
+                                    </div>
                                     <span className="font-mono font-black text-emerald-600 text-sm">₱{inv.remainingBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                                 </CommandItem>
                             ))}

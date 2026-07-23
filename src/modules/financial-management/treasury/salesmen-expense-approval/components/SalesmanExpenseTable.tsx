@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import type { SalesmanExpenseRow } from "../type";
 
 interface Props {
+  mode: "pending" | "history";
   rows: SalesmanExpenseRow[];
   totalItems: number;
   q: string;
@@ -31,6 +32,7 @@ interface Props {
 
 export default function SalesmanExpenseTable(props: Props) {
   const {
+    mode,
     rows,
     totalItems,
     q,
@@ -85,7 +87,9 @@ export default function SalesmanExpenseTable(props: Props) {
               <TableHead className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Account Identity</TableHead>
               <TableHead className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Division</TableHead>
               <TableHead className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 w-32">Submittals</TableHead>
-              <TableHead className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 pr-8">Outstanding Exposure</TableHead>
+              <TableHead className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 pr-8">
+                {mode === "pending" ? "Outstanding Exposure" : "Historical Total"}
+              </TableHead>
               <TableHead className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 w-24">Action</TableHead>
             </TableRow>
           </TableHeader>
@@ -95,16 +99,26 @@ export default function SalesmanExpenseTable(props: Props) {
                 <TableCell colSpan={7} className="h-[340px] text-center">
                   <div className="flex flex-col items-center justify-center gap-3 text-muted-foreground">
                     <FolderOpen className="h-10 w-10 opacity-30" />
-                    <p className="text-sm font-medium">No salesmen with pending expenses.</p>
+                    <p className="text-sm font-medium">
+                      {mode === "pending"
+                        ? "No salesmen with pending expenses."
+                        : "No decided submissions found."}
+                    </p>
                   </div>
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((row, idx) => (
-                <TableRow
-                  key={`${row.employee_id}_${row.division_id}`}
-                  className={`transition-colors group ${selectedId === row.id ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-muted/30 dark:hover:bg-slate-800/50"}`}
-                >
+              rows.map((row, idx) => {
+                const divisionLabel =
+                  row.division_names?.length > 0
+                    ? row.division_names.join(" • ")
+                    : row.division_name;
+
+                return (
+                  <TableRow
+                    key={row.employee_id}
+                    className={`transition-colors group ${selectedId === row.id ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-muted/30 dark:hover:bg-slate-800/50"}`}
+                  >
                   <TableCell className="text-center text-muted-foreground text-xs font-mono">
                     {(page - 1) * 5 + idx + 1}
                   </TableCell>
@@ -124,10 +138,15 @@ export default function SalesmanExpenseTable(props: Props) {
                     </div>
                   </TableCell>
                   <TableCell className="overflow-hidden">
-                    {row.division_name ? (
-                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    {divisionLabel ? (
+                      <div
+                        className="inline-flex max-w-[200px] items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 dark:border-slate-700 dark:bg-slate-800"
+                        title={divisionLabel}
+                      >
                         <div className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
-                        <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-tight truncate max-w-[120px]">{row.division_name}</span>
+                        <span className="max-w-[200px] truncate text-[10px] font-black uppercase tracking-tight text-slate-600 dark:text-slate-300">
+                          {divisionLabel}
+                        </span>
                       </div>
                     ) : (
                       <span className="text-slate-300 dark:text-slate-600 text-[10px] font-black italic">No Division</span>
@@ -151,6 +170,20 @@ export default function SalesmanExpenseTable(props: Props) {
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
+                        {mode === "history" && row.header_statuses.map((status) => (
+                          <span
+                            key={status}
+                            className={`text-[9px] font-black uppercase tracking-tighter ${
+                              status.toLowerCase() === "rejected"
+                                ? "text-rose-600"
+                                : "text-emerald-600"
+                            }`}
+                          >
+                            {status}
+                          </span>
+                        ))}
+                        {mode === "pending" && (
+                          <>
                         {row.draft_count > 0 && (
                           <div className="flex items-center gap-1">
                             <FileText size={10} className="text-slate-400" />
@@ -169,6 +202,8 @@ export default function SalesmanExpenseTable(props: Props) {
                             <span className="text-[9px] font-black text-rose-600 uppercase tracking-tighter">{row.rejected_count} Rejected</span>
                           </div>
                         )}
+                          </>
+                        )}
                       </div>
                     </div>
                   </TableCell>
@@ -185,8 +220,9 @@ export default function SalesmanExpenseTable(props: Props) {
                       <ArrowRight size={14} className={selectedId === row.id ? "text-white" : "text-slate-400 group-hover/btn:text-primary"} />
                     </Button>
                   </TableCell>
-                </TableRow>
-              ))
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

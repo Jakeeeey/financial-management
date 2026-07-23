@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw, ShieldAlert, ArrowLeft, ShieldCheck } from "lucide-react";
+import { RefreshCw, ShieldAlert, ArrowLeft, ShieldCheck, History, Clock3 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,8 @@ import HeaderSelectionPanel from "./components/HeaderSelectionPanel";
 
 export default function SalesmenExpenseApprovalModule() {
   const {
+    listMode,
+    setListMode,
     rows,
     totalItems,
     q,
@@ -102,16 +104,38 @@ export default function SalesmenExpenseApprovalModule() {
         
         {/* Left Side: Salesmen */}
         <div className="flex-[7] flex flex-col min-h-0 bg-card dark:bg-slate-900 border dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-6 py-5 border-b dark:border-slate-800 bg-muted/10 dark:bg-slate-800/50 shrink-0">
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              Pending Authorization List
-              <Badge variant="secondary" className="font-bold text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors uppercase tracking-widest px-2 py-0.5 ml-2">
-                Live Data
-              </Badge>
-            </h2>
-            <p className="text-xs font-medium text-muted-foreground mt-1">
-              Select an ongoing draft application to review receipts and allocate balances.
-            </p>
+          <div className="flex shrink-0 items-center justify-between gap-4 border-b bg-muted/10 px-6 py-5 dark:border-slate-800 dark:bg-slate-800/50">
+            <div>
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                {listMode === "pending" ? "Pending Authorization List" : "Decision History"}
+                <Badge variant="secondary" className="font-bold text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors uppercase tracking-widest px-2 py-0.5 ml-2">
+                  {listMode === "pending" ? "Live Data" : "Archive"}
+                </Badge>
+              </h2>
+              <p className="text-xs font-medium text-muted-foreground mt-1">
+                {listMode === "pending"
+                  ? "Select an ongoing draft application to review receipts and allocate balances."
+                  : "Find completed or rejected submissions and reopen their audit details."}
+              </p>
+            </div>
+            <div className="flex rounded-full border bg-background p-1 shadow-sm dark:border-slate-700">
+              <Button
+                size="sm"
+                variant={listMode === "pending" ? "default" : "ghost"}
+                className="h-8 rounded-full px-4 text-[10px] font-black uppercase tracking-wider"
+                onClick={() => setListMode("pending")}
+              >
+                <Clock3 className="mr-1.5 h-3.5 w-3.5" /> Pending
+              </Button>
+              <Button
+                size="sm"
+                variant={listMode === "history" ? "default" : "ghost"}
+                className="h-8 rounded-full px-4 text-[10px] font-black uppercase tracking-wider"
+                onClick={() => setListMode("history")}
+              >
+                <History className="mr-1.5 h-3.5 w-3.5" /> History
+              </Button>
+            </div>
           </div>
           
           <div className="p-6 flex-1 flex flex-col min-h-0 bg-muted/5 dark:bg-slate-900/50">
@@ -124,6 +148,7 @@ export default function SalesmenExpenseApprovalModule() {
               setPage={setPage}
               pageCount={pageCount}
               loading={loading}
+              mode={listMode}
               onAction={selectSalesman}
               selectedId={selectedSalesman?.id}
             />
@@ -139,6 +164,7 @@ export default function SalesmenExpenseApprovalModule() {
               loading={detailLoading}
               onClose={closePanel}
               onSelectHeader={openModalForHeader}
+              initialTab={listMode}
             />
           ) : (
             <div className="p-6 h-full flex flex-col">

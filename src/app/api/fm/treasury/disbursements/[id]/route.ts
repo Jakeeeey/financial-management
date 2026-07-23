@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId } from "../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow } from "../route";
+import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
+import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
+import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
+import { isPettyCashAccount, validatePaymentLine } from "../_payment-method";
 
 export const runtime = "nodejs";
 
@@ -28,6 +32,35 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     try {
         const body = await request.json();
+        const requestedPayables = (body.payables || []) as PayableInput[];
+        const requestedPayments = (body.payments || []) as PaymentInput[];
+        const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
+        if (missingPrincipalDivisionError) {
+            return NextResponse.json({ message: missingPrincipalDivisionError }, { status: 400 });
+        }
+        const normalizedPayables = normalizeVatSplitDivisions(requestedPayables);
+        const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
+            !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
+        );
+        const paymentLinesInput = requestedPayments.filter((line: PaymentInput) =>
+            !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
+        );
+        const coaMap = await getCoaMap();
+        for (let index = 0; index < paymentLinesInput.length; index++) {
+            const line = paymentLinesInput[index];
+            const validationError = validatePaymentLine(line, coaMap.get(Number(line.coaId)));
+            if (validationError) {
+                return NextResponse.json({
+                    message: validationError,
+                    detail: `Payment row ${index + 1} is invalid.`,
+                }, { status: 400 });
+            }
+        }
+        const normalizedPaymentLines = paymentLinesInput.map((line) =>
+            isPettyCashAccount(coaMap.get(Number(line.coaId)))
+                ? { ...line, bankId: undefined, checkNo: "" }
+                : line
+        );
 
         // 1. Fetch current status from Directus
         const directusUrl = `${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/items/disbursement/${id}`;
@@ -54,6 +87,58 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
         if (currentDis.status !== "Draft" && currentDis.status !== "Submitted" && currentDis.status !== "Approved" && currentDis.status !== "Returned for Revision" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
             return NextResponse.json({ message: "Only Draft, Submitted, Approved, Returned, Released, or Partially Released disbursements can be edited." }, { status: 400 });
+        }
+
+        const currentLineItems = await getLineItems([id]);
+        const currentPayables = currentLineItems.payables.get(id) || [];
+        const currentPayments = currentLineItems.payments.get(id) || [];
+        const incomingCanonical = canonicalizeDisbursementPayload({
+            transactionTypeId: body.transactionTypeId,
+            payeeId: body.payeeId,
+            remarks: body.remarks,
+            totalAmount: body.totalAmount,
+            transactionDate: body.transactionDate,
+            divisionId: body.divisionId,
+            departmentId: body.departmentId,
+            fundSourceId: body.fundSourceId,
+            supportingDocumentsUrl: body.supportingDocumentsUrl,
+            payables: payableLinesInput,
+            payments: normalizedPaymentLines,
+        });
+        if (canonicalizePersistedDisbursement(currentDis, currentPayables, currentPayments) === incomingCanonical) {
+            return NextResponse.json(await loadNormalizedDisbursement(currentDis, token));
+        }
+
+        const currentPayeeIdForEligibility = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
+            ? Number(currentDis.payee.id)
+            : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
+        const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
+            requestedPayables.map((line) => line.referenceNo),
+            body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
+        );
+        if (unpostedPoReferences.length > 0) {
+            return NextResponse.json({
+                message: "Disbursement cannot include purchase-order amounts that have not been posted.",
+                detail: `Unposted or ineligible references: ${unpostedPoReferences.join(", ")}`,
+                references: unpostedPoReferences,
+            }, { status: 409 });
+        }
+
+        const memoCapError = await validateSupplierMemoCaps(
+            body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
+            requestedPayables,
+            id,
+        );
+        if (memoCapError) {
+            return NextResponse.json({
+                message: "Supplier memo amount exceeds its authorized cap.",
+                detail: memoCapError.message,
+                memoNumber: memoCapError.memoNumber,
+                authorizedAmount: memoCapError.authorizedAmount,
+                appliedAmount: memoCapError.appliedAmount,
+                requestedAmount: memoCapError.requestedAmount,
+                remainingAmount: memoCapError.remainingAmount,
+            }, { status: 409 });
         }
 
         // 2. Fetch existing payables & payments to clear them (matching Spring Boot's behavior)
@@ -117,7 +202,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }
 
         // 4. Calculate paid amount (sum of payments)
-        const calculatedPaidAmount = (body.payments || []).reduce(
+        const calculatedPaidAmount = normalizedPaymentLines.reduce(
             (sum: number, p: PaymentInput) => sum + (Number(p.amount) || 0),
             0
         );
@@ -132,6 +217,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             transaction_date: body.transactionDate,
             division_id: body.divisionId ? Number(body.divisionId) : null,
             department_id: body.departmentId ? Number(body.departmentId) : null,
+            fund_source_id: body.fundSourceId ? Number(body.fundSourceId) : null,
             supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
             status: newStatus,
             approver_id: approverId,
@@ -147,10 +233,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             body: JSON.stringify(headerPayload),
         });
         if (!updateRes.ok) throw new Error(await updateRes.text());
-        await updateRes.json();
+        const updatedHeader = (await updateRes.json()).data as DisbursementRow;
 
         // 5b. Batch insert new line items
-        const payableLines = (body.payables || [])
+        const payableLines = normalizedPayables
             .filter((line: PayableInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== ""))
             .map((line: PayableInput) => ({
                 disbursement_id: id,
@@ -162,8 +248,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 remarks: line.remarks || ""
             }));
 
-        const paymentLines = (body.payments || [])
-            .filter((line: PaymentInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo && line.checkNo.trim() !== ""))
+        const paymentLines = normalizedPaymentLines
+            .filter((line: PaymentInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== ""))
             .map((line: PaymentInput) => {
                 const payload: {
                     disbursement_id: number;
@@ -216,10 +302,16 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             }
         }
 
+        const verifiedLineItems = await getLineItems([id]);
+        const verifiedPayables = verifiedLineItems.payables.get(id) || [];
+        const verifiedPayments = verifiedLineItems.payments.get(id) || [];
+        if (canonicalizePersistedDisbursement(updatedHeader, verifiedPayables, verifiedPayments) !== incomingCanonical) {
+            throw new Error("Updated disbursement lines failed integrity verification.");
+        }
+
         // 6. Fetch full line items structure, user maps, coa maps and map back to response DTO format
         const lineItems = await getLineItems([id]);
 
-        const coaMap = await getCoaMap();
         const divisionMap = await getDivisionMap();
         const bankMap = await getBankMap();
 
@@ -334,6 +426,12 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
             return NextResponse.json({ message: "Cannot delete a transaction that is already Posted to the GL. This record is immutable." }, { status: 400 });
         }
 
+        const memoPayeeId = relationId(currentDis.payee, "id") || 0;
+        const existingLineItems = await getLineItems([id]);
+        const memoReferences = (existingLineItems.payables.get(id) || [])
+            .map((line) => String(line.reference_no || ""))
+            .filter((reference) => /^(SCM|SDM)-/i.test(reference));
+
         // Soft Delete: stamp is_deleted = 1, deleted_at = NOW(), and deleted_by = currentUserId
         const deletePayload = {
             is_deleted: 1,
@@ -352,6 +450,10 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
         });
 
         if (!patchRes.ok) throw new Error(await patchRes.text());
+
+        if (memoPayeeId) {
+            await refreshSupplierMemoStatuses(memoPayeeId, memoReferences);
+        }
 
         return NextResponse.json({ message: "Disbursement soft-deleted successfully" });
 

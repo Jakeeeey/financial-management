@@ -147,6 +147,7 @@ export type DraftRowResponse = {
   doc_no: string;
   payee_user_id: number;
   payee_name: string;
+  encoder_user_id?: number;
   encoder_name: string;
   total_amount: number;
   remarks: string | null;

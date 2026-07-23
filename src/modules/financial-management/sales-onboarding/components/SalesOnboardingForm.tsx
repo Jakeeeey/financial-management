@@ -52,6 +52,7 @@ export default function SalesOnboardingForm({
     register,
     handleSubmit,
     control,
+    getValues,
     setValue,
     reset,
     formState: { errors },
@@ -137,15 +138,20 @@ export default function SalesOnboardingForm({
     if (!selectedCustomerCode) return;
     const cust = customers.find(c => String(c.customer_code) === String(selectedCustomerCode));
     if (!cust) return;
-    const terms = cust.payment_term || 0;
-    if (terms > 0 && invoiceDate) {
-      const baseDate = new Date(invoiceDate);
+    const terms = cust.payment_term?.payment_days || 0;
+    const currentInvoiceDate = invoiceDate || getValues("invoice_date");
+    if (!currentInvoiceDate) {
+      setValue("due_date", "");
+      return;
+    }
+    if (terms > 0) {
+      const baseDate = new Date(currentInvoiceDate);
       baseDate.setDate(baseDate.getDate() + terms);
       setValue("due_date", baseDate.toISOString().split("T")[0]);
     } else {
-      setValue("due_date", invoiceDate);
+      setValue("due_date", currentInvoiceDate);
     }
-  }, [selectedCustomerCode, invoiceDate, customers, setValue]);
+  }, [selectedCustomerCode, invoiceDate, customers, getValues, setValue]);
 
   // Auto-calculate discount amount when discount type is selected
   useEffect(() => {
@@ -187,7 +193,9 @@ export default function SalesOnboardingForm({
     return customers.map((c) => ({
       value: c.customer_code,
       label: c.customer_name,
-      sublabel: `Code: ${c.customer_code} | Payment Term: ${c.payment_term || "N/A"} days`,
+      sublabel: c.payment_term
+        ? `Code: ${c.customer_code} | ${c.payment_term.payment_name} (${c.payment_term.payment_days} days)`
+        : `Code: ${c.customer_code} | Payment Term: N/A`,
     }));
   }, [customers]);
 
