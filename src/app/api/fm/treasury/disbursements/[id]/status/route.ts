@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap, relationId } from "../../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap, relationId, loadNormalizedDisbursement } from "../../route";
 import { findUnpostedPurchaseOrderReferences } from "../../_purchase-order-eligibility";
 import { findVatSplitDivisionError } from "../../_payable-split-integrity";
 import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../../_memo-cap-integrity";
@@ -156,6 +156,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         if (!currentRes.ok) return NextResponse.json({ message: "Disbursement not found in Directus" }, { status: 404 });
         const currentDis = (await currentRes.json()).data;
+
+        const currentStatus = String(currentDis.status || "");
+        const isReplay = currentStatus === status ||
+            (status === "Submitted" && currentStatus === "Approved" && Number(currentDis.total_amount) < 1000);
+        if (isReplay) {
+            return NextResponse.json(await loadNormalizedDisbursement(currentDis, token));
+        }
 
         // Immutability Enforcement: block modifications if isPosted = 1
         if (Number(currentDis.isPosted) === 1) {

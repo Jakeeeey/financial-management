@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -146,13 +146,11 @@ export default function ApprovalSubmodule() {
 
     // Reset checklists when selecting a different voucher
     useEffect(() => {
-        /* eslint-disable react-hooks/set-state-in-effect */
         setCheckPayee(false);
         setCheckCostCenter(false);
         setCheckGLAccount(false);
         setCheckRemarks(false);
         setCheckAttachments(false);
-        /* eslint-enable react-hooks/set-state-in-effect */
     }, [selectedDisbursement]);
 
     // Force filters to "Submitted" status when loading
@@ -175,15 +173,26 @@ export default function ApprovalSubmodule() {
     }, [selectedDisbursement]);
 
     const isChecklistComplete = checkPayee && checkCostCenter && checkGLAccount && checkRemarks && (selectedDisbursement?.supportingDocumentsUrl ? checkAttachments : true);
+    const [actionLocked, setActionLocked] = useState(false);
+    const actionLockRef = useRef(false);
 
     const handleAction = async (status: string) => {
-        if (!selectedDisbursement) return;
-        const success = await changeStatus(selectedDisbursement.id, status);
-        if (success) {
-            setSelectedDisbursement(null);
-            refresh();
+        if (!selectedDisbursement || actionLoading || actionLockRef.current) return;
+        actionLockRef.current = true;
+        setActionLocked(true);
+        try {
+            const success = await changeStatus(selectedDisbursement.id, status);
+            if (success) {
+                setSelectedDisbursement(null);
+                refresh();
+            }
+        } finally {
+            actionLockRef.current = false;
+            setActionLocked(false);
         }
     };
+
+    const isActionBusy = actionLoading || actionLocked;
 
     return (
         <div className="flex flex-col lg:flex-row gap-6 max-w-[1600px] mx-auto min-h-[calc(100vh-140px)] animate-in fade-in duration-500">
@@ -583,19 +592,19 @@ export default function ApprovalSubmodule() {
                             <Button 
                                 variant="destructive" 
                                 onClick={() => handleAction("Returned for Revision")} 
-                                disabled={actionLoading}
+                                disabled={isActionBusy}
                                 className="h-11 px-6 text-xs font-black uppercase tracking-widest"
                             >
-                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />}
+                                {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />}
                                 Return for Revision
                             </Button>
 
                             <Button 
                                 onClick={() => handleAction("Approved")} 
-                                disabled={actionLoading || !isChecklistComplete}
+                                disabled={isActionBusy || !isChecklistComplete}
                                 className="h-11 px-10 text-xs font-black uppercase tracking-widest bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/10 disabled:opacity-50"
                             >
-                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                                {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
                                 Approve Voucher
                             </Button>
                         </div>

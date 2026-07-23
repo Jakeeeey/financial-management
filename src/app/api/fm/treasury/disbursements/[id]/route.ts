@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId } from "../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow } from "../route";
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
 import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
@@ -32,11 +32,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     try {
         const body = await request.json();
         const requestedPayables = (body.payables || []) as PayableInput[];
+        const requestedPayments = (body.payments || []) as PaymentInput[];
         const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
         if (missingPrincipalDivisionError) {
             return NextResponse.json({ message: missingPrincipalDivisionError }, { status: 400 });
         }
         const normalizedPayables = normalizeVatSplitDivisions(requestedPayables);
+        const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
+            !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
+        );
+        const paymentLinesInput = requestedPayments.filter((line: PaymentInput) =>
+            !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo && line.checkNo.trim() !== "")
+        );
 
         // 1. Fetch current status from Directus
         const directusUrl = `${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/items/disbursement/${id}`;
@@ -63,6 +70,26 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
         if (currentDis.status !== "Draft" && currentDis.status !== "Submitted" && currentDis.status !== "Approved" && currentDis.status !== "Returned for Revision" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
             return NextResponse.json({ message: "Only Draft, Submitted, Approved, Returned, Released, or Partially Released disbursements can be edited." }, { status: 400 });
+        }
+
+        const currentLineItems = await getLineItems([id]);
+        const currentPayables = currentLineItems.payables.get(id) || [];
+        const currentPayments = currentLineItems.payments.get(id) || [];
+        const incomingCanonical = canonicalizeDisbursementPayload({
+            transactionTypeId: body.transactionTypeId,
+            payeeId: body.payeeId,
+            remarks: body.remarks,
+            totalAmount: body.totalAmount,
+            transactionDate: body.transactionDate,
+            divisionId: body.divisionId,
+            departmentId: body.departmentId,
+            fundSourceId: body.fundSourceId,
+            supportingDocumentsUrl: body.supportingDocumentsUrl,
+            payables: payableLinesInput,
+            payments: paymentLinesInput,
+        });
+        if (canonicalizePersistedDisbursement(currentDis, currentPayables, currentPayments) === incomingCanonical) {
+            return NextResponse.json(await loadNormalizedDisbursement(currentDis, token));
         }
 
         const currentPayeeIdForEligibility = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
@@ -173,6 +200,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             transaction_date: body.transactionDate,
             division_id: body.divisionId ? Number(body.divisionId) : null,
             department_id: body.departmentId ? Number(body.departmentId) : null,
+            fund_source_id: body.fundSourceId ? Number(body.fundSourceId) : null,
             supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
             status: newStatus,
             approver_id: approverId,
@@ -188,7 +216,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             body: JSON.stringify(headerPayload),
         });
         if (!updateRes.ok) throw new Error(await updateRes.text());
-        await updateRes.json();
+        const updatedHeader = (await updateRes.json()).data as DisbursementRow;
 
         // 5b. Batch insert new line items
         const payableLines = normalizedPayables
@@ -255,6 +283,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             if (res && !res.ok) {
                 throw new Error(await res.text());
             }
+        }
+
+        const verifiedLineItems = await getLineItems([id]);
+        const verifiedPayables = verifiedLineItems.payables.get(id) || [];
+        const verifiedPayments = verifiedLineItems.payments.get(id) || [];
+        if (canonicalizePersistedDisbursement(updatedHeader, verifiedPayables, verifiedPayments) !== incomingCanonical) {
+            throw new Error("Updated disbursement lines failed integrity verification.");
         }
 
         // 6. Fetch full line items structure, user maps, coa maps and map back to response DTO format

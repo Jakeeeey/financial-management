@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,6 +92,9 @@ export function DisbursementCreateSheet({
     
     const [previewDocNo, setPreviewDocNo] = useState("");
     const [loadingDocNo, setLoadingDocNo] = useState(false);
+    const [localSubmitting, setLocalSubmitting] = useState(false);
+    const submitLockRef = useRef(false);
+    const isBusy = loading || loadingDocNo || localSubmitting;
 
     const totalAmount = useMemo(() => payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payables]);
     const totalPayments = useMemo(() => payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payments]);
@@ -376,6 +379,7 @@ export function DisbursementCreateSheet({
     };
 
     const handleSubmit = async () => {
+        if (isBusy || submitLockRef.current) return;
         if (!transactionTypeId) return toast.error("Transaction Type is required.");
         if (!payeeId) return toast.error("Please select a Payee.");
         if (!departmentId) return toast.error("Department is required.");
@@ -386,38 +390,46 @@ export function DisbursementCreateSheet({
             return toast.error("All payment lines must have a valid GL Account (COA) selected.");
         }
 
-        const payload: DisbursementPayload = {
-            docNo: editData ? editData.docNo : undefined,
-            transactionTypeId: Number(transactionTypeId),
-            payeeId: Number(payeeId),
-            divisionId: divisionId ? Number(divisionId) : undefined,
-            departmentId: Number(departmentId),
-            remarks,
-            supportingDocumentsUrl: supportingDocumentsUrl ? (supportingDocumentsUrl.includes("/") ? (supportingDocumentsUrl.split("/").pop()?.split("?")[0] || "") : supportingDocumentsUrl) : "",
-            totalAmount: totalAmount,
-            transactionDate,
-            payables: payables.map(p => ({
-                ...p,
-                coaId: p.coaId ? Number(p.coaId) : undefined,
-                divisionId: p.divisionId ? Number(p.divisionId) : undefined
-            })),
-            payments: payments.map(p => ({
-                ...p,
-                coaId: p.coaId ? Number(p.coaId) : undefined,
-                bankId: p.bankId ? Number(p.bankId) : undefined
-            })),
-        };
-        const success = await onSubmit(payload);
-        if (success) {
-            setTransactionTypeId(1);
-            setPayeeId("");
-            setDivisionId("");
-            setDepartmentId("");
-            setRemarks("");
-            setSupportingDocumentsUrl("");
-            setPayables([]);
-            setPayments([]);
-            onOpenChange(false);
+        submitLockRef.current = true;
+        setLocalSubmitting(true);
+        try {
+            const payload: DisbursementPayload = {
+                docNo: editData ? editData.docNo : (previewDocNo || undefined),
+                transactionTypeId: Number(transactionTypeId),
+                payeeId: Number(payeeId),
+                divisionId: divisionId ? Number(divisionId) : undefined,
+                departmentId: Number(departmentId),
+                remarks,
+                supportingDocumentsUrl: supportingDocumentsUrl ? (supportingDocumentsUrl.includes("/") ? (supportingDocumentsUrl.split("/").pop()?.split("?")[0] || "") : supportingDocumentsUrl) : "",
+                totalAmount: totalAmount,
+                transactionDate,
+                payables: payables.map(p => ({
+                    ...p,
+                    coaId: p.coaId ? Number(p.coaId) : undefined,
+                    divisionId: p.divisionId ? Number(p.divisionId) : undefined
+                })),
+                payments: payments.map(p => ({
+                    ...p,
+                    coaId: p.coaId ? Number(p.coaId) : undefined,
+                    bankId: p.bankId ? Number(p.bankId) : undefined
+                })),
+            };
+            const success = await onSubmit(payload);
+            if (success) {
+                setTransactionTypeId(1);
+                setPayeeId("");
+                setDivisionId("");
+                setDepartmentId("");
+                setRemarks("");
+                setSupportingDocumentsUrl("");
+                setPayables([]);
+                setPayments([]);
+                setPreviewDocNo("");
+                onOpenChange(false);
+            }
+        } finally {
+            submitLockRef.current = false;
+            setLocalSubmitting(false);
         }
     };
 
@@ -490,6 +502,7 @@ export function DisbursementCreateSheet({
                                     totalAmount={totalAmount}
                                     totalPayments={totalPayments}
                                     paymentDifference={paymentDifference}
+                                    disabled={isBusy}
                                 />
                             </div>
                         </div>
@@ -510,6 +523,7 @@ export function DisbursementCreateSheet({
                                     handleRemovePayable={(idx) => setPayables(payables.filter((_, i) => i !== idx))}
                                     formatMoney={formatCurrency}
                                     isAddDisabled={!divisionId || !departmentId}
+                                    disabled={isBusy}
                                 />
 
                                 <PaymentsSection
@@ -521,6 +535,7 @@ export function DisbursementCreateSheet({
                                     totalPayments={totalPayments}
                                     formatMoney={formatCurrency}
                                     isAddDisabled={!divisionId || !departmentId}
+                                    disabled={isBusy}
                                 />
                             </div>
                         </div>
@@ -532,11 +547,11 @@ export function DisbursementCreateSheet({
                             Lines: {payables.length} Allocated | {payments.length} Paid
                         </div>
                         <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => onOpenChange(false)}
+                            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isBusy}
                                     className="border-input text-foreground hover:bg-accent font-bold text-xs h-9 px-5 rounded-sm">Cancel</Button>
-                            <Button onClick={handleSubmit} disabled={loading}
+                            <Button onClick={handleSubmit} disabled={isBusy}
                                     className="text-xs font-bold h-9 px-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm shadow-sm transition-colors">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> :
+                                {isBusy ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> :
                                     <Save className="w-4 h-4 mr-2"/>}
                                 {editData ? "Save and Close" : "Save and Close"}
                             </Button>
