@@ -5,7 +5,7 @@ import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentI
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
 import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
-import { isPettyCashAccount, validatePaymentLine } from "@/lib/financial-management/payment-method";
+import { isPettyCashAccount, validatePaymentLine } from "../_payment-method";
 
 export const runtime = "nodejs";
 

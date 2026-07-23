@@ -4,7 +4,7 @@ import { decodeJwtPayload } from "@/lib/auth-utils";
 import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
 import { validateSupplierMemoCaps } from "./_memo-cap-integrity";
-import { isPettyCashAccount, validatePaymentLine } from "@/lib/financial-management/payment-method";
+import { isPettyCashAccount, validatePaymentLine } from "./_payment-method";
 
 export const runtime = "nodejs";
 

@@ -5,7 +5,7 @@ import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, Disburseme
 import { findUnpostedPurchaseOrderReferences } from "../../_purchase-order-eligibility";
 import { findVatSplitDivisionError } from "../../_payable-split-integrity";
 import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../../_memo-cap-integrity";
-import { validatePaymentLine } from "@/lib/financial-management/payment-method";
+import { validatePaymentLine } from "../../_payment-method";
 
 export const runtime = "nodejs";
 

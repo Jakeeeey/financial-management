@@ -18,7 +18,7 @@ import { Disbursement, BankAccountDto, COADto, PaymentLine, DisbursementPayload 
 import { useDisbursement } from "../hooks/useDisbursement";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { formatCurrency, numberToWords } from "../utils/disbursement-utils";
-import { isPettyCashAccount, validatePaymentLine } from "@/lib/financial-management/payment-method";
+import { isPettyCashAccount, validatePaymentLine } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { generateDisbursementPDF, generateCheckLeafPDF } from "../utils/pdfGenerator";
 
 import { format } from "date-fns";
