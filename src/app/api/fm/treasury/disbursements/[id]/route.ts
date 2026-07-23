@@ -4,6 +4,7 @@ import { decodeJwtPayload } from "@/lib/auth-utils";
 import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId } from "../route";
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
+import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
 
 export const runtime = "nodejs";
 
@@ -76,6 +77,23 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 message: "Disbursement cannot include purchase-order amounts that have not been posted.",
                 detail: `Unposted or ineligible references: ${unpostedPoReferences.join(", ")}`,
                 references: unpostedPoReferences,
+            }, { status: 409 });
+        }
+
+        const memoCapError = await validateSupplierMemoCaps(
+            body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
+            requestedPayables,
+            id,
+        );
+        if (memoCapError) {
+            return NextResponse.json({
+                message: "Supplier memo amount exceeds its authorized cap.",
+                detail: memoCapError.message,
+                memoNumber: memoCapError.memoNumber,
+                authorizedAmount: memoCapError.authorizedAmount,
+                appliedAmount: memoCapError.appliedAmount,
+                requestedAmount: memoCapError.requestedAmount,
+                remainingAmount: memoCapError.remainingAmount,
             }, { status: 409 });
         }
 
@@ -357,6 +375,12 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
             return NextResponse.json({ message: "Cannot delete a transaction that is already Posted to the GL. This record is immutable." }, { status: 400 });
         }
 
+        const memoPayeeId = relationId(currentDis.payee, "id") || 0;
+        const existingLineItems = await getLineItems([id]);
+        const memoReferences = (existingLineItems.payables.get(id) || [])
+            .map((line) => String(line.reference_no || ""))
+            .filter((reference) => /^(SCM|SDM)-/i.test(reference));
+
         // Soft Delete: stamp is_deleted = 1, deleted_at = NOW(), and deleted_by = currentUserId
         const deletePayload = {
             is_deleted: 1,
@@ -375,6 +399,10 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
         });
 
         if (!patchRes.ok) throw new Error(await patchRes.text());
+
+        if (memoPayeeId) {
+            await refreshSupplierMemoStatuses(memoPayeeId, memoReferences);
+        }
 
         return NextResponse.json({ message: "Disbursement soft-deleted successfully" });
 

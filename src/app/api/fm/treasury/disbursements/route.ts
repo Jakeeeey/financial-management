@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
+import { validateSupplierMemoCaps } from "./_memo-cap-integrity";
 
 export const runtime = "nodejs";
 
@@ -842,6 +843,19 @@ export async function POST(request: NextRequest) {
         // 1. Fetch payee supplier type to determine prefix (Trade / Non-Trade)
         if (!body.payeeId) {
             return NextResponse.json({ message: "Payee (Supplier ID) is required." }, { status: 400 });
+        }
+
+        const memoCapError = await validateSupplierMemoCaps(Number(body.payeeId), requestedPayables);
+        if (memoCapError) {
+            return NextResponse.json({
+                message: "Supplier memo amount exceeds its authorized cap.",
+                detail: memoCapError.message,
+                memoNumber: memoCapError.memoNumber,
+                authorizedAmount: memoCapError.authorizedAmount,
+                appliedAmount: memoCapError.appliedAmount,
+                requestedAmount: memoCapError.requestedAmount,
+                remainingAmount: memoCapError.remainingAmount,
+            }, { status: 409 });
         }
 
         const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(

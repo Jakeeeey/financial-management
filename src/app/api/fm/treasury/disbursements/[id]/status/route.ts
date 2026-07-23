@@ -4,6 +4,7 @@ import { decodeJwtPayload } from "@/lib/auth-utils";
 import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap, relationId } from "../../route";
 import { findUnpostedPurchaseOrderReferences } from "../../_purchase-order-eligibility";
 import { findVatSplitDivisionError } from "../../_payable-split-integrity";
+import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../../_memo-cap-integrity";
 
 export const runtime = "nodejs";
 
@@ -111,32 +112,12 @@ async function syncPurchaseOrderStatuses(disbursement: DisbursementRow, payables
 }
 
 // 🚀 Helper: Lock Applied Memos
-async function lockAppliedMemos(payablesList: PayableRow[]) {
+async function lockAppliedMemos(payablesList: PayableRow[], supplierId: number) {
     const referenceNumbers = Array.from(new Set(
         payablesList.map((p) => String(p.reference_no || "")).filter((ref) => ref && ref.trim())
     ));
 
-    for (const refNo of referenceNumbers) {
-        try {
-            // Find memo by memo_number
-            const memoRes = await fetch(`${DIRECTUS_URL}/items/suppliers_memo?filter[memo_number][_eq]=${encodeURIComponent(refNo)}&fields=id,status`, {
-                headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` }
-            });
-            if (!memoRes.ok) continue;
-            const memos = ((await memoRes.json()).data || []) as { id: number; status: string }[];
-            for (const memo of memos) {
-                if (memo.status !== "USED") {
-                    await fetch(`${DIRECTUS_URL}/items/suppliers_memo/${memo.id}`, {
-                        method: "PATCH",
-                        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" },
-                        body: JSON.stringify({ status: "USED" })
-                    });
-                }
-            }
-        } catch (e) {
-            console.error(`Failed to lock memo ${refNo}:`, e);
-        }
-    }
+    await refreshSupplierMemoStatuses(supplierId, referenceNumbers);
 }
 
 // 🚀 PATCH Handler - Status Transitions
@@ -188,6 +169,28 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const lineItems = await getLineItems([id]);
         const payables = lineItems.payables.get(id) || [];
         const payments = lineItems.payments.get(id) || [];
+
+        const currentPayeeId = relationId(currentDis.payee, "id") || 0;
+        const memoCapError = currentPayeeId
+            ? await validateSupplierMemoCaps(
+                currentPayeeId,
+                status === "Returned for Revision"
+                    ? []
+                    : payables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
+                id,
+            )
+            : null;
+        if (memoCapError) {
+            return NextResponse.json({
+                message: "Supplier memo amount exceeds its authorized cap.",
+                detail: memoCapError.message,
+                memoNumber: memoCapError.memoNumber,
+                authorizedAmount: memoCapError.authorizedAmount,
+                appliedAmount: memoCapError.appliedAmount,
+                requestedAmount: memoCapError.requestedAmount,
+                remainingAmount: memoCapError.remainingAmount,
+            }, { status: 409 });
+        }
 
         let totalDebit = 0;
         let totalCredit = 0;
@@ -351,7 +354,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 postedBy = currentUserId;
                 datePosted = new Date().toISOString();
                 // Lock applied memos
-                await lockAppliedMemos(payables);
+                await lockAppliedMemos(payables, currentPayeeId);
                 // Sync PO statuses
                 await syncPurchaseOrderStatuses(currentDis, payables);
                 break;
@@ -395,6 +398,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         if (!patchRes.ok) throw new Error(await patchRes.text());
         const updatedDis = (await patchRes.json()).data;
+
+        if (status === "Returned for Revision") {
+            await lockAppliedMemos(payables, currentPayeeId);
+        }
 
         // 5. Build DTO representation
         const userIdsToFetch: number[] = [];

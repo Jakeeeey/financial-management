@@ -136,6 +136,8 @@ export interface MemoDto {
     memo_type_name: string;
     date: string;
     amount: number;
+    applied_amount?: number;
+    remaining_amount?: number;
     reason: string | null;
     coa_id: number;
     account_title: string;
