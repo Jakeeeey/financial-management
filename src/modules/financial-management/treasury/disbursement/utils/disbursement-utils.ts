@@ -2,6 +2,10 @@ export function formatCurrency(amount: number): string {
     return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
 }
 
+export function sumLineAmounts(lines: Array<{ amount: number }>): number {
+    return lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+}
+
 export function getCookie(name: string): string {
     if (typeof window === "undefined") return "";
     const value = `; ${document.cookie}`;
