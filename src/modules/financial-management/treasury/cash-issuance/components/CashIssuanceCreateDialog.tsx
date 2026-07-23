@@ -382,6 +382,9 @@ export function CashIssuanceCreateDialog({
     };
 
     const handleSubmit = async () => {
+        if (!editData && !previewDocNo) {
+            return toast.error("Document number is still loading. Please try again.");
+        }
         if (!transactionTypeId) return toast.error("Transaction Type is required.");
         if (!payeeId) return toast.error("Please select a Payee.");
         if (!divisionId) return toast.error("Division is required.");
@@ -394,7 +397,7 @@ export function CashIssuanceCreateDialog({
         }
 
         const payload: DisbursementPayload = {
-            docNo: editData ? editData.docNo : undefined,
+            docNo: editData ? editData.docNo : (previewDocNo || undefined),
             transactionTypeId: Number(transactionTypeId),
             payeeId: Number(payeeId),
             divisionId: Number(divisionId),

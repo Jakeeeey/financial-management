@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -103,6 +103,8 @@ function AttachmentPreview({ docUrl }: { docUrl: string }) {
 
 export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading, readOnly = false }: DisbursementViewSheetProps) {
     const [showPrintOptions, setShowPrintOptions] = useState(false);
+    const [actionLocked, setActionLocked] = useState(false);
+    const actionLockRef = useRef(false);
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
 
@@ -125,9 +127,19 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
     const isApprover = disbursement.approverId != null && currentUserId != null && String(disbursement.approverId) === String(currentUserId);
 
     const handleAction = async (status: string) => {
-        const success = await onUpdateStatus(disbursement.id, status);
-        if (success) onOpenChange(false);
+        if (loading || actionLockRef.current) return;
+        actionLockRef.current = true;
+        setActionLocked(true);
+        try {
+            const success = await onUpdateStatus(disbursement.id, status);
+            if (success) onOpenChange(false);
+        } finally {
+            actionLockRef.current = false;
+            setActionLocked(false);
+        }
     };
+
+    const isActionBusy = loading || actionLocked;
 
     const handlePrint = (size: "A4" | "58mm") => {
         generateDisbursementPDF(disbursement, size);
@@ -420,8 +432,8 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
 
                         {/* Revert Tool */}
                         {!readOnly && disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" && (
-                            <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
+                            <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
+                                {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
                             </Button>
                         )}
                     </div>
@@ -431,15 +443,15 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         {!readOnly && (
                             <>
                                 {(disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && (
-                                    <Button onClick={() => handleAction("Submitted")} disabled={loading} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
-                                        {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
+                                    <Button onClick={() => handleAction("Submitted")} disabled={isActionBusy} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
                                         {isAutoApprove ? "Submit & Auto-Approve" : "Submit for Approval"}
                                     </Button>
                                 )}
 
                                 {disbursement.status === "Submitted" && (
-                                    <Button onClick={() => handleAction("Approved")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
-                                        {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
+                                    <Button onClick={() => handleAction("Approved")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
                                         Approve Voucher
                                     </Button>
                                 )}
@@ -447,9 +459,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                 {disbursement.status === "Approved" && (
                                     <Button
                                         onClick={() => handleAction("Released")}
-                                        disabled={loading || !disbursement.payments || disbursement.payments.length === 0}
+                                        disabled={isActionBusy || !disbursement.payments || disbursement.payments.length === 0}
                                         className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-purple-600 hover:bg-purple-700 text-white shadow-md disabled:opacity-50">
-                                        {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Send className="w-4 h-4 sm:mr-2" />}
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Send className="w-4 h-4 sm:mr-2" />}
                                         Release Check
                                     </Button>
                                 )}
@@ -458,10 +470,10 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                     <div className="flex flex-col items-end gap-1">
                                         <Button 
                                             onClick={() => handleAction("Posted")} 
-                                            disabled={loading || !isBalanced || isApprover} 
+                                            disabled={isActionBusy || !isBalanced || isApprover}
                                             className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md disabled:opacity-50"
                                         >
-                                            {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
+                                            {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
                                             Post to Ledger
                                         </Button>
                                         {isApprover && (
