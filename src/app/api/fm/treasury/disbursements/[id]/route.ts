@@ -5,6 +5,7 @@ import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentI
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
 import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
+import { isPettyCashAccount, validatePaymentLine } from "../_payment-method";
 
 export const runtime = "nodejs";
 
@@ -42,7 +43,23 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
         const paymentLinesInput = requestedPayments.filter((line: PaymentInput) =>
-            !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo && line.checkNo.trim() !== "")
+            !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
+        );
+        const coaMap = await getCoaMap();
+        for (let index = 0; index < paymentLinesInput.length; index++) {
+            const line = paymentLinesInput[index];
+            const validationError = validatePaymentLine(line, coaMap.get(Number(line.coaId)));
+            if (validationError) {
+                return NextResponse.json({
+                    message: validationError,
+                    detail: `Payment row ${index + 1} is invalid.`,
+                }, { status: 400 });
+            }
+        }
+        const normalizedPaymentLines = paymentLinesInput.map((line) =>
+            isPettyCashAccount(coaMap.get(Number(line.coaId)))
+                ? { ...line, bankId: undefined, checkNo: "" }
+                : line
         );
 
         // 1. Fetch current status from Directus
@@ -86,7 +103,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             fundSourceId: body.fundSourceId,
             supportingDocumentsUrl: body.supportingDocumentsUrl,
             payables: payableLinesInput,
-            payments: paymentLinesInput,
+            payments: normalizedPaymentLines,
         });
         if (canonicalizePersistedDisbursement(currentDis, currentPayables, currentPayments) === incomingCanonical) {
             return NextResponse.json(await loadNormalizedDisbursement(currentDis, token));
@@ -185,7 +202,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }
 
         // 4. Calculate paid amount (sum of payments)
-        const calculatedPaidAmount = (body.payments || []).reduce(
+        const calculatedPaidAmount = normalizedPaymentLines.reduce(
             (sum: number, p: PaymentInput) => sum + (Number(p.amount) || 0),
             0
         );
@@ -231,8 +248,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 remarks: line.remarks || ""
             }));
 
-        const paymentLines = (body.payments || [])
-            .filter((line: PaymentInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo && line.checkNo.trim() !== ""))
+        const paymentLines = normalizedPaymentLines
+            .filter((line: PaymentInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== ""))
             .map((line: PaymentInput) => {
                 const payload: {
                     disbursement_id: number;
@@ -295,7 +312,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         // 6. Fetch full line items structure, user maps, coa maps and map back to response DTO format
         const lineItems = await getLineItems([id]);
 
-        const coaMap = await getCoaMap();
         const divisionMap = await getDivisionMap();
         const bankMap = await getBankMap();
 
