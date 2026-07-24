@@ -29,6 +29,7 @@ export interface Disbursement {
     id: number;
     docNo: string;
     payeeId?: number;
+    transactionTypeId?: number;
     transactionTypeName?: string;
     payeeName?: string;
     remarks?: string;

@@ -311,7 +311,10 @@ async function directusFetch<T>(path: string, options: RequestInit = {}): Promis
 }
 
 function transactionTypeName(type: unknown) {
-    return asNumber(type) === 2 ? "Non-Trade" : "Trade";
+    const normalizedType = asNumber(type);
+    if (normalizedType === 1) return "Trade";
+    if (normalizedType === 2) return "Non-Trade";
+    return "Unknown";
 }
 
 function normalizePage(value: string | null) {
@@ -692,6 +695,7 @@ export function normalizeDisbursement(
         id,
         docNo: asString(row.doc_no),
         payeeId: relationId(row.payee),
+        transactionTypeId: asNumber(row.transaction_type),
         transactionTypeName: transactionTypeName(row.transaction_type),
         payeeName: relationLabel(row.payee, "supplier_name"),
         remarks: asString(row.remarks),
@@ -997,6 +1001,10 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json();
+        const transactionTypeId = Number(body.transactionTypeId);
+        if (transactionTypeId !== 1 && transactionTypeId !== 2) {
+            return NextResponse.json({ message: "Transaction Type must be Trade (1) or Non-Trade (2)." }, { status: 400 });
+        }
         const requestedPayables = (body.payables || []) as PayableInput[];
         const requestedPayments = (body.payments || []) as PaymentInput[];
         const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
@@ -1041,7 +1049,7 @@ export async function POST(request: NextRequest) {
         }
 
         const incomingCanonical = canonicalizeDisbursementPayload({
-            transactionTypeId: body.transactionTypeId,
+            transactionTypeId,
             payeeId: body.payeeId,
             remarks: body.remarks,
             totalAmount: body.totalAmount,
@@ -1111,7 +1119,7 @@ export async function POST(request: NextRequest) {
         // 5. Create disbursement header (no nested O2M — Directus doesn't support it)
         const headerPayload = {
             doc_no: docNo,
-            transaction_type: body.transactionTypeId ? Number(body.transactionTypeId) : null,
+            transaction_type: transactionTypeId,
             payee: Number(body.payeeId),
             remarks: body.remarks || "",
             total_amount: Number(body.totalAmount) || 0,
@@ -1135,6 +1143,9 @@ export async function POST(request: NextRequest) {
         const createdDisbursement = createRes.data;
         const persistedId = asNumber(createdDisbursement.id);
         if (!persistedId) throw new Error("Disbursement created but returned no ID.");
+        if (asNumber(createdDisbursement.transaction_type) !== transactionTypeId) {
+            throw new Error("Disbursement was created but its transaction type was not persisted. Verify the Directus transaction_type field permissions.");
+        }
         createdId = persistedId;
 
         // 6. Batch-create payable lines and payment lines in parallel

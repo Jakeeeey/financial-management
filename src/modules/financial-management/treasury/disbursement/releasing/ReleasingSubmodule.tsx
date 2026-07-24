@@ -17,11 +17,11 @@ import {
 import { Disbursement, BankAccountDto, COADto, PaymentLine, DisbursementPayload } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
 import { disbursementProvider } from "../providers/fetchProvider";
-import { formatCurrency, numberToWords } from "../utils/disbursement-utils";
+import { formatCurrency, getManilaDateInput, numberToWords } from "../utils/disbursement-utils";
 import { isPettyCashAccount, validatePaymentLine } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { generateDisbursementPDF, generateCheckLeafPDF } from "../utils/pdfGenerator";
 
-import { format } from "date-fns";
+import { formatManilaDate } from "../utils/disbursement-utils";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -123,7 +123,7 @@ export default function ReleasingSubmodule() {
             setPayments(selectedDisbursement.payments?.map(p => ({
                 id: p.id,
                 checkNo: p.checkNo || "",
-                date: p.date ? p.date.split("T")[0] : new Date().toISOString().split("T")[0],
+                date: p.date ? p.date.split("T")[0] : getManilaDateInput(),
                 amount: p.amount,
                 coaId: p.coaId,
                 bankId: p.bankId,
@@ -154,7 +154,7 @@ export default function ReleasingSubmodule() {
 
         setPayments([...payments, {
             checkNo: "",
-            date: new Date().toISOString().split("T")[0],
+            date: getManilaDateInput(),
             amount: remaining > 0 ? remaining : 0,
             coaId: autoCoaId,
             remarks: ""
@@ -404,7 +404,7 @@ export default function ReleasingSubmodule() {
                                     </span>
                                     <div className="flex items-center justify-between mt-2.5 w-full">
                                         <span className="text-[9px] font-medium text-muted-foreground/80">
-                                            {v.transactionDate ? format(new Date(v.transactionDate), "MMM dd, yyyy") : ""}
+                                            {formatManilaDate(v.transactionDate, "")}
                                         </span>
                                         <Badge variant="outline" className="text-[8px] px-1.5 py-0 font-bold uppercase bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
                                             Approved

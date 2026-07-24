@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 // 🚀 FIXED: Pointing directly to your existing provider!
 import { disbursementProvider } from "../providers/fetchProvider";
 import { DisbursementDashboardData, DashboardFilters } from "../types";
+import { getManilaDateInput, getManilaMonthStartInput } from "../utils/disbursement-utils";
 
 export function useDisbursementDashboard() {
     const [data, setData] = useState<DisbursementDashboardData | null>(null);
@@ -13,8 +14,8 @@ export function useDisbursementDashboard() {
     // Default filters: Current month up to today
     const [filters, setFilters] = useState<DashboardFilters>({
         status: "ALL",
-        startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0],
+        startDate: getManilaMonthStartInput(),
+        endDate: getManilaDateInput(),
     });
 
     const fetchDashboard = useCallback(async (currentFilters: DashboardFilters) => {
