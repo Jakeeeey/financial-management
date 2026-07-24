@@ -22,6 +22,7 @@ import { Disbursement, DashboardFilters, COADto, SupplierDto, DivisionDto, Depar
 import { generateReportExcel } from "../utils/reportExcelGenerator";
 import { DisbursementViewSheet } from "../components/DisbursementViewSheet";
 import { StickyTableWrapper } from "../components/StickyTableWrapper";
+import { formatManilaDate, getManilaDateInput, getManilaMonthEndInput, getManilaMonthStartInput, getManilaQuarterStartInput, getManilaYearStartInput } from "../utils/disbursement-utils";
 
 interface SearchSelectProps<T extends string | number> {
     options: { label: string; value: T }[];
@@ -221,20 +222,18 @@ export default function LedgerSubmodule() {
 
     // Quick presets
     const handleDatePreset = (preset: "thisMonth" | "lastMonth" | "thisQuarter" | "thisYear" | "clear") => {
-        const today = new Date();
         let start = "";
-        let end = today.toISOString().split("T")[0];
+        let end = getManilaDateInput();
 
         if (preset === "thisMonth") {
-            start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split("T")[0];
+            start = getManilaMonthStartInput();
         } else if (preset === "lastMonth") {
-            start = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().split("T")[0];
-            end = new Date(today.getFullYear(), today.getMonth(), 0).toISOString().split("T")[0];
+            start = getManilaMonthStartInput(-1);
+            end = getManilaMonthEndInput(-1);
         } else if (preset === "thisQuarter") {
-            const quarter = Math.floor(today.getMonth() / 3);
-            start = new Date(today.getFullYear(), quarter * 3, 1).toISOString().split("T")[0];
+            start = getManilaQuarterStartInput();
         } else if (preset === "thisYear") {
-            start = new Date(today.getFullYear(), 0, 1).toISOString().split("T")[0];
+            start = getManilaYearStartInput();
         } else {
             start = "";
             end = "";
@@ -682,7 +681,7 @@ export default function LedgerSubmodule() {
                                                 className="cursor-pointer group hover:bg-muted/40 transition-colors border-b border-border/40"
                                             >
                                                 <TableCell className="text-xs font-bold text-foreground">
-                                                    {v.transactionDate ? new Date(v.transactionDate).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "2-digit" }) : "N/A"}
+                                                    {formatManilaDate(v.transactionDate)}
                                                 </TableCell>
                                                 <TableCell className="text-xs font-black uppercase text-foreground group-hover:text-primary transition-colors">
                                                     {v.docNo}

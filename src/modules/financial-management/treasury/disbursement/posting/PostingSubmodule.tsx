@@ -13,9 +13,8 @@ import {
 import { Disbursement, BankAccountDto, COADto } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
 import { disbursementProvider } from "../providers/fetchProvider";
-import { formatCurrency, VOUCHER_STEPS, getCookie, decodeToken } from "../utils/disbursement-utils";
+import { formatCurrency, formatManilaDate, VOUCHER_STEPS, getCookie, decodeToken } from "../utils/disbursement-utils";
 import { StickyTableWrapper } from "../components/StickyTableWrapper";
-import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
@@ -218,7 +217,7 @@ export default function PostingSubmodule() {
                                     </span>
                                     <div className="flex items-center justify-between mt-2.5 w-full">
                                         <span className="text-[9px] font-medium text-muted-foreground/80">
-                                            {v.transactionDate ? format(new Date(v.transactionDate), "MMM dd, yyyy") : ""}
+                                            {formatManilaDate(v.transactionDate, "")}
                                         </span>
                                         <Badge variant="outline" className={cn(
                                             "text-[8px] px-1.5 py-0 font-bold uppercase",
@@ -391,7 +390,7 @@ export default function PostingSubmodule() {
                                                     return (
                                                         <TableRow key={i} className="hover:bg-muted/50 border-border">
                                                             <TableCell className="text-[10px] font-bold uppercase text-muted-foreground">
-                                                                {p.date ? format(new Date(p.date), "MMM dd, yyyy") : "N/A"}
+                                                                {formatManilaDate(p.date)}
                                                             </TableCell>
                                                             <TableCell className="text-xs font-bold uppercase text-foreground">{p.checkNo || "N/A"}</TableCell>
                                                             <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">
