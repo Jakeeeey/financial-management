@@ -31,6 +31,7 @@ import { applyBulkActionResult, type BulkActionOutcome } from "../utils/applyBul
 import { pcrApproveButtonClass, pcrRejectButtonClass } from "../utils/pcrStatusStyles";
 import { snapshotFromCostRow } from "../utils/labels";
 import type {
+    ApprovalRecordRow,
     CostChangeRequestRow,
     ListQuery,
     PCRStatusFilter,
@@ -117,19 +118,16 @@ export function ListCostRequestManager({
         setConfirmingApprove({ type: "batch" });
     }, [selectedIds]);
 
-    const openRequestReview = React.useCallback((id: number) => {
-        const row = inbox.rows.find((item) => {
-            if (item.kind === "cost_batch") return Number(item.batch_id ?? item.request_id) === id;
-            return Number(item.request_id) === id;
-        });
+    const openRequestReview = React.useCallback((row: ApprovalRecordRow) => {
+        if (!("kind" in row)) return;
 
-        if (row?.kind === "cost_batch") {
+        if (row.kind === "cost_batch") {
             setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
             return;
         }
 
-        setViewingRequestId(id);
-    }, [inbox.rows]);
+        if (row.kind === "list_price") setViewingRequestId(Number(row.request_id));
+    }, []);
 
     const handleConfirmApprove = React.useCallback(async (effectiveAt?: string | null) => {
         if (!confirmingApprove) return;
@@ -315,8 +313,20 @@ export function ListCostRequestManager({
                     {...(readOnly
                         ? {}
                         : {
-                              onApprove: (id) => setConfirmingApprove({ type: "single", id }),
-                              onReject: (id) => setRejectingId(id),
+                              onApprove: (row: ApprovalRecordRow) => {
+                                  if ("kind" in row && row.kind === "list_price") {
+                                      setConfirmingApprove({ type: "single", id: Number(row.request_id) });
+                                  } else if ("kind" in row && row.kind === "cost_batch") {
+                                      setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
+                                  }
+                              },
+                              onReject: (row: ApprovalRecordRow) => {
+                                  if ("kind" in row && row.kind === "list_price") {
+                                      setRejectingId(Number(row.request_id));
+                                  } else if ("kind" in row && row.kind === "cost_batch") {
+                                      setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
+                                  }
+                              },
                           })}
                     meta={{ total_count: inbox.total }}
                     page={Number(inbox.query.page ?? 1)}
