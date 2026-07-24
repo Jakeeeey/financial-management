@@ -502,14 +502,18 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
         if (!payeeId) hasError = true;
         if (!departmentId) hasError = true;
         if (!transactionDate) hasError = true;
+        if (submitImmediate && !supportingDocumentsUrl) hasError = true;
 
         if (hasError) {
             setShowValidationErrors(true);
-            toast.error("Please fill out all required fields marked in red.");
+            toast.error(submitImmediate && !supportingDocumentsUrl
+                ? "Please complete the required fields and attach a supporting document."
+                : "Please fill out all required fields marked in red.");
             return;
         }
 
         if (payables.length === 0) {
+            setShowValidationErrors(true);
             toast.error("Please add at least one payable allocation line item.");
             return;
         }
@@ -518,10 +522,12 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
         for (let i = 0; i < payables.length; i++) {
             const p = payables[i];
             if (!p.coaId) {
+                setShowValidationErrors(true);
                 toast.error(`Please select a GL COA account on payable row ${i + 1}`);
                 return;
             }
             if (Number(p.amount) === 0) {
+                setShowValidationErrors(true);
                 toast.error(`Amount cannot be zero on payable row ${i + 1}`);
                 return;
             }
@@ -852,9 +858,9 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                 {/* Inputs */}
                                 <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-wider">Transaction Type</Label>
+                                    <Label className="text-[10px] font-black uppercase tracking-wider">Transaction Type <span className="text-destructive">*</span></Label>
                                     <select 
-                                        className="h-10 w-full rounded-lg border border-border/80 bg-background px-3 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary/30 cursor-pointer"
+                                        className={cn("h-10 w-full rounded-lg border border-border/80 bg-background px-3 text-xs font-bold uppercase outline-none focus:ring-1 focus:ring-primary/30 cursor-pointer", showValidationErrors && !transactionTypeId && "border-rose-500 focus:ring-rose-500/30")}
                                         value={transactionTypeId}
                                         onChange={e => setTransactionTypeId(Number(e.target.value))}
                                     >
@@ -945,14 +951,17 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
                                  {/* Supporting Doc Upload */}
                                  <div className="space-y-2 sm:col-span-2 lg:col-span-4 border-t border-dashed border-border pt-4">
-                                     <Label className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5"><UploadCloud className="w-3.5 h-3.5" /> Supporting Document File</Label>
+                                     <Label className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5"><UploadCloud className="w-3.5 h-3.5" /> Supporting Document File <span className="text-destructive">*</span></Label>
                                      <div className="flex items-center gap-4">
-                                         <Input type="file" onChange={handleFileUpload} disabled={uploading} className="max-w-[320px] text-xs cursor-pointer" />
+                                         <Input type="file" aria-invalid={showValidationErrors && !supportingDocumentsUrl} onChange={handleFileUpload} disabled={uploading} className={cn("max-w-[320px] text-xs cursor-pointer", showValidationErrors && !supportingDocumentsUrl && "border-rose-500 ring-rose-500/30")} />
                                          {uploading && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
                                          {supportingDocumentsUrl && (
                                              <Badge variant="outline" className="text-xs bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400 font-bold max-w-[400px] truncate">
                                                  Doc URL: {supportingDocumentsUrl}
                                              </Badge>
+                                         )}
+                                         {showValidationErrors && !supportingDocumentsUrl && (
+                                             <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">Required for approval submission.</span>
                                          )}
                                      </div>
                                  </div>
@@ -994,11 +1003,11 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                             <Table className="min-w-[1100px] table-fixed">
                                 <TableHeader className="bg-muted/70 sticky top-0 z-10">
                                     <TableRow>
-                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[220px]">GL Account (COA)</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[220px]">GL Account (COA) <span className="text-destructive">*</span></TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px]">Cost Division</TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px]">Reference / PO</TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[130px]">Invoice Date</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px] text-right">Amount (PHP)</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px] text-right">Amount (PHP) <span className="text-destructive">*</span></TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[210px]">Line Remarks</TableHead>
                                         <TableHead className="w-[60px]"></TableHead>
                                     </TableRow>
@@ -1020,7 +1029,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                         value={line.coaId != null ? line.coaId : ""}
                                                         onSelect={val => handlePayableChange(idx, "coaId", val)}
                                                         placeholder="Select GL Account..."
-                                                        className="h-9 font-bold text-xs bg-background"
+                                                        className={cn("h-9 font-bold text-xs bg-background", showValidationErrors && !line.coaId && "border-rose-500 ring-rose-500/20")}
                                                     />
                                                 </TableCell>
 
@@ -1060,7 +1069,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                 <TableCell className="py-2.5">
                                                     <Input 
                                                         type="number"
-                                                        className="h-9 text-xs font-bold bg-background border-border/80 text-right font-mono" 
+                                                        className={cn("h-9 text-xs font-bold bg-background border-border/80 text-right font-mono", showValidationErrors && Number(line.amount) === 0 && "border-rose-500 focus:ring-rose-500/30")}
                                                         placeholder="0.00"
                                                         value={line.amount || ""} 
                                                         onChange={e => handlePayableChange(idx, "amount", e.target.value === "" ? 0 : Number(e.target.value))} 
