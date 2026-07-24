@@ -18,7 +18,7 @@ import { disbursementProvider } from "../providers/fetchProvider";
 import { toast } from "sonner";
 import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
 import type { Payee } from "@/modules/financial-management/payee-registration/types/payee.schema";
-import { formatCurrency } from "../utils/disbursement-utils";
+import { formatCurrency, getManilaDateInput } from "../utils/disbursement-utils";
 import { VoucherDetailsSection } from "./VoucherDetailsSection";
 import { PayablesSection } from "./PayablesSection";
 import { PaymentsSection } from "./PaymentsSection";
@@ -54,7 +54,7 @@ export function DisbursementCreateSheet({
                                             loading,
                                             editData
                                         }: DisbursementCreateSheetProps) {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getManilaDateInput();
 
     const [transactionTypeId, setTransactionTypeId] = useState<number | "">(1);
     const [payeeId, setPayeeId] = useState<number | "">("");
