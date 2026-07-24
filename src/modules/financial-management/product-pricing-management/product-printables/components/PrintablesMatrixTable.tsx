@@ -189,7 +189,7 @@ export default function PrintablesMatrixTable({
                                                 >
                                                     {price != null ? (
                                                         <span className="font-bold text-[#374151]">
-                                                            {price.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                                            {price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                                                         </span>
                                                     ) : (
                                                         <span className="text-[#D1D5DB]">—</span>

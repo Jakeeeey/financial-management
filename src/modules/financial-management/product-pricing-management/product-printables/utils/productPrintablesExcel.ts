@@ -192,7 +192,7 @@ export async function exportProductPrintablesExcel(args: {
                 cell.fill = fill("FFF9FAFB");
             }
             if (cellIndex > IDENTITY_COLUMN_COUNT && typeof cell.value === "number") {
-                cell.numFmt = "#,##0.000";
+                cell.numFmt = "#,##0.0000";
             }
         }
     }
