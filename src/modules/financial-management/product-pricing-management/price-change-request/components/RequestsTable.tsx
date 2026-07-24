@@ -32,7 +32,7 @@ function fmtPrice(v: number | string | null | undefined) {
 }
 
 function fmtCost(v: number | string | null | undefined) {
-    return fmt(v, 2);
+    return fmt(v, 4);
 }
 
 function requestedAtParts(value: string | null | undefined) {

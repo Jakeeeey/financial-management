@@ -27,7 +27,7 @@ function formatMoney(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
     return Number(value).toLocaleString("en-PH", {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 4,
     });
 }
 

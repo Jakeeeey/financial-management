@@ -40,7 +40,7 @@ function money(value: number | null | undefined) {
         style: "currency",
         currency: "PHP",
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 4,
     }).format(Number(value));
 }
 
