@@ -42,6 +42,7 @@ import {
 import { snapshotFromPriceApprovalRow, snapshotFromUnifiedRow } from "../utils/labels";
 import type {
     CostChangeRequestRow,
+    ApprovalRecordRow,
     ListQuery,
     PCRStatusFilter,
     PriceChangeRequestRow,
@@ -62,15 +63,6 @@ type Props = {
 
 function resolveUnifiedSelectionKey(row: UnifiedApprovalRow): string {
     return row.row_key;
-}
-
-function resolveApprovalActionRow(rows: UnifiedApprovalRow[], id: number) {
-    return rows.find((row) => {
-        if (row.kind === "price_batch" || row.kind === "cost_batch") {
-            return Number(row.batch_id ?? row.request_id) === id;
-        }
-        return Number(row.request_id) === id;
-    });
 }
 
 export function UnifiedApprovalsManager({
@@ -233,39 +225,49 @@ export function UnifiedApprovalsManager({
         selectedPriceSnapshots,
     ]);
 
-    const openRequestReview = React.useCallback((id: number) => {
-        const row = resolveApprovalActionRow(feed.rows, id);
-        if (row?.kind === "price_batch") {
+    const clearViewingState = React.useCallback(() => {
+        setViewingBatchHeaderId(null);
+        setViewingCostBatchHeaderId(null);
+        setViewingCostRequestId(null);
+        setViewingPriceRequestId(null);
+    }, []);
+
+    const openRequestReview = React.useCallback((row: ApprovalRecordRow) => {
+        if (!("kind" in row)) return;
+
+        clearViewingState();
+        if (row.kind === "price_batch") {
             setViewingBatchHeaderId(Number(row.batch_id ?? row.request_id));
             return;
         }
-        if (row?.kind === "cost_batch") {
+        if (row.kind === "cost_batch") {
             setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
             return;
         }
-        if (row && row.kind === "list_price") {
-            setViewingCostRequestId(id);
+        if (row.kind === "list_price") {
+            setViewingCostRequestId(Number(row.request_id));
             return;
         }
-        setViewingPriceRequestId(id);
-    }, [feed.rows]);
+        setViewingPriceRequestId(Number(row.request_id));
+    }, [clearViewingState]);
 
     const handleTableApprove = React.useCallback(
-        (id: number) => {
-            const row = resolveApprovalActionRow(feed.rows, id);
-            if (row?.kind === "list_price") {
+        (row: ApprovalRecordRow) => {
+            if (!("kind" in row)) return;
+            const id = Number(row.request_id);
+            if (row.kind === "list_price") {
                 setConfirmingCostApprove({ type: "single", id });
                 return;
             }
-            if (row?.kind === "price_batch") {
+            if (row.kind === "price_batch") {
                 setConfirmingPriceBatchHeaderId(Number(row.batch_id ?? row.request_id));
                 return;
             }
-            if (row?.kind === "cost_batch") {
+            if (row.kind === "cost_batch") {
                 setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
                 return;
             }
-            if (row?.kind === "price_type") {
+            if (row.kind === "price_type") {
                 if (row.batch_header_id) {
                     setConfirmingPriceBatchHeaderId(row.batch_header_id);
                 } else {
@@ -273,25 +275,26 @@ export function UnifiedApprovalsManager({
                 }
             }
         },
-        [feed.rows],
+        [],
     );
 
     const handleTableReject = React.useCallback(
-        (id: number) => {
-            const row = resolveApprovalActionRow(feed.rows, id);
-            if (row?.kind === "list_price") {
+        (row: ApprovalRecordRow) => {
+            if (!("kind" in row)) return;
+            const id = Number(row.request_id);
+            if (row.kind === "list_price") {
                 setRejectingCostId(id);
                 return;
             }
-            if (row?.kind === "price_batch") {
+            if (row.kind === "price_batch") {
                 setRejectingPriceBatchHeaderId(Number(row.batch_id ?? row.request_id));
                 return;
             }
-            if (row?.kind === "cost_batch") {
+            if (row.kind === "cost_batch") {
                 setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
                 return;
             }
-            if (row?.kind === "price_type") {
+            if (row.kind === "price_type") {
                 if (row.batch_header_id) {
                     setRejectingPriceBatchHeaderId(row.batch_header_id);
                 } else {
@@ -299,7 +302,7 @@ export function UnifiedApprovalsManager({
                 }
             }
         },
-        [feed.rows],
+        [],
     );
 
     const canSelectUnifiedRow = React.useCallback((row: PriceChangeRequestRow | CostChangeRequestRow | UnifiedApprovalRow) => {
