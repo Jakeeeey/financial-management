@@ -98,6 +98,7 @@ export default function ReleasingSubmodule() {
 
     // Releasing prompt state
     const [releasingPromptOpen, setReleasingPromptOpen] = useState(false);
+    const [paymentValidationErrors, setPaymentValidationErrors] = useState<Set<string>>(new Set());
     const [actionLocked, setActionLocked] = useState(false);
     const actionLockRef = useRef(false);
     const saveLockRef = useRef(false);
@@ -131,6 +132,7 @@ export default function ReleasingSubmodule() {
         } else {
             setPayments([]);
         }
+        setPaymentValidationErrors(new Set());
     }, [selectedDisbursement]);
 
     // Derived states
@@ -161,12 +163,22 @@ export default function ReleasingSubmodule() {
 
     const handleRemovePayment = (idx: number) => {
         setPayments(payments.filter((_, i) => i !== idx));
+        setPaymentValidationErrors(new Set());
     };
 
     const handlePaymentChange = <K extends keyof PaymentLine>(idx: number, key: K, val: PaymentLine[K]) => {
         const copy = [...payments];
         copy[idx] = { ...copy[idx], [key]: val };
         setPayments(copy);
+        setPaymentValidationErrors(previous => {
+            const next = new Set(previous);
+            next.delete(`${idx}:${key}`);
+            if (key === "coaId") {
+                next.delete(`${idx}:bankId`);
+                next.delete(`${idx}:checkNo`);
+            }
+            return next;
+        });
     };
 
     // Save checks allocation to backend
@@ -175,15 +187,29 @@ export default function ReleasingSubmodule() {
         saveLockRef.current = true;
 
         try {
-            // validate payments
+            const nextErrors = new Set<string>();
+            const validationMessages: string[] = [];
             for (let i = 0; i < payments.length; i++) {
                 const p = payments[i];
                 const selectedCoa = coas.find(c => c.coaId === p.coaId);
+                const isPettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+                if (!p.date) nextErrors.add(`${i}:date`);
+                if (p.amount == null || !Number.isFinite(Number(p.amount)) || Number(p.amount) === 0) {
+                    nextErrors.add(`${i}:amount`);
+                }
+                if (!p.coaId) nextErrors.add(`${i}:coaId`);
+                if (!isPettyCash && !p.bankId) nextErrors.add(`${i}:bankId`);
+                if (!isPettyCash && String(p.checkNo ?? "").trim() === "") nextErrors.add(`${i}:checkNo`);
+
                 const validationError = validatePaymentLine(p, selectedCoa?.accountTitle);
                 if (validationError) {
-                    toast.error(`${validationError} Payment row ${i + 1}`);
-                    return false;
+                    validationMessages.push(`${validationError} Payment row ${i + 1}`);
                 }
+            }
+            setPaymentValidationErrors(nextErrors);
+            if (nextErrors.size > 0) {
+                toast.error(`${validationMessages[0] || "Please complete all required payment fields."} Complete the highlighted fields.`);
+                return false;
             }
 
             const payload: DisbursementPayload = {
@@ -475,16 +501,18 @@ export default function ReleasingSubmodule() {
                                                             <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 hover:bg-purple-100 font-bold text-[8px] uppercase tracking-wider">Approved Queue</Badge>
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            <Button 
-                                                                type="button"
-                                                                variant="outline" 
-                                                                size="sm" 
-                                                                disabled={!line.checkNo || !line.bankId || !line.amount}
-                                                                onClick={() => handlePrintCheck(line)}
-                                                                className="h-8 text-[9px] font-black uppercase tracking-widest bg-white dark:bg-zinc-800 text-foreground border-border hover:bg-muted/50"
-                                                            >
-                                                                <Printer className="w-3.5 h-3.5 mr-1 text-purple-600" /> Print check
-                                                            </Button>
+                                                            {!isPettyCash && (
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    disabled={!line.checkNo || !line.bankId || !line.amount}
+                                                                    onClick={() => handlePrintCheck(line)}
+                                                                    className="h-8 text-[9px] font-black uppercase tracking-widest bg-white dark:bg-zinc-800 text-foreground border-border hover:bg-muted/50"
+                                                                >
+                                                                    <Printer className="w-3.5 h-3.5 mr-1 text-purple-600" /> Print check
+                                                                </Button>
+                                                            )}
                                                             <Button 
                                                                 type="button"
                                                                 variant="ghost" 
@@ -500,19 +528,21 @@ export default function ReleasingSubmodule() {
                                                      {/* Form Inputs Grid (modern, highly styled) */}
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2">
                                                         <div>
-                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Payment Date</label>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Payment Date <span className="text-destructive">*</span></label>
                                                             <Input 
                                                                 type="date"
-                                                                className="h-9 text-xs font-bold bg-background border-border" 
+                                                                aria-invalid={paymentValidationErrors.has(`${idx}:date`)}
+                                                                className={cn("h-9 text-xs font-bold bg-background border-border", paymentValidationErrors.has(`${idx}:date`) && "border-rose-500 focus:ring-rose-500/30")}
                                                                 value={line.date} 
                                                                 onChange={e => handlePaymentChange(idx, "date", e.target.value)} 
                                                             />
                                                         </div>
                                                         {!isPettyCash && (
                                                             <div>
-                                                                <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Check / Reference No.</label>
+                                                                <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Check / Reference No. <span className="text-destructive">*</span></label>
                                                                 <Input
-                                                                    className="h-9 text-xs font-bold bg-background border-border placeholder:text-muted-foreground/30 font-mono"
+                                                                    aria-invalid={paymentValidationErrors.has(`${idx}:checkNo`)}
+                                                                    className={cn("h-9 text-xs font-bold bg-background border-border placeholder:text-muted-foreground/30 font-mono", paymentValidationErrors.has(`${idx}:checkNo`) && "border-rose-500 focus:ring-rose-500/30")}
                                                                     placeholder="CK-000000"
                                                                     value={line.checkNo}
                                                                     onChange={e => handlePaymentChange(idx, "checkNo", e.target.value)}
@@ -520,10 +550,11 @@ export default function ReleasingSubmodule() {
                                                             </div>
                                                         )}
                                                         <div>
-                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Payment Amount (PHP)</label>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Payment Amount (PHP) <span className="text-destructive">*</span></label>
                                                             <Input 
                                                                 type="number"
-                                                                className="h-9 text-xs font-black bg-background border-border text-right font-mono text-emerald-600 dark:text-emerald-400" 
+                                                                aria-invalid={paymentValidationErrors.has(`${idx}:amount`)}
+                                                                className={cn("h-9 text-xs font-black bg-background border-border text-right font-mono text-emerald-600 dark:text-emerald-400", paymentValidationErrors.has(`${idx}:amount`) && "border-rose-500 focus:ring-rose-500/30")}
                                                                 placeholder="0.00"
                                                                 value={line.amount || ""} 
                                                                 onChange={e => handlePaymentChange(idx, "amount", e.target.value === "" ? 0 : Number(e.target.value))} 
@@ -539,7 +570,7 @@ export default function ReleasingSubmodule() {
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/60">
                                                         {!isPettyCash && (
                                                             <div>
-                                                                <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Draw Bank Account</label>
+                                                                <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Draw Bank Account <span className="text-destructive">*</span></label>
                                                                 <SearchSelect<number>
                                                                     options={banks.map(b => ({
                                                                         value: b.bankId,
@@ -548,11 +579,12 @@ export default function ReleasingSubmodule() {
                                                                     value={line.bankId || ""}
                                                                     onSelect={val => handlePaymentChange(idx, "bankId", val)}
                                                                     placeholder="Select Draw Bank Account..."
+                                                                    className={cn("h-9 text-xs font-bold bg-background border-border", paymentValidationErrors.has(`${idx}:bankId`) && "border-rose-500 ring-rose-500/20")}
                                                                 />
                                                             </div>
                                                         )}
                                                         <div>
-                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">GL Account (Credit)</label>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">GL Account (Credit) <span className="text-destructive">*</span></label>
                                                             <SearchSelect<number>
                                                                 options={paymentCoas.map(c => ({
                                                                     value: c.coaId,
@@ -565,11 +597,19 @@ export default function ReleasingSubmodule() {
                                                                         setPayments(prev => prev.map((payment, paymentIndex) => paymentIndex === idx
                                                                             ? { ...payment, coaId: val, bankId: undefined, checkNo: "" }
                                                                             : payment));
+                                                                        setPaymentValidationErrors(previous => {
+                                                                            const next = new Set(previous);
+                                                                            [...next].forEach(key => {
+                                                                                if (key.startsWith(`${idx}:`)) next.delete(key);
+                                                                            });
+                                                                            return next;
+                                                                        });
                                                                         return;
                                                                     }
                                                                     handlePaymentChange(idx, "coaId", val);
                                                                 }}
                                                                 placeholder="Select GL Account (Credit)..."
+                                                                className={cn("h-9 text-xs font-bold bg-background border-border", paymentValidationErrors.has(`${idx}:coaId`) && "border-rose-500 ring-rose-500/20")}
                                                             />
                                                         </div>
                                                     </div>
