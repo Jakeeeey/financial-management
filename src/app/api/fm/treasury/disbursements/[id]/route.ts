@@ -32,6 +32,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     try {
         const body = await request.json();
+        const transactionTypeId = Number(body.transactionTypeId);
+        if (transactionTypeId !== 1 && transactionTypeId !== 2) {
+            return NextResponse.json({ message: "Transaction Type must be Trade (1) or Non-Trade (2)." }, { status: 400 });
+        }
         const requestedPayables = (body.payables || []) as PayableInput[];
         const requestedPayments = (body.payments || []) as PaymentInput[];
         const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
@@ -93,7 +97,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const currentPayables = currentLineItems.payables.get(id) || [];
         const currentPayments = currentLineItems.payments.get(id) || [];
         const incomingCanonical = canonicalizeDisbursementPayload({
-            transactionTypeId: body.transactionTypeId,
+            transactionTypeId,
             payeeId: body.payeeId,
             remarks: body.remarks,
             totalAmount: body.totalAmount,
@@ -188,7 +192,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const isHeaderOrPayableModified = 
             (body.totalAmount != null && Number(body.totalAmount) !== Number(currentDis.total_amount)) ||
             (body.payeeId != null && Number(body.payeeId) !== currentPayeeId) ||
-            (body.transactionTypeId != null && Number(body.transactionTypeId) !== Number(currentDis.transaction_type));
+            transactionTypeId !== Number(currentDis.transaction_type);
 
         if (isBelowThreshold) {
             newStatus = "Approved";
@@ -209,7 +213,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
         // 5. Update parent header (no nested O2M — Directus doesn't support it)
         const headerPayload = {
-            transaction_type: body.transactionTypeId ? Number(body.transactionTypeId) : null,
+            transaction_type: transactionTypeId,
             payee: Number(body.payeeId),
             remarks: body.remarks || "",
             total_amount: Number(body.totalAmount) || 0,
@@ -356,6 +360,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
         if (!freshRes.ok) throw new Error("Failed to fetch fresh disbursement header");
         const freshDis = (await freshRes.json()).data;
+        if (Number(freshDis.transaction_type) !== transactionTypeId) {
+            throw new Error("Disbursement was updated but its transaction type was not persisted. Verify the Directus transaction_type field permissions.");
+        }
 
         const userIdsToFetch: number[] = [];
         const addId = (val: number | undefined) => {

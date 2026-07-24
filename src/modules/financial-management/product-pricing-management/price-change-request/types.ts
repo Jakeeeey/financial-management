@@ -277,6 +277,8 @@ export type UnifiedApprovalRow =
       }
     | ItemUnifiedApprovalRow;
 
+export type ApprovalRecordRow = PriceChangeRequestRow | CostChangeRequestRow | UnifiedApprovalRow;
+
 export type ListMeta = {
     total_count?: number;
     actual_total_count?: number;

@@ -63,7 +63,7 @@ function money(v: unknown): string {
     if (!Number.isFinite(n)) return "";
     return `PHP ${n.toLocaleString("en-PH", {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 4,
     })}`;
 }
 

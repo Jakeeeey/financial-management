@@ -39,6 +39,7 @@ import {
 import { pcrApproveButtonClass, pcrRejectButtonClass } from "../utils/pcrStatusStyles";
 import { snapshotFromPriceApprovalRow } from "../utils/labels";
 import type {
+    ApprovalRecordRow,
     ListQuery,
     PCRStatusFilter,
     PriceTypeSelectionSnapshot,
@@ -184,19 +185,6 @@ export function PriceTypeRequestManager({
             setBatchActing(false);
         }
     }, [inbox, onUnauthorized]);
-
-    const resolveBatchHeaderId = React.useCallback(
-        (requestId: number) => {
-            const row = inbox.rows.find((r) => {
-                if (r.kind === "price_batch") return Number(r.batch_id ?? r.request_id) === requestId;
-                return Number(r.request_id) === requestId;
-            });
-            if (row?.kind === "price_batch") return Number(row.batch_id ?? row.request_id);
-            if (row?.kind === "price_type") return row.batch_header_id ?? null;
-            return null;
-        },
-        [inbox.rows],
-    );
 
     const handleConfirmBulkApprove = React.useCallback(async (effectiveAt?: string | null) => {
         if (selectedSnapshots.length === 0) return;
@@ -402,30 +390,35 @@ export function PriceTypeRequestManager({
                     hasLoadError={Boolean(inbox.error)}
                     acting={inbox.loading || batchActing}
                     canSelectRow={(row) => row.status === "PENDING"}
-                    onReview={(id) => {
-                        const row = inbox.rows.find((item) => {
-                            if (item.kind === "price_batch") return Number(item.batch_id ?? item.request_id) === id;
-                            return Number(item.request_id) === id;
-                        });
-                        if (row?.kind === "price_batch") {
+                    onReview={(row: ApprovalRecordRow) => {
+                        if (!("kind" in row)) return;
+                        if (row.kind === "price_batch") {
                             setViewingBatchHeaderId(Number(row.batch_id ?? row.request_id));
                             return;
                         }
-                        setViewingRequestId(id);
+                        if (row.kind === "price_type") setViewingRequestId(Number(row.request_id));
                     }}
                     {...(readOnly
                         ? {}
                         : {
-                              onApprove: (id) => {
-                                  const headerId = resolveBatchHeaderId(id);
+                              onApprove: (row: ApprovalRecordRow) => {
+                                  if (!("kind" in row)) return;
+                                  const id = Number(row.request_id);
+                                  const headerId = row.kind === "price_batch"
+                                      ? Number(row.batch_id ?? row.request_id)
+                                      : row.kind === "price_type" ? row.batch_header_id ?? null : null;
                                   if (headerId) {
                                       setConfirmingBatchHeaderId(headerId);
                                       return;
                                   }
                                   setConfirmingOrphanApproveId(id);
                               },
-                              onReject: (id) => {
-                                  const headerId = resolveBatchHeaderId(id);
+                              onReject: (row: ApprovalRecordRow) => {
+                                  if (!("kind" in row)) return;
+                                  const id = Number(row.request_id);
+                                  const headerId = row.kind === "price_batch"
+                                      ? Number(row.batch_id ?? row.request_id)
+                                      : row.kind === "price_type" ? row.batch_header_id ?? null : null;
                                   if (headerId) {
                                       setRejectingBatchHeaderId(headerId);
                                       return;

@@ -1,3 +1,13 @@
+import {
+    getManilaDateInput,
+    getManilaDateOffsetInput,
+    getManilaMonthEndInput,
+    getManilaMonthStartInput,
+    getManilaQuarterStartInput,
+    getManilaYearEndInput,
+    getManilaYearStartInput,
+} from "./disbursement-utils";
+
 export interface QuickRangeOption {
     value: string;
     label: string;
@@ -9,8 +19,7 @@ export const QUICK_RANGES: QuickRangeOption[] = [
         value: "today",
         label: "Today",
         getRange: () => {
-            const d = new Date();
-            const s = d.toISOString().split("T")[0];
+            const s = getManilaDateInput();
             return { start: s, end: s };
         }
     },
@@ -18,9 +27,7 @@ export const QUICK_RANGES: QuickRangeOption[] = [
         value: "yesterday",
         label: "Yesterday",
         getRange: () => {
-            const d = new Date();
-            d.setDate(d.getDate() - 1);
-            const s = d.toISOString().split("T")[0];
+            const s = getManilaDateOffsetInput(-1);
             return { start: s, end: s };
         }
     },
@@ -28,10 +35,8 @@ export const QUICK_RANGES: QuickRangeOption[] = [
         value: "last_7_days",
         label: "Last 7 Days",
         getRange: () => {
-            const d = new Date();
-            const end = d.toISOString().split("T")[0];
-            d.setDate(d.getDate() - 6);
-            const start = d.toISOString().split("T")[0];
+            const end = getManilaDateInput();
+            const start = getManilaDateOffsetInput(-6);
             return { start, end };
         }
     },
@@ -39,10 +44,8 @@ export const QUICK_RANGES: QuickRangeOption[] = [
         value: "last_30_days",
         label: "Last 30 Days",
         getRange: () => {
-            const d = new Date();
-            const end = d.toISOString().split("T")[0];
-            d.setDate(d.getDate() - 29);
-            const start = d.toISOString().split("T")[0];
+            const end = getManilaDateInput();
+            const start = getManilaDateOffsetInput(-29);
             return { start, end };
         }
     },
@@ -50,9 +53,8 @@ export const QUICK_RANGES: QuickRangeOption[] = [
         value: "this_month",
         label: "This Month",
         getRange: () => {
-            const d = new Date();
-            const start = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0];
-            const end = d.toISOString().split("T")[0];
+            const start = getManilaMonthStartInput();
+            const end = getManilaDateInput();
             return { start, end };
         }
     },
@@ -60,9 +62,8 @@ export const QUICK_RANGES: QuickRangeOption[] = [
         value: "last_month",
         label: "Last Month",
         getRange: () => {
-            const d = new Date();
-            const start = new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().split("T")[0];
-            const end = new Date(d.getFullYear(), d.getMonth(), 0).toISOString().split("T")[0];
+            const start = getManilaMonthStartInput(-1);
+            const end = getManilaMonthEndInput(-1);
             return { start, end };
         }
     },
@@ -70,10 +71,8 @@ export const QUICK_RANGES: QuickRangeOption[] = [
         value: "this_quarter",
         label: "This Quarter",
         getRange: () => {
-            const d = new Date();
-            const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
-            const start = new Date(d.getFullYear(), quarterStartMonth, 1).toISOString().split("T")[0];
-            const end = d.toISOString().split("T")[0];
+            const start = getManilaQuarterStartInput();
+            const end = getManilaDateInput();
             return { start, end };
         }
     },
@@ -81,9 +80,8 @@ export const QUICK_RANGES: QuickRangeOption[] = [
         value: "ytd",
         label: "Year to Date (YTD)",
         getRange: () => {
-            const d = new Date();
-            const start = new Date(d.getFullYear(), 0, 1).toISOString().split("T")[0];
-            const end = d.toISOString().split("T")[0];
+            const start = getManilaYearStartInput();
+            const end = getManilaDateInput();
             return { start, end };
         }
     },
@@ -91,9 +89,8 @@ export const QUICK_RANGES: QuickRangeOption[] = [
         value: "all_time",
         label: "All Time",
         getRange: () => {
-            const d = new Date();
             const start = "2020-01-01";
-            const end = new Date(d.getFullYear() + 1, 11, 31).toISOString().split("T")[0];
+            const end = getManilaYearEndInput(1);
             return { start, end };
         }
     }

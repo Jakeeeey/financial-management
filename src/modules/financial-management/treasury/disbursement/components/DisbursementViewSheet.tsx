@@ -13,11 +13,10 @@ import {
 } from "lucide-react";
 import { Disbursement, BankAccountDto, COADto } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
-import { format } from "date-fns";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { cn } from "@/lib/utils";
 import { StickyTableWrapper } from "./StickyTableWrapper";
-import { getCookie, decodeToken, formatCurrency, VOUCHER_STEPS } from "../utils/disbursement-utils";
+import { decodeToken, formatCurrency, formatManilaDate, formatManilaDateTime, getCookie, VOUCHER_STEPS } from "../utils/disbursement-utils";
 
 interface DisbursementViewSheetProps {
     disbursement: Disbursement | null;
@@ -169,7 +168,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                 )}
                             </SheetTitle>
                             <SheetDescription className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
-                                Transaction Date: {disbursement.transactionDate ? format(new Date(disbursement.transactionDate), "MMMM dd, yyyy") : "No Date Recorded"}
+                                Transaction Date: {formatManilaDate(disbursement.transactionDate, "No Date Recorded")}
                             </SheetDescription>
                         </div>
                         <Badge variant="outline" className="px-3 py-1 bg-muted font-black uppercase tracking-widest text-[10px]">
@@ -219,6 +218,10 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                             </p>
                             <p className="text-sm font-black text-foreground uppercase">{disbursement.payeeName || "N/A"}</p>
                         </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Transaction Type</p>
+                            <p className="text-sm font-black text-foreground uppercase">{disbursement.transactionTypeName || "Unknown"}</p>
+                        </div>
                         <div className="text-right">
                             <p className="flex items-center justify-end gap-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                                 <Wallet className="w-3 h-3" /> Total Amount
@@ -263,22 +266,22 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                             <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Prepared By</p>
                                 <p className="text-xs font-black text-foreground mt-0.5">{disbursement.submittedByName || disbursement.encoderName || "N/A"}</p>
-                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateSubmitted ? format(new Date(disbursement.dateSubmitted), "MMM dd, yyyy HH:mm") : "Draft State"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateSubmitted ? formatManilaDateTime(disbursement.dateSubmitted) : "Draft State"}</p>
                             </div>
                             <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Approved By</p>
                                 <p className="text-xs font-black text-foreground mt-0.5">{disbursement.approverName || "Pending"}</p>
-                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateApproved ? format(new Date(disbursement.dateApproved), "MMM dd, yyyy HH:mm") : "N/A"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateApproved ? formatManilaDateTime(disbursement.dateApproved) : "N/A"}</p>
                             </div>
                             <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Released By</p>
                                 <p className="text-xs font-black text-foreground mt-0.5">{disbursement.releasedByName || "Pending"}</p>
-                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateReleased ? format(new Date(disbursement.dateReleased), "MMM dd, yyyy HH:mm") : "N/A"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateReleased ? formatManilaDateTime(disbursement.dateReleased) : "N/A"}</p>
                             </div>
                             <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Posted By</p>
                                 <p className="text-xs font-black text-foreground mt-0.5">{disbursement.postedByName || "Pending"}</p>
-                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.datePosted ? format(new Date(disbursement.datePosted), "MMM dd, yyyy HH:mm") : "N/A"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.datePosted ? formatManilaDateTime(disbursement.datePosted) : "N/A"}</p>
                             </div>
                         </div>
                     </div>
@@ -372,7 +375,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                             return (
                                                 <TableRow key={i} className="hover:bg-muted/50 border-border">
                                                     <TableCell className="text-[10px] font-bold uppercase text-muted-foreground">
-                                                        {p.date ? format(new Date(p.date), "MMM dd, yyyy") : "N/A"}
+                                                        {formatManilaDate(p.date)}
                                                     </TableCell>
                                                     <TableCell className="text-xs font-bold uppercase text-foreground">{p.checkNo || "N/A"}</TableCell>
                                                     <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">

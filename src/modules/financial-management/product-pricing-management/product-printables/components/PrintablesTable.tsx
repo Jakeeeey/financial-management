@@ -48,11 +48,11 @@ export default function PrintablesTable({ rows, loading, priceTypes, units }: Pr
                             <TableCell className="font-medium sticky left-0 bg-background/50 backdrop-blur-sm z-10">{row.product_name}</TableCell>
                             <TableCell className="font-mono text-xs">{row.product_code || "—"}</TableCell>
                             <TableCell>{unitMap.get(Number(row.unit_of_measurement)) || row.unit_of_measurement || "—"}</TableCell>
-                            <TableCell className="text-right">{row.priceA ? Number(row.priceA).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</TableCell>
-                            <TableCell className="text-right">{row.priceB ? Number(row.priceB).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</TableCell>
-                            <TableCell className="text-right">{row.priceC ? Number(row.priceC).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</TableCell>
-                            <TableCell className="text-right">{row.priceD ? Number(row.priceD).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</TableCell>
-                            <TableCell className="text-right">{row.priceE ? Number(row.priceE).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</TableCell>
+                            <TableCell className="text-right">{row.priceA ? Number(row.priceA).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</TableCell>
+                            <TableCell className="text-right">{row.priceB ? Number(row.priceB).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</TableCell>
+                            <TableCell className="text-right">{row.priceC ? Number(row.priceC).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</TableCell>
+                            <TableCell className="text-right">{row.priceD ? Number(row.priceD).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</TableCell>
+                            <TableCell className="text-right">{row.priceE ? Number(row.priceE).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : "—"}</TableCell>
                             <TableCell className="text-center">
                                 <Badge variant={row.isActive === 1 ? "default" : "secondary"} className="text-[10px] h-5">
                                     {row.isActive === 1 ? "Active" : "Inactive"}
