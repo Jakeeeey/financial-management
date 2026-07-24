@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { ListMeta, PriceChangeRequestRow, CostChangeRequestRow, UnifiedApprovalRow } from "../types";
+import type { ApprovalRecordRow, ListMeta, PriceChangeRequestRow, CostChangeRequestRow, UnifiedApprovalRow } from "../types";
 import { productLabel, priceTypeLabel, uomLabel } from "../utils/labels";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -70,8 +70,6 @@ function getTotalPages(meta: ListMeta | null | undefined, pageSize: number, curr
     return 0;
 }
 
-type ApprovalRecordRow = PriceChangeRequestRow | CostChangeRequestRow | UnifiedApprovalRow;
-
 function approvalKind(row: ApprovalRecordRow): "price_batch" | "cost_batch" | "price_type" | "list_price" {
     if ("kind" in row) return row.kind;
     return "proposed_cost" in row ? "list_price" : "price_type";
@@ -110,15 +108,6 @@ function approvalRecordLabel(row: ApprovalRecordRow) {
     }
     if (kind === "list_price") return `CCR-${Number(row.request_id)}`;
     return `PCR-${Number(row.request_id)}`;
-}
-
-function approvalActionId(row: ApprovalRecordRow) {
-    const kind = approvalKind(row);
-    if (kind === "price_batch" || kind === "cost_batch") {
-        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" }>;
-        return Number(batch.batch_id ?? batch.request_id);
-    }
-    return Number(row.request_id);
 }
 
 function totalProductsText(row: ApprovalRecordRow) {
@@ -230,10 +219,10 @@ type Props = {
     loading?: boolean;
     hasLoadError?: boolean;
     acting?: boolean;
-    onApprove?: (id: number) => void;
-    onReject?: (id: number) => void;
-    onReview?: (id: number) => void;
-    onCancel?: (id: number) => void;
+    onApprove?: (row: ApprovalRecordRow) => void;
+    onReject?: (row: ApprovalRecordRow) => void;
+    onReview?: (row: ApprovalRecordRow) => void;
+    onCancel?: (row: ApprovalRecordRow) => void;
     canSelectRow?: (row: ApprovalRecordRow) => boolean;
     canReviewRow?: (row: ApprovalRecordRow) => boolean;
     canApproveRow?: (row: ApprovalRecordRow) => boolean;
@@ -363,7 +352,6 @@ export default function RequestsTable(props: Props) {
 
                     <TableBody>
                         {rows.map((r) => {
-                            const id = approvalActionId(r);
                             const selectionKey = resolveSelectionKey(r);
                             const isPending = r.status === "PENDING";
                             const displayStatus = displayPcrStatus(r.status, r.application_status);
@@ -428,7 +416,7 @@ export default function RequestsTable(props: Props) {
                                                         size="sm"
                                                         variant="outline"
                                                         className="h-7 px-2 text-[11px]"
-                                                        onClick={() => props.onReview?.(id)}
+                                                        onClick={() => props.onReview?.(r)}
                                                         disabled={props.acting}
                                                         aria-label="Review record"
                                                     >
@@ -644,7 +632,7 @@ export default function RequestsTable(props: Props) {
                                                     size="sm"
                                                     variant="outline"
                                                     className="h-7 px-2 text-[11px]"
-                                                    onClick={() => props.onReview?.(id)}
+                                                    onClick={() => props.onReview?.(r)}
                                                     disabled={props.acting}
                                                     aria-label="Review request"
                                                 >
