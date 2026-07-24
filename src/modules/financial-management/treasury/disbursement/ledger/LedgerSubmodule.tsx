@@ -13,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -77,8 +76,6 @@ function SearchSelect<T extends string | number>({ options, value, onSelect, pla
 
 export default function LedgerSubmodule() {
     // Grid type tabs
-    const [viewMode, setViewMode] = useState<"journal" | "voucher">("journal");
-    
     // Core data states
     const [vouchers, setVouchers] = useState<Disbursement[]>([]);
     const [loading, setLoading] = useState(true);
@@ -276,77 +273,6 @@ export default function LedgerSubmodule() {
             payoutRate,
             activeVouchers
         };
-    }, [vouchers]);
-
-    // Flatten ledger entries (Debits and Credits)
-    const journalEntries = useMemo(() => {
-        const list: Array<{
-            id: string;
-            disbursementId: number;
-            voucher: Disbursement;
-            date: string;
-            docNo: string;
-            payeeName: string;
-            type: "DEBIT" | "CREDIT";
-            glAccount: string;
-            referenceNo: string;
-            debit: number;
-            credit: number;
-            remarks: string;
-            costCenter: string;
-            isRefund: boolean;
-            status: string;
-        }> = [];
-
-        vouchers.forEach((v) => {
-            // 1. Map Payables as Debit rows
-            v.payables.forEach((p, pIdx) => {
-                list.push({
-                    id: `v-${v.id}-p-${p.id || pIdx}`,
-                    disbursementId: v.id,
-                    voucher: v,
-                    date: p.date || v.transactionDate || "",
-                    docNo: v.docNo,
-                    payeeName: v.payeeName || "N/A",
-                    type: "DEBIT",
-                    glAccount: p.accountTitle ? `${p.coaId ? p.coaId + ' - ' : ''}${p.accountTitle}` : "Accounts Payable (Debit)",
-                    referenceNo: p.referenceNo,
-                    debit: p.amount,
-                    credit: 0,
-                    remarks: p.remarks || v.remarks || "",
-                    costCenter: p.divisionName || v.divisionName || "N/A",
-                    isRefund: false,
-                    status: v.status
-                });
-            });
-
-            // 2. Map Payments as Credit rows
-            v.payments.forEach((py, pyIdx) => {
-                const amount = py.amount || 0;
-                const isRefund = amount < 0;
-                
-                list.push({
-                    id: `v-${v.id}-py-${py.id || pyIdx}`,
-                    disbursementId: v.id,
-                    voucher: v,
-                    date: py.date || v.transactionDate || "",
-                    docNo: v.docNo,
-                    payeeName: v.payeeName || "N/A",
-                    type: "CREDIT",
-                    glAccount: py.accountTitle ? `${py.coaId ? py.coaId + ' - ' : ''}${py.accountTitle}` : "Cash in Bank (Credit)",
-                    referenceNo: py.checkNo ? `Check: ${py.checkNo}` : "N/A",
-                    debit: 0,
-                    credit: amount, // keep absolute or signed? We style signed in green/emerald
-                    remarks: py.remarks || "",
-                    costCenter: v.divisionName || "N/A",
-                    isRefund,
-                    status: v.status
-                });
-            });
-        });
-
-        // Sort by date descending, then document number
-        return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [vouchers]);
 
     // Excel export triggers
@@ -711,15 +637,11 @@ export default function LedgerSubmodule() {
             {/* 📊 GRID VIEWS */}
             <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                    <Tabs value={viewMode} onValueChange={(val) => setViewMode(val as "journal" | "voucher")} className="w-[320px]">
-                        <TabsList className="bg-muted/50 p-1 rounded-xl h-10 shadow-inner w-full grid grid-cols-2">
-                            <TabsTrigger value="journal" className="rounded-lg text-[10px] font-black uppercase tracking-wider">Journal Ledger</TabsTrigger>
-                            <TabsTrigger value="voucher" className="rounded-lg text-[10px] font-black uppercase tracking-wider">Voucher registry</TabsTrigger>
-                        </TabsList>
-                    </Tabs>
-
                     <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
-                        Showing {viewMode === "journal" ? journalEntries.length : vouchers.length} Records
+                        Disbursement Headers
+                    </div>
+                    <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                        Showing {vouchers.length} Records
                     </div>
                 </div>
 
@@ -729,138 +651,44 @@ export default function LedgerSubmodule() {
                             <RefreshCw className="w-8 h-8 text-primary animate-spin" />
                             <span className="text-xs font-bold uppercase text-muted-foreground tracking-widest">Loading registry files...</span>
                         </div>
-                    ) : (viewMode === "journal" ? journalEntries.length === 0 : vouchers.length === 0) ? (
+                    ) : vouchers.length === 0 ? (
                         <div className="flex-1 flex flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
                             <HelpCircle className="w-10 h-10 text-muted-foreground/45" />
                             <span className="text-xs font-black uppercase tracking-widest">No ledger records found matching filters</span>
                         </div>
-                    ) : viewMode === "journal" ? (
-                        /* VIEW A: FLATTENED JOURNAL LEDGER GRID */
-                        <StickyTableWrapper className="max-h-[640px]">
-                            <Table>
-                                <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
-                                    <TableRow className="hover:bg-transparent border-b border-border/80">
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-4 w-[110px]">Date</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Doc No</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground max-w-[180px]">Payee / Supplier</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[100px]">Type</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[200px]">GL Account Allocation</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[140px]">Ref / Check No</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right w-[120px]">Debit (Dr)</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right w-[120px]">Credit (Cr)</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-center w-[100px]">Status</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[160px] pr-4">Remarks</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {journalEntries.map((row) => (
-                                        <TableRow
-                                            key={row.id}
-                                            onClick={() => handleRowClick(row.voucher)}
-                                            className={cn(
-                                                "cursor-pointer group hover:bg-muted/40 transition-colors border-b border-border/40",
-                                                row.isRefund && "bg-emerald-500/[0.03] hover:bg-emerald-500/[0.06] border-l-2 border-l-emerald-500"
-                                            )}
-                                        >
-                                            <TableCell className="text-xs font-bold text-foreground pl-4">
-                                                {row.date ? new Date(row.date).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "2-digit" }) : "N/A"}
-                                            </TableCell>
-                                            <TableCell className="text-xs font-black uppercase text-foreground group-hover:text-primary transition-colors">
-                                                {row.docNo}
-                                            </TableCell>
-                                            <TableCell className="text-xs font-bold uppercase text-foreground max-w-[180px] truncate">
-                                                {row.payeeName}
-                                            </TableCell>
-                                            <TableCell className="text-[9px] font-black">
-                                                <span className={cn(
-                                                    "px-2 py-0.5 rounded-full border text-[8px] font-black uppercase",
-                                                    row.type === "DEBIT" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" : "bg-indigo-500/10 text-indigo-500 border-indigo-500/20"
-                                                )}>
-                                                    {row.type}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className="text-xs font-bold text-foreground uppercase">
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-foreground truncate max-w-[280px]">{row.glAccount}</span>
-                                                    <span className="text-[9px] text-muted-foreground font-semibold lowercase tracking-wider">{row.costCenter}</span>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="text-xs font-bold text-muted-foreground uppercase">
-                                                {row.referenceNo}
-                                            </TableCell>
-                                            <TableCell className="text-xs font-black text-right text-foreground">
-                                                {row.debit > 0 ? formatCurrency(row.debit) : "-"}
-                                            </TableCell>
-                                            <TableCell className={cn(
-                                                "text-xs font-black text-right text-foreground",
-                                                row.isRefund && "text-emerald-500"
-                                            )}>
-                                                {row.credit !== 0 ? (
-                                                    <div className="flex flex-col items-end">
-                                                        <span>{formatCurrency(row.credit)}</span>
-                                                        {row.isRefund && (
-                                                            <Badge className="bg-emerald-500/10 hover:bg-emerald-500/10 text-emerald-500 border-emerald-500/25 px-1 py-0 h-4 text-[7px] font-black mt-0.5">
-                                                                REFUND
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                ) : "-"}
-                                            </TableCell>
-                                            <TableCell className="text-center">
-                                                <Badge className={cn("px-2 py-0.5 text-[8px] font-black uppercase tracking-wider border", getStatusColor(row.status))}>
-                                                    {row.status}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="text-xs font-medium text-muted-foreground truncate max-w-[160px] pr-4">
-                                                {row.remarks || "-"}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </StickyTableWrapper>
                     ) : (
-                        /* VIEW B: VOUCHER REGISTRY VIEW */
+                        /* VOUCHER HEADER LIST */
                         <StickyTableWrapper className="max-h-[640px]">
                             <Table>
                                 <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                     <TableRow className="hover:bg-transparent border-b border-border/80">
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-6 w-[120px]">Voucher No</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[120px]">Trans Date</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground max-w-[220px]">Payee / Supplier</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pl-6 w-[120px]">Date</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[130px]">Doc No</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[220px]">Payee</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right w-[150px]">Payable Amount</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right w-[150px]">Paid Amount</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right w-[130px]">Variance</TableHead>
                                         <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-center w-[120px]">Status</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right w-[150px]">Vouchered Amount</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right w-[150px]">Released Payout</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground text-right w-[120px]">Unpaid Balance</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground w-[180px]">Banks Used</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground pr-6">Remarks</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase tracking-widest text-muted-foreground min-w-[220px] pr-6">Remarks</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {vouchers.map((v) => {
-                                        const isUnbalanced = (v.totalAmount || 0) > (v.paidAmount || 0) && v.paidAmount > 0;
+                                        const variance = Math.max(0, (v.totalAmount || 0) - (v.paidAmount || 0));
                                         return (
                                             <TableRow
                                                 key={v.id}
                                                 onClick={() => handleRowClick(v)}
                                                 className="cursor-pointer group hover:bg-muted/40 transition-colors border-b border-border/40"
                                             >
-                                                <TableCell className="text-xs font-black uppercase text-foreground group-hover:text-primary transition-colors pl-6">
-                                                    {v.docNo}
-                                                </TableCell>
                                                 <TableCell className="text-xs font-bold text-foreground">
                                                     {v.transactionDate ? new Date(v.transactionDate).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "2-digit" }) : "N/A"}
                                                 </TableCell>
-                                                <TableCell className="text-xs font-bold uppercase text-foreground max-w-[220px] truncate">
-                                                    <div className="flex flex-col">
-                                                        <span className="font-bold text-foreground truncate">{v.payeeName || "N/A"}</span>
-                                                        <span className="text-[9px] text-muted-foreground font-semibold lowercase tracking-wider">{v.divisionName || "N/A"}</span>
-                                                    </div>
+                                                <TableCell className="text-xs font-black uppercase text-foreground group-hover:text-primary transition-colors">
+                                                    {v.docNo}
                                                 </TableCell>
-                                                <TableCell className="text-center">
-                                                    <Badge className={cn("px-2 py-0.5 text-[8px] font-black uppercase tracking-wider border", getStatusColor(v.status))}>
-                                                        {v.status}
-                                                    </Badge>
+                                                <TableCell className="text-xs font-bold uppercase text-foreground max-w-[220px] truncate">
+                                                    {v.payeeName || "N/A"}
                                                 </TableCell>
                                                 <TableCell className="text-xs font-black text-right text-foreground">
                                                     {formatCurrency(v.totalAmount)}
@@ -870,12 +698,14 @@ export default function LedgerSubmodule() {
                                                 </TableCell>
                                                 <TableCell className={cn(
                                                     "text-xs font-black text-right",
-                                                    isUnbalanced ? "text-amber-500" : "text-muted-foreground"
+                                                    variance > 0 ? "text-amber-500" : "text-muted-foreground"
                                                 )}>
-                                                    {formatCurrency(Math.max(0, (v.totalAmount || 0) - (v.paidAmount || 0)))}
+                                                    {formatCurrency(variance)}
                                                 </TableCell>
-                                                <TableCell className="text-xs font-bold text-muted-foreground truncate max-w-[180px]">
-                                                    {v.payments.map(p => p.accountTitle || "Cash Account").filter((val, idx, self) => self.indexOf(val) === idx).join(", ") || "-"}
+                                                <TableCell className="text-center">
+                                                    <Badge className={cn("px-2 py-0.5 text-[8px] font-black uppercase tracking-wider border", getStatusColor(v.status))}>
+                                                        {v.status}
+                                                    </Badge>
                                                 </TableCell>
                                                 <TableCell className="text-xs font-medium text-muted-foreground truncate max-w-[200px] pr-6">
                                                     {v.remarks || "-"}
