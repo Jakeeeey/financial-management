@@ -4,6 +4,8 @@ import React from "react";
 import CustomersMemoApprovalModule from "@/modules/financial-management/accounting/customers-memo/components/CustomersMemoApprovalModule";
 import { Metadata } from "next";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
     title: "Customer Credit Memo Approval | Financial Management",
     description: "Approve pending Customer Credit Memos within the authorization queue.",
