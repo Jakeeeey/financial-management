@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
     approveUnifiedBatch,
     getUnifiedBatch,
+    isUnifiedBatchDetectionError,
     rejectUnifiedBatch,
 } from "../../_unifiedBatch";
 import {
@@ -33,6 +34,13 @@ export async function GET(req: NextRequest, context: RouteContext) {
 
         return NextResponse.json({ data });
     } catch (error: unknown) {
+        if (isUnifiedBatchDetectionError(error)) {
+            console.error("[unifiedBatch] Mixed-batch detection failed", error.originalError);
+            return NextResponse.json(
+                { error: error.message, code: error.code, retryable: error.retryable },
+                { status: error.status },
+            );
+        }
         return directusErrorResponse(error);
     }
 }
@@ -72,6 +80,13 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
         return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
     } catch (error: unknown) {
+        if (isUnifiedBatchDetectionError(error)) {
+            console.error("[unifiedBatch] Mixed-batch detection failed", error.originalError);
+            return NextResponse.json(
+                { error: error.message, code: error.code, retryable: error.retryable },
+                { status: error.status },
+            );
+        }
         return directusErrorResponse(error);
     }
 }

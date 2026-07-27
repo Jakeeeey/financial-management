@@ -352,7 +352,7 @@ export default function RequestsTable(props: Props) {
                                 </TableHead>
                             ) : null}
                             <TableHead className="w-[110px] px-2">Request #</TableHead>
-                            <TableHead className="w-[84px] px-2">Type</TableHead>
+                            <TableHead className="w-[160px] min-w-[160px] px-2">Type</TableHead>
                             <TableHead className="w-[140px] px-2">Supplier</TableHead>
                             <TableHead className="w-[140px] px-2">Requested By</TableHead>
                             <TableHead className="w-[120px] px-2 text-right">Total Products</TableHead>
@@ -396,12 +396,17 @@ export default function RequestsTable(props: Props) {
                                     <TableCell className="truncate px-2 font-medium" title={approvalRecordLabel(r)}>
                                         {approvalRecordLabel(r)}
                                     </TableCell>
-                                    <TableCell className="px-2">
-                                        <Badge variant="outline" className={`${approvalTypeBadgeClass(approvalKind(r))} text-[11px] px-2 whitespace-nowrap uppercase`}>
-                                            {approvalTypeLabel(approvalKind(r))}
+                                    <TableCell className="min-w-0 px-2">
+                                        <Badge
+                                            variant="outline"
+                                            className={`${approvalTypeBadgeClass(approvalKind(r))} max-w-full whitespace-normal break-words px-2 text-center text-[11px] leading-tight uppercase`}
+                                        >
+                                            <span className="min-w-0 max-w-full break-words text-center">
+                                                {approvalTypeLabel(approvalKind(r))}
+                                            </span>
                                         </Badge>
                                     </TableCell>
-                                    <TableCell className="truncate px-2" title={supplierText(r)}>
+                                    <TableCell className="min-w-0 truncate overflow-hidden px-2" title={supplierText(r)}>
                                         {supplierText(r)}
                                     </TableCell>
                                     <TableCell className="truncate px-2" title={requestedByText(r)}>

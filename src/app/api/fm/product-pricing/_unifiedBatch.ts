@@ -19,7 +19,7 @@ import {
 } from "./cost-change-batches/_batch";
 import { applyProposedPrice } from "./price-change-requests/_actions";
 import { patchProductCostField } from "./cost-change-requests/_actions";
-import { assertValidProposedCost } from "./cost-change-requests/_costValidation";
+import { assertValidProposedCost, isInvalidProposedCostError } from "./cost-change-requests/_costValidation";
 import {
     executeClaimedApplication,
     fallbackApplicationStatus,
@@ -230,13 +230,37 @@ export async function getUnifiedBatch(headerId: number): Promise<UnifiedBatchDat
     };
 }
 
-export async function isMixedBatch(headerId: number): Promise<boolean> {
-    try {
-        const batch = await getUnifiedBatch(headerId);
-        return Boolean(batch && batch.price_details.length > 0 && batch.cost_details.length > 0);
-    } catch {
-        return false;
+export type UnifiedBatchKind = "mixed" | "single" | "missing";
+
+export class UnifiedBatchDetectionError extends Error {
+    readonly code = "mixed_batch_detection_unavailable";
+    readonly retryable = true;
+    readonly status = 503;
+    readonly originalError: unknown;
+
+    constructor(error: unknown) {
+        super("Unable to determine the batch type. No changes were applied. Please retry.");
+        this.name = "UnifiedBatchDetectionError";
+        this.originalError = error;
     }
+}
+
+export function isUnifiedBatchDetectionError(error: unknown): error is UnifiedBatchDetectionError {
+    return error instanceof UnifiedBatchDetectionError;
+}
+
+async function getBatchForDecision(headerId: number): Promise<UnifiedBatchData | null> {
+    try {
+        return await getUnifiedBatch(headerId);
+    } catch (error: unknown) {
+        throw new UnifiedBatchDetectionError(error);
+    }
+}
+
+export async function resolveUnifiedBatchKind(headerId: number): Promise<UnifiedBatchKind> {
+    const batch = await getBatchForDecision(headerId);
+    if (!batch) return "missing";
+    return batch.price_details.length > 0 && batch.cost_details.length > 0 ? "mixed" : "single";
 }
 
 async function patchFiltered<T>(
@@ -396,7 +420,7 @@ async function refreshUnifiedApplicationStatus(headerId: number, userId: number 
 }
 
 export async function approveUnifiedBatch(headerId: number, userId: number, effectiveAt?: string | null) {
-    const batch = await getUnifiedBatch(headerId);
+    const batch = await getBatchForDecision(headerId);
     if (!batch) return { error: "Batch not found", status: 404 } as const;
     if (batch.status !== "PENDING") return { error: "Only PENDING batches can be approved.", status: 409 } as const;
     if (batch.price_details.length === 0 || batch.cost_details.length === 0) {
@@ -409,8 +433,16 @@ export async function approveUnifiedBatch(headerId: number, userId: number, effe
         }
     }
     for (const line of batch.cost_details) {
-        if (!line.product_id || !Number.isFinite(Number(line.proposed_cost))) {
+        if (!line.product_id) {
             return { error: "Mixed batch contains an invalid list cost detail line.", status: 400 } as const;
+        }
+        try {
+            assertValidProposedCost(line.proposed_cost);
+        } catch (error: unknown) {
+            if (isInvalidProposedCostError(error)) {
+                return { error: error.message, status: 400 } as const;
+            }
+            throw error;
         }
     }
 
@@ -538,7 +570,7 @@ export async function approveUnifiedBatch(headerId: number, userId: number, effe
 }
 
 export async function rejectUnifiedBatch(headerId: number, userId: number, reason: string) {
-    const batch = await getUnifiedBatch(headerId);
+    const batch = await getBatchForDecision(headerId);
     if (!batch) return { error: "Batch not found", status: 404 } as const;
     if (batch.status !== "PENDING") return { error: "Only PENDING batches can be rejected.", status: 409 } as const;
     if (batch.price_details.length === 0 || batch.cost_details.length === 0) {

@@ -17,7 +17,12 @@ import {
     resolveBatchDecisionUserNames,
     resolveUserDisplayName,
 } from "../_batch";
-import { approveUnifiedBatch, isMixedBatch, rejectUnifiedBatch } from "../../_unifiedBatch";
+import {
+    approveUnifiedBatch,
+    isUnifiedBatchDetectionError,
+    rejectUnifiedBatch,
+    resolveUnifiedBatchKind,
+} from "../../_unifiedBatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -194,21 +199,24 @@ export async function POST(req: NextRequest, context: RouteContext) {
         }>;
         const action = String(body.action ?? "").trim().toLowerCase();
 
-        if (await isMixedBatch(headerId)) {
-            if (action === "approve") {
-                const result = await approveUnifiedBatch(headerId, userId, body.effective_at);
-                if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
-                return NextResponse.json(result, { status: result.failed > 0 || result.retryable ? 202 : 200 });
-            }
-
-            if (action === "reject") {
-                const rejectReason = String(body.reject_reason ?? "").trim();
-                if (!rejectReason) {
-                    return NextResponse.json({ error: "reject_reason is required" }, { status: 400 });
+        if (action === "approve" || action === "reject") {
+            const batchKind = await resolveUnifiedBatchKind(headerId);
+            if (batchKind === "mixed") {
+                if (action === "approve") {
+                    const result = await approveUnifiedBatch(headerId, userId, body.effective_at);
+                    if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
+                    return NextResponse.json(result, { status: result.failed > 0 || result.retryable ? 202 : 200 });
                 }
-                const result = await rejectUnifiedBatch(headerId, userId, rejectReason);
-                if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
-                return NextResponse.json(result);
+
+                if (action === "reject") {
+                    const rejectReason = String(body.reject_reason ?? "").trim();
+                    if (!rejectReason) {
+                        return NextResponse.json({ error: "reject_reason is required" }, { status: 400 });
+                    }
+                    const result = await rejectUnifiedBatch(headerId, userId, rejectReason);
+                    if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
+                    return NextResponse.json(result);
+                }
             }
         }
 
@@ -226,6 +234,13 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
         return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
     } catch (error: unknown) {
+        if (isUnifiedBatchDetectionError(error)) {
+            console.error("[priceChangeBatch] Mixed-batch detection failed", error.originalError);
+            return NextResponse.json(
+                { error: error.message, code: error.code, retryable: error.retryable },
+                { status: error.status },
+            );
+        }
         return directusErrorResponse(error);
     }
 }
