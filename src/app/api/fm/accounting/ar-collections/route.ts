@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import fs from 'fs';
 import path from 'path';
 import { getARPayload } from '../accounts-receivable/_arData';
+import { computeDerivedStatus } from '../accounts-receivable/_arFetchAndDerive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -309,11 +310,15 @@ export async function GET(request: NextRequest) {
     const pageCustomerCodes = Array.from(new Set(rawInvoices.map((inv: any) => inv.customer_code).filter(Boolean)));
     const pageSalesmanIds = Array.from(new Set(rawInvoices.map((inv: any) => inv.salesman_id).filter((s: any) => typeof s === 'number')));
 
-    const [payments, returns, customers, salesmen] = await Promise.all([
+    const [payments, returns, customers, salesmen, dispatchInvoices, transmittalDetails, counteredInvoices, collectionInvoices] = await Promise.all([
       fetchDirectus<any>(`${DIRECTUS_URL}/items/sales_invoice_payments?filter[invoice_id][_in]=${pageInvoiceIds.join(',')}&fields=invoice_id,paid_amount`),
       fetchDirectus<any>(`${DIRECTUS_URL}/items/sales_invoice_sales_return?filter[invoice_no][_in]=${pageInvoiceNos.join(',')}&fields=invoice_no,amount`),
       fetchDirectus<any>(`${DIRECTUS_URL}/items/customer?filter[customer_code][_in]=${pageCustomerCodes.join(',')}&fields=customer_code,customer_name`),
       fetchDirectus<any>(`${DIRECTUS_URL}/items/salesman?filter[id][_in]=${pageSalesmanIds.join(',')}&fields=id,salesman_name,salesman_code`),
+      fetchDirectus<any>(`${DIRECTUS_URL}/items/post_dispatch_invoices?filter[invoice_id][_in]=${pageInvoiceIds.join(',')}&fields=invoice_id,status,post_dispatch_plan_id.status`).catch(() => []),
+      fetchDirectus<any>(`${DIRECTUS_URL}/items/document_transmittal_details?filter[invoice_id][_in]=${pageInvoiceIds.join(',')}&fields=invoice_id,receivedAt,document_transmittal_id.receivedAt`).catch(() => []),
+      fetchDirectus<any>(`${DIRECTUS_URL}/items/countered_invoices?filter[invoice_id][_in]=${pageInvoiceIds.join(',')}&fields=invoice_id,countered_date`).catch(() => []),
+      fetchDirectus<any>(`${DIRECTUS_URL}/items/collection_invoices?filter[invoice_id][_in]=${pageInvoiceIds.join(',')}&fields=invoice_id,collection_id.isPosted,collection_id.isCancelled`).catch(() => []),
     ]);
 
     // Map raw data for easy lookup
@@ -377,7 +382,13 @@ export async function GET(request: NextRequest) {
         deliveryDate: inv.dispatch_date || '',
         arStatus: daysOverdue !== null && daysOverdue >= 0 && outstanding > 0 ? 'Overdue' : (inv.dispatch_date ? 'Due' : '—'),
         paymentStatus: inv.payment_status || 'Unpaid',
-        transactionStatus: inv.transaction_status || 'NULL',
+        transactionStatus: computeDerivedStatus(
+          inv.invoice_id,
+          inv.payment_status || 'Unpaid',
+          inv.transaction_status,
+          totalPaid,
+          { dispatchInvoices, transmittalDetails, counteredInvoices, collectionInvoices }
+        ),
         cluster: 'Unassigned',
       };
 
