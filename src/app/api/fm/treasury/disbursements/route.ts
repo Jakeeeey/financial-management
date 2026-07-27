@@ -862,42 +862,46 @@ async function getPreviewDocumentNumber(supplierType: string): Promise<string> {
     const isTrade = supplierType.toLowerCase() === "trade";
     const prefix = isTrade ? "TR" : "NT";
     const field = isTrade ? "trade_no" : "non-trade_no";
+    let sequenceValue = 0;
 
     try {
         // 1. Get current sequence row
         const getRes = await directusFetch<DirectusList<DirectusDisbursementNo>>("/items/disbursement_no?limit=1");
         const seqRow = getRes.data?.[0];
         if (seqRow) {
-            const currentSeq = (Number(seqRow[field]) || 0) + 1;
-            const seqStr = String(currentSeq).padStart(6, "0");
-            return `${prefix}-${seqStr}`;
+            sequenceValue = Number(seqRow[field]) || 0;
         }
     } catch {
-        // Fallback if forbidden
+        // Continue with the persisted document number fallback.
     }
 
-    // Fallback: Query max doc_no from disbursement table
+    // The sequence row can be stale after a manual import or an older write path.
+    // Compare it with the highest persisted document number before issuing a preview.
     const params = new URLSearchParams();
     params.set("filter[doc_no][_starts_with]", `${prefix}-`);
-    params.set("limit", "1");
-    params.set("sort", "-id");
+    params.set("limit", "-1");
     params.set("fields", "doc_no");
 
-    const fallbackRes = await directusFetch<DirectusList<{ doc_no: string }>>(`/items/disbursement?${params.toString()}`);
-    const latestDocNo = fallbackRes.data?.[0]?.doc_no;
-
-    let nextSeq = 1;
-    if (latestDocNo) {
-        const parts = latestDocNo.split("-");
-        const numericPart = parts[parts.length - 1];
-        const parsed = parseInt(numericPart, 10);
-        if (!isNaN(parsed)) {
-            nextSeq = parsed + 1;
-        }
+    try {
+        const fallbackRes = await directusFetch<DirectusList<{ doc_no: string }>>(`/items/disbursement?${params.toString()}`);
+        const persistedValue = (fallbackRes.data ?? []).reduce((max, row) => {
+            const numericPart = String(row.doc_no ?? "").split("-").pop() || "";
+            const parsed = Number.parseInt(numericPart, 10);
+            return Number.isFinite(parsed) ? Math.max(max, parsed) : max;
+        }, 0);
+        sequenceValue = Math.max(sequenceValue, persistedValue);
+    } catch {
+        // The sequence value remains usable when the persisted-number lookup is unavailable.
     }
 
-    const seqStr = String(nextSeq).padStart(6, "0");
+    const seqStr = String(sequenceValue + 1).padStart(6, "0");
     return `${prefix}-${seqStr}`;
+}
+
+function isDocumentNumberConflict(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return /(duplicate|unique|already exists|conflict)/i.test(message)
+        && /(doc[_\s-]?no|document\s+number)/i.test(message);
 }
 
 export async function GET(request: NextRequest) {
@@ -1070,9 +1074,19 @@ export async function POST(request: NextRequest) {
                 existingSnapshot.payments,
             );
             if (persistedCanonical !== incomingCanonical) {
+                let nextDocNo: string | undefined;
+                try {
+                    nextDocNo = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
+                } catch {
+                    // The conflict remains actionable even if a replacement preview is unavailable.
+                }
                 return NextResponse.json({
-                    message: `Document Number already exists with different transaction data: ${docNo}`,
-                    detail: "Use the existing voucher or refresh the form to obtain a new document number."
+                    code: "DOC_NO_CONFLICT",
+                    message: `Document number ${docNo} is already used by another voucher.`,
+                    detail: nextDocNo
+                        ? `A new document number ${nextDocNo} is available. Review the voucher and submit again.`
+                        : "Obtain a new document number before submitting again.",
+                    nextDocNo,
                 }, { status: 409 });
             }
 
@@ -1104,7 +1118,7 @@ export async function POST(request: NextRequest) {
             }, { status: 409 });
         }
 
-        createdDocNo = docNo;
+        let docNoForCreation = docNo;
 
         // 3. Threshold check
         const APPROVAL_THRESHOLD = 1000.00;
@@ -1117,8 +1131,8 @@ export async function POST(request: NextRequest) {
         );
 
         // 5. Create disbursement header (no nested O2M — Directus doesn't support it)
-        const headerPayload = {
-            doc_no: docNo,
+        let headerPayload = {
+            doc_no: docNoForCreation,
             transaction_type: transactionTypeId,
             payee: Number(body.payeeId),
             remarks: body.remarks || "",
@@ -1135,10 +1149,23 @@ export async function POST(request: NextRequest) {
             date_approved: null,
         };
 
-        const createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
-            method: "POST",
-            body: JSON.stringify(headerPayload)
-        });
+        let createRes: { data: DisbursementRow } | undefined;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            createdDocNo = docNoForCreation;
+            headerPayload = { ...headerPayload, doc_no: docNoForCreation };
+            try {
+                createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
+                    method: "POST",
+                    body: JSON.stringify(headerPayload)
+                });
+                break;
+            } catch (error: unknown) {
+                if (!isDocumentNumberConflict(error) || attempt === 2) throw error;
+                docNoForCreation = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
+            }
+        }
+
+        if (!createRes) throw new Error("Disbursement could not be created with an available document number.");
 
         const createdDisbursement = createRes.data;
         const persistedId = asNumber(createdDisbursement.id);
