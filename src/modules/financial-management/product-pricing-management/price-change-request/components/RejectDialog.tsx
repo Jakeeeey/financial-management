@@ -16,14 +16,23 @@ export function RejectDialog(props: {
     contentClassName?: string;
     children?: React.ReactNode;
 }) {
+    const { loading, onOpenChange } = props;
     const [reason, setReason] = React.useState("");
 
     React.useEffect(() => {
         if (!props.open) setReason("");
     }, [props.open]);
 
+    const handleOpenChange = React.useCallback(
+        (nextOpen: boolean) => {
+            if (!nextOpen && loading) return;
+            onOpenChange(nextOpen);
+        },
+        [loading, onOpenChange],
+    );
+
     return (
-        <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+        <Dialog open={props.open} onOpenChange={handleOpenChange}>
             <DialogContent className={props.contentClassName ?? "sm:max-w-lg"}>
                 <DialogHeader>
                     <DialogTitle>{props.title || "Reject Request"}</DialogTitle>

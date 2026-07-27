@@ -84,8 +84,8 @@ function LineTable({ lines }: { lines: UnifiedBatchLine[] }) {
                             <TableCell className="text-right">{money(lineCurrent(line))}</TableCell>
                             <TableCell className="text-right font-medium">{money(lineProposed(line))}</TableCell>
                             <TableCell>
-                                <Badge variant="outline" className={pcrStatusBadgeClass(displayPcrStatus(line.status, line.application_status))}>
-                                    {displayPcrStatus(line.status, line.application_status)}
+                                <Badge variant="outline" className={pcrStatusBadgeClass(displayPcrStatus(line.status, line.application_status, line.effective_at))}>
+                                    {displayPcrStatus(line.status, line.application_status, line.effective_at)}
                                 </Badge>
                             </TableCell>
                         </TableRow>
@@ -136,7 +136,7 @@ export function UnifiedBatchDetailDialog({
 
     const isPending = detail?.status === "PENDING";
     const canAct = !readOnly && isPending && Boolean(onApprove && onReject) && !loading;
-    const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status) : "";
+    const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
 
     return (
         <>

@@ -47,6 +47,14 @@ export function DecisionConfirmationDialog({
         if (!open) setEffectiveAt("");
     }, [open]);
 
+    const handleOpenChange = React.useCallback(
+        (nextOpen: boolean) => {
+            if (!nextOpen && loading) return;
+            onOpenChange(nextOpen);
+        },
+        [loading, onOpenChange],
+    );
+
     const handleConfirm = React.useCallback(async () => {
         try {
             await onConfirm(isReject ? null : effectiveAt || null);
@@ -56,7 +64,7 @@ export function DecisionConfirmationDialog({
     }, [effectiveAt, isReject, onConfirm]);
 
     return (
-        <AlertDialog open={open} onOpenChange={onOpenChange}>
+        <AlertDialog open={open} onOpenChange={handleOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>{isReject ? "Confirm Rejection" : "Confirm Approval"}</AlertDialogTitle>

@@ -256,9 +256,12 @@ async function patchFiltered<T>(
 async function fetchApplicationRows(collection: string, headerId: number): Promise<DetailRow[]> {
     const params = new URLSearchParams();
     params.set("limit", "-1");
+    const fields = collection === PRICE_DETAILS
+        ? "request_id,header_id,product_id,price_type_id,current_price,proposed_price,status,effective_at,application_status,application_lock_id,application_started_at,application_attempts,application_error"
+        : "request_id,header_id,product_id,current_cost,proposed_cost,status,effective_at,application_status,application_lock_id,application_started_at,application_attempts,application_error";
     params.set(
         "fields",
-        "request_id,header_id,product_id,price_type_id,current_price,proposed_price,current_cost,proposed_cost,status,effective_at,application_status,application_lock_id,application_started_at,application_attempts,application_error",
+        fields,
     );
     params.set("filter[header_id][_eq]", String(headerId));
     const response = await fetchDirectus<DirectusList<DetailRow>>(
@@ -395,7 +398,7 @@ async function refreshUnifiedApplicationStatus(headerId: number, userId: number 
 export async function approveUnifiedBatch(headerId: number, userId: number, effectiveAt?: string | null) {
     const batch = await getUnifiedBatch(headerId);
     if (!batch) return { error: "Batch not found", status: 404 } as const;
-    if (batch.status !== "PENDING") return { error: "Only PENDING batches can be approved.", status: 400 } as const;
+    if (batch.status !== "PENDING") return { error: "Only PENDING batches can be approved.", status: 409 } as const;
     if (batch.price_details.length === 0 || batch.cost_details.length === 0) {
         return { error: "This batch is not a mixed batch.", status: 400 } as const;
     }
@@ -444,7 +447,11 @@ export async function approveUnifiedBatch(headerId: number, userId: number, effe
             { application_status: "FAILED", application_lock_id: null, application_started_at: null, application_error: error instanceof Error ? error.message : String(error) },
             "header_id,status,application_status,application_error",
         ).catch(() => undefined);
-        return { error: error instanceof Error ? error.message : String(error), status: 500 } as const;
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+            error: message,
+            status: message.includes("approval lock was lost") ? 409 : 500,
+        } as const;
     }
 
     let applied = 0;
@@ -533,7 +540,7 @@ export async function approveUnifiedBatch(headerId: number, userId: number, effe
 export async function rejectUnifiedBatch(headerId: number, userId: number, reason: string) {
     const batch = await getUnifiedBatch(headerId);
     if (!batch) return { error: "Batch not found", status: 404 } as const;
-    if (batch.status !== "PENDING") return { error: "Only PENDING batches can be rejected.", status: 400 } as const;
+    if (batch.status !== "PENDING") return { error: "Only PENDING batches can be rejected.", status: 409 } as const;
     if (batch.price_details.length === 0 || batch.cost_details.length === 0) {
         return { error: "This batch is not a mixed batch.", status: 400 } as const;
     }
@@ -626,6 +633,10 @@ export async function rejectUnifiedBatch(headerId: number, userId: number, reaso
             "header_id,status,application_status,application_error",
         ).catch(() => undefined);
 
-        return { error: error instanceof Error ? error.message : String(error), status: 500 } as const;
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+            error: message,
+            status: message.includes("rejection lock was lost") ? 409 : 500,
+        } as const;
     }
 }

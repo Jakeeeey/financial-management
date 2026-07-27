@@ -62,7 +62,12 @@ export function useUnifiedApprovals(
         setActing(true);
         try {
             const result = await api.approvePriceChangeBatch(headerId, effectiveAt);
-            await api.waitForBatchDecision({ kind: "price_batch", headerId, expectedStatus: "APPROVED" });
+            await api.waitForBatchDecision({
+                kind: "price_batch",
+                headerId,
+                expectedStatus: "APPROVED",
+                expectedApplicationStatus: result.scheduled ? "SCHEDULED" : "APPLIED",
+            });
             const verb = result.scheduled ? "approved and scheduled" : "approved";
             toast.success(`${result.affected} price change line(s) ${verb}.`);
             await refresh();
@@ -97,7 +102,12 @@ export function useUnifiedApprovals(
         setActing(true);
         try {
             const result = await api.approveListCostBatch(headerId, effectiveAt);
-            await api.waitForBatchDecision({ kind: "cost_batch", headerId, expectedStatus: "APPROVED" });
+            await api.waitForBatchDecision({
+                kind: "cost_batch",
+                headerId,
+                expectedStatus: "APPROVED",
+                expectedApplicationStatus: result.scheduled ? "SCHEDULED" : "APPLIED",
+            });
             const verb = result.scheduled ? "approved and scheduled" : "approved";
             toast.success(`${result.affected} list cost line(s) ${verb}.`);
             await refresh();
@@ -132,7 +142,12 @@ export function useUnifiedApprovals(
         setActing(true);
         try {
             const result = await api.approveUnifiedBatch(headerId, effectiveAt);
-            await api.waitForBatchDecision({ kind: "mixed_batch", headerId, expectedStatus: "APPROVED" });
+            await api.waitForBatchDecision({
+                kind: "mixed_batch",
+                headerId,
+                expectedStatus: "APPROVED",
+                expectedApplicationStatus: result.scheduled ? "SCHEDULED" : "APPLIED",
+            });
             const verb = result.scheduled ? "approved and scheduled" : "approved";
             toast.success(`${result.affected} mixed batch line(s) ${verb}.`);
             await refresh();

@@ -168,7 +168,7 @@ export function PriceChangeBatchDetailDialog({
         onRejectScheduled != null;
     const canRetryApplication =
         !readOnly && detail?.application_status === "FAILED" && headerId > 0 && onRetryApplication != null;
-    const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status) : "";
+    const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
     const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
 
     const handleOpenChange = React.useCallback(

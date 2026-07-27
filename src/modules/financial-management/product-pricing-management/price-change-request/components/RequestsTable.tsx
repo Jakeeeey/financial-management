@@ -369,7 +369,7 @@ export default function RequestsTable(props: Props) {
                         {rows.map((r) => {
                             const selectionKey = resolveSelectionKey(r);
                             const isPending = r.status === "PENDING";
-                            const displayStatus = displayPcrStatus(r.status, r.application_status);
+                            const displayStatus = displayPcrStatus(r.status, r.application_status, r.effective_at);
                             const isSelected = selectedKeySet.has(selectionKey);
                             const canSelect = props.canSelectRow?.(r) ?? true;
                             const canReview = props.canReviewRow?.(r) ?? true;
@@ -553,7 +553,7 @@ export default function RequestsTable(props: Props) {
                         const id = Number(r.request_id);
                         const selectionKey = resolveSelectionKey(r);
                         const isPending = r.status === "PENDING";
-                        const displayStatus = displayPcrStatus(r.status, r.application_status);
+                        const displayStatus = displayPcrStatus(r.status, r.application_status, r.effective_at);
                         const isSelected = selectedKeySet.has(selectionKey);
                         const rowType = "cost";
                         const canSelect = props.canSelectRow?.(r) ?? true;

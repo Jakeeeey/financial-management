@@ -144,7 +144,7 @@ export function UnifiedApprovalsTable({
                     ) : (
                         rows.map((row) => {
                             const isPending = row.status === "PENDING";
-                            const displayStatus = displayPcrStatus(row.status, row.application_status);
+                            const displayStatus = displayPcrStatus(row.status, row.application_status, row.effective_at);
                             const isBatch = row.kind === "price_batch";
                             const requestId = row.kind === "list_price" && row.request_id ? Number(row.request_id) : null;
                             const batchId = row.kind === "price_batch" && row.batch_id ? Number(row.batch_id) : null;

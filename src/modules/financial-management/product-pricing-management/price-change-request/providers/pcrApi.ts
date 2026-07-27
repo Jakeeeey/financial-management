@@ -625,9 +625,19 @@ export type BatchDecisionStatus = "APPROVED" | "REJECTED";
 
 type BatchDecisionSnapshot = {
     status?: string | null;
+    application_status?: string | null;
+    application_error?: string | null;
     details?: Array<{ status?: string | null }>;
-    price_details?: Array<{ status?: string | null }>;
-    cost_details?: Array<{ status?: string | null }>;
+    price_details?: Array<{
+        status?: string | null;
+        application_status?: string | null;
+        application_error?: string | null;
+    }>;
+    cost_details?: Array<{
+        status?: string | null;
+        application_status?: string | null;
+        application_error?: string | null;
+    }>;
 };
 
 function decisionDetails(kind: BatchDecisionKind, data: BatchDecisionSnapshot) {
@@ -647,6 +657,7 @@ export async function waitForBatchDecision(args: {
     kind: BatchDecisionKind;
     headerId: number;
     expectedStatus: BatchDecisionStatus;
+    expectedApplicationStatus?: "APPLIED" | "SCHEDULED";
     timeoutMs?: number;
     intervalMs?: number;
 }) {
@@ -663,8 +674,30 @@ export async function waitForBatchDecision(args: {
             const detailsReached = details.length > 0 && details.every(
                 (detail) => String(detail.status ?? "").toUpperCase() === args.expectedStatus,
             );
+            const applicationDetails = details as Array<{
+                application_status?: string | null;
+                application_error?: string | null;
+            }>;
+            const applicationReached = !args.expectedApplicationStatus || (
+                String(data.application_status ?? "").toUpperCase() === args.expectedApplicationStatus &&
+                applicationDetails.length > 0 &&
+                applicationDetails.every(
+                    (detail) => String(detail.application_status ?? "").toUpperCase() === args.expectedApplicationStatus,
+                )
+            );
+            const failedApplication = [
+                { application_status: data.application_status, application_error: data.application_error },
+                ...applicationDetails,
+            ].find((row) => String(row.application_status ?? "").toUpperCase() === "FAILED");
 
-            if (headerReached && detailsReached) return data;
+            if (failedApplication) {
+                throw new Error(
+                    failedApplication.application_error ||
+                    "One or more pricing changes failed to apply. Retry the application from the batch details.",
+                );
+            }
+
+            if (headerReached && detailsReached && applicationReached) return data;
             lastError = null;
         } catch (error: unknown) {
             lastError = error;

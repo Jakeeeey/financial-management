@@ -46,12 +46,18 @@ export function usePriceChangeBatches(
         setActing(true);
         try {
             const result = await api.approvePriceChangeBatch(headerId, effectiveAt);
-            await api.waitForBatchDecision({ kind: "price_batch", headerId, expectedStatus: "APPROVED" });
+            await api.waitForBatchDecision({
+                kind: "price_batch",
+                headerId,
+                expectedStatus: "APPROVED",
+                expectedApplicationStatus: result.scheduled ? "SCHEDULED" : "APPLIED",
+            });
             const verb = result.scheduled ? "approved and scheduled" : "approved";
             toast.success(`${result.affected} price change line(s) ${verb}.`);
             await refresh();
         } catch (error: unknown) {
             toast.error(getErrorMessage(error, "Failed to approve batch"));
+            throw error;
         } finally {
             setActing(false);
         }
@@ -66,6 +72,7 @@ export function usePriceChangeBatches(
             await refresh();
         } catch (error: unknown) {
             toast.error(getErrorMessage(error, "Failed to reject batch"));
+            throw error;
         } finally {
             setActing(false);
         }

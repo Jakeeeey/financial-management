@@ -119,7 +119,12 @@ export function PriceTypeRequestManager({
         setBatchActing(true);
         try {
             const result = await pcrApi.approvePriceChangeBatch(headerId, effectiveAt);
-            await pcrApi.waitForBatchDecision({ kind: "price_batch", headerId, expectedStatus: "APPROVED" });
+            await pcrApi.waitForBatchDecision({
+                kind: "price_batch",
+                headerId,
+                expectedStatus: "APPROVED",
+                expectedApplicationStatus: result.scheduled ? "SCHEDULED" : "APPLIED",
+            });
             const verb = result.scheduled ? "approved and scheduled" : "approved";
             toast.success(`${result.affected} price change line(s) ${verb}.`);
             await inbox.refresh();
