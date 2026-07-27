@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
     DisbursementPayload, PayableLine, PaymentLine, SupplierDto, COADto,
-    Disbursement, BankAccountDto, UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto
+    Disbursement, BankAccountDto, UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto, DisbursementSubmitResult
 } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { toast } from "sonner";
@@ -33,7 +33,7 @@ export interface ExtendedDisbursement extends Disbursement {
 interface DisbursementCreateSheetProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onSubmit: (payload: DisbursementPayload) => Promise<boolean>;
+    onSubmit: (payload: DisbursementPayload) => Promise<DisbursementSubmitResult>;
     loading: boolean;
     editData?: ExtendedDisbursement | null;
 }
@@ -414,8 +414,12 @@ export function DisbursementCreateSheet({
                     bankId: p.bankId ? Number(p.bankId) : undefined
                 })),
             };
-            const success = await onSubmit(payload);
-            if (success) {
+            const result = await onSubmit(payload);
+            if (result.code === "DOC_NO_CONFLICT" && result.nextDocNo) {
+                setPreviewDocNo(result.nextDocNo);
+                toast.warning(`Document number was already used. A new number, ${result.nextDocNo}, is ready. Review and submit again.`);
+            }
+            if (result.success) {
                 setTransactionTypeId(1);
                 setPayeeId("");
                 setDivisionId("");

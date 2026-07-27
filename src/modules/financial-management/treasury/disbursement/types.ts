@@ -87,6 +87,13 @@ export interface DisbursementPayload {
     payments: PaymentLine[];
 }
 
+export interface DisbursementSubmitResult {
+    success: boolean;
+    code?: string;
+    message?: string;
+    nextDocNo?: string;
+}
+
 export interface DivisionDto {
     divisionId: number;
     divisionName: string;
