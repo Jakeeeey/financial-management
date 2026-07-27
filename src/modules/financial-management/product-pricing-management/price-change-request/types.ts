@@ -4,7 +4,7 @@ export type PCRDisplayStatus = PCRStatus | "SCHEDULED" | "APPLYING" | "FAILED";
 
 export type PCRStatusFilter = PCRDisplayStatus | "ALL";
 
-export type ApprovalKind = "price_batch" | "cost_batch" | "price_type" | "list_price";
+export type ApprovalKind = "price_batch" | "cost_batch" | "mixed_batch" | "price_type" | "list_price";
 
 export type ApprovalTypeFilter = "all" | "price" | "cost";
 
@@ -199,6 +199,52 @@ export type ListCostBatchDetail = ListCostBatchHeader & {
     details: ListCostBatchLine[];
 };
 
+export type UnifiedBatchLine = {
+    request_id: number | null;
+    kind: "price_type" | "list_cost";
+    product_id: number;
+    product_name: string;
+    product_code?: string;
+    unit_name?: string;
+    price_type_id?: number;
+    price_type_name?: string;
+    current_price?: number | null;
+    proposed_price?: number | null;
+    current_cost?: number | null;
+    proposed_cost?: number | null;
+    delta: number | null;
+    percent_change: number | null;
+    status: string;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
+};
+
+export type UnifiedBatchDetail = {
+    id: number;
+    header_id: number;
+    supplier_id: number | null;
+    supplier_name: string;
+    reference_no: string;
+    remarks: string;
+    status: string;
+    requested_by: number | null;
+    requested_at: string | null;
+    approved_by?: number | string | null;
+    approved_at?: string | null;
+    rejected_by?: number | string | null;
+    rejected_at?: string | null;
+    reject_reason?: string | null;
+    effective_at?: string | null;
+    application_status?: string | null;
+    applied_at?: string | null;
+    applied_by?: number | string | null;
+    batch_types: Array<"PRICE_TYPE" | "LIST_COST">;
+    price_details: UnifiedBatchLine[];
+    cost_details: UnifiedBatchLine[];
+};
+
 export type PriceTypeUnifiedApprovalRow = PriceChangeRequestRow & {
     row_key: string;
     kind: "price_type";
@@ -245,6 +291,40 @@ export type UnifiedApprovalRow =
           supplier_id?: number | null;
           supplier_name?: string | null;
           supplier_names?: string[];
+          effective_at?: string | null;
+          application_status?: PriceChangeApplicationStatus | string | null;
+          applied_at?: string | null;
+      }
+    | {
+          row_key: string;
+          kind: "mixed_batch";
+          record_label: string;
+          title: string;
+          subtitle?: string;
+          status: PCRStatus;
+          requested_at: string | null;
+          requested_by?: number | string | null;
+          requested_by_name?: string | null;
+          line_count?: number;
+          total_products?: number;
+          proposed_min?: number | null;
+          proposed_max?: number | null;
+          proposed_price?: number | null;
+          proposed_cost?: number | null;
+          batch_id?: number;
+          request_id?: number;
+          remarks?: string | null;
+          reference_no?: string | null;
+          supplier_id?: number | null;
+          supplier_name?: string | null;
+          supplier_names?: string[];
+          batch_types?: Array<"PRICE_TYPE" | "LIST_COST">;
+          price_line_count?: number;
+          cost_line_count?: number;
+          price_proposed_min?: number | null;
+          price_proposed_max?: number | null;
+          cost_proposed_min?: number | null;
+          cost_proposed_max?: number | null;
           effective_at?: string | null;
           application_status?: PriceChangeApplicationStatus | string | null;
           applied_at?: string | null;

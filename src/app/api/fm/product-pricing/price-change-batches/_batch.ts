@@ -599,31 +599,18 @@ export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]
     };
 }
 
-export async function createPendingPriceBatch(args: {
+export async function createPriceBatchHeader(args: {
     userId: number;
     supplierId: number;
     referenceNo: string;
     remarks: string;
-    linesToCreate: NormalizedBatchCreateLine[];
 }) {
-    const { userId, supplierId, referenceNo, remarks, linesToCreate } = args;
-
-    if (linesToCreate.length === 0) {
-        throw new Error("linesToCreate must be non-empty");
-    }
-
-    const liveSnapshots = await fetchLivePriceSnapshots(linesToCreate);
-    const snapshottedLines = linesToCreate.map((line) => ({
-        ...line,
-        current_price: liveSnapshots.get(batchLineKey(line.product_id, line.price_type_id)) ?? null,
-    }));
-
     const headerPayload = {
-        supplier_id: supplierId,
-        reference_no: referenceNo || null,
-        remarks,
+        supplier_id: args.supplierId,
+        reference_no: args.referenceNo || null,
+        remarks: args.remarks,
         status: "PENDING",
-        requested_by: userId,
+        requested_by: args.userId,
         requested_at: nowManila(),
     };
 
@@ -638,6 +625,31 @@ export async function createPendingPriceBatch(args: {
         throw new Error("Batch header was created without an id");
     }
 
+    return {
+        headerId,
+        headerRow: header.data ?? { header_id: headerId },
+        requestedAt: headerPayload.requested_at,
+    };
+}
+
+export async function createPriceBatchDetails(args: {
+    userId: number;
+    headerId: number;
+    linesToCreate: NormalizedBatchCreateLine[];
+    requestedAt?: string;
+}) {
+    const { userId, headerId, linesToCreate } = args;
+    if (linesToCreate.length === 0) {
+        return { created: 0, detailRows: [] as BatchDetailRow[] };
+    }
+
+    const liveSnapshots = await fetchLivePriceSnapshots(linesToCreate);
+    const snapshottedLines = linesToCreate.map((line) => ({
+        ...line,
+        current_price: liveSnapshots.get(batchLineKey(line.product_id, line.price_type_id)) ?? null,
+    }));
+
+    const requestedAt = args.requestedAt ?? nowManila();
     const detailPayload = snapshottedLines.map((line) => ({
         header_id: headerId,
         product_id: line.product_id,
@@ -646,7 +658,7 @@ export async function createPendingPriceBatch(args: {
         proposed_price: line.proposed_price,
         status: "PENDING",
         requested_by: userId,
-        requested_at: nowManila(),
+        requested_at: requestedAt,
     }));
 
     const details = await fetchDirectus<DirectusList<BatchDetailRow>>(`${mustBase()}/items/${DETAILS}`, {
@@ -656,11 +668,41 @@ export async function createPendingPriceBatch(args: {
     });
 
     const created = details.data?.length ?? detailPayload.length;
+    if (created !== detailPayload.length) {
+        throw new Error("Price batch detail creation was incomplete.");
+    }
 
     return {
-        headerId,
         created,
-        headerRow: header.data ?? { header_id: headerId },
+        detailRows: details.data ?? [],
+    };
+}
+
+export async function createPendingPriceBatch(args: {
+    userId: number;
+    supplierId: number;
+    referenceNo: string;
+    remarks: string;
+    linesToCreate: NormalizedBatchCreateLine[];
+}) {
+    const { userId, supplierId, referenceNo, remarks, linesToCreate } = args;
+
+    if (linesToCreate.length === 0) {
+        throw new Error("linesToCreate must be non-empty");
+    }
+
+    const header = await createPriceBatchHeader({ userId, supplierId, referenceNo, remarks });
+    const details = await createPriceBatchDetails({
+        userId,
+        headerId: header.headerId,
+        linesToCreate,
+        requestedAt: header.requestedAt,
+    });
+
+    return {
+        headerId: header.headerId,
+        created: details.created,
+        headerRow: header.headerRow,
     };
 }
 
@@ -780,7 +822,12 @@ export async function getDetails(headerId: number) {
     });
 }
 
-export async function cancelPendingBatch(headerId: number, userId: number, reason: string) {
+export async function cancelPendingBatch(
+    headerId: number,
+    userId: number,
+    reason: string,
+    detailCollections: string[] = [DETAILS],
+) {
     const header = await getHeader(headerId);
     if (!header) return;
 
@@ -798,18 +845,30 @@ export async function cancelPendingBatch(headerId: number, userId: number, reaso
         }),
     });
 
-    const details = await getDetails(headerId);
     await Promise.all(
-        details
-            .map((line) => pickId(line.request_id))
-            .filter((lineId): lineId is number => Boolean(lineId))
-            .map((lineId) =>
-                fetchDirectus(`${mustBase()}/items/${DETAILS}/${lineId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders(),
-                    body: JSON.stringify({ status: "CANCELLED" }),
-                }),
-            ),
+        Array.from(new Set(detailCollections.filter(Boolean))).map(async (collection) => {
+            const params = new URLSearchParams();
+            params.set("limit", "-1");
+            params.set("fields", "request_id");
+            params.set("filter[header_id][_eq]", String(headerId));
+            const rows = await fetchDirectus<DirectusList<{ request_id?: number | string | null }>>(
+                `${mustBase()}/items/${collection}?${params.toString()}`,
+                { headers: directusHeaders() },
+            );
+
+            await Promise.all(
+                (rows.data ?? [])
+                    .map((line) => pickId(line.request_id))
+                    .filter((lineId): lineId is number => Boolean(lineId))
+                    .map((lineId) =>
+                        fetchDirectus(`${mustBase()}/items/${collection}/${lineId}`, {
+                            method: "PATCH",
+                            headers: directusHeaders(),
+                            body: JSON.stringify({ status: "CANCELLED" }),
+                        }),
+                    ),
+            );
+        }),
     );
 }
 
@@ -897,7 +956,13 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
         );
     }
 
-    const { executeClaimedApplication, refreshBatchApplicationStatus, stageBatchApproval } =
+    const {
+        executeClaimedApplication,
+        fallbackApplicationStatus,
+        postCommitApplicationNotice,
+        refreshBatchApplicationStatus,
+        stageBatchApproval,
+    } =
         await import("../_applicationEngine");
     const staged = await stageBatchApproval({ detailCollection: DETAILS, headerId, userId, effectiveAt });
     if (!staged) {
@@ -906,48 +971,81 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
 
     let applied = 0;
     let failed = 0;
+    let warning: string | null = null;
+    let retryable = false;
     if (!staged.scheduled) {
-        const { applyProposedPrice } = await import("../price-change-requests/_actions");
-        const stagedDetails = await getDetails(headerId);
-        for (const row of stagedDetails) {
-            const outcome = await executeClaimedApplication({
-                collection: DETAILS,
-                row,
-                userId,
-                claimFields: ["current_price"],
-                apply: async (claimed) => {
-                    const productId = normalizeProductId(claimed);
-                    const priceTypeId = normalizePriceTypeId(claimed);
-                    if (!productId || !priceTypeId) {
-                        throw new Error("Batch contains an invalid detail line.");
-                    }
-                    const proposedPrice = assertValidPriceValue(claimed.proposed_price, "proposed_price");
-                    await applyProposedPrice({
-                        userId,
-                        productId,
-                        priceTypeId,
-                        currentPrice: claimed.current_price,
-                        proposedPrice,
-                    });
-                },
-            });
-            if (outcome.state === "applied") applied += 1;
-            if (outcome.state === "failed") failed += 1;
+        try {
+            const { applyProposedPrice } = await import("../price-change-requests/_actions");
+            const stagedDetails = await getDetails(headerId);
+            for (const row of stagedDetails) {
+                const outcome = await executeClaimedApplication({
+                    collection: DETAILS,
+                    row,
+                    userId,
+                    claimFields: ["current_price"],
+                    apply: async (claimed) => {
+                        const productId = normalizeProductId(claimed);
+                        const priceTypeId = normalizePriceTypeId(claimed);
+                        if (!productId || !priceTypeId) {
+                            throw new Error("Batch contains an invalid detail line.");
+                        }
+                        const proposedPrice = assertValidPriceValue(claimed.proposed_price, "proposed_price");
+                        await applyProposedPrice({
+                            userId,
+                            productId,
+                            priceTypeId,
+                            currentPrice: claimed.current_price,
+                            proposedPrice,
+                        });
+                    },
+                });
+                if (outcome.state === "applied") applied += 1;
+                if (outcome.state === "failed") failed += 1;
+            }
+        } catch (error: unknown) {
+            const notice = postCommitApplicationNotice(error, "pricing application");
+            warning = notice.warning;
+            retryable = notice.retryable;
         }
     }
 
-    const applicationStatus = await refreshBatchApplicationStatus({ detailCollection: DETAILS, headerId, userId });
-    if (applied > 0) invalidateGroupIndexCacheOnCatalogChange();
+    let applicationStatus: string | null = null;
+    try {
+        applicationStatus = await refreshBatchApplicationStatus({ detailCollection: DETAILS, headerId, userId });
+    } catch (error: unknown) {
+        const notice = postCommitApplicationNotice(error, "application status reconciliation");
+        warning = warning ?? notice.warning;
+        retryable = notice.retryable;
+    }
+    if (failed > 0) {
+        warning = warning ?? "Approval was saved, but one or more pricing lines failed to apply. Retry application from the batch details.";
+        retryable = true;
+    }
+    if (applied > 0) {
+        try {
+            invalidateGroupIndexCacheOnCatalogChange();
+        } catch (error: unknown) {
+            const notice = postCommitApplicationNotice(error, "pricing cache refresh");
+            warning = warning ?? notice.warning;
+            retryable = notice.retryable;
+        }
+    }
+
+    const affected = normalizedDetails.length;
 
     return NextResponse.json({
         ok: true,
+        committed: true,
         header_id: headerId,
-        affected: normalizedDetails.length,
+        affected,
         applied,
         failed,
-        application_status: applicationStatus ?? "SCHEDULED",
+        scheduled: staged.scheduled,
+        application_status: applicationStatus ?? fallbackApplicationStatus({ scheduled: staged.scheduled, applied, failed, affected }),
         effective_at: staged.effectiveAt,
-    }, { status: failed > 0 ? 202 : 200 });
+        warning,
+        retryable,
+    }, { status: failed > 0 || retryable ? 202 : 200 });
 }
 
 type DirectusProductRow = {

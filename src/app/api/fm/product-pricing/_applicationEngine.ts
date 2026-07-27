@@ -35,6 +35,11 @@ export type ApplicationOutcome<T extends ApplicationRow> = {
     error?: string;
 };
 
+export type PostCommitApplicationNotice = {
+    warning: string;
+    retryable: true;
+};
+
 type DirectusList<T> = { data?: T[] };
 
 const UNSTAGED_DETAIL_ERROR = "Batch has pending detail rows that were not staged for application.";
@@ -54,6 +59,30 @@ function sanitizedError(error: unknown): string {
         // The original message is already suitable for an operational error.
     }
     return raw.slice(0, 500);
+}
+
+export function fallbackApplicationStatus(args: {
+    scheduled: boolean;
+    applied: number;
+    failed: number;
+    affected: number;
+}): ApplicationStatus {
+    if (args.failed > 0) return "FAILED";
+    if (args.scheduled || args.applied < args.affected) return "SCHEDULED";
+    return "APPLIED";
+}
+
+export function postCommitApplicationNotice(error: unknown, operation: string): PostCommitApplicationNotice {
+    const errorId = randomUUID();
+    console.error(
+        `[product-pricing:${errorId}] Post-commit ${operation} failed`,
+        sanitizedError(error),
+    );
+
+    return {
+        warning: `Approval was saved, but ${operation} could not be completed. Retry application from the batch details.`,
+        retryable: true,
+    };
 }
 
 function requestId(row: ApplicationRow): number {
@@ -445,9 +474,16 @@ export async function refreshBatchApplicationStatus(args: {
     detailCollection: string;
     headerId: number;
     userId: number | null;
+    additionalDetailCollections?: string[];
 }) {
     if (args.headerId <= 0) return null;
-    const rows = await fetchBatchApplicationRows(args.detailCollection, args.headerId);
+    const collections = Array.from(new Set([
+        args.detailCollection,
+        ...(args.additionalDetailCollections ?? []),
+    ].filter(Boolean)));
+    const rows = (await Promise.all(
+        collections.map((collection) => fetchBatchApplicationRows(collection, args.headerId)),
+    )).flat();
     if (rows.length === 0) return null;
 
     const hasPendingRows = rows.some((row) => String(row.status ?? "") === "PENDING");

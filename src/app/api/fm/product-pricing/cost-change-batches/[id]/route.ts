@@ -18,6 +18,7 @@ import {
     resolveBatchDecisionUserNames,
     resolveUserDisplayName,
 } from "../_batch";
+import { approveUnifiedBatch, isMixedBatch, rejectUnifiedBatch } from "../../_unifiedBatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -168,6 +169,24 @@ export async function POST(req: NextRequest, context: RouteContext) {
             effective_at: string | null;
         }>;
         const action = String(body.action ?? "").trim().toLowerCase();
+
+        if (await isMixedBatch(headerId)) {
+            if (action === "approve") {
+                const result = await approveUnifiedBatch(headerId, userId, normalizeEffectiveAt(body.effective_at));
+                if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
+                return NextResponse.json(result, { status: result.failed > 0 || result.retryable ? 202 : 200 });
+            }
+
+            if (action === "reject") {
+                const rejectReason = String(body.reject_reason ?? "").trim();
+                if (!rejectReason) {
+                    return NextResponse.json({ error: "reject_reason is required" }, { status: 400 });
+                }
+                const result = await rejectUnifiedBatch(headerId, userId, rejectReason);
+                if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
+                return NextResponse.json(result);
+            }
+        }
 
         if (action === "approve") {
             return approveCostBatch(headerId, userId, normalizeEffectiveAt(body.effective_at));

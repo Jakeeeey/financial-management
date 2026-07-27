@@ -94,6 +94,13 @@ export function DecisionConfirmationDialog({
                     </div>
                 ) : null}
 
+                {loading ? (
+                    <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground" role="status" aria-live="polite">
+                        <Loader2 className="size-4 animate-spin" />
+                        {isReject ? "Waiting for rejection to finish..." : "Waiting for approval to finish..."}
+                    </div>
+                ) : null}
+
                 <AlertDialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
                         Cancel

@@ -83,6 +83,7 @@ export function pcrStatusTabTriggerClass(status: Exclude<PCRDisplayStatus, "CANC
 }
 
 export function approvalTypeLabel(kind: ApprovalKind): string {
+    if (kind === "mixed_batch") return "Price Type + List Cost";
     return kind === "price_batch" || kind === "price_type" ? "Price Type" : "List Cost";
 }
 
@@ -94,6 +95,8 @@ export function approvalTypeBadgeClass(kind: ApprovalKind): string {
         case "cost_batch":
         case "list_price":
             return "border-violet-200 bg-violet-100 text-violet-900 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-200";
+        case "mixed_batch":
+            return "border-slate-300 bg-slate-100 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200";
     }
 }
 

@@ -17,6 +17,7 @@ import { PcrTabExportImportActions } from "./PcrTabExportImportActions";
 import { ListPriceRequestDetailDialog } from "./ListPriceRequestDetailDialog";
 import { ListCostBatchDetailDialog } from "./ListCostBatchDetailDialog";
 import { PriceChangeBatchDetailDialog } from "./PriceChangeBatchDetailDialog";
+import { UnifiedBatchDetailDialog } from "./UnifiedBatchDetailDialog";
 import { PriceTypeRequestDetailDialog } from "./PriceTypeRequestDetailDialog";
 import { RejectDialog } from "./RejectDialog";
 import { RequestFiltersBar } from "./RequestFiltersBar";
@@ -87,6 +88,7 @@ export function UnifiedApprovalsManager({
     });
     const [viewingBatchHeaderId, setViewingBatchHeaderId] = React.useState<number | null>(null);
     const [viewingCostBatchHeaderId, setViewingCostBatchHeaderId] = React.useState<number | null>(null);
+    const [viewingMixedBatchHeaderId, setViewingMixedBatchHeaderId] = React.useState<number | null>(null);
     const [viewingCostRequestId, setViewingCostRequestId] = React.useState<number | null>(null);
     const [viewingPriceRequestId, setViewingPriceRequestId] = React.useState<number | null>(null);
     const [rejectingCostId, setRejectingCostId] = React.useState<number | null>(null);
@@ -228,6 +230,7 @@ export function UnifiedApprovalsManager({
     const clearViewingState = React.useCallback(() => {
         setViewingBatchHeaderId(null);
         setViewingCostBatchHeaderId(null);
+        setViewingMixedBatchHeaderId(null);
         setViewingCostRequestId(null);
         setViewingPriceRequestId(null);
     }, []);
@@ -242,6 +245,10 @@ export function UnifiedApprovalsManager({
         }
         if (row.kind === "cost_batch") {
             setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
+            return;
+        }
+        if (row.kind === "mixed_batch") {
+            setViewingMixedBatchHeaderId(Number(row.batch_id ?? row.request_id));
             return;
         }
         if (row.kind === "list_price") {
@@ -650,6 +657,22 @@ export function UnifiedApprovalsManager({
                           onRejectScheduled: (headerId: number, reason: string) =>
                               feed.rejectScheduled("cost_batch", headerId, reason),
                           onRetryApplication: (headerId: number) => feed.retryApplication("cost_batch", headerId),
+                      })}
+            />
+
+            <UnifiedBatchDetailDialog
+                batchId={viewingMixedBatchHeaderId}
+                open={viewingMixedBatchHeaderId != null}
+                acting={acting}
+                readOnly={readOnly}
+                onOpenChange={(open) => {
+                    if (!open) setViewingMixedBatchHeaderId(null);
+                }}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApprove: feed.approveMixedBatch,
+                          onReject: feed.rejectMixedBatch,
                       })}
             />
 

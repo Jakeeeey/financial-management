@@ -209,7 +209,12 @@ async function applyDuePriceRequests(rows: PcrRow[], userId: number | null): Pro
     }
 
     for (const headerId of headerIds) {
-        await refreshBatchApplicationStatus({ detailCollection: PRICE_DETAILS, headerId, userId });
+        await refreshBatchApplicationStatus({
+            detailCollection: PRICE_DETAILS,
+            additionalDetailCollections: [COST_DETAILS],
+            headerId,
+            userId,
+        });
     }
 
     return { scanned: rows.length, applied, failed: failures.length, skipped, failures };
@@ -251,7 +256,12 @@ async function applyDueCostRequests(rows: CcrRow[], userId: number | null): Prom
     }
 
     for (const headerId of headerIds) {
-        await refreshBatchApplicationStatus({ detailCollection: COST_DETAILS, headerId, userId });
+        await refreshBatchApplicationStatus({
+            detailCollection: COST_DETAILS,
+            additionalDetailCollections: [PRICE_DETAILS],
+            headerId,
+            userId,
+        });
     }
 
     return { scanned: rows.length, applied, failed: failures.length, skipped, failures };

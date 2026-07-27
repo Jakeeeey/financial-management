@@ -62,7 +62,8 @@ export function useUnifiedApprovals(
         setActing(true);
         try {
             const result = await api.approvePriceChangeBatch(headerId, effectiveAt);
-            const verb = result.application_status === "SCHEDULED" ? "approved and scheduled" : "approved and applied";
+            await api.waitForBatchDecision({ kind: "price_batch", headerId, expectedStatus: "APPROVED" });
+            const verb = result.scheduled ? "approved and scheduled" : "approved";
             toast.success(`${result.affected} price change line(s) ${verb}.`);
             await refresh();
         } catch (error: unknown) {
@@ -79,6 +80,7 @@ export function useUnifiedApprovals(
         setActing(true);
         try {
             await api.rejectPriceChangeBatch(headerId, reason);
+            await api.waitForBatchDecision({ kind: "price_batch", headerId, expectedStatus: "REJECTED" });
             toast.success("Batch rejected.");
             await refresh();
         } catch (error: unknown) {
@@ -95,7 +97,8 @@ export function useUnifiedApprovals(
         setActing(true);
         try {
             const result = await api.approveListCostBatch(headerId, effectiveAt);
-            const verb = result.application_status === "SCHEDULED" ? "approved and scheduled" : "approved and applied";
+            await api.waitForBatchDecision({ kind: "cost_batch", headerId, expectedStatus: "APPROVED" });
+            const verb = result.scheduled ? "approved and scheduled" : "approved";
             toast.success(`${result.affected} list cost line(s) ${verb}.`);
             await refresh();
         } catch (error: unknown) {
@@ -112,12 +115,44 @@ export function useUnifiedApprovals(
         setActing(true);
         try {
             await api.rejectListCostBatch(headerId, reason);
+            await api.waitForBatchDecision({ kind: "cost_batch", headerId, expectedStatus: "REJECTED" });
             toast.success("List cost batch rejected.");
             await refresh();
         } catch (error: unknown) {
             if (applyActionError(error, "Failed to reject list cost batch", { setUnauthorized })) {
                 throw error;
             }
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
+    const approveMixedBatch = React.useCallback(async (headerId: number, effectiveAt?: string | null) => {
+        setActing(true);
+        try {
+            const result = await api.approveUnifiedBatch(headerId, effectiveAt);
+            await api.waitForBatchDecision({ kind: "mixed_batch", headerId, expectedStatus: "APPROVED" });
+            const verb = result.scheduled ? "approved and scheduled" : "approved";
+            toast.success(`${result.affected} mixed batch line(s) ${verb}.`);
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to approve mixed batch", { setUnauthorized })) throw error;
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
+    const rejectMixedBatch = React.useCallback(async (headerId: number, reason: string) => {
+        setActing(true);
+        try {
+            await api.rejectUnifiedBatch(headerId, reason);
+            await api.waitForBatchDecision({ kind: "mixed_batch", headerId, expectedStatus: "REJECTED" });
+            toast.success("Mixed batch rejected.");
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to reject mixed batch", { setUnauthorized })) throw error;
             throw error;
         } finally {
             setActing(false);
@@ -225,6 +260,8 @@ export function useUnifiedApprovals(
         rejectBatch,
         approveCostBatch,
         rejectCostBatch,
+        approveMixedBatch,
+        rejectMixedBatch,
         approvePriceRequest,
         rejectPriceRequest,
         applyScheduledNow,

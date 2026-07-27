@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +40,13 @@ export function RejectDialog(props: {
                         rows={4}
                     />
                 </div>
+
+                {props.loading ? (
+                    <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground" role="status" aria-live="polite">
+                        <Loader2 className="size-4 animate-spin" />
+                        Waiting for rejection to finish...
+                    </div>
+                ) : null}
 
                 <div className="flex justify-end gap-2 pt-2">
                     <Button variant="outline" onClick={() => props.onOpenChange(false)} disabled={props.loading}>

@@ -3,9 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import {
     BatchCreateLineInput,
     cancelPendingBatch,
+    createPriceBatchDetails,
+    createPriceBatchHeader,
     createPendingPriceBatch,
     decodeUserIdFromJwtCookie,
     directusErrorResponse,
+    DETAILS,
     mapBatchHeaderResponse,
     mustBase,
     normalizeBatchCreateLines,
@@ -15,7 +18,12 @@ import {
     createPendingCostRequests,
     planCostBulkCreate,
 } from "../cost-change-requests/_bulk";
-import { isCostBatchStorageSetupError } from "../cost-change-batches/_batch";
+import {
+    assertCostBatchStorageReady,
+    createCostBatchDetails,
+    COST_DETAILS,
+    isCostBatchStorageSetupError,
+} from "../cost-change-batches/_batch";
 import { isInvalidProposedCostError } from "../cost-change-requests/_costValidation";
 
 export const runtime = "nodejs";
@@ -105,6 +113,85 @@ export async function POST(req: NextRequest) {
                         },
                     },
                     { status: 400 },
+                );
+            }
+        }
+
+        if (isMixed) {
+            let sharedHeaderId = 0;
+            try {
+                await assertCostBatchStorageReady();
+                const sharedHeader = await createPriceBatchHeader({
+                    userId,
+                    supplierId,
+                    referenceNo,
+                    remarks,
+                });
+                sharedHeaderId = sharedHeader.headerId;
+
+                const priceCreated = await createPriceBatchDetails({
+                    userId,
+                    headerId: sharedHeaderId,
+                    linesToCreate: pricePlan!.linesToCreate,
+                    requestedAt: sharedHeader.requestedAt,
+                });
+                const costCreated = await createCostBatchDetails({
+                    userId,
+                    headerId: sharedHeaderId,
+                    itemsToCreate: costPlan!.itemsToCreate,
+                    requestedAt: sharedHeader.requestedAt,
+                });
+
+                if (priceCreated.created === 0 || costCreated.created === 0) {
+                    throw new Error("Mixed save did not create both price and list cost detail lines.");
+                }
+
+                return NextResponse.json(
+                    {
+                        created: priceCreated.created + costCreated.created,
+                        header_id: sharedHeaderId,
+                        batch_types: ["PRICE_TYPE", "LIST_COST"],
+                        price: {
+                            created: priceCreated.created,
+                            skipped_duplicates: pricePlan!.skippedDuplicates,
+                            skipped_existing_pending: pricePlan!.skippedExistingPending,
+                            header_id: sharedHeaderId,
+                            data: mapBatchHeaderResponse(sharedHeader.headerRow, priceCreated.created),
+                        },
+                        cost: {
+                            created: costCreated.created,
+                            skipped_duplicates: costPlan!.skippedDuplicates,
+                            skipped_existing_pending: costPlan!.skippedExistingPending,
+                            header_id: sharedHeaderId,
+                        },
+                    },
+                    { status: 201 },
+                );
+            } catch (error: unknown) {
+                if (sharedHeaderId > 0) {
+                    await cancelPendingBatch(
+                        sharedHeaderId,
+                        userId,
+                        MIXED_SAVE_ROLLBACK_REASON,
+                        [DETAILS, COST_DETAILS],
+                    ).catch(() => undefined);
+                }
+
+                if (isCostBatchStorageSetupError(error)) {
+                    return costBatchStorageSetupResponse(
+                        error instanceof Error ? error.message : String(error),
+                        sharedHeaderId > 0,
+                    );
+                }
+
+                return NextResponse.json(
+                    {
+                        error: "Mixed save failed; shared batch was rolled back",
+                        code: "mixed_save_rolled_back",
+                        rolled_back: sharedHeaderId > 0,
+                        details: error instanceof Error ? error.message : String(error),
+                    },
+                    { status: 500 },
                 );
             }
         }

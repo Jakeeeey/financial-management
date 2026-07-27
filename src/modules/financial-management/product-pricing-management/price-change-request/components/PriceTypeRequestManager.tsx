@@ -119,7 +119,8 @@ export function PriceTypeRequestManager({
         setBatchActing(true);
         try {
             const result = await pcrApi.approvePriceChangeBatch(headerId, effectiveAt);
-            const verb = result.application_status === "SCHEDULED" ? "approved and scheduled" : "approved and applied";
+            await pcrApi.waitForBatchDecision({ kind: "price_batch", headerId, expectedStatus: "APPROVED" });
+            const verb = result.scheduled ? "approved and scheduled" : "approved";
             toast.success(`${result.affected} price change line(s) ${verb}.`);
             await inbox.refresh();
         } catch (error: unknown) {
@@ -136,6 +137,7 @@ export function PriceTypeRequestManager({
         setBatchActing(true);
         try {
             await pcrApi.rejectPriceChangeBatch(headerId, reason);
+            await pcrApi.waitForBatchDecision({ kind: "price_batch", headerId, expectedStatus: "REJECTED" });
             toast.success("Batch rejected.");
             await inbox.refresh();
         } catch (error: unknown) {

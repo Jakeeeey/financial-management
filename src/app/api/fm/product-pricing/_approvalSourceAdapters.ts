@@ -137,7 +137,7 @@ type DirectusPCRRow = {
 
 export type UnifiedApprovalRow = {
     row_key: string;
-    kind: "price_batch" | "cost_batch" | "price_type" | "list_price";
+    kind: "price_batch" | "cost_batch" | "mixed_batch" | "price_type" | "list_price";
     record_label: string;
     title: string;
     subtitle?: string;
@@ -164,6 +164,13 @@ export type UnifiedApprovalRow = {
     total_products?: number;
     proposed_min?: number | null;
     proposed_max?: number | null;
+    batch_types?: Array<"PRICE_TYPE" | "LIST_COST">;
+    price_line_count?: number;
+    cost_line_count?: number;
+    price_proposed_min?: number | null;
+    price_proposed_max?: number | null;
+    cost_proposed_min?: number | null;
+    cost_proposed_max?: number | null;
     remarks?: string | null;
     reference_no?: string | null;
     current_price?: number | null;
@@ -285,7 +292,7 @@ export async function addSuppliersToRows(rows: UnifiedApprovalRow[]): Promise<Un
     const supplierByProductId = await getSupplierNameListsByProductId(productIds);
 
     return rows.map((row) => {
-        if (row.kind === "price_batch" || row.kind === "cost_batch") {
+        if (row.kind === "price_batch" || row.kind === "cost_batch" || row.kind === "mixed_batch") {
             return row;
         }
 
@@ -1034,6 +1041,12 @@ export async function fetchPriceBatchesPage(
     const headerRows = json.data ?? [];
     const headerIds = headerRows.map(normalizeHeaderId).filter((id) => id > 0);
     const summaries = await summarizeBatchLines(headerIds);
+    let costSummaries = new Map<number, BatchLineSummary>();
+    try {
+        costSummaries = await summarizeCostBatchLines(headerIds);
+    } catch (error: unknown) {
+        if (!isCostHeaderAccessError(error)) throw error;
+    }
 
     const rows: UnifiedApprovalRow[] = [];
     for (const row of headerRows) {
@@ -1042,6 +1055,8 @@ export async function fetchPriceBatchesPage(
 
         const requestedBy = Number(row.requested_by);
         const summary = summaries.get(headerId);
+        const costSummary = costSummaries.get(headerId);
+        const isMixed = Boolean(costSummary && costSummary.lineCount > 0);
         const supplierName = supplierNameOf(row.supplier_id);
         const supplierNames = supplierName ? [supplierName] : [];
         const referenceNo = String(row.reference_no ?? "").trim();
@@ -1053,7 +1068,7 @@ export async function fetchPriceBatchesPage(
 
         rows.push({
             row_key: `batch:${headerId}`,
-            kind: "price_batch",
+            kind: isMixed ? "mixed_batch" : "price_batch",
             record_label: `PCB-${headerId}`,
             title: supplierName || referenceNo || `Price change batch #${headerId}`,
             subtitle: remarks || referenceNo || undefined,
@@ -1076,6 +1091,14 @@ export async function fetchPriceBatchesPage(
             proposed_min: proposedMin,
             proposed_max: proposedMax,
             proposed_price: proposedMin === proposedMax ? proposedMin : null,
+            proposed_cost: costSummary && costSummary.proposedMin === costSummary.proposedMax ? costSummary.proposedMin : null,
+            batch_types: isMixed ? ["PRICE_TYPE", "LIST_COST"] : ["PRICE_TYPE"],
+            price_line_count: summary?.lineCount ?? 0,
+            cost_line_count: costSummary?.lineCount ?? 0,
+            price_proposed_min: proposedMin,
+            price_proposed_max: proposedMax,
+            cost_proposed_min: costSummary?.proposedMin ?? null,
+            cost_proposed_max: costSummary?.proposedMax ?? null,
             remarks: remarks || null,
             reference_no: referenceNo || null,
             supplier_id: supplierIdOf(row.supplier_id),
@@ -1096,8 +1119,11 @@ export async function fetchCostBatchesPage(
     limit: number,
     costHeaderIds: number[],
     headerIdsFromSearch?: number[],
+    excludeHeaderIds: number[] = [],
 ): Promise<{ rows: UnifiedApprovalRow[]; total: number }> {
-    if (costHeaderIds.length === 0) {
+    const excluded = new Set(excludeHeaderIds);
+    const filteredCostHeaderIds = costHeaderIds.filter((id) => !excluded.has(id));
+    if (filteredCostHeaderIds.length === 0) {
         return { rows: [], total: 0 };
     }
 
@@ -1119,7 +1145,8 @@ export async function fetchCostBatchesPage(
             "applied_by",
         ] });
 
-    appendCostBatchFilters(params, filters, costHeaderIds, headerIdsFromSearch);
+    const filteredSearchHeaderIds = headerIdsFromSearch?.filter((id) => !excluded.has(id));
+    appendCostBatchFilters(params, filters, filteredCostHeaderIds, filteredSearchHeaderIds);
 
     const url = `${mustBase()}/items/${COST_HEADERS}?${params.toString()}`;
     const json = await fetchDirectus<DirectusList<CostHeaderRow>>(url, { headers: directusHeaders() });

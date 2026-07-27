@@ -70,7 +70,7 @@ function getTotalPages(meta: ListMeta | null | undefined, pageSize: number, curr
     return 0;
 }
 
-function approvalKind(row: ApprovalRecordRow): "price_batch" | "cost_batch" | "price_type" | "list_price" {
+function approvalKind(row: ApprovalRecordRow): "price_batch" | "cost_batch" | "mixed_batch" | "price_type" | "list_price" {
     if ("kind" in row) return row.kind;
     return "proposed_cost" in row ? "list_price" : "price_type";
 }
@@ -100,8 +100,9 @@ function supplierText(row: ApprovalRecordRow): string {
 function approvalRecordLabel(row: ApprovalRecordRow) {
     const kind = approvalKind(row);
     if ("record_label" in row && row.record_label) return row.record_label;
-    if (kind === "price_batch" || kind === "cost_batch") {
-        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" }>;
+    if (kind === "price_batch" || kind === "cost_batch" || kind === "mixed_batch") {
+        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" | "mixed_batch" }>;
+        if (kind === "mixed_batch") return `PCB-${Number(batch.batch_id ?? batch.request_id)}`;
         return kind === "cost_batch"
             ? `CCR-${Number(batch.batch_id ?? batch.request_id)}`
             : `PCB-${Number(batch.batch_id ?? batch.request_id)}`;
@@ -112,8 +113,8 @@ function approvalRecordLabel(row: ApprovalRecordRow) {
 
 function totalProductsText(row: ApprovalRecordRow) {
     const kind = approvalKind(row);
-    if (kind === "price_batch" || kind === "cost_batch") {
-        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" }>;
+    if (kind === "price_batch" || kind === "cost_batch" || kind === "mixed_batch") {
+        const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" | "cost_batch" | "mixed_batch" }>;
         const totalProducts = Number(batch.total_products ?? 0);
         if (Number.isFinite(totalProducts) && totalProducts > 0) return totalProducts.toLocaleString("en-PH");
         const lineCount = Number(batch.line_count ?? 0);
@@ -124,6 +125,20 @@ function totalProductsText(row: ApprovalRecordRow) {
 
 function proposedText(row: ApprovalRecordRow) {
     const kind = approvalKind(row);
+    if (kind === "mixed_batch") {
+        const batch = row as Extract<UnifiedApprovalRow, { kind: "mixed_batch" }>;
+        const priceMin = Number(batch.price_proposed_min);
+        const priceMax = Number(batch.price_proposed_max);
+        const costMin = Number(batch.cost_proposed_min);
+        const costMax = Number(batch.cost_proposed_max);
+        const price = Number.isFinite(priceMin)
+            ? priceMin === priceMax ? fmtPrice(priceMin) : `${fmtPrice(priceMin)} - ${fmtPrice(priceMax)}`
+            : null;
+        const cost = Number.isFinite(costMin)
+            ? costMin === costMax ? fmtCost(costMin) : `${fmtCost(costMin)} - ${fmtCost(costMax)}`
+            : null;
+        return [price ? `Price: ${price}` : null, cost ? `Cost: ${cost}` : null].filter(Boolean).join(" | ") || "-";
+    }
     if (kind === "price_batch") {
         const batch = row as Extract<UnifiedApprovalRow, { kind: "price_batch" }>;
         const min = Number(batch.proposed_min);
