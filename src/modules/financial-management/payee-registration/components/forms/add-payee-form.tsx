@@ -82,9 +82,14 @@ async function getPsgcOptions(
     { cache: "no-store" },
   );
 
-  if (!response.ok) throw new Error("Failed to load PSGC address data");
+  const json = (await response.json().catch(() => ({}))) as {
+    error?: unknown;
+    options?: unknown;
+  };
+  if (!response.ok) {
+    throw new Error(typeof json.error === "string" ? json.error : "Failed to load PSGC address data");
+  }
 
-  const json = await response.json();
   return (json.options || []) as PsgcOption[];
 }
 
@@ -296,15 +301,27 @@ export function AddPayeeForm({
       if (kind === "cities") setCityOptions(options);
       if (kind === "barangays") setBarangayOptions(options);
       return options;
-    } catch {
+    } catch (error: unknown) {
       if (seq === psgcSeqRef.current[kind]) {
-        setPsgcError("Failed to load PSGC address data");
+        setPsgcError(error instanceof Error ? error.message : "Failed to load PSGC address data");
       }
       return [];
     } finally {
-      setPsgcLoading((current) => ({ ...current, [kind]: false }));
+      if (seq === psgcSeqRef.current[kind]) {
+        setPsgcLoading((current) => ({ ...current, [kind]: false }));
+      }
     }
   }, []);
+
+  const retryPsgcOptions = useCallback(() => {
+    void loadPsgcOptions("provinces");
+    void loadPsgcOptions("cities", locationCodes.provinceCode ? { provinceCode: locationCodes.provinceCode } : {});
+    if (locationCodes.cityCode) {
+      void loadPsgcOptions("barangays", { cityCode: locationCodes.cityCode });
+    } else if (locationCodes.provinceCode) {
+      void loadPsgcOptions("barangays", { provinceCode: locationCodes.provinceCode });
+    }
+  }, [loadPsgcOptions, locationCodes.cityCode, locationCodes.provinceCode]);
 
   const loadPostalCodeOptions = useCallback(async (
     province: string,
@@ -717,11 +734,20 @@ export function AddPayeeForm({
                   )}
                 />
 
-                {psgcError ? (
-                  <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                    {psgcError}
-                  </div>
-                ) : null}
+                  {psgcError ? (
+                    <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                      <span>{psgcError}</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={retryPsgcOptions}
+                        disabled={Object.values(psgcLoading).some(Boolean)}
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  ) : null}
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <FormField
