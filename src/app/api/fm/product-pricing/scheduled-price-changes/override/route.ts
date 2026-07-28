@@ -28,7 +28,7 @@ import { assertValidPriceValue } from "../../_pricePrecision";
 import { applyProposedPrice, getPriceRequest, type PcrRow } from "../../price-change-requests/_actions";
 import { CCR, getCostRequest, patchProductCostField, type CcrRow } from "../../cost-change-requests/_actions";
 import { COST_DETAILS, getCostDetails, getCostHeader } from "../../cost-change-batches/_batch";
-import { retryUnifiedBatch } from "../../_unifiedBatch";
+import { applyNowUnifiedBatch, retryUnifiedBatch } from "../../_unifiedBatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -368,11 +368,13 @@ export async function POST(req: NextRequest) {
         if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
         if (kind === "mixed_batch") {
-            if (action !== "retry_application") {
-                return NextResponse.json({ error: "Mixed batches only support retry_application from this route." }, { status: 400 });
+            if (action !== "apply_now" && action !== "retry_application") {
+                return NextResponse.json({ error: "Mixed batches only support apply_now or retry_application from this route." }, { status: 400 });
             }
 
-            const result = await retryUnifiedBatch(id, userId);
+            const result = action === "apply_now"
+                ? await applyNowUnifiedBatch(id, userId)
+                : await retryUnifiedBatch(id, userId);
             if ("status" in result) {
                 return failedApplyResponse({
                     kind,

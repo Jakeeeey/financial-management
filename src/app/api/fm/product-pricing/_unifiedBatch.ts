@@ -12,6 +12,7 @@ import {
     normalizeHeaderId,
     nowManila,
     pickId,
+    resolveBatchDecisionUserNames,
 } from "./price-change-batches/_batch";
 import {
     COST_DETAILS,
@@ -93,9 +94,11 @@ export type UnifiedBatchData = {
     status: string;
     requested_by: number | null;
     requested_at: string | null;
-    approved_by?: unknown;
+    approved_by: number | null;
+    approved_by_name: string | null;
     approved_at?: string | null;
-    rejected_by?: unknown;
+    rejected_by: number | null;
+    rejected_by_name: string | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
     effective_at?: string | null;
@@ -218,6 +221,7 @@ export async function getUnifiedBatch(headerId: number): Promise<UnifiedBatchDat
         ? pickId(header.supplier_id.id)
         : pickId(header.supplier_id);
     const requestedBy = userIdOf(header.requested_by);
+    const { approved_by_name, rejected_by_name } = await resolveBatchDecisionUserNames(header);
     const allLines = [...price, ...cost];
     const headerApplicationStatus = String(header.application_status ?? "").toUpperCase();
     const retryable = String(header.status ?? "").toUpperCase() === "APPROVED" &&
@@ -238,9 +242,11 @@ export async function getUnifiedBatch(headerId: number): Promise<UnifiedBatchDat
         status: String(header.status ?? "PENDING"),
         requested_by: requestedBy,
         requested_at: header.requested_at ?? null,
-        approved_by: header.approved_by,
+        approved_by: userIdOf(header.approved_by),
+        approved_by_name,
         approved_at: header.approved_at ?? null,
-        rejected_by: header.rejected_by,
+        rejected_by: userIdOf(header.rejected_by),
+        rejected_by_name,
         rejected_at: header.rejected_at ?? null,
         reject_reason: header.reject_reason ?? null,
         effective_at: header.effective_at ?? null,
@@ -852,6 +858,19 @@ export async function retryUnifiedBatch(headerId: number, userId: number) {
             retryable: true,
         } as const;
     }
+}
+
+export async function applyNowUnifiedBatch(headerId: number, userId: number) {
+    const batch = await getBatchForDecision(headerId);
+    if (!batch) return { error: "Batch not found", status: 404 } as const;
+    if (batch.price_details.length === 0 || batch.cost_details.length === 0) {
+        return { error: "This batch is not a mixed batch.", status: 400 } as const;
+    }
+    if (String(batch.status).toUpperCase() !== "APPROVED" || String(batch.application_status).toUpperCase() !== "SCHEDULED") {
+        return { error: "Only scheduled approved mixed batches can be applied now.", status: 409 } as const;
+    }
+
+    return retryUnifiedBatch(headerId, userId);
 }
 
 export async function rejectUnifiedBatch(headerId: number, userId: number, reason: string) {

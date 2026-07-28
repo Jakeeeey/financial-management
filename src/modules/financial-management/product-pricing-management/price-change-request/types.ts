@@ -234,8 +234,10 @@ export type UnifiedBatchDetail = {
     requested_by: number | null;
     requested_at: string | null;
     approved_by?: number | string | null;
+    approved_by_name?: string | null;
     approved_at?: string | null;
     rejected_by?: number | string | null;
+    rejected_by_name?: string | null;
     rejected_at?: string | null;
     reject_reason?: string | null;
     effective_at?: string | null;
@@ -274,6 +276,13 @@ export type ListPriceUnifiedApprovalRow = CostChangeRequestRow & {
 };
 
 export type ItemUnifiedApprovalRow = PriceTypeUnifiedApprovalRow | ListPriceUnifiedApprovalRow;
+
+export type UnifiedBatchSummary = {
+    line_count: number;
+    total_products: number;
+    proposed_min: number | null;
+    proposed_max: number | null;
+};
 
 export type UnifiedApprovalRow =
     | {
@@ -330,6 +339,8 @@ export type UnifiedApprovalRow =
           price_proposed_max?: number | null;
           cost_proposed_min?: number | null;
           cost_proposed_max?: number | null;
+          price_summary?: UnifiedBatchSummary | null;
+          cost_summary?: UnifiedBatchSummary | null;
           effective_at?: string | null;
           application_status?: PriceChangeApplicationStatus | string | null;
           applied_at?: string | null;

@@ -171,6 +171,8 @@ export type UnifiedApprovalRow = {
     price_proposed_max?: number | null;
     cost_proposed_min?: number | null;
     cost_proposed_max?: number | null;
+    price_summary?: UnifiedBatchSummary | null;
+    cost_summary?: UnifiedBatchSummary | null;
     remarks?: string | null;
     reference_no?: string | null;
     current_price?: number | null;
@@ -422,6 +424,24 @@ type BatchLineSummary = {
     proposedMax: number | null;
     productIds: number[];
 };
+
+export type UnifiedBatchSummary = {
+    line_count: number;
+    total_products: number;
+    proposed_min: number | null;
+    proposed_max: number | null;
+};
+
+function toUnifiedBatchSummary(summary: BatchLineSummary | undefined): UnifiedBatchSummary | null {
+    if (!summary) return null;
+
+    return {
+        line_count: summary.lineCount,
+        total_products: summary.totalProducts,
+        proposed_min: summary.proposedMin,
+        proposed_max: summary.proposedMax,
+    };
+}
 
 async function summarizeBatchLines(headerIds: number[]): Promise<Map<number, BatchLineSummary>> {
     const summaries = new Map<number, {
@@ -1099,6 +1119,8 @@ export async function fetchPriceBatchesPage(
             price_proposed_max: proposedMax,
             cost_proposed_min: costSummary?.proposedMin ?? null,
             cost_proposed_max: costSummary?.proposedMax ?? null,
+            price_summary: toUnifiedBatchSummary(summary),
+            cost_summary: toUnifiedBatchSummary(costSummary),
             remarks: remarks || null,
             reference_no: referenceNo || null,
             supplier_id: supplierIdOf(row.supplier_id),
@@ -1205,6 +1227,8 @@ export async function fetchCostBatchesPage(
             proposed_min: proposedMin,
             proposed_max: proposedMax,
             proposed_cost: proposedMin === proposedMax ? proposedMin : null,
+            price_summary: null,
+            cost_summary: toUnifiedBatchSummary(summary),
             remarks: remarks || null,
             reference_no: referenceNo || null,
             supplier_name: batchSupplierName !== "-" ? batchSupplierName : null,

@@ -127,15 +127,19 @@ function proposedText(row: ApprovalRecordRow) {
     const kind = approvalKind(row);
     if (kind === "mixed_batch") {
         const batch = row as Extract<UnifiedApprovalRow, { kind: "mixed_batch" }>;
-        const priceMin = Number(batch.price_proposed_min);
-        const priceMax = Number(batch.price_proposed_max);
-        const costMin = Number(batch.cost_proposed_min);
-        const costMax = Number(batch.cost_proposed_max);
-        const price = Number.isFinite(priceMin)
-            ? priceMin === priceMax ? fmtPrice(priceMin) : `${fmtPrice(priceMin)} - ${fmtPrice(priceMax)}`
+        const priceMin = batch.price_summary?.proposed_min ?? batch.price_proposed_min;
+        const priceMax = batch.price_summary?.proposed_max ?? batch.price_proposed_max;
+        const costMin = batch.cost_summary?.proposed_min ?? batch.cost_proposed_min;
+        const costMax = batch.cost_summary?.proposed_max ?? batch.cost_proposed_max;
+        const priceMinNumber = priceMin == null ? null : Number(priceMin);
+        const priceMaxNumber = priceMax == null ? null : Number(priceMax);
+        const costMinNumber = costMin == null ? null : Number(costMin);
+        const costMaxNumber = costMax == null ? null : Number(costMax);
+        const price = Number.isFinite(priceMinNumber) && Number.isFinite(priceMaxNumber)
+            ? priceMinNumber === priceMaxNumber ? fmtPrice(priceMinNumber) : `${fmtPrice(priceMinNumber)} - ${fmtPrice(priceMaxNumber)}`
             : null;
-        const cost = Number.isFinite(costMin)
-            ? costMin === costMax ? fmtCost(costMin) : `${fmtCost(costMin)} - ${fmtCost(costMax)}`
+        const cost = Number.isFinite(costMinNumber) && Number.isFinite(costMaxNumber)
+            ? costMinNumber === costMaxNumber ? fmtCost(costMinNumber) : `${fmtCost(costMinNumber)} - ${fmtCost(costMaxNumber)}`
             : null;
         return [price ? `Price: ${price}` : null, cost ? `Cost: ${cost}` : null].filter(Boolean).join(" | ") || "-";
     }

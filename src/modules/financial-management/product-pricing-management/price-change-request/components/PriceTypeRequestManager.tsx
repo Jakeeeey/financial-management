@@ -527,6 +527,7 @@ export function PriceTypeRequestManager({
                     : {
                           onApprove: inbox.approveMixedBatch,
                           onReject: inbox.rejectMixedBatch,
+                          onApplyScheduledNow: (headerId: number) => inbox.applyScheduledNow("mixed_batch", headerId),
                           onRetryApplication: inbox.retryMixedBatch,
                       })}
             />

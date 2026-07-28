@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 
 import type { UnifiedBatchDetail, UnifiedBatchLine } from "../types";
 import { getUnifiedBatch } from "../providers/pcrApi";
+import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { RejectDialog } from "./RejectDialog";
 import { displayPcrStatus, pcrApproveButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
@@ -30,6 +31,7 @@ type Props = {
     onOpenChange: (open: boolean) => void;
     onApprove?: (headerId: number, effectiveAt?: string | null) => Promise<void> | void;
     onReject?: (headerId: number, reason: string) => Promise<void> | void;
+    onApplyScheduledNow?: (headerId: number) => Promise<void> | void;
     onRetryApplication?: (headerId: number) => Promise<void> | void;
 };
 
@@ -105,6 +107,7 @@ export function UnifiedBatchDetailDialog({
     onOpenChange,
     onApprove,
     onReject,
+    onApplyScheduledNow,
     onRetryApplication,
 }: Props) {
     const [detail, setDetail] = React.useState<UnifiedBatchDetail | null>(null);
@@ -138,12 +141,21 @@ export function UnifiedBatchDetailDialog({
 
     const isPending = detail?.status === "PENDING";
     const canAct = !readOnly && isPending && Boolean(onApprove && onReject) && !loading;
-    const canRetry = !readOnly && Boolean(detail?.retryable) && Boolean(onRetryApplication) && !loading && !acting;
+    const isScheduled = detail?.status === "APPROVED" && detail.application_status === "SCHEDULED";
+    const canApplyScheduledNow = !readOnly && isScheduled && Boolean(onApplyScheduledNow) && !loading && !acting;
+    const canRetry = !readOnly && detail?.application_status === "FAILED" && Boolean(detail.retryable) && Boolean(onRetryApplication) && !loading && !acting;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
 
     const handleRetryApplication = async () => {
         if (!batchId || !onRetryApplication) return;
         await onRetryApplication(batchId);
+        const result = await getUnifiedBatch(batchId);
+        setDetail(result.data);
+    };
+
+    const handleApplyScheduledNow = async () => {
+        if (!batchId || !onApplyScheduledNow) return;
+        await onApplyScheduledNow(batchId);
         const result = await getUnifiedBatch(batchId);
         setDetail(result.data);
     };
@@ -170,6 +182,7 @@ export function UnifiedBatchDetailDialog({
                                 <div><div className="text-xs uppercase text-muted-foreground">Reference</div><div className="mt-1 font-medium">{detail.reference_no || "-"}</div></div>
                                 <div><div className="text-xs uppercase text-muted-foreground">Requested</div><div className="mt-1 font-medium">{safeDate(detail.requested_at)}</div></div>
                                 <div><div className="text-xs uppercase text-muted-foreground">Status</div><Badge variant="outline" className={`mt-1 ${pcrStatusBadgeClass(displayStatus)}`}>{displayStatus}</Badge></div>
+                                <BatchDecisionSummaryFields detail={detail} />
                             </div>
 
                             {detail.application_error ? (
@@ -205,6 +218,12 @@ export function UnifiedBatchDetailDialog({
                                 <Button variant="outline" className="border-red-600 text-red-600" onClick={() => setRejecting(true)} disabled={acting}>Reject Batch</Button>
                                 <Button className={pcrApproveButtonClass} onClick={() => setConfirmingApprove(true)} disabled={acting}>Approve Batch</Button>
                             </>
+                        ) : null}
+                        {canApplyScheduledNow ? (
+                            <Button className={pcrApproveButtonClass} onClick={() => void handleApplyScheduledNow()} disabled={acting}>
+                                {acting ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                                Apply Now
+                            </Button>
                         ) : null}
                         {canRetry ? (
                             <Button className={pcrApproveButtonClass} onClick={() => void handleRetryApplication()} disabled={acting}>
