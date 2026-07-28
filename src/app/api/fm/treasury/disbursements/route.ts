@@ -30,7 +30,7 @@ type DirectusList<T> = {
     };
 };
 
-type RelationValue = number | string | null | {
+export type RelationValue = number | string | null | {
     id?: unknown;
     division_id?: unknown;
     department_id?: unknown;
@@ -68,6 +68,49 @@ export type DisbursementRow = {
     status?: unknown;
     supporting_documents_url?: unknown;
 };
+
+export type DisbursementPaymentState =
+    | "UNPAID"
+    | "ALLOCATED"
+    | "PARTIALLY_RELEASED"
+    | "RELEASED";
+
+export function normalizeDisbursementStatus(value: unknown) {
+    switch (asString(value).trim().toUpperCase()) {
+        case "DRAFT": return "Draft";
+        case "SUBMITTED": return "Submitted";
+        case "APPROVED": return "Approved";
+        case "PARTIALLY RELEASED": return "Partially Released";
+        case "RELEASED": return "Released";
+        case "POSTED": return "Posted";
+        case "RETURNED FOR REVISION": return "Returned for Revision";
+        default: return asString(value).trim() || "Draft";
+    }
+}
+
+export function resolveDisbursementPaymentState(input: {
+    status: string;
+    totalAmount: number;
+    paidAmount: number;
+    isPosted: number;
+}): DisbursementPaymentState {
+    const paidAmount = Math.max(0, input.paidAmount);
+    const totalAmount = Math.max(0, input.totalAmount);
+    const normalizedStatus = normalizeDisbursementStatus(input.status);
+
+    if (paidAmount <= 0) return "UNPAID";
+    if (input.isPosted === 1 || normalizedStatus === "Posted") {
+        return totalAmount > 0 && paidAmount + 0.01 < totalAmount
+            ? "PARTIALLY_RELEASED"
+            : "RELEASED";
+    }
+    if (normalizedStatus === "Partially Released") return "PARTIALLY_RELEASED";
+    if (normalizedStatus === "Released") return "RELEASED";
+
+    // Saving payment/check lines is an allocation only. The explicit release
+    // transition is the source of truth for released lifecycle states.
+    return "ALLOCATED";
+}
 
 export type PayableRow = {
     id?: unknown;
@@ -687,6 +730,12 @@ export function normalizeDisbursement(
     const releasedByName = releasedByVal ? (userMap?.get(String(releasedByVal)) || `User #${releasedByVal}`) : "";
     const postedByName = postedByVal ? (userMap?.get(String(postedByVal)) || `User #${postedByVal}`) : "";
 
+    const totalAmount = asNumber(row.total_amount) ?? totalDebit;
+    const paidAmount = totalCredit > 0
+        ? totalCredit
+        : (asNumber(row.paid_amount) ?? 0);
+    const status = normalizeDisbursementStatus(row.status);
+
     return {
         id,
         docNo: asString(row.doc_no),
@@ -695,8 +744,14 @@ export function normalizeDisbursement(
         transactionTypeName: transactionTypeName(row.transaction_type),
         payeeName: relationLabel(row.payee, "supplier_name"),
         remarks: asString(row.remarks),
-        totalAmount: asNumber(row.total_amount) ?? totalDebit,
-        paidAmount: asNumber(row.paid_amount) ?? totalCredit,
+        totalAmount,
+        paidAmount,
+        paymentState: resolveDisbursementPaymentState({
+            status,
+            totalAmount,
+            paidAmount,
+            isPosted: asNumber(row.isPosted) ?? 0,
+        }),
         totalDebit,
         totalCredit,
         balance: roundMoney(totalDebit - totalCredit),
@@ -722,7 +777,7 @@ export function normalizeDisbursement(
         divisionName: relationLabel(row.division_id, "division_name"),
         departmentName: relationLabel(row.department_id, "department_name"),
         fundSourceId: asNumber(row.fund_source_id),
-        status: asString(row.status) || "Draft",
+        status,
         supportingDocumentsUrl: asString(row.supporting_documents_url),
         payables,
         payments,
@@ -900,6 +955,24 @@ function isDocumentNumberConflict(error: unknown) {
         && /(doc[_\s-]?no|document\s+number)/i.test(message);
 }
 
+async function documentNumberConflictResponse(docNo: string, transactionTypeId: number) {
+    let nextDocNo: string | undefined;
+    try {
+        nextDocNo = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
+    } catch {
+        // The conflict remains actionable even if a replacement preview is unavailable.
+    }
+
+    return NextResponse.json({
+        code: "DOC_NO_CONFLICT",
+        message: `Document number ${docNo} is already used by another voucher.`,
+        detail: nextDocNo
+            ? `A new document number ${nextDocNo} is available. Review the voucher and submit again.`
+            : "Obtain a new document number before submitting again.",
+        nextDocNo,
+    }, { status: 409 });
+}
+
 export async function GET(request: NextRequest) {
     const cookieStore = await cookies();
     const token = cookieStore.get("vos_access_token")?.value;
@@ -1072,20 +1145,7 @@ export async function POST(request: NextRequest) {
                 existingSnapshot.payments,
             );
             if (persistedCanonical !== incomingCanonical) {
-                let nextDocNo: string | undefined;
-                try {
-                    nextDocNo = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
-                } catch {
-                    // The conflict remains actionable even if a replacement preview is unavailable.
-                }
-                return NextResponse.json({
-                    code: "DOC_NO_CONFLICT",
-                    message: `Document number ${docNo} is already used by another voucher.`,
-                    detail: nextDocNo
-                        ? `A new document number ${nextDocNo} is available. Review the voucher and submit again.`
-                        : "Obtain a new document number before submitting again.",
-                    nextDocNo,
-                }, { status: 409 });
+                return documentNumberConflictResponse(docNo, transactionTypeId);
             }
 
             return NextResponse.json(await loadNormalizedDisbursement(existingSnapshot.header, token));
@@ -1116,7 +1176,7 @@ export async function POST(request: NextRequest) {
             }, { status: 409 });
         }
 
-        let docNoForCreation = docNo;
+        const docNoForCreation = docNo;
 
         // 3. Threshold check
         const APPROVAL_THRESHOLD = 1000.00;
@@ -1149,19 +1209,35 @@ export async function POST(request: NextRequest) {
         };
 
         let createRes: { data: DisbursementRow } | undefined;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-            createdDocNo = docNoForCreation;
-            headerPayload = { ...headerPayload, doc_no: docNoForCreation };
+        createdDocNo = docNoForCreation;
+        headerPayload = { ...headerPayload, doc_no: docNoForCreation };
+        try {
+            createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
+                method: "POST",
+                body: JSON.stringify(headerPayload)
+            });
+        } catch (error: unknown) {
+            if (!isDocumentNumberConflict(error)) throw error;
+
+            let racedSnapshot: DisbursementSnapshot | null = null;
             try {
-                createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
-                    method: "POST",
-                    body: JSON.stringify(headerPayload)
-                });
-                break;
-            } catch (error: unknown) {
-                if (!isDocumentNumberConflict(error) || attempt === 2) throw error;
-                docNoForCreation = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
+                racedSnapshot = await findDisbursementSnapshotByDocNo(docNo);
+            } catch {
+                // Return the conflict response even if the follow-up lookup is unavailable.
             }
+
+            if (racedSnapshot) {
+                const racedCanonical = canonicalizePersistedDisbursement(
+                    racedSnapshot.header,
+                    racedSnapshot.payables,
+                    racedSnapshot.payments,
+                );
+                if (racedCanonical === incomingCanonical) {
+                    return NextResponse.json(await loadNormalizedDisbursement(racedSnapshot.header, token));
+                }
+            }
+
+            return documentNumberConflictResponse(docNo, transactionTypeId);
         }
 
         if (!createRes) throw new Error("Disbursement could not be created with an available document number.");

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow } from "../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, RelationValue, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow } from "../route";
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
 import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
@@ -39,7 +39,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             return NextResponse.json({ message: "Transaction Type must be Trade (1) or Non-Trade (2)." }, { status: 400 });
         }
         const requestedPayables = (body.payables || []) as PayableInput[];
-        const requestedPayments = (body.payments || []) as PaymentInput[];
+        const hasPaymentPatch = Object.prototype.hasOwnProperty.call(body, "payments");
+        const requestedPayments = hasPaymentPatch && Array.isArray(body.payments)
+            ? body.payments as PaymentInput[]
+            : [];
         const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
         if (missingPrincipalDivisionError) {
             return NextResponse.json({ message: missingPrincipalDivisionError }, { status: 400 });
@@ -48,9 +51,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
-        const paymentLinesInput = requestedPayments.filter((line: PaymentInput) =>
-            !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
-        );
+        const paymentLinesInput = hasPaymentPatch
+            ? requestedPayments.filter((line: PaymentInput) =>
+                !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
+            )
+            : [];
         const coaMap = await getCoaMap();
         for (let index = 0; index < paymentLinesInput.length; index++) {
             const line = paymentLinesInput[index];
@@ -98,6 +103,16 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const currentLineItems = await getLineItems([id]);
         const currentPayables = currentLineItems.payables.get(id) || [];
         const currentPayments = currentLineItems.payments.get(id) || [];
+        const effectivePaymentLines: PaymentInput[] = hasPaymentPatch
+            ? normalizedPaymentLines
+            : currentPayments.map((line) => ({
+                coaId: relationId(line.coa_id, "coa_id"),
+                bankId: relationId(line.bank_id as RelationValue),
+                checkNo: line.check_no == null ? "" : String(line.check_no),
+                date: line.date == null ? undefined : String(line.date),
+                amount: Number(line.amount) || 0,
+                remarks: line.remarks == null ? "" : String(line.remarks),
+            }));
         const incomingCanonical = canonicalizeDisbursementPayload({
             transactionTypeId,
             payeeId: body.payeeId,
@@ -108,7 +123,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             fundSourceId: body.fundSourceId,
             supportingDocumentsUrl: body.supportingDocumentsUrl,
             payables: payableLinesInput,
-            payments: normalizedPaymentLines,
+            payments: effectivePaymentLines,
         });
         if (canonicalizePersistedDisbursement(currentDis, currentPayables, currentPayments) === incomingCanonical) {
             return NextResponse.json(await loadNormalizedDisbursement(currentDis, token));
@@ -176,7 +191,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 body: JSON.stringify(payableIds),
             });
         }
-        if (paymentIds.length > 0) {
+        if (hasPaymentPatch && paymentIds.length > 0) {
             await fetch(`${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/items/disbursement_payments`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${directusToken}`, "Content-Type": "application/json" },
@@ -212,7 +227,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }
 
         // 4. Calculate paid amount (sum of payments)
-        const calculatedPaidAmount = normalizedPaymentLines.reduce(
+        const calculatedPaidAmount = effectivePaymentLines.reduce(
             (sum: number, p: PaymentInput) => sum + (Number(p.amount) || 0),
             0
         );
@@ -259,7 +274,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 remarks: line.remarks || ""
             }));
 
-        const paymentLines = normalizedPaymentLines
+        const paymentLines = hasPaymentPatch
+            ? normalizedPaymentLines
             .filter((line: PaymentInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== ""))
             .map((line: PaymentInput) => {
                 const payload: {
@@ -288,7 +304,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                     payload.released_date = line.releasedDate;
                 }
                 return payload;
-            });
+            })
+            : [];
 
         const lineRes = await Promise.all([
             payableLines.length > 0
@@ -446,7 +463,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
         const existingLineItems = await getLineItems([id]);
         const memoReferences = (existingLineItems.payables.get(id) || [])
             .map((line) => String(line.reference_no || ""))
-            .filter((reference) => /^(SCM|SDM)-/i.test(reference));
+            .filter((reference) => reference.trim() !== "");
 
         // Soft Delete: stamp is_deleted = 1, deleted_at = NOW(), and deleted_by = currentUserId
         const deletePayload = {

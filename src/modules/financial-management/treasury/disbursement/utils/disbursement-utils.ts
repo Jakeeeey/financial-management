@@ -1,3 +1,5 @@
+import type { Disbursement } from "../types";
+
 export function formatCurrency(amount: number): string {
     return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
 }
@@ -142,6 +144,21 @@ export function getStatusColor(status: string): string {
 }
 
 export const VOUCHER_STEPS = ["Draft", "Submitted", "Approved", "Released", "Posted"];
+
+export function getVoucherStepIndex(status: string): number {
+    const normalizedStatus = status.trim().toUpperCase();
+    if (normalizedStatus === "PARTIALLY RELEASED") return VOUCHER_STEPS.indexOf("Released");
+    return Math.max(0, VOUCHER_STEPS.findIndex((step) => step.toUpperCase() === normalizedStatus));
+}
+
+export function getPaymentStateLabel(state: Disbursement["paymentState"]): string {
+    switch (state) {
+        case "ALLOCATED": return "Allocated";
+        case "PARTIALLY_RELEASED": return "Partially Released";
+        case "RELEASED": return "Paid";
+        default: return "Paid";
+    }
+}
 
 /**
  * Spells out numeric values in standard Philippine Check formats (Pesos and Centavos).
