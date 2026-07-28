@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Wallet, Lock } from "lucide-react";
 import { StickyTableWrapper } from "./StickyTableWrapper";
-import { formatCurrency, formatManilaDate, getStatusColor } from "../utils/disbursement-utils";
+import { formatCurrency, formatManilaDate, getPaymentStateLabel, getStatusColor } from "../utils/disbursement-utils";
 
 interface DisbursementTableProps {
     data: Disbursement[];
@@ -71,7 +71,7 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                                     <div className="flex flex-col gap-1 items-end">
                                         <span className="text-xs font-black text-foreground">{formatCurrency(d.totalAmount)}</span>
                                         <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-500">
-                                            <Wallet className="w-3 h-3" /> Paid: {formatCurrency(d.paidAmount || 0)}
+                                            <Wallet className="w-3 h-3" /> {getPaymentStateLabel(d.paymentState)}: {formatCurrency(d.paidAmount || 0)}
                                         </div>
                                     </div>
                                 </TableCell>

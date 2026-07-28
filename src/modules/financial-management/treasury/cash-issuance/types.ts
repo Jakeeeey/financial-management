@@ -29,6 +29,12 @@ export interface PaymentLine {
     releasedBy?: string;
 }
 
+export type DisbursementPaymentState =
+    | "UNPAID"
+    | "ALLOCATED"
+    | "PARTIALLY_RELEASED"
+    | "RELEASED";
+
 export interface Disbursement {
     id: number;
     docNo: string;
@@ -38,6 +44,7 @@ export interface Disbursement {
     remarks?: string;
     totalAmount: number;
     paidAmount: number;
+    paymentState: DisbursementPaymentState;
 
     // 🚀 NEW: Financial Header Aggregates
     totalDebit?: number;

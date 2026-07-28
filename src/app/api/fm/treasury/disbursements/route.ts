@@ -69,6 +69,49 @@ export type DisbursementRow = {
     supporting_documents_url?: unknown;
 };
 
+export type DisbursementPaymentState =
+    | "UNPAID"
+    | "ALLOCATED"
+    | "PARTIALLY_RELEASED"
+    | "RELEASED";
+
+export function normalizeDisbursementStatus(value: unknown) {
+    switch (asString(value).trim().toUpperCase()) {
+        case "DRAFT": return "Draft";
+        case "SUBMITTED": return "Submitted";
+        case "APPROVED": return "Approved";
+        case "PARTIALLY RELEASED": return "Partially Released";
+        case "RELEASED": return "Released";
+        case "POSTED": return "Posted";
+        case "RETURNED FOR REVISION": return "Returned for Revision";
+        default: return asString(value).trim() || "Draft";
+    }
+}
+
+export function resolveDisbursementPaymentState(input: {
+    status: string;
+    totalAmount: number;
+    paidAmount: number;
+    isPosted: number;
+}): DisbursementPaymentState {
+    const paidAmount = Math.max(0, input.paidAmount);
+    const totalAmount = Math.max(0, input.totalAmount);
+    const normalizedStatus = normalizeDisbursementStatus(input.status);
+
+    if (paidAmount <= 0) return "UNPAID";
+    if (input.isPosted === 1 || normalizedStatus === "Posted") {
+        return totalAmount > 0 && paidAmount + 0.01 < totalAmount
+            ? "PARTIALLY_RELEASED"
+            : "RELEASED";
+    }
+    if (normalizedStatus === "Partially Released") return "PARTIALLY_RELEASED";
+    if (normalizedStatus === "Released") return "RELEASED";
+
+    // Saving payment/check lines is an allocation only. The explicit release
+    // transition is the source of truth for released lifecycle states.
+    return "ALLOCATED";
+}
+
 export type PayableRow = {
     id?: unknown;
     disbursement_id?: unknown;
@@ -687,6 +730,12 @@ export function normalizeDisbursement(
     const releasedByName = releasedByVal ? (userMap?.get(String(releasedByVal)) || `User #${releasedByVal}`) : "";
     const postedByName = postedByVal ? (userMap?.get(String(postedByVal)) || `User #${postedByVal}`) : "";
 
+    const totalAmount = asNumber(row.total_amount) ?? totalDebit;
+    const paidAmount = totalCredit > 0
+        ? totalCredit
+        : (asNumber(row.paid_amount) ?? 0);
+    const status = normalizeDisbursementStatus(row.status);
+
     return {
         id,
         docNo: asString(row.doc_no),
@@ -695,8 +744,14 @@ export function normalizeDisbursement(
         transactionTypeName: transactionTypeName(row.transaction_type),
         payeeName: relationLabel(row.payee, "supplier_name"),
         remarks: asString(row.remarks),
-        totalAmount: asNumber(row.total_amount) ?? totalDebit,
-        paidAmount: asNumber(row.paid_amount) ?? totalCredit,
+        totalAmount,
+        paidAmount,
+        paymentState: resolveDisbursementPaymentState({
+            status,
+            totalAmount,
+            paidAmount,
+            isPosted: asNumber(row.isPosted) ?? 0,
+        }),
         totalDebit,
         totalCredit,
         balance: roundMoney(totalDebit - totalCredit),
@@ -722,7 +777,7 @@ export function normalizeDisbursement(
         divisionName: relationLabel(row.division_id, "division_name"),
         departmentName: relationLabel(row.department_id, "department_name"),
         fundSourceId: asNumber(row.fund_source_id),
-        status: asString(row.status) || "Draft",
+        status,
         supportingDocumentsUrl: asString(row.supporting_documents_url),
         payables,
         payments,

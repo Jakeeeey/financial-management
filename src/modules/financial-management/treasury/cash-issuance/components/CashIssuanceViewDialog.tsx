@@ -17,7 +17,7 @@ import { format } from "date-fns";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { cn } from "@/lib/utils";
 import { StickyTableWrapper } from "./StickyTableWrapper";
-import { getCookie, decodeToken, formatCurrency, VOUCHER_STEPS } from "../utils/disbursement-utils";
+import { getCookie, decodeToken, formatCurrency, getPaymentStateLabel, getVoucherStepIndex, VOUCHER_STEPS } from "../utils/disbursement-utils";
 
 interface CashIssuanceViewDialogProps {
     disbursement: Disbursement | null;
@@ -139,7 +139,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
     const balance = disbursement.balance ?? (totalDebit - totalCredit);
     const isBalanced = Math.abs(balance) < 0.01;
 
-    const currentStepIndex = VOUCHER_STEPS.indexOf(disbursement.status);
+    const currentStepIndex = getVoucherStepIndex(disbursement.status);
     const isAutoApprove = disbursement.totalAmount < 1000;
 
     return (
@@ -163,6 +163,9 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         <Badge variant="outline" className="px-3 py-1 bg-muted font-black uppercase tracking-widest text-[10px]">
                             {disbursement.status}
                         </Badge>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                            Payment: {getPaymentStateLabel(disbursement.paymentState)}
+                        </span>
                     </div>
 
                     <div className="mt-6 pt-4 border-t border-border/50">

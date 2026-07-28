@@ -11,6 +11,10 @@ import {
     isPostedReceivingAmount,
     postedReceivingRowsByPurchaseOrder,
 } from "@/app/api/fm/treasury/disbursements/_purchase-order-eligibility";
+import {
+    normalizeDisbursementStatus,
+    resolveDisbursementPaymentState,
+} from "@/app/api/fm/treasury/disbursements/route";
 
 // 1. Business Logic Code to Test (Usually resides in controllers/utilities)
 export function validateMutation(disbursement: Pick<Disbursement, "isPosted" | "status">) {
@@ -40,6 +44,39 @@ export function evaluateReleasingCondition(totalAmount: number, paidAmount: numb
 
 // 2. Jest Automated Unit Tests
 describe("Disbursement Module Core Business Rules", () => {
+
+    describe("Payment and lifecycle state reconciliation", () => {
+        it("keeps saved payment allocations distinct from a released status", () => {
+            expect(resolveDisbursementPaymentState({
+                status: "Approved",
+                totalAmount: 1000,
+                paidAmount: 1,
+                isPosted: 0,
+            })).toBe("ALLOCATED");
+        });
+
+        it("marks a partial release as released progress", () => {
+            expect(resolveDisbursementPaymentState({
+                status: "Partially Released",
+                totalAmount: 1000,
+                paidAmount: 1,
+                isPosted: 0,
+            })).toBe("PARTIALLY_RELEASED");
+        });
+
+        it("marks a fully released and posted voucher as released payment state", () => {
+            expect(resolveDisbursementPaymentState({
+                status: "POSTED",
+                totalAmount: 1000,
+                paidAmount: 1000,
+                isPosted: 1,
+            })).toBe("RELEASED");
+        });
+
+        it("normalizes lifecycle status casing for the workflow stepper", () => {
+            expect(normalizeDisbursementStatus("partially released")).toBe("Partially Released");
+        });
+    });
     
     // --- Rule 1: Immutability Locks ---
     describe("Immutability Locks (isPosted = 1)", () => {

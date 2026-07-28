@@ -16,7 +16,7 @@ import { disbursementProvider } from "../providers/fetchProvider";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { cn } from "@/lib/utils";
 import { StickyTableWrapper } from "./StickyTableWrapper";
-import { decodeToken, formatCurrency, formatManilaDate, formatManilaDateTime, getCookie, VOUCHER_STEPS } from "../utils/disbursement-utils";
+import { decodeToken, formatCurrency, formatManilaDate, formatManilaDateTime, getCookie, getPaymentStateLabel, getVoucherStepIndex, VOUCHER_STEPS } from "../utils/disbursement-utils";
 
 interface DisbursementViewSheetProps {
     disbursement: Disbursement | null;
@@ -150,7 +150,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
     const balance = disbursement.balance ?? (totalDebit - totalCredit);
     const isBalanced = Math.abs(balance) < 0.01;
 
-    const currentStepIndex = VOUCHER_STEPS.indexOf(disbursement.status);
+    const currentStepIndex = getVoucherStepIndex(disbursement.status);
     const isAutoApprove = disbursement.totalAmount < 1000;
 
     return (
@@ -174,6 +174,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         <Badge variant="outline" className="px-3 py-1 bg-muted font-black uppercase tracking-widest text-[10px]">
                             {disbursement.status}
                         </Badge>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                            Payment: {getPaymentStateLabel(disbursement.paymentState)}
+                        </span>
                     </div>
 
                     <div className="mt-6 pt-4 border-t border-border/50">
