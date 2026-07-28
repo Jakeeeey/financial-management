@@ -24,11 +24,23 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+type CashIssuanceSubModule = "preparation" | "approval" | "releasing" | "posting" | "all" | "dashboard";
+
+const SUBMODULE_STATUS_FILTERS: Record<CashIssuanceSubModule, string> = {
+    preparation: "Draft,Submitted,Returned for Revision",
+    approval: "Submitted",
+    releasing: "Approved",
+    posting: "Released",
+    all: "All",
+    dashboard: "All",
+};
+
 interface CashIssuanceModuleProps {
-    initialSubModule?: "preparation" | "approval" | "releasing" | "posting" | "all" | "dashboard";
+    initialSubModule?: CashIssuanceSubModule;
 }
 
 export default function CashIssuanceModule({ initialSubModule = "preparation" }: CashIssuanceModuleProps) {
+    const initialStatusFilter = SUBMODULE_STATUS_FILTERS[initialSubModule];
     const {
         data, loading, page, setPage, size, changeSize, totalPages,
         activeType, handleTabChange, refresh,
@@ -36,9 +48,9 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
         supplierSearch, setSupplierSearch, startDate, setStartDate, endDate, setEndDate,
         statusFilter, setStatusFilter, divisionFilter, setDivisionFilter, departmentFilter, setDepartmentFilter, docNoSearch, setDocNoSearch,
         applyFilters, clearFilters, filterSuppliers, divisions, departments
-    } = useCashIssuance();
+    } = useCashIssuance(initialStatusFilter);
 
-    const [subModule, setSubModule] = useState<"preparation" | "approval" | "releasing" | "posting" | "all" | "dashboard">(initialSubModule);
+    const [subModule, setSubModule] = useState<CashIssuanceSubModule>(initialSubModule);
 
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isViewOpen, setIsViewOpen] = useState(false);
@@ -88,14 +100,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
 
     // Sync subModule to hook's statusFilter
     React.useEffect(() => {
-        let filterVal = "All";
-        if (subModule === "preparation") filterVal = "Draft,Submitted,Returned for Revision";
-        else if (subModule === "approval") filterVal = "Submitted";
-        else if (subModule === "releasing") filterVal = "Approved";
-        else if (subModule === "posting") filterVal = "Released";
-        else if (subModule === "all" || subModule === "dashboard") filterVal = "All";
-
-        setStatusFilter(filterVal);
+        setStatusFilter(SUBMODULE_STATUS_FILTERS[subModule]);
         setPage(0);
         setSelectedIds([]); // Clear selection when subModule changes
     }, [subModule, setStatusFilter, setPage]);
@@ -263,7 +268,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                             Apply
                                         </Button>
                                         <Button
-                                            onClick={clearFilters}
+                                    onClick={() => clearFilters(SUBMODULE_STATUS_FILTERS[subModule])}
                                             variant="ghost"
                                             size="icon"
                                             className="h-10 w-10 text-destructive hover:bg-destructive/10 hover:text-destructive rounded-xl"

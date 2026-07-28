@@ -46,7 +46,8 @@ export const disbursementProvider = {
         if (endDate) url += `&endDate=${encodeURIComponent(endDate)}`;
         if (divisionId) url += `&divisionId=${divisionId}`;
         if (departmentId) url += `&departmentId=${departmentId}`;
-        if (docNo) url += `&docNo=${encodeURIComponent(docNo)}`;
+        const normalizedDocNo = docNo.trim();
+        if (normalizedDocNo) url += `&docNo=${encodeURIComponent(normalizedDocNo)}`;
 
         const res = await fetch(url);
         if (!res.ok) throw new Error("Failed to fetch disbursements");

@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
     Loader2, CheckCircle, Send, SendIcon, Wallet, Building2,
     Printer, Pencil, Lock, AlertTriangle, FileText, Receipt,
-    CheckCircle2, CircleDashed, X, Sparkles, ArrowDownToLine, ArrowUpFromLine,
+    CheckCircle2, CircleDashed, X, ArrowDownToLine, ArrowUpFromLine,
     Paperclip, ExternalLink
 } from "lucide-react";
 import { Disbursement, BankAccountDto, COADto } from "../types";
@@ -151,8 +151,6 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
     const isBalanced = Math.abs(balance) < 0.01;
 
     const currentStepIndex = getVoucherStepIndex(disbursement.status);
-    const isAutoApprove = disbursement.totalAmount < 1000;
-
     return (
         <Sheet open={open} onOpenChange={(val) => { onOpenChange(val); setShowPrintOptions(false); }}>
             <SheetContent className="sm:max-w-[1000px] w-full p-0 flex flex-col bg-background border-l border-border overflow-hidden shadow-2xl">
@@ -431,7 +429,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         )}
 
                         {/* Revert Tool */}
-                        {!readOnly && disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" && (
+                        {!readOnly && disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Submitted" && disbursement.status !== "Posted" && (
                             <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
                                 {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
                             </Button>
@@ -443,9 +441,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         {!readOnly && (
                             <>
                                 {(disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && (
-                                    <Button onClick={() => handleAction("Submitted")} disabled={isActionBusy} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
-                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
-                                        {isAutoApprove ? "Submit & Auto-Approve" : "Submit for Approval"}
+                                    <Button onClick={() => handleAction("Submitted")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-blue-600 hover:bg-blue-700 text-white shadow-md disabled:opacity-50">
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />}
+                                        Submit for Approval
                                     </Button>
                                 )}
 

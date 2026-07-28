@@ -100,10 +100,6 @@ export function getManilaYearEndInput(yearOffset = 0, value = new Date()): strin
     return calendarDateInput(new Date(Date.UTC(parts.year + yearOffset, 11, 31, 12)));
 }
 
-export function sumLineAmounts(lines: Array<{ amount: number }>): number {
-    return lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
-}
-
 export function getCookie(name: string): string {
     if (typeof window === "undefined") return "";
     const value = `; ${document.cookie}`;

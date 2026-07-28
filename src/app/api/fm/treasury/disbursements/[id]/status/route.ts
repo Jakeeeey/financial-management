@@ -6,6 +6,7 @@ import { findUnpostedPurchaseOrderReferences } from "../../_purchase-order-eligi
 import { findVatSplitDivisionError } from "../../_payable-split-integrity";
 import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../../_memo-cap-integrity";
 import { validatePaymentLine } from "../../_payment-method";
+import { hasDisbursementApprovalAccess } from "../../_approval-access";
 
 export const runtime = "nodejs";
 
@@ -175,6 +176,26 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             }, { status: 400 });
         }
 
+        if (status === "Returned for Revision") {
+            if (currentStatus !== "Submitted" && currentStatus !== "Approved") {
+                return NextResponse.json({
+                    message: "Only Submitted or Approved vouchers can be returned for revision.",
+                }, { status: 400 });
+            }
+
+            if (!(await hasDisbursementApprovalAccess(currentUserId))) {
+                return NextResponse.json({
+                    message: "Only authorized disbursement approvers can return a voucher for revision.",
+                }, { status: 403 });
+            }
+        }
+
+        if (status === "Draft" && currentStatus === "Submitted") {
+            return NextResponse.json({
+                message: "Submitted vouchers are locked. An authorized approver must return the voucher for revision.",
+            }, { status: 409 });
+        }
+
         // 2. Fetch line items to calculate double-entry debits/credits balance
         const lineItems = await getLineItems([id]);
         const payables = lineItems.payables.get(id) || [];
@@ -227,7 +248,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const isBalanced = Math.abs(totalDebit - totalCredit) <= 0.01;
 
         // 3. Status Transition Logic matching Spring Boot and Specifications
-        const APPROVAL_THRESHOLD = 1000.00;
         let newStatus = status;
         let approverId: number | null | undefined = relationId(currentDis.approver_id, "user_id");
         let dateApproved = currentDis.date_approved;
@@ -285,11 +305,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 submittedBy = currentUserId;
                 dateSubmitted = new Date().toISOString();
 
-                if (roundedTotalAmount < APPROVAL_THRESHOLD) {
-                    newStatus = "Approved";
-                    approverId = currentUserId;
-                    dateApproved = new Date().toISOString();
-                }
+                // Existing Draft and Returned for Revision vouchers must always
+                // return to formal approval, including low-value vouchers.
+                newStatus = "Submitted";
                 break;
             }
             case "Approved":
@@ -302,8 +320,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
             case "Released":
             case "Partially Released": {
-                if (currentDis.status !== "Approved" && currentDis.status !== "Released" && currentDis.status !== "Partially Released" && currentDis.status !== "Submitted") {
-                    return NextResponse.json({ message: "Can only release Approved, Submitted, or already Released disbursements." }, { status: 400 });
+                if (currentDis.status !== "Approved" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
+                    return NextResponse.json({ message: "Can only release Approved or already Released disbursements." }, { status: 400 });
                 }
 
                 for (let index = 0; index < payments.length; index++) {

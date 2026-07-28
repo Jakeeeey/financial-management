@@ -5,11 +5,12 @@ import {Disbursement, DisbursementPayload, DisbursementSubmitResult, SupplierDto
 import {disbursementProvider, DisbursementRequestError} from "../providers/fetchProvider";
 import {toast} from "sonner";
 
-export function useCashIssuance() {
+export function useCashIssuance(initialStatusFilter = "All") {
     const [data, setData] = useState<Disbursement[]>([]);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
     const createRequestLockRef = useRef(false);
+    const listRequestIdRef = useRef(0);
 
     const [page, setPage] = useState(0);
     const [size, setSize] = useState(20);
@@ -21,7 +22,7 @@ export function useCashIssuance() {
     const [endDate, setEndDate] = useState("");
 
     // 🚀 NEW FILTER STATES
-    const [statusFilter, setStatusFilter] = useState("All");
+    const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
     const [divisionFilter, setDivisionFilter] = useState("");
     const [departmentFilter, setDepartmentFilter] = useState("");
     const [docNoSearch, setDocNoSearch] = useState("");
@@ -53,15 +54,20 @@ export function useCashIssuance() {
         pageNum: number, type: string, search: string, start: string, end: string,
         status: string, divId: string, deptId: string, docNo: string
     ) => {
+        const requestId = ++listRequestIdRef.current;
         setLoading(true);
         try {
             const response = await disbursementProvider.getDisbursements(pageNum, size, type, search, start, end, status, divId, deptId, docNo);
+            if (requestId !== listRequestIdRef.current) return;
             setData(response.content);
             setTotalPages(response.totalPages);
         } catch {
+            if (requestId !== listRequestIdRef.current) return;
             toast.error("Failed to load disbursements");
         } finally {
-            setLoading(false);
+            if (requestId === listRequestIdRef.current) {
+                setLoading(false);
+            }
         }
     }, [size]);
 
@@ -75,16 +81,16 @@ export function useCashIssuance() {
         fetchList(0, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
     };
 
-    const clearFilters = () => {
+    const clearFilters = (resetStatus = initialStatusFilter) => {
         setSupplierSearch("");
         setStartDate("");
         setEndDate("");
-        setStatusFilter("All");
+        setStatusFilter(resetStatus);
         setDivisionFilter("");
         setDepartmentFilter("");
         setDocNoSearch("");
         setPage(0);
-        fetchList(0, activeType, "", "", "", "All", "", "", "");
+        fetchList(0, activeType, "", "", "", resetStatus, "", "", "");
     };
 
     const handleTabChange = (type: string) => {

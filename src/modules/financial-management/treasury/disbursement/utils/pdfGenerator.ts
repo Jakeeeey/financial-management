@@ -2,7 +2,8 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
 import { Disbursement, PaymentLine } from "../types";
-import { numberToWords, sumLineAmounts } from "./disbursement-utils";
+import { numberToWords } from "./disbursement-utils";
+import { sumLineAmounts } from "../../utils/line-amounts";
 
 export const generateDisbursementPDF = (disbursement: Disbursement, paperSize: "A4" | "58mm") => {
     const doc = new jsPDF({
