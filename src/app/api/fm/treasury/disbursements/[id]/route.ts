@@ -4,7 +4,7 @@ import { decodeJwtPayload } from "@/lib/auth-utils";
 import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow } from "../route";
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
-import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
+import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
 import { isPettyCashAccount, validatePaymentLine } from "../_payment-method";
 
 export const runtime = "nodejs";
@@ -29,6 +29,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             detail: "Your account is not registered in the system user directory. Voucher updates are blocked."
         }, { status: 403 });
     }
+
+    let releaseMemoCapLock: (() => void) | undefined;
 
     try {
         const body = await request.json();
@@ -102,7 +104,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             remarks: body.remarks,
             totalAmount: body.totalAmount,
             transactionDate: body.transactionDate,
-            divisionId: body.divisionId,
             departmentId: body.departmentId,
             fundSourceId: body.fundSourceId,
             supportingDocumentsUrl: body.supportingDocumentsUrl,
@@ -112,6 +113,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         if (canonicalizePersistedDisbursement(currentDis, currentPayables, currentPayments) === incomingCanonical) {
             return NextResponse.json(await loadNormalizedDisbursement(currentDis, token));
         }
+
+        releaseMemoCapLock = await acquireMemoCapLock([
+            ...currentPayables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
+            ...payableLinesInput,
+        ]);
 
         const currentPayeeIdForEligibility = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
             ? Number(currentDis.payee.id)
@@ -219,7 +225,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             total_amount: Number(body.totalAmount) || 0,
             paid_amount: calculatedPaidAmount,
             transaction_date: body.transactionDate,
-            division_id: body.divisionId ? Number(body.divisionId) : null,
+            // Header-level Division is deprecated. Payable lines carry Cost Division.
+            division_id: null,
             department_id: body.departmentId ? Number(body.departmentId) : null,
             fund_source_id: body.fundSourceId ? Number(body.fundSourceId) : null,
             supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
@@ -389,6 +396,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error';
         return NextResponse.json({ message: "BFF Error", detail: errorMessage }, { status: 502 });
+    } finally {
+        releaseMemoCapLock?.();
     }
 }
 

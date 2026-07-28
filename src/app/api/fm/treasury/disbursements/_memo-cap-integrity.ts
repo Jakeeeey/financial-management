@@ -46,6 +46,8 @@ export type MemoCapError = {
     message: string;
 };
 
+let memoCapLockTail = Promise.resolve();
+
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
 const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 const ACTIVE_DISBURSEMENT_STATUSES = new Set([
@@ -80,6 +82,31 @@ function normalizedReference(value: unknown): string {
 
 function looksLikeMemoReference(reference: string): boolean {
     return /^(SCM|SDM)-/i.test(reference);
+}
+
+/**
+ * Serializes memo-bearing mutations handled by this Next.js process. A
+ * transaction-capable Directus operation is still required when the BFF is
+ * deployed across multiple processes or instances.
+ */
+export async function acquireMemoCapLock(lines: MemoCapInput[]): Promise<() => void> {
+    const hasMemoReference = lines.some((line) => looksLikeMemoReference(normalizedReference(line.referenceNo)));
+    if (!hasMemoReference) return () => undefined;
+
+    const previous = memoCapLockTail;
+    let releaseQueuedRequest!: () => void;
+    const queuedRequest = new Promise<void>((resolve) => {
+        releaseQueuedRequest = resolve;
+    });
+    memoCapLockTail = previous.then(() => queuedRequest);
+    await previous;
+
+    let released = false;
+    return () => {
+        if (released) return;
+        released = true;
+        releaseQueuedRequest();
+    };
 }
 
 async function directusFetch<T>(path: string, options: RequestInit = {}): Promise<T> {

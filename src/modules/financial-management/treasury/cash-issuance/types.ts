@@ -70,7 +70,6 @@ export interface DisbursementPayload {
     remarks?: string;
     totalAmount: number;
     transactionDate?: string;
-    divisionId?: number;
     departmentId?: number;
     fundSourceId?: number;
     supportingDocumentsUrl?: string;

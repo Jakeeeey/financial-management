@@ -6,6 +6,11 @@
 // Standard Jest typings mock or actual imports
 import { Disbursement, PaymentLine } from "../types";
 import { sumLineAmounts } from "../utils/disbursement-utils";
+import {
+    isFullyPostedPurchaseOrder,
+    isPostedReceivingAmount,
+    postedReceivingRowsByPurchaseOrder,
+} from "@/app/api/fm/treasury/disbursements/_purchase-order-eligibility";
 
 // 1. Business Logic Code to Test (Usually resides in controllers/utilities)
 export function validateMutation(disbursement: Pick<Disbursement, "isPosted" | "status">) {
@@ -117,6 +122,39 @@ describe("Disbursement Module Core Business Rules", () => {
 
         it("should preserve decimal totals", () => {
             expect(sumLineAmounts([{ amount: 0.1 }, { amount: 0.2 }])).toBeCloseTo(0.3);
+        });
+    });
+
+    describe("Purchase-order disbursement eligibility", () => {
+        it("requires both inventory and amount posting flags", () => {
+            expect(isPostedReceivingAmount({ isPosted: 0, is_posted_amounts: 1, is_reverted: 0 })).toBe(false);
+            expect(isPostedReceivingAmount({ isPosted: 1, is_posted_amounts: 0, is_reverted: 0 })).toBe(false);
+            expect(isPostedReceivingAmount({ isPosted: 1, is_posted_amounts: 1, is_reverted: 1 })).toBe(false);
+            expect(isPostedReceivingAmount({ isPosted: 1, is_posted_amounts: 1, is_reverted: 0 })).toBe(true);
+        });
+
+        it("keeps only fully posted active receiving rows in the posted PO map", () => {
+            const rows = postedReceivingRowsByPurchaseOrder([
+                { purchase_order_id: 10, receipt_no: "R-POSTED", isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { purchase_order_id: 10, receipt_no: "R-AMOUNT-PENDING", isPosted: 1, is_posted_amounts: 0, is_reverted: 0 },
+                { purchase_order_id: 11, receipt_no: "R-REVERTED", isPosted: 1, is_posted_amounts: 1, is_reverted: 1 },
+            ]);
+
+            expect(rows.get(10)).toHaveLength(1);
+            expect(rows.get(10)?.[0].receipt_no).toBe("R-POSTED");
+            expect(rows.has(11)).toBe(false);
+        });
+
+        it("requires every active CWO receiving row to be fully posted", () => {
+            expect(isFullyPostedPurchaseOrder([])).toBe(false);
+            expect(isFullyPostedPurchaseOrder([
+                { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { isPosted: 1, is_posted_amounts: 0, is_reverted: 0 },
+            ])).toBe(false);
+            expect(isFullyPostedPurchaseOrder([
+                { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+            ])).toBe(true);
         });
     });
 

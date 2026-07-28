@@ -218,7 +218,6 @@ export default function ReleasingSubmodule() {
                 remarks: selectedDisbursement.remarks,
                 totalAmount: selectedDisbursement.totalAmount,
                 transactionDate: selectedDisbursement.transactionDate,
-                divisionId: selectedDisbursement.divisionId,
                 departmentId: selectedDisbursement.departmentId,
                 supportingDocumentsUrl: selectedDisbursement.supportingDocumentsUrl,
                 payables: selectedDisbursement.payables,

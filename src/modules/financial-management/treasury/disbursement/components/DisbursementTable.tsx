@@ -5,7 +5,7 @@ import { Disbursement } from "../types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Building2, Wallet, Lock } from "lucide-react";
+import { FileText, Wallet, Lock } from "lucide-react";
 import { StickyTableWrapper } from "./StickyTableWrapper";
 import { formatCurrency, formatManilaDate, getStatusColor } from "../utils/disbursement-utils";
 
@@ -25,7 +25,7 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-[180px]">Voucher Info</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Transaction Type</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Payee & Particulars</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Cost Center</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Cost Department</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Financials</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-[120px]">Status</TableHead>
                         <TableHead className="w-[80px]"></TableHead>
@@ -65,13 +65,7 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                                     </div>
                                 </TableCell>
                                 <TableCell className="align-top py-4">
-                                    <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-1.5 text-foreground/80">
-                                            <Building2 className="w-3 h-3 opacity-50" />
-                                            <span className="text-[10px] font-bold uppercase truncate">{d.divisionName || "No Division"}</span>
-                                        </div>
-                                        <span className="text-[9px] font-bold text-muted-foreground uppercase ml-4.5 truncate">{d.departmentName || "No Department"}</span>
-                                    </div>
+                                    <span className="text-[10px] font-bold uppercase truncate">{d.departmentName || "No Department"}</span>
                                 </TableCell>
                                 <TableCell className="align-top py-4 text-right">
                                     <div className="flex flex-col gap-1 items-end">

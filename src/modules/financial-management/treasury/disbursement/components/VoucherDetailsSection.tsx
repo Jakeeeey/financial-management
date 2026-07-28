@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SearchableDropdown } from "./SearchableDropdown";
 import { Plus, DownloadCloud, Paperclip, Trash2, UploadCloud, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SupplierDto, DivisionDto, DepartmentDto } from "../types";
+import { SupplierDto, DepartmentDto } from "../types";
 import { toast } from "sonner";
 
 interface VoucherDetailsSectionProps {
@@ -23,9 +23,6 @@ interface VoucherDetailsSectionProps {
     isNonTradeVoucher: boolean;
     setIsPayeeRegistrationOpen: (open: boolean) => void;
     handleOpenPoModal: () => void;
-    divisions: DivisionDto[];
-    divisionId: number | "";
-    setDivisionId: (val: number | "") => void;
     departments: DepartmentDto[];
     departmentId: number | "";
     setDepartmentId: (val: number | "") => void;

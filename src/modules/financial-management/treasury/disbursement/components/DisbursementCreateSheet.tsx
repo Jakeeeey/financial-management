@@ -23,10 +23,11 @@ import { VoucherDetailsSection } from "./VoucherDetailsSection";
 import { PayablesSection } from "./PayablesSection";
 import { PaymentsSection } from "./PaymentsSection";
 import { StickyTableWrapper } from "./StickyTableWrapper";
+import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
+import { getPendingMemoUsage } from "@/modules/financial-management/treasury/components/memo-cap";
 
 export interface ExtendedDisbursement extends Disbursement {
     payeeId?: number;
-    divisionId?: number;
     departmentId?: number;
 }
 
@@ -80,7 +81,6 @@ export function DisbursementCreateSheet({
     const [loadingMemos, setLoadingMemos] = useState(false);
     const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
 
-    const [divisionId, setDivisionId] = useState<number | "">("");
     const [departmentId, setDepartmentId] = useState<number | "">("");
     const [supportingDocumentsUrl, setSupportingDocumentsUrl] = useState("");
     const [uploadingFile, setUploadingFile] = useState(false);
@@ -146,7 +146,6 @@ export function DisbursementCreateSheet({
                 setTransactionTypeId(isNonTrade ? 2 : 1);
 
                 setPayeeId(editData.payeeId != null ? Number(editData.payeeId) : "");
-                setDivisionId(editData.divisionId != null ? Number(editData.divisionId) : "");
                 setDepartmentId(editData.departmentId != null ? Number(editData.departmentId) : "");
                 setRemarks(editData.remarks || "");
                 const docUrl = editData.supportingDocumentsUrl || "";
@@ -178,7 +177,6 @@ export function DisbursementCreateSheet({
             } else {
                 setTransactionTypeId(1);
                 setPayeeId("");
-                setDivisionId("");
                 setDepartmentId("");
                 setRemarks("");
                 setSupportingDocumentsUrl("");
@@ -196,13 +194,6 @@ export function DisbursementCreateSheet({
             if (match) setPayeeId(match.id);
         }
     }, [open, editData, payeeId, suppliers]);
-
-    useEffect(() => {
-        if (open && editData && !divisionId && editData.divisionName && divisions.length > 0) {
-            const match = divisions.find(d => d.divisionName?.toLowerCase() === editData.divisionName?.toLowerCase());
-            if (match) setDivisionId(match.divisionId);
-        }
-    }, [open, editData, divisionId, divisions]);
 
     useEffect(() => {
         if (open && editData && !departmentId && editData.departmentName && departments.length > 0) {
@@ -288,8 +279,6 @@ export function DisbursementCreateSheet({
         selectedPos.forEach(po => {
             const baseRef = `${po.poNo} / ${po.receiptNo}`;
             const taxType = currentTaxTypes[po.uniqueKey] || "VAT";
-            const currentDivId = divisionId || undefined;
-
             if (taxType === "VAT") {
                 const netAmount = po.amountDue / (1 + VAT_RATE);
                 const vatAmount = netAmount * VAT_RATE;
@@ -300,7 +289,7 @@ export function DisbursementCreateSheet({
                     amount: Number(netAmount.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal Net of VAT`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
                 newPayables.push({
                     referenceNo: baseRef,
@@ -308,7 +297,7 @@ export function DisbursementCreateSheet({
                     amount: Number(vatAmount.toFixed(2)),
                     coaId: 9,
                     remarks: `Input VAT (12%)`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
                 newPayables.push({
                     referenceNo: baseRef,
@@ -316,7 +305,7 @@ export function DisbursementCreateSheet({
                     amount: -Number(ewtAmount.toFixed(2)),
                     coaId: 38,
                     remarks: `EWT Deduction (1%)`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
             } else {
                 newPayables.push({
@@ -325,18 +314,18 @@ export function DisbursementCreateSheet({
                     amount: Number(po.amountDue.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal (Non-VAT)`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
             }
         });
         return newPayables;
-    }, [divisionId]);
+    }, []);
 
     const handleImportPos = useCallback(() => {
         const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
         const newPayables = calculateTaxedPayables(selected, taxTypes, today);
 
-        setPayables((prev) => [...prev, ...newPayables]);
+        setPayables((prev) => replaceEmptyPayablePlaceholders(prev, newPayables));
         setIsPoModalOpen(false);
         toast.success(`Imported ${selected.length} record(s) successfully`);
     }, [unpaidPos, selectedPoIds, taxTypes, today, calculateTaxedPayables]);
@@ -360,13 +349,15 @@ export function DisbursementCreateSheet({
     const handleApplyMemo = (memo: MemoDto) => {
         const isCredit = memo.type === 1;
         const remainingAmount = Number(memo.remaining_amount ?? memo.amount) || 0;
+        const localPendingUsage = getPendingMemoUsage(payables, memo.memo_number);
+        const locallyRemainingAmount = Math.max(0, remainingAmount - localPendingUsage);
         const requestedAmount = Number(memoAmounts[String(memo.id)] ?? remainingAmount);
-        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > remainingAmount + 0.01) {
-            return toast.error(`Memo ${memo.memo_number} can only use up to ${remainingAmount.toFixed(2)}.`);
+        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > locallyRemainingAmount + 0.01) {
+            return toast.error(`Memo ${memo.memo_number} can only use up to ${locallyRemainingAmount.toFixed(2)}.`);
         }
         const finalAmount = isCredit ? -Math.abs(requestedAmount) : Math.abs(requestedAmount);
 
-        setPayables([...payables, {
+        setPayables((previous) => [...previous, {
             referenceNo: memo.memo_number,
             date: today,
             amount: finalAmount,
@@ -397,7 +388,6 @@ export function DisbursementCreateSheet({
                 docNo: editData ? editData.docNo : (previewDocNo || undefined),
                 transactionTypeId: Number(transactionTypeId),
                 payeeId: Number(payeeId),
-                divisionId: divisionId ? Number(divisionId) : undefined,
                 departmentId: Number(departmentId),
                 remarks,
                 supportingDocumentsUrl: supportingDocumentsUrl ? (supportingDocumentsUrl.includes("/") ? (supportingDocumentsUrl.split("/").pop()?.split("?")[0] || "") : supportingDocumentsUrl) : "",
@@ -422,7 +412,6 @@ export function DisbursementCreateSheet({
             if (result.success) {
                 setTransactionTypeId(1);
                 setPayeeId("");
-                setDivisionId("");
                 setDepartmentId("");
                 setRemarks("");
                 setSupportingDocumentsUrl("");
@@ -491,9 +480,6 @@ export function DisbursementCreateSheet({
                                     isNonTradeVoucher={isNonTradeVoucher}
                                     setIsPayeeRegistrationOpen={setIsPayeeRegistrationOpen}
                                     handleOpenPoModal={handleOpenPoModal}
-                                    divisions={divisions}
-                                    divisionId={divisionId}
-                                    setDivisionId={setDivisionId}
                                     departments={departments}
                                     departmentId={departmentId}
                                     setDepartmentId={setDepartmentId}
@@ -526,7 +512,7 @@ export function DisbursementCreateSheet({
                                     handleOpenMemoModal={handleOpenMemoModal}
                                     handleRemovePayable={(idx) => setPayables(payables.filter((_, i) => i !== idx))}
                                     formatMoney={formatCurrency}
-                                    isAddDisabled={!divisionId || !departmentId}
+                                    isAddDisabled={!departmentId}
                                     disabled={isBusy}
                                 />
 
@@ -538,7 +524,7 @@ export function DisbursementCreateSheet({
                                     handleRemovePayment={(idx) => setPayments(payments.filter((_, i) => i !== idx))}
                                     totalPayments={totalPayments}
                                     formatMoney={formatCurrency}
-                                    isAddDisabled={!divisionId || !departmentId}
+                                    isAddDisabled={!departmentId}
                                     disabled={isBusy}
                                 />
                             </div>

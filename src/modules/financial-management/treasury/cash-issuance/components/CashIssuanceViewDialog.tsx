@@ -273,15 +273,9 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Particulars / Remarks</p>
                             <p className="text-xs font-bold text-foreground bg-muted p-2 rounded-md border border-border/50">{disbursement.remarks || "No remarks provided."}</p>
                         </div>
-                        <div className="grid grid-cols-2 col-span-2 mt-1 gap-2">
-                            <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Division</p>
-                                <p className="text-xs font-bold text-foreground">{disbursement.divisionName || "N/A"}</p>
-                            </div>
-                            <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Department</p>
-                                <p className="text-xs font-bold text-foreground">{disbursement.departmentName || "N/A"}</p>
-                            </div>
+                        <div className="mt-1">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Department</p>
+                            <p className="text-xs font-bold text-foreground">{disbursement.departmentName || "N/A"}</p>
                         </div>
                     </div>
 

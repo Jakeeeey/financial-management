@@ -138,7 +138,9 @@ export const disbursementProvider = {
     },
 
     getUnpaidPos: async (supplierId: number): Promise<UnpaidPoDto[]> => {
-        const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`);
+        const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`, {
+            cache: "no-store",
+        });
         if (!res.ok) throw new Error("Failed to fetch unpaid POs");
         return res.json();
     },
