@@ -5,7 +5,7 @@
 
 // Standard Jest typings mock or actual imports
 import { Disbursement, PaymentLine } from "../types";
-import { sumLineAmounts } from "../utils/disbursement-utils";
+import { sumLineAmounts } from "../../utils/line-amounts";
 import {
     isFullyPostedPurchaseOrder,
     isPostedReceivingAmount,

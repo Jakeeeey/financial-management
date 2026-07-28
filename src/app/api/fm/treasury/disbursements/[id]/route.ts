@@ -91,13 +91,20 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
         const currentDis = (await currentRes.json()).data;
 
+        if (currentDis.status === "Submitted") {
+            return NextResponse.json({
+                message: "Submitted vouchers are locked and cannot be edited.",
+                detail: "An authorized approver must return this voucher for revision before it can be changed.",
+            }, { status: 409 });
+        }
+
         // Immutability Enforcement Check
         if (Number(currentDis.isPosted) === 1) {
             return NextResponse.json({ message: "Cannot modify a transaction that is already Posted to the GL. This record is immutable." }, { status: 400 });
         }
 
-        if (currentDis.status !== "Draft" && currentDis.status !== "Submitted" && currentDis.status !== "Approved" && currentDis.status !== "Returned for Revision" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
-            return NextResponse.json({ message: "Only Draft, Submitted, Approved, Returned, Released, or Partially Released disbursements can be edited." }, { status: 400 });
+        if (currentDis.status !== "Draft" && currentDis.status !== "Approved" && currentDis.status !== "Returned for Revision" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
+            return NextResponse.json({ message: "Only Draft, Approved, Returned, Released, or Partially Released disbursements can be edited." }, { status: 400 });
         }
 
         const currentLineItems = await getLineItems([id]);
@@ -199,9 +206,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             });
         }
 
-        // 3. Threshold check & status transition
-        const APPROVAL_THRESHOLD = 1000.00;
-        const isBelowThreshold = Number(body.totalAmount) < APPROVAL_THRESHOLD;
+        // 3. Status transition
         let newStatus = currentDis.status;
         let approverId: number | null | undefined = relationId(currentDis.approver_id, "user_id");
         let dateApproved = currentDis.date_approved;
@@ -215,12 +220,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             (body.payeeId != null && Number(body.payeeId) !== currentPayeeId) ||
             transactionTypeId !== Number(currentDis.transaction_type);
 
-        if (isBelowThreshold) {
-            newStatus = "Approved";
-            approverId = currentUserId;
-            dateApproved = new Date().toISOString();
-        } else if (currentDis.status === "Approved" && isHeaderOrPayableModified) {
-            // Resubmit if it was approved and now edited to be over threshold
+        if (currentDis.status === "Approved" && isHeaderOrPayableModified) {
+            // Any material edit to an approved voucher requires re-approval.
             newStatus = "Submitted";
             approverId = null;
             dateApproved = null;
@@ -453,6 +454,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
         }
 
         const currentDis = (await currentRes.json()).data;
+
+        if (currentDis.status === "Submitted") {
+            return NextResponse.json({
+                message: "Submitted vouchers are locked and cannot be deleted.",
+                detail: "An authorized approver must return this voucher for revision before it can be changed.",
+            }, { status: 409 });
+        }
 
         // Immutability Enforcement Check
         if (Number(currentDis.isPosted) === 1) {
