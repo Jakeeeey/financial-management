@@ -70,6 +70,8 @@ export function CashIssuanceCreateDialog({
     const [loadingPos, setLoadingPos] = useState(false);
     const [isPoModalOpen, setIsPoModalOpen] = useState(false);
     const poRequestIdRef = useRef(0);
+    const poAbortControllerRef = useRef<AbortController | null>(null);
+    const [poLoadError, setPoLoadError] = useState<string | null>(null);
     const [selectedPoIds, setSelectedPoIds] = useState<string[]>([]);
     const [taxTypes, setTaxTypes] = useState<Record<string, "VAT" | "NON_VAT">>({});
 
@@ -248,29 +250,40 @@ export function CashIssuanceCreateDialog({
         }
     }, [payeeSupplierType, payeeSupplierTypeLabel, setPayeeId, setSuppliers]);
 
-    const handleOpenPoModal = useCallback(async (supplierIdOverride?: number) => {
-        const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
-        if (!sid) return toast.error("Please select a Payee first.");
+    const handleOpenPoModal = useCallback(async (supplierId: number) => {
+        if (!Number.isInteger(supplierId) || supplierId <= 0) return toast.error("Please select a Payee first.");
 
+        poAbortControllerRef.current?.abort();
+        const controller = new AbortController();
+        poAbortControllerRef.current = controller;
         const requestId = ++poRequestIdRef.current;
         setUnpaidPos([]);
         setSelectedPoIds([]);
         setTaxTypes({});
         setPoSearchQuery("");
+        setPoLoadError(null);
         setLoadingPos(true);
         setIsPoModalOpen(true);
         try {
-            const pos = await disbursementProvider.getUnpaidPos(sid);
+            const pos = await disbursementProvider.getUnpaidPos(supplierId, controller.signal);
             if (requestId !== poRequestIdRef.current) return;
             setUnpaidPos(pos);
-        } catch {
-            if (requestId !== poRequestIdRef.current) return;
-            toast.error("Failed to load unpaid POs");
-            setIsPoModalOpen(false);
+        } catch (error) {
+            if (controller.signal.aborted || requestId !== poRequestIdRef.current) return;
+            setPoLoadError(error instanceof Error ? error.message : "Failed to load unpaid POs");
         } finally {
             if (requestId === poRequestIdRef.current) setLoadingPos(false);
         }
-    }, [payeeId]);
+    }, []);
+
+    const handlePoModalOpenChange = useCallback((nextOpen: boolean) => {
+        setIsPoModalOpen(nextOpen);
+        if (!nextOpen) {
+            poAbortControllerRef.current?.abort();
+            poRequestIdRef.current += 1;
+            setLoadingPos(false);
+        }
+    }, []);
 
     // Auto-open PO modal when a Trade payee is selected (no extra click needed)
     const handlePayeeSelect = useCallback((val: number) => {
@@ -279,6 +292,13 @@ export function CashIssuanceCreateDialog({
             handleOpenPoModal(val);
         }
     }, [isNonTradeVoucher, handleOpenPoModal]);
+
+    const handlePendingRecordsError = poLoadError ? (
+        <TableRow><TableCell colSpan={5}
+                              className="h-24 text-center text-sm font-medium text-destructive">
+            {poLoadError}
+        </TableCell></TableRow>
+    ) : null;
 
     const calculateTaxedPayables = useCallback((selectedPos: UnpaidPoDto[], currentTaxTypes: Record<string, "VAT" | "NON_VAT">, date: string): PayableLine[] => {
         const newPayables: PayableLine[] = [];
@@ -557,7 +577,7 @@ export function CashIssuanceCreateDialog({
                 supplierType={payeeSupplierType}
             />
 
-            <Dialog open={isPoModalOpen} onOpenChange={setIsPoModalOpen}>
+            <Dialog open={isPoModalOpen} onOpenChange={handlePoModalOpenChange}>
                 <DialogContent className="sm:max-w-[750px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
@@ -605,6 +625,8 @@ export function CashIssuanceCreateDialog({
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2
                                         className="w-5 h-5 animate-spin mx-auto mb-2"/> Loading
                                         Records...</TableCell></TableRow>
+                                ) : poLoadError ? (
+                                    handlePendingRecordsError
                                 ) : unpaidPos.filter(po =>
                                     po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
                                     (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()))

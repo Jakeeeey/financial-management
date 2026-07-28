@@ -145,6 +145,26 @@ describe("Disbursement Module Core Business Rules", () => {
             expect(rows.has(11)).toBe(false);
         });
 
+        it("hides the entire receipt when one of its lines is not fully posted", () => {
+            const rows = postedReceivingRowsByPurchaseOrder([
+                { purchase_order_id: 12, receipt_no: "R-MIXED", isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { purchase_order_id: 12, receipt_no: "R-MIXED", isPosted: 1, is_posted_amounts: 0, is_reverted: 0 },
+            ]);
+
+            expect(rows.has(12)).toBe(false);
+        });
+
+        it("keeps every line from a fully posted receipt so the full amount is available", () => {
+            const rows = postedReceivingRowsByPurchaseOrder([
+                { purchase_order_id: 13, receipt_no: "R-FULL", isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { purchase_order_id: 13, receipt_no: "R-FULL", isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { purchase_order_id: 13, receipt_no: "R-PENDING", isPosted: 1, is_posted_amounts: 0, is_reverted: 0 },
+            ]);
+
+            expect(rows.get(13)).toHaveLength(2);
+            expect(rows.get(13)?.every((row) => row.receipt_no === "R-FULL")).toBe(true);
+        });
+
         it("requires every active CWO receiving row to be fully posted", () => {
             expect(isFullyPostedPurchaseOrder([])).toBe(false);
             expect(isFullyPostedPurchaseOrder([

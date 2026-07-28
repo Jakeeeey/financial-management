@@ -22,7 +22,7 @@ interface VoucherDetailsSectionProps {
     payeeSupplierTypeLabel: string;
     isNonTradeVoucher: boolean;
     setIsPayeeRegistrationOpen: (open: boolean) => void;
-    handleOpenPoModal: () => void;
+    handleOpenPoModal: (supplierId: number) => void;
     departments: DepartmentDto[];
     departmentId: number | "";
     setDepartmentId: (val: number | "") => void;
@@ -118,7 +118,7 @@ export function VoucherDetailsSection({
                         {!isNonTradeVoucher && (
                             <Button 
                                 type="button" 
-                                onClick={handleOpenPoModal} 
+                                onClick={() => handleOpenPoModal(Number(payeeId))}
                                 disabled={!payeeId || disabled}
                                 className="h-8 px-2 bg-primary hover:bg-primary/95 text-primary-foreground rounded-sm shadow-sm shrink-0 disabled:opacity-50"
                                 title="Pull Unpaid POs"

@@ -137,12 +137,17 @@ export const disbursementProvider = {
         return res.json();
     },
 
-    getUnpaidPos: async (supplierId: number): Promise<UnpaidPoDto[]> => {
+    getUnpaidPos: async (supplierId: number, signal?: AbortSignal): Promise<UnpaidPoDto[]> => {
         const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`, {
             cache: "no-store",
+            signal,
         });
-        if (!res.ok) throw new Error("Failed to fetch unpaid POs");
-        return res.json();
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+            throw new Error(data?.detail || data?.message || "Failed to fetch unpaid POs");
+        }
+        if (!Array.isArray(data)) throw new Error("Pending Records returned an invalid response");
+        return data as UnpaidPoDto[];
     },
 
     getSupplierMemos: async (supplierId: number): Promise<MemoDto[]> => {
