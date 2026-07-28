@@ -683,6 +683,7 @@ export function UnifiedApprovalsManager({
                     : {
                           onApprove: feed.approveMixedBatch,
                           onReject: feed.rejectMixedBatch,
+                          onRetryApplication: feed.retryMixedBatch,
                       })}
             />
 

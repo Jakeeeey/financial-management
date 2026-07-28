@@ -217,6 +217,8 @@ export type UnifiedBatchLine = {
     status: string;
     effective_at?: string | null;
     application_status?: string | null;
+    application_attempts?: number;
+    application_error?: string | null;
     applied_at?: string | null;
     applied_by?: number | string | null;
 };
@@ -238,6 +240,9 @@ export type UnifiedBatchDetail = {
     reject_reason?: string | null;
     effective_at?: string | null;
     application_status?: string | null;
+    application_attempts?: number;
+    application_error?: string | null;
+    retryable?: boolean;
     applied_at?: string | null;
     applied_by?: number | string | null;
     batch_types: Array<"PRICE_TYPE" | "LIST_COST">;

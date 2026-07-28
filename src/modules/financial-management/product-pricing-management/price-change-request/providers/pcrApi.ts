@@ -712,7 +712,7 @@ export async function waitForBatchDecision(args: {
     throw new Error(`The request did not reach ${args.expectedStatus} within ${Math.round(timeoutMs / 1000)} seconds.`);
 }
 
-export type ScheduledOverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch";
+export type ScheduledOverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch" | "mixed_batch";
 export type ScheduledOverrideAction = "apply_now" | "reject_schedule" | "retry_application";
 
 export type ScheduledOverrideResponse = {
@@ -794,6 +794,17 @@ export async function approveUnifiedBatch(headerId: number, effectiveAt?: string
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(approvalBody(effectiveAt)),
+        },
+    );
+}
+
+export async function retryUnifiedBatch(headerId: number) {
+    return http<ApprovalResponse>(
+        `/api/fm/product-pricing/unified-batches/${headerId}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "retry_application" }),
         },
     );
 }

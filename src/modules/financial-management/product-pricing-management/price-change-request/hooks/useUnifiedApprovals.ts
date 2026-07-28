@@ -261,6 +261,21 @@ export function useUnifiedApprovals(
         }
     }, [refresh]);
 
+    const retryMixedBatch = React.useCallback(async (headerId: number) => {
+        setActing(true);
+        try {
+            const result = await api.retryUnifiedBatch(headerId);
+            if (result.warning) toast.warning(result.warning);
+            else toast.success(`${result.applied ?? 0} mixed batch line(s) applied.`);
+            await refresh();
+        } catch (error: unknown) {
+            if (applyActionError(error, "Failed to retry mixed batch application", { setUnauthorized })) throw error;
+            throw error;
+        } finally {
+            setActing(false);
+        }
+    }, [refresh]);
+
     return {
         query,
         setQuery,
@@ -282,5 +297,6 @@ export function useUnifiedApprovals(
         applyScheduledNow,
         rejectScheduled,
         retryApplication,
+        retryMixedBatch,
     };
 }

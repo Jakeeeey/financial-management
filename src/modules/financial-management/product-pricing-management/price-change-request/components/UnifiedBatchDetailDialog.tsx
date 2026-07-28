@@ -30,6 +30,7 @@ type Props = {
     onOpenChange: (open: boolean) => void;
     onApprove?: (headerId: number, effectiveAt?: string | null) => Promise<void> | void;
     onReject?: (headerId: number, reason: string) => Promise<void> | void;
+    onRetryApplication?: (headerId: number) => Promise<void> | void;
 };
 
 function money(value: number | null | undefined) {
@@ -104,6 +105,7 @@ export function UnifiedBatchDetailDialog({
     onOpenChange,
     onApprove,
     onReject,
+    onRetryApplication,
 }: Props) {
     const [detail, setDetail] = React.useState<UnifiedBatchDetail | null>(null);
     const [loading, setLoading] = React.useState(false);
@@ -136,7 +138,15 @@ export function UnifiedBatchDetailDialog({
 
     const isPending = detail?.status === "PENDING";
     const canAct = !readOnly && isPending && Boolean(onApprove && onReject) && !loading;
+    const canRetry = !readOnly && Boolean(detail?.retryable) && Boolean(onRetryApplication) && !loading && !acting;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
+
+    const handleRetryApplication = async () => {
+        if (!batchId || !onRetryApplication) return;
+        await onRetryApplication(batchId);
+        const result = await getUnifiedBatch(batchId);
+        setDetail(result.data);
+    };
 
     return (
         <>
@@ -162,6 +172,16 @@ export function UnifiedBatchDetailDialog({
                                 <div><div className="text-xs uppercase text-muted-foreground">Status</div><Badge variant="outline" className={`mt-1 ${pcrStatusBadgeClass(displayStatus)}`}>{displayStatus}</Badge></div>
                             </div>
 
+                            {detail.application_error ? (
+                                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                                    <div className="font-medium">Application issue</div>
+                                    <div className="mt-1">{detail.application_error}</div>
+                                    {detail.application_attempts != null ? (
+                                        <div className="mt-1 text-xs">Attempts: {detail.application_attempts}</div>
+                                    ) : null}
+                                </div>
+                            ) : null}
+
                             {detail.remarks ? <div className="rounded-lg border p-3 text-sm"><span className="font-medium">Remarks:</span> {detail.remarks}</div> : null}
 
                             <section className="space-y-2">
@@ -185,6 +205,12 @@ export function UnifiedBatchDetailDialog({
                                 <Button variant="outline" className="border-red-600 text-red-600" onClick={() => setRejecting(true)} disabled={acting}>Reject Batch</Button>
                                 <Button className={pcrApproveButtonClass} onClick={() => setConfirmingApprove(true)} disabled={acting}>Approve Batch</Button>
                             </>
+                        ) : null}
+                        {canRetry ? (
+                            <Button className={pcrApproveButtonClass} onClick={() => void handleRetryApplication()} disabled={acting}>
+                                {acting ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                                Retry Application
+                            </Button>
                         ) : null}
                     </DialogFooter>
                 </DialogContent>
