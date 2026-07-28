@@ -28,6 +28,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const resolvedParams = await params;
     const supplierId = Number(resolvedParams.supplierId);
 
+    if (!Number.isInteger(supplierId) || supplierId <= 0) {
+        return NextResponse.json({ message: "Invalid supplier ID" }, { status: 400 });
+    }
+
     try {
         const queryParams = new URLSearchParams({
             filter: JSON.stringify({

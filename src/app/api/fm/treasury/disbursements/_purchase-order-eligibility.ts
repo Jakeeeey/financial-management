@@ -64,6 +64,15 @@ function isCwoReference(receiptNo: string): boolean {
     return receiptNo.toUpperCase() === "ADVANCE-CWO";
 }
 
+function receivingReceiptKey(row: DirectusReceiving): string {
+    return asString(row.receipt_no) || "NO-RECEIPT";
+}
+
+function isFullyPostedReceipt(rows: DirectusReceiving[], receiptNo: string): boolean {
+    const receiptRows = rows.filter((row) => receivingReceiptKey(row) === receiptNo);
+    return receiptRows.length > 0 && receiptRows.every(isPostedReceivingAmount);
+}
+
 /**
  * Returns PO references that are known purchase-order references but are not
  * backed by fully inventory-posted and amount-posted receiving rows.
@@ -145,7 +154,7 @@ export async function findUnpostedPurchaseOrderReferences(
 
         const eligible = isCwoReference(entry.parsed.receiptNo)
             ? activeRows.length > 0 && activeRows.every(isPostedReceivingAmount)
-            : activeRows.some((row) => asString(row.receipt_no) === entry.parsed.receiptNo && isPostedReceivingAmount(row));
+            : isFullyPostedReceipt(activeRows, entry.parsed.receiptNo);
 
         if (!eligible) invalid.push(entry.raw);
     }
@@ -154,14 +163,26 @@ export async function findUnpostedPurchaseOrderReferences(
 }
 
 export function postedReceivingRowsByPurchaseOrder<T extends DirectusReceiving>(rows: T[]): Map<number, T[]> {
-    const result = new Map<number, T[]>();
+    const rowsByPoAndReceipt = new Map<number, Map<string, T[]>>();
+
     for (const row of rows) {
-        if (!isPostedReceivingAmount(row)) continue;
+        if (asNumber(row.is_reverted) === 1) continue;
         const poId = asNumber(row.purchase_order_id);
         if (poId === undefined) continue;
-        const current = result.get(poId) || [];
-        current.push(row);
-        result.set(poId, current);
+
+        const rowsByReceipt = rowsByPoAndReceipt.get(poId) || new Map<string, T[]>();
+        const receiptRows = rowsByReceipt.get(receivingReceiptKey(row)) || [];
+        receiptRows.push(row);
+        rowsByReceipt.set(receivingReceiptKey(row), receiptRows);
+        rowsByPoAndReceipt.set(poId, rowsByReceipt);
+    }
+
+    const result = new Map<number, T[]>();
+    for (const [poId, rowsByReceipt] of rowsByPoAndReceipt) {
+        const fullyPostedRows = [...rowsByReceipt.values()]
+            .filter((receiptRows) => receiptRows.length > 0 && receiptRows.every(isPostedReceivingAmount))
+            .flat();
+        if (fullyPostedRows.length > 0) result.set(poId, fullyPostedRows);
     }
     return result;
 }

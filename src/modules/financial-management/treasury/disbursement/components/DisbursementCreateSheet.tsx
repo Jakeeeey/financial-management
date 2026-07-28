@@ -23,10 +23,11 @@ import { VoucherDetailsSection } from "./VoucherDetailsSection";
 import { PayablesSection } from "./PayablesSection";
 import { PaymentsSection } from "./PaymentsSection";
 import { StickyTableWrapper } from "./StickyTableWrapper";
+import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
+import { getPendingMemoUsage } from "@/modules/financial-management/treasury/components/memo-cap";
 
 export interface ExtendedDisbursement extends Disbursement {
     payeeId?: number;
-    divisionId?: number;
     departmentId?: number;
 }
 
@@ -72,6 +73,9 @@ export function DisbursementCreateSheet({
     const [unpaidPos, setUnpaidPos] = useState<UnpaidPoDto[]>([]);
     const [loadingPos, setLoadingPos] = useState(false);
     const [isPoModalOpen, setIsPoModalOpen] = useState(false);
+    const poRequestIdRef = useRef(0);
+    const poAbortControllerRef = useRef<AbortController | null>(null);
+    const [poLoadError, setPoLoadError] = useState<string | null>(null);
     const [selectedPoIds, setSelectedPoIds] = useState<string[]>([]);
     const [taxTypes, setTaxTypes] = useState<Record<string, "VAT" | "NON_VAT">>({});
 
@@ -80,7 +84,6 @@ export function DisbursementCreateSheet({
     const [loadingMemos, setLoadingMemos] = useState(false);
     const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
 
-    const [divisionId, setDivisionId] = useState<number | "">("");
     const [departmentId, setDepartmentId] = useState<number | "">("");
     const [supportingDocumentsUrl, setSupportingDocumentsUrl] = useState("");
     const [uploadingFile, setUploadingFile] = useState(false);
@@ -146,7 +149,6 @@ export function DisbursementCreateSheet({
                 setTransactionTypeId(isNonTrade ? 2 : 1);
 
                 setPayeeId(editData.payeeId != null ? Number(editData.payeeId) : "");
-                setDivisionId(editData.divisionId != null ? Number(editData.divisionId) : "");
                 setDepartmentId(editData.departmentId != null ? Number(editData.departmentId) : "");
                 setRemarks(editData.remarks || "");
                 const docUrl = editData.supportingDocumentsUrl || "";
@@ -178,7 +180,6 @@ export function DisbursementCreateSheet({
             } else {
                 setTransactionTypeId(1);
                 setPayeeId("");
-                setDivisionId("");
                 setDepartmentId("");
                 setRemarks("");
                 setSupportingDocumentsUrl("");
@@ -196,13 +197,6 @@ export function DisbursementCreateSheet({
             if (match) setPayeeId(match.id);
         }
     }, [open, editData, payeeId, suppliers]);
-
-    useEffect(() => {
-        if (open && editData && !divisionId && editData.divisionName && divisions.length > 0) {
-            const match = divisions.find(d => d.divisionName?.toLowerCase() === editData.divisionName?.toLowerCase());
-            if (match) setDivisionId(match.divisionId);
-        }
-    }, [open, editData, divisionId, divisions]);
 
     useEffect(() => {
         if (open && editData && !departmentId && editData.departmentName && departments.length > 0) {
@@ -253,24 +247,40 @@ export function DisbursementCreateSheet({
         }
     }, [payeeSupplierType, payeeSupplierTypeLabel, setPayeeId, setSuppliers]);
 
-    const handleOpenPoModal = useCallback(async (supplierIdOverride?: number) => {
-        const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
-        if (!sid) return toast.error("Please select a Payee first.");
+    const handleOpenPoModal = useCallback(async (supplierId: number) => {
+        if (!Number.isInteger(supplierId) || supplierId <= 0) return toast.error("Please select a Payee first.");
+
+        poAbortControllerRef.current?.abort();
+        const controller = new AbortController();
+        poAbortControllerRef.current = controller;
+        const requestId = ++poRequestIdRef.current;
+        setUnpaidPos([]);
+        setSelectedPoIds([]);
+        setTaxTypes({});
+        setPoSearchQuery("");
+        setPoLoadError(null);
         setLoadingPos(true);
         setIsPoModalOpen(true);
         try {
-            const pos = await disbursementProvider.getUnpaidPos(sid);
+            const pos = await disbursementProvider.getUnpaidPos(supplierId, controller.signal);
+            if (requestId !== poRequestIdRef.current) return;
             setUnpaidPos(pos);
-            setSelectedPoIds([]);
-            setTaxTypes({});
-            setPoSearchQuery("");
-        } catch {
-            toast.error("Failed to load unpaid POs");
-            setIsPoModalOpen(false);
+        } catch (error) {
+            if (controller.signal.aborted || requestId !== poRequestIdRef.current) return;
+            setPoLoadError(error instanceof Error ? error.message : "Failed to load unpaid POs");
         } finally {
+            if (requestId === poRequestIdRef.current) setLoadingPos(false);
+        }
+    }, []);
+
+    const handlePoModalOpenChange = useCallback((nextOpen: boolean) => {
+        setIsPoModalOpen(nextOpen);
+        if (!nextOpen) {
+            poAbortControllerRef.current?.abort();
+            poRequestIdRef.current += 1;
             setLoadingPos(false);
         }
-    }, [payeeId]);
+    }, []);
 
     // Auto-open PO modal when a Trade payee is selected (no extra click needed)
     const handlePayeeSelect = useCallback((val: number) => {
@@ -288,8 +298,6 @@ export function DisbursementCreateSheet({
         selectedPos.forEach(po => {
             const baseRef = `${po.poNo} / ${po.receiptNo}`;
             const taxType = currentTaxTypes[po.uniqueKey] || "VAT";
-            const currentDivId = divisionId || undefined;
-
             if (taxType === "VAT") {
                 const netAmount = po.amountDue / (1 + VAT_RATE);
                 const vatAmount = netAmount * VAT_RATE;
@@ -300,7 +308,7 @@ export function DisbursementCreateSheet({
                     amount: Number(netAmount.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal Net of VAT`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
                 newPayables.push({
                     referenceNo: baseRef,
@@ -308,7 +316,7 @@ export function DisbursementCreateSheet({
                     amount: Number(vatAmount.toFixed(2)),
                     coaId: 9,
                     remarks: `Input VAT (12%)`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
                 newPayables.push({
                     referenceNo: baseRef,
@@ -316,7 +324,7 @@ export function DisbursementCreateSheet({
                     amount: -Number(ewtAmount.toFixed(2)),
                     coaId: 38,
                     remarks: `EWT Deduction (1%)`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
             } else {
                 newPayables.push({
@@ -325,18 +333,18 @@ export function DisbursementCreateSheet({
                     amount: Number(po.amountDue.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal (Non-VAT)`,
-                    divisionId: currentDivId
+                    divisionId: undefined
                 });
             }
         });
         return newPayables;
-    }, [divisionId]);
+    }, []);
 
     const handleImportPos = useCallback(() => {
         const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
         const newPayables = calculateTaxedPayables(selected, taxTypes, today);
 
-        setPayables((prev) => [...prev, ...newPayables]);
+        setPayables((prev) => replaceEmptyPayablePlaceholders(prev, newPayables));
         setIsPoModalOpen(false);
         toast.success(`Imported ${selected.length} record(s) successfully`);
     }, [unpaidPos, selectedPoIds, taxTypes, today, calculateTaxedPayables]);
@@ -360,13 +368,15 @@ export function DisbursementCreateSheet({
     const handleApplyMemo = (memo: MemoDto) => {
         const isCredit = memo.type === 1;
         const remainingAmount = Number(memo.remaining_amount ?? memo.amount) || 0;
+        const localPendingUsage = getPendingMemoUsage(payables, memo.memo_number);
+        const locallyRemainingAmount = Math.max(0, remainingAmount - localPendingUsage);
         const requestedAmount = Number(memoAmounts[String(memo.id)] ?? remainingAmount);
-        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > remainingAmount + 0.01) {
-            return toast.error(`Memo ${memo.memo_number} can only use up to ${remainingAmount.toFixed(2)}.`);
+        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > locallyRemainingAmount + 0.01) {
+            return toast.error(`Memo ${memo.memo_number} can only use up to ${locallyRemainingAmount.toFixed(2)}.`);
         }
         const finalAmount = isCredit ? -Math.abs(requestedAmount) : Math.abs(requestedAmount);
 
-        setPayables([...payables, {
+        setPayables((previous) => [...previous, {
             referenceNo: memo.memo_number,
             date: today,
             amount: finalAmount,
@@ -397,7 +407,6 @@ export function DisbursementCreateSheet({
                 docNo: editData ? editData.docNo : (previewDocNo || undefined),
                 transactionTypeId: Number(transactionTypeId),
                 payeeId: Number(payeeId),
-                divisionId: divisionId ? Number(divisionId) : undefined,
                 departmentId: Number(departmentId),
                 remarks,
                 supportingDocumentsUrl: supportingDocumentsUrl ? (supportingDocumentsUrl.includes("/") ? (supportingDocumentsUrl.split("/").pop()?.split("?")[0] || "") : supportingDocumentsUrl) : "",
@@ -422,7 +431,6 @@ export function DisbursementCreateSheet({
             if (result.success) {
                 setTransactionTypeId(1);
                 setPayeeId("");
-                setDivisionId("");
                 setDepartmentId("");
                 setRemarks("");
                 setSupportingDocumentsUrl("");
@@ -491,9 +499,6 @@ export function DisbursementCreateSheet({
                                     isNonTradeVoucher={isNonTradeVoucher}
                                     setIsPayeeRegistrationOpen={setIsPayeeRegistrationOpen}
                                     handleOpenPoModal={handleOpenPoModal}
-                                    divisions={divisions}
-                                    divisionId={divisionId}
-                                    setDivisionId={setDivisionId}
                                     departments={departments}
                                     departmentId={departmentId}
                                     setDepartmentId={setDepartmentId}
@@ -526,7 +531,7 @@ export function DisbursementCreateSheet({
                                     handleOpenMemoModal={handleOpenMemoModal}
                                     handleRemovePayable={(idx) => setPayables(payables.filter((_, i) => i !== idx))}
                                     formatMoney={formatCurrency}
-                                    isAddDisabled={!divisionId || !departmentId}
+                                    isAddDisabled={!departmentId}
                                     disabled={isBusy}
                                 />
 
@@ -538,7 +543,7 @@ export function DisbursementCreateSheet({
                                     handleRemovePayment={(idx) => setPayments(payments.filter((_, i) => i !== idx))}
                                     totalPayments={totalPayments}
                                     formatMoney={formatCurrency}
-                                    isAddDisabled={!divisionId || !departmentId}
+                                    isAddDisabled={!departmentId}
                                     disabled={isBusy}
                                 />
                             </div>
@@ -571,7 +576,7 @@ export function DisbursementCreateSheet({
                 supplierType={payeeSupplierType}
             />
 
-            <Dialog open={isPoModalOpen} onOpenChange={setIsPoModalOpen}>
+            <Dialog open={isPoModalOpen} onOpenChange={handlePoModalOpenChange}>
                 <DialogContent className="sm:max-w-[750px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
@@ -619,6 +624,11 @@ export function DisbursementCreateSheet({
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground"><Loader2
                                         className="w-5 h-5 animate-spin mx-auto mb-2"/> Loading
                                         Records...</TableCell></TableRow>
+                                ) : poLoadError ? (
+                                    <TableRow><TableCell colSpan={5}
+                                                          className="h-24 text-center text-sm font-medium text-destructive">
+                                        {poLoadError}
+                                    </TableCell></TableRow>
                                 ) : unpaidPos.filter(po => {
                                     const matchesSearch = po.poNo.toLowerCase().includes(poSearchQuery.toLowerCase()) ||
                                         (po.receiptNo && po.receiptNo.toLowerCase().includes(poSearchQuery.toLowerCase()));

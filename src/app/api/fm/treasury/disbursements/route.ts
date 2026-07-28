@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
-import { validateSupplierMemoCaps } from "./_memo-cap-integrity";
+import { acquireMemoCapLock, validateSupplierMemoCaps } from "./_memo-cap-integrity";
 import { isPettyCashAccount, validatePaymentLine } from "./_payment-method";
 
 export const runtime = "nodejs";
@@ -143,7 +143,6 @@ type ComparableDisbursement = {
     remarks: string | null;
     totalAmount: number;
     transactionDate: string | null;
-    divisionId: number | null;
     departmentId: number | null;
     fundSourceId: number | null;
     supportingDocumentsUrl: string | null;
@@ -224,7 +223,6 @@ export function canonicalizeDisbursementPayload(input: {
     remarks?: unknown;
     totalAmount?: unknown;
     transactionDate?: unknown;
-    divisionId?: unknown;
     departmentId?: unknown;
     fundSourceId?: unknown;
     supportingDocumentsUrl?: unknown;
@@ -251,7 +249,6 @@ export function canonicalizeDisbursementPayload(input: {
         remarks: comparableText(input.remarks),
         totalAmount: roundMoney(Number(input.totalAmount) || 0),
         transactionDate: comparableDate(input.transactionDate),
-        divisionId: comparableNumber(input.divisionId),
         departmentId: comparableNumber(input.departmentId),
         fundSourceId: comparableNumber(input.fundSourceId),
         supportingDocumentsUrl: cleanSupportingDocsUrl(asString(input.supportingDocumentsUrl)),
@@ -269,7 +266,6 @@ export function canonicalizePersistedDisbursement(row: DisbursementRow, payables
         remarks: row.remarks,
         totalAmount: row.total_amount,
         transactionDate: row.transaction_date,
-        divisionId: relationId(row.division_id, "division_id"),
         departmentId: relationId(row.department_id, "department_id"),
         fundSourceId: relationId(row.fund_source_id as RelationValue),
         supportingDocumentsUrl: row.supporting_documents_url,
@@ -1002,6 +998,7 @@ export async function POST(request: NextRequest) {
     let createdId: number | undefined;
     let createdDocNo = "";
     let creationFinalized = false;
+    let releaseMemoCapLock: (() => void) | undefined;
 
     try {
         const body = await request.json();
@@ -1039,6 +1036,8 @@ export async function POST(request: NextRequest) {
                 : line
         );
 
+        releaseMemoCapLock = await acquireMemoCapLock(payableLinesInput);
+
         // 1. Fetch payee supplier type to determine prefix (Trade / Non-Trade)
         if (!body.payeeId) {
             return NextResponse.json({ message: "Payee (Supplier ID) is required." }, { status: 400 });
@@ -1058,7 +1057,6 @@ export async function POST(request: NextRequest) {
             remarks: body.remarks,
             totalAmount: body.totalAmount,
             transactionDate: body.transactionDate,
-            divisionId: body.divisionId,
             departmentId: body.departmentId,
             fundSourceId: body.fundSourceId,
             supportingDocumentsUrl: body.supportingDocumentsUrl,
@@ -1140,7 +1138,8 @@ export async function POST(request: NextRequest) {
             paid_amount: calculatedPaidAmount,
             encoder_id: currentUserId,
             transaction_date: body.transactionDate,
-            division_id: body.divisionId ? Number(body.divisionId) : null,
+            // Header-level Division is deprecated. Payable lines carry Cost Division.
+            division_id: null,
             department_id: body.departmentId ? Number(body.departmentId) : null,
             fund_source_id: body.fundSourceId ? Number(body.fundSourceId) : null,
             supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
@@ -1273,5 +1272,7 @@ export async function POST(request: NextRequest) {
         }
         const message = err instanceof Error ? err.message : "An unknown error occurred";
         return NextResponse.json({ message: "BFF Error", detail: message }, { status: 502 });
+    } finally {
+        releaseMemoCapLock?.();
     }
 }

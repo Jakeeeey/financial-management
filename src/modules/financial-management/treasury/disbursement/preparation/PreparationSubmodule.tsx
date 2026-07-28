@@ -25,6 +25,7 @@ import { formatCurrency } from "../utils/disbursement-utils";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { StickyTableWrapper } from "../components/StickyTableWrapper";
 import { isInheritedVatSplitLine, updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
+import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
 import {
     DisbursementPayload, PayableLine, SupplierDto, COADto, DivisionDto, DepartmentDto, Disbursement,
     UnpaidPoDto, MemoDto
@@ -125,7 +126,6 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     const [payeeId, setPayeeId] = useState<number | "">("");
     const [remarks, setRemarks] = useState("");
     const [transactionDate, setTransactionDate] = useState(today);
-    const [divisionId, setDivisionId] = useState<number | "">("");
     const [departmentId, setDepartmentId] = useState<number | "">("");
     const [supportingDocumentsUrl, setSupportingDocumentsUrl] = useState("");
     const [payables, setPayables] = useState<PayableLine[]>([]);
@@ -137,6 +137,9 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     const [unpaidPos, setUnpaidPos] = useState<UnpaidPoDto[]>([]);
     const [loadingPos, setLoadingPos] = useState(false);
     const [isPoModalOpen, setIsPoModalOpen] = useState(false);
+    const poRequestIdRef = useRef(0);
+    const poAbortControllerRef = useRef<AbortController | null>(null);
+    const [poLoadError, setPoLoadError] = useState<string | null>(null);
     const [selectedPoIds, setSelectedPoIds] = useState<string[]>([]);
     const [taxTypes, setTaxTypes] = useState<Record<string, "VAT" | "NON_VAT">>({});
     const [poSearchQuery, setPoSearchQuery] = useState("");
@@ -285,7 +288,6 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             setPayeeId(activeVoucher.payeeId || "");
             setRemarks(activeVoucher.remarks || "");
             setTransactionDate(activeVoucher.transactionDate || today);
-            setDivisionId(activeVoucher.divisionId || "");
             setDepartmentId(activeVoucher.departmentId || "");
             setSupportingDocumentsUrl(activeVoucher.supportingDocumentsUrl || "");
             setPayables(activeVoucher.payables || []);
@@ -295,7 +297,6 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             setPayeeId("");
             setRemarks("");
             setTransactionDate(today);
-            setDivisionId("");
             setDepartmentId("");
             setSupportingDocumentsUrl("");
             setPayables([]);
@@ -315,24 +316,40 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             .catch(() => setPreviewDocNo(""));
     }, [activeVoucher, transactionTypeId]);
 
-    const handleOpenPoModal = useCallback(async (supplierIdOverride?: number) => {
-        const sid = supplierIdOverride ?? (payeeId ? Number(payeeId) : null);
-        if (!sid) return toast.error("Please select a Payee first.");
+    const handleOpenPoModal = useCallback(async (supplierId: number) => {
+        if (!Number.isInteger(supplierId) || supplierId <= 0) return toast.error("Please select a Payee first.");
+
+        poAbortControllerRef.current?.abort();
+        const controller = new AbortController();
+        poAbortControllerRef.current = controller;
+        const requestId = ++poRequestIdRef.current;
+        setUnpaidPos([]);
+        setSelectedPoIds([]);
+        setTaxTypes({});
+        setPoSearchQuery("");
+        setPoLoadError(null);
         setLoadingPos(true);
         setIsPoModalOpen(true);
         try {
-            const pos = await disbursementProvider.getUnpaidPos(sid);
+            const pos = await disbursementProvider.getUnpaidPos(supplierId, controller.signal);
+            if (requestId !== poRequestIdRef.current) return;
             setUnpaidPos(pos);
-            setSelectedPoIds([]);
-            setTaxTypes({});
-            setPoSearchQuery("");
-        } catch {
-            toast.error("Failed to load unpaid POs");
-            setIsPoModalOpen(false);
+        } catch (error) {
+            if (controller.signal.aborted || requestId !== poRequestIdRef.current) return;
+            setPoLoadError(error instanceof Error ? error.message : "Failed to load unpaid POs");
         } finally {
+            if (requestId === poRequestIdRef.current) setLoadingPos(false);
+        }
+    }, []);
+
+    const handlePoModalOpenChange = useCallback((nextOpen: boolean) => {
+        setIsPoModalOpen(nextOpen);
+        if (!nextOpen) {
+            poAbortControllerRef.current?.abort();
+            poRequestIdRef.current += 1;
             setLoadingPos(false);
         }
-    }, [payeeId]);
+    }, []);
 
     const handlePayeeSelect = useCallback((val: number) => {
         setPayeeId(val);
@@ -349,8 +366,6 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
         selectedPos.forEach(po => {
             const baseRef = `${po.poNo} / ${po.receiptNo}`;
             const taxType = currentTaxTypes[po.uniqueKey] || "VAT";
-            const lineDivId = divisionId ? Number(divisionId) : undefined;
-
             if (taxType === "VAT") {
                 const netAmount = po.amountDue / (1 + VAT_RATE);
                 const vatAmount = netAmount * VAT_RATE;
@@ -361,7 +376,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                     amount: Number(netAmount.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal Net of VAT`,
-                    divisionId: lineDivId
+                    divisionId: undefined
                 });
                 newPayables.push({
                     referenceNo: baseRef,
@@ -369,7 +384,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                     amount: Number(vatAmount.toFixed(2)),
                     coaId: 9,
                     remarks: `Input VAT (12%)`,
-                    divisionId: lineDivId
+                    divisionId: undefined
                 });
                 newPayables.push({
                     referenceNo: baseRef,
@@ -377,7 +392,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                     amount: -Number(ewtAmount.toFixed(2)),
                     coaId: 38,
                     remarks: `EWT Deduction (1%)`,
-                    divisionId: lineDivId
+                    divisionId: undefined
                 });
             } else {
                 newPayables.push({
@@ -386,18 +401,18 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                     amount: Number(po.amountDue.toFixed(2)),
                     coaId: 8,
                     remarks: `Principal (Non-VAT)`,
-                    divisionId: lineDivId
+                    divisionId: undefined
                 });
             }
         });
         return newPayables;
-    }, [divisionId]);
+    }, []);
 
     const handleImportPos = useCallback(() => {
         const selected = unpaidPos.filter(po => selectedPoIds.includes(po.uniqueKey));
         const newPayables = calculateTaxedPayables(selected, taxTypes, today);
 
-        setPayables((prev) => [...prev, ...newPayables]);
+        setPayables((prev) => replaceEmptyPayablePlaceholders(prev, newPayables));
         setIsPoModalOpen(false);
         toast.success(`Imported ${selected.length} record(s) successfully`);
     }, [unpaidPos, selectedPoIds, taxTypes, today, calculateTaxedPayables]);
@@ -433,7 +448,6 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             amount: finalAmount,
             coaId: memo.coa_id,
             remarks: `${memo.memo_type_name}: ${memo.reason || 'Applied to voucher'}`,
-            divisionId: divisionId ? Number(divisionId) : undefined
         }]);
 
         setIsMemoModalOpen(false);
@@ -554,7 +568,6 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             remarks,
             totalAmount,
             transactionDate,
-            divisionId: divisionId ? Number(divisionId) : undefined,
             departmentId: departmentId ? Number(departmentId) : undefined,
             supportingDocumentsUrl,
             payables,
@@ -591,7 +604,6 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             setPayeeId("");
             setRemarks("");
             setTransactionDate(today);
-            setDivisionId("");
             setDepartmentId("");
             setSupportingDocumentsUrl("");
             setPayables([]);
@@ -912,7 +924,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                             </Popover>
                                         </div>
                                         {!isNonTradeVoucher && (
-                                            <Button type="button" onClick={() => handleOpenPoModal()} disabled={!payeeId}
+                                            <Button type="button" onClick={() => handleOpenPoModal(Number(payeeId))} disabled={!payeeId}
                                                     className="h-10 px-3 bg-amber-500 hover:bg-amber-600 text-white shadow-sm shrink-0"
                                                     title="Pull Unpaid POs">
                                                 <DownloadCloud className="w-4 h-4"/>
@@ -1175,7 +1187,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             </Dialog>
 
             {/* UNPAID POs SELECTION MODAL */}
-            <Dialog open={isPoModalOpen} onOpenChange={setIsPoModalOpen}>
+            <Dialog open={isPoModalOpen} onOpenChange={handlePoModalOpenChange}>
                 <DialogContent className="sm:max-w-[750px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
@@ -1214,6 +1226,12 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                     <TableRow>
                                         <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground">
                                             <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2"/> Loading Records...
+                                        </TableCell>
+                                    </TableRow>
+                                ) : poLoadError ? (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-destructive">
+                                            {poLoadError}
                                         </TableCell>
                                     </TableRow>
                                 ) : unpaidPos.filter(po => {

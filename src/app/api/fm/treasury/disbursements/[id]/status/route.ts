@@ -4,7 +4,7 @@ import { decodeJwtPayload } from "@/lib/auth-utils";
 import { normalizeDisbursement, getLineItems, getUserMap, PayableRow, DisbursementRow, resolveEncoderId, getCoaMap, getDivisionMap, getBankMap, relationId, loadNormalizedDisbursement } from "../../route";
 import { findUnpostedPurchaseOrderReferences } from "../../_purchase-order-eligibility";
 import { findVatSplitDivisionError } from "../../_payable-split-integrity";
-import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../../_memo-cap-integrity";
+import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../../_memo-cap-integrity";
 import { validatePaymentLine } from "../../_payment-method";
 
 export const runtime = "nodejs";
@@ -147,6 +147,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }, { status: 403 });
     }
 
+    let releaseMemoCapLock: (() => void) | undefined;
+
     try {
         // 1. Fetch current record from Directus
         const directusUrl = `${DIRECTUS_URL}/items/disbursement/${id}`;
@@ -178,6 +180,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const payables = lineItems.payables.get(id) || [];
         const payments = lineItems.payments.get(id) || [];
         const coaMap = await getCoaMap();
+
+        releaseMemoCapLock = await acquireMemoCapLock(
+            payables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
+        );
 
         const currentPayeeId = relationId(currentDis.payee, "id") || 0;
         const memoCapError = currentPayeeId
@@ -453,5 +459,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         return NextResponse.json({ message: "BFF Error", detail: errorMessage }, { status: 502 });
+    } finally {
+        releaseMemoCapLock?.();
     }
 }
