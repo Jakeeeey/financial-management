@@ -214,6 +214,7 @@ export default function ReleasingSubmodule() {
 
             const payload: DisbursementPayload = {
                 docNo: selectedDisbursement.docNo,
+                transactionTypeId: selectedDisbursement.transactionTypeId,
                 payeeId: selectedDisbursement.payeeId || 0,
                 remarks: selectedDisbursement.remarks,
                 totalAmount: selectedDisbursement.totalAmount,
