@@ -1,5 +1,9 @@
 export interface PayableLine {
     id?: number;
+    isMemo?: boolean;
+    memoId?: number;
+    memoType?: number;
+    memoNumber?: string;
     divisionId?: number;
     divisionName?: string;
     referenceNo: string;
@@ -75,7 +79,14 @@ export interface DisbursementPayload {
     supportingDocumentsUrl?: string;
 
     payables: PayableLine[];
-    payments: PaymentLine[];
+    payments?: PaymentLine[];
+}
+
+export interface DisbursementSubmitResult {
+    success: boolean;
+    code?: string;
+    message?: string;
+    nextDocNo?: string;
 }
 
 export interface DivisionDto {

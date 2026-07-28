@@ -571,7 +571,6 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             departmentId: departmentId ? Number(departmentId) : undefined,
             supportingDocumentsUrl,
             payables,
-            payments: [] // New/Edited vouchers start released payments blank
         };
 
         try {

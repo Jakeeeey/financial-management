@@ -30,7 +30,7 @@ type DirectusList<T> = {
     };
 };
 
-type RelationValue = number | string | null | {
+export type RelationValue = number | string | null | {
     id?: unknown;
     division_id?: unknown;
     department_id?: unknown;
@@ -900,6 +900,24 @@ function isDocumentNumberConflict(error: unknown) {
         && /(doc[_\s-]?no|document\s+number)/i.test(message);
 }
 
+async function documentNumberConflictResponse(docNo: string, transactionTypeId: number) {
+    let nextDocNo: string | undefined;
+    try {
+        nextDocNo = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
+    } catch {
+        // The conflict remains actionable even if a replacement preview is unavailable.
+    }
+
+    return NextResponse.json({
+        code: "DOC_NO_CONFLICT",
+        message: `Document number ${docNo} is already used by another voucher.`,
+        detail: nextDocNo
+            ? `A new document number ${nextDocNo} is available. Review the voucher and submit again.`
+            : "Obtain a new document number before submitting again.",
+        nextDocNo,
+    }, { status: 409 });
+}
+
 export async function GET(request: NextRequest) {
     const cookieStore = await cookies();
     const token = cookieStore.get("vos_access_token")?.value;
@@ -1072,20 +1090,7 @@ export async function POST(request: NextRequest) {
                 existingSnapshot.payments,
             );
             if (persistedCanonical !== incomingCanonical) {
-                let nextDocNo: string | undefined;
-                try {
-                    nextDocNo = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
-                } catch {
-                    // The conflict remains actionable even if a replacement preview is unavailable.
-                }
-                return NextResponse.json({
-                    code: "DOC_NO_CONFLICT",
-                    message: `Document number ${docNo} is already used by another voucher.`,
-                    detail: nextDocNo
-                        ? `A new document number ${nextDocNo} is available. Review the voucher and submit again.`
-                        : "Obtain a new document number before submitting again.",
-                    nextDocNo,
-                }, { status: 409 });
+                return documentNumberConflictResponse(docNo, transactionTypeId);
             }
 
             return NextResponse.json(await loadNormalizedDisbursement(existingSnapshot.header, token));
@@ -1116,7 +1121,7 @@ export async function POST(request: NextRequest) {
             }, { status: 409 });
         }
 
-        let docNoForCreation = docNo;
+        const docNoForCreation = docNo;
 
         // 3. Threshold check
         const APPROVAL_THRESHOLD = 1000.00;
@@ -1149,19 +1154,35 @@ export async function POST(request: NextRequest) {
         };
 
         let createRes: { data: DisbursementRow } | undefined;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-            createdDocNo = docNoForCreation;
-            headerPayload = { ...headerPayload, doc_no: docNoForCreation };
+        createdDocNo = docNoForCreation;
+        headerPayload = { ...headerPayload, doc_no: docNoForCreation };
+        try {
+            createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
+                method: "POST",
+                body: JSON.stringify(headerPayload)
+            });
+        } catch (error: unknown) {
+            if (!isDocumentNumberConflict(error)) throw error;
+
+            let racedSnapshot: DisbursementSnapshot | null = null;
             try {
-                createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
-                    method: "POST",
-                    body: JSON.stringify(headerPayload)
-                });
-                break;
-            } catch (error: unknown) {
-                if (!isDocumentNumberConflict(error) || attempt === 2) throw error;
-                docNoForCreation = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
+                racedSnapshot = await findDisbursementSnapshotByDocNo(docNo);
+            } catch {
+                // Return the conflict response even if the follow-up lookup is unavailable.
             }
+
+            if (racedSnapshot) {
+                const racedCanonical = canonicalizePersistedDisbursement(
+                    racedSnapshot.header,
+                    racedSnapshot.payables,
+                    racedSnapshot.payments,
+                );
+                if (racedCanonical === incomingCanonical) {
+                    return NextResponse.json(await loadNormalizedDisbursement(racedSnapshot.header, token));
+                }
+            }
+
+            return documentNumberConflictResponse(docNo, transactionTypeId);
         }
 
         if (!createRes) throw new Error("Disbursement could not be created with an available document number.");

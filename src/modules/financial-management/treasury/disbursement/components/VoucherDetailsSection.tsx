@@ -33,8 +33,6 @@ interface VoucherDetailsSectionProps {
     uploadingFile: boolean;
     setUploadingFile: (val: boolean) => void;
     totalAmount: number;
-    totalPayments: number;
-    paymentDifference: number;
     disabled?: boolean;
 }
 

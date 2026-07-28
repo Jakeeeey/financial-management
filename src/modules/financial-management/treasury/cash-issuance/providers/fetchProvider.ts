@@ -19,6 +19,18 @@ import {
 const API_BASE = "/api/fm/treasury/disbursements";
 const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
 
+export class DisbursementRequestError extends Error {
+    readonly code?: string;
+    readonly nextDocNo?: string;
+
+    constructor(message: string, code?: string, nextDocNo?: string) {
+        super(message);
+        this.name = "DisbursementRequestError";
+        this.code = code;
+        this.nextDocNo = nextDocNo;
+    }
+}
+
 const toStoredSupplierType = (type: string) =>
     type.toUpperCase().startsWith("NON") ? "NON-TRADE" : "TRADE";
 
@@ -47,7 +59,14 @@ export const disbursementProvider = {
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error("Failed to create disbursement");
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new DisbursementRequestError(
+                errData.detail || errData.message || "Failed to create disbursement",
+                typeof errData.code === "string" ? errData.code : undefined,
+                typeof errData.nextDocNo === "string" ? errData.nextDocNo : undefined,
+            );
+        }
         return res.json();
     },
 
