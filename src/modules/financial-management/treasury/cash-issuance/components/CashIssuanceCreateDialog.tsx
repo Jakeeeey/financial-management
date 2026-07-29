@@ -7,11 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Save, Search, FileText, DownloadCloud } from "lucide-react";
+import { Loader2, Save, Search, FileText, DownloadCloud, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import {
     DisbursementPayload, DisbursementSubmitResult, PayableLine, SupplierDto, COADto,
-    Disbursement, UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto
+    Disbursement, UnpaidPoDto, MemoDto, DivisionDto, DepartmentDto, PaymentLine, BankAccountDto
 } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { toast } from "sonner";
@@ -21,9 +21,12 @@ import { formatCurrency } from "../utils/disbursement-utils";
 import { VoucherDetailsSection } from "./VoucherDetailsSection";
 import { PayablesSection } from "./PayablesSection";
 import { StickyTableWrapper } from "./StickyTableWrapper";
+import { SearchableDropdown } from "./SearchableDropdown";
 import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
 import { getPendingMemoUsage } from "@/modules/financial-management/treasury/components/memo-cap";
 import { normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
+import { isPettyCashAccount, validatePaymentLine } from "@/app/api/fm/treasury/disbursements/_payment-method";
+import { cn } from "@/lib/utils";
 
 export interface ExtendedDisbursement extends Disbursement {
     payeeId?: number;
@@ -58,6 +61,9 @@ export function CashIssuanceCreateDialog({
     const [transactionDate, setTransactionDate] = useState(today);
 
     const [payables, setPayables] = useState<PayableLine[]>([]);
+    const [payments, setPayments] = useState<PaymentLine[]>([]);
+    const [banks, setBanks] = useState<BankAccountDto[]>([]);
+    const [paymentValidationErrors, setPaymentValidationErrors] = useState<Set<string>>(new Set());
 
     const [suppliers, setSuppliers] = useState<SupplierDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
@@ -113,7 +119,16 @@ export function CashIssuanceCreateDialog({
 
     useEffect(() => {
         if (open) {
-            disbursementProvider.getCOAs().then(res => setCoas(Array.isArray(res) ? res : []));
+            Promise.all([
+                disbursementProvider.getCOAs(),
+                disbursementProvider.getBanks(),
+            ]).then(([coaList, bankList]) => {
+                setCoas(Array.isArray(coaList) ? coaList : []);
+                setBanks(Array.isArray(bankList) ? bankList : []);
+            }).catch(() => {
+                setCoas([]);
+                setBanks([]);
+            });
             disbursementProvider.getDivisions().then(res => setDivisions(Array.isArray(res) ? res : [])).catch(() => console.warn("No divisions route"));
             disbursementProvider.getDepartments().then(res => setDepartments(Array.isArray(res) ? res : [])).catch(() => console.warn("No departments route"));
         }
@@ -169,6 +184,21 @@ export function CashIssuanceCreateDialog({
                     remarks: p.remarks,
                     accountTitle: p.accountTitle
                 })));
+                setPayments(editData.payments.map(p => ({
+                    id: p.id,
+                    coaId: p.coaId,
+                    accountTitle: p.accountTitle,
+                    bankId: p.bankId,
+                    bankName: p.bankName,
+                    bankAccountNumber: p.bankAccountNumber,
+                    checkNo: p.checkNo || "",
+                    date: p.date ? p.date.split("T")[0] : today,
+                    amount: p.amount,
+                    remarks: p.remarks || "",
+                    releasedDate: p.releasedDate,
+                    releasedBy: p.releasedBy,
+                })));
+                setPaymentValidationErrors(new Set());
 
             } else {
                 setTransactionTypeId(1);
@@ -178,6 +208,8 @@ export function CashIssuanceCreateDialog({
                 setSupportingDocumentsUrl("");
                 // Start with one blank row for payables so the user can begin typing immediately.
                 setPayables([{referenceNo: "", date: today, amount: 0, remarks: "", divisionId: undefined}]);
+                setPayments([]);
+                setPaymentValidationErrors(new Set());
                 setTransactionDate(today);
             }
         }
@@ -396,6 +428,62 @@ export function CashIssuanceCreateDialog({
         toast.success(`${memo.memo_type_name} applied successfully!`);
     };
 
+    const paymentCoaOptions = useMemo(() => coas.map((coa) => ({
+        value: coa.coaId,
+        label: `${coa.glCode || "NO-CODE"} - ${coa.accountTitle || "Unknown"}`,
+    })), [coas]);
+
+    const handleAddPayment = useCallback(() => {
+        const remaining = Number((totalAmount - payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0)).toFixed(2));
+        setPayments((current) => [...current, {
+            checkNo: "",
+            date: today,
+            amount: remaining > 0 ? remaining : 0,
+            remarks: "",
+        }]);
+    }, [payments, today, totalAmount]);
+
+    const handlePaymentChange = <K extends keyof PaymentLine>(index: number, key: K, value: PaymentLine[K]) => {
+        setPayments((current) => current.map((line, lineIndex) =>
+            lineIndex === index ? { ...line, [key]: value } : line,
+        ));
+        setPaymentValidationErrors((current) => {
+            const next = new Set(current);
+            next.delete(`${index}:${String(key)}`);
+            if (key === "coaId") {
+                next.delete(`${index}:bankId`);
+                next.delete(`${index}:checkNo`);
+            }
+            return next;
+        });
+    };
+
+    const validatePayments = () => {
+        const errors = new Set<string>();
+        const messages: string[] = [];
+
+        payments.forEach((line, index) => {
+            const selectedCoa = coas.find((coa) => coa.coaId === Number(line.coaId));
+            const pettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+
+            if (!line.date) errors.add(`${index}:date`);
+            if (!Number.isFinite(Number(line.amount)) || Number(line.amount) === 0) errors.add(`${index}:amount`);
+            if (!line.coaId || !selectedCoa) errors.add(`${index}:coaId`);
+            if (!pettyCash && !line.bankId) errors.add(`${index}:bankId`);
+            if (!pettyCash && String(line.checkNo || "").trim() === "") errors.add(`${index}:checkNo`);
+
+            const validationError = validatePaymentLine(line, selectedCoa?.accountTitle);
+            if (validationError) messages.push(`${validationError} Payment row ${index + 1}`);
+        });
+
+        setPaymentValidationErrors(errors);
+        if (errors.size > 0) {
+            toast.error(`${messages[0] || "Please complete all required payment fields."} Complete the highlighted fields.`);
+            return false;
+        }
+        return true;
+    };
+
     const handleSubmit = async () => {
         if (loading || isReadOnly || submitLockRef.current) return;
         if (!editData && !previewDocNo) {
@@ -405,6 +493,7 @@ export function CashIssuanceCreateDialog({
         if (!payeeId) return toast.error("Please select a Payee.");
         if (!departmentId) return toast.error("Department is required.");
         if (totalAmount <= 0) return toast.error("Voucher total must be greater than 0.");
+        if (!validatePayments()) return;
 
         submitLockRef.current = true;
         setLocalSubmitting(true);
@@ -423,6 +512,16 @@ export function CashIssuanceCreateDialog({
                     coaId: p.coaId ? Number(p.coaId) : undefined,
                     divisionId: p.divisionId ? Number(p.divisionId) : undefined
                 })),
+                payments: payments.map((line) => {
+                    const selectedCoa = coas.find((coa) => coa.coaId === Number(line.coaId));
+                    const pettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+                    return {
+                        ...line,
+                        coaId: Number(line.coaId),
+                        bankId: pettyCash ? undefined : Number(line.bankId),
+                        checkNo: pettyCash ? "" : line.checkNo,
+                    };
+                }),
             };
             const result = await onSubmit(payload);
             if (result.code === "DOC_NO_CONFLICT") {
@@ -440,6 +539,8 @@ export function CashIssuanceCreateDialog({
                 setRemarks("");
                 setSupportingDocumentsUrl("");
                 setPayables([]);
+                setPayments([]);
+                setPaymentValidationErrors(new Set());
                 onOpenChange(false);
             }
         } finally {
@@ -523,6 +624,132 @@ export function CashIssuanceCreateDialog({
                                     disabled={isPayablesLocked}
                                     isAddDisabled={!departmentId}
                                 />
+
+                                <div className="bg-card rounded-sm border border-border shadow-sm overflow-hidden text-foreground">
+                                    <div className="bg-muted px-4 py-2.5 border-b border-border flex items-center gap-2">
+                                        <FileText className="w-4 h-4 text-emerald-600" />
+                                        <span className="text-xs font-bold text-foreground">Payment details (Check / Cash distribution)</span>
+                                        <span className="ml-auto text-[10px] font-semibold text-muted-foreground uppercase">{payments.length} row{payments.length !== 1 ? "s" : ""}</span>
+                                    </div>
+                                    <div className="p-0.5">
+                                        <StickyTableWrapper className="max-h-[360px] overflow-auto custom-scrollbar border-b border-border">
+                                            <Table className="border-collapse min-w-[900px]">
+                                                <TableHeader className="bg-muted sticky top-0 z-10 border-b border-border">
+                                                    <TableRow className="border-border">
+                                                        <TableHead className="text-[10px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 min-w-[150px]">Check / Reference No.</TableHead>
+                                                        <TableHead className="text-[10px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 min-w-[145px]">Payment Date</TableHead>
+                                                        <TableHead className="text-[10px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 min-w-[240px]">Bank / Cash Account</TableHead>
+                                                        <TableHead className="text-[10px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 min-w-[260px]">GL Account (Credit) <span className="text-destructive">*</span></TableHead>
+                                                        <TableHead className="text-[10px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 min-w-[180px]">Memo Description</TableHead>
+                                                        <TableHead className="text-[10px] font-bold text-muted-foreground uppercase h-9 py-1 px-3 w-[120px] text-right">Amount</TableHead>
+                                                        <TableHead className="w-[40px]"></TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody className="divide-y divide-border bg-card">
+                                                    {payments.length === 0 ? (
+                                                        <TableRow>
+                                                            <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">No payment lines added. Click &quot;Add payment line&quot; to allocate.</TableCell>
+                                                        </TableRow>
+                                                    ) : payments.map((line, index) => {
+                                                        const selectedCoa = coas.find((coa) => coa.coaId === Number(line.coaId));
+                                                        const pettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+                                                        return (
+                                                            <TableRow key={line.id ?? index} className="hover:bg-muted/40 border-b border-border">
+                                                                <TableCell className="p-1 align-middle">
+                                                                    <Input
+                                                                        disabled={isPayablesLocked || pettyCash}
+                                                                        className={cn("h-7 text-xs uppercase bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:checkNo`) && "border-rose-500 bg-rose-50/30")}
+                                                                        placeholder={pettyCash ? "Not required for petty cash" : "CK-000000"}
+                                                                        value={line.checkNo || ""}
+                                                                        onChange={(event) => handlePaymentChange(index, "checkNo", event.target.value)}
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell className="p-1 align-middle">
+                                                                    <Input
+                                                                        type="date"
+                                                                        disabled={isPayablesLocked}
+                                                                        className={cn("h-7 text-xs bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:date`) && "border-rose-500 bg-rose-50/30")}
+                                                                        value={line.date || ""}
+                                                                        onChange={(event) => handlePaymentChange(index, "date", event.target.value)}
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell className="p-1 align-middle">
+                                                                    <SearchableDropdown<number>
+                                                                        options={banks.map((bank) => ({ value: bank.bankId, label: `${bank.bankName} - ${bank.accountNumber}` }))}
+                                                                        value={line.bankId || ""}
+                                                                        onSelect={(value) => handlePaymentChange(index, "bankId", value)}
+                                                                        placeholder={pettyCash ? "Not required for petty cash" : "Select bank / cash account..."}
+                                                                        disabled={isPayablesLocked || pettyCash}
+                                                                        className={cn("h-7 w-full bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background text-xs rounded-sm shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:bankId`) && "border-rose-500 bg-rose-50/30")}
+                                                                        popoverWidth="w-[360px]"
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell className="p-1 align-middle">
+                                                                    <SearchableDropdown<number>
+                                                                        options={paymentCoaOptions}
+                                                                        value={line.coaId || ""}
+                                                                        onSelect={(value) => {
+                                                                            const nextCoa = coas.find((coa) => coa.coaId === value);
+                                                                            handlePaymentChange(index, "coaId", value);
+                                                                            if (isPettyCashAccount(nextCoa?.accountTitle)) {
+                                                                                setPayments((current) => current.map((payment, paymentIndex) => paymentIndex === index
+                                                                                    ? { ...payment, coaId: value, bankId: undefined, checkNo: "" }
+                                                                                    : payment));
+                                                                            }
+                                                                        }}
+                                                                        placeholder="Select GL Account (Credit)..."
+                                                                        disabled={isPayablesLocked}
+                                                                        className={cn("h-7 w-full bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background text-xs rounded-sm shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:coaId`) && "border-rose-500 bg-rose-50/30")}
+                                                                        popoverWidth="w-[420px]"
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell className="p-1 align-middle">
+                                                                    <Input
+                                                                        disabled={isPayablesLocked}
+                                                                        className="h-7 text-xs bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background shadow-none px-2 text-foreground"
+                                                                        placeholder="Line payment info..."
+                                                                        value={line.remarks || ""}
+                                                                        onChange={(event) => handlePaymentChange(index, "remarks", event.target.value)}
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell className="p-1 align-middle">
+                                                                    <Input
+                                                                        type="number"
+                                                                        disabled={isPayablesLocked}
+                                                                        className={cn("h-7 text-xs font-bold text-right bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:amount`) && "border-rose-500 bg-rose-50/30")}
+                                                                        placeholder="0.00"
+                                                                        value={line.amount || ""}
+                                                                        onChange={(event) => handlePaymentChange(index, "amount", event.target.value === "" ? 0 : Number(event.target.value))}
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell className="p-1 text-center align-middle">
+                                                                    <Button
+                                                                        size="icon"
+                                                                        variant="ghost"
+                                                                        onClick={() => {
+                                                                            setPayments((current) => current.filter((_, paymentIndex) => paymentIndex !== index));
+                                                                            setPaymentValidationErrors(new Set());
+                                                                        }}
+                                                                        disabled={isPayablesLocked}
+                                                                        className="h-7 w-7 text-destructive hover:bg-destructive/10 rounded-sm disabled:opacity-50"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </Button>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        );
+                                                    })}
+                                                </TableBody>
+                                            </Table>
+                                        </StickyTableWrapper>
+                                        <div className="px-3 py-2 flex items-center justify-between bg-muted/30">
+                                            <Button type="button" variant="outline" size="sm" onClick={handleAddPayment} disabled={isPayablesLocked} className="h-7 text-[10px] font-bold uppercase">
+                                                <Save className="w-3 h-3 mr-1" /> Add payment line
+                                            </Button>
+                                            <span className="text-[10px] font-black uppercase text-muted-foreground">Total Payments: {formatCurrency(payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0))}</span>
+                                        </div>
+                                    </div>
+                                </div>
 
                             </div>
                         </div>

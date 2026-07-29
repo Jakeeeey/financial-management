@@ -22,6 +22,10 @@ export function validatePaymentLine(line: PaymentValidationLine, accountTitle?: 
         return "Please select a GL COA account.";
     }
 
+    if (!accountTitle || accountTitle.trim() === "") {
+        return "Please select a valid GL COA account.";
+    }
+
     if (isPettyCashAccount(accountTitle)) {
         return null;
     }
