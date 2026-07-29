@@ -157,6 +157,11 @@ export interface PayableInput {
     remarks?: string;
 }
 
+export function findMissingPayableDateError(lines: PayableInput[]) {
+    const invalidRow = lines.findIndex((line) => typeof line.date !== "string" || line.date.trim() === "");
+    return invalidRow >= 0 ? `Invoice Date is required on payable row ${invalidRow + 1}.` : null;
+}
+
 export interface PaymentInput {
     id?: number;
     coaId?: number;
@@ -345,12 +350,29 @@ async function directusFetch<T>(path: string, options: RequestInit = {}): Promis
         cache: "no-store",
     });
 
-    if (!res.ok) throw new Error(await res.text());
-    return res.json() as Promise<T>;
+    const responseText = await res.text();
+    if (!res.ok) throw new Error(responseText);
+    if (!responseText.trim()) return undefined as T;
+
+    try {
+        return JSON.parse(responseText) as T;
+    } catch {
+        throw new Error("Directus returned an invalid JSON response.");
+    }
 }
 
-function transactionTypeName(type: unknown) {
+export function resolveTransactionTypeId(type: unknown, docNo?: unknown): 1 | 2 | null {
     const normalizedType = asNumber(type);
+    if (normalizedType === 1 || normalizedType === 2) return normalizedType;
+
+    const normalizedDocNo = asString(docNo).trim().toUpperCase();
+    if (normalizedDocNo.startsWith("TR-")) return 1;
+    if (normalizedDocNo.startsWith("NT-")) return 2;
+    return null;
+}
+
+function transactionTypeName(type: unknown, docNo?: unknown) {
+    const normalizedType = resolveTransactionTypeId(type, docNo);
     if (normalizedType === 1) return "Trade";
     if (normalizedType === 2) return "Non-Trade";
     return "Unknown";
@@ -740,8 +762,8 @@ export function normalizeDisbursement(
         id,
         docNo: asString(row.doc_no),
         payeeId: relationId(row.payee),
-        transactionTypeId: asNumber(row.transaction_type),
-        transactionTypeName: transactionTypeName(row.transaction_type),
+        transactionTypeId: resolveTransactionTypeId(row.transaction_type, row.doc_no) ?? undefined,
+        transactionTypeName: transactionTypeName(row.transaction_type, row.doc_no),
         payeeName: relationLabel(row.payee, "supplier_name"),
         remarks: asString(row.remarks),
         totalAmount,
@@ -1089,6 +1111,10 @@ export async function POST(request: NextRequest) {
         const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
+        const missingPayableDateError = findMissingPayableDateError(payableLinesInput);
+        if (missingPayableDateError) {
+            return NextResponse.json({ message: missingPayableDateError }, { status: 400 });
+        }
         const paymentLinesInput = requestedPayments.filter((line: PaymentInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
         );
@@ -1178,11 +1204,7 @@ export async function POST(request: NextRequest) {
 
         const docNoForCreation = docNo;
 
-        // 3. Threshold check
-        const APPROVAL_THRESHOLD = 1000.00;
-        const isAutoApprove = Number(body.totalAmount) < APPROVAL_THRESHOLD;
-
-        // 4. Calculate paid amount (sum of payments)
+        // 3. Calculate paid amount (sum of payments)
         const calculatedPaidAmount = normalizedPaymentLines.reduce(
             (sum: number, p: PaymentInput) => sum + (Number(p.amount) || 0),
             0
@@ -1309,17 +1331,6 @@ export async function POST(request: NextRequest) {
             throw new Error("Created disbursement lines failed integrity verification.");
         }
 
-        if (isAutoApprove) {
-            const approvedRes = await directusFetch<{ data: DisbursementRow }>(`/items/disbursement/${persistedId}`, {
-                method: "PATCH",
-                body: JSON.stringify({
-                    status: "Approved",
-                    approver_id: currentUserId,
-                    date_approved: new Date().toISOString(),
-                }),
-            });
-            if (!approvedRes.data) throw new Error("Disbursement was created but automatic approval could not be confirmed.");
-        }
         creationFinalized = true;
 
         // Return the full normalized record

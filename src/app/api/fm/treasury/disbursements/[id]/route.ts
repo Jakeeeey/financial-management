@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, RelationValue, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow } from "../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, RelationValue, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow, findMissingPayableDateError, resolveTransactionTypeId } from "../route";
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
 import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
@@ -34,8 +34,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     try {
         const body = await request.json();
-        const transactionTypeId = Number(body.transactionTypeId);
-        if (transactionTypeId !== 1 && transactionTypeId !== 2) {
+        const requestedTransactionTypeId = body.transactionTypeId == null || body.transactionTypeId === ""
+            ? null
+            : Number(body.transactionTypeId);
+        if (requestedTransactionTypeId !== null && requestedTransactionTypeId !== 1 && requestedTransactionTypeId !== 2) {
             return NextResponse.json({ message: "Transaction Type must be Trade (1) or Non-Trade (2)." }, { status: 400 });
         }
         const requestedPayables = (body.payables || []) as PayableInput[];
@@ -51,6 +53,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
+        const missingPayableDateError = findMissingPayableDateError(payableLinesInput);
+        if (missingPayableDateError) {
+            return NextResponse.json({ message: missingPayableDateError }, { status: 400 });
+        }
         const paymentLinesInput = hasPaymentPatch
             ? requestedPayments.filter((line: PaymentInput) =>
                 !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
@@ -90,6 +96,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }
 
         const currentDis = (await currentRes.json()).data;
+        const transactionTypeId = requestedTransactionTypeId
+            ?? resolveTransactionTypeId(currentDis.transaction_type, currentDis.doc_no ?? body.docNo);
+
+        if (transactionTypeId === null) {
+            return NextResponse.json({
+                message: "Transaction Type is missing. Repair the voucher before updating it.",
+            }, { status: 400 });
+        }
 
         if (currentDis.status === "Submitted") {
             return NextResponse.json({
@@ -214,11 +228,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const currentPayeeId = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
             ? Number(currentDis.payee.id)
             : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
+        const currentTransactionTypeId = resolveTransactionTypeId(currentDis.transaction_type, currentDis.doc_no);
 
         const isHeaderOrPayableModified = 
             (body.totalAmount != null && Number(body.totalAmount) !== Number(currentDis.total_amount)) ||
             (body.payeeId != null && Number(body.payeeId) !== currentPayeeId) ||
-            transactionTypeId !== Number(currentDis.transaction_type);
+            transactionTypeId !== currentTransactionTypeId;
 
         if (currentDis.status === "Approved" && isHeaderOrPayableModified) {
             // Any material edit to an approved voucher requires re-approval.
