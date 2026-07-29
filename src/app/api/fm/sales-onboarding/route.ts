@@ -99,6 +99,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "A valid invoice payload is required." }, { status: 400 });
     }
 
+    const rawGrossAmount = body.gross_amount;
+    const grossAmount = typeof rawGrossAmount === "number"
+      ? rawGrossAmount
+      : typeof rawGrossAmount === "string" && rawGrossAmount.trim() !== ""
+        ? Number(rawGrossAmount)
+        : Number.NaN;
+    if (!Number.isFinite(grossAmount) || grossAmount <= 0) {
+      return NextResponse.json(
+        { error: "Gross amount must be greater than zero." },
+        { status: 400 },
+      );
+    }
+
     const customerCode = typeof body.customer_code === "string" ? body.customer_code.trim() : "";
     if (!customerCode) {
       return NextResponse.json({ error: "Customer is required." }, { status: 400 });
@@ -137,6 +150,7 @@ export async function POST(req: NextRequest) {
     const finalPayload = {
       ...body,
       customer_code: customerCode,
+      gross_amount: grossAmount,
       payment_terms: paymentTermId,
       created_by: createdBy,
       modified_by: createdBy, // modified_by is initially the creator

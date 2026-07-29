@@ -46,6 +46,8 @@ export type MemoCapError = {
     message: string;
 };
 
+let memoCapLockTail = Promise.resolve();
+
 const DIRECTUS_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
 const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 const ACTIVE_DISBURSEMENT_STATUSES = new Set([
@@ -80,6 +82,42 @@ function normalizedReference(value: unknown): string {
 
 function looksLikeMemoReference(reference: string): boolean {
     return /^(SCM|SDM)-/i.test(reference);
+}
+
+/**
+ * Serializes memo-bearing mutations handled by this Next.js process. A
+ * transaction-capable Directus operation is still required when the BFF is
+ * deployed across multiple processes or instances.
+ */
+export async function acquireMemoCapLock(lines: MemoCapInput[]): Promise<() => void> {
+    const references = Array.from(new Set(
+        lines.map((line) => normalizedReference(line.referenceNo)).filter(Boolean),
+    ));
+    let hasMemoReference = references.some(looksLikeMemoReference);
+    if (!hasMemoReference && references.length > 0) {
+        try {
+            hasMemoReference = (await fetchMemosByReferences(references)).length > 0;
+        } catch {
+            // Validation below remains authoritative; a lookup failure must not mutate data.
+            return () => undefined;
+        }
+    }
+    if (!hasMemoReference) return () => undefined;
+
+    const previous = memoCapLockTail;
+    let releaseQueuedRequest!: () => void;
+    const queuedRequest = new Promise<void>((resolve) => {
+        releaseQueuedRequest = resolve;
+    });
+    memoCapLockTail = previous.then(() => queuedRequest);
+    await previous;
+
+    let released = false;
+    return () => {
+        if (released) return;
+        released = true;
+        releaseQueuedRequest();
+    };
 }
 
 async function directusFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -213,11 +251,16 @@ export async function validateSupplierMemoCaps(
     }
 
     const references = Array.from(requested.keys());
-    const memoReferences = references.filter(looksLikeMemoReference);
+    if (references.length === 0) return null;
+
+    // Query every submitted reference. Memo numbers are not required to have a
+    // prefix, so prefix-only detection would allow numeric memo references to
+    // bypass supplier, sign, and cap validation.
+    const memos = await fetchMemosByReferences(references);
+    const memoMap = new Map(memos.map((memo) => [normalizedReference(memo.memo_number), memo]));
+    const memoReferences = references.filter((reference) => memoMap.has(reference) || looksLikeMemoReference(reference));
     if (memoReferences.length === 0) return null;
 
-    const memos = await fetchMemosByReferences(memoReferences);
-    const memoMap = new Map(memos.map((memo) => [memo.memo_number, memo]));
     const missing = memoReferences.find((reference) => !memoMap.has(reference));
     if (missing) {
         return {

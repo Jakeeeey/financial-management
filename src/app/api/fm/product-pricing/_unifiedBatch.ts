@@ -570,7 +570,7 @@ async function refreshUnifiedApplicationStatus(headerId: number, userId: number 
     return status;
 }
 
-async function applyUnifiedDetails(headerId: number, userId: number | null) {
+async function applyUnifiedDetails(headerId: number, userId: number) {
     let applied = 0;
     let failed = 0;
     let warning: string | null = null;

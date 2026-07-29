@@ -23,6 +23,7 @@ import {
     normalizeProductId,
     nowManila,
     pickId,
+    readAuditUserId,
 } from "../../price-change-batches/_batch";
 import { assertValidPriceValue } from "../../_pricePrecision";
 import { applyProposedPrice, getPriceRequest, type PcrRow } from "../../price-change-requests/_actions";
@@ -187,6 +188,7 @@ async function applyPriceNow(row: PcrRow, userId: number, effectiveAt = nowManil
             }
             await applyProposedPrice({
                 userId,
+                createdBy: readAuditUserId(claimed.requested_by),
                 productId,
                 priceTypeId,
                 currentPrice: claimed.current_price,

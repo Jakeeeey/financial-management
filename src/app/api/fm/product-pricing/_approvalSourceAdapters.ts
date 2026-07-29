@@ -368,8 +368,13 @@ async function fetchSupplierByProductIds(productIds: number[]): Promise<Map<numb
         const chunk = uniqueIds.slice(i, i + 200);
         const params = new URLSearchParams();
         params.set("limit", "-1");
-        params.set("fields", "product_id,supplier_id,supplier_id.id,supplier_id.supplier_name,supplier_id.supplier_shortcut");
+        params.set(
+            "fields",
+            "product_id,supplier_id,supplier_id.id,supplier_id.supplier_name,supplier_id.supplier_shortcut,supplier_id.isActive,supplier_id.nonBuy",
+        );
         params.set("filter[product_id][_in]", chunk.join(","));
+        params.set("filter[supplier_id][isActive][_eq]", "1");
+        params.set("filter[supplier_id][nonBuy][_eq]", "0");
 
         const url = `${mustBase()}/items/product_per_supplier?${params.toString()}`;
         const json = await fetchDirectus<DirectusList<Record<string, unknown>>>(url, { headers: directusHeaders() });

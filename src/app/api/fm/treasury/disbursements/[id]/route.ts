@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
-import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow } from "../route";
+import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, RelationValue, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow, findMissingPayableDateError, resolveTransactionTypeId } from "../route";
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
-import { refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
+import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
 import { isPettyCashAccount, validatePaymentLine } from "../_payment-method";
 
 export const runtime = "nodejs";
@@ -30,14 +30,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }, { status: 403 });
     }
 
+    let releaseMemoCapLock: (() => void) | undefined;
+
     try {
         const body = await request.json();
-        const transactionTypeId = Number(body.transactionTypeId);
-        if (transactionTypeId !== 1 && transactionTypeId !== 2) {
+        const requestedTransactionTypeId = body.transactionTypeId == null || body.transactionTypeId === ""
+            ? null
+            : Number(body.transactionTypeId);
+        if (requestedTransactionTypeId !== null && requestedTransactionTypeId !== 1 && requestedTransactionTypeId !== 2) {
             return NextResponse.json({ message: "Transaction Type must be Trade (1) or Non-Trade (2)." }, { status: 400 });
         }
         const requestedPayables = (body.payables || []) as PayableInput[];
-        const requestedPayments = (body.payments || []) as PaymentInput[];
+        const hasPaymentPatch = Object.prototype.hasOwnProperty.call(body, "payments");
+        const requestedPayments = hasPaymentPatch && Array.isArray(body.payments)
+            ? body.payments as PaymentInput[]
+            : [];
         const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
         if (missingPrincipalDivisionError) {
             return NextResponse.json({ message: missingPrincipalDivisionError }, { status: 400 });
@@ -46,9 +53,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
-        const paymentLinesInput = requestedPayments.filter((line: PaymentInput) =>
-            !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
-        );
+        const missingPayableDateError = findMissingPayableDateError(payableLinesInput);
+        if (missingPayableDateError) {
+            return NextResponse.json({ message: missingPayableDateError }, { status: 400 });
+        }
+        const paymentLinesInput = hasPaymentPatch
+            ? requestedPayments.filter((line: PaymentInput) =>
+                !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
+            )
+            : [];
         const coaMap = await getCoaMap();
         for (let index = 0; index < paymentLinesInput.length; index++) {
             const line = paymentLinesInput[index];
@@ -83,35 +96,64 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }
 
         const currentDis = (await currentRes.json()).data;
+        const transactionTypeId = requestedTransactionTypeId
+            ?? resolveTransactionTypeId(currentDis.transaction_type, currentDis.doc_no ?? body.docNo);
+
+        if (transactionTypeId === null) {
+            return NextResponse.json({
+                message: "Transaction Type is missing. Repair the voucher before updating it.",
+            }, { status: 400 });
+        }
+
+        if (currentDis.status === "Submitted") {
+            return NextResponse.json({
+                message: "Submitted vouchers are locked and cannot be edited.",
+                detail: "An authorized approver must return this voucher for revision before it can be changed.",
+            }, { status: 409 });
+        }
 
         // Immutability Enforcement Check
         if (Number(currentDis.isPosted) === 1) {
             return NextResponse.json({ message: "Cannot modify a transaction that is already Posted to the GL. This record is immutable." }, { status: 400 });
         }
 
-        if (currentDis.status !== "Draft" && currentDis.status !== "Submitted" && currentDis.status !== "Approved" && currentDis.status !== "Returned for Revision" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
-            return NextResponse.json({ message: "Only Draft, Submitted, Approved, Returned, Released, or Partially Released disbursements can be edited." }, { status: 400 });
+        if (currentDis.status !== "Draft" && currentDis.status !== "Approved" && currentDis.status !== "Returned for Revision" && currentDis.status !== "Released" && currentDis.status !== "Partially Released") {
+            return NextResponse.json({ message: "Only Draft, Approved, Returned, Released, or Partially Released disbursements can be edited." }, { status: 400 });
         }
 
         const currentLineItems = await getLineItems([id]);
         const currentPayables = currentLineItems.payables.get(id) || [];
         const currentPayments = currentLineItems.payments.get(id) || [];
+        const effectivePaymentLines: PaymentInput[] = hasPaymentPatch
+            ? normalizedPaymentLines
+            : currentPayments.map((line) => ({
+                coaId: relationId(line.coa_id, "coa_id"),
+                bankId: relationId(line.bank_id as RelationValue),
+                checkNo: line.check_no == null ? "" : String(line.check_no),
+                date: line.date == null ? undefined : String(line.date),
+                amount: Number(line.amount) || 0,
+                remarks: line.remarks == null ? "" : String(line.remarks),
+            }));
         const incomingCanonical = canonicalizeDisbursementPayload({
             transactionTypeId,
             payeeId: body.payeeId,
             remarks: body.remarks,
             totalAmount: body.totalAmount,
             transactionDate: body.transactionDate,
-            divisionId: body.divisionId,
             departmentId: body.departmentId,
             fundSourceId: body.fundSourceId,
             supportingDocumentsUrl: body.supportingDocumentsUrl,
             payables: payableLinesInput,
-            payments: normalizedPaymentLines,
+            payments: effectivePaymentLines,
         });
         if (canonicalizePersistedDisbursement(currentDis, currentPayables, currentPayments) === incomingCanonical) {
             return NextResponse.json(await loadNormalizedDisbursement(currentDis, token));
         }
+
+        releaseMemoCapLock = await acquireMemoCapLock([
+            ...currentPayables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
+            ...payableLinesInput,
+        ]);
 
         const currentPayeeIdForEligibility = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
             ? Number(currentDis.payee.id)
@@ -170,7 +212,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 body: JSON.stringify(payableIds),
             });
         }
-        if (paymentIds.length > 0) {
+        if (hasPaymentPatch && paymentIds.length > 0) {
             await fetch(`${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/items/disbursement_payments`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${directusToken}`, "Content-Type": "application/json" },
@@ -178,9 +220,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             });
         }
 
-        // 3. Threshold check & status transition
-        const APPROVAL_THRESHOLD = 1000.00;
-        const isBelowThreshold = Number(body.totalAmount) < APPROVAL_THRESHOLD;
+        // 3. Status transition
         let newStatus = currentDis.status;
         let approverId: number | null | undefined = relationId(currentDis.approver_id, "user_id");
         let dateApproved = currentDis.date_approved;
@@ -188,25 +228,22 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const currentPayeeId = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
             ? Number(currentDis.payee.id)
             : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
+        const currentTransactionTypeId = resolveTransactionTypeId(currentDis.transaction_type, currentDis.doc_no);
 
         const isHeaderOrPayableModified = 
             (body.totalAmount != null && Number(body.totalAmount) !== Number(currentDis.total_amount)) ||
             (body.payeeId != null && Number(body.payeeId) !== currentPayeeId) ||
-            transactionTypeId !== Number(currentDis.transaction_type);
+            transactionTypeId !== currentTransactionTypeId;
 
-        if (isBelowThreshold) {
-            newStatus = "Approved";
-            approverId = currentUserId;
-            dateApproved = new Date().toISOString();
-        } else if (currentDis.status === "Approved" && isHeaderOrPayableModified) {
-            // Resubmit if it was approved and now edited to be over threshold
+        if (currentDis.status === "Approved" && isHeaderOrPayableModified) {
+            // Any material edit to an approved voucher requires re-approval.
             newStatus = "Submitted";
             approverId = null;
             dateApproved = null;
         }
 
         // 4. Calculate paid amount (sum of payments)
-        const calculatedPaidAmount = normalizedPaymentLines.reduce(
+        const calculatedPaidAmount = effectivePaymentLines.reduce(
             (sum: number, p: PaymentInput) => sum + (Number(p.amount) || 0),
             0
         );
@@ -219,7 +256,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             total_amount: Number(body.totalAmount) || 0,
             paid_amount: calculatedPaidAmount,
             transaction_date: body.transactionDate,
-            division_id: body.divisionId ? Number(body.divisionId) : null,
+            // Header-level Division is deprecated. Payable lines carry Cost Division.
+            division_id: null,
             department_id: body.departmentId ? Number(body.departmentId) : null,
             fund_source_id: body.fundSourceId ? Number(body.fundSourceId) : null,
             supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
@@ -252,7 +290,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 remarks: line.remarks || ""
             }));
 
-        const paymentLines = normalizedPaymentLines
+        const paymentLines = hasPaymentPatch
+            ? normalizedPaymentLines
             .filter((line: PaymentInput) => !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== ""))
             .map((line: PaymentInput) => {
                 const payload: {
@@ -281,7 +320,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                     payload.released_date = line.releasedDate;
                 }
                 return payload;
-            });
+            })
+            : [];
 
         const lineRes = await Promise.all([
             payableLines.length > 0
@@ -389,6 +429,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error';
         return NextResponse.json({ message: "BFF Error", detail: errorMessage }, { status: 502 });
+    } finally {
+        releaseMemoCapLock?.();
     }
 }
 
@@ -428,6 +470,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
         const currentDis = (await currentRes.json()).data;
 
+        if (currentDis.status === "Submitted") {
+            return NextResponse.json({
+                message: "Submitted vouchers are locked and cannot be deleted.",
+                detail: "An authorized approver must return this voucher for revision before it can be changed.",
+            }, { status: 409 });
+        }
+
         // Immutability Enforcement Check
         if (Number(currentDis.isPosted) === 1) {
             return NextResponse.json({ message: "Cannot delete a transaction that is already Posted to the GL. This record is immutable." }, { status: 400 });
@@ -437,7 +486,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
         const existingLineItems = await getLineItems([id]);
         const memoReferences = (existingLineItems.payables.get(id) || [])
             .map((line) => String(line.reference_no || ""))
-            .filter((reference) => /^(SCM|SDM)-/i.test(reference));
+            .filter((reference) => reference.trim() !== "");
 
         // Soft Delete: stamp is_deleted = 1, deleted_at = NOW(), and deleted_by = currentUserId
         const deletePayload = {

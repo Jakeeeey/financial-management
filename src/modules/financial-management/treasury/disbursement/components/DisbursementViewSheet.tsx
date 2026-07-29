@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
     Loader2, CheckCircle, Send, SendIcon, Wallet, Building2,
     Printer, Pencil, Lock, AlertTriangle, FileText, Receipt,
-    CheckCircle2, CircleDashed, X, Sparkles, ArrowDownToLine, ArrowUpFromLine,
+    CheckCircle2, CircleDashed, X, ArrowDownToLine, ArrowUpFromLine,
     Paperclip, ExternalLink
 } from "lucide-react";
 import { Disbursement, BankAccountDto, COADto } from "../types";
@@ -16,7 +16,7 @@ import { disbursementProvider } from "../providers/fetchProvider";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { cn } from "@/lib/utils";
 import { StickyTableWrapper } from "./StickyTableWrapper";
-import { decodeToken, formatCurrency, formatManilaDate, formatManilaDateTime, getCookie, VOUCHER_STEPS } from "../utils/disbursement-utils";
+import { decodeToken, formatCurrency, formatManilaDate, formatManilaDateTime, getCookie, getPaymentStateLabel, getVoucherStepIndex, VOUCHER_STEPS } from "../utils/disbursement-utils";
 
 interface DisbursementViewSheetProps {
     disbursement: Disbursement | null;
@@ -150,9 +150,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
     const balance = disbursement.balance ?? (totalDebit - totalCredit);
     const isBalanced = Math.abs(balance) < 0.01;
 
-    const currentStepIndex = VOUCHER_STEPS.indexOf(disbursement.status);
-    const isAutoApprove = disbursement.totalAmount < 1000;
-
+    const currentStepIndex = getVoucherStepIndex(disbursement.status);
     return (
         <Sheet open={open} onOpenChange={(val) => { onOpenChange(val); setShowPrintOptions(false); }}>
             <SheetContent className="sm:max-w-[1000px] w-full p-0 flex flex-col bg-background border-l border-border overflow-hidden shadow-2xl">
@@ -174,6 +172,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         <Badge variant="outline" className="px-3 py-1 bg-muted font-black uppercase tracking-widest text-[10px]">
                             {disbursement.status}
                         </Badge>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                            Payment: {getPaymentStateLabel(disbursement.paymentState)}
+                        </span>
                     </div>
 
                     <div className="mt-6 pt-4 border-t border-border/50">
@@ -250,15 +251,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Particulars / Remarks</p>
                             <p className="text-xs font-bold text-foreground bg-muted p-2 rounded-md border border-border/50">{disbursement.remarks || "No remarks provided."}</p>
                         </div>
-                        <div className="grid grid-cols-2 col-span-2 mt-1 gap-2">
-                            <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Division</p>
-                                <p className="text-xs font-bold text-foreground">{disbursement.divisionName || "N/A"}</p>
-                            </div>
-                            <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Department</p>
-                                <p className="text-xs font-bold text-foreground">{disbursement.departmentName || "N/A"}</p>
-                            </div>
+                        <div className="mt-1">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Department</p>
+                            <p className="text-xs font-bold text-foreground">{disbursement.departmentName || "N/A"}</p>
                         </div>
 
                         {/* Audit Trail Section */}
@@ -434,7 +429,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         )}
 
                         {/* Revert Tool */}
-                        {!readOnly && disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" && (
+                        {!readOnly && disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Submitted" && disbursement.status !== "Posted" && (
                             <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
                                 {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
                             </Button>
@@ -446,9 +441,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         {!readOnly && (
                             <>
                                 {(disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && (
-                                    <Button onClick={() => handleAction("Submitted")} disabled={isActionBusy} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
-                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
-                                        {isAutoApprove ? "Submit & Auto-Approve" : "Submit for Approval"}
+                                    <Button onClick={() => handleAction("Submitted")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-blue-600 hover:bg-blue-700 text-white shadow-md disabled:opacity-50">
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />}
+                                        Submit for Approval
                                     </Button>
                                 )}
 

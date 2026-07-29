@@ -1,5 +1,9 @@
 export interface PayableLine {
     id?: number;
+    isMemo?: boolean;
+    memoId?: number;
+    memoType?: number;
+    memoNumber?: string;
     divisionId?: number;
     divisionName?: string;
     referenceNo: string;
@@ -25,6 +29,12 @@ export interface PaymentLine {
     releasedBy?: string | number;
 }
 
+export type DisbursementPaymentState =
+    | "UNPAID"
+    | "ALLOCATED"
+    | "PARTIALLY_RELEASED"
+    | "RELEASED";
+
 export interface Disbursement {
     id: number;
     docNo: string;
@@ -35,6 +45,7 @@ export interface Disbursement {
     remarks?: string;
     totalAmount: number;
     paidAmount: number;
+    paymentState: DisbursementPaymentState;
 
     // Financial Header Aggregates
     totalDebit?: number;
@@ -78,13 +89,12 @@ export interface DisbursementPayload {
     remarks?: string;
     totalAmount: number;
     transactionDate?: string;
-    divisionId?: number;
     departmentId?: number;
     fundSourceId?: number;
     supportingDocumentsUrl?: string;
 
     payables: PayableLine[];
-    payments: PaymentLine[];
+    payments?: PaymentLine[];
 }
 
 export interface DisbursementSubmitResult {

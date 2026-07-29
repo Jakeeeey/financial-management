@@ -19,6 +19,7 @@ export type ApplicationStatus = "SCHEDULED" | "APPLYING" | "APPLIED" | "FAILED" 
 export type ApplicationRow = {
     request_id?: unknown;
     header_id?: unknown;
+    requested_by?: unknown;
     current_price?: unknown;
     status?: string | null;
     effective_at?: string | null;
@@ -344,6 +345,7 @@ export async function executeClaimedApplication<T extends ApplicationRow>(args: 
     const fields = [
         "request_id",
         "header_id",
+        "requested_by",
         "product_id",
         "price_type_id",
         "proposed_price",

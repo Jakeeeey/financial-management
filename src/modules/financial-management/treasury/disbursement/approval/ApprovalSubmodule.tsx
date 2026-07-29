@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Disbursement } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
-import { formatCurrency, VOUCHER_STEPS } from "../utils/disbursement-utils";
+import { formatCurrency, getVoucherStepIndex, VOUCHER_STEPS } from "../utils/disbursement-utils";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -342,11 +342,11 @@ export default function ApprovalSubmodule() {
                                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-muted"></div>
                                     <div
                                         className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-primary transition-all duration-500"
-                                        style={{ width: `${(VOUCHER_STEPS.indexOf(selectedDisbursement.status) / (VOUCHER_STEPS.length - 1)) * 100}%` }}
+                                        style={{ width: `${(getVoucherStepIndex(selectedDisbursement.status) / (VOUCHER_STEPS.length - 1)) * 100}%` }}
                                     ></div>
 
                                     {VOUCHER_STEPS.map((step, idx) => {
-                                        const currentStepIndex = VOUCHER_STEPS.indexOf(selectedDisbursement.status);
+                                        const currentStepIndex = getVoucherStepIndex(selectedDisbursement.status);
                                         const isCompleted = idx < currentStepIndex;
                                         const isCurrent = idx === currentStepIndex;
                                         return (

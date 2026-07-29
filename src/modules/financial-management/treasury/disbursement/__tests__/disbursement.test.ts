@@ -5,7 +5,16 @@
 
 // Standard Jest typings mock or actual imports
 import { Disbursement, PaymentLine } from "../types";
-import { sumLineAmounts } from "../utils/disbursement-utils";
+import { sumLineAmounts } from "../../utils/line-amounts";
+import {
+    isFullyPostedPurchaseOrder,
+    isPostedReceivingAmount,
+    postedReceivingRowsByPurchaseOrder,
+} from "@/app/api/fm/treasury/disbursements/_purchase-order-eligibility";
+import {
+    normalizeDisbursementStatus,
+    resolveDisbursementPaymentState,
+} from "@/app/api/fm/treasury/disbursements/route";
 
 // 1. Business Logic Code to Test (Usually resides in controllers/utilities)
 export function validateMutation(disbursement: Pick<Disbursement, "isPosted" | "status">) {
@@ -35,6 +44,39 @@ export function evaluateReleasingCondition(totalAmount: number, paidAmount: numb
 
 // 2. Jest Automated Unit Tests
 describe("Disbursement Module Core Business Rules", () => {
+
+    describe("Payment and lifecycle state reconciliation", () => {
+        it("keeps saved payment allocations distinct from a released status", () => {
+            expect(resolveDisbursementPaymentState({
+                status: "Approved",
+                totalAmount: 1000,
+                paidAmount: 1,
+                isPosted: 0,
+            })).toBe("ALLOCATED");
+        });
+
+        it("marks a partial release as released progress", () => {
+            expect(resolveDisbursementPaymentState({
+                status: "Partially Released",
+                totalAmount: 1000,
+                paidAmount: 1,
+                isPosted: 0,
+            })).toBe("PARTIALLY_RELEASED");
+        });
+
+        it("marks a fully released and posted voucher as released payment state", () => {
+            expect(resolveDisbursementPaymentState({
+                status: "POSTED",
+                totalAmount: 1000,
+                paidAmount: 1000,
+                isPosted: 1,
+            })).toBe("RELEASED");
+        });
+
+        it("normalizes lifecycle status casing for the workflow stepper", () => {
+            expect(normalizeDisbursementStatus("partially released")).toBe("Partially Released");
+        });
+    });
     
     // --- Rule 1: Immutability Locks ---
     describe("Immutability Locks (isPosted = 1)", () => {
@@ -117,6 +159,59 @@ describe("Disbursement Module Core Business Rules", () => {
 
         it("should preserve decimal totals", () => {
             expect(sumLineAmounts([{ amount: 0.1 }, { amount: 0.2 }])).toBeCloseTo(0.3);
+        });
+    });
+
+    describe("Purchase-order disbursement eligibility", () => {
+        it("requires both inventory and amount posting flags", () => {
+            expect(isPostedReceivingAmount({ isPosted: 0, is_posted_amounts: 1, is_reverted: 0 })).toBe(false);
+            expect(isPostedReceivingAmount({ isPosted: 1, is_posted_amounts: 0, is_reverted: 0 })).toBe(false);
+            expect(isPostedReceivingAmount({ isPosted: 1, is_posted_amounts: 1, is_reverted: 1 })).toBe(false);
+            expect(isPostedReceivingAmount({ isPosted: 1, is_posted_amounts: 1, is_reverted: 0 })).toBe(true);
+        });
+
+        it("keeps only fully posted active receiving rows in the posted PO map", () => {
+            const rows = postedReceivingRowsByPurchaseOrder([
+                { purchase_order_id: 10, receipt_no: "R-POSTED", isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { purchase_order_id: 10, receipt_no: "R-AMOUNT-PENDING", isPosted: 1, is_posted_amounts: 0, is_reverted: 0 },
+                { purchase_order_id: 11, receipt_no: "R-REVERTED", isPosted: 1, is_posted_amounts: 1, is_reverted: 1 },
+            ]);
+
+            expect(rows.get(10)).toHaveLength(1);
+            expect(rows.get(10)?.[0].receipt_no).toBe("R-POSTED");
+            expect(rows.has(11)).toBe(false);
+        });
+
+        it("hides the entire receipt when one of its lines is not fully posted", () => {
+            const rows = postedReceivingRowsByPurchaseOrder([
+                { purchase_order_id: 12, receipt_no: "R-MIXED", isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { purchase_order_id: 12, receipt_no: "R-MIXED", isPosted: 1, is_posted_amounts: 0, is_reverted: 0 },
+            ]);
+
+            expect(rows.has(12)).toBe(false);
+        });
+
+        it("keeps every line from a fully posted receipt so the full amount is available", () => {
+            const rows = postedReceivingRowsByPurchaseOrder([
+                { purchase_order_id: 13, receipt_no: "R-FULL", isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { purchase_order_id: 13, receipt_no: "R-FULL", isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { purchase_order_id: 13, receipt_no: "R-PENDING", isPosted: 1, is_posted_amounts: 0, is_reverted: 0 },
+            ]);
+
+            expect(rows.get(13)).toHaveLength(2);
+            expect(rows.get(13)?.every((row) => row.receipt_no === "R-FULL")).toBe(true);
+        });
+
+        it("requires every active CWO receiving row to be fully posted", () => {
+            expect(isFullyPostedPurchaseOrder([])).toBe(false);
+            expect(isFullyPostedPurchaseOrder([
+                { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { isPosted: 1, is_posted_amounts: 0, is_reverted: 0 },
+            ])).toBe(false);
+            expect(isFullyPostedPurchaseOrder([
+                { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+                { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
+            ])).toBe(true);
         });
     });
 

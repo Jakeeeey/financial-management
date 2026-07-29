@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { FileText, Building2, Wallet, Lock } from "lucide-react";
 import { StickyTableWrapper } from "./StickyTableWrapper";
-import { formatCurrency, getStatusColor } from "../utils/disbursement-utils";
+import { formatCurrency, getPaymentStateLabel, getStatusColor } from "../utils/disbursement-utils";
 
 interface CashIssuanceTableProps {
     data: Disbursement[];
@@ -72,7 +72,7 @@ export function CashIssuanceTable({ data, loading, onView }: CashIssuanceTablePr
                                     <div className="flex flex-col gap-1 items-end">
                                         <span className="text-xs font-black text-foreground">{formatCurrency(d.totalAmount)}</span>
                                         <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-500">
-                                            <Wallet className="w-3 h-3" /> Paid: {formatCurrency(d.paidAmount || 0)}
+                                            <Wallet className="w-3 h-3" /> {getPaymentStateLabel(d.paymentState)}: {formatCurrency(d.paidAmount || 0)}
                                         </div>
                                     </div>
                                 </TableCell>

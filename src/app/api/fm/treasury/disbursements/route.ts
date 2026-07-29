@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
-import { validateSupplierMemoCaps } from "./_memo-cap-integrity";
+import { acquireMemoCapLock, validateSupplierMemoCaps } from "./_memo-cap-integrity";
 import { isPettyCashAccount, validatePaymentLine } from "./_payment-method";
 
 export const runtime = "nodejs";
@@ -30,7 +30,7 @@ type DirectusList<T> = {
     };
 };
 
-type RelationValue = number | string | null | {
+export type RelationValue = number | string | null | {
     id?: unknown;
     division_id?: unknown;
     department_id?: unknown;
@@ -68,6 +68,49 @@ export type DisbursementRow = {
     status?: unknown;
     supporting_documents_url?: unknown;
 };
+
+export type DisbursementPaymentState =
+    | "UNPAID"
+    | "ALLOCATED"
+    | "PARTIALLY_RELEASED"
+    | "RELEASED";
+
+export function normalizeDisbursementStatus(value: unknown) {
+    switch (asString(value).trim().toUpperCase()) {
+        case "DRAFT": return "Draft";
+        case "SUBMITTED": return "Submitted";
+        case "APPROVED": return "Approved";
+        case "PARTIALLY RELEASED": return "Partially Released";
+        case "RELEASED": return "Released";
+        case "POSTED": return "Posted";
+        case "RETURNED FOR REVISION": return "Returned for Revision";
+        default: return asString(value).trim() || "Draft";
+    }
+}
+
+export function resolveDisbursementPaymentState(input: {
+    status: string;
+    totalAmount: number;
+    paidAmount: number;
+    isPosted: number;
+}): DisbursementPaymentState {
+    const paidAmount = Math.max(0, input.paidAmount);
+    const totalAmount = Math.max(0, input.totalAmount);
+    const normalizedStatus = normalizeDisbursementStatus(input.status);
+
+    if (paidAmount <= 0) return "UNPAID";
+    if (input.isPosted === 1 || normalizedStatus === "Posted") {
+        return totalAmount > 0 && paidAmount + 0.01 < totalAmount
+            ? "PARTIALLY_RELEASED"
+            : "RELEASED";
+    }
+    if (normalizedStatus === "Partially Released") return "PARTIALLY_RELEASED";
+    if (normalizedStatus === "Released") return "RELEASED";
+
+    // Saving payment/check lines is an allocation only. The explicit release
+    // transition is the source of truth for released lifecycle states.
+    return "ALLOCATED";
+}
 
 export type PayableRow = {
     id?: unknown;
@@ -114,6 +157,11 @@ export interface PayableInput {
     remarks?: string;
 }
 
+export function findMissingPayableDateError(lines: PayableInput[]) {
+    const invalidRow = lines.findIndex((line) => typeof line.date !== "string" || line.date.trim() === "");
+    return invalidRow >= 0 ? `Invoice Date is required on payable row ${invalidRow + 1}.` : null;
+}
+
 export interface PaymentInput {
     id?: number;
     coaId?: number;
@@ -143,7 +191,6 @@ type ComparableDisbursement = {
     remarks: string | null;
     totalAmount: number;
     transactionDate: string | null;
-    divisionId: number | null;
     departmentId: number | null;
     fundSourceId: number | null;
     supportingDocumentsUrl: string | null;
@@ -224,7 +271,6 @@ export function canonicalizeDisbursementPayload(input: {
     remarks?: unknown;
     totalAmount?: unknown;
     transactionDate?: unknown;
-    divisionId?: unknown;
     departmentId?: unknown;
     fundSourceId?: unknown;
     supportingDocumentsUrl?: unknown;
@@ -251,7 +297,6 @@ export function canonicalizeDisbursementPayload(input: {
         remarks: comparableText(input.remarks),
         totalAmount: roundMoney(Number(input.totalAmount) || 0),
         transactionDate: comparableDate(input.transactionDate),
-        divisionId: comparableNumber(input.divisionId),
         departmentId: comparableNumber(input.departmentId),
         fundSourceId: comparableNumber(input.fundSourceId),
         supportingDocumentsUrl: cleanSupportingDocsUrl(asString(input.supportingDocumentsUrl)),
@@ -269,7 +314,6 @@ export function canonicalizePersistedDisbursement(row: DisbursementRow, payables
         remarks: row.remarks,
         totalAmount: row.total_amount,
         transactionDate: row.transaction_date,
-        divisionId: relationId(row.division_id, "division_id"),
         departmentId: relationId(row.department_id, "department_id"),
         fundSourceId: relationId(row.fund_source_id as RelationValue),
         supportingDocumentsUrl: row.supporting_documents_url,
@@ -306,12 +350,29 @@ async function directusFetch<T>(path: string, options: RequestInit = {}): Promis
         cache: "no-store",
     });
 
-    if (!res.ok) throw new Error(await res.text());
-    return res.json() as Promise<T>;
+    const responseText = await res.text();
+    if (!res.ok) throw new Error(responseText);
+    if (!responseText.trim()) return undefined as T;
+
+    try {
+        return JSON.parse(responseText) as T;
+    } catch {
+        throw new Error("Directus returned an invalid JSON response.");
+    }
 }
 
-function transactionTypeName(type: unknown) {
+export function resolveTransactionTypeId(type: unknown, docNo?: unknown): 1 | 2 | null {
     const normalizedType = asNumber(type);
+    if (normalizedType === 1 || normalizedType === 2) return normalizedType;
+
+    const normalizedDocNo = asString(docNo).trim().toUpperCase();
+    if (normalizedDocNo.startsWith("TR-")) return 1;
+    if (normalizedDocNo.startsWith("NT-")) return 2;
+    return null;
+}
+
+function transactionTypeName(type: unknown, docNo?: unknown) {
+    const normalizedType = resolveTransactionTypeId(type, docNo);
     if (normalizedType === 1) return "Trade";
     if (normalizedType === 2) return "Non-Trade";
     return "Unknown";
@@ -691,16 +752,28 @@ export function normalizeDisbursement(
     const releasedByName = releasedByVal ? (userMap?.get(String(releasedByVal)) || `User #${releasedByVal}`) : "";
     const postedByName = postedByVal ? (userMap?.get(String(postedByVal)) || `User #${postedByVal}`) : "";
 
+    const totalAmount = asNumber(row.total_amount) ?? totalDebit;
+    const paidAmount = totalCredit > 0
+        ? totalCredit
+        : (asNumber(row.paid_amount) ?? 0);
+    const status = normalizeDisbursementStatus(row.status);
+
     return {
         id,
         docNo: asString(row.doc_no),
         payeeId: relationId(row.payee),
-        transactionTypeId: asNumber(row.transaction_type),
-        transactionTypeName: transactionTypeName(row.transaction_type),
+        transactionTypeId: resolveTransactionTypeId(row.transaction_type, row.doc_no) ?? undefined,
+        transactionTypeName: transactionTypeName(row.transaction_type, row.doc_no),
         payeeName: relationLabel(row.payee, "supplier_name"),
         remarks: asString(row.remarks),
-        totalAmount: asNumber(row.total_amount) ?? totalDebit,
-        paidAmount: asNumber(row.paid_amount) ?? totalCredit,
+        totalAmount,
+        paidAmount,
+        paymentState: resolveDisbursementPaymentState({
+            status,
+            totalAmount,
+            paidAmount,
+            isPosted: asNumber(row.isPosted) ?? 0,
+        }),
         totalDebit,
         totalCredit,
         balance: roundMoney(totalDebit - totalCredit),
@@ -726,7 +799,7 @@ export function normalizeDisbursement(
         divisionName: relationLabel(row.division_id, "division_name"),
         departmentName: relationLabel(row.department_id, "department_name"),
         fundSourceId: asNumber(row.fund_source_id),
-        status: asString(row.status) || "Draft",
+        status,
         supportingDocumentsUrl: asString(row.supporting_documents_url),
         payables,
         payments,
@@ -904,6 +977,24 @@ function isDocumentNumberConflict(error: unknown) {
         && /(doc[_\s-]?no|document\s+number)/i.test(message);
 }
 
+async function documentNumberConflictResponse(docNo: string, transactionTypeId: number) {
+    let nextDocNo: string | undefined;
+    try {
+        nextDocNo = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
+    } catch {
+        // The conflict remains actionable even if a replacement preview is unavailable.
+    }
+
+    return NextResponse.json({
+        code: "DOC_NO_CONFLICT",
+        message: `Document number ${docNo} is already used by another voucher.`,
+        detail: nextDocNo
+            ? `A new document number ${nextDocNo} is available. Review the voucher and submit again.`
+            : "Obtain a new document number before submitting again.",
+        nextDocNo,
+    }, { status: 409 });
+}
+
 export async function GET(request: NextRequest) {
     const cookieStore = await cookies();
     const token = cookieStore.get("vos_access_token")?.value;
@@ -1002,6 +1093,7 @@ export async function POST(request: NextRequest) {
     let createdId: number | undefined;
     let createdDocNo = "";
     let creationFinalized = false;
+    let releaseMemoCapLock: (() => void) | undefined;
 
     try {
         const body = await request.json();
@@ -1019,6 +1111,10 @@ export async function POST(request: NextRequest) {
         const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
+        const missingPayableDateError = findMissingPayableDateError(payableLinesInput);
+        if (missingPayableDateError) {
+            return NextResponse.json({ message: missingPayableDateError }, { status: 400 });
+        }
         const paymentLinesInput = requestedPayments.filter((line: PaymentInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
         );
@@ -1039,6 +1135,8 @@ export async function POST(request: NextRequest) {
                 : line
         );
 
+        releaseMemoCapLock = await acquireMemoCapLock(payableLinesInput);
+
         // 1. Fetch payee supplier type to determine prefix (Trade / Non-Trade)
         if (!body.payeeId) {
             return NextResponse.json({ message: "Payee (Supplier ID) is required." }, { status: 400 });
@@ -1058,7 +1156,6 @@ export async function POST(request: NextRequest) {
             remarks: body.remarks,
             totalAmount: body.totalAmount,
             transactionDate: body.transactionDate,
-            divisionId: body.divisionId,
             departmentId: body.departmentId,
             fundSourceId: body.fundSourceId,
             supportingDocumentsUrl: body.supportingDocumentsUrl,
@@ -1074,20 +1171,7 @@ export async function POST(request: NextRequest) {
                 existingSnapshot.payments,
             );
             if (persistedCanonical !== incomingCanonical) {
-                let nextDocNo: string | undefined;
-                try {
-                    nextDocNo = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
-                } catch {
-                    // The conflict remains actionable even if a replacement preview is unavailable.
-                }
-                return NextResponse.json({
-                    code: "DOC_NO_CONFLICT",
-                    message: `Document number ${docNo} is already used by another voucher.`,
-                    detail: nextDocNo
-                        ? `A new document number ${nextDocNo} is available. Review the voucher and submit again.`
-                        : "Obtain a new document number before submitting again.",
-                    nextDocNo,
-                }, { status: 409 });
+                return documentNumberConflictResponse(docNo, transactionTypeId);
             }
 
             return NextResponse.json(await loadNormalizedDisbursement(existingSnapshot.header, token));
@@ -1118,13 +1202,9 @@ export async function POST(request: NextRequest) {
             }, { status: 409 });
         }
 
-        let docNoForCreation = docNo;
+        const docNoForCreation = docNo;
 
-        // 3. Threshold check
-        const APPROVAL_THRESHOLD = 1000.00;
-        const isAutoApprove = Number(body.totalAmount) < APPROVAL_THRESHOLD;
-
-        // 4. Calculate paid amount (sum of payments)
+        // 3. Calculate paid amount (sum of payments)
         const calculatedPaidAmount = normalizedPaymentLines.reduce(
             (sum: number, p: PaymentInput) => sum + (Number(p.amount) || 0),
             0
@@ -1140,7 +1220,8 @@ export async function POST(request: NextRequest) {
             paid_amount: calculatedPaidAmount,
             encoder_id: currentUserId,
             transaction_date: body.transactionDate,
-            division_id: body.divisionId ? Number(body.divisionId) : null,
+            // Header-level Division is deprecated. Payable lines carry Cost Division.
+            division_id: null,
             department_id: body.departmentId ? Number(body.departmentId) : null,
             fund_source_id: body.fundSourceId ? Number(body.fundSourceId) : null,
             supporting_documents_url: cleanSupportingDocsUrl(body.supportingDocumentsUrl),
@@ -1150,19 +1231,35 @@ export async function POST(request: NextRequest) {
         };
 
         let createRes: { data: DisbursementRow } | undefined;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-            createdDocNo = docNoForCreation;
-            headerPayload = { ...headerPayload, doc_no: docNoForCreation };
+        createdDocNo = docNoForCreation;
+        headerPayload = { ...headerPayload, doc_no: docNoForCreation };
+        try {
+            createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
+                method: "POST",
+                body: JSON.stringify(headerPayload)
+            });
+        } catch (error: unknown) {
+            if (!isDocumentNumberConflict(error)) throw error;
+
+            let racedSnapshot: DisbursementSnapshot | null = null;
             try {
-                createRes = await directusFetch<{ data: DisbursementRow }>("/items/disbursement", {
-                    method: "POST",
-                    body: JSON.stringify(headerPayload)
-                });
-                break;
-            } catch (error: unknown) {
-                if (!isDocumentNumberConflict(error) || attempt === 2) throw error;
-                docNoForCreation = await getPreviewDocumentNumber(transactionTypeId === 1 ? "Trade" : "Non-Trade");
+                racedSnapshot = await findDisbursementSnapshotByDocNo(docNo);
+            } catch {
+                // Return the conflict response even if the follow-up lookup is unavailable.
             }
+
+            if (racedSnapshot) {
+                const racedCanonical = canonicalizePersistedDisbursement(
+                    racedSnapshot.header,
+                    racedSnapshot.payables,
+                    racedSnapshot.payments,
+                );
+                if (racedCanonical === incomingCanonical) {
+                    return NextResponse.json(await loadNormalizedDisbursement(racedSnapshot.header, token));
+                }
+            }
+
+            return documentNumberConflictResponse(docNo, transactionTypeId);
         }
 
         if (!createRes) throw new Error("Disbursement could not be created with an available document number.");
@@ -1234,17 +1331,6 @@ export async function POST(request: NextRequest) {
             throw new Error("Created disbursement lines failed integrity verification.");
         }
 
-        if (isAutoApprove) {
-            const approvedRes = await directusFetch<{ data: DisbursementRow }>(`/items/disbursement/${persistedId}`, {
-                method: "PATCH",
-                body: JSON.stringify({
-                    status: "Approved",
-                    approver_id: currentUserId,
-                    date_approved: new Date().toISOString(),
-                }),
-            });
-            if (!approvedRes.data) throw new Error("Disbursement was created but automatic approval could not be confirmed.");
-        }
         creationFinalized = true;
 
         // Return the full normalized record
@@ -1273,5 +1359,7 @@ export async function POST(request: NextRequest) {
         }
         const message = err instanceof Error ? err.message : "An unknown error occurred";
         return NextResponse.json({ message: "BFF Error", detail: message }, { status: 502 });
+    } finally {
+        releaseMemoCapLock?.();
     }
 }

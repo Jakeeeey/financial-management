@@ -1,6 +1,7 @@
 import { resolveLegacyProductsPatch } from "../_legacyProductPriceSync";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 import { executeClaimedApplication, stageStandaloneApproval } from "../_applicationEngine";
+import { assertPriceAuditRecord, resolveAuditUserId } from "../_priceAudit";
 import { resolveHeaderMeta } from "../_pcrHeaderMeta";
 import { assertValidPriceValue, isValidPriceValue } from "../_pricePrecision";
 import {
@@ -15,6 +16,7 @@ import {
     mustBase,
     nowManila,
     pickId,
+    readAuditUserId,
 } from "../price-change-batches/_batch";
 
 export const PCR = DETAILS;
@@ -48,6 +50,7 @@ type ExistingPriceRow = {
     id?: number | string | null;
     product_id?: number | string | null;
     price_type_id?: number | string | null;
+    created_by?: unknown;
 };
 
 type DirectusSingleResponse<T> = { data: T };
@@ -128,17 +131,19 @@ async function loadPriceTypeCatalog() {
     return catalog;
 }
 
-async function findExistingPriceId(productId: number, priceTypeId: number): Promise<number | null> {
+async function findExistingPriceRecord(productId: number, priceTypeId: number): Promise<{
+    id?: number | string | null;
+    created_by?: unknown;
+} | null> {
     const params = new URLSearchParams();
-    params.set("fields", "id");
+    params.set("fields", "id,created_by");
     params.set("limit", "1");
     params.set("filter[product_id][_eq]", String(productId));
     params.set("filter[price_type_id][_eq]", String(priceTypeId));
 
     const url = `${mustBase()}/items/${PRICES}?${params.toString()}`;
     const json = await fetchDirectus<DirectusList<ExistingPriceRow>>(url, { headers: directusHeaders() });
-    const id = Number(json.data?.[0]?.id);
-    return Number.isFinite(id) && id > 0 ? id : null;
+    return json.data?.[0] ?? null;
 }
 
 export function isFutureEffectiveAt(effectiveAt?: string | null): boolean {
@@ -173,13 +178,15 @@ export function approvalApplicationPatch(args: {
 }
 
 export async function applyProposedPrice(args: {
-    userId?: number | null;
+    userId: number;
+    createdBy?: number | null;
     productId: number;
     priceTypeId: number;
     currentPrice: unknown;
     proposedPrice: number;
 }) {
     const { userId, productId, priceTypeId, currentPrice, proposedPrice } = args;
+    const updatedBy = await resolveAuditUserId(userId);
     const validProposedPrice = assertValidPriceValue(proposedPrice, "proposed_price");
     await assertPriceSnapshotCurrent({
         product_id: productId,
@@ -187,10 +194,16 @@ export async function applyProposedPrice(args: {
         current_price: currentPrice,
     });
 
-    const [existingId, priceTypeCatalog] = await Promise.all([
-        findExistingPriceId(productId, priceTypeId),
+    const [existingPrice, priceTypeCatalog] = await Promise.all([
+        findExistingPriceRecord(productId, priceTypeId),
         loadPriceTypeCatalog(),
     ]);
+    const existingId = Number(existingPrice?.id);
+    const hasExistingId = Number.isFinite(existingId) && existingId > 0;
+    const existingCreatedBy = readAuditUserId(existingPrice?.created_by);
+    const createdBy = !hasExistingId || !existingCreatedBy
+        ? await resolveAuditUserId(args.createdBy ?? updatedBy)
+        : null;
 
     const payload = {
         status: "approved",
@@ -198,21 +211,35 @@ export async function applyProposedPrice(args: {
         price_type_id: priceTypeId,
         price: validProposedPrice,
         updated_at: nowManila(),
-        ...(userId ? { updated_by: userId } : {}),
+        updated_by: updatedBy,
+        ...(createdBy ? { created_by: createdBy } : {}),
     };
 
-    if (existingId) {
-        await fetchDirectus(`${mustBase()}/items/${PRICES}/${existingId}`, {
+    if (hasExistingId) {
+        const response = await fetchDirectus<DirectusSingleResponse<{
+            id?: number | string | null;
+            created_by?: unknown;
+            updated_by?: unknown;
+        }>>(`${mustBase()}/items/${PRICES}/${existingId}?fields=id,created_by,updated_by`, {
             method: "PATCH",
             headers: directusHeaders(),
             body: JSON.stringify(payload),
         });
+        assertPriceAuditRecord(
+            response.data,
+            createdBy ? { createdBy, updatedBy } : { updatedBy },
+        );
     } else {
-        await fetchDirectus(`${mustBase()}/items/${PRICES}`, {
+        const response = await fetchDirectus<DirectusSingleResponse<{
+            id?: number | string | null;
+            created_by?: unknown;
+            updated_by?: unknown;
+        }>>(`${mustBase()}/items/${PRICES}?fields=id,created_by,updated_by`, {
             method: "POST",
             headers: directusHeaders(),
-            body: JSON.stringify({ ...payload, created_by: userId }),
+            body: JSON.stringify(payload),
         });
+        assertPriceAuditRecord(response.data, { createdBy, updatedBy });
     }
 
     const priceTypeName =
@@ -228,7 +255,7 @@ export async function applyProposedPrice(args: {
         const productPayload = {
             ...productPatch,
             last_updated: nowManila(),
-            ...(userId ? { updated_by: userId } : {}),
+            updated_by: updatedBy,
         };
 
         await fetchDirectus(`${mustBase()}/items/${PRODUCTS}/${productId}`, {
@@ -291,6 +318,7 @@ export async function approveOneOrphanPriceRequest(
             claimFields: ["current_price"],
             apply: async (claimed) => applyProposedPrice({
                 userId,
+                createdBy: readAuditUserId(claimed.requested_by),
                 productId,
                 priceTypeId,
                 currentPrice: claimed.current_price,

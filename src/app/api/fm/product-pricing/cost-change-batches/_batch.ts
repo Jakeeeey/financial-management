@@ -23,6 +23,7 @@ import {
     assertValidProposedCost,
     isInvalidProposedCostError,
 } from "../cost-change-requests/_costValidation";
+import { resolveBatchReferenceNo } from "../_batchReference";
 
 export {
     decodeUserIdFromJwtCookie,
@@ -58,6 +59,7 @@ type DirectusUserRelation = {
 export type CostHeaderRow = {
     id?: number | string | null;
     header_id?: number | string | null;
+    supplier_id?: number | string | { id?: number | string | null; supplier_name?: string | null; supplier_shortcut?: string | null } | null;
     reference_no?: string | null;
     remarks?: string | null;
     status?: string | null;
@@ -166,9 +168,17 @@ export function isCostBatchStorageSetupError(error: unknown): error is Error {
 
 export function mapCostBatchHeaderResponse(row: CostHeaderRow, lineCount = 0) {
     const headerId = normalizeCostHeaderId(row);
+    const supplierId = pickId(row.supplier_id);
+    const supplier = isRecord(row.supplier_id) ? row.supplier_id : null;
+    const supplierShortcut = String(supplier?.supplier_shortcut ?? "").trim();
+    const supplierName = String(supplier?.supplier_name ?? "").trim();
     return {
         id: headerId,
         header_id: headerId,
+        supplier_id: supplierId,
+        supplier_name: supplierShortcut && supplierName
+            ? `${supplierShortcut} - ${supplierName}`
+            : supplierName || supplierShortcut || null,
         reference_no: row.reference_no ?? "",
         remarks: row.remarks ?? "",
         status: row.status ?? "PENDING",
@@ -257,6 +267,7 @@ export async function createCostBatchDetails(args: {
 export async function createPendingCostBatch(args: {
     userId: number;
     itemsToCreate: NormalizedCostBulkItem[];
+    supplierId?: number | null;
     referenceNo?: string;
     remarks?: string;
 }) {
@@ -268,8 +279,10 @@ export async function createPendingCostBatch(args: {
     await assertCostBatchStorageReady();
 
     const requestedAt = nowManila();
+    const referenceNo = resolveBatchReferenceNo(args.referenceNo, requestedAt);
     const headerPayload = {
-        reference_no: args.referenceNo?.trim() || null,
+        ...(args.supplierId ? { supplier_id: args.supplierId } : {}),
+        reference_no: referenceNo,
         remarks: args.remarks?.trim() || "List cost change request",
         status: "PENDING",
         requested_by: userId,
@@ -295,7 +308,11 @@ export async function createPendingCostBatch(args: {
     return {
         headerId,
         created: details.created,
-        headerRow: header.data ?? { header_id: headerId },
+        headerRow: {
+            ...(header.data ?? {}),
+            header_id: headerId,
+            reference_no: header.data?.reference_no?.trim() || referenceNo,
+        },
         detailRows: details.detailRows,
     };
 }
@@ -306,6 +323,10 @@ export async function getCostHeader(headerId: number) {
         "fields",
         [
             "header_id",
+            "supplier_id",
+            "supplier_id.id",
+            "supplier_id.supplier_name",
+            "supplier_id.supplier_shortcut",
             "reference_no",
             "remarks",
             "status",

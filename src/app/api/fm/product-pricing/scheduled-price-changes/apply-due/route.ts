@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { invalidateGroupIndexCacheOnCatalogChange } from "../../_productGroupIndexCache";
+import { resolveAuditUserId } from "../../_priceAudit";
 import {
     DETAILS as PRICE_DETAILS,
     HEADERS,
@@ -12,6 +13,7 @@ import {
     normalizeProductId,
     nowManila,
     pickId,
+    readAuditUserId,
 } from "../../price-change-batches/_batch";
 import {
     applyProposedPrice,
@@ -202,14 +204,14 @@ async function resolveMixedHeaderIds(headerIds: number[]) {
     );
 }
 
-async function applyDueMixedBatches(headerIds: Set<number>, userId: number | null): Promise<ScheduledSummary> {
+async function applyDueMixedBatches(headerIds: Set<number>, userId: number): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     let applied = 0;
     let failed = 0;
     let skipped = 0;
 
     for (const headerId of headerIds) {
-        const result = await retryUnifiedBatch(headerId, userId ?? 0);
+        const result = await retryUnifiedBatch(headerId, userId);
         if ("status" in result) {
             if (result.status === 409) {
                 skipped += 1;
@@ -233,7 +235,7 @@ async function applyDueMixedBatches(headerIds: Set<number>, userId: number | nul
     return { scanned: headerIds.size, applied, failed, skipped, failures };
 }
 
-async function applyDuePriceRequests(rows: PcrRow[], userId: number | null): Promise<ScheduledSummary> {
+async function applyDuePriceRequests(rows: PcrRow[], userId: number): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     const headerIds = new Set<number>();
     let applied = 0;
@@ -257,6 +259,7 @@ async function applyDuePriceRequests(rows: PcrRow[], userId: number | null): Pro
                 }
                 await applyProposedPrice({
                     userId,
+                    createdBy: readAuditUserId(claimed.requested_by),
                     productId,
                     priceTypeId,
                     currentPrice: claimed.current_price,
@@ -288,7 +291,7 @@ async function applyDuePriceRequests(rows: PcrRow[], userId: number | null): Pro
     return { scanned: rows.length, applied, failed: failures.length, skipped, failures };
 }
 
-async function applyDueCostRequests(rows: CcrRow[], userId: number | null): Promise<ScheduledSummary> {
+async function applyDueCostRequests(rows: CcrRow[], userId: number): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     const headerIds = new Set<number>();
     let applied = 0;
@@ -341,7 +344,14 @@ export async function POST(req: NextRequest) {
         if (tokenError) return tokenError;
 
         const now = nowManila();
-        const userId = schedulerUserId();
+        const configuredUserId = schedulerUserId();
+        if (!configuredUserId) {
+            return NextResponse.json(
+                { error: "PRICE_CHANGE_SCHEDULER_USER_ID must identify a valid audit user." },
+                { status: 500 },
+            );
+        }
+        const userId = await resolveAuditUserId(configuredUserId);
         const [priceRows, costRows, dueHeaderIds] = await Promise.all([
             fetchDuePriceRequests(now),
             fetchDueCostRequests(now),

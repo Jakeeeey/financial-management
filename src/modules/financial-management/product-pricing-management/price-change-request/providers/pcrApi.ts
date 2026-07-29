@@ -79,7 +79,11 @@ export async function listCostRequests(query: ListQuery) {
 }
 
 export async function createCostRequest(payload: CreateCCRPayload) {
-    return http<{ data: CostChangeRequestRow }>(`/api/fm/product-pricing/cost-change-requests`, {
+    return http<{
+        data: CostChangeRequestRow;
+        header_id?: number;
+        reference_no?: string | null;
+    }>(`/api/fm/product-pricing/cost-change-requests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -88,12 +92,14 @@ export async function createCostRequest(payload: CreateCCRPayload) {
 
 export async function createBulkCostChangeRequests(payload: {
     items: CreateCCRPayload[];
+    supplier_id: number;
     reference_no?: string;
     remarks?: string;
 }) {
     return http<{
         created: number;
         header_id?: number;
+        reference_no?: string | null;
         skipped_duplicates?: number;
         skipped_existing_pending?: number;
     }>(`/api/fm/product-pricing/cost-change-requests/bulk`, {
@@ -125,6 +131,7 @@ export async function saveMixedPricingChanges(payload: {
             skipped_duplicates?: number;
             skipped_existing_pending?: number;
             header_id?: number;
+            reference_no?: string | null;
         };
     }>(`/api/fm/product-pricing/mixed-save`, {
         method: "POST",
