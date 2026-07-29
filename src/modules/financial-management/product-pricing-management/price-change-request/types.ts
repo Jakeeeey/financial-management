@@ -232,6 +232,7 @@ export type UnifiedBatchDetail = {
     remarks: string;
     status: string;
     requested_by: number | null;
+    requested_by_name?: string | null;
     requested_at: string | null;
     approved_by?: number | string | null;
     approved_by_name?: string | null;

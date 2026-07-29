@@ -15,12 +15,14 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 import type { UnifiedBatchDetail, UnifiedBatchLine } from "../types";
 import { getUnifiedBatch } from "../providers/pcrApi";
 import { BatchDecisionSummaryFields } from "./BatchDecisionSummaryFields";
 import { DecisionConfirmationDialog } from "./DecisionConfirmationDialog";
 import { RejectDialog } from "./RejectDialog";
+import { decisionUserLabel } from "../utils/labels";
 import { displayPcrStatus, pcrApproveButtonClass, pcrStatusBadgeClass } from "../utils/pcrStatusStyles";
 
 type Props = {
@@ -59,42 +61,121 @@ function lineCurrent(line: UnifiedBatchLine) {
     return line.kind === "price_type" ? line.current_price : line.current_cost;
 }
 
-function LineTable({ lines }: { lines: UnifiedBatchLine[] }) {
+function diffClass(line: UnifiedBatchLine) {
+    const delta = Number(line.delta ?? 0);
+    if (delta > 0) return "text-destructive";
+    if (delta < 0) return "text-emerald-600";
+    return "text-muted-foreground";
+}
+
+function buildLineSummary(lines: UnifiedBatchLine[]) {
+    const productIds = new Set<number>();
+    const typeLabels = new Set<string>();
+    let increaseCount = 0;
+    let decreaseCount = 0;
+
+    for (const line of lines) {
+        if (Number.isFinite(line.product_id)) productIds.add(Number(line.product_id));
+        typeLabels.add(line.kind === "price_type" ? line.price_type_name || "Price Type" : "List Cost");
+        const delta = Number(line.delta ?? 0);
+        if (delta > 0) increaseCount += 1;
+        if (delta < 0) decreaseCount += 1;
+    }
+
+    return {
+        lineCount: lines.length,
+        productCount: productIds.size,
+        typeCount: typeLabels.size,
+        increaseCount,
+        decreaseCount,
+    };
+}
+
+type LineSummary = ReturnType<typeof buildLineSummary>;
+
+function LineTable({
+    lines,
+    supplierName,
+    summary,
+}: {
+    lines: UnifiedBatchLine[];
+    supplierName: string;
+    summary: LineSummary;
+}) {
     return (
-        <div className="overflow-hidden rounded-lg border">
+        <div className="rounded-md border overflow-x-auto">
             <Table>
                 <TableHeader>
                     <TableRow>
                         <TableHead>Product</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>UOM</TableHead>
-                        <TableHead className="text-right">Current</TableHead>
-                        <TableHead className="text-right">Proposed</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead className="w-[130px]">Supplier</TableHead>
+                        <TableHead className="w-[72px]">Unit</TableHead>
+                        <TableHead className="w-[110px]">Type</TableHead>
+                        <TableHead className="w-[140px] text-right">Current</TableHead>
+                        <TableHead className="w-[140px] text-right">Proposed</TableHead>
+                        <TableHead className="w-[130px] text-right">Change</TableHead>
+                        <TableHead className="w-[120px] text-right">% Change</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {lines.map((line) => (
                         <TableRow key={`${line.kind}-${line.request_id}`}>
-                            <TableCell>
-                                <div className="font-medium">{line.product_name || `Product #${line.product_id}`}</div>
-                                {line.product_code ? <div className="text-xs text-muted-foreground">{line.product_code}</div> : null}
+                            <TableCell className="min-w-[280px] max-w-[420px] align-top">
+                                <div className="whitespace-normal break-words leading-snug font-medium">
+                                    {line.product_name || `Product #${line.product_id}`}
+                                </div>
+                                {line.product_code ? (
+                                    <div className="whitespace-normal break-words text-xs text-muted-foreground">
+                                        {line.product_code}
+                                    </div>
+                                ) : null}
                             </TableCell>
-                            <TableCell>
-                                <Badge variant="outline">{line.kind === "price_type" ? line.price_type_name || "Price Type" : "List Cost"}</Badge>
+                            <TableCell className="min-w-[180px] max-w-[280px] whitespace-normal break-words align-top">
+                                {supplierName || "-"}
                             </TableCell>
                             <TableCell>{line.unit_name || "-"}</TableCell>
+                            <TableCell>
+                                <Badge variant="outline">
+                                    {line.kind === "price_type" ? line.price_type_name || "Price Type" : "List Cost"}
+                                </Badge>
+                            </TableCell>
                             <TableCell className="text-right">{money(lineCurrent(line))}</TableCell>
                             <TableCell className="text-right font-medium">{money(lineProposed(line))}</TableCell>
-                            <TableCell>
-                                <Badge variant="outline" className={pcrStatusBadgeClass(displayPcrStatus(line.status, line.application_status, line.effective_at))}>
-                                    {displayPcrStatus(line.status, line.application_status, line.effective_at)}
-                                </Badge>
+                            <TableCell className={cn("text-right font-medium", diffClass(line))}>
+                                {money(line.delta)}
+                            </TableCell>
+                            <TableCell className={cn("text-right", diffClass(line))}>
+                                {line.percent_change == null
+                                    ? "-"
+                                    : `${Number(line.percent_change).toLocaleString("en-PH", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                    })}%`}
                             </TableCell>
                         </TableRow>
                     ))}
+                    {lines.length === 0 ? (
+                        <TableRow>
+                            <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                                No detail lines found.
+                            </TableCell>
+                        </TableRow>
+                    ) : (
+                        <TableRow>
+                            <TableCell colSpan={2} className="font-medium">Summary</TableCell>
+                            <TableCell colSpan={6} className="text-sm text-muted-foreground">
+                                {summary.lineCount} line(s) / {summary.productCount} product(s) / {summary.typeCount} type(s)
+                                {summary.increaseCount > 0 || summary.decreaseCount > 0
+                                    ? ` / ${summary.increaseCount} increase(s), ${summary.decreaseCount} decrease(s)`
+                                    : null}
+                            </TableCell>
+                        </TableRow>
+                    )}
                 </TableBody>
             </Table>
+            <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+                Amounts are not totaled across products and price types.
+            </p>
         </div>
     );
 }
@@ -145,6 +226,11 @@ export function UnifiedBatchDetailDialog({
     const canApplyScheduledNow = !readOnly && isScheduled && Boolean(onApplyScheduledNow) && !loading && !acting;
     const canRetry = !readOnly && detail?.application_status === "FAILED" && Boolean(detail.retryable) && Boolean(onRetryApplication) && !loading && !acting;
     const displayStatus = detail ? displayPcrStatus(detail.status, detail.application_status, detail.effective_at) : "";
+    const lines = React.useMemo(
+        () => [...(detail?.price_details ?? []), ...(detail?.cost_details ?? [])],
+        [detail?.cost_details, detail?.price_details],
+    );
+    const lineSummary = React.useMemo(() => buildLineSummary(lines), [lines]);
 
     const handleRetryApplication = async () => {
         if (!batchId || !onRetryApplication) return;
@@ -163,25 +249,56 @@ export function UnifiedBatchDetailDialog({
     return (
         <>
             <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+                <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-6xl">
                     <DialogHeader>
                         <DialogTitle>Unified Price Change Batch {batchId ? `PCB-${batchId}` : ""}</DialogTitle>
                         <DialogDescription>
-                            Price Type and List Cost changes are reviewed and decided together under one batch lifecycle.
+                            Review the current and proposed prices before approving the full batch.
                         </DialogDescription>
                     </DialogHeader>
 
                     {loading ? (
-                        <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">
-                            <Loader2 className="mr-2 size-5 animate-spin" /> Loading batch details
+                        <div className="flex min-h-48 flex-col items-center justify-center gap-2 text-muted-foreground">
+                            <Loader2 className="size-5 animate-spin" />
+                            Loading batch detail
                         </div>
                     ) : detail ? (
-                        <div className="space-y-5">
-                            <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                                <div><div className="text-xs uppercase text-muted-foreground">Supplier</div><div className="mt-1 font-medium">{detail.supplier_name || "-"}</div></div>
-                                <div><div className="text-xs uppercase text-muted-foreground">Reference</div><div className="mt-1 font-medium">{detail.reference_no || "-"}</div></div>
-                                <div><div className="text-xs uppercase text-muted-foreground">Requested</div><div className="mt-1 font-medium">{safeDate(detail.requested_at)}</div></div>
-                                <div><div className="text-xs uppercase text-muted-foreground">Status</div><Badge variant="outline" className={`mt-1 ${pcrStatusBadgeClass(displayStatus)}`}>{displayStatus}</Badge></div>
+                        <div className="flex flex-col gap-4">
+                            <div className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm sm:grid-cols-4">
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Supplier</div>
+                                    <div className="mt-1 break-words font-medium">{detail.supplier_name || "-"}</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Status</div>
+                                    <div className="mt-1">
+                                        <Badge variant="outline" className={pcrStatusBadgeClass(String(displayStatus))}>
+                                            {displayStatus}
+                                        </Badge>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Requested At</div>
+                                    <div className="mt-1 font-medium">{safeDate(detail.requested_at)}</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Requested By</div>
+                                    <div className="mt-1 font-medium">
+                                        {decisionUserLabel(detail.requested_by, detail.requested_by_name)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Lines</div>
+                                    <div className="mt-1 font-medium">{lines.length.toLocaleString()}</div>
+                                </div>
+                                <div className="sm:col-span-2">
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Reference No.</div>
+                                    <div className="mt-1 font-medium">{detail.reference_no || "-"}</div>
+                                </div>
+                                <div className="sm:col-span-2">
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Remarks</div>
+                                    <div className="mt-1 font-medium">{detail.remarks || "-"}</div>
+                                </div>
                                 <BatchDecisionSummaryFields detail={detail} />
                             </div>
 
@@ -195,17 +312,7 @@ export function UnifiedBatchDetailDialog({
                                 </div>
                             ) : null}
 
-                            {detail.remarks ? <div className="rounded-lg border p-3 text-sm"><span className="font-medium">Remarks:</span> {detail.remarks}</div> : null}
-
-                            <section className="space-y-2">
-                                <div className="flex items-center justify-between"><h3 className="font-semibold">Price Type Lines ({detail.price_details.length})</h3><Badge variant="outline">PRICE TYPE</Badge></div>
-                                <LineTable lines={detail.price_details} />
-                            </section>
-
-                            <section className="space-y-2">
-                                <div className="flex items-center justify-between"><h3 className="font-semibold">List Cost Lines ({detail.cost_details.length})</h3><Badge variant="outline">LIST COST</Badge></div>
-                                <LineTable lines={detail.cost_details} />
-                            </section>
+                            <LineTable lines={lines} supplierName={detail.supplier_name} summary={lineSummary} />
                         </div>
                     ) : (
                         <div className="py-10 text-center text-sm text-muted-foreground">No batch details found.</div>

@@ -1360,18 +1360,28 @@ export function resolveUserDisplayName(
 }
 
 export async function resolveBatchDecisionUserNames(header: {
+    requested_by?: number | string | DirectusUserRelation | null;
     approved_by?: number | string | DirectusUserRelation | null;
     rejected_by?: number | string | DirectusUserRelation | null;
-}): Promise<{ approved_by_name: string | null; rejected_by_name: string | null }> {
+}): Promise<{
+    requested_by_name: string | null;
+    approved_by_name: string | null;
+    rejected_by_name: string | null;
+}> {
+    const requestedFromRelation = userNameFromRelationValue(header.requested_by);
     const approvedFromRelation = userNameFromRelationValue(header.approved_by);
     const rejectedFromRelation = userNameFromRelationValue(header.rejected_by);
 
     const namesById = await fetchUserNamesById([
+        normalizeStoredUserId(header.requested_by),
         normalizeStoredUserId(header.approved_by),
         normalizeStoredUserId(header.rejected_by),
     ]);
 
     return {
+        requested_by_name:
+            requestedFromRelation ??
+            resolveUserDisplayName(normalizeStoredUserId(header.requested_by), namesById),
         approved_by_name:
             approvedFromRelation ??
             resolveUserDisplayName(normalizeStoredUserId(header.approved_by), namesById),
