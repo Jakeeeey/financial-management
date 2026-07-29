@@ -126,6 +126,7 @@ export async function POST(req: NextRequest) {
             skipped_duplicates: number;
             skipped_existing_pending: number;
             header_id?: number;
+            reference_no?: string | null;
         } = {
             created: 0,
             skipped_duplicates: 0,
@@ -197,10 +198,11 @@ export async function POST(req: NextRequest) {
 
                     costResult = {
                         created: created.created,
-                        skipped_duplicates: costPlan.skippedDuplicates,
-                        skipped_existing_pending: costPlan.skippedExistingPending,
-                        header_id: created.headerId,
-                    };
+                    skipped_duplicates: costPlan.skippedDuplicates,
+                    skipped_existing_pending: costPlan.skippedExistingPending,
+                    header_id: created.headerId,
+                    reference_no: created.headerRow?.reference_no ?? null,
+                };
                 } catch (costError: unknown) {
                     if (isMixed && priceResult.header_id) {
                         await cancelPendingBatch(

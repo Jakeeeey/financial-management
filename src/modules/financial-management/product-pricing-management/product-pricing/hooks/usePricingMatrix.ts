@@ -645,6 +645,11 @@ export function usePricingMatrix(args: {
             return { success: false, reason: "no_valid_lines" };
         }
 
+        if (costPcrItems.length > 0 && (!batch?.supplier_id || batch.supplier_id <= 0)) {
+            toast.error("Supplier is required for List Cost requests.");
+            return { success: false, reason: "missing_batch_fields" };
+        }
+
         if (pcrItems.length > 0 && (!batch?.supplier_id || !batch.remarks.trim())) {
             toast.error("Supplier and batch remarks are required for price change batches.");
             return { success: false, reason: "missing_batch_fields" };
@@ -733,7 +738,12 @@ export function usePricingMatrix(args: {
             }
 
             if (costPcrItems.length > 0) {
-                const costRes = (await api.createCostChangeRequests(costPcrItems)) as CreateResult;
+                const costRes = (await api.createCostChangeRequests({
+                    items: costPcrItems,
+                    supplier_id: batch!.supplier_id,
+                    reference_no: batch!.reference_no,
+                    remarks: batch!.remarks,
+                })) as CreateResult;
                 costCreated = costRes.created ?? 0;
                 totalSkippedDuplicates += costRes.skipped_duplicates ?? 0;
                 totalSkippedExistingPending += costRes.skipped_existing_pending ?? 0;
