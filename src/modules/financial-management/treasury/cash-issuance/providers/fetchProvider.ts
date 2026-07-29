@@ -134,7 +134,10 @@ export const disbursementProvider = {
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error("Failed to update disbursement");
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || "Failed to update disbursement");
+        }
         return res.json();
     },
 
