@@ -465,7 +465,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             coaId: undefined,
             divisionId: undefined,
             referenceNo: "",
-            date: "",
+            date: today,
             amount: 0,
             remarks: ""
         };
@@ -538,6 +538,11 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             if (!p.coaId) {
                 setShowValidationErrors(true);
                 toast.error(`Please select a GL COA account on payable row ${i + 1}`);
+                return;
+            }
+            if (!p.date) {
+                setShowValidationErrors(true);
+                toast.error(`Please select an invoice date on payable row ${i + 1}`);
                 return;
             }
             if (Number(p.amount) === 0) {
@@ -1017,7 +1022,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[220px]">GL Account (COA) <span className="text-destructive">*</span></TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px]">Cost Division</TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px]">Reference / PO</TableHead>
-                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[130px]">Invoice Date</TableHead>
+                                        <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[130px]">Invoice Date <span className="text-destructive">*</span></TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[160px] text-right">Amount (PHP) <span className="text-destructive">*</span></TableHead>
                                         <TableHead className="text-[9px] font-black uppercase text-muted-foreground w-[210px]">Line Remarks</TableHead>
                                         <TableHead className="w-[60px]"></TableHead>
@@ -1070,7 +1075,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                                 <TableCell className="py-2.5">
                                                     <Input 
                                                         type="date"
-                                                        className="h-9 text-xs font-bold bg-background border-border/80" 
+                                                        className={cn("h-9 text-xs font-bold bg-background border-border/80", showValidationErrors && !line.date && "border-rose-500 focus:ring-rose-500/30")}
                                                         value={line.date} 
                                                         onChange={e => handlePayableChange(idx, "date", e.target.value)} 
                                                     />
