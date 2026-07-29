@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { invalidateGroupIndexCacheOnCatalogChange } from "../../_productGroupIndexCache";
+import { resolveAuditUserId } from "../../_priceAudit";
 import {
     DETAILS as PRICE_DETAILS,
     directusErrorResponse,
@@ -11,6 +12,7 @@ import {
     normalizeProductId,
     nowManila,
     pickId,
+    readAuditUserId,
 } from "../../price-change-batches/_batch";
 import {
     applyProposedPrice,
@@ -165,7 +167,7 @@ async function fetchDueCostRequests(now: string) {
     return all;
 }
 
-async function applyDuePriceRequests(rows: PcrRow[], userId: number | null): Promise<ScheduledSummary> {
+async function applyDuePriceRequests(rows: PcrRow[], userId: number): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     const headerIds = new Set<number>();
     let applied = 0;
@@ -189,6 +191,7 @@ async function applyDuePriceRequests(rows: PcrRow[], userId: number | null): Pro
                 }
                 await applyProposedPrice({
                     userId,
+                    createdBy: readAuditUserId(claimed.requested_by),
                     productId,
                     priceTypeId,
                     currentPrice: claimed.current_price,
@@ -215,7 +218,7 @@ async function applyDuePriceRequests(rows: PcrRow[], userId: number | null): Pro
     return { scanned: rows.length, applied, failed: failures.length, skipped, failures };
 }
 
-async function applyDueCostRequests(rows: CcrRow[], userId: number | null): Promise<ScheduledSummary> {
+async function applyDueCostRequests(rows: CcrRow[], userId: number): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     const headerIds = new Set<number>();
     let applied = 0;
@@ -263,7 +266,14 @@ export async function POST(req: NextRequest) {
         if (tokenError) return tokenError;
 
         const now = nowManila();
-        const userId = schedulerUserId();
+        const configuredUserId = schedulerUserId();
+        if (!configuredUserId) {
+            return NextResponse.json(
+                { error: "PRICE_CHANGE_SCHEDULER_USER_ID must identify a valid audit user." },
+                { status: 500 },
+            );
+        }
+        const userId = await resolveAuditUserId(configuredUserId);
         const [priceRows, costRows] = await Promise.all([fetchDuePriceRequests(now), fetchDueCostRequests(now)]);
         const [price, cost] = await Promise.all([
             applyDuePriceRequests(priceRows, userId),

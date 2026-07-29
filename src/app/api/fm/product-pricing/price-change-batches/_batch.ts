@@ -94,6 +94,9 @@ export type BatchDetailRow = {
     applied_by?: number | string | DirectusUserRelation | null;
     requested_by?: number | string | DirectusUserRelation | null;
     requested_at?: string | null;
+    rejected_by?: number | string | DirectusUserRelation | null;
+    rejected_at?: string | null;
+    reject_reason?: string | null;
 };
 
 type DirectusSingle<T> = { data?: T };
@@ -101,6 +104,20 @@ type DirectusList<T> = { data?: T[]; meta?: { total_count?: number } | null };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
+}
+
+export function readAuditUserId(value: unknown): number | null {
+    if (typeof value === "number") {
+        return Number.isFinite(value) && value > 0 ? value : null;
+    }
+    if (typeof value === "string") {
+        const id = Number(value);
+        return Number.isFinite(id) && id > 0 ? id : null;
+    }
+    if (isRecord(value)) {
+        return readAuditUserId(value.user_id ?? value.id);
+    }
+    return null;
 }
 
 export function mustBase() {
@@ -769,6 +786,16 @@ export async function getDetails(headerId: number) {
         "requested_by.nickname",
         "requested_by.user_email",
         "requested_at",
+        "rejected_by",
+        "rejected_by.user_id",
+        "rejected_by.user_fname",
+        "rejected_by.user_mname",
+        "rejected_by.user_lname",
+        "rejected_by.suffix_name",
+        "rejected_by.nickname",
+        "rejected_by.user_email",
+        "rejected_at",
+        "reject_reason",
     ].join(",");
 
     return fetchAllPagesLocal<BatchDetailRow>(DETAILS, () => {
@@ -820,18 +847,22 @@ export async function rejectPriceChangeBatch(headerId: number, userId: number, r
         return NextResponse.json({ error: "Only PENDING batches can be rejected." }, { status: 400 });
     }
 
+    const normalizedReason = rejectReason.trim();
+    const rejectedAt = nowManila();
+    const rejectionPatch = {
+        status: "REJECTED",
+        rejected_by: userId,
+        rejected_at: rejectedAt,
+        reject_reason: normalizedReason,
+    };
+
+    const details = await getDetails(headerId);
     await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
         method: "PATCH",
         headers: directusHeaders(),
-        body: JSON.stringify({
-            status: "REJECTED",
-            rejected_by: userId,
-            rejected_at: nowManila(),
-            reject_reason: rejectReason,
-        }),
+        body: JSON.stringify(rejectionPatch),
     });
 
-    const details = await getDetails(headerId);
     await Promise.all(
         details
             .map((line) => pickId(line.request_id))
@@ -840,10 +871,32 @@ export async function rejectPriceChangeBatch(headerId: number, userId: number, r
                 fetchDirectus(`${mustBase()}/items/${DETAILS}/${lineId}`, {
                     method: "PATCH",
                     headers: directusHeaders(),
-                    body: JSON.stringify({ status: "REJECTED" }),
+                    body: JSON.stringify(rejectionPatch),
                 }),
             ),
     );
+
+    const persistedHeader = await getHeader(headerId);
+    const persistedDetails = await getDetails(headerId);
+    const hasPersistedRejection = (row: {
+        status?: unknown;
+        rejected_by?: unknown;
+        rejected_at?: unknown;
+        reject_reason?: unknown;
+    }) =>
+        String(row.status ?? "").toUpperCase() === "REJECTED" &&
+        readAuditUserId(row.rejected_by) === userId &&
+        Boolean(row.rejected_at) &&
+        String(row.reject_reason ?? "") === normalizedReason;
+
+    if (
+        !persistedHeader ||
+        !hasPersistedRejection(persistedHeader) ||
+        persistedDetails.length !== details.length ||
+        persistedDetails.some((detail) => !hasPersistedRejection(detail))
+    ) {
+        throw new Error("Directus did not persist batch rejection metadata.");
+    }
 
     return NextResponse.json({ ok: true, header_id: headerId, rejected: details.length });
 }
@@ -924,6 +977,7 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
                     const proposedPrice = assertValidPriceValue(claimed.proposed_price, "proposed_price");
                     await applyProposedPrice({
                         userId,
+                        createdBy: readAuditUserId(claimed.requested_by),
                         productId,
                         priceTypeId,
                         currentPrice: claimed.current_price,
@@ -1026,8 +1080,13 @@ export async function getSupplierNameListsByProductId(productIds: number[]): Pro
         const chunk = allProductIds.slice(i, i + 200);
         const p = new URLSearchParams();
         p.set("limit", "-1");
-        p.set("fields", "product_id,supplier_id,supplier_id.id,supplier_id.supplier_name,supplier_id.supplier_shortcut");
+        p.set(
+            "fields",
+            "product_id,supplier_id,supplier_id.id,supplier_id.supplier_name,supplier_id.supplier_shortcut,supplier_id.isActive,supplier_id.nonBuy",
+        );
         p.set("filter[product_id][_in]", chunk.join(","));
+        p.set("filter[supplier_id][isActive][_eq]", "1");
+        p.set("filter[supplier_id][nonBuy][_eq]", "0");
         const url = `${mustBase()}/items/product_per_supplier?${p.toString()}`;
         const json = await fetchDirectus<DirectusList<Record<string, unknown>>>(url, { headers: directusHeaders() });
 

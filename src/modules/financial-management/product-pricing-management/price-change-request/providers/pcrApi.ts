@@ -87,6 +87,7 @@ export async function createCostRequest(payload: CreateCCRPayload) {
 
 export async function createBulkCostChangeRequests(payload: {
     items: CreateCCRPayload[];
+    supplier_id: number;
     reference_no?: string;
     remarks?: string;
 }) {
