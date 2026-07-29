@@ -392,7 +392,10 @@ export function PriceChangeBatchDetailDialog({
                                 <Button
                                     variant="outline"
                                     className={pcrRejectButtonClass}
-                                    onClick={() => setRejecting(true)}
+                                    onClick={() => {
+                                        setConfirmingAction(null);
+                                        setRejecting(true);
+                                    }}
                                     disabled={acting}
                                 >
                                     Reject Batch
@@ -401,7 +404,7 @@ export function PriceChangeBatchDetailDialog({
                             <Button
                                 className={pcrApproveButtonClass}
                                 onClick={() => setConfirmingAction("approve")}
-                                disabled={acting}
+                                disabled={acting || rejecting}
                             >
                                 Approve Batch
                             </Button>
@@ -434,7 +437,10 @@ export function PriceChangeBatchDetailDialog({
                                 <Button
                                     variant="outline"
                                     className={pcrRejectButtonClass}
-                                    onClick={() => setRejecting(true)}
+                                    onClick={() => {
+                                        setConfirmingAction(null);
+                                        setRejecting(true);
+                                    }}
                                     disabled={acting}
                                 >
                                     Reject Scheduled Change

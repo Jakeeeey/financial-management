@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
 
         const isMixed = priceLines.length > 0 && costItems.length > 0;
 
-        if (priceLines.length > 0) {
+        if (priceLines.length > 0 || costItems.length > 0) {
             if (!Number.isFinite(supplierId) || supplierId <= 0) {
                 return NextResponse.json({ error: "supplier_id is required" }, { status: 400 });
             }
@@ -190,6 +190,7 @@ export async function POST(req: NextRequest) {
                     const created = await createPendingCostRequests({
                         userId,
                         itemsToCreate: costPlan.itemsToCreate,
+                        supplierId,
                         referenceNo,
                         remarks: remarks || "List cost change request",
                     });
