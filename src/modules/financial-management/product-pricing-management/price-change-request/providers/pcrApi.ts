@@ -8,6 +8,7 @@ import type {
     PriceActionPayload,
     PriceChangeBatchDetail,
     PriceChangeBatchHeader,
+    UnifiedBatchDetail,
     PriceChangeRequestRow,
     CostChangeRequestRow,
     ListMeta,
@@ -593,6 +594,12 @@ export async function getListCostBatch(headerId: number) {
     );
 }
 
+export async function getUnifiedBatch(headerId: number) {
+    return http<{ data: UnifiedBatchDetail }>(
+        `/api/fm/product-pricing/unified-batches/${headerId}`,
+    );
+}
+
 export async function createPriceChangeBatch(payload: CreatePriceChangeBatchPayload) {
     return http<{
         data: PriceChangeBatchHeader;
@@ -608,13 +615,111 @@ export async function createPriceChangeBatch(payload: CreatePriceChangeBatchPayl
 
 type ApprovalResponse = {
     ok: boolean;
+    committed?: boolean;
     header_id: number;
     affected: number;
+    applied?: number;
+    failed?: number;
+    scheduled?: boolean;
     application_status?: string | null;
     effective_at?: string | null;
+    warning?: string | null;
+    retryable?: boolean;
 };
 
-export type ScheduledOverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch";
+export type BatchDecisionKind = "price_batch" | "cost_batch" | "mixed_batch";
+export type BatchDecisionStatus = "APPROVED" | "REJECTED";
+
+type BatchDecisionSnapshot = {
+    status?: string | null;
+    application_status?: string | null;
+    application_error?: string | null;
+    details?: Array<{ status?: string | null }>;
+    price_details?: Array<{
+        status?: string | null;
+        application_status?: string | null;
+        application_error?: string | null;
+    }>;
+    cost_details?: Array<{
+        status?: string | null;
+        application_status?: string | null;
+        application_error?: string | null;
+    }>;
+};
+
+function decisionDetails(kind: BatchDecisionKind, data: BatchDecisionSnapshot) {
+    if (kind === "mixed_batch") {
+        return [...(data.price_details ?? []), ...(data.cost_details ?? [])];
+    }
+    return data.details ?? [];
+}
+
+async function readBatchDecision(kind: BatchDecisionKind, headerId: number) {
+    if (kind === "price_batch") return (await getPriceChangeBatch(headerId)).data as BatchDecisionSnapshot;
+    if (kind === "cost_batch") return (await getListCostBatch(headerId)).data as BatchDecisionSnapshot;
+    return (await getUnifiedBatch(headerId)).data as BatchDecisionSnapshot;
+}
+
+export async function waitForBatchDecision(args: {
+    kind: BatchDecisionKind;
+    headerId: number;
+    expectedStatus: BatchDecisionStatus;
+    expectedApplicationStatus?: "APPLIED" | "SCHEDULED";
+    timeoutMs?: number;
+    intervalMs?: number;
+}) {
+    const timeoutMs = args.timeoutMs ?? 30_000;
+    const intervalMs = args.intervalMs ?? 750;
+    const startedAt = Date.now();
+    let lastError: unknown = null;
+
+    while (Date.now() - startedAt <= timeoutMs) {
+        try {
+            const data = await readBatchDecision(args.kind, args.headerId);
+            const details = decisionDetails(args.kind, data);
+            const headerReached = String(data.status ?? "").toUpperCase() === args.expectedStatus;
+            const detailsReached = details.length > 0 && details.every(
+                (detail) => String(detail.status ?? "").toUpperCase() === args.expectedStatus,
+            );
+            const applicationDetails = details as Array<{
+                application_status?: string | null;
+                application_error?: string | null;
+            }>;
+            const applicationReached = !args.expectedApplicationStatus || (
+                String(data.application_status ?? "").toUpperCase() === args.expectedApplicationStatus &&
+                applicationDetails.length > 0 &&
+                applicationDetails.every(
+                    (detail) => String(detail.application_status ?? "").toUpperCase() === args.expectedApplicationStatus,
+                )
+            );
+            const failedApplication = [
+                { application_status: data.application_status, application_error: data.application_error },
+                ...applicationDetails,
+            ].find((row) => String(row.application_status ?? "").toUpperCase() === "FAILED");
+
+            if (failedApplication) {
+                throw new Error(
+                    failedApplication.application_error ||
+                    "One or more pricing changes failed to apply. Retry the application from the batch details.",
+                );
+            }
+
+            if (headerReached && detailsReached && applicationReached) return data;
+            lastError = null;
+        } catch (error: unknown) {
+            lastError = error;
+        }
+
+        await new Promise<void>((resolve) => window.setTimeout(resolve, intervalMs));
+    }
+
+    if (lastError instanceof Error) {
+        throw lastError;
+    }
+    throw new Error(`The request did not reach ${args.expectedStatus} within ${Math.round(timeoutMs / 1000)} seconds.`);
+}
+
+export type ScheduledOverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch" | "mixed_batch";
 export type ScheduledOverrideAction = "apply_now" | "reject_schedule" | "retry_application";
 
 export type ScheduledOverrideResponse = {
@@ -681,6 +786,39 @@ export async function rejectPriceChangeBatch(headerId: number, reject_reason: st
 export async function rejectListCostBatch(headerId: number, reject_reason: string) {
     return http<{ ok: boolean; header_id: number; rejected: number }>(
         `/api/fm/product-pricing/cost-change-batches/${headerId}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "reject", reject_reason }),
+        },
+    );
+}
+
+export async function approveUnifiedBatch(headerId: number, effectiveAt?: string | null) {
+    return http<ApprovalResponse>(
+        `/api/fm/product-pricing/unified-batches/${headerId}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(approvalBody(effectiveAt)),
+        },
+    );
+}
+
+export async function retryUnifiedBatch(headerId: number) {
+    return http<ApprovalResponse>(
+        `/api/fm/product-pricing/unified-batches/${headerId}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "retry_application" }),
+        },
+    );
+}
+
+export async function rejectUnifiedBatch(headerId: number, reject_reason: string) {
+    return http<{ ok: boolean; header_id: number; rejected: number }>(
+        `/api/fm/product-pricing/unified-batches/${headerId}`,
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },

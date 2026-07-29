@@ -4,6 +4,7 @@ import { invalidateGroupIndexCacheOnCatalogChange } from "../../_productGroupInd
 import { resolveAuditUserId } from "../../_priceAudit";
 import {
     DETAILS as PRICE_DETAILS,
+    HEADERS,
     directusErrorResponse,
     directusHeaders,
     fetchDirectus,
@@ -29,6 +30,7 @@ import {
     refreshBatchApplicationStatus,
     staleApplicationCutoff,
 } from "../../_applicationEngine";
+import { getUnifiedBatch, retryUnifiedBatch } from "../../_unifiedBatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +53,10 @@ type ScheduledSummary = {
     failed: number;
     skipped: number;
     failures: ApplyFailure[];
+};
+
+type HeaderCandidate = {
+    header_id?: number | string | null;
 };
 
 function schedulerToken() {
@@ -167,6 +173,68 @@ async function fetchDueCostRequests(now: string) {
     return all;
 }
 
+async function fetchDueBatchHeaders(now: string) {
+    const params = new URLSearchParams();
+    params.set("limit", String(DUE_PAGE_SIZE));
+    params.set("fields", "header_id,application_status,effective_at,application_started_at");
+    params.set("filter[_and][0][status][_eq]", "APPROVED");
+    params.set("filter[_and][1][_or][0][_and][0][application_status][_eq]", "SCHEDULED");
+    params.set("filter[_and][1][_or][0][_and][1][effective_at][_lte]", now);
+    params.set("filter[_and][1][_or][1][_and][0][application_status][_eq]", "APPLYING");
+    params.set("filter[_and][1][_or][1][_and][1][application_started_at][_lte]", staleApplicationCutoff());
+    params.set("filter[_and][1][_or][2][application_status][_eq]", "FAILED");
+
+    const response = await fetchDirectus<DirectusList<HeaderCandidate>>(
+        `${mustBase()}/items/${HEADERS}?${params.toString()}`,
+        { headers: directusHeaders() },
+    );
+    return (response.data ?? [])
+        .map((row) => pickId(row.header_id))
+        .filter((id): id is number => Boolean(id));
+}
+
+async function resolveMixedHeaderIds(headerIds: number[]) {
+    const batches = await Promise.all(headerIds.map((headerId) => getUnifiedBatch(headerId)));
+    return new Set(
+        batches
+            .filter((batch): batch is NonNullable<typeof batch> =>
+                Boolean(batch && batch.price_details.length > 0 && batch.cost_details.length > 0),
+            )
+            .map((batch) => batch.header_id),
+    );
+}
+
+async function applyDueMixedBatches(headerIds: Set<number>, userId: number): Promise<ScheduledSummary> {
+    const failures: ApplyFailure[] = [];
+    let applied = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const headerId of headerIds) {
+        const result = await retryUnifiedBatch(headerId, userId);
+        if ("status" in result) {
+            if (result.status === 409) {
+                skipped += 1;
+            } else {
+                failed += 1;
+                failures.push({ request_id: headerId, message: result.error ?? "Mixed batch retry failed." });
+            }
+            continue;
+        }
+
+        applied += result.applied;
+        if (result.failed > 0) {
+            failed += result.failed;
+            failures.push({
+                request_id: headerId,
+                message: result.warning ?? "Mixed batch application failed.",
+            });
+        }
+    }
+
+    return { scanned: headerIds.size, applied, failed, skipped, failures };
+}
+
 async function applyDuePriceRequests(rows: PcrRow[], userId: number): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     const headerIds = new Set<number>();
@@ -212,7 +280,12 @@ async function applyDuePriceRequests(rows: PcrRow[], userId: number): Promise<Sc
     }
 
     for (const headerId of headerIds) {
-        await refreshBatchApplicationStatus({ detailCollection: PRICE_DETAILS, headerId, userId });
+        await refreshBatchApplicationStatus({
+            detailCollection: PRICE_DETAILS,
+            additionalDetailCollections: [COST_DETAILS],
+            headerId,
+            userId,
+        });
     }
 
     return { scanned: rows.length, applied, failed: failures.length, skipped, failures };
@@ -254,7 +327,12 @@ async function applyDueCostRequests(rows: CcrRow[], userId: number): Promise<Sch
     }
 
     for (const headerId of headerIds) {
-        await refreshBatchApplicationStatus({ detailCollection: COST_DETAILS, headerId, userId });
+        await refreshBatchApplicationStatus({
+            detailCollection: COST_DETAILS,
+            additionalDetailCollections: [PRICE_DETAILS],
+            headerId,
+            userId,
+        });
     }
 
     return { scanned: rows.length, applied, failed: failures.length, skipped, failures };
@@ -274,17 +352,30 @@ export async function POST(req: NextRequest) {
             );
         }
         const userId = await resolveAuditUserId(configuredUserId);
-        const [priceRows, costRows] = await Promise.all([fetchDuePriceRequests(now), fetchDueCostRequests(now)]);
-        const [price, cost] = await Promise.all([
-            applyDuePriceRequests(priceRows, userId),
-            applyDueCostRequests(costRows, userId),
+        const [priceRows, costRows, dueHeaderIds] = await Promise.all([
+            fetchDuePriceRequests(now),
+            fetchDueCostRequests(now),
+            fetchDueBatchHeaders(now),
         ]);
+        const candidateHeaderIds = Array.from(new Set([
+            ...dueHeaderIds,
+            ...priceRows.map((row) => pickId(row.header_id)).filter((id): id is number => Boolean(id)),
+            ...costRows.map((row) => pickId(row.header_id)).filter((id): id is number => Boolean(id)),
+        ]));
+        const mixedHeaderIds = await resolveMixedHeaderIds(candidateHeaderIds);
+        const nonMixedPriceRows = priceRows.filter((row) => !mixedHeaderIds.has(pickId(row.header_id) ?? 0));
+        const nonMixedCostRows = costRows.filter((row) => !mixedHeaderIds.has(pickId(row.header_id) ?? 0));
+        const [price, cost] = await Promise.all([
+            applyDuePriceRequests(nonMixedPriceRows, userId),
+            applyDueCostRequests(nonMixedCostRows, userId),
+        ]);
+        const mixed = await applyDueMixedBatches(mixedHeaderIds, userId);
 
-        if (price.applied > 0 || cost.applied > 0) {
+        if (price.applied > 0 || cost.applied > 0 || mixed.applied > 0) {
             invalidateGroupIndexCacheOnCatalogChange();
         }
 
-        return NextResponse.json({ ok: true, ran_at: now, price, cost });
+        return NextResponse.json({ ok: true, ran_at: now, price, cost, mixed });
     } catch (error: unknown) {
         return directusErrorResponse(error);
     }

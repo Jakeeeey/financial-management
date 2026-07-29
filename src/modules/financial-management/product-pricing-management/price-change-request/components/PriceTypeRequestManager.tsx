@@ -20,6 +20,7 @@ import { PriceTypeRequestDetailDialog } from "./PriceTypeRequestDetailDialog";
 import { RejectDialog } from "./RejectDialog";
 import { RequestFiltersBar } from "./RequestFiltersBar";
 import RequestsTable from "./RequestsTable";
+import { UnifiedBatchDetailDialog } from "./UnifiedBatchDetailDialog";
 
 import { useRequestBulkSelection } from "../hooks/useRequestBulkSelection";
 import { usePriceTypeSupplierExportImport } from "../hooks/usePriceTypeSupplierExportImport";
@@ -77,6 +78,7 @@ export function PriceTypeRequestManager({
         onOpenPrintEditor: openSupplierPrint,
     });
     const [viewingBatchHeaderId, setViewingBatchHeaderId] = React.useState<number | null>(null);
+    const [viewingMixedBatchHeaderId, setViewingMixedBatchHeaderId] = React.useState<number | null>(null);
     const [viewingRequestId, setViewingRequestId] = React.useState<number | null>(null);
     const [confirmingBatchHeaderId, setConfirmingBatchHeaderId] = React.useState<number | null>(null);
     const [rejectingBatchHeaderId, setRejectingBatchHeaderId] = React.useState<number | null>(null);
@@ -119,7 +121,13 @@ export function PriceTypeRequestManager({
         setBatchActing(true);
         try {
             const result = await pcrApi.approvePriceChangeBatch(headerId, effectiveAt);
-            const verb = result.application_status === "SCHEDULED" ? "approved and scheduled" : "approved and applied";
+            await pcrApi.waitForBatchDecision({
+                kind: "price_batch",
+                headerId,
+                expectedStatus: "APPROVED",
+                expectedApplicationStatus: result.scheduled ? "SCHEDULED" : "APPLIED",
+            });
+            const verb = result.scheduled ? "approved and scheduled" : "approved";
             toast.success(`${result.affected} price change line(s) ${verb}.`);
             await inbox.refresh();
         } catch (error: unknown) {
@@ -136,6 +144,7 @@ export function PriceTypeRequestManager({
         setBatchActing(true);
         try {
             await pcrApi.rejectPriceChangeBatch(headerId, reason);
+            await pcrApi.waitForBatchDecision({ kind: "price_batch", headerId, expectedStatus: "REJECTED" });
             toast.success("Batch rejected.");
             await inbox.refresh();
         } catch (error: unknown) {
@@ -396,6 +405,10 @@ export function PriceTypeRequestManager({
                             setViewingBatchHeaderId(Number(row.batch_id ?? row.request_id));
                             return;
                         }
+                        if (row.kind === "mixed_batch") {
+                            setViewingMixedBatchHeaderId(Number(row.batch_id ?? row.request_id));
+                            return;
+                        }
                         if (row.kind === "price_type") setViewingRequestId(Number(row.request_id));
                     }}
                     {...(readOnly
@@ -403,6 +416,10 @@ export function PriceTypeRequestManager({
                         : {
                               onApprove: (row: ApprovalRecordRow) => {
                                   if (!("kind" in row)) return;
+                                  if (row.kind === "mixed_batch") {
+                                      setViewingMixedBatchHeaderId(Number(row.batch_id ?? row.request_id));
+                                      return;
+                                  }
                                   const id = Number(row.request_id);
                                   const headerId = row.kind === "price_batch"
                                       ? Number(row.batch_id ?? row.request_id)
@@ -415,6 +432,10 @@ export function PriceTypeRequestManager({
                               },
                               onReject: (row: ApprovalRecordRow) => {
                                   if (!("kind" in row)) return;
+                                  if (row.kind === "mixed_batch") {
+                                      setViewingMixedBatchHeaderId(Number(row.batch_id ?? row.request_id));
+                                      return;
+                                  }
                                   const id = Number(row.request_id);
                                   const headerId = row.kind === "price_batch"
                                       ? Number(row.batch_id ?? row.request_id)
@@ -490,6 +511,24 @@ export function PriceTypeRequestManager({
                           onApplyScheduledNow: (kind, id) => inbox.applyScheduledNow(kind, id),
                           onRejectScheduled: (kind, id, reason) => inbox.rejectScheduled(kind, id, reason),
                           onRetryApplication: (kind, id) => inbox.retryApplication(kind, id),
+                })}
+            />
+
+            <UnifiedBatchDetailDialog
+                batchId={viewingMixedBatchHeaderId}
+                open={viewingMixedBatchHeaderId != null}
+                acting={inbox.loading || inbox.acting || batchActing}
+                readOnly={readOnly}
+                onOpenChange={(open) => {
+                    if (!open) setViewingMixedBatchHeaderId(null);
+                }}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApprove: inbox.approveMixedBatch,
+                          onReject: inbox.rejectMixedBatch,
+                          onApplyScheduledNow: (headerId: number) => inbox.applyScheduledNow("mixed_batch", headerId),
+                          onRetryApplication: inbox.retryMixedBatch,
                       })}
             />
 
