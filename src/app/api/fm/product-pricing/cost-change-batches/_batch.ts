@@ -23,6 +23,7 @@ import {
     assertValidProposedCost,
     isInvalidProposedCostError,
 } from "../cost-change-requests/_costValidation";
+import { resolveBatchReferenceNo } from "../_batchReference";
 
 export {
     decodeUserIdFromJwtCookie,
@@ -219,9 +220,10 @@ export async function createPendingCostBatch(args: {
     await assertCostBatchStorageReady();
 
     const requestedAt = nowManila();
+    const referenceNo = resolveBatchReferenceNo(args.referenceNo, requestedAt);
     const headerPayload = {
         ...(args.supplierId ? { supplier_id: args.supplierId } : {}),
-        reference_no: args.referenceNo?.trim() || null,
+        reference_no: referenceNo,
         remarks: args.remarks?.trim() || "List cost change request",
         status: "PENDING",
         requested_by: userId,
@@ -281,7 +283,11 @@ export async function createPendingCostBatch(args: {
     return {
         headerId,
         created: linkedDetails.length,
-        headerRow: header.data ?? { header_id: headerId },
+        headerRow: {
+            ...(header.data ?? {}),
+            header_id: headerId,
+            reference_no: header.data?.reference_no?.trim() || referenceNo,
+        },
         detailRows: linkedDetails,
     };
 }

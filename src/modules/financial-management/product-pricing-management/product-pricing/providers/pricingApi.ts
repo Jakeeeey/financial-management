@@ -264,20 +264,26 @@ export async function bulkUpdateProducts(items: { product_id: number; cost_per_u
 }
 
 export async function createCostChangeRequests(
-    items: {
-        product_id: number;
-        proposed_cost: number;
-        current_cost?: number | null;
-    }[],
+    payload: {
+        items: {
+            product_id: number;
+            proposed_cost: number;
+            current_cost?: number | null;
+        }[];
+        supplier_id: number;
+        reference_no?: string;
+        remarks?: string;
+    },
 ) {
     return http<{
         created: number;
         header_id?: number;
+        reference_no?: string | null;
         skipped_duplicates?: number;
         skipped_existing_pending?: number;
     }>(`/api/fm/product-pricing/cost-change-requests/bulk`, {
         method: "POST",
-        body: JSON.stringify({ items }),
+        body: JSON.stringify(payload),
     });
 }
 
@@ -300,6 +306,7 @@ export type MixedSaveResponse = {
         skipped_duplicates?: number;
         skipped_existing_pending?: number;
         header_id?: number;
+        reference_no?: string | null;
     };
 };
 
