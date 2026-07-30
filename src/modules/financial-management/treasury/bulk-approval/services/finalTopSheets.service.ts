@@ -1397,6 +1397,7 @@ export async function handleFinalHeaderDecision(params: {
   const results: { id: number; ok: boolean; error?: unknown }[] = [];
   const affectedEncoderIds = new Set<number>();
   const affectedHeaderIds = new Set<number>();
+  let hasAnyAutoRejectedConcern = false;
 
   for (const expense of targetExpenses) {
     const expenseId = toNumericId(expense.id);
@@ -1409,10 +1410,27 @@ export async function handleFinalHeaderDecision(params: {
     const headerId = toNumericId(expense.header_id);
     if (headerId) affectedHeaderIds.add(headerId);
 
+    const isConcernItem = (expense.status ?? "").toLowerCase() === "with concern";
+    if (isConcernItem) hasAnyAutoRejectedConcern = true;
+
+    const itemStatus = (status === "Approved" && isConcernItem) ? "Rejected" : status;
+    const itemRemarks = (status === "Approved" && isConcernItem)
+      ? (remarks || "Automatically rejected due to unresolved concern upon final top sheet approval")
+      : remarks;
+
+    const itemPatchPayload: Record<string, unknown> = {
+      status: itemStatus,
+      feedback: itemStatus === "Approved" ? null : itemRemarks,
+      return_to: itemStatus === "With Concern" ? `L${userContext.approver_level}` : null,
+      date_updated: nowTs,
+      approved_at: itemStatus === "Approved" ? nowTs : null,
+      rejected_at: itemStatus === "Rejected" ? nowTs : null,
+    };
+
     const patchRes = await directusFetch(`/items/expense_draft/${expenseId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(patchPayload),
+      body: JSON.stringify(itemPatchPayload),
     });
 
     if (!patchRes.ok) {
@@ -1426,12 +1444,12 @@ export async function handleFinalHeaderDecision(params: {
 
     await createExpenseLog({
       expenseId,
-      action: `Final Top Sheet ${status}`,
+      action: `Final Top Sheet ${itemStatus}`,
       changedBy: params.context.currentUserId,
       changedAt: nowTs,
       amount: expense.amount,
-      remarks: remarks || `Final Top Sheet staged ${status}`,
-      status,
+      remarks: itemRemarks || `Final Top Sheet staged ${itemStatus}`,
+      status: itemStatus,
     });
 
     results.push({ id: expenseId, ok: true });
@@ -1439,7 +1457,7 @@ export async function handleFinalHeaderDecision(params: {
 
   // If any expense was rejected/with-concern, check if the parent header
   // now has no remaining non-rejected items and mark it accordingly.
-  if ((status === "Rejected" || status === "With Concern") && affectedHeaderIds.size > 0) {
+  if ((status === "Rejected" || status === "With Concern" || hasAnyAutoRejectedConcern) && affectedHeaderIds.size > 0) {
     await updateParentHeaderStatuses(Array.from(affectedHeaderIds));
   }
 
