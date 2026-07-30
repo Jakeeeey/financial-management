@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,10 +17,11 @@ import {
 import { Disbursement, BankAccountDto, COADto, PaymentLine, DisbursementPayload } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
 import { disbursementProvider } from "../providers/fetchProvider";
-import { formatCurrency, numberToWords } from "../utils/disbursement-utils";
+import { formatCurrency, getManilaDateInput, numberToWords } from "../utils/disbursement-utils";
+import { isPettyCashAccount, validatePaymentLine } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { generateDisbursementPDF, generateCheckLeafPDF } from "../utils/pdfGenerator";
 
-import { format } from "date-fns";
+import { formatManilaDate } from "../utils/disbursement-utils";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +74,14 @@ function SearchSelect<T extends string | number>({ options, value, onSelect, pla
     );
 }
 
+function getBalanceDue(disbursement: Disbursement): number {
+    return Math.max(0, Number((disbursement.totalAmount - disbursement.paidAmount).toFixed(2)));
+}
+
+function isPartiallyPaid(disbursement: Disbursement, balanceDue: number): boolean {
+    return disbursement.paidAmount > 0 && balanceDue > 0.01;
+}
+
 export default function ReleasingSubmodule() {
     const {
         data, loading, changeStatus, update, actionLoading, refresh,
@@ -97,10 +106,13 @@ export default function ReleasingSubmodule() {
 
     // Releasing prompt state
     const [releasingPromptOpen, setReleasingPromptOpen] = useState(false);
+    const [paymentValidationErrors, setPaymentValidationErrors] = useState<Set<string>>(new Set());
+    const [actionLocked, setActionLocked] = useState(false);
+    const actionLockRef = useRef(false);
+    const saveLockRef = useRef(false);
 
     // Fetch active banks and COAs
     useEffect(() => {
-        /* eslint-disable react-hooks/set-state-in-effect */
         setLoadingMetadata(true);
         Promise.all([
             disbursementProvider.getBanks().catch(() => []),
@@ -111,17 +123,15 @@ export default function ReleasingSubmodule() {
         }).finally(() => {
             setLoadingMetadata(false);
         });
-        /* eslint-enable react-hooks/set-state-in-effect */
     }, []);
 
     // Set local payments state on voucher select
     useEffect(() => {
-        /* eslint-disable react-hooks/set-state-in-effect */
         if (selectedDisbursement) {
             setPayments(selectedDisbursement.payments?.map(p => ({
                 id: p.id,
                 checkNo: p.checkNo || "",
-                date: p.date ? p.date.split("T")[0] : new Date().toISOString().split("T")[0],
+                date: p.date ? p.date.split("T")[0] : getManilaDateInput(),
                 amount: p.amount,
                 coaId: p.coaId,
                 bankId: p.bankId,
@@ -130,7 +140,7 @@ export default function ReleasingSubmodule() {
         } else {
             setPayments([]);
         }
-        /* eslint-enable react-hooks/set-state-in-effect */
+        setPaymentValidationErrors(new Set());
     }, [selectedDisbursement]);
 
     // Derived states
@@ -146,13 +156,18 @@ export default function ReleasingSubmodule() {
         return coas.filter(c => c.isPayment);
     }, [coas]);
 
+    const selectedBalanceDue = selectedDisbursement ? getBalanceDue(selectedDisbursement) : 0;
+    const selectedIsPartiallyPaid = selectedDisbursement
+        ? isPartiallyPaid(selectedDisbursement, selectedBalanceDue)
+        : false;
+
     const handleAddPayment = () => {
         const remaining = Number(((selectedDisbursement?.totalAmount || 0) - totalPaymentsAmount).toFixed(2));
         const autoCoaId = paymentCoas.length === 1 ? paymentCoas[0].coaId : undefined;
 
         setPayments([...payments, {
             checkNo: "",
-            date: new Date().toISOString().split("T")[0],
+            date: getManilaDateInput(),
             amount: remaining > 0 ? remaining : 0,
             coaId: autoCoaId,
             remarks: ""
@@ -161,98 +176,136 @@ export default function ReleasingSubmodule() {
 
     const handleRemovePayment = (idx: number) => {
         setPayments(payments.filter((_, i) => i !== idx));
+        setPaymentValidationErrors(new Set());
     };
 
     const handlePaymentChange = <K extends keyof PaymentLine>(idx: number, key: K, val: PaymentLine[K]) => {
         const copy = [...payments];
         copy[idx] = { ...copy[idx], [key]: val };
         setPayments(copy);
+        setPaymentValidationErrors(previous => {
+            const next = new Set(previous);
+            next.delete(`${idx}:${key}`);
+            if (key === "coaId") {
+                next.delete(`${idx}:bankId`);
+                next.delete(`${idx}:checkNo`);
+            }
+            return next;
+        });
     };
 
     // Save checks allocation to backend
     const handleSavePayments = async () => {
-        if (!selectedDisbursement) return false;
+        if (!selectedDisbursement || actionLoading || saveLockRef.current) return false;
+        saveLockRef.current = true;
 
-        // validate payments
-        for (let i = 0; i < payments.length; i++) {
-            const p = payments[i];
-            const selectedCoa = coas.find(c => c.coaId === p.coaId);
-            const accountTitle = selectedCoa?.accountTitle || "";
-            const isCashOrPetty = accountTitle.toLowerCase().includes("petty cash") || 
-                                  accountTitle.toLowerCase().includes("cash") || 
-                                  accountTitle.toLowerCase().includes("revolving");
+        try {
+            const nextErrors = new Set<string>();
+            const validationMessages: string[] = [];
+            for (let i = 0; i < payments.length; i++) {
+                const p = payments[i];
+                const selectedCoa = coas.find(c => c.coaId === p.coaId);
+                const isPettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+                if (!p.date) nextErrors.add(`${i}:date`);
+                if (p.amount == null || !Number.isFinite(Number(p.amount)) || Number(p.amount) === 0) {
+                    nextErrors.add(`${i}:amount`);
+                }
+                if (!p.coaId) nextErrors.add(`${i}:coaId`);
+                if (!isPettyCash && !p.bankId) nextErrors.add(`${i}:bankId`);
+                if (!isPettyCash && String(p.checkNo ?? "").trim() === "") nextErrors.add(`${i}:checkNo`);
 
-            if (!isCashOrPetty && !p.checkNo) {
-                toast.error(`Please provide a check number on check row ${i + 1}`);
+                const validationError = validatePaymentLine(p, selectedCoa?.accountTitle);
+                if (validationError) {
+                    validationMessages.push(`${validationError} Payment row ${i + 1}`);
+                }
+            }
+            setPaymentValidationErrors(nextErrors);
+            if (nextErrors.size > 0) {
+                toast.error(`${validationMessages[0] || "Please complete all required payment fields."} Complete the highlighted fields.`);
                 return false;
             }
-            if (!p.bankId) {
-                toast.error(`Please select a bank account on check row ${i + 1}`);
-                return false;
+
+            const payload: DisbursementPayload = {
+                docNo: selectedDisbursement.docNo,
+                transactionTypeId: selectedDisbursement.transactionTypeId,
+                payeeId: selectedDisbursement.payeeId || 0,
+                remarks: selectedDisbursement.remarks,
+                totalAmount: selectedDisbursement.totalAmount,
+                transactionDate: selectedDisbursement.transactionDate,
+                departmentId: selectedDisbursement.departmentId,
+                supportingDocumentsUrl: selectedDisbursement.supportingDocumentsUrl,
+                payables: selectedDisbursement.payables,
+                payments: payments.map(p => {
+                    const pettyCash = isPettyCashAccount(coas.find(c => c.coaId === p.coaId)?.accountTitle);
+                    return {
+                        ...p,
+                        coaId: Number(p.coaId),
+                        bankId: pettyCash ? undefined : Number(p.bankId),
+                        checkNo: pettyCash ? "" : p.checkNo,
+                    };
+                })
+            };
+
+            const success = await update(selectedDisbursement.id, payload);
+            if (success) {
+                refresh();
+                const updated = data.find(v => v.id === selectedDisbursement.id);
+                if (updated) setSelectedDisbursement(updated);
+                return true;
             }
-            if (!p.coaId) {
-                toast.error(`Please select a GL COA account on check row ${i + 1}`);
-                return false;
-            }
+            return false;
+        } finally {
+            saveLockRef.current = false;
         }
-
-        const payload: DisbursementPayload = {
-            payeeId: selectedDisbursement.payeeId || 0,
-            remarks: selectedDisbursement.remarks,
-            totalAmount: selectedDisbursement.totalAmount,
-            transactionDate: selectedDisbursement.transactionDate,
-            divisionId: selectedDisbursement.divisionId,
-            departmentId: selectedDisbursement.departmentId,
-            supportingDocumentsUrl: selectedDisbursement.supportingDocumentsUrl,
-            payables: selectedDisbursement.payables,
-            payments: payments.map(p => ({
-                ...p,
-                coaId: Number(p.coaId),
-                bankId: Number(p.bankId)
-            }))
-        };
-
-        const success = await update(selectedDisbursement.id, payload);
-        if (success) {
-            refresh();
-            // Reload the selected voucher from updated data list
-            const updated = data.find(v => v.id === selectedDisbursement.id);
-            if (updated) setSelectedDisbursement(updated);
-            return true;
-        }
-        return false;
     };
 
     // Release Check button logic
     const handleReleaseVoucher = async () => {
-        if (!selectedDisbursement) return;
+        if (!selectedDisbursement || actionLoading || actionLockRef.current) return;
+        actionLockRef.current = true;
+        setActionLocked(true);
 
-        // Save current payments state first to avoid stale release
-        const saved = await handleSavePayments();
-        if (!saved) return; // Halt if validation or save fails!
+        try {
+            // Save current payments state first to avoid stale release
+            const saved = await handleSavePayments();
+            if (!saved) return;
 
-        // Compute total amount directly from fresh payments to avoid stale closure state
-        const freshTotalPaymentsAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-        const diff = Math.abs(selectedDisbursement.totalAmount - freshTotalPaymentsAmount);
-        
-        if (diff < 0.01) {
-            // Condition A: Balanced payment match
-            await handleCommitRelease("Released");
-        } else {
-            // Condition B: Mismatched payments amount
-            setReleasingPromptOpen(true);
+            const freshTotalPaymentsAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+            const diff = Math.abs(selectedDisbursement.totalAmount - freshTotalPaymentsAmount);
+
+            if (diff < 0.01) {
+                await handleCommitRelease("Released", true);
+            } else {
+                setReleasingPromptOpen(true);
+            }
+        } finally {
+            actionLockRef.current = false;
+            setActionLocked(false);
         }
     };
 
-    const handleCommitRelease = async (status: string) => {
+    const handleCommitRelease = async (status: string, lockAlreadyHeld = false) => {
         setReleasingPromptOpen(false);
-        if (!selectedDisbursement) return;
-        const success = await changeStatus(selectedDisbursement.id, status);
-        if (success) {
-            setSelectedDisbursement(null);
-            refresh();
+        if (!selectedDisbursement || actionLoading || (!lockAlreadyHeld && actionLockRef.current)) return;
+        if (!lockAlreadyHeld) {
+            actionLockRef.current = true;
+            setActionLocked(true);
+        }
+        try {
+            const success = await changeStatus(selectedDisbursement.id, status);
+            if (success) {
+                setSelectedDisbursement(null);
+                refresh();
+            }
+        } finally {
+            if (!lockAlreadyHeld) {
+                actionLockRef.current = false;
+                setActionLocked(false);
+            }
         }
     };
+
+    const isActionBusy = actionLoading || actionLocked;
 
     const handlePrintCheck = (p: PaymentLine) => {
         setActivePrintCheck(p);
@@ -261,14 +314,12 @@ export default function ReleasingSubmodule() {
 
     // Load calibration from localStorage on mount
     useEffect(() => {
-        /* eslint-disable react-hooks/set-state-in-effect */
         if (typeof window !== "undefined") {
             const savedX = localStorage.getItem("check_print_calibration_x");
             const savedY = localStorage.getItem("check_print_calibration_y");
             if (savedX !== null) setCalibrationX(Number(savedX));
             if (savedY !== null) setCalibrationY(Number(savedY));
         }
-        /* eslint-enable react-hooks/set-state-in-effect */
     }, []);
 
     // Spaced out boxed check date (MM-DD-YYYY) parsing
@@ -346,7 +397,11 @@ export default function ReleasingSubmodule() {
                                 No approved vouchers to release
                             </div>
                         ) : (
-                            approvedVouchers.map((v) => (
+                            approvedVouchers.map((v) => {
+                                const balanceDue = getBalanceDue(v);
+                                const partiallyPaid = isPartiallyPaid(v, balanceDue);
+
+                                return (
                                 <button
                                     key={v.id}
                                     onClick={() => setSelectedDisbursement(v)}
@@ -357,23 +412,36 @@ export default function ReleasingSubmodule() {
                                 >
                                     <div className="flex items-center justify-between w-full">
                                         <span className="text-xs font-black text-foreground uppercase tracking-wider">{v.docNo}</span>
-                                        <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 font-mono">
-                                            {formatCurrency(v.totalAmount)}
-                                        </span>
+                                        <div className="flex flex-col items-end gap-0.5 font-mono">
+                                            <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-500">
+                                                {formatCurrency(v.totalAmount)}
+                                            </span>
+                                            {partiallyPaid && (
+                                                <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">
+                                                    Balance: {formatCurrency(balanceDue)}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                     <span className="text-[9px] font-bold text-muted-foreground uppercase mt-1 truncate max-w-[340px]">
                                         Payee: {v.payeeName || "N/A"}
                                     </span>
                                     <div className="flex items-center justify-between mt-2.5 w-full">
                                         <span className="text-[9px] font-medium text-muted-foreground/80">
-                                            {v.transactionDate ? format(new Date(v.transactionDate), "MMM dd, yyyy") : ""}
+                                            {formatManilaDate(v.transactionDate, "")}
                                         </span>
-                                        <Badge variant="outline" className="text-[8px] px-1.5 py-0 font-bold uppercase bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
-                                            Approved
+                                        <Badge variant="outline" className={cn(
+                                            "text-[8px] px-1.5 py-0 font-bold uppercase",
+                                            partiallyPaid
+                                                ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                                                : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                        )}>
+                                            {partiallyPaid ? "Partially Paid" : "Approved"}
                                         </Badge>
                                     </div>
                                 </button>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 </Card>
@@ -414,18 +482,18 @@ export default function ReleasingSubmodule() {
                                     <div>
                                         <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Approved Payable Amount</span>
                                         <span className="text-lg font-black text-primary">{formatCurrency(selectedDisbursement.totalAmount)}</span>
+                                        {selectedIsPartiallyPaid && (
+                                            <div className="mt-1 space-y-0.5 text-[9px] font-black uppercase tracking-widest">
+                                                <span className="block text-muted-foreground">Paid to Date: {formatCurrency(selectedDisbursement.paidAmount)}</span>
+                                                <span className="block text-amber-600 dark:text-amber-400">Balance Due: {formatCurrency(selectedBalanceDue)}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="space-y-3">
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Division</span>
-                                            <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.divisionName || "N/A"}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Department</span>
-                                            <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
-                                        </div>
+                                    <div>
+                                        <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Department</span>
+                                        <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
@@ -440,44 +508,47 @@ export default function ReleasingSubmodule() {
                                 </div>
                             </div>
 
-                            {/* QuickBooks Check Leafs Container */}
+                            {/* Payment Allocation */}
                             <div className="bg-card p-1 rounded-xl border border-border shadow-sm space-y-4">
                                 <div className="px-4 pt-4 pb-2 border-b border-border flex items-center justify-between">
                                     <div className="flex items-center gap-2 text-foreground font-black uppercase tracking-widest text-[11px]">
-                                        <ArrowUpFromLine className="w-3.5 h-3.5 text-purple-600" /> QuickBooks Check leaves (Credits)
+                                        <ArrowUpFromLine className="w-3.5 h-3.5 text-purple-600" /> Payment Allocation
                                     </div>
                                     <Button onClick={handleAddPayment} disabled={loadingMetadata} size="sm" className="h-8 px-3.5 bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest text-[9px]">
-                                        <Plus className="w-3.5 h-3.5 mr-1" /> Add Check
+                                        <Plus className="w-3.5 h-3.5 mr-1" /> Add Payment
                                     </Button>
                                 </div>
 
                                 <div className="px-4 pb-4 space-y-5 max-h-[480px] overflow-y-auto scrollbar-thin">
                                     {payments.length === 0 ? (
                                         <div className="py-16 text-center text-xs font-black text-muted-foreground uppercase tracking-widest bg-muted/5 rounded-xl border border-dashed border-border/80">
-                                            No check leaves issued yet. Click &quot;Add Check&quot; above.
+                                            No payment lines added yet. Click &quot;Add Payment&quot; above.
                                         </div>
                                     ) : (
                                         payments.map((line, idx) => {
-                                            const amountInWords = numberToWords(line.amount || 0);
+                                            const selectedCoa = coas.find(c => c.coaId === line.coaId);
+                                            const isPettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
                                             return (
                                                 <div key={idx} className="relative bg-card border border-border/80 rounded-2xl p-6 shadow-md hover:shadow-lg transition-all space-y-5">
                                                     {/* Top control bar: Header */}
                                                     <div className="flex flex-row justify-between items-center pb-3 border-b border-border">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-black text-foreground uppercase tracking-widest">Check Leaf #{idx + 1}</span>
+                                                            <span className="text-xs font-black text-foreground uppercase tracking-widest">Payment Line #{idx + 1}</span>
                                                             <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 hover:bg-purple-100 font-bold text-[8px] uppercase tracking-wider">Approved Queue</Badge>
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            <Button 
-                                                                type="button"
-                                                                variant="outline" 
-                                                                size="sm" 
-                                                                disabled={!line.checkNo || !line.bankId || !line.amount}
-                                                                onClick={() => handlePrintCheck(line)}
-                                                                className="h-8 text-[9px] font-black uppercase tracking-widest bg-white dark:bg-zinc-800 text-foreground border-border hover:bg-muted/50"
-                                                            >
-                                                                <Printer className="w-3.5 h-3.5 mr-1 text-purple-600" /> Print leaf
-                                                            </Button>
+                                                            {!isPettyCash && (
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    disabled={!line.checkNo || !line.bankId || !line.amount}
+                                                                    onClick={() => handlePrintCheck(line)}
+                                                                    className="h-8 text-[9px] font-black uppercase tracking-widest bg-white dark:bg-zinc-800 text-foreground border-border hover:bg-muted/50"
+                                                                >
+                                                                    <Printer className="w-3.5 h-3.5 mr-1 text-purple-600" /> Print check
+                                                                </Button>
+                                                            )}
                                                             <Button 
                                                                 type="button"
                                                                 variant="ghost" 
@@ -490,72 +561,36 @@ export default function ReleasingSubmodule() {
                                                         </div>
                                                     </div>
 
-                                                    {/* Visual Check Leaf Preview (Modernized QuickBooks style) */}
-                                                    <div className="bg-gradient-to-br from-purple-50/50 via-slate-50/50 to-indigo-50/50 dark:from-zinc-900/40 dark:via-zinc-900/20 dark:to-zinc-950/40 rounded-xl p-5 border border-dashed border-border/80 relative space-y-4 shadow-inner">
-                                                        {/* Top row of check */}
-                                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                                                            <div className="space-y-0.5">
-                                                                <span className="text-[9px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest block font-mono">DRAWEE BANK</span>
-                                                                <span className="text-xs font-black text-foreground uppercase tracking-wide">
-                                                                    {banks.find(b => b.bankId === line.bankId)?.bankName || "No Bank Selected"}
-                                                                </span>
-                                                            </div>
-                                                            <div className="text-right font-mono text-[9px] text-muted-foreground/80 space-y-0.5 self-end sm:self-auto">
-                                                                <div>NO: <span className="font-bold text-foreground">{line.checkNo || "------"}</span></div>
-                                                                <div>DATE: <span className="font-bold text-foreground">{line.date ? format(new Date(line.date), "MM/dd/yyyy") : "--/--/----"}</span></div>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Payee row */}
-                                                        <div className="flex items-end gap-2 border-b border-zinc-300 dark:border-zinc-800 pb-1">
-                                                            <span className="text-[8px] font-black text-muted-foreground/80 tracking-widest font-mono shrink-0 mb-1">PAY TO THE ORDER OF:</span>
-                                                            <span className="text-xs font-black text-foreground uppercase tracking-wider flex-1 truncate pb-0.5">
-                                                                {selectedDisbursement.payeeName}
-                                                            </span>
-                                                        </div>
-
-                                                        {/* Written Amount & Numeric Box */}
-                                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-                                                            <div className="flex items-end gap-2 border-b border-zinc-300 dark:border-zinc-800 pb-1 flex-1 w-full">
-                                                                <span className="text-[8px] font-black text-muted-foreground/80 tracking-widest font-mono shrink-0 mb-1">PESOS:</span>
-                                                                <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 italic flex-1 pb-0.5 leading-relaxed">
-                                                                    {amountInWords}
-                                                                </span>
-                                                            </div>
-                                                            <div className="bg-white dark:bg-zinc-950 px-4 py-2 rounded-lg border border-border/80 flex items-center gap-2 font-mono shrink-0 w-full sm:w-auto shadow-sm">
-                                                                <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400">PHP</span>
-                                                                <span className="text-sm font-black text-foreground">
-                                                                    {line.amount ? formatCurrency(line.amount).replace("₱", "") : "0.00"}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Form Inputs Grid (modern, highly styled) */}
+                                                     {/* Form Inputs Grid (modern, highly styled) */}
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2">
                                                         <div>
-                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Check Date</label>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Payment Date <span className="text-destructive">*</span></label>
                                                             <Input 
                                                                 type="date"
-                                                                className="h-9 text-xs font-bold bg-background border-border" 
+                                                                aria-invalid={paymentValidationErrors.has(`${idx}:date`)}
+                                                                className={cn("h-9 text-xs font-bold bg-background border-border", paymentValidationErrors.has(`${idx}:date`) && "border-rose-500 focus:ring-rose-500/30")}
                                                                 value={line.date} 
                                                                 onChange={e => handlePaymentChange(idx, "date", e.target.value)} 
                                                             />
                                                         </div>
+                                                        {!isPettyCash && (
+                                                            <div>
+                                                                <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Check / Reference No. <span className="text-destructive">*</span></label>
+                                                                <Input
+                                                                    aria-invalid={paymentValidationErrors.has(`${idx}:checkNo`)}
+                                                                    className={cn("h-9 text-xs font-bold bg-background border-border placeholder:text-muted-foreground/30 font-mono", paymentValidationErrors.has(`${idx}:checkNo`) && "border-rose-500 focus:ring-rose-500/30")}
+                                                                    placeholder="CK-000000"
+                                                                    value={line.checkNo}
+                                                                    onChange={e => handlePaymentChange(idx, "checkNo", e.target.value)}
+                                                                />
+                                                            </div>
+                                                        )}
                                                         <div>
-                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Check No.</label>
-                                                            <Input 
-                                                                className="h-9 text-xs font-bold bg-background border-border placeholder:text-muted-foreground/30 font-mono" 
-                                                                placeholder="CK-000000"
-                                                                value={line.checkNo} 
-                                                                onChange={e => handlePaymentChange(idx, "checkNo", e.target.value)} 
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Check Amount (PHP)</label>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Payment Amount (PHP) <span className="text-destructive">*</span></label>
                                                             <Input 
                                                                 type="number"
-                                                                className="h-9 text-xs font-black bg-background border-border text-right font-mono text-emerald-600 dark:text-emerald-400" 
+                                                                aria-invalid={paymentValidationErrors.has(`${idx}:amount`)}
+                                                                className={cn("h-9 text-xs font-black bg-background border-border text-right font-mono text-emerald-600 dark:text-emerald-400", paymentValidationErrors.has(`${idx}:amount`) && "border-rose-500 focus:ring-rose-500/30")}
                                                                 placeholder="0.00"
                                                                 value={line.amount || ""} 
                                                                 onChange={e => handlePaymentChange(idx, "amount", e.target.value === "" ? 0 : Number(e.target.value))} 
@@ -569,28 +604,48 @@ export default function ReleasingSubmodule() {
                                                     </div>
 
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/60">
+                                                        {!isPettyCash && (
+                                                            <div>
+                                                                <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Draw Bank Account <span className="text-destructive">*</span></label>
+                                                                <SearchSelect<number>
+                                                                    options={banks.map(b => ({
+                                                                        value: b.bankId,
+                                                                        label: `${b.bankName} - ${b.accountNumber}`
+                                                                    }))}
+                                                                    value={line.bankId || ""}
+                                                                    onSelect={val => handlePaymentChange(idx, "bankId", val)}
+                                                                    placeholder="Select Draw Bank Account..."
+                                                                    className={cn("h-9 text-xs font-bold bg-background border-border", paymentValidationErrors.has(`${idx}:bankId`) && "border-rose-500 ring-rose-500/20")}
+                                                                />
+                                                            </div>
+                                                        )}
                                                         <div>
-                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Draw Bank Account</label>
-                                                            <SearchSelect<number>
-                                                                options={banks.map(b => ({
-                                                                    value: b.bankId,
-                                                                    label: `${b.bankName} - ${b.accountNumber}`
-                                                                }))}
-                                                                value={line.bankId || ""}
-                                                                onSelect={val => handlePaymentChange(idx, "bankId", val)}
-                                                                placeholder="Select Draw Bank Account..."
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">GL Account (Credit)</label>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">GL Account (Credit) <span className="text-destructive">*</span></label>
                                                             <SearchSelect<number>
                                                                 options={paymentCoas.map(c => ({
                                                                     value: c.coaId,
                                                                     label: `${c.glCode} - ${c.accountTitle}`
                                                                 }))}
                                                                 value={line.coaId || ""}
-                                                                onSelect={val => handlePaymentChange(idx, "coaId", val)}
+                                                                onSelect={val => {
+                                                                    const nextCoa = coas.find(c => c.coaId === val);
+                                                                    if (isPettyCashAccount(nextCoa?.accountTitle)) {
+                                                                        setPayments(prev => prev.map((payment, paymentIndex) => paymentIndex === idx
+                                                                            ? { ...payment, coaId: val, bankId: undefined, checkNo: "" }
+                                                                            : payment));
+                                                                        setPaymentValidationErrors(previous => {
+                                                                            const next = new Set(previous);
+                                                                            [...next].forEach(key => {
+                                                                                if (key.startsWith(`${idx}:`)) next.delete(key);
+                                                                            });
+                                                                            return next;
+                                                                        });
+                                                                        return;
+                                                                    }
+                                                                    handlePaymentChange(idx, "coaId", val);
+                                                                }}
                                                                 placeholder="Select GL Account (Credit)..."
+                                                                className={cn("h-9 text-xs font-bold bg-background border-border", paymentValidationErrors.has(`${idx}:coaId`) && "border-rose-500 ring-rose-500/20")}
                                                             />
                                                         </div>
                                                     </div>
@@ -607,7 +662,7 @@ export default function ReleasingSubmodule() {
                                             <span className="text-foreground">{formatCurrency(selectedDisbursement.totalAmount)}</span>
                                         </div>
                                         <div>
-                                            <span className="text-muted-foreground block mb-0.5">Total Check Lines</span>
+                                            <span className="text-muted-foreground block mb-0.5">Total Payment Lines</span>
                                             <span className="text-foreground">{formatCurrency(totalPaymentsAmount)}</span>
                                         </div>
                                     </div>
@@ -631,19 +686,19 @@ export default function ReleasingSubmodule() {
                             <Button 
                                 variant="outline" 
                                 onClick={handleSavePayments} 
-                                disabled={actionLoading}
+                                disabled={isActionBusy}
                                 className="h-11 px-6 text-xs font-black uppercase tracking-widest border-border/80"
                             >
-                                Save Checks Allocation
+                                Save Payment Allocation
                             </Button>
 
                             <Button 
                                 onClick={handleReleaseVoucher} 
-                                disabled={actionLoading || payments.length === 0}
+                                disabled={isActionBusy || payments.length === 0}
                                 className="h-11 px-10 text-xs font-black uppercase tracking-widest bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-500/10 disabled:opacity-50"
                             >
-                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowUpFromLine className="w-4 h-4 mr-2" />}
-                                Release Checks
+                                {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowUpFromLine className="w-4 h-4 mr-2" />}
+                                Release Payments
                             </Button>
                         </div>
                     </Card>
@@ -662,44 +717,46 @@ export default function ReleasingSubmodule() {
 
             {/* DYNAMIC MISMATCH PROMPT DIALOG (Condition B) */}
             <Dialog open={releasingPromptOpen} onOpenChange={setReleasingPromptOpen}>
-                <DialogContent className="sm:max-w-[460px] border-border shadow-2xl p-6 bg-background rounded-2xl text-center">
-                    <DialogHeader className="flex flex-col items-center">
+                <DialogContent className="w-[calc(100%-2rem)] max-w-[460px] max-h-[calc(100vh-2rem)] overflow-x-hidden overflow-y-auto border-border shadow-2xl p-6 bg-background rounded-2xl text-center">
+                    <DialogHeader className="flex min-w-0 w-full flex-col items-center">
                         <div className="h-16 w-16 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center mb-4">
                             <AlertTriangle className="w-8 h-8 stroke-[2.5]" />
                         </div>
-                        <DialogTitle className="text-lg font-black uppercase tracking-tight text-foreground">Mismatched Allocation Detected</DialogTitle>
-                        <DialogDescription className="text-xs font-bold text-muted-foreground uppercase tracking-wider mt-1">
+                        <DialogTitle className="max-w-full break-words text-base sm:text-lg font-black uppercase tracking-tight text-foreground">Mismatched Allocation Detected</DialogTitle>
+                        <DialogDescription className="max-w-full break-words text-xs font-bold text-muted-foreground uppercase tracking-wider mt-1">
                             Voucher No: {selectedDisbursement?.docNo}
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="my-6 p-4 rounded-xl bg-muted/40 border border-border/40 text-xs font-bold text-muted-foreground uppercase tracking-widest leading-relaxed text-left space-y-2">
-                        <p>The combined check lines do not equal the total disbursement payable:</p>
-                        <div className="grid grid-cols-2 gap-1 pt-1 border-t border-border/40">
-                            <span>Voucher Payable:</span>
-                            <span className="text-right text-foreground">{selectedDisbursement ? formatCurrency(selectedDisbursement.totalAmount) : ""}</span>
-                            <span>Total Check Lines:</span>
-                            <span className="text-right text-foreground">{formatCurrency(totalPaymentsAmount)}</span>
+                    <div className="my-6 w-full min-w-0 p-4 rounded-xl bg-muted/40 border border-border/40 text-xs font-bold text-muted-foreground uppercase tracking-wide leading-relaxed text-left space-y-2">
+                        <p className="break-words">The combined check lines do not equal the total disbursement payable:</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 pt-1 border-t border-border/40">
+                            <span className="min-w-0 break-words">Voucher Payable:</span>
+                            <span className="min-w-0 text-right text-foreground whitespace-nowrap tabular-nums">{selectedDisbursement ? formatCurrency(selectedDisbursement.totalAmount) : ""}</span>
+                            <span className="min-w-0 break-words">Total Check Lines:</span>
+                            <span className="min-w-0 text-right text-foreground whitespace-nowrap tabular-nums">{formatCurrency(totalPaymentsAmount)}</span>
                         </div>
                     </div>
 
-                    <DialogFooter className="sm:justify-center flex flex-col sm:flex-row gap-3">
+                    <DialogFooter className="w-full !flex-col gap-2 !justify-stretch">
                         <Button 
                             onClick={() => handleCommitRelease("Released")}
-                            className="h-11 px-5 text-xs font-black uppercase bg-destructive hover:bg-destructive/90 text-white"
+                            disabled={isActionBusy}
+                            className="w-full min-w-0 h-auto min-h-11 px-3 py-2 text-xs font-black uppercase whitespace-normal text-center leading-tight break-words bg-destructive hover:bg-destructive/90 text-white"
                         >
                             Force &apos;Released&apos;
                         </Button>
                         <Button 
                             onClick={() => handleCommitRelease("Partially Released")}
-                            className="h-11 px-5 text-xs font-black uppercase bg-amber-500 hover:bg-amber-600 text-white"
+                            disabled={isActionBusy}
+                            className="w-full min-w-0 h-auto min-h-11 px-3 py-2 text-xs font-black uppercase whitespace-normal text-center leading-tight break-words bg-amber-500 hover:bg-amber-600 text-white"
                         >
                             Flag &apos;Partially Released&apos;
                         </Button>
                         <Button 
                             variant="outline"
                             onClick={() => setReleasingPromptOpen(false)}
-                            className="h-11 px-5 text-xs font-bold uppercase border-border/60"
+                            className="w-full min-w-0 h-auto min-h-11 px-3 py-2 text-xs font-bold uppercase whitespace-normal text-center leading-tight break-words border-border/60"
                         >
                             Cancel
                         </Button>

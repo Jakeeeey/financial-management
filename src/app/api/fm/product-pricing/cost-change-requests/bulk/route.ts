@@ -52,9 +52,15 @@ export async function POST(req: NextRequest) {
 
         const body = (await req.json()) as Partial<{
             items: CostBulkItemInput[];
+            supplier_id: number;
             reference_no: string;
             remarks: string;
         }>;
+
+        const supplierId = Number(body.supplier_id);
+        if (!Number.isFinite(supplierId) || supplierId <= 0) {
+            return NextResponse.json({ error: "supplier_id is required for List Cost requests" }, { status: 400 });
+        }
 
         const rawItems = Array.isArray(body.items) ? body.items : [];
 
@@ -78,6 +84,7 @@ export async function POST(req: NextRequest) {
         const result = await createPendingCostRequests({
             userId,
             itemsToCreate: plan.itemsToCreate,
+            supplierId,
             referenceNo: body.reference_no,
             remarks: body.remarks,
         });
@@ -86,6 +93,7 @@ export async function POST(req: NextRequest) {
             {
                 created: result.created,
                 header_id: result.headerId,
+                reference_no: result.headerRow?.reference_no ?? null,
                 skipped_duplicates: plan.skippedDuplicates,
                 skipped_existing_pending: plan.skippedExistingPending,
             },

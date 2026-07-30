@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { getSupplierMemoBalances } from "../../_memo-cap-integrity";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,7 @@ interface DirectusMemo {
     date: string;
     amount: number;
     reason?: string | null;
+    status?: string | null;
     chart_of_account?: DirectusCOA | number | null;
 }
 
@@ -35,10 +37,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             filter: JSON.stringify({
                 _and: [
                     { supplier_id: { _eq: supplierId } },
-                    { status: { _nin: ["USED", "CANCELLED"] } }
+                    { status: { _neq: "CANCELLED" } }
                 ]
             }),
-            fields: "id,memo_number,type,date,amount,reason,chart_of_account",
+            fields: "id,memo_number,type,date,amount,reason,status,chart_of_account",
             sort: "-date",
             limit: "-1"
         });
@@ -52,6 +54,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
         if (!directusRes.ok) throw new Error(await directusRes.text());
         const rawData = ((await directusRes.json()).data || []) as DirectusMemo[];
+        const balances = await getSupplierMemoBalances(supplierId);
+        const balanceMap = new Map(balances.map((balance) => [balance.id, balance]));
 
         // Extract COA IDs
         const coaIds = Array.from(new Set(
@@ -84,6 +88,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }
 
         const mapped = rawData.map((row: DirectusMemo) => {
+            const balance = balanceMap.get(Number(row.id));
             let coaId: number | null = null;
             let accountTitle = "";
 
@@ -109,11 +114,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
                 memo_type_name: Number(row.type) === 1 ? "CREDIT MEMO" : Number(row.type) === 2 ? "DEBIT MEMO" : "UNKNOWN",
                 date: row.date,
                 amount: Number(row.amount) || 0,
+                applied_amount: balance?.appliedAmount || 0,
+                remaining_amount: balance?.remainingAmount || 0,
                 reason: row.reason || "",
                 coa_id: coaId,
                 account_title: accountTitle
             };
-        });
+        }).filter((memo) => memo.remaining_amount > 0.01);
 
         return NextResponse.json(mapped);
     } catch (err: unknown) {

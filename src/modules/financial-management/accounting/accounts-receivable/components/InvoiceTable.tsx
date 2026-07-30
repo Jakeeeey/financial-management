@@ -29,6 +29,11 @@ const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
   'Partially Paid': { bg: 'rgba(245,158,11,0.1)',  color: '#d97706' },
   'Unpaid':         { bg: 'rgba(100,116,139,0.1)', color: '#64748b' },
   'Due':            { bg: 'rgba(100,116,139,0.1)', color: '#64748b' },
+  'Dispatch':       { bg: 'rgba(99,102,241,0.1)',  color: '#4f46e5' }, // Indigo
+  'Delivered':      { bg: 'rgba(14,165,233,0.1)',  color: '#0284c7' }, // Sky
+  'Transmitted':    { bg: 'rgba(168,85,247,0.1)',  color: '#9333ea' }, // Purple
+  'Countered':      { bg: 'rgba(234,179,8,0.1)',   color: '#ca8a04' }, // Amber
+  'Collected':      { bg: 'rgba(16,185,129,0.1)',  color: '#059669' }, // Emerald
 };
 
 function StatusPill({ status }: { status: string }) {
@@ -157,7 +162,7 @@ const MAX_VIRTUAL_LIST_HEIGHT = 320;
 
 const INVOICE_TABLE_COL_WIDTHS = [
   '8%', '10%', '8%', '6%', '6%', '6%', '6%', '6%',
-  '7%', '6%', '7%', '5%', '6%', '6%', '7%',
+  '7%', '6%', '7%', '5%', '6%', '7%',
 ] as const;
 
 function InvoiceTableColGroup() {
@@ -209,7 +214,7 @@ function VirtualInvoiceRows({
 
   return (
     <TableRow className="hover:bg-transparent border-0">
-      <TableCell colSpan={15} className="p-0">
+      <TableCell colSpan={14} className="p-0">
         <div
           ref={parentRef}
           className="overflow-auto"
@@ -261,46 +266,45 @@ function InvoiceChildRow({
     <>
       <TableCell className="py-2 pl-8 relative">
         {isLast ? (
-          <div className="absolute left-5 top-0 h-[22px] w-px bg-border/80 dark:bg-border/45" />
+          <div className="absolute left-5 top-0 h-[22px] w-px bg-border/40 dark:bg-border/20" />
         ) : (
-          <div className="absolute left-5 top-0 bottom-0 w-px bg-border/80 dark:bg-border/45" />
+          <div className="absolute left-5 top-0 bottom-0 w-px bg-border/40 dark:bg-border/20" />
         )}
-        <div className="absolute left-5 top-[22px] w-3 h-px bg-border/80 dark:bg-border/45" />
-        <div className="flex flex-col gap-0.5 min-w-0 pl-2.5">
-          <span className="font-bold text-primary/95 text-xs truncate block w-full" title={inv.invoiceNo}>{inv.invoiceNo}</span>
+        <div className="absolute left-5 top-[22px] w-3 h-px bg-border/40 dark:bg-border/20" />
+        <div className="flex flex-col gap-1 min-w-0 pl-2.5">
+          <span className="font-extrabold text-foreground/90 text-xs truncate block w-full" title={inv.invoiceNo}>{inv.invoiceNo}</span>
           {inv.isPosted ? (
-            <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8px] font-semibold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/15 uppercase">Posted</span>
+            <span className="inline-flex items-center w-max px-1 py-0.25 rounded text-[8px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/15 uppercase">Posted</span>
           ) : (
-            <span className="inline-flex items-center w-max px-1.5 py-0.25 rounded-[3px] text-[8px] font-semibold tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/15 uppercase">Draft</span>
+            <span className="inline-flex items-center w-max px-1 py-0.25 rounded text-[8px] font-bold tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/15 uppercase">Draft</span>
           )}
         </div>
       </TableCell>
-      <TableCell className="py-2 text-muted-foreground/45 text-[10px] italic">└─ detail</TableCell>
-      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.salesman}>{inv.salesman || <span className="text-muted-foreground/30">—</span>}</span></TableCell>
-      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.division}>{inv.division || <span className="text-muted-foreground/30">—</span>}</span></TableCell>
-      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground truncate block w-full" title={inv.salesmanCode}>{inv.salesmanCode || <span className="text-muted-foreground/30">—</span>}</span></TableCell>
-      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground whitespace-nowrap block">{formatDate(inv.invoiceDate)}</span></TableCell>
-      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground whitespace-nowrap block">{formatDate(inv.deliveryDate)}</span></TableCell>
-      <TableCell className="py-2"><span className="text-[11px] text-muted-foreground whitespace-nowrap block">{formatDate(inv.due)}</span></TableCell>
-      <TableCell className="py-2 text-right"><span className="text-xs font-medium text-muted-foreground/90">{formatPeso(inv.netReceivable)}</span></TableCell>
-      <TableCell className="py-2 text-right"><span className="text-xs font-medium text-muted-foreground/90">{formatPeso(inv.totalPaid)}</span></TableCell>
-      <TableCell className="py-2 text-right font-semibold tabular-nums text-foreground/90">{formatPeso(inv.outstanding)}</TableCell>
+      <TableCell className="py-2 text-muted-foreground/35 text-[9px] font-medium tracking-wide uppercase italic">└─ detail</TableCell>
+      <TableCell className="py-2"><span className="text-xs text-muted-foreground truncate block w-full font-medium" title={inv.salesman}>{inv.salesman || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
+      <TableCell className="py-2"><span className="text-xs text-muted-foreground truncate block w-full font-medium" title={inv.division}>{inv.division || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
+      <TableCell className="py-2"><span className="text-xs text-muted-foreground truncate block w-full font-mono font-medium" title={inv.salesmanCode}>{inv.salesmanCode || <span className="text-muted-foreground/20">—</span>}</span></TableCell>
+      <TableCell className="py-2"><span className="text-xs text-muted-foreground/90 font-mono font-medium whitespace-nowrap block">{formatDate(inv.invoiceDate)}</span></TableCell>
+      <TableCell className="py-2"><span className="text-xs text-muted-foreground/90 font-mono font-medium whitespace-nowrap block">{formatDate(inv.deliveryDate)}</span></TableCell>
+      <TableCell className="py-2"><span className="text-xs text-muted-foreground/90 font-mono font-medium whitespace-nowrap block">{formatDate(inv.due)}</span></TableCell>
+      <TableCell className="py-2 text-right"><span className="text-xs font-semibold font-mono text-muted-foreground/90 tabular-nums">{formatPeso(inv.netReceivable)}</span></TableCell>
+      <TableCell className="py-2 text-right"><span className="text-xs font-semibold font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">{formatPeso(inv.totalPaid)}</span></TableCell>
+      <TableCell className="py-2 text-right font-bold font-mono text-primary tabular-nums">{formatPeso(inv.outstanding)}</TableCell>
       <TableCell className="py-2 text-center">
         {inv.overdue !== null && inv.overdue >= 0 ? (
-          <span className={`text-xs ${inv.overdue > 30 ? 'font-semibold' : ''}`} style={{ color: agingColor(inv.overdue) }}>{inv.overdue}d</span>
+          <span className={`text-xs font-mono font-extrabold ${inv.overdue > 30 ? 'animate-pulse' : ''}`} style={{ color: agingColor(inv.overdue) }}>{inv.overdue}d</span>
         ) : (
-          <span className="text-[11px] text-muted-foreground">—</span>
+          <span className="text-[11px] text-muted-foreground/50">—</span>
         )}
       </TableCell>
       <TableCell className="py-2"><StatusPill status={inv.arStatus} /></TableCell>
-      <TableCell className="py-2"><StatusPill status={inv.paymentStatus} /></TableCell>
       <TableCell className="py-2 pr-4"><StatusPill status={inv.transactionStatus} /></TableCell>
     </>
   );
 
   if (asTableRow) {
     return (
-      <TableRow className="border-b border-border/20 hover:bg-muted/15 cursor-pointer bg-card/45 transition-colors active:bg-muted/25" onClick={() => onRowClick?.(inv)}>
+      <TableRow className="border-b border-border/15 hover:bg-primary/[0.03] cursor-pointer bg-card/25 transition-all duration-150 ease-in-out active:bg-primary/[0.06] hover:shadow-[inset_3px_0_0_0_#4f46e5]" onClick={() => onRowClick?.(inv)}>
         {row}
       </TableRow>
     );
@@ -464,7 +468,6 @@ export function InvoiceTable({
               <TableHead className="py-3 text-right w-[7%] whitespace-nowrap"><SortableHeader<Invoice> label="Outstanding" sortKey="outstanding" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold justify-end w-full" /></TableHead>
               <TableHead className="py-3 text-center w-[5%] whitespace-nowrap"><SortableHeader<Invoice> label="Overdue" sortKey="overdue" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold justify-center w-full" /></TableHead>
               <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="AR Status" sortKey="arStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
-              <TableHead className="py-3 w-[6%] whitespace-nowrap"><SortableHeader<Invoice> label="Payment Status" sortKey="paymentStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
               <TableHead className="py-3 pr-4 w-[7%] whitespace-nowrap"><SortableHeader<Invoice> label="Transaction Status" sortKey="transactionStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={handleSort} className="text-xs font-bold" /></TableHead>
             </TableRow>
           </TableHeader>
@@ -472,7 +475,7 @@ export function InvoiceTable({
           <TableBody>
             {pagedGroups.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={15} className="text-center py-10 text-muted-foreground text-sm">
+                <TableCell colSpan={14} className="text-center py-10 text-muted-foreground text-sm">
                   {tableLoading ? 'Loading invoices…' : 'No invoices found.'}
                 </TableCell>
               </TableRow>
@@ -491,39 +494,39 @@ export function InvoiceTable({
                   <Fragment key={group.customerName}>
                     {/* Customer Group Row */}
                     <TableRow
-                      className="bg-muted/35 hover:bg-muted/50 border-b border-border/40 cursor-pointer transition-colors active:bg-muted/60 font-semibold border-l-4 border-l-primary/60 dark:border-l-primary/45"
+                      className="bg-gradient-to-r from-muted/50 via-muted/20 to-transparent hover:from-muted/60 hover:via-muted/30 hover:to-transparent border-b border-border/40 cursor-pointer transition-all duration-200 ease-in-out active:bg-muted/40 font-semibold border-l-4 border-l-primary"
                       onClick={(e) => toggleExpand(e)}
                     >
                       <TableCell className="py-2.5 pl-4 flex items-center gap-1.5 font-bold text-xs text-primary">
                         {isExpanded ? (
-                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <ChevronDown className="h-4 w-4 shrink-0 text-primary animate-in fade-in duration-200" />
                         ) : (
-                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />
                         )}
-                        <span className="truncate block max-w-[80px]" title="Customer Group Header">
+                        <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-primary/10 text-primary border border-primary/20 uppercase tracking-widest">
                           Group
                         </span>
-                        <span className="text-[10px] font-normal text-muted-foreground">
+                        <span className="text-[10px] font-bold text-muted-foreground/80">
                           ({group.invoices.length})
                         </span>
                       </TableCell>
 
-                      <TableCell className="py-2.5 font-black text-xs text-foreground truncate" colSpan={7}>
-                        {group.customerName} <span className="font-semibold text-[10px] text-muted-foreground ml-1">({group.customerCode})</span>
+                      <TableCell className="py-2.5 font-extrabold text-xs text-foreground/90 truncate" colSpan={7}>
+                        {group.customerName} <span className="font-mono text-[9px] font-semibold text-muted-foreground bg-muted/80 px-1.5 py-0.5 rounded ml-2">{group.customerCode}</span>
                       </TableCell>
 
                       {/* Net Receivable */}
-                      <TableCell className="py-2.5 text-right font-bold text-xs text-foreground">
+                      <TableCell className="py-2.5 text-right font-bold text-xs text-foreground/90 font-mono">
                         {formatPeso(group.netReceivable)}
                       </TableCell>
 
                       {/* Paid */}
-                      <TableCell className="py-2.5 text-right font-bold text-xs text-emerald-600 dark:text-emerald-400">
+                      <TableCell className="py-2.5 text-right font-bold text-xs text-emerald-600 dark:text-emerald-400 font-mono">
                         {formatPeso(group.totalPaid)}
                       </TableCell>
 
                       {/* Outstanding */}
-                      <TableCell className="py-2.5 text-right font-black text-xs text-primary">
+                      <TableCell className="py-2.5 text-right font-extrabold text-xs text-primary font-mono">
                         {formatPeso(group.outstanding)}
                       </TableCell>
 
@@ -546,10 +549,7 @@ export function InvoiceTable({
                         <StatusPill status={group.maxOverdue !== null && group.maxOverdue >= 0 ? 'Overdue' : 'Due'} />
                       </TableCell>
 
-                      {/* Payment Status & Transaction Status empty at Group level */}
-                      <TableCell className="py-2.5">
-                        <span className="text-[11px] text-muted-foreground">—</span>
-                      </TableCell>
+                      {/* Transaction Status empty at Group level */}
                       <TableCell className="py-2.5 pr-4">
                         <span className="text-[11px] text-muted-foreground">—</span>
                       </TableCell>

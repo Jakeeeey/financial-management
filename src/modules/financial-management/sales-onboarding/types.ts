@@ -13,11 +13,17 @@ export interface Salesman {
   price_type?: string;
 }
 
+export interface PaymentTerm {
+  id: number;
+  payment_name: string;
+  payment_days: number;
+}
+
 export interface Customer {
   id: number;
   customer_code: string;
   customer_name: string;
-  payment_term?: number;
+  payment_term?: PaymentTerm | null;
 }
 
 export interface SalesInvoiceType {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,16 +8,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
     Loader2, CheckCircle, Send, SendIcon, Wallet, Building2,
     Printer, Pencil, Lock, AlertTriangle, FileText, Receipt,
-    CheckCircle2, CircleDashed, X, Sparkles, ArrowDownToLine, ArrowUpFromLine,
+    CheckCircle2, CircleDashed, X, ArrowDownToLine, ArrowUpFromLine,
     Paperclip, ExternalLink
 } from "lucide-react";
 import { Disbursement, BankAccountDto, COADto } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
-import { format } from "date-fns";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
 import { cn } from "@/lib/utils";
 import { StickyTableWrapper } from "./StickyTableWrapper";
-import { getCookie, decodeToken, formatCurrency, VOUCHER_STEPS } from "../utils/disbursement-utils";
+import { decodeToken, formatCurrency, formatManilaDate, formatManilaDateTime, getCookie, getPaymentStateLabel, getVoucherStepIndex, VOUCHER_STEPS } from "../utils/disbursement-utils";
 
 interface DisbursementViewSheetProps {
     disbursement: Disbursement | null;
@@ -103,6 +102,8 @@ function AttachmentPreview({ docUrl }: { docUrl: string }) {
 
 export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpdateStatus, onEdit, loading, readOnly = false }: DisbursementViewSheetProps) {
     const [showPrintOptions, setShowPrintOptions] = useState(false);
+    const [actionLocked, setActionLocked] = useState(false);
+    const actionLockRef = useRef(false);
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
 
@@ -125,9 +126,19 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
     const isApprover = disbursement.approverId != null && currentUserId != null && String(disbursement.approverId) === String(currentUserId);
 
     const handleAction = async (status: string) => {
-        const success = await onUpdateStatus(disbursement.id, status);
-        if (success) onOpenChange(false);
+        if (loading || actionLockRef.current) return;
+        actionLockRef.current = true;
+        setActionLocked(true);
+        try {
+            const success = await onUpdateStatus(disbursement.id, status);
+            if (success) onOpenChange(false);
+        } finally {
+            actionLockRef.current = false;
+            setActionLocked(false);
+        }
     };
+
+    const isActionBusy = loading || actionLocked;
 
     const handlePrint = (size: "A4" | "58mm") => {
         generateDisbursementPDF(disbursement, size);
@@ -139,9 +150,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
     const balance = disbursement.balance ?? (totalDebit - totalCredit);
     const isBalanced = Math.abs(balance) < 0.01;
 
-    const currentStepIndex = VOUCHER_STEPS.indexOf(disbursement.status);
-    const isAutoApprove = disbursement.totalAmount < 1000;
-
+    const currentStepIndex = getVoucherStepIndex(disbursement.status);
     return (
         <Sheet open={open} onOpenChange={(val) => { onOpenChange(val); setShowPrintOptions(false); }}>
             <SheetContent className="sm:max-w-[1000px] w-full p-0 flex flex-col bg-background border-l border-border overflow-hidden shadow-2xl">
@@ -157,12 +166,15 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                 )}
                             </SheetTitle>
                             <SheetDescription className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
-                                Transaction Date: {disbursement.transactionDate ? format(new Date(disbursement.transactionDate), "MMMM dd, yyyy") : "No Date Recorded"}
+                                Transaction Date: {formatManilaDate(disbursement.transactionDate, "No Date Recorded")}
                             </SheetDescription>
                         </div>
                         <Badge variant="outline" className="px-3 py-1 bg-muted font-black uppercase tracking-widest text-[10px]">
                             {disbursement.status}
                         </Badge>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                            Payment: {getPaymentStateLabel(disbursement.paymentState)}
+                        </span>
                     </div>
 
                     <div className="mt-6 pt-4 border-t border-border/50">
@@ -207,6 +219,10 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                             </p>
                             <p className="text-sm font-black text-foreground uppercase">{disbursement.payeeName || "N/A"}</p>
                         </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Transaction Type</p>
+                            <p className="text-sm font-black text-foreground uppercase">{disbursement.transactionTypeName || "Unknown"}</p>
+                        </div>
                         <div className="text-right">
                             <p className="flex items-center justify-end gap-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                                 <Wallet className="w-3 h-3" /> Total Amount
@@ -235,15 +251,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                             <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Particulars / Remarks</p>
                             <p className="text-xs font-bold text-foreground bg-muted p-2 rounded-md border border-border/50">{disbursement.remarks || "No remarks provided."}</p>
                         </div>
-                        <div className="grid grid-cols-2 col-span-2 mt-1 gap-2">
-                            <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Division</p>
-                                <p className="text-xs font-bold text-foreground">{disbursement.divisionName || "N/A"}</p>
-                            </div>
-                            <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Department</p>
-                                <p className="text-xs font-bold text-foreground">{disbursement.departmentName || "N/A"}</p>
-                            </div>
+                        <div className="mt-1">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Department</p>
+                            <p className="text-xs font-bold text-foreground">{disbursement.departmentName || "N/A"}</p>
                         </div>
 
                         {/* Audit Trail Section */}
@@ -251,22 +261,22 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                             <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Prepared By</p>
                                 <p className="text-xs font-black text-foreground mt-0.5">{disbursement.submittedByName || disbursement.encoderName || "N/A"}</p>
-                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateSubmitted ? format(new Date(disbursement.dateSubmitted), "MMM dd, yyyy HH:mm") : "Draft State"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateSubmitted ? formatManilaDateTime(disbursement.dateSubmitted) : "Draft State"}</p>
                             </div>
                             <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Approved By</p>
                                 <p className="text-xs font-black text-foreground mt-0.5">{disbursement.approverName || "Pending"}</p>
-                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateApproved ? format(new Date(disbursement.dateApproved), "MMM dd, yyyy HH:mm") : "N/A"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateApproved ? formatManilaDateTime(disbursement.dateApproved) : "N/A"}</p>
                             </div>
                             <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Released By</p>
                                 <p className="text-xs font-black text-foreground mt-0.5">{disbursement.releasedByName || "Pending"}</p>
-                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateReleased ? format(new Date(disbursement.dateReleased), "MMM dd, yyyy HH:mm") : "N/A"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.dateReleased ? formatManilaDateTime(disbursement.dateReleased) : "N/A"}</p>
                             </div>
                             <div>
                                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Posted By</p>
                                 <p className="text-xs font-black text-foreground mt-0.5">{disbursement.postedByName || "Pending"}</p>
-                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.datePosted ? format(new Date(disbursement.datePosted), "MMM dd, yyyy HH:mm") : "N/A"}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground mt-0.5">{disbursement.datePosted ? formatManilaDateTime(disbursement.datePosted) : "N/A"}</p>
                             </div>
                         </div>
                     </div>
@@ -360,7 +370,7 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                             return (
                                                 <TableRow key={i} className="hover:bg-muted/50 border-border">
                                                     <TableCell className="text-[10px] font-bold uppercase text-muted-foreground">
-                                                        {p.date ? format(new Date(p.date), "MMM dd, yyyy") : "N/A"}
+                                                        {formatManilaDate(p.date)}
                                                     </TableCell>
                                                     <TableCell className="text-xs font-bold uppercase text-foreground">{p.checkNo || "N/A"}</TableCell>
                                                     <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">
@@ -419,9 +429,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         )}
 
                         {/* Revert Tool */}
-                        {!readOnly && disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Posted" && (
-                            <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
+                        {!readOnly && disbursement.status !== "Draft" && disbursement.status !== "Returned for Revision" && disbursement.status !== "Submitted" && disbursement.status !== "Posted" && (
+                            <Button variant="ghost" onClick={() => handleAction("Draft")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 text-destructive hover:bg-destructive/10 hidden md:flex">
+                                {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />} Return to Draft
                             </Button>
                         )}
                     </div>
@@ -431,15 +441,15 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                         {!readOnly && (
                             <>
                                 {(disbursement.status === "Draft" || disbursement.status === "Returned for Revision") && (
-                                    <Button onClick={() => handleAction("Submitted")} disabled={loading} className={cn("text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 text-white shadow-md disabled:opacity-50", isAutoApprove ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700")}>
-                                        {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : (isAutoApprove ? <Sparkles className="w-4 h-4 sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />)}
-                                        {isAutoApprove ? "Submit & Auto-Approve" : "Submit for Approval"}
+                                    <Button onClick={() => handleAction("Submitted")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-blue-600 hover:bg-blue-700 text-white shadow-md disabled:opacity-50">
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <SendIcon className="w-4 h-4 sm:mr-2" />}
+                                        Submit for Approval
                                     </Button>
                                 )}
 
                                 {disbursement.status === "Submitted" && (
-                                    <Button onClick={() => handleAction("Approved")} disabled={loading} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
-                                        {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
+                                    <Button onClick={() => handleAction("Approved")} disabled={isActionBusy} className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md">
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <CheckCircle className="w-4 h-4 sm:mr-2" />}
                                         Approve Voucher
                                     </Button>
                                 )}
@@ -447,9 +457,9 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                 {disbursement.status === "Approved" && (
                                     <Button
                                         onClick={() => handleAction("Released")}
-                                        disabled={loading || !disbursement.payments || disbursement.payments.length === 0}
+                                        disabled={isActionBusy || !disbursement.payments || disbursement.payments.length === 0}
                                         className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-purple-600 hover:bg-purple-700 text-white shadow-md disabled:opacity-50">
-                                        {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Send className="w-4 h-4 sm:mr-2" />}
+                                        {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Send className="w-4 h-4 sm:mr-2" />}
                                         Release Check
                                     </Button>
                                 )}
@@ -458,10 +468,10 @@ export function DisbursementViewSheet({ disbursement, open, onOpenChange, onUpda
                                     <div className="flex flex-col items-end gap-1">
                                         <Button 
                                             onClick={() => handleAction("Posted")} 
-                                            disabled={loading || !isBalanced || isApprover} 
+                                            disabled={isActionBusy || !isBalanced || isApprover}
                                             className="text-[10px] font-black uppercase tracking-widest h-10 px-6 sm:px-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md disabled:opacity-50"
                                         >
-                                            {loading ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
+                                            {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin sm:mr-2" /> : <Lock className="w-4 h-4 sm:mr-2" />}
                                             Post to Ledger
                                         </Button>
                                         {isApprover && (

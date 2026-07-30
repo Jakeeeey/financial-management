@@ -17,6 +17,7 @@ import { PcrTabExportImportActions } from "./PcrTabExportImportActions";
 import { ListPriceRequestDetailDialog } from "./ListPriceRequestDetailDialog";
 import { ListCostBatchDetailDialog } from "./ListCostBatchDetailDialog";
 import { PriceChangeBatchDetailDialog } from "./PriceChangeBatchDetailDialog";
+import { UnifiedBatchDetailDialog } from "./UnifiedBatchDetailDialog";
 import { PriceTypeRequestDetailDialog } from "./PriceTypeRequestDetailDialog";
 import { RejectDialog } from "./RejectDialog";
 import { RequestFiltersBar } from "./RequestFiltersBar";
@@ -42,6 +43,7 @@ import {
 import { snapshotFromPriceApprovalRow, snapshotFromUnifiedRow } from "../utils/labels";
 import type {
     CostChangeRequestRow,
+    ApprovalRecordRow,
     ListQuery,
     PCRStatusFilter,
     PriceChangeRequestRow,
@@ -62,15 +64,6 @@ type Props = {
 
 function resolveUnifiedSelectionKey(row: UnifiedApprovalRow): string {
     return row.row_key;
-}
-
-function resolveApprovalActionRow(rows: UnifiedApprovalRow[], id: number) {
-    return rows.find((row) => {
-        if (row.kind === "price_batch" || row.kind === "cost_batch") {
-            return Number(row.batch_id ?? row.request_id) === id;
-        }
-        return Number(row.request_id) === id;
-    });
 }
 
 export function UnifiedApprovalsManager({
@@ -95,6 +88,7 @@ export function UnifiedApprovalsManager({
     });
     const [viewingBatchHeaderId, setViewingBatchHeaderId] = React.useState<number | null>(null);
     const [viewingCostBatchHeaderId, setViewingCostBatchHeaderId] = React.useState<number | null>(null);
+    const [viewingMixedBatchHeaderId, setViewingMixedBatchHeaderId] = React.useState<number | null>(null);
     const [viewingCostRequestId, setViewingCostRequestId] = React.useState<number | null>(null);
     const [viewingPriceRequestId, setViewingPriceRequestId] = React.useState<number | null>(null);
     const [rejectingCostId, setRejectingCostId] = React.useState<number | null>(null);
@@ -106,6 +100,8 @@ export function UnifiedApprovalsManager({
     const [confirmingBulkPriceApprove, setConfirmingBulkPriceApprove] = React.useState(false);
     const [confirmingPriceBatchHeaderId, setConfirmingPriceBatchHeaderId] = React.useState<number | null>(null);
     const [rejectingPriceBatchHeaderId, setRejectingPriceBatchHeaderId] = React.useState<number | null>(null);
+    const [confirmingMixedBatchHeaderId, setConfirmingMixedBatchHeaderId] = React.useState<number | null>(null);
+    const [rejectingMixedBatchHeaderId, setRejectingMixedBatchHeaderId] = React.useState<number | null>(null);
     const [confirmingOrphanPriceApproveId, setConfirmingOrphanPriceApproveId] = React.useState<number | null>(null);
     const [rejectingOrphanPriceId, setRejectingOrphanPriceId] = React.useState<number | null>(null);
     const [bulkCostActionOutcome, setBulkCostActionOutcome] = React.useState<BulkActionOutcome | null>(null);
@@ -233,39 +229,58 @@ export function UnifiedApprovalsManager({
         selectedPriceSnapshots,
     ]);
 
-    const openRequestReview = React.useCallback((id: number) => {
-        const row = resolveApprovalActionRow(feed.rows, id);
-        if (row?.kind === "price_batch") {
+    const clearViewingState = React.useCallback(() => {
+        setViewingBatchHeaderId(null);
+        setViewingCostBatchHeaderId(null);
+        setViewingMixedBatchHeaderId(null);
+        setViewingCostRequestId(null);
+        setViewingPriceRequestId(null);
+    }, []);
+
+    const openRequestReview = React.useCallback((row: ApprovalRecordRow) => {
+        if (!("kind" in row)) return;
+
+        clearViewingState();
+        if (row.kind === "price_batch") {
             setViewingBatchHeaderId(Number(row.batch_id ?? row.request_id));
             return;
         }
-        if (row?.kind === "cost_batch") {
+        if (row.kind === "cost_batch") {
             setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
             return;
         }
-        if (row && row.kind === "list_price") {
-            setViewingCostRequestId(id);
+        if (row.kind === "mixed_batch") {
+            setViewingMixedBatchHeaderId(Number(row.batch_id ?? row.request_id));
             return;
         }
-        setViewingPriceRequestId(id);
-    }, [feed.rows]);
+        if (row.kind === "list_price") {
+            setViewingCostRequestId(Number(row.request_id));
+            return;
+        }
+        setViewingPriceRequestId(Number(row.request_id));
+    }, [clearViewingState]);
 
     const handleTableApprove = React.useCallback(
-        (id: number) => {
-            const row = resolveApprovalActionRow(feed.rows, id);
-            if (row?.kind === "list_price") {
+        (row: ApprovalRecordRow) => {
+            if (!("kind" in row)) return;
+            const id = Number(row.request_id);
+            if (row.kind === "list_price") {
                 setConfirmingCostApprove({ type: "single", id });
                 return;
             }
-            if (row?.kind === "price_batch") {
+            if (row.kind === "price_batch") {
                 setConfirmingPriceBatchHeaderId(Number(row.batch_id ?? row.request_id));
                 return;
             }
-            if (row?.kind === "cost_batch") {
+            if (row.kind === "mixed_batch") {
+                setConfirmingMixedBatchHeaderId(Number(row.batch_id ?? row.request_id));
+                return;
+            }
+            if (row.kind === "cost_batch") {
                 setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
                 return;
             }
-            if (row?.kind === "price_type") {
+            if (row.kind === "price_type") {
                 if (row.batch_header_id) {
                     setConfirmingPriceBatchHeaderId(row.batch_header_id);
                 } else {
@@ -273,25 +288,30 @@ export function UnifiedApprovalsManager({
                 }
             }
         },
-        [feed.rows],
+        [],
     );
 
     const handleTableReject = React.useCallback(
-        (id: number) => {
-            const row = resolveApprovalActionRow(feed.rows, id);
-            if (row?.kind === "list_price") {
+        (row: ApprovalRecordRow) => {
+            if (!("kind" in row)) return;
+            const id = Number(row.request_id);
+            if (row.kind === "list_price") {
                 setRejectingCostId(id);
                 return;
             }
-            if (row?.kind === "price_batch") {
+            if (row.kind === "price_batch") {
                 setRejectingPriceBatchHeaderId(Number(row.batch_id ?? row.request_id));
                 return;
             }
-            if (row?.kind === "cost_batch") {
+            if (row.kind === "mixed_batch") {
+                setRejectingMixedBatchHeaderId(Number(row.batch_id ?? row.request_id));
+                return;
+            }
+            if (row.kind === "cost_batch") {
                 setViewingCostBatchHeaderId(Number(row.batch_id ?? row.request_id));
                 return;
             }
-            if (row?.kind === "price_type") {
+            if (row.kind === "price_type") {
                 if (row.batch_header_id) {
                     setRejectingPriceBatchHeaderId(row.batch_header_id);
                 } else {
@@ -299,7 +319,7 @@ export function UnifiedApprovalsManager({
                 }
             }
         },
-        [feed.rows],
+        [],
     );
 
     const canSelectUnifiedRow = React.useCallback((row: PriceChangeRequestRow | CostChangeRequestRow | UnifiedApprovalRow) => {
@@ -650,6 +670,24 @@ export function UnifiedApprovalsManager({
                       })}
             />
 
+            <UnifiedBatchDetailDialog
+                batchId={viewingMixedBatchHeaderId}
+                open={viewingMixedBatchHeaderId != null}
+                acting={acting}
+                readOnly={readOnly}
+                onOpenChange={(open) => {
+                    if (!open) setViewingMixedBatchHeaderId(null);
+                }}
+                {...(readOnly
+                    ? {}
+                    : {
+                          onApprove: feed.approveMixedBatch,
+                          onReject: feed.rejectMixedBatch,
+                          onApplyScheduledNow: (headerId: number) => feed.applyScheduledNow("mixed_batch", headerId),
+                          onRetryApplication: feed.retryMixedBatch,
+                      })}
+            />
+
             <PriceTypeRequestDetailDialog
                 row={viewingPriceRequest}
                 open={viewingPriceRequestId != null}
@@ -776,6 +814,20 @@ export function UnifiedApprovalsManager({
                 }}
             />
 
+            <RejectDialog
+                open={rejectingMixedBatchHeaderId != null}
+                onOpenChange={(open) => {
+                    if (!open) setRejectingMixedBatchHeaderId(null);
+                }}
+                loading={acting}
+                title="Reject Mixed Batch"
+                onConfirm={async (reason) => {
+                    if (rejectingMixedBatchHeaderId == null) return;
+                    await feed.rejectMixedBatch(rejectingMixedBatchHeaderId, reason);
+                    setRejectingMixedBatchHeaderId(null);
+                }}
+            />
+
             <ApproveDialog
                 open={confirmingCostApprove != null}
                 onOpenChange={() => setConfirmingCostApprove(null)}
@@ -857,6 +909,19 @@ export function UnifiedApprovalsManager({
                     if (confirmingPriceBatchHeaderId == null) return;
                     await feed.approveBatch(confirmingPriceBatchHeaderId, effectiveAt);
                     setConfirmingPriceBatchHeaderId(null);
+                }}
+            />
+
+            <ApproveDialog
+                open={confirmingMixedBatchHeaderId != null}
+                onOpenChange={() => setConfirmingMixedBatchHeaderId(null)}
+                loading={acting}
+                title="Approve Mixed Batch"
+                description="Approve this mixed batch? All pending price-type and list-cost lines will be approved and applied."
+                onConfirm={async (effectiveAt) => {
+                    if (confirmingMixedBatchHeaderId == null) return;
+                    await feed.approveMixedBatch(confirmingMixedBatchHeaderId, effectiveAt);
+                    setConfirmingMixedBatchHeaderId(null);
                 }}
             />
 

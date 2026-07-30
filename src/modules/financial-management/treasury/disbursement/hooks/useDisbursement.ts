@@ -1,8 +1,9 @@
 "use client";
 
-import {useState, useCallback, useEffect} from "react";
+import {useState, useCallback, useEffect, useRef} from "react";
 import {Disbursement, DisbursementPayload, SupplierDto, DivisionDto, DepartmentDto} from "../types";
-import {disbursementProvider} from "../providers/fetchProvider";
+import {disbursementProvider, DisbursementRequestError} from "../providers/fetchProvider";
+import {DisbursementSubmitResult} from "../types";
 import {toast} from "sonner";
 
 export function useDisbursement() {
@@ -28,6 +29,8 @@ export function useDisbursement() {
     const [filterSuppliers, setFilterSuppliers] = useState<SupplierDto[]>([]);
     const [divisions, setDivisions] = useState<DivisionDto[]>([]);
     const [departments, setDepartments] = useState<DepartmentDto[]>([]);
+    const listRequestIdRef = useRef(0);
+    const createRequestLockRef = useRef(false);
 
     useEffect(() => {
         const fetchFilterData = async () => {
@@ -52,29 +55,26 @@ export function useDisbursement() {
         pageNum: number, type: string, search: string, start: string, end: string,
         status: string, divId: string, deptId: string, docNo: string
     ) => {
+        const requestId = ++listRequestIdRef.current;
         setLoading(true);
         try {
             const response = await disbursementProvider.getDisbursements(pageNum, size, type, search, start, end, status, divId, deptId, docNo);
+            if (requestId !== listRequestIdRef.current) return;
             setData(response.content);
             setTotalPages(response.totalPages);
         } catch {
+            if (requestId !== listRequestIdRef.current) return;
             toast.error("Failed to load disbursements");
         } finally {
-            setLoading(false);
+            if (requestId === listRequestIdRef.current) {
+                setLoading(false);
+            }
         }
     }, [size]);
 
     useEffect(() => {
         fetchList(page, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
-        
-        const timer = setInterval(() => {
-            if (typeof window !== "undefined" && document.hasFocus() && !actionLoading) {
-                fetchList(page, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
-            }
-        }, 10000); // 10s poll
-
-        return () => clearInterval(timer);
-    }, [page, activeType, size, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch, actionLoading, fetchList]);
+    }, [page, activeType, size, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch, fetchList]);
 
     const applyFilters = () => {
         setPage(0);
@@ -98,32 +98,44 @@ export function useDisbursement() {
         setPage(0);
     };
 
-    const create = async (payload: DisbursementPayload) => {
+    const create = async (payload: DisbursementPayload): Promise<DisbursementSubmitResult> => {
+        if (createRequestLockRef.current) return {success: false};
+        createRequestLockRef.current = true;
         setActionLoading(true);
         try {
             await disbursementProvider.createDisbursement(payload);
             toast.success("Voucher created successfully");
             applyFilters();
-            return true;
-        } catch {
-            toast.error("Creation failed");
-            return false;
+            return {success: true};
+        } catch (error: unknown) {
+            if (error instanceof DisbursementRequestError && error.code === "DOC_NO_CONFLICT") {
+                return {
+                    success: false,
+                    code: error.code,
+                    message: error.message,
+                    nextDocNo: error.nextDocNo,
+                };
+            }
+            const message = error instanceof Error ? error.message : "Creation failed";
+            toast.error(message);
+            return {success: false, message};
         } finally {
+            createRequestLockRef.current = false;
             setActionLoading(false);
         }
     };
 
-    const update = async (id: number, payload: DisbursementPayload) => {
+    const update = async (id: number, payload: DisbursementPayload): Promise<DisbursementSubmitResult> => {
         setActionLoading(true);
         try {
             await disbursementProvider.updateDisbursement(id, payload);
             toast.success("Voucher updated successfully");
             applyFilters();
-            return true;
+            return {success: true};
         } catch (error: unknown) { // 🚀 FIX: Replaced 'any'
             const msg = error instanceof Error ? error.message : "Update failed";
             toast.error(msg);
-            return false;
+            return {success: false, message: msg};
         } finally {
             setActionLoading(false);
         }

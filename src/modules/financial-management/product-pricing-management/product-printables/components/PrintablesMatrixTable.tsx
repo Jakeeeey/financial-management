@@ -21,6 +21,7 @@ import {
     matrixPriceTypeColor,
     priceTypeTierKey,
 } from "../utils/matrixDisplay";
+import { formatPriceNumber } from "../../shared/pricePrecision";
 
 type Props = {
     rows: MatrixRow[];
@@ -189,7 +190,7 @@ export default function PrintablesMatrixTable({
                                                 >
                                                     {price != null ? (
                                                         <span className="font-bold text-[#374151]">
-                                                            {price.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                                            {formatPriceNumber(price, "\u2014")}
                                                         </span>
                                                     ) : (
                                                         <span className="text-[#D1D5DB]">—</span>

@@ -10,6 +10,8 @@ import {
   fetchRecentInvoices,
   createSalesInvoice,
   fetchDiscountTypes,
+  resolveCustomerPaymentTerm,
+  SalesOnboardingValidationError,
 } from "@/modules/financial-management/sales-onboarding/services/salesOnboarding";
  
 export const runtime = "nodejs";
@@ -93,6 +95,27 @@ export async function POST(req: NextRequest) {
  
     // 2. Parse payload
     const body = await req.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "A valid invoice payload is required." }, { status: 400 });
+    }
+
+    const rawGrossAmount = body.gross_amount;
+    const grossAmount = typeof rawGrossAmount === "number"
+      ? rawGrossAmount
+      : typeof rawGrossAmount === "string" && rawGrossAmount.trim() !== ""
+        ? Number(rawGrossAmount)
+        : Number.NaN;
+    if (!Number.isFinite(grossAmount) || grossAmount <= 0) {
+      return NextResponse.json(
+        { error: "Gross amount must be greater than zero." },
+        { status: 400 },
+      );
+    }
+
+    const customerCode = typeof body.customer_code === "string" ? body.customer_code.trim() : "";
+    if (!customerCode) {
+      return NextResponse.json({ error: "Customer is required." }, { status: 400 });
+    }
 
     // 2.5. Double check uniqueness at save time
     const invoiceNo = body.invoice_no;
@@ -112,9 +135,23 @@ export async function POST(req: NextRequest) {
       }
     }
     
+    // Resolve the relation ID from the customer instead of trusting a day count or client value.
+    let paymentTermId: number | null;
+    try {
+      paymentTermId = await resolveCustomerPaymentTerm(customerCode);
+    } catch (error) {
+      if (error instanceof SalesOnboardingValidationError) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      throw error;
+    }
+
     // 3. Attach Audit fields
     const finalPayload = {
       ...body,
+      customer_code: customerCode,
+      gross_amount: grossAmount,
+      payment_terms: paymentTermId,
       created_by: createdBy,
       modified_by: createdBy, // modified_by is initially the creator
     };

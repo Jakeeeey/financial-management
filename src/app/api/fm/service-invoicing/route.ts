@@ -56,6 +56,17 @@ export const runtime = "nodejs";
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN;
 
+class DirectusRequestError extends Error {
+    constructor(
+        public readonly operation: string,
+        public readonly upstreamStatus: number,
+        statusText: string,
+    ) {
+        super(`${operation}: ${statusText || `HTTP ${upstreamStatus}`}`);
+        this.name = "DirectusRequestError";
+    }
+}
+
 function getHeaders() {
     if (!DIRECTUS_URL) throw new Error("NEXT_PUBLIC_API_BASE_URL is not configured");
     if (!DIRECTUS_TOKEN) throw new Error("DIRECTUS_STATIC_TOKEN is not configured");
@@ -63,6 +74,70 @@ function getHeaders() {
         "Content-Type": "application/json",
         Authorization: `Bearer ${DIRECTUS_TOKEN}`,
     };
+}
+
+function sanitizeDirectusErrorBody(body: string): string {
+    const compact = body.replace(/[\r\n]+/g, " ").trim();
+    if (!compact) return "";
+
+    try {
+        const parsed = JSON.parse(compact) as { errors?: unknown };
+        if (Array.isArray(parsed.errors)) {
+            return JSON.stringify({
+                errors: parsed.errors.map((error) => {
+                    if (typeof error === "string") return error;
+                    if (typeof error !== "object" || error === null) return "Unknown Directus error";
+
+                    const record = error as Record<string, unknown>;
+                    return {
+                        code: typeof record.code === "string" ? record.code : undefined,
+                        message: typeof record.message === "string" ? record.message : undefined,
+                    };
+                }),
+            });
+        }
+    } catch {
+        // Keep a bounded text fallback for non-JSON Directus responses.
+    }
+
+    return compact.slice(0, 500);
+}
+
+async function assertDirectusOk(response: Response, operation: string): Promise<void> {
+    if (response.ok) return;
+
+    const body = await response.text().catch(() => "");
+    console.error("Service invoicing Directus request failed", {
+        operation,
+        status: response.status,
+        statusText: response.statusText,
+        body: sanitizeDirectusErrorBody(body),
+    });
+
+    throw new DirectusRequestError(operation, response.status, response.statusText);
+}
+
+function directusErrorResponse(error: unknown, fallbackMessage: string) {
+    if (error instanceof DirectusRequestError) {
+        if (error.upstreamStatus === 401 || error.upstreamStatus === 403) {
+            return NextResponse.json(
+                {
+                    error: "Service invoicing data is unavailable because the configured Directus role lacks the required permissions. Verify access to the service invoice mapping and related collections, then retry.",
+                },
+                { status: 502 },
+            );
+        }
+
+        if (error.upstreamStatus >= 500) {
+            return NextResponse.json(
+                { error: "The Directus service is temporarily unavailable. Please retry the service invoicing request." },
+                { status: 502 },
+            );
+        }
+    }
+
+    const message = error instanceof Error ? error.message : fallbackMessage;
+    return NextResponse.json({ error: message || fallbackMessage }, { status: 500 });
 }
 
 export async function GET(request: NextRequest) {
@@ -75,7 +150,7 @@ export async function GET(request: NextRequest) {
         if (invoiceNo) {
             const checkUrl = `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_no][_eq]=${encodeURIComponent(invoiceNo)}&fields=invoice_id`;
             const checkRes = await fetch(checkUrl, { headers, cache: "no-store" });
-            if (!checkRes.ok) throw new Error(`Directus uniqueness query failed: ${checkRes.statusText}`);
+            await assertDirectusOk(checkRes, "Directus uniqueness query failed");
             const checkData = await checkRes.json();
             const exists = Array.isArray(checkData.data) && checkData.data.length > 0;
             return NextResponse.json({ exists });
@@ -87,7 +162,7 @@ export async function GET(request: NextRequest) {
             // Fetch child_invoice_id values already linked in mappings
             const mappingUrl = `${DIRECTUS_URL}/items/service_invoice_mapping?limit=-1&fields=child_invoice_id`;
             const mappingRes = await fetch(mappingUrl, { headers, cache: "no-store" });
-            if (!mappingRes.ok) throw new Error(`Directus mapping query failed: ${mappingRes.statusText}`);
+            await assertDirectusOk(mappingRes, "Directus mapping query failed");
             const mappingData = await mappingRes.json();
             
             const linkedChildIds = new Set<number>(
@@ -97,7 +172,7 @@ export async function GET(request: NextRequest) {
             // Fetch sales invoices matching this customer code
             const invoicesUrl = `${DIRECTUS_URL}/items/sales_invoice?filter[customer_code][_eq]=${encodeURIComponent(customerCode)}&limit=-1&fields=invoice_id,invoice_no,total_amount,invoice_date,transaction_status,dispatch_date`;
             const invoicesRes = await fetch(invoicesUrl, { headers, cache: "no-store" });
-            if (!invoicesRes.ok) throw new Error(`Directus invoices query failed: ${invoicesRes.statusText}`);
+            await assertDirectusOk(invoicesRes, "Directus invoices query failed");
             const invoicesData = await invoicesRes.json();
 
             // Filter out invoices that are already linked
@@ -113,7 +188,7 @@ export async function GET(request: NextRequest) {
         if (history === "true") {
             const mappingUrl = `${DIRECTUS_URL}/items/service_invoice_mapping?limit=-1&fields=id,parent_invoice_id,child_invoice_id,amount_applied`;
             const mappingRes = await fetch(mappingUrl, { headers, cache: "no-store" });
-            if (!mappingRes.ok) throw new Error(`Directus mapping query failed: ${mappingRes.statusText}`);
+            await assertDirectusOk(mappingRes, "Directus mapping query failed");
             const mappingData = await mappingRes.json();
             const mappingsList = mappingData.data || [];
 
@@ -144,7 +219,7 @@ export async function GET(request: NextRequest) {
                 const filterString = `filter[invoice_id][_in]=${chunk.join(",")}`;
                 const invoicesUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&${filterString}&fields=invoice_id,invoice_no,customer_code,salesman_id,invoice_type,total_amount,due_date,dispatch_date,gross_amount,discount_amount,net_amount,transaction_status,remarks`;
                 const res = await fetch(invoicesUrl, { headers, cache: "no-store" });
-                if (!res.ok) throw new Error(`Invoices details query failed: ${res.statusText}`);
+                await assertDirectusOk(res, "Invoices details query failed");
                 const data = await res.json();
                 allInvoicesList = allInvoicesList.concat(data.data || []);
             }
@@ -214,7 +289,7 @@ export async function GET(request: NextRequest) {
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         console.error("GET service-invoicing error:", err);
-        return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
+        return directusErrorResponse(err, "Failed to load service invoicing data.");
     }
 }
 
@@ -310,10 +385,7 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify(parentInvoicePayload)
         });
 
-        if (!createParentRes.ok) {
-            const errData = await createParentRes.json().catch(() => ({}));
-            throw new Error(errData.errors?.[0]?.message || `Failed to create parent sales invoice: ${createParentRes.statusText}`);
-        }
+        await assertDirectusOk(createParentRes, "Failed to create parent sales invoice");
 
         const parentInvoiceData = await createParentRes.json();
         parentInvoiceId = Number(parentInvoiceData.data.invoice_id);
@@ -337,10 +409,7 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify(mappingsPayload)
         });
 
-        if (!createMappingsRes.ok) {
-            const errData = await createMappingsRes.json().catch(() => ({}));
-            throw new Error(errData.errors?.[0]?.message || `Failed to create mappings: ${createMappingsRes.statusText}`);
-        }
+        await assertDirectusOk(createMappingsRes, "Failed to create mappings");
 
         const mappingsResult = await createMappingsRes.json();
 
@@ -367,6 +436,6 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        return NextResponse.json({ error: err.message || "Failed to process service invoice consolidation." }, { status: 500 });
+        return directusErrorResponse(err, "Failed to process service invoice consolidation.");
     }
 }

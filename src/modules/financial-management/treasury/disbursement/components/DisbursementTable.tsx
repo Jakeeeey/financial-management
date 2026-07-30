@@ -5,10 +5,9 @@ import { Disbursement } from "../types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { format } from "date-fns";
-import { FileText, Building2, Wallet, Lock } from "lucide-react";
+import { FileText, Wallet, Lock } from "lucide-react";
 import { StickyTableWrapper } from "./StickyTableWrapper";
-import { formatCurrency, getStatusColor } from "../utils/disbursement-utils";
+import { formatCurrency, formatManilaDate, getPaymentStateLabel, getStatusColor } from "../utils/disbursement-utils";
 
 interface DisbursementTableProps {
     data: Disbursement[];
@@ -24,8 +23,9 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                 <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                     <TableRow className="border-border">
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground w-[180px]">Voucher Info</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Transaction Type</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Payee & Particulars</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Cost Center</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Cost Department</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Financials</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-[120px]">Status</TableHead>
                         <TableHead className="w-[80px]"></TableHead>
@@ -33,9 +33,9 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                 </TableHeader>
                 <TableBody>
                     {loading ? (
-                        <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">Loading vouchers...</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={7} className="h-48 text-center text-sm font-medium text-muted-foreground">Loading vouchers...</TableCell></TableRow>
                     ) : data.length === 0 ? (
-                        <TableRow><TableCell colSpan={6} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements found in this category.</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={7} className="h-48 text-center text-sm font-medium text-muted-foreground">No disbursements found in this category.</TableCell></TableRow>
                     ) : (
                         data.map((d) => (
                             <TableRow key={d.id} className="group hover:bg-primary/[0.04] transition-all duration-200 border-border even:bg-muted/20">
@@ -49,9 +49,14 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                                             )}
                                         </div>
                                         <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                                            {d.transactionDate ? format(new Date(d.transactionDate), "MMM dd, yyyy") : "No Date"}
+                                            {formatManilaDate(d.transactionDate, "No Date")}
                                         </span>
                                     </div>
+                                </TableCell>
+                                <TableCell className="align-top py-4">
+                                    <Badge variant="outline" className="text-[9px] font-black uppercase px-2 py-0.5 whitespace-nowrap">
+                                        {d.transactionTypeName || "Unknown"}
+                                    </Badge>
                                 </TableCell>
                                 <TableCell className="align-top py-4">
                                     <div className="flex flex-col gap-1 max-w-[300px]">
@@ -60,19 +65,13 @@ export function DisbursementTable({ data, loading, onView }: DisbursementTablePr
                                     </div>
                                 </TableCell>
                                 <TableCell className="align-top py-4">
-                                    <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-1.5 text-foreground/80">
-                                            <Building2 className="w-3 h-3 opacity-50" />
-                                            <span className="text-[10px] font-bold uppercase truncate">{d.divisionName || "No Division"}</span>
-                                        </div>
-                                        <span className="text-[9px] font-bold text-muted-foreground uppercase ml-4.5 truncate">{d.departmentName || "No Department"}</span>
-                                    </div>
+                                    <span className="text-[10px] font-bold uppercase truncate">{d.departmentName || "No Department"}</span>
                                 </TableCell>
                                 <TableCell className="align-top py-4 text-right">
                                     <div className="flex flex-col gap-1 items-end">
                                         <span className="text-xs font-black text-foreground">{formatCurrency(d.totalAmount)}</span>
                                         <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-500">
-                                            <Wallet className="w-3 h-3" /> Paid: {formatCurrency(d.paidAmount || 0)}
+                                            <Wallet className="w-3 h-3" /> {getPaymentStateLabel(d.paymentState)}: {formatCurrency(d.paidAmount || 0)}
                                         </div>
                                     </div>
                                 </TableCell>
