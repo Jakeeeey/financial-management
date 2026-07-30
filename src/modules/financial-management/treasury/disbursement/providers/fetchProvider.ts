@@ -15,6 +15,18 @@ import {
     DashboardFilters
 } from "../types";
 
+export class DisbursementRequestError extends Error {
+    readonly code?: string;
+    readonly nextDocNo?: string;
+
+    constructor(message: string, code?: string, nextDocNo?: string) {
+        super(message);
+        this.name = "DisbursementRequestError";
+        this.code = code;
+        this.nextDocNo = nextDocNo;
+    }
+}
+
 const API_BASE = "/api/fm/treasury/disbursements";
 const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
 
@@ -50,7 +62,11 @@ export const disbursementProvider = {
         });
         if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.detail || errData.message || "Failed to create disbursement");
+            throw new DisbursementRequestError(
+                errData.detail || errData.message || "Failed to create disbursement",
+                typeof errData.code === "string" ? errData.code : undefined,
+                typeof errData.nextDocNo === "string" ? errData.nextDocNo : undefined,
+            );
         }
         return res.json();
     },
@@ -121,10 +137,17 @@ export const disbursementProvider = {
         return res.json();
     },
 
-    getUnpaidPos: async (supplierId: number): Promise<UnpaidPoDto[]> => {
-        const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`);
-        if (!res.ok) throw new Error("Failed to fetch unpaid POs");
-        return res.json();
+    getUnpaidPos: async (supplierId: number, signal?: AbortSignal): Promise<UnpaidPoDto[]> => {
+        const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`, {
+            cache: "no-store",
+            signal,
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+            throw new Error(data?.detail || data?.message || "Failed to fetch unpaid POs");
+        }
+        if (!Array.isArray(data)) throw new Error("Pending Records returned an invalid response");
+        return data as UnpaidPoDto[];
     },
 
     getSupplierMemos: async (supplierId: number): Promise<MemoDto[]> => {

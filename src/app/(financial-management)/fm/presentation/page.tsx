@@ -8,6 +8,8 @@ import { AnimatedBackground } from "@/components/command-center/AnimatedBackgrou
 import { GlassCard } from "@/components/command-center/GlassCard";
 import { Button } from "@/components/ui/button";
 
+export const dynamic = "force-dynamic";
+
 // Slide Data & Structure
 const SLIDES = [
     { id: "hero", title: "Overview", icon: "Activity" },

@@ -6,6 +6,11 @@ import {
     directusErrorResponse,
     normalizeEffectiveAt,
 } from "../../_batch";
+import {
+    approveUnifiedBatch,
+    isUnifiedBatchDetectionError,
+    resolveUnifiedBatchKind,
+} from "../../../_unifiedBatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,8 +31,22 @@ export async function POST(req: NextRequest, context: RouteContext) {
         }
 
         const body = (await req.json().catch(() => ({}))) as Partial<{ effective_at: string | null }>;
+        const batchKind = await resolveUnifiedBatchKind(headerId);
+        if (batchKind === "mixed") {
+            const result = await approveUnifiedBatch(headerId, userId, normalizeEffectiveAt(body.effective_at));
+            if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
+            return NextResponse.json(result, { status: result.failed > 0 || result.retryable ? 202 : 200 });
+        }
+
         return approveCostBatch(headerId, userId, normalizeEffectiveAt(body.effective_at));
     } catch (error: unknown) {
+        if (isUnifiedBatchDetectionError(error)) {
+            console.error("[costChangeBatchApprove] Mixed-batch detection failed", error.originalError);
+            return NextResponse.json(
+                { error: error.message, code: error.code, retryable: error.retryable },
+                { status: error.status },
+            );
+        }
         return directusErrorResponse(error);
     }
 }

@@ -5,8 +5,6 @@ import { Loader2, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import * as api from "../providers/pcrApi";
@@ -38,8 +36,6 @@ type CatalogPanelProps = {
     setCatalogViewMode: React.Dispatch<React.SetStateAction<"catalog" | "imported">>;
     showingImportedView: boolean;
     importedProductIds: number[];
-    applyParentPriceToChildren: boolean;
-    setApplyParentPriceToChildren: React.Dispatch<React.SetStateAction<boolean>>;
     localCatalogQ: string;
     setLocalCatalogQ: React.Dispatch<React.SetStateAction<string>>;
     applyCatalogSearch: () => void;
@@ -78,17 +74,6 @@ export function BatchCatalogPanel(props: CatalogPanelProps) {
                                 Full Catalog
                             </Button>
                         </div>
-                    ) : null}
-                    <div className="flex items-center gap-2">
-                        <Switch id="apply-parent-price-to-children" checked={props.applyParentPriceToChildren} onCheckedChange={props.setApplyParentPriceToChildren} disabled={props.saving} />
-                        <Label htmlFor="apply-parent-price-to-children" className="text-xs font-normal text-muted-foreground">
-                            Apply parent prices to child variants
-                        </Label>
-                    </div>
-                    {props.applyParentPriceToChildren ? (
-                        <p className="text-[11px] leading-snug text-muted-foreground">
-                            Applies to all unit variants in each product group, including variants on other catalog pages.
-                        </p>
                     ) : null}
                 </div>
                 <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">

@@ -74,7 +74,8 @@ export function PriceChangeBatchDialog({
     const [errors, setErrors] = React.useState<FieldErrors>({});
     const [submitting, setSubmitting] = React.useState(false);
 
-    const requiresBatchFields = priceLineCount > 0;
+    const requiresSupplier = priceLineCount > 0 || costLineCount > 0;
+    const requiresRemarks = priceLineCount > 0;
     const supplierOptions = batchSupplierOptions ?? suppliers;
 
     React.useEffect(() => {
@@ -90,10 +91,12 @@ export function PriceChangeBatchDialog({
         const parsedSupplierId = Number(supplierId);
         const trimmedRemarks = remarks.trim();
 
-        if (requiresBatchFields) {
+        if (requiresSupplier) {
             if (!Number.isFinite(parsedSupplierId) || parsedSupplierId <= 0) {
                 nextErrors.supplier_id = "Supplier is required.";
             }
+        }
+        if (requiresRemarks) {
             if (!trimmedRemarks) {
                 nextErrors.remarks = "Remarks is required.";
             }
@@ -119,17 +122,18 @@ export function PriceChangeBatchDialog({
 
     const canSubmit =
         !submitting &&
-        (!requiresBatchFields || (Number(supplierId) > 0 && remarks.trim().length > 0));
+        (!requiresSupplier || Number(supplierId) > 0) &&
+        (!requiresRemarks || remarks.trim().length > 0);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
                 <DialogHeader>
                     <DialogTitle>
-                        {requiresBatchFields ? "New Price Change Batch" : "Review changes before saving"}
+                        {requiresRemarks ? "New Price Change Batch" : "Review changes before saving"}
                     </DialogTitle>
                     <DialogDescription>
-                        {requiresBatchFields
+                        {requiresRemarks
                             ? "Group the pending price edits into one document for approval."
                             : "Confirm the list cost changes below before submitting for approval."}
                     </DialogDescription>
@@ -221,7 +225,7 @@ export function PriceChangeBatchDialog({
                         </div>
                     </div>
 
-                    {requiresBatchFields ? (
+                    {requiresSupplier ? (
                         <>
                             <div className="flex flex-col gap-1.5">
                                 <Label>
@@ -257,27 +261,29 @@ export function PriceChangeBatchDialog({
                                 />
                             </div>
 
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="price-change-remarks">
-                                    Remarks
-                                    <span className="text-destructive"> *</span>
-                                </Label>
-                                <Textarea
-                                    id="price-change-remarks"
-                                    value={remarks}
-                                    onChange={(event) => {
-                                        setRemarks(event.target.value);
-                                        setErrors((prev) => ({ ...prev, remarks: undefined }));
-                                    }}
-                                    placeholder="Explain why this batch should be approved"
-                                    className="min-h-24 resize-y"
-                                    aria-invalid={Boolean(errors.remarks)}
-                                    disabled={submitting}
-                                />
-                                {errors.remarks ? (
-                                    <p className="text-xs text-destructive">{errors.remarks}</p>
-                                ) : null}
-                            </div>
+                            {requiresRemarks ? (
+                                <div className="flex flex-col gap-1.5">
+                                    <Label htmlFor="price-change-remarks">
+                                        Remarks
+                                        <span className="text-destructive"> *</span>
+                                    </Label>
+                                    <Textarea
+                                        id="price-change-remarks"
+                                        value={remarks}
+                                        onChange={(event) => {
+                                            setRemarks(event.target.value);
+                                            setErrors((prev) => ({ ...prev, remarks: undefined }));
+                                        }}
+                                        placeholder="Explain why this batch should be approved"
+                                        className="min-h-24 resize-y"
+                                        aria-invalid={Boolean(errors.remarks)}
+                                        disabled={submitting}
+                                    />
+                                    {errors.remarks ? (
+                                        <p className="text-xs text-destructive">{errors.remarks}</p>
+                                    ) : null}
+                                </div>
+                            ) : null}
                         </>
                     ) : null}
                 </div>
@@ -288,7 +294,7 @@ export function PriceChangeBatchDialog({
                     </Button>
                     <Button onClick={() => void submit()} disabled={!canSubmit}>
                         {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-                        {requiresBatchFields ? "Submit Batch" : "Confirm save"}
+                        {requiresRemarks ? "Submit Batch" : "Confirm save"}
                     </Button>
                 </DialogFooter>
             </DialogContent>

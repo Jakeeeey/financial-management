@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SearchableDropdown } from "./SearchableDropdown";
 import { Plus, DownloadCloud, Paperclip, Trash2, UploadCloud, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SupplierDto, DivisionDto, DepartmentDto } from "../types";
+import { SupplierDto, DepartmentDto } from "../types";
 import { toast } from "sonner";
 
 interface VoucherDetailsSectionProps {
@@ -22,10 +22,7 @@ interface VoucherDetailsSectionProps {
     payeeSupplierTypeLabel: string;
     isNonTradeVoucher: boolean;
     setIsPayeeRegistrationOpen: (open: boolean) => void;
-    handleOpenPoModal: () => void;
-    divisions: DivisionDto[];
-    divisionId: number | "";
-    setDivisionId: (val: number | "") => void;
+    handleOpenPoModal: (supplierId: number) => void;
     departments: DepartmentDto[];
     departmentId: number | "";
     setDepartmentId: (val: number | "") => void;
@@ -36,8 +33,6 @@ interface VoucherDetailsSectionProps {
     uploadingFile: boolean;
     setUploadingFile: (val: boolean) => void;
     totalAmount: number;
-    totalPayments: number;
-    paymentDifference: number;
     disabled?: boolean;
 }
 
@@ -121,7 +116,7 @@ export function VoucherDetailsSection({
                         {!isNonTradeVoucher && (
                             <Button 
                                 type="button" 
-                                onClick={handleOpenPoModal} 
+                                onClick={() => handleOpenPoModal(Number(payeeId))}
                                 disabled={!payeeId || disabled}
                                 className="h-8 px-2 bg-primary hover:bg-primary/95 text-primary-foreground rounded-sm shadow-sm shrink-0 disabled:opacity-50"
                                 title="Pull Unpaid POs"

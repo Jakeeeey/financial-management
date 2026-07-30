@@ -12,7 +12,8 @@ export function hasAtMostDecimalPlaces(value: unknown, places: number): boolean 
     if (n === null) return false;
     const factor = 10 ** places;
     const scaled = n * factor;
-    return Math.abs(scaled - Math.round(scaled)) < 1e-8;
+    const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 2;
+    return Math.abs(scaled - Math.round(scaled)) <= tolerance;
 }
 
 export function formatPriceNumber(value: number | null | undefined, fallback = "-") {

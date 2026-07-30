@@ -152,7 +152,14 @@ export async function GET(req: NextRequest) {
                 : null,
             includeCostBatch
                 ? (streamOffset: number, streamLimit: number) =>
-                      fetchCostBatchesPage(filters, streamOffset, streamLimit, costBatchHeaderIds, costHeaderIdsFromSearch)
+                      fetchCostBatchesPage(
+                          filters,
+                          streamOffset,
+                          streamLimit,
+                          costBatchHeaderIds,
+                          costHeaderIdsFromSearch,
+                          priceBatchHeaderIds,
+                      )
                 : null,
         ];
 

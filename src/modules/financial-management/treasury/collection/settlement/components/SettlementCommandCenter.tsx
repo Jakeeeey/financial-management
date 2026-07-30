@@ -132,7 +132,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
             setIsSearching(true);
             try {
                 const data = await fetchProvider.get<UnpaidInvoice[]>(
-                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}`
+                    `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(searchQuery.trim())}&pouchId=${encodeURIComponent(String(id))}`
                 );
                 const cleanResults = (data || []).filter(inv => !cartInvoices.some(cartInv => cartInv.id === inv.id));
                 setSearchResults(cleanResults);
@@ -144,7 +144,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
         }, 300);
 
         return () => clearTimeout(delayDebounceFn);
-    }, [searchQuery, cartInvoices, isPosted]);
+    }, [searchQuery, cartInvoices, isPosted, id]);
 
     useEffect(() => {
         if (cartInvoices.length > 0 && !activeInvoiceId) {
@@ -159,7 +159,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
     useEffect(() => {
         if (autoAddInvoiceNo && !isPosted && !autoAdded && cartInvoices.length >= 0) {
             fetchProvider.get<UnpaidInvoice[]>(
-                `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(autoAddInvoiceNo.trim())}`
+                `/api/fm/treasury/collections/search-unpaid?query=${encodeURIComponent(autoAddInvoiceNo.trim())}&pouchId=${encodeURIComponent(String(id))}`
             ).then((res) => {
                 const found = res?.find(inv => inv.invoiceNo === autoAddInvoiceNo);
                 if (found) {
@@ -171,7 +171,7 @@ export default function SettlementCommandCenter({ id, onClose, autoAddInvoiceNo 
                 console.error("Auto add invoice failed:", err);
             });
         }
-    }, [autoAddInvoiceNo, isPosted, autoAdded, cartInvoices, addToCart]);
+    }, [autoAddInvoiceNo, isPosted, autoAdded, cartInvoices, addToCart, id]);
 
     const handleSmartMatch = () => {
         if (cartInvoices.length === 0) {

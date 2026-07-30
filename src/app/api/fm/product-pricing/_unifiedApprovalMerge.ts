@@ -2,7 +2,7 @@ export const UNIFIED_FETCH_CHUNK_SIZE = 100;
 
 export type UnifiedApprovalRowLike = {
     row_key: string;
-    kind: "price_batch" | "cost_batch" | "price_type" | "list_price";
+    kind: "price_batch" | "cost_batch" | "mixed_batch" | "price_type" | "list_price";
     request_id?: number;
     batch_id?: number;
     requested_at: string | null;

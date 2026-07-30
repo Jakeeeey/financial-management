@@ -40,7 +40,7 @@ function money(value: number | null | undefined) {
         style: "currency",
         currency: "PHP",
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 4,
     }).format(Number(value));
 }
 
@@ -108,7 +108,7 @@ export function ListPriceRequestDetailDialog({
             ? (delta / currentNumeric) * 100
             : null;
     const status = String(row?.status ?? "").toUpperCase();
-    const displayStatus = row ? displayPcrStatus(row.status, row.application_status) : "";
+    const displayStatus = row ? displayPcrStatus(row.status, row.application_status, row.effective_at) : "";
     const effectiveTime = new Date(row?.effective_at ?? "").getTime();
     const isScheduledBeforeEffective =
         status === "APPROVED" &&

@@ -25,8 +25,10 @@ function safeDate(value: string | null | undefined) {
 
 export function BatchDecisionSummaryFields({ detail }: { detail: BatchDecisionSummary }) {
     const status = String(detail.status ?? "").toUpperCase();
+    const applicationStatus = String(detail.application_status ?? "").toUpperCase();
+    const isApproved = status === "APPROVED" || applicationStatus === "SCHEDULED";
 
-    if (status === "APPROVED") {
+    if (isApproved) {
         return (
             <>
                 <div>
@@ -40,7 +42,9 @@ export function BatchDecisionSummaryFields({ detail }: { detail: BatchDecisionSu
                     <div className="mt-1 font-medium">{safeDate(detail.approved_at)}</div>
                 </div>
                 <div>
-                    <div className="text-xs font-medium uppercase text-muted-foreground">Effective At</div>
+                    <div className="text-xs font-medium uppercase text-muted-foreground">
+                        {applicationStatus === "SCHEDULED" ? "Scheduled At" : "Effective At"}
+                    </div>
                     <div className="mt-1 font-medium">{safeDate(detail.effective_at)}</div>
                 </div>
                 <div>

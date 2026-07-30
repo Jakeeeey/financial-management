@@ -8,6 +8,8 @@ import { Plus, Trash2, FileSpreadsheet } from "lucide-react";
 import { SearchableDropdown } from "./SearchableDropdown";
 import { StickyTableWrapper } from "./StickyTableWrapper";
 import { PayableLine, COADto, DivisionDto } from "../types";
+import { isInheritedVatSplitLine, updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
+import { isMemoPayableLine, normalizeMemoReference } from "@/modules/financial-management/treasury/components/memo-payable-line";
 
 interface PayablesSectionProps {
     payables: PayableLine[];
@@ -23,6 +25,7 @@ interface PayablesSectionProps {
     formatMoney: (amount: number) => string;
     disabled?: boolean;
     isAddDisabled?: boolean;
+    memoReferences?: ReadonlySet<string>;
 }
 
 export function PayablesSection({
@@ -38,7 +41,8 @@ export function PayablesSection({
     handleRemovePayable,
     formatMoney,
     disabled = false,
-    isAddDisabled = false
+    isAddDisabled = false,
+    memoReferences = new Set()
 }: PayablesSectionProps) {
     return (
         <div className="bg-card rounded-sm border border-border shadow-sm overflow-hidden text-foreground">
@@ -68,12 +72,14 @@ export function PayablesSection({
                                         No distribution lines added. Click &quot;Add line&quot; to allocate.
                                     </TableCell>
                                 </TableRow>
-                            ) : payables.map((p, i) => (
+                            ) : payables.map((p, i) => {
+                                const memoLine = isMemoPayableLine(p, memoReferences) || memoReferences.has(normalizeMemoReference(p.memoNumber));
+                                return (
                                 <TableRow key={i} className="hover:bg-muted/40 border-b border-border">
                                     {/* Ref No */}
                                     <TableCell className="p-1 align-middle">
                                         <Input 
-                                            disabled={disabled}
+                                            disabled={disabled || memoLine}
                                             className="h-7 text-xs uppercase bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background focus:ring-0 focus-visible:ring-0 shadow-none px-2 rounded-sm transition-all disabled:bg-transparent disabled:cursor-not-allowed text-foreground"
                                             placeholder="e.g. Invoice #" 
                                             value={p.referenceNo || ""}
@@ -99,7 +105,7 @@ export function PayablesSection({
                                                 setPayables(n);
                                             }}
                                             placeholder="Choose Category GL..."
-                                            disabled={disabled}
+                                            disabled={disabled || memoLine}
                                             className="h-7 w-full bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background text-xs rounded-sm shadow-none px-2 text-foreground disabled:opacity-50"
                                             popoverWidth="w-[380px]"
                                         />
@@ -108,14 +114,14 @@ export function PayablesSection({
                                     {/* Division */}
                                     <TableCell className="p-1 align-middle">
                                         <select
-                                            disabled={disabled}
+                                            disabled={disabled || isInheritedVatSplitLine(payables, i)}
                                             className="h-7 w-full bg-transparent border border-transparent hover:border-input focus:border-primary focus:bg-background rounded-sm text-xs px-2 focus:outline-none transition-all disabled:bg-transparent disabled:cursor-not-allowed text-foreground"
                                             value={p.divisionId || ""}
-                                            onChange={e => {
-                                                const n = [...payables];
-                                                n[i].divisionId = e.target.value ? Number(e.target.value) : undefined;
-                                                setPayables(n);
-                                            }}
+                                            onChange={e => setPayables(updateVatSplitDivision(
+                                                payables,
+                                                i,
+                                                e.target.value ? Number(e.target.value) : undefined,
+                                            ))}
                                         >
                                             <option value="">(Select Division)</option>
                                             {divisions.map(d => (
@@ -146,7 +152,9 @@ export function PayablesSection({
                                         <Input 
                                             type="number" 
                                             disabled={disabled}
-                                            className="h-7 text-xs font-bold text-right bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background focus:ring-0 focus-visible:ring-0 shadow-none px-2 rounded-sm transition-all disabled:bg-transparent disabled:cursor-not-allowed text-foreground"
+                                            readOnly={memoLine}
+                                            title={memoLine ? "Memo amount is controlled by the applied memo. Remove and reapply it to change the amount." : undefined}
+                                            className={`h-7 text-xs font-bold text-right bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background focus:ring-0 focus-visible:ring-0 shadow-none px-2 rounded-sm transition-all disabled:bg-transparent disabled:cursor-not-allowed text-foreground ${memoLine ? "cursor-not-allowed bg-muted/40" : ""}`}
                                             placeholder="0.00" 
                                             value={p.amount || ""}
                                             onChange={e => {
@@ -170,7 +178,8 @@ export function PayablesSection({
                                         </Button>
                                     </TableCell>
                                 </TableRow>
-                            ))}
+                                );
+                            })}
                         </TableBody>
                     </Table>
                 </StickyTableWrapper>

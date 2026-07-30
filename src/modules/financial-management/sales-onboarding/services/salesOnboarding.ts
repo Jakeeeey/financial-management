@@ -1,6 +1,6 @@
 // src/modules/financial-management/sales-onboarding/services/salesOnboarding.ts
 
-import { Salesman, Customer, SalesInvoiceType, SalesInvoice, DiscountType } from "../types";
+import { Salesman, Customer, SalesInvoiceType, SalesInvoice, DiscountType, PaymentTerm } from "../types";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -29,32 +29,106 @@ export async function fetchSalesmen(): Promise<Salesman[]> {
 
 export async function fetchCustomers(): Promise<Customer[]> {
   const res = await fetch(
-    `${DIRECTUS_URL}/items/customer?limit=-1&sort=customer_name&filter[isActive][_eq]=1&fields=id,customer_code,customer_name,payment_term.id,payment_term.payment_days`,
+    `${DIRECTUS_URL}/items/customer?limit=-1&sort=customer_name&filter[isActive][_eq]=1&fields=id,customer_code,customer_name,payment_term`,
     {
       headers: getHeaders(),
       cache: "no-store",
     }
   );
   if (!res.ok) throw new Error(`Failed to fetch customers: ${res.statusText}`);
-  const json = await res.json();
+  const termsRes = await fetch(
+    `${DIRECTUS_URL}/items/payment_terms?limit=-1&fields=id,payment_name,payment_days`,
+    {
+      headers: getHeaders(),
+      cache: "no-store",
+    }
+  );
+  if (!termsRes.ok) throw new Error(`Failed to fetch payment terms: ${termsRes.statusText}`);
+
+  const [json, termsJson] = await Promise.all([res.json(), termsRes.json()]);
+
   interface RawCustomer {
     id: number;
     customer_code: string;
     customer_name: string;
-    payment_term?: { id: number; payment_days: number } | number | null;
+    payment_term?: { id: number } | number | string | null;
+  }
+
+  interface RawPaymentTerm {
+    id: number | string;
+    payment_name?: string | null;
+    payment_days?: number | string | null;
   }
 
   const rawCustomers: RawCustomer[] = json.data || [];
+  const paymentTerms = new Map<number, PaymentTerm>(
+    (termsJson.data || []).map((term: RawPaymentTerm) => [
+      Number(term.id),
+      {
+        id: Number(term.id),
+        payment_name: term.payment_name || "N/A",
+        payment_days: term.payment_days == null ? 0 : Number(term.payment_days),
+      },
+    ])
+  );
+
   return rawCustomers.map((cust: RawCustomer) => {
-    const termObj = cust.payment_term;
-    const paymentDays = termObj && typeof termObj === "object"
-      ? (termObj.payment_days || 0)
-      : 0;
+    const rawTermId = cust.payment_term && typeof cust.payment_term === "object"
+      ? cust.payment_term.id
+      : cust.payment_term;
+    const termId = rawTermId == null || rawTermId === "" ? null : Number(rawTermId);
+
     return {
       ...cust,
-      payment_term: paymentDays
+      payment_term: termId != null && Number.isFinite(termId)
+        ? paymentTerms.get(termId) || null
+        : null,
     };
   });
+}
+
+export class SalesOnboardingValidationError extends Error {}
+
+export async function resolveCustomerPaymentTerm(customerCode: string): Promise<number | null> {
+  const customerRes = await fetch(
+    `${DIRECTUS_URL}/items/customer?limit=1&filter[customer_code][_eq]=${encodeURIComponent(customerCode)}&fields=customer_code,payment_term`,
+    {
+      headers: getHeaders(),
+      cache: "no-store",
+    }
+  );
+  if (!customerRes.ok) throw new Error(`Failed to resolve customer payment term: ${customerRes.statusText}`);
+
+  const customerJson = await customerRes.json();
+  const customer = customerJson.data?.[0];
+  if (!customer) {
+    throw new SalesOnboardingValidationError(`Customer ${customerCode} was not found.`);
+  }
+
+  const rawTermId = customer.payment_term && typeof customer.payment_term === "object"
+    ? customer.payment_term.id
+    : customer.payment_term;
+  const termId = rawTermId == null || rawTermId === "" ? null : Number(rawTermId);
+  if (termId == null) return null;
+  if (!Number.isInteger(termId)) {
+    throw new SalesOnboardingValidationError(`Customer ${customerCode} has an invalid payment term.`);
+  }
+
+  const termRes = await fetch(
+    `${DIRECTUS_URL}/items/payment_terms/${encodeURIComponent(String(termId))}?fields=id`,
+    {
+      headers: getHeaders(),
+      cache: "no-store",
+    }
+  );
+  if (!termRes.ok) {
+    if (termRes.status === 404) {
+      throw new SalesOnboardingValidationError(`Payment term ${termId} assigned to customer ${customerCode} does not exist.`);
+    }
+    throw new Error(`Failed to validate payment term: ${termRes.statusText}`);
+  }
+
+  return termId;
 }
 
 export async function fetchInvoiceTypes(): Promise<SalesInvoiceType[]> {
