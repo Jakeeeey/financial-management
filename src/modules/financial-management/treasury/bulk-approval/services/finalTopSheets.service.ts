@@ -1172,31 +1172,38 @@ export async function handleFinalHeaderDecision(params: {
     periodFrom,
     periodTo,
     context: params.context,
-    actionableOnly: hasActionableDraftForPeriod,
   });
 
+  const isNonApprovalScope = (status === "Rejected" || status === "With Concern") && scope === "expense_ids";
+
   if (!linked.headerIds.length || !linked.expenseIds.length || !linked.payables.length) {
-    if (!hasActionableDraftForPeriod) {
+    if (!isNonApprovalScope) {
+      if (!hasActionableDraftForPeriod) {
+        return jsonResponse(
+          {
+            error: "Final Top Sheet is visible but not yet actionable for your approval level.",
+            message: "Please wait until the disbursement draft reaches your approval level.",
+            current_statuses: [...new Set(visibleDraftResult.drafts.map((draft) => draft.status))],
+            actionable_statuses: actionableStatuses,
+          },
+          { status: 409 }
+        );
+      }
+
       return jsonResponse(
-        {
-          error: "Final Top Sheet is visible but not yet actionable for your approval level.",
-          message: "Please wait until the disbursement draft reaches your approval level.",
-          current_statuses: [...new Set(visibleDraftResult.drafts.map((draft) => draft.status))],
-          actionable_statuses: actionableStatuses,
-        },
-        { status: 409 }
+        { error: "No linked payable draft expenses found for this final top sheet period" },
+        { status: 404 }
       );
     }
-
-    return jsonResponse(
-      { error: "No linked payable draft expenses found for this final top sheet period" },
-      { status: 404 }
-    );
   }
 
   const filters: Record<string, unknown> = {
-    id: { _in: linked.expenseIds },
+    division_id: { _eq: divisionId },
   };
+
+  if (scope !== "expense_ids" && linked.expenseIds.length > 0) {
+    filters.id = { _in: linked.expenseIds };
+  }
 
   if (status === "Approved" && scope !== "expense_ids") {
     filters.status = { _nin: ["Rejected", "With Concern"] };
@@ -1210,7 +1217,7 @@ export async function handleFinalHeaderDecision(params: {
     const linkedExpenseIdSet = new Set(linked.expenseIds);
     const outsideLinkedScope = expenseIds.some((expenseId) => !linkedExpenseIdSet.has(expenseId));
 
-    if (outsideLinkedScope) {
+    if (outsideLinkedScope && status !== "Rejected" && status !== "With Concern") {
       return jsonResponse(
         { error: "Scope mismatch: selected expense_ids are not linked to this final top sheet" },
         { status: 409 }
@@ -1251,7 +1258,7 @@ export async function handleFinalHeaderDecision(params: {
   const rawTargetExpenses = expenseRes.data.data ?? [];
 
   if (!rawTargetExpenses.length) {
-    if (!hasActionableDraftForPeriod) {
+    if (!hasActionableDraftForPeriod && status !== "Rejected" && status !== "With Concern") {
       return jsonResponse(
         {
           error: "Final Top Sheet is visible but not yet actionable for your approval level.",
@@ -1314,7 +1321,7 @@ export async function handleFinalHeaderDecision(params: {
     });
   }
 
-  if (!hasActionableDraftForPeriod) {
+  if (!hasActionableDraftForPeriod && status !== "Rejected" && status !== "With Concern") {
     return jsonResponse(
       {
         error: "Final Top Sheet is visible but not yet actionable for your approval level.",
