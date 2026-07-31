@@ -57,15 +57,12 @@ type ScheduledSummary = {
 
 type HeaderCandidate = {
     header_id?: number | string | null;
+    approved_by?: unknown;
+    requested_by?: unknown;
 };
 
 function schedulerToken() {
     return String(process.env.PRICE_CHANGE_SCHEDULER_TOKEN ?? "").trim();
-}
-
-function schedulerUserId() {
-    const value = Number(process.env.PRICE_CHANGE_SCHEDULER_USER_ID);
-    return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function assertSchedulerToken(req: NextRequest) {
@@ -109,6 +106,8 @@ async function fetchDuePriceRequests(now: string) {
                 "application_started_at",
                 "application_attempts",
                 "application_error",
+                "approved_by",
+                "requested_by",
             ].join(","),
         );
         params.set("filter[_and][0][status][_eq]", "APPROVED");
@@ -152,6 +151,8 @@ async function fetchDueCostRequests(now: string) {
                 "application_started_at",
                 "application_attempts",
                 "application_error",
+                "approved_by",
+                "requested_by",
             ].join(","),
         );
         params.set("filter[_and][0][status][_eq]", "APPROVED");
@@ -176,7 +177,7 @@ async function fetchDueCostRequests(now: string) {
 async function fetchDueBatchHeaders(now: string) {
     const params = new URLSearchParams();
     params.set("limit", String(DUE_PAGE_SIZE));
-    params.set("fields", "header_id,application_status,effective_at,application_started_at");
+    params.set("fields", "header_id,approved_by,requested_by,application_status,effective_at,application_started_at");
     params.set("filter[_and][0][status][_eq]", "APPROVED");
     params.set("filter[_and][1][_or][0][_and][0][application_status][_eq]", "SCHEDULED");
     params.set("filter[_and][1][_or][0][_and][1][effective_at][_lte]", now);
@@ -188,9 +189,37 @@ async function fetchDueBatchHeaders(now: string) {
         `${mustBase()}/items/${HEADERS}?${params.toString()}`,
         { headers: directusHeaders() },
     );
-    return (response.data ?? [])
-        .map((row) => pickId(row.header_id))
-        .filter((id): id is number => Boolean(id));
+    return response.data ?? [];
+}
+
+function auditUserCandidate(source: { approved_by?: unknown; requested_by?: unknown }) {
+    return readAuditUserId(source.approved_by) ?? readAuditUserId(source.requested_by);
+}
+
+async function resolveSchedulerAuditUserId(
+    source: { approved_by?: unknown; requested_by?: unknown },
+    fallback?: number | null,
+) {
+    const candidate = auditUserCandidate(source) ?? fallback ?? null;
+    if (!candidate) {
+        throw new Error("Scheduled application has no approved or requested audit user.");
+    }
+    return resolveAuditUserId(candidate);
+}
+
+async function resolveHeaderAuditUsers(headers: HeaderCandidate[]) {
+    const users = new Map<number, number | null>();
+    for (const header of headers) {
+        const headerId = pickId(header.header_id);
+        if (!headerId) continue;
+
+        try {
+            users.set(headerId, await resolveSchedulerAuditUserId(header));
+        } catch {
+            users.set(headerId, null);
+        }
+    }
+    return users;
 }
 
 async function resolveMixedHeaderIds(headerIds: number[]) {
@@ -204,13 +233,25 @@ async function resolveMixedHeaderIds(headerIds: number[]) {
     );
 }
 
-async function applyDueMixedBatches(headerIds: Set<number>, userId: number): Promise<ScheduledSummary> {
+async function applyDueMixedBatches(
+    headerIds: Set<number>,
+    auditUsers: Map<number, number | null>,
+): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     let applied = 0;
     let failed = 0;
     let skipped = 0;
 
     for (const headerId of headerIds) {
+        const userId = auditUsers.get(headerId);
+        if (!userId) {
+            failed += 1;
+            failures.push({
+                request_id: headerId,
+                message: "Scheduled application has no valid approved or requested audit user.",
+            });
+            continue;
+        }
         const result = await retryUnifiedBatch(headerId, userId);
         if ("status" in result) {
             if (result.status === 409) {
@@ -235,7 +276,10 @@ async function applyDueMixedBatches(headerIds: Set<number>, userId: number): Pro
     return { scanned: headerIds.size, applied, failed, skipped, failures };
 }
 
-async function applyDuePriceRequests(rows: PcrRow[], userId: number): Promise<ScheduledSummary> {
+async function applyDuePriceRequests(
+    rows: PcrRow[],
+    auditUsers: Map<number, number | null>,
+): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     const headerIds = new Set<number>();
     let applied = 0;
@@ -245,6 +289,16 @@ async function applyDuePriceRequests(rows: PcrRow[], userId: number): Promise<Sc
         const requestId = pickId(row.request_id) ?? 0;
         const headerId = pickId(row.header_id);
         if (headerId) headerIds.add(headerId);
+        let userId: number;
+        try {
+            userId = await resolveSchedulerAuditUserId(row, headerId ? auditUsers.get(headerId) : null);
+        } catch (error: unknown) {
+            failures.push({
+                request_id: requestId,
+                message: error instanceof Error ? error.message : String(error),
+            });
+            continue;
+        }
         const outcome = await executeClaimedApplication({
             collection: PRICE_DETAILS,
             row,
@@ -284,14 +338,17 @@ async function applyDuePriceRequests(rows: PcrRow[], userId: number): Promise<Sc
             detailCollection: PRICE_DETAILS,
             additionalDetailCollections: [COST_DETAILS],
             headerId,
-            userId,
+            userId: auditUsers.get(headerId) ?? null,
         });
     }
 
     return { scanned: rows.length, applied, failed: failures.length, skipped, failures };
 }
 
-async function applyDueCostRequests(rows: CcrRow[], userId: number): Promise<ScheduledSummary> {
+async function applyDueCostRequests(
+    rows: CcrRow[],
+    auditUsers: Map<number, number | null>,
+): Promise<ScheduledSummary> {
     const failures: ApplyFailure[] = [];
     const headerIds = new Set<number>();
     let applied = 0;
@@ -301,6 +358,16 @@ async function applyDueCostRequests(rows: CcrRow[], userId: number): Promise<Sch
         const requestId = pickId(row.request_id) ?? 0;
         const headerId = pickId(row.header_id);
         if (headerId) headerIds.add(headerId);
+        let userId: number;
+        try {
+            userId = await resolveSchedulerAuditUserId(row, headerId ? auditUsers.get(headerId) : null);
+        } catch (error: unknown) {
+            failures.push({
+                request_id: requestId,
+                message: error instanceof Error ? error.message : String(error),
+            });
+            continue;
+        }
         const outcome = await executeClaimedApplication({
             collection: COST_DETAILS,
             row,
@@ -331,7 +398,7 @@ async function applyDueCostRequests(rows: CcrRow[], userId: number): Promise<Sch
             detailCollection: COST_DETAILS,
             additionalDetailCollections: [PRICE_DETAILS],
             headerId,
-            userId,
+            userId: auditUsers.get(headerId) ?? null,
         });
     }
 
@@ -344,21 +411,17 @@ export async function POST(req: NextRequest) {
         if (tokenError) return tokenError;
 
         const now = nowManila();
-        const configuredUserId = schedulerUserId();
-        if (!configuredUserId) {
-            return NextResponse.json(
-                { error: "PRICE_CHANGE_SCHEDULER_USER_ID must identify a valid audit user." },
-                { status: 500 },
-            );
-        }
-        const userId = await resolveAuditUserId(configuredUserId);
         const [priceRows, costRows, dueHeaderIds] = await Promise.all([
             fetchDuePriceRequests(now),
             fetchDueCostRequests(now),
             fetchDueBatchHeaders(now),
         ]);
+        const dueHeaderIdList = dueHeaderIds
+            .map((row) => pickId(row.header_id))
+            .filter((id): id is number => Boolean(id));
+        const auditUsers = await resolveHeaderAuditUsers(dueHeaderIds);
         const candidateHeaderIds = Array.from(new Set([
-            ...dueHeaderIds,
+            ...dueHeaderIdList,
             ...priceRows.map((row) => pickId(row.header_id)).filter((id): id is number => Boolean(id)),
             ...costRows.map((row) => pickId(row.header_id)).filter((id): id is number => Boolean(id)),
         ]));
@@ -366,10 +429,10 @@ export async function POST(req: NextRequest) {
         const nonMixedPriceRows = priceRows.filter((row) => !mixedHeaderIds.has(pickId(row.header_id) ?? 0));
         const nonMixedCostRows = costRows.filter((row) => !mixedHeaderIds.has(pickId(row.header_id) ?? 0));
         const [price, cost] = await Promise.all([
-            applyDuePriceRequests(nonMixedPriceRows, userId),
-            applyDueCostRequests(nonMixedCostRows, userId),
+            applyDuePriceRequests(nonMixedPriceRows, auditUsers),
+            applyDueCostRequests(nonMixedCostRows, auditUsers),
         ]);
-        const mixed = await applyDueMixedBatches(mixedHeaderIds, userId);
+        const mixed = await applyDueMixedBatches(mixedHeaderIds, auditUsers);
 
         if (price.applied > 0 || cost.applied > 0 || mixed.applied > 0) {
             invalidateGroupIndexCacheOnCatalogChange();
