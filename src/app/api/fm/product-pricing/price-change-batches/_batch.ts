@@ -36,6 +36,13 @@ type DirectusUserRelation = {
     user_email?: string | null;
 };
 
+export type DirectusFlagValue =
+    | number
+    | string
+    | boolean
+    | { type?: string | null; data?: unknown[] | null }
+    | null;
+
 export type BatchHeaderRow = {
     id?: number | string | null;
     header_id?: number | string | null;
@@ -43,8 +50,8 @@ export type BatchHeaderRow = {
         id?: number | string | null;
         supplier_name?: string | null;
         supplier_shortcut?: string | null;
-        isActive?: number | string | boolean | null;
-        nonBuy?: number | string | boolean | null;
+        isActive?: DirectusFlagValue;
+        nonBuy?: DirectusFlagValue;
     } | null;
     reference_no?: string | null;
     remarks?: string | null;
@@ -517,6 +524,10 @@ function supplierIdOf(value: unknown): number | null {
 function supplierFlag(value: unknown): number | null {
     if (value === true) return 1;
     if (value === false) return 0;
+    if (isRecord(value)) {
+        if (value.type !== "Buffer" || !Array.isArray(value.data) || value.data.length === 0) return null;
+        return supplierFlag(value.data[0]);
+    }
     if (typeof value !== "number" && typeof value !== "string") return null;
     const text = String(value).trim();
     if (!text) return null;

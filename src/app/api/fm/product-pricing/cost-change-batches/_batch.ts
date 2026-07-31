@@ -16,6 +16,7 @@ import {
     resolveBatchDecisionUserNames,
     resolveUserDisplayName,
     supplierNameOf,
+    type DirectusFlagValue,
 } from "../price-change-batches/_batch";
 
 import type { NormalizedCostBulkItem } from "../cost-change-requests/_bulk";
@@ -64,8 +65,8 @@ export type CostHeaderRow = {
         id?: number | string | null;
         supplier_name?: string | null;
         supplier_shortcut?: string | null;
-        isActive?: number | string | boolean | null;
-        nonBuy?: number | string | boolean | null;
+        isActive?: DirectusFlagValue;
+        nonBuy?: DirectusFlagValue;
     } | null;
     reference_no?: string | null;
     remarks?: string | null;
