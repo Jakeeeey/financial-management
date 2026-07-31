@@ -67,6 +67,7 @@ export type PcrRow = {
     application_status?: string | null;
     applied_at?: string | null;
     applied_by?: number | string | null;
+    approved_by?: number | string | null;
     application_lock_id?: string | null;
     application_started_at?: string | null;
     application_attempts?: number | string | null;
