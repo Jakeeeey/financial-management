@@ -453,6 +453,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                 onOpenChange={setIsCreateOpen}
                 onSubmit={(payload) => formMode === "edit" ? update(selectedDisbursement!.id, payload) : create(payload)}
                 editData={formMode === "edit" ? selectedDisbursement : null}
+                allowPaymentEditing={subModule === "releasing"}
                 loading={actionLoading}
             />
 

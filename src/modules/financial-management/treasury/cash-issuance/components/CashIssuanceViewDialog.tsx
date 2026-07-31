@@ -335,7 +335,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         </div>
 
                         {/* PAYMENTS SECTION */}
-                        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
+                        {subModule !== "preparation" && <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
                             <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
                                 <div className="flex items-center gap-2 text-foreground font-black uppercase tracking-widest text-[11px]">
                                     <ArrowUpFromLine className="w-4 h-4 text-emerald-500"/> Bank Checks (Credits)
@@ -400,7 +400,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                                 <span className="text-muted-foreground">Total Credits</span>
                                 <span className="text-emerald-600 dark:text-emerald-500">{formatCurrency(totalCredit)}</span>
                             </div>
-                        </div>
+                        </div>}
 
                     </div>
                 </div>
