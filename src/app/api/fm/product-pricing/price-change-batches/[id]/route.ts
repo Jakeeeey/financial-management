@@ -16,6 +16,7 @@ import {
     rejectPriceChangeBatch,
     resolveBatchDecisionUserNames,
     resolveUserDisplayName,
+    supplierNameOf,
 } from "../_batch";
 import {
     approveUnifiedBatch,
@@ -52,13 +53,6 @@ function supplierIdOf(value: unknown): number | null {
     }
     if (isRecord(value)) return pickId(value.id);
     return null;
-}
-
-function supplierNameOf(value: unknown): string {
-    if (!isRecord(value)) return "";
-    const shortcut = String(value.supplier_shortcut ?? "").trim();
-    const name = String(value.supplier_name ?? "").trim();
-    return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
 }
 
 function userIdOf(value: unknown): number | string | null {

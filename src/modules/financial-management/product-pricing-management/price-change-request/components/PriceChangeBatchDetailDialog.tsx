@@ -449,7 +449,7 @@ export function PriceChangeBatchDetailDialog({
                             <Button
                                 className={pcrApproveButtonClass}
                                 onClick={() => setConfirmingAction("apply_now")}
-                                disabled={acting}
+                                disabled={acting || rejecting}
                             >
                                 Apply Now
                             </Button>

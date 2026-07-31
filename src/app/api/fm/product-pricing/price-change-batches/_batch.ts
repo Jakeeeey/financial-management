@@ -39,7 +39,13 @@ type DirectusUserRelation = {
 export type BatchHeaderRow = {
     id?: number | string | null;
     header_id?: number | string | null;
-    supplier_id?: number | string | { id?: number | string | null; supplier_name?: string | null; supplier_shortcut?: string | null } | null;
+    supplier_id?: number | string | {
+        id?: number | string | null;
+        supplier_name?: string | null;
+        supplier_shortcut?: string | null;
+        isActive?: number | string | boolean | null;
+        nonBuy?: number | string | boolean | null;
+    } | null;
     reference_no?: string | null;
     remarks?: string | null;
     status?: string | null;
@@ -508,8 +514,23 @@ function supplierIdOf(value: unknown): number | null {
     return null;
 }
 
-function supplierNameOf(value: unknown): string {
-    if (!isRecord(value)) return "";
+function supplierFlag(value: unknown): number | null {
+    if (value === true) return 1;
+    if (value === false) return 0;
+    if (typeof value !== "number" && typeof value !== "string") return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const numeric = Number(text);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+function isEligibleSupplier(value: unknown): boolean {
+    if (!isRecord(value)) return false;
+    return supplierFlag(value.isActive) === 1 && supplierFlag(value.nonBuy) === 0;
+}
+
+export function supplierNameOf(value: unknown): string {
+    if (!isRecord(value) || !isEligibleSupplier(value)) return "";
     const shortcut = String(value.supplier_shortcut ?? "").trim();
     const name = String(value.supplier_name ?? "").trim();
     return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
@@ -733,6 +754,8 @@ export async function getHeader(headerId: number) {
             "supplier_id.id",
             "supplier_id.supplier_name",
             "supplier_id.supplier_shortcut",
+            "supplier_id.isActive",
+            "supplier_id.nonBuy",
             "reference_no",
             "remarks",
             "status",
