@@ -1156,6 +1156,10 @@ export async function fetchCostBatchesPage(
 
     const params = createApprovalListParams({ offset, limit, sort: "-requested_at,-header_id", fields: [
             "header_id",
+            "supplier_id",
+            "supplier_id.id",
+            "supplier_id.supplier_name",
+            "supplier_id.supplier_shortcut",
             "reference_no",
             "remarks",
             "status",
@@ -1204,8 +1208,11 @@ export async function fetchCostBatchesPage(
 
         const batchSupplierInfos = (summary?.productIds ?? [])
             .flatMap((pid) => supplierByProductId.get(pid) ?? []);
-        const batchSupplierNames = uniqueSupplierNamesFromInfos(batchSupplierInfos);
-        const batchSupplierName = resolveSupplierName(batchSupplierInfos);
+        const headerSupplierName = supplierNameOf(row.supplier_id);
+        const batchSupplierNames = headerSupplierName
+            ? [headerSupplierName]
+            : uniqueSupplierNamesFromInfos(batchSupplierInfos);
+        const batchSupplierName = headerSupplierName || resolveSupplierName(batchSupplierInfos);
 
         rows.push({
             row_key: `cost-batch:${headerId}`,

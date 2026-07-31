@@ -145,12 +145,13 @@ export function BatchCatalogPanel(props: CatalogPanelProps) {
                     ) : (
                         <div className="flex flex-col gap-3 border-t px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="text-sm text-muted-foreground">
-                                Showing <span className="font-medium text-foreground">{props.catalogStartIndex}</span> - <span className="font-medium text-foreground">{props.catalogEndIndex}</span>
+                                Showing <span className="font-medium text-foreground">{props.gridProducts.length}</span> product variants on this page
+                                {props.catalogTotalVariants > 0 ? (
+                                    <> of <span className="font-medium text-foreground">{props.catalogTotalVariants}</span> variants</>
+                                ) : null}
                                 {props.catalogTotal > 0 ? (
-                                    <> of <span className="font-medium text-foreground">{props.catalogTotal}</span> product groups
-                                        {props.catalogTotalVariants > 0 ? <> (<span className="font-medium text-foreground">{props.catalogTotalVariants}</span> variants)</> : null}
-                                    </>
-                                ) : (" product groups")}
+                                    <> across <span className="font-medium text-foreground">{props.catalogTotal}</span> product groups</>
+                                ) : null}
                             </div>
                             <div className="flex flex-wrap items-center justify-end gap-2">
                                 <select className={cn("h-9 rounded-md border bg-background px-2 text-sm")} value={String(props.catalogPageSize)}
