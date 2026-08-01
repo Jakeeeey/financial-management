@@ -301,7 +301,7 @@ export function PriceChangeBatchDetailDialog({
                                                 ) : null}
                                             </TableCell>
                                             <TableCell className="min-w-[180px] max-w-[280px] whitespace-normal break-words align-top">
-                                                {line.supplier_name ?? "-"}
+                                                {detail.supplier_name || "-"}
                                             </TableCell>
                                             <TableCell>
                                                 {line.unit_name ?? "-"}
@@ -449,7 +449,7 @@ export function PriceChangeBatchDetailDialog({
                             <Button
                                 className={pcrApproveButtonClass}
                                 onClick={() => setConfirmingAction("apply_now")}
-                                disabled={acting}
+                                disabled={acting || rejecting}
                             >
                                 Apply Now
                             </Button>

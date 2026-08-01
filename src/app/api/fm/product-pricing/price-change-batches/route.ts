@@ -72,6 +72,8 @@ export async function GET(req: NextRequest) {
                 "supplier_id.id",
                 "supplier_id.supplier_name",
                 "supplier_id.supplier_shortcut",
+                "supplier_id.isActive",
+                "supplier_id.nonBuy",
                 "reference_no",
                 "remarks",
                 "status",
