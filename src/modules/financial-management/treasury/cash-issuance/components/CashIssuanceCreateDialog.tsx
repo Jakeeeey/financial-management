@@ -25,7 +25,7 @@ import { SearchableDropdown } from "./SearchableDropdown";
 import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
 import { getMemoAvailableAmount } from "@/modules/financial-management/treasury/components/memo-cap";
 import { normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
-import { isPettyCashAccount, validatePaymentLine } from "@/app/api/fm/treasury/disbursements/_payment-method";
+import { isPettyCashAccount } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { cn } from "@/lib/utils";
 
 export interface ExtendedDisbursement extends Disbursement {
@@ -526,20 +526,37 @@ export function CashIssuanceCreateDialog({
         payments.forEach((line, index) => {
             const selectedCoa = coas.find((coa) => coa.coaId === Number(line.coaId));
             const pettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+            const missingFields: string[] = [];
 
-            if (!line.date) errors.add(`${index}:date`);
-            if (!Number.isFinite(Number(line.amount)) || Number(line.amount) === 0) errors.add(`${index}:amount`);
-            if (!line.coaId || !selectedCoa) errors.add(`${index}:coaId`);
-            if (!pettyCash && !line.bankId) errors.add(`${index}:bankId`);
-            if (!pettyCash && String(line.checkNo || "").trim() === "") errors.add(`${index}:checkNo`);
+            if (!line.date) {
+                errors.add(`${index}:date`);
+                missingFields.push("Payment Date");
+            }
+            if (!Number.isFinite(Number(line.amount)) || Number(line.amount) === 0) {
+                errors.add(`${index}:amount`);
+                missingFields.push("Amount");
+            }
+            if (!line.coaId || !selectedCoa) {
+                errors.add(`${index}:coaId`);
+                missingFields.push("GL Account");
+            }
+            if (!pettyCash && !line.bankId) {
+                errors.add(`${index}:bankId`);
+                missingFields.push("Bank / Cash Account");
+            }
+            if (!pettyCash && String(line.checkNo || "").trim() === "") {
+                errors.add(`${index}:checkNo`);
+                missingFields.push("Check / Reference No.");
+            }
 
-            const validationError = validatePaymentLine(line, selectedCoa?.accountTitle);
-            if (validationError) messages.push(`${validationError} Payment row ${index + 1}`);
+            if (missingFields.length > 0) {
+                messages.push(`Payment row ${index + 1}: ${missingFields.join(", ")}`);
+            }
         });
 
         setPaymentValidationErrors(errors);
         if (errors.size > 0) {
-            toast.error(`${messages[0] || "Please complete all required payment fields."} Complete the highlighted fields.`);
+            toast.error(`Please complete the following payment fields:\n${messages.join("\n")}`);
             return false;
         }
         return true;
@@ -582,7 +599,7 @@ export function CashIssuanceCreateDialog({
                         return {
                             ...line,
                             coaId: Number(line.coaId),
-                            bankId: pettyCash ? undefined : Number(line.bankId),
+                            bankId: line.bankId ? Number(line.bankId) : undefined,
                             checkNo: pettyCash ? "" : line.checkNo,
                         };
                     }),
@@ -752,8 +769,8 @@ export function CashIssuanceCreateDialog({
                                                                         options={banks.map((bank) => ({ value: bank.bankId, label: `${bank.bankName} - ${bank.accountNumber}` }))}
                                                                         value={line.bankId || ""}
                                                                         onSelect={(value) => handlePaymentChange(index, "bankId", value)}
-                                                                        placeholder={pettyCash ? "Not required for petty cash" : "Select bank / cash account..."}
-                                                                        disabled={arePaymentFieldsLocked || pettyCash}
+                                                                        placeholder={pettyCash ? "Optional cash account..." : "Select bank / cash account..."}
+                                                                        disabled={arePaymentFieldsLocked}
                                                                         className={cn("h-7 w-full bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background text-xs rounded-sm shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:bankId`) && "border-rose-500 bg-rose-50/30")}
                                                                         popoverWidth="w-[360px]"
                                                                     />
@@ -767,7 +784,7 @@ export function CashIssuanceCreateDialog({
                                                                             handlePaymentChange(index, "coaId", value);
                                                                             if (isPettyCashAccount(nextCoa?.accountTitle)) {
                                                                                 setPayments((current) => current.map((payment, paymentIndex) => paymentIndex === index
-                                                                                    ? { ...payment, coaId: value, bankId: undefined, checkNo: "" }
+                                                                                    ? { ...payment, coaId: value, checkNo: "" }
                                                                                     : payment));
                                                                             }
                                                                         }}

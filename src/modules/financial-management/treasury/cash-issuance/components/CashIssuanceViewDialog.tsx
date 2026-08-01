@@ -359,7 +359,9 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                                             const matchedBank = banks.find(b => b.bankId === p.bankId);
                                             const displayBank = matchedBank
                                                 ? `${matchedBank.bankName} - ${matchedBank.accountNumber}`
-                                                : (p.bankId ? `Bank ID: ${p.bankId}` : "No Bank Selected");
+                                                : p.bankName
+                                                    ? `${p.bankName}${p.bankAccountNumber ? ` - ${p.bankAccountNumber}` : ""}`
+                                                    : (p.bankId ? `Bank ID: ${p.bankId}` : "No Bank Selected");
 
                                             const matchedCoa = coas.find(c => c.coaId === p.coaId);
                                             const displayCoa = matchedCoa
