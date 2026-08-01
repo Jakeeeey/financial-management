@@ -1131,7 +1131,7 @@ export async function POST(request: NextRequest) {
         }
         const normalizedPaymentLines = paymentLinesInput.map((line) =>
             isPettyCashAccount(coaMap.get(Number(line.coaId)))
-                ? { ...line, bankId: undefined, checkNo: "" }
+                ? { ...line, checkNo: "" }
                 : line
         );
 
