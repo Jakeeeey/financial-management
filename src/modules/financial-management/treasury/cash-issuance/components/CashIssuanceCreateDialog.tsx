@@ -25,7 +25,7 @@ import { SearchableDropdown } from "./SearchableDropdown";
 import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
 import { getMemoAvailableAmount } from "@/modules/financial-management/treasury/components/memo-cap";
 import { normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
-import { isPettyCashAccount, validatePaymentLine } from "@/app/api/fm/treasury/disbursements/_payment-method";
+import { isPettyCashAccount } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { cn } from "@/lib/utils";
 
 export interface ExtendedDisbursement extends Disbursement {
@@ -116,7 +116,7 @@ export function CashIssuanceCreateDialog({
     const [localSubmitting, setLocalSubmitting] = useState(false);
     const submitLockRef = useRef(false);
 
-    const isReleasingEdit = !!(editData && editData.status === "Approved");
+    const isReleasingEdit = !!(editData && (editData.status === "Approved" || editData.status === "Partially Released"));
     const isPaymentEditorEnabled = allowPaymentEditing && isReleasingEdit;
     const isReadOnly = !!(editData && (
         editData.status === "Released" || 
@@ -129,6 +129,8 @@ export function CashIssuanceCreateDialog({
     const arePaymentFieldsLocked = !isPaymentEditorEnabled || isReadOnly;
 
     const totalAmount = useMemo(() => payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payables]);
+    const paymentTotal = useMemo(() => payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payments]);
+    const remainingPayment = Number((totalAmount - paymentTotal).toFixed(2));
     const memoReferences = useMemo(
         () => new Set(memos.map((memo) => normalizeMemoReference(memo.memo_number)).filter(Boolean)),
         [memos],
@@ -523,23 +525,45 @@ export function CashIssuanceCreateDialog({
         const errors = new Set<string>();
         const messages: string[] = [];
 
+        if (paymentTotal > totalAmount + 0.01) {
+            toast.error(`Total payments cannot exceed the voucher amount of ${formatCurrency(totalAmount)}.`);
+            return false;
+        }
+
         payments.forEach((line, index) => {
             const selectedCoa = coas.find((coa) => coa.coaId === Number(line.coaId));
             const pettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+            const missingFields: string[] = [];
 
-            if (!line.date) errors.add(`${index}:date`);
-            if (!Number.isFinite(Number(line.amount)) || Number(line.amount) === 0) errors.add(`${index}:amount`);
-            if (!line.coaId || !selectedCoa) errors.add(`${index}:coaId`);
-            if (!pettyCash && !line.bankId) errors.add(`${index}:bankId`);
-            if (!pettyCash && String(line.checkNo || "").trim() === "") errors.add(`${index}:checkNo`);
+            if (!line.date) {
+                errors.add(`${index}:date`);
+                missingFields.push("Payment Date");
+            }
+            if (!Number.isFinite(Number(line.amount)) || Number(line.amount) === 0) {
+                errors.add(`${index}:amount`);
+                missingFields.push("Amount");
+            }
+            if (!line.coaId || !selectedCoa) {
+                errors.add(`${index}:coaId`);
+                missingFields.push("GL Account");
+            }
+            if (!pettyCash && !line.bankId) {
+                errors.add(`${index}:bankId`);
+                missingFields.push("Bank / Cash Account");
+            }
+            if (!pettyCash && String(line.checkNo || "").trim() === "") {
+                errors.add(`${index}:checkNo`);
+                missingFields.push("Check / Reference No.");
+            }
 
-            const validationError = validatePaymentLine(line, selectedCoa?.accountTitle);
-            if (validationError) messages.push(`${validationError} Payment row ${index + 1}`);
+            if (missingFields.length > 0) {
+                messages.push(`Payment row ${index + 1}: ${missingFields.join(", ")}`);
+            }
         });
 
         setPaymentValidationErrors(errors);
         if (errors.size > 0) {
-            toast.error(`${messages[0] || "Please complete all required payment fields."} Complete the highlighted fields.`);
+            toast.error(`Please complete the following payment fields:\n${messages.join("\n")}`);
             return false;
         }
         return true;
@@ -547,12 +571,13 @@ export function CashIssuanceCreateDialog({
 
     const handleSubmit = async () => {
         if (loading || isReadOnly || submitLockRef.current) return;
+        const isPartialReleasePaymentEdit = isPaymentEditorEnabled && editData?.status === "Partially Released";
         if (!editData && !previewDocNo) {
             return toast.error("Document number is still loading. Please try again.");
         }
         if (!transactionTypeId) return toast.error("Transaction Type is required.");
         if (!payeeId) return toast.error("Please select a Payee.");
-        if (!departmentId) return toast.error("Department is required.");
+        if (!departmentId && !isPartialReleasePaymentEdit) return toast.error("Department is required.");
         if (totalAmount <= 0) return toast.error("Voucher total must be greater than 0.");
         const memoAmountError = Object.values(memoAmountErrors)[0];
         if (memoAmountError) return toast.error(memoAmountError);
@@ -565,7 +590,7 @@ export function CashIssuanceCreateDialog({
                 docNo: editData ? editData.docNo : (previewDocNo || undefined),
                 transactionTypeId: Number(transactionTypeId),
                 payeeId: Number(payeeId),
-                departmentId: Number(departmentId),
+                departmentId: departmentId ? Number(departmentId) : undefined,
                 remarks,
                 supportingDocumentsUrl: supportingDocumentsUrl ? (supportingDocumentsUrl.includes("/") ? (supportingDocumentsUrl.split("/").pop()?.split("?")[0] || "") : supportingDocumentsUrl) : "",
                 totalAmount: totalAmount,
@@ -582,7 +607,7 @@ export function CashIssuanceCreateDialog({
                         return {
                             ...line,
                             coaId: Number(line.coaId),
-                            bankId: pettyCash ? undefined : Number(line.bankId),
+                            bankId: line.bankId ? Number(line.bankId) : undefined,
                             checkNo: pettyCash ? "" : line.checkNo,
                         };
                     }),
@@ -727,11 +752,13 @@ export function CashIssuanceCreateDialog({
                                                     ) : payments.map((line, index) => {
                                                         const selectedCoa = coas.find((coa) => coa.coaId === Number(line.coaId));
                                                         const pettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+                                                        const isReleasedPaymentLine = Boolean(line.releasedDate || line.releasedBy);
+                                                        const isPaymentLineLocked = arePaymentFieldsLocked || isReleasedPaymentLine;
                                                         return (
-                                                            <TableRow key={line.id ?? index} className="hover:bg-muted/40 border-b border-border">
+                                                            <TableRow key={line.id ?? index} className={cn("hover:bg-muted/40 border-b border-border", isReleasedPaymentLine && "bg-muted/30")}>
                                                                 <TableCell className="p-1 align-middle">
                                                                     <Input
-                                                                        disabled={arePaymentFieldsLocked || pettyCash}
+                                                                        disabled={isPaymentLineLocked || pettyCash}
                                                                         className={cn("h-7 text-xs uppercase bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:checkNo`) && "border-rose-500 bg-rose-50/30")}
                                                                         placeholder={pettyCash ? "Not required for petty cash" : "CK-000000"}
                                                                         value={line.checkNo || ""}
@@ -741,7 +768,7 @@ export function CashIssuanceCreateDialog({
                                                                 <TableCell className="p-1 align-middle">
                                                                     <Input
                                                                         type="date"
-                                                                        disabled={arePaymentFieldsLocked}
+                                                                        disabled={isPaymentLineLocked}
                                                                         className={cn("h-7 text-xs bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:date`) && "border-rose-500 bg-rose-50/30")}
                                                                         value={line.date || ""}
                                                                         onChange={(event) => handlePaymentChange(index, "date", event.target.value)}
@@ -752,8 +779,8 @@ export function CashIssuanceCreateDialog({
                                                                         options={banks.map((bank) => ({ value: bank.bankId, label: `${bank.bankName} - ${bank.accountNumber}` }))}
                                                                         value={line.bankId || ""}
                                                                         onSelect={(value) => handlePaymentChange(index, "bankId", value)}
-                                                                        placeholder={pettyCash ? "Not required for petty cash" : "Select bank / cash account..."}
-                                                                        disabled={arePaymentFieldsLocked || pettyCash}
+                                                                        placeholder={pettyCash ? "Optional cash account..." : "Select bank / cash account..."}
+                                                                        disabled={isPaymentLineLocked}
                                                                         className={cn("h-7 w-full bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background text-xs rounded-sm shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:bankId`) && "border-rose-500 bg-rose-50/30")}
                                                                         popoverWidth="w-[360px]"
                                                                     />
@@ -767,19 +794,19 @@ export function CashIssuanceCreateDialog({
                                                                             handlePaymentChange(index, "coaId", value);
                                                                             if (isPettyCashAccount(nextCoa?.accountTitle)) {
                                                                                 setPayments((current) => current.map((payment, paymentIndex) => paymentIndex === index
-                                                                                    ? { ...payment, coaId: value, bankId: undefined, checkNo: "" }
+                                                                                    ? { ...payment, coaId: value, checkNo: "" }
                                                                                     : payment));
                                                                             }
                                                                         }}
                                                                         placeholder="Select GL Account (Credit)..."
-                                                                        disabled={arePaymentFieldsLocked}
+                                                                        disabled={isPaymentLineLocked}
                                                                         className={cn("h-7 w-full bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background text-xs rounded-sm shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:coaId`) && "border-rose-500 bg-rose-50/30")}
                                                                         popoverWidth="w-[420px]"
                                                                     />
                                                                 </TableCell>
                                                                 <TableCell className="p-1 align-middle">
                                                                     <Input
-                                                                        disabled={arePaymentFieldsLocked}
+                                                                        disabled={isPaymentLineLocked}
                                                                         className="h-7 text-xs bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background shadow-none px-2 text-foreground"
                                                                         placeholder="Line payment info..."
                                                                         value={line.remarks || ""}
@@ -789,7 +816,7 @@ export function CashIssuanceCreateDialog({
                                                                 <TableCell className="p-1 align-middle">
                                                                     <Input
                                                                         type="number"
-                                                                        disabled={arePaymentFieldsLocked}
+                                                                        disabled={isPaymentLineLocked}
                                                                         className={cn("h-7 text-xs font-bold text-right bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:amount`) && "border-rose-500 bg-rose-50/30")}
                                                                         placeholder="0.00"
                                                                         value={line.amount || ""}
@@ -804,7 +831,7 @@ export function CashIssuanceCreateDialog({
                                                                             setPayments((current) => current.filter((_, paymentIndex) => paymentIndex !== index));
                                                                             setPaymentValidationErrors(new Set());
                                                                         }}
-                                                                        disabled={arePaymentFieldsLocked}
+                                                                        disabled={isPaymentLineLocked}
                                                                         className="h-7 w-7 text-destructive hover:bg-destructive/10 rounded-sm disabled:opacity-50"
                                                                     >
                                                                         <Trash2 className="w-3.5 h-3.5" />
@@ -820,7 +847,12 @@ export function CashIssuanceCreateDialog({
                                             <Button type="button" variant="outline" size="sm" onClick={handleAddPayment} disabled={arePaymentFieldsLocked} className="h-7 text-[10px] font-bold uppercase">
                                                 <Save className="w-3 h-3 mr-1" /> Add payment line
                                             </Button>
-                                            <span className="text-[10px] font-black uppercase text-muted-foreground">Total Payments: {formatCurrency(payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0))}</span>
+                                            <div className="flex items-center gap-4 text-[10px] font-black uppercase text-muted-foreground">
+                                                <span>Total Payments: {formatCurrency(paymentTotal)}</span>
+                                                <span className={remainingPayment < -0.01 ? "text-destructive" : "text-emerald-600"}>
+                                                    Remaining: {formatCurrency(remainingPayment)}
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>}

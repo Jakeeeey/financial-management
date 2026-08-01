@@ -75,7 +75,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }
         const normalizedPaymentLines = paymentLinesInput.map((line) =>
             isPettyCashAccount(coaMap.get(Number(line.coaId)))
-                ? { ...line, bankId: undefined, checkNo: "" }
+                ? { ...line, checkNo: "" }
                 : line
         );
 
@@ -124,6 +124,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const currentLineItems = await getLineItems([id]);
         const currentPayables = currentLineItems.payables.get(id) || [];
         const currentPayments = currentLineItems.payments.get(id) || [];
+        const currentPayeeId = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
+            ? Number(currentDis.payee.id)
+            : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
+        const currentTransactionTypeId = resolveTransactionTypeId(currentDis.transaction_type, currentDis.doc_no);
         const effectivePaymentLines: PaymentInput[] = hasPaymentPatch
             ? normalizedPaymentLines
             : currentPayments.map((line) => ({
@@ -144,47 +148,102 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             fundSourceId: body.fundSourceId,
             supportingDocumentsUrl: body.supportingDocumentsUrl,
             payables: payableLinesInput,
-            payments: effectivePaymentLines,
+                payments: effectivePaymentLines,
         });
+
+        const currentNonPaymentCanonical = canonicalizeDisbursementPayload({
+            transactionTypeId: currentTransactionTypeId,
+            payeeId: currentPayeeId,
+            remarks: currentDis.remarks,
+            totalAmount: currentDis.total_amount,
+            transactionDate: currentDis.transaction_date,
+            departmentId: relationId(currentDis.department_id, "department_id"),
+            fundSourceId: relationId(currentDis.fund_source_id as RelationValue),
+            supportingDocumentsUrl: currentDis.supporting_documents_url,
+            payables: currentPayables.map((line) => ({
+                divisionId: relationId(line.division_id, "division_id"),
+                referenceNo: line.reference_no,
+                date: line.date,
+                coaId: relationId(line.coa_id, "coa_id"),
+                amount: line.amount,
+                remarks: line.remarks,
+            })),
+            payments: [],
+        });
+        const incomingNonPaymentCanonical = canonicalizeDisbursementPayload({
+            transactionTypeId,
+            payeeId: body.payeeId,
+            remarks: body.remarks,
+            totalAmount: body.totalAmount,
+            transactionDate: body.transactionDate,
+            departmentId: body.departmentId,
+            fundSourceId: body.fundSourceId,
+            supportingDocumentsUrl: body.supportingDocumentsUrl,
+            payables: payableLinesInput,
+            payments: [],
+        });
+        const isPaymentOnlyPartialEdit = currentDis.status === "Partially Released"
+            && currentNonPaymentCanonical === incomingNonPaymentCanonical;
+        if (currentDis.status === "Partially Released" && !isPaymentOnlyPartialEdit) {
+            return NextResponse.json({
+                message: "Partially released vouchers can only be updated through payment lines.",
+                detail: "Voucher header and payable lines are locked until the remaining balance is fully released.",
+            }, { status: 409 });
+        }
+
+        const effectivePaymentTotal = effectivePaymentLines.reduce(
+            (sum: number, line: PaymentInput) => sum + (Number(line.amount) || 0),
+            0,
+        );
+        const requestedTotalAmount = Number(body.totalAmount) || 0;
+        if (effectivePaymentTotal > requestedTotalAmount + 0.01) {
+            return NextResponse.json({
+                message: "Payment total cannot exceed the voucher total.",
+                detail: `Payments total ${effectivePaymentTotal.toFixed(2)} exceeds voucher total ${requestedTotalAmount.toFixed(2)}.`,
+            }, { status: 400 });
+        }
+
         if (canonicalizePersistedDisbursement(currentDis, currentPayables, currentPayments) === incomingCanonical) {
             return NextResponse.json(await loadNormalizedDisbursement(currentDis, token));
         }
 
-        releaseMemoCapLock = await acquireMemoCapLock([
-            ...currentPayables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
-            ...payableLinesInput,
-        ]);
+        if (!isPaymentOnlyPartialEdit) {
+            releaseMemoCapLock = await acquireMemoCapLock([
+                ...currentPayables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
+                ...payableLinesInput,
+            ]);
 
-        const currentPayeeIdForEligibility = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
-            ? Number(currentDis.payee.id)
-            : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
-        const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
-            requestedPayables.map((line) => line.referenceNo),
-            body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
-        );
-        if (unpostedPoReferences.length > 0) {
-            return NextResponse.json({
-                message: "Disbursement cannot include purchase-order amounts that have not been posted.",
-                detail: `Unposted or ineligible references: ${unpostedPoReferences.join(", ")}`,
-                references: unpostedPoReferences,
-            }, { status: 409 });
-        }
+            const currentPayeeIdForEligibility = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
+                ? Number(currentDis.payee.id)
+                : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
+            const unpostedPoReferences = await findUnpostedPurchaseOrderReferences(
+                requestedPayables.map((line) => line.referenceNo),
+                body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
+            );
+            if (unpostedPoReferences.length > 0) {
+                return NextResponse.json({
+                    message: "Disbursement cannot include purchase-order amounts that have not been posted.",
+                    detail: `Unposted or ineligible references: ${unpostedPoReferences.join(", ")}`,
+                    references: unpostedPoReferences,
+                }, { status: 409 });
+            }
 
-        const memoCapError = await validateSupplierMemoCaps(
-            body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
-            requestedPayables,
-            id,
-        );
-        if (memoCapError) {
-            return NextResponse.json({
-                message: "Supplier memo amount exceeds its authorized cap.",
-                detail: memoCapError.message,
-                memoNumber: memoCapError.memoNumber,
-                authorizedAmount: memoCapError.authorizedAmount,
-                appliedAmount: memoCapError.appliedAmount,
-                requestedAmount: memoCapError.requestedAmount,
-                remainingAmount: memoCapError.remainingAmount,
-            }, { status: 409 });
+            const memoCapError = await validateSupplierMemoCaps(
+                body.payeeId != null ? Number(body.payeeId) : currentPayeeIdForEligibility,
+                requestedPayables,
+                id,
+            );
+            if (memoCapError) {
+                return NextResponse.json({
+                    message: "Supplier memo amount exceeds its authorized cap.",
+                    detail: memoCapError.message,
+                    memoNumber: memoCapError.memoNumber,
+                    authorizedAmount: memoCapError.authorizedAmount,
+                    appliedAmount: memoCapError.appliedAmount,
+                    requestedAmount: memoCapError.requestedAmount,
+                    remainingAmount: memoCapError.remainingAmount,
+                }, { status: 409 });
+            }
         }
 
         // 2. Fetch existing payables & payments to clear them (matching Spring Boot's behavior)
@@ -224,11 +283,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         let newStatus = currentDis.status;
         let approverId: number | null | undefined = relationId(currentDis.approver_id, "user_id");
         let dateApproved = currentDis.date_approved;
-
-        const currentPayeeId = currentDis.payee && typeof currentDis.payee === "object" && "id" in currentDis.payee
-            ? Number(currentDis.payee.id)
-            : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
-        const currentTransactionTypeId = resolveTransactionTypeId(currentDis.transaction_type, currentDis.doc_no);
 
         const isHeaderOrPayableModified = 
             (body.totalAmount != null && Number(body.totalAmount) !== Number(currentDis.total_amount)) ||
