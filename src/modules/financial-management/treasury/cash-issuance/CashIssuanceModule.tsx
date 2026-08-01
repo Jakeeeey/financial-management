@@ -29,7 +29,7 @@ type CashIssuanceSubModule = "preparation" | "approval" | "releasing" | "posting
 const SUBMODULE_STATUS_FILTERS: Record<CashIssuanceSubModule, string> = {
     preparation: "Draft,Submitted,Returned for Revision",
     approval: "Submitted",
-    releasing: "Approved",
+    releasing: "Approved,Partially Released",
     posting: "Released",
     all: "All",
     dashboard: "All",
@@ -333,6 +333,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                                 <option value="Draft">Draft</option>
                                                 <option value="Submitted">Submitted</option>
                                                 <option value="Approved">Approved</option>
+                                                <option value="Partially Released">Partially Released</option>
                                                 <option value="Released">Released</option>
                                                 <option value="Posted">Posted</option>
                                                 <option value="Returned for Revision">Returned</option>
