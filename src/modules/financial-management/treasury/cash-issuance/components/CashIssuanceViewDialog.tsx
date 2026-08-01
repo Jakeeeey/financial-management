@@ -174,7 +174,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                             {disbursement.status}
                         </Badge>
                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
-                            Payment: {getPaymentStateLabel(disbursement.paymentState)}
+                            Payment: {getPaymentStateLabel(disbursement.paymentState, disbursement.paidAmount)}
                         </span>
                     </div>
 

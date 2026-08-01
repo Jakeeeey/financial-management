@@ -50,11 +50,12 @@ export function getVoucherStepIndex(status: string): number {
     return Math.max(0, VOUCHER_STEPS.findIndex((step) => step.toUpperCase() === normalizedStatus));
 }
 
-export function getPaymentStateLabel(state: Disbursement["paymentState"]): string {
+export function getPaymentStateLabel(state: Disbursement["paymentState"] | undefined, paidAmount = 0): string {
     switch (state) {
+        case "UNPAID": return "Unpaid";
         case "ALLOCATED": return "Allocated";
-        case "PARTIALLY_RELEASED": return "Partially Released";
+        case "PARTIALLY_RELEASED": return "Partially Paid";
         case "RELEASED": return "Paid";
-        default: return "Paid";
+        default: return paidAmount > 0 ? "Allocated" : "Unpaid";
     }
 }
