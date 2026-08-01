@@ -542,6 +542,11 @@ function isEligibleSupplier(value: unknown): boolean {
 
 export function supplierNameOf(value: unknown): string {
     if (!isRecord(value) || !isEligibleSupplier(value)) return "";
+    return supplierLabelOf(value);
+}
+
+export function supplierLabelOf(value: unknown): string {
+    if (!isRecord(value)) return "";
     const shortcut = String(value.supplier_shortcut ?? "").trim();
     const name = String(value.supplier_name ?? "").trim();
     return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
