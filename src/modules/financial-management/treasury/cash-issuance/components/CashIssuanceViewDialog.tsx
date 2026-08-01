@@ -475,10 +475,10 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                             disbursement.status === "Draft" || 
                             disbursement.status === "Returned for Revision"
                           )) || 
-                          (disbursement.status === "Approved" && subModule === "releasing")) && onEdit) && (
+                          ((disbursement.status === "Approved" || disbursement.status === "Partially Released") && subModule === "releasing")) && onEdit) && (
                             <Button variant="outline" onClick={() => onEdit(disbursement)} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-6 text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/30">
                                 <Pencil className="w-4 h-4 sm:mr-2" />
-                                <span className="hidden sm:inline">{disbursement.status !== "Approved" ? "Edit Voucher" : "Add/Edit Checks"}</span>
+                                <span className="hidden sm:inline">{disbursement.status === "Approved" || disbursement.status === "Partially Released" ? "Add/Edit Checks" : "Edit Voucher"}</span>
                             </Button>
                         )}
 
@@ -513,7 +513,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                             </Button>
                         )}
 
-                        {disbursement.status === "Approved" && subModule === "releasing" && (
+                        {(disbursement.status === "Approved" || disbursement.status === "Partially Released") && subModule === "releasing" && (
                             <Button
                                 onClick={() => handleAction("Released")}
                                 disabled={loading || !disbursement.payments || disbursement.payments.length === 0}

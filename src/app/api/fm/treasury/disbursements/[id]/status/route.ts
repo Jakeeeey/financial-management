@@ -349,6 +349,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
                 // Dynamically determine status based on total paid amount vs total voucher amount
                 const totalVoucherAmount = Number(currentDis.total_amount) || 0;
+                if (totalPaidPayments > totalVoucherAmount + 0.01) {
+                    return NextResponse.json({
+                        message: "Payment total cannot exceed the voucher total.",
+                        detail: `Payments total ${totalPaidPayments.toFixed(2)} exceeds voucher total ${totalVoucherAmount.toFixed(2)}.`,
+                    }, { status: 400 });
+                }
                 if (Math.abs(totalVoucherAmount - totalPaidPayments) < 0.01) {
                     newStatus = "Released";
                 } else {
