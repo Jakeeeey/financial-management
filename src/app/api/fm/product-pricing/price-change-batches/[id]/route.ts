@@ -7,7 +7,6 @@ import {
     fetchUserNamesById,
     getDetails,
     getHeader,
-    getSupplierNamesByProductId,
     isRecord,
     normalizeHeaderId,
     normalizePriceTypeId,
@@ -16,6 +15,7 @@ import {
     rejectPriceChangeBatch,
     resolveBatchDecisionUserNames,
     resolveUserDisplayName,
+    supplierLabelOf,
 } from "../_batch";
 import {
     approveUnifiedBatch,
@@ -52,13 +52,6 @@ function supplierIdOf(value: unknown): number | null {
     }
     if (isRecord(value)) return pickId(value.id);
     return null;
-}
-
-function supplierNameOf(value: unknown): string {
-    if (!isRecord(value)) return "";
-    const shortcut = String(value.supplier_shortcut ?? "").trim();
-    const name = String(value.supplier_name ?? "").trim();
-    return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
 }
 
 function userIdOf(value: unknown): number | string | null {
@@ -128,11 +121,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
         if (!header) return NextResponse.json({ error: "Batch not found" }, { status: 404 });
 
         const details = await getDetails(headerId);
-
-        const detailProductIds = details
-            .map((line) => normalizeProductId(line))
-            .filter((id) => id > 0);
-        const supplierByProductId = await getSupplierNamesByProductId(detailProductIds);
+        const batchSupplierName = supplierLabelOf(header.supplier_id);
         const { approved_by_name, rejected_by_name } = await resolveBatchDecisionUserNames(header);
         const detailRequester = details.find((line) => userIdOf(line.requested_by) !== null)?.requested_by ?? null;
         const requestedBy = header.requested_by ?? detailRequester;
@@ -145,7 +134,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
                 id: normalizeHeaderId(header),
                 header_id: normalizeHeaderId(header),
                 supplier_id: supplierIdOf(header.supplier_id),
-                supplier_name: supplierNameOf(header.supplier_id),
+                supplier_name: batchSupplierName,
                 reference_no: header.reference_no ?? "",
                 remarks: header.remarks ?? "",
                 status: header.status ?? "PENDING",
@@ -164,10 +153,9 @@ export async function GET(req: NextRequest, context: RouteContext) {
                 applied_at: header.applied_at ?? null,
                 applied_by: header.applied_by ?? null,
                 details: details.map((line) => {
-                    const pid = normalizeProductId(line);
                     return {
                         ...mapDetail(line),
-                        supplier_name: supplierByProductId.get(pid) ?? null,
+                        supplier_name: batchSupplierName || null,
                         effective_at: line.effective_at ?? null,
                         application_status: line.application_status ?? null,
                         applied_at: line.applied_at ?? null,

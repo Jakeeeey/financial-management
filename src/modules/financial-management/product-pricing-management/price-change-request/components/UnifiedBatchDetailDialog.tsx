@@ -323,7 +323,7 @@ export function UnifiedBatchDetailDialog({
                         {canAct ? (
                             <>
                                 <Button variant="outline" className="border-red-600 text-red-600" onClick={() => setRejecting(true)} disabled={acting}>Reject Batch</Button>
-                                <Button className={pcrApproveButtonClass} onClick={() => setConfirmingApprove(true)} disabled={acting}>Approve Batch</Button>
+                                <Button className={pcrApproveButtonClass} onClick={() => setConfirmingApprove(true)} disabled={acting || rejecting}>Approve Batch</Button>
                             </>
                         ) : null}
                         {canApplyScheduledNow ? (

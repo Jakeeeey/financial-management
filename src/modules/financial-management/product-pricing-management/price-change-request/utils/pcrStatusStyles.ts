@@ -15,24 +15,15 @@ export function normalizePcrStatus(status: string): PCRDisplayStatus | null {
     return STATUS_VALUES.includes(normalized as PCRDisplayStatus) ? (normalized as PCRDisplayStatus) : null;
 }
 
-export function isFutureEffectiveAt(effectiveAt?: string | null): boolean {
-    if (!effectiveAt) return false;
-    const timestamp = new Date(effectiveAt).getTime();
-    return Number.isFinite(timestamp) && timestamp > Date.now();
-}
-
 export function displayPcrStatus(
     status: string,
     applicationStatus?: string | null,
-    effectiveAt?: string | null,
+    _effectiveAt?: string | null,
 ): PCRDisplayStatus | string {
+    void _effectiveAt;
     const normalized = status.trim().toUpperCase();
     const normalizedApplicationStatus = String(applicationStatus ?? "").trim().toUpperCase();
-    if (
-        normalized === "APPROVED" &&
-        normalizedApplicationStatus === "SCHEDULED" &&
-        isFutureEffectiveAt(effectiveAt)
-    ) {
+    if (normalized === "APPROVED" && normalizedApplicationStatus === "SCHEDULED") {
         return normalizedApplicationStatus;
     }
     if (normalized === "APPROVED" && ["APPLYING", "FAILED"].includes(normalizedApplicationStatus)) {
