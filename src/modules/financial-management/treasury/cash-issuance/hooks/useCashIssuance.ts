@@ -1,9 +1,19 @@
 "use client";
 
 import {useState, useCallback, useEffect, useRef} from "react";
-import {Disbursement, DisbursementPayload, DisbursementSubmitResult, SupplierDto, DivisionDto, DepartmentDto} from "../types";
+import {Disbursement, DisbursementPayload, DisbursementStatusResult, DisbursementSubmitResult, SupplierDto, DivisionDto, DepartmentDto} from "../types";
 import {disbursementProvider, DisbursementRequestError} from "../providers/fetchProvider";
 import {toast} from "sonner";
+
+type AppliedListFilters = {
+    supplierSearch: string;
+    startDate: string;
+    endDate: string;
+    statusFilter: string;
+    divisionFilter: string;
+    departmentFilter: string;
+    docNoSearch: string;
+};
 
 export function useCashIssuance(initialStatusFilter = "All") {
     const [data, setData] = useState<Disbursement[]>([]);
@@ -26,6 +36,15 @@ export function useCashIssuance(initialStatusFilter = "All") {
     const [divisionFilter, setDivisionFilter] = useState("");
     const [departmentFilter, setDepartmentFilter] = useState("");
     const [docNoSearch, setDocNoSearch] = useState("");
+    const [appliedFilters, setAppliedFilters] = useState<AppliedListFilters>(() => ({
+        supplierSearch: "",
+        startDate: "",
+        endDate: "",
+        statusFilter: initialStatusFilter,
+        divisionFilter: "",
+        departmentFilter: "",
+        docNoSearch: "",
+    }));
 
     const [filterSuppliers, setFilterSuppliers] = useState<SupplierDto[]>([]);
     const [divisions, setDivisions] = useState<DivisionDto[]>([]);
@@ -72,13 +91,30 @@ export function useCashIssuance(initialStatusFilter = "All") {
     }, [size]);
 
     useEffect(() => {
-        fetchList(page, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, activeType, size, statusFilter]);
+        fetchList(
+            page,
+            activeType,
+            appliedFilters.supplierSearch,
+            appliedFilters.startDate,
+            appliedFilters.endDate,
+            appliedFilters.statusFilter,
+            appliedFilters.divisionFilter,
+            appliedFilters.departmentFilter,
+            appliedFilters.docNoSearch,
+        );
+    }, [activeType, appliedFilters, fetchList, page]);
 
     const applyFilters = () => {
         setPage(0);
-        fetchList(0, activeType, supplierSearch, startDate, endDate, statusFilter, divisionFilter, departmentFilter, docNoSearch);
+        setAppliedFilters({
+            supplierSearch,
+            startDate,
+            endDate,
+            statusFilter,
+            divisionFilter,
+            departmentFilter,
+            docNoSearch,
+        });
     };
 
     const clearFilters = (resetStatus = initialStatusFilter) => {
@@ -90,7 +126,15 @@ export function useCashIssuance(initialStatusFilter = "All") {
         setDepartmentFilter("");
         setDocNoSearch("");
         setPage(0);
-        fetchList(0, activeType, "", "", "", resetStatus, "", "", "");
+        setAppliedFilters({
+            supplierSearch: "",
+            startDate: "",
+            endDate: "",
+            statusFilter: resetStatus,
+            divisionFilter: "",
+            departmentFilter: "",
+            docNoSearch: "",
+        });
     };
 
     const handleTabChange = (type: string) => {
@@ -141,17 +185,28 @@ export function useCashIssuance(initialStatusFilter = "All") {
         }
     };
 
-    const changeStatus = async (id: number, status: string) => {
+    const changeStatus = async (id: number, status: string): Promise<DisbursementStatusResult> => {
         setActionLoading(true);
         try {
             await disbursementProvider.updateStatus(id, status);
             toast.success(`Status updated to ${status}`);
             applyFilters();
-            return true;
-        } catch (error: unknown) { // 🚀 FIX: Replaced 'any'
-            const msg = error instanceof Error ? error.message : "Status update failed";
-            toast.error(msg);
-            return false;
+            return {success: true};
+        } catch (error: unknown) {
+            const message = error instanceof DisbursementRequestError
+                ? error.message
+                : error instanceof Error
+                    ? error.message
+                    : "Status update failed";
+            const detail = error instanceof DisbursementRequestError ? error.detail : undefined;
+
+            if (detail) {
+                toast.error(message, {description: detail});
+            } else {
+                toast.error(message);
+            }
+
+            return {success: false, message, detail};
         } finally {
             setActionLoading(false);
         }

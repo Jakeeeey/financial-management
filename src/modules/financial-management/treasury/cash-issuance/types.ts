@@ -98,6 +98,12 @@ export interface DisbursementSubmitResult {
     nextDocNo?: string;
 }
 
+export interface DisbursementStatusResult {
+    success: boolean;
+    message?: string;
+    detail?: string;
+}
+
 export interface DivisionDto {
     divisionId: number;
     divisionName: string;

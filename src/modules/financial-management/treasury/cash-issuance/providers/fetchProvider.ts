@@ -21,13 +21,17 @@ const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
 
 export class DisbursementRequestError extends Error {
     readonly code?: string;
+    readonly detail?: string;
     readonly nextDocNo?: string;
+    readonly statusCode?: number;
 
-    constructor(message: string, code?: string, nextDocNo?: string) {
+    constructor(message: string, code?: string, nextDocNo?: string, detail?: string, statusCode?: number) {
         super(message);
         this.name = "DisbursementRequestError";
         this.code = code;
+        this.detail = detail;
         this.nextDocNo = nextDocNo;
+        this.statusCode = statusCode;
     }
 }
 
@@ -76,9 +80,15 @@ export const disbursementProvider = {
             method: "PATCH",
         });
         if (!res.ok) {
-            // 🚀 Catch the BFF/Spring Boot error payload!
             const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.detail || errData.message || errData.error || "Failed to update status");
+            const message = typeof errData.message === "string"
+                ? errData.message
+                : typeof errData.error === "string"
+                    ? errData.error
+                    : "Failed to update status";
+            const detail = typeof errData.detail === "string" ? errData.detail : undefined;
+
+            throw new DisbursementRequestError(message, undefined, undefined, detail, res.status);
         }
         return res.json();
     },
