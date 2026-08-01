@@ -77,8 +77,6 @@ export function CreatePriceChangeBatchDialog({ open, onOpenChange, suppliers, on
                         setCatalogViewMode={state.setCatalogViewMode}
                         showingImportedView={state.showingImportedView}
                         importedProductIds={state.importedProductIds}
-                        applyParentPriceToChildren={state.applyParentPriceToChildren}
-                        setApplyParentPriceToChildren={state.setApplyParentPriceToChildren}
                         localCatalogQ={state.localCatalogQ}
                         setLocalCatalogQ={state.setLocalCatalogQ}
                         applyCatalogSearch={state.applyCatalogSearch}

@@ -7,7 +7,13 @@ export function appendDisplayStatusFilter(params: URLSearchParams, andIdx: numbe
         andIdx += 1;
     };
 
-    if (["SCHEDULED", "APPLYING", "FAILED"].includes(normalized)) {
+    if (normalized === "SCHEDULED") {
+        addAnd("[status][_eq]", "APPROVED");
+        addAnd("[application_status][_eq]", "SCHEDULED");
+        return andIdx;
+    }
+
+    if (["APPLYING", "FAILED"].includes(normalized)) {
         addAnd("[status][_eq]", "APPROVED");
         addAnd("[application_status][_eq]", normalized);
         return andIdx;

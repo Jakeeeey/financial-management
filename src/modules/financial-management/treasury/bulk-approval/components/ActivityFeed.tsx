@@ -121,7 +121,7 @@ function getDraftStatusMeta(status: string) {
 
   if (s === "submitted") {
     return {
-      label: "Awaiting L1",
+      label: "Awaiting Level 1",
       cls: "text-blue-700 bg-blue-100/80 dark:bg-blue-900/40 dark:text-blue-400",
       icon: <Clock className="h-3 w-3" />,
     };
@@ -131,7 +131,7 @@ function getDraftStatusMeta(status: string) {
 
   if (m) {
     return {
-      label: `Awaiting L${m[1]}`,
+      label: `Awaiting Level ${m[1]}`,
       cls: "text-amber-700 bg-amber-100/80 dark:bg-amber-900/40 dark:text-amber-400",
       icon: <Clock className="h-3 w-3" />,
     };
@@ -153,8 +153,8 @@ function VoteRow({ vote }: { vote: LogRound["votes"][number] }) {
 
   return (
     <div className="flex items-start gap-3 py-2.5 px-3 rounded-xl hover:bg-muted/20 transition-colors group">
-      <span className="shrink-0 mt-0.5 h-5 w-5 rounded-md bg-muted/60 border text-[9px] font-black flex items-center justify-center text-muted-foreground">
-        L{vote.level}
+      <span className="shrink-0 mt-0.5 h-5 px-1.5 rounded-md bg-muted/60 border text-[9px] font-black flex items-center justify-center text-muted-foreground whitespace-nowrap">
+        Level {vote.level}
       </span>
 
       <div

@@ -19,6 +19,18 @@ import {
 const API_BASE = "/api/fm/treasury/disbursements";
 const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
 
+export class DisbursementRequestError extends Error {
+    readonly code?: string;
+    readonly nextDocNo?: string;
+
+    constructor(message: string, code?: string, nextDocNo?: string) {
+        super(message);
+        this.name = "DisbursementRequestError";
+        this.code = code;
+        this.nextDocNo = nextDocNo;
+    }
+}
+
 const toStoredSupplierType = (type: string) =>
     type.toUpperCase().startsWith("NON") ? "NON-TRADE" : "TRADE";
 
@@ -34,7 +46,8 @@ export const disbursementProvider = {
         if (endDate) url += `&endDate=${encodeURIComponent(endDate)}`;
         if (divisionId) url += `&divisionId=${divisionId}`;
         if (departmentId) url += `&departmentId=${departmentId}`;
-        if (docNo) url += `&docNo=${encodeURIComponent(docNo)}`;
+        const normalizedDocNo = docNo.trim();
+        if (normalizedDocNo) url += `&docNo=${encodeURIComponent(normalizedDocNo)}`;
 
         const res = await fetch(url);
         if (!res.ok) throw new Error("Failed to fetch disbursements");
@@ -47,7 +60,14 @@ export const disbursementProvider = {
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error("Failed to create disbursement");
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new DisbursementRequestError(
+                errData.detail || errData.message || "Failed to create disbursement",
+                typeof errData.code === "string" ? errData.code : undefined,
+                typeof errData.nextDocNo === "string" ? errData.nextDocNo : undefined,
+            );
+        }
         return res.json();
     },
 
@@ -114,14 +134,24 @@ export const disbursementProvider = {
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error("Failed to update disbursement");
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || "Failed to update disbursement");
+        }
         return res.json();
     },
 
-    getUnpaidPos: async (supplierId: number): Promise<UnpaidPoDto[]> => {
-        const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`);
-        if (!res.ok) throw new Error("Failed to fetch unpaid POs");
-        return res.json();
+    getUnpaidPos: async (supplierId: number, signal?: AbortSignal): Promise<UnpaidPoDto[]> => {
+        const res = await fetch(`/api/fm/treasury/disbursements/unpaid-pos/${supplierId}`, {
+            cache: "no-store",
+            signal,
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+            throw new Error(data?.detail || data?.message || "Failed to fetch unpaid POs");
+        }
+        if (!Array.isArray(data)) throw new Error("Pending Records returned an invalid response");
+        return data as UnpaidPoDto[];
     },
 
     getSupplierMemos: async (supplierId: number): Promise<MemoDto[]> => {

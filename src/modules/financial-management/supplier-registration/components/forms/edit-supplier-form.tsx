@@ -346,7 +346,15 @@ export function EditSupplierForm({
                       <FormItem>
                         <FormLabel>Phone Number</FormLabel>
                         <FormControl>
-                          <Input placeholder="09XXXXXXXXX" {...field} />
+                          <Input 
+                            placeholder="09XXXXXXXXX" 
+                            {...field} 
+                            maxLength={11}
+                            onChange={(e) => {
+                              const formatted = e.target.value.replace(/\D/g, "").slice(0, 11);
+                              field.onChange(formatted);
+                            }}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

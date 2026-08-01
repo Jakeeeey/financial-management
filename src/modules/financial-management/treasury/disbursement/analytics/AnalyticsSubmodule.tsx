@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { Disbursement, COADto, SupplierDto, DivisionDto, DepartmentDto } from "../types";
 import { AiInsightsPanel } from "../components/AiInsightsPanel";
+import { getManilaDateInput, getManilaDateOffsetInput } from "../utils/disbursement-utils";
 
 // Styling constants for charts
 const THEME_COLORS = {
@@ -109,10 +110,8 @@ export default function AnalyticsSubmodule() {
         loadLookups();
         
         // Initialize default dates (last 90 days for better historical charts)
-        const ninetyDaysAgo = new Date();
-        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-        setStartDate(ninetyDaysAgo.toISOString().split("T")[0]);
-        setEndDate(new Date().toISOString().split("T")[0]);
+        setStartDate(getManilaDateOffsetInput(-90));
+        setEndDate(getManilaDateInput());
     }, []);
 
     // Main fetch routine

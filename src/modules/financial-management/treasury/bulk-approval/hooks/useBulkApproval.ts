@@ -26,6 +26,7 @@ export function useBulkApproval() {
 
   const [finalHeaderGroups, setFinalHeaderGroups] = React.useState<FinalHeaderGroup[]>([]);
   const [finalHeaderGroupsLoading, setFinalHeaderGroupsLoading] = React.useState(false);
+  const [finalHeaderStatus, setFinalHeaderStatus] = React.useState<"ready" | "completed">("ready");
 
   const [logs, setLogs] = React.useState<LogDraft[]>([]);
   const [logsLoading, setLogsLoading] = React.useState(false);
@@ -98,10 +99,10 @@ export function useBulkApproval() {
     }
   }, []);
 
-  const loadFinalHeaderGroups = React.useCallback(async (): Promise<FinalHeaderGroup[]> => {
+  const loadFinalHeaderGroups = React.useCallback(async (status: "ready" | "completed" = "ready"): Promise<FinalHeaderGroup[]> => {
     try {
       setFinalHeaderGroupsLoading(true);
-      const groups = await api.getFinalHeaderGroups();
+      const groups = await api.getFinalHeaderGroups(status);
       setFinalHeaderGroups(groups);
       return groups;
     } catch (e: unknown) {
@@ -122,7 +123,7 @@ export function useBulkApproval() {
       const [result] = await Promise.all([
         api.listDrafts(selectedDivisionId),
         loadLogs(),
-        loadFinalHeaderGroups(),
+        loadFinalHeaderGroups(finalHeaderStatus),
       ]);
       setDrafts(result.data);
       setMyLevel(result.myLevel);
@@ -137,7 +138,7 @@ export function useBulkApproval() {
     } finally {
       setLoading(false);
     }
-  }, [loadFinalHeaderGroups, loadLogs, selectedDivisionId]);
+  }, [loadFinalHeaderGroups, loadLogs, selectedDivisionId, finalHeaderStatus]);
 
   React.useEffect(() => {
     void loadApprovalContexts();
@@ -149,7 +150,7 @@ export function useBulkApproval() {
 
   React.useEffect(() => {
     setPage(1);
-  }, [selectedDivisionId]);
+  }, [selectedDivisionId, q]);
 
   React.useEffect(() => {
     if (!selectedDivisionId) return;
@@ -254,6 +255,8 @@ export function useBulkApproval() {
     canDoFinalApproval,
     finalHeaderGroups,
     finalHeaderGroupsLoading,
+    finalHeaderStatus,
+    setFinalHeaderStatus,
     loadFinalHeaderGroups,
     openVoteModal,
     closeModal,

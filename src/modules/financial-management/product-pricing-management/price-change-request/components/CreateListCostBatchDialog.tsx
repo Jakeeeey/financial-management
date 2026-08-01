@@ -27,7 +27,7 @@ function formatMoney(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
     return Number(value).toLocaleString("en-PH", {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 4,
     });
 }
 
@@ -83,6 +83,7 @@ export function CreateListCostBatchDialog({
                     proposed_cost: line.proposed_cost,
                     current_cost: line.current_cost,
                 })),
+                supplier_id: importPrefill.supplierId,
                 reference_no: referenceNo.trim() || undefined,
                 remarks: trimmedRemarks,
             });
@@ -105,7 +106,7 @@ export function CreateListCostBatchDialog({
             toast.success(
                 `${result.created} list cost request(s) submitted successfully.${
                     skipped.length ? ` ${skipped.join(", ")}.` : ""
-                }`,
+                }${result.reference_no ? ` Reference: ${result.reference_no}.` : ""}`,
             );
             onOpenChange(false);
             onCreated();
@@ -137,7 +138,7 @@ export function CreateListCostBatchDialog({
                 <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
-                            <Label htmlFor="list-cost-reference-no">Reference No. (optional)</Label>
+                            <Label htmlFor="list-cost-reference-no">Reference No.</Label>
                             <Input
                                 id="list-cost-reference-no"
                                 value={referenceNo}

@@ -69,7 +69,7 @@ export function useSalesOnboarding() {
       const invT = invoiceTypes.find((t) => t.id === invoiceData.invoice_type);
 
       const sales_type = sm && typeof sm.operation === "number" ? sm.operation : null;
-      const payment_terms = cust && typeof cust.payment_term === "number" ? cust.payment_term : null;
+      const payment_terms = cust?.payment_term?.id ?? null;
       const price_type = sm && sm.price_type ? sm.price_type : null;
       const isReceipt = invT && typeof invT.isOfficial === "number" ? invT.isOfficial === 1 : null;
       const total_amount = invoiceData.net_amount; // total amount which is also just the net amount

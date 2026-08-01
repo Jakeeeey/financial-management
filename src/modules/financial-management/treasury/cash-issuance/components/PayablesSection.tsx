@@ -8,6 +8,9 @@ import { Plus, Trash2, FileSpreadsheet } from "lucide-react";
 import { SearchableDropdown } from "./SearchableDropdown";
 import { StickyTableWrapper } from "./StickyTableWrapper";
 import { PayableLine, COADto, DivisionDto } from "../types";
+import { isInheritedVatSplitLine, updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
+import { isMemoPayableLine, normalizeMemoReference } from "@/modules/financial-management/treasury/components/memo-payable-line";
+import { cn } from "@/lib/utils";
 
 interface PayablesSectionProps {
     payables: PayableLine[];
@@ -20,9 +23,13 @@ interface PayablesSectionProps {
     handleAddPayable: () => void;
     handleOpenMemoModal: () => void;
     handleRemovePayable: (idx: number) => void;
+    handleAmountChange: (idx: number, value: string) => void;
     formatMoney: (amount: number) => string;
     disabled?: boolean;
     isAddDisabled?: boolean;
+    memoReferences?: ReadonlySet<string>;
+    memoAmountErrors?: Readonly<Record<number, string>>;
+    fillHeight?: boolean;
 }
 
 export function PayablesSection({
@@ -36,20 +43,30 @@ export function PayablesSection({
     handleAddPayable,
     handleOpenMemoModal,
     handleRemovePayable,
+    handleAmountChange,
     formatMoney,
     disabled = false,
-    isAddDisabled = false
+    isAddDisabled = false,
+    memoReferences = new Set(),
+    memoAmountErrors = {},
+    fillHeight = false,
 }: PayablesSectionProps) {
     return (
-        <div className="bg-card rounded-sm border border-border shadow-sm overflow-hidden text-foreground">
+        <div className={cn(
+            "bg-card rounded-sm border border-border shadow-sm overflow-hidden text-foreground",
+            fillHeight && "h-full min-h-0 flex flex-col",
+        )}>
             <div className="bg-muted px-4 py-2.5 border-b border-border flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-primary"/>
                 <span className="text-xs font-bold text-foreground">Category details (Expense / Liability allocations)</span>
                 <span className="ml-auto text-[10px] font-semibold text-muted-foreground uppercase">{payables.length} row{payables.length !== 1 ? 's' : ''}</span>
             </div>
             
-            <div className="p-0.5">
-                <StickyTableWrapper className="max-h-[320px] overflow-auto custom-scrollbar border-b border-border">
+            <div className={cn("p-0.5", fillHeight && "flex-1 min-h-0 flex flex-col")}>
+                <StickyTableWrapper className={cn(
+                    "max-h-[320px] overflow-auto custom-scrollbar border-b border-border",
+                    fillHeight && "max-h-none flex-1 min-h-0",
+                )}>
                     <Table className="border-collapse">
                         <TableHeader className="bg-muted sticky top-0 z-10 border-b border-border">
                             <TableRow className="border-border">
@@ -68,12 +85,15 @@ export function PayablesSection({
                                         No distribution lines added. Click &quot;Add line&quot; to allocate.
                                     </TableCell>
                                 </TableRow>
-                            ) : payables.map((p, i) => (
+                            ) : payables.map((p, i) => {
+                                const memoLine = isMemoPayableLine(p, memoReferences) || memoReferences.has(normalizeMemoReference(p.memoNumber));
+                                const memoAmountError = memoAmountErrors[i];
+                                return (
                                 <TableRow key={i} className="hover:bg-muted/40 border-b border-border">
                                     {/* Ref No */}
                                     <TableCell className="p-1 align-middle">
                                         <Input 
-                                            disabled={disabled}
+                                            disabled={disabled || memoLine}
                                             className="h-7 text-xs uppercase bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background focus:ring-0 focus-visible:ring-0 shadow-none px-2 rounded-sm transition-all disabled:bg-transparent disabled:cursor-not-allowed text-foreground"
                                             placeholder="e.g. Invoice #" 
                                             value={p.referenceNo || ""}
@@ -99,7 +119,7 @@ export function PayablesSection({
                                                 setPayables(n);
                                             }}
                                             placeholder="Choose Category GL..."
-                                            disabled={disabled}
+                                            disabled={disabled || memoLine}
                                             className="h-7 w-full bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background text-xs rounded-sm shadow-none px-2 text-foreground disabled:opacity-50"
                                             popoverWidth="w-[380px]"
                                         />
@@ -108,14 +128,14 @@ export function PayablesSection({
                                     {/* Division */}
                                     <TableCell className="p-1 align-middle">
                                         <select
-                                            disabled={disabled}
+                                            disabled={disabled || isInheritedVatSplitLine(payables, i)}
                                             className="h-7 w-full bg-transparent border border-transparent hover:border-input focus:border-primary focus:bg-background rounded-sm text-xs px-2 focus:outline-none transition-all disabled:bg-transparent disabled:cursor-not-allowed text-foreground"
                                             value={p.divisionId || ""}
-                                            onChange={e => {
-                                                const n = [...payables];
-                                                n[i].divisionId = e.target.value ? Number(e.target.value) : undefined;
-                                                setPayables(n);
-                                            }}
+                                            onChange={e => setPayables(updateVatSplitDivision(
+                                                payables,
+                                                i,
+                                                e.target.value ? Number(e.target.value) : undefined,
+                                            ))}
                                         >
                                             <option value="">(Select Division)</option>
                                             {divisions.map(d => (
@@ -146,15 +166,18 @@ export function PayablesSection({
                                         <Input 
                                             type="number" 
                                             disabled={disabled}
-                                            className="h-7 text-xs font-bold text-right bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background focus:ring-0 focus-visible:ring-0 shadow-none px-2 rounded-sm transition-all disabled:bg-transparent disabled:cursor-not-allowed text-foreground"
+                                            aria-invalid={!!memoAmountError}
+                                            title={memoLine ? "Memo amount can be edited within the memo's available balance." : undefined}
+                                            className={`h-7 text-xs font-bold text-right bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background focus:ring-0 focus-visible:ring-0 shadow-none px-2 rounded-sm transition-all disabled:bg-transparent disabled:cursor-not-allowed text-foreground ${memoLine ? "bg-muted/40" : ""} ${memoAmountError ? "border-destructive text-destructive focus:border-destructive" : ""}`}
                                             placeholder="0.00" 
                                             value={p.amount || ""}
-                                            onChange={e => {
-                                                const n = [...payables];
-                                                n[i].amount = e.target.value === "" ? 0 : Number(e.target.value);
-                                                setPayables(n);
-                                            }}
+                                            onChange={e => handleAmountChange(i, e.target.value)}
                                         />
+                                        {memoAmountError && (
+                                            <p role="alert" className="mt-1 text-[10px] leading-tight text-destructive">
+                                                {memoAmountError}
+                                            </p>
+                                        )}
                                     </TableCell>
                                     
                                     {/* Delete Row */}
@@ -170,13 +193,14 @@ export function PayablesSection({
                                         </Button>
                                     </TableCell>
                                 </TableRow>
-                            ))}
+                                );
+                            })}
                         </TableBody>
                     </Table>
                 </StickyTableWrapper>
 
                 {/* Ledger actions and subtotal */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 gap-2 bg-muted/30 border-t border-border">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 gap-2 bg-muted/30 border-t border-border shrink-0">
                     <div className="flex gap-2">
                         <Button 
                             size="sm" 

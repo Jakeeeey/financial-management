@@ -13,9 +13,8 @@ import {
 import { Disbursement, BankAccountDto, COADto } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
 import { disbursementProvider } from "../providers/fetchProvider";
-import { formatCurrency, VOUCHER_STEPS, getCookie, decodeToken } from "../utils/disbursement-utils";
+import { formatCurrency, formatManilaDate, getVoucherStepIndex, VOUCHER_STEPS, getCookie, decodeToken } from "../utils/disbursement-utils";
 import { StickyTableWrapper } from "../components/StickyTableWrapper";
-import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
@@ -218,7 +217,7 @@ export default function PostingSubmodule() {
                                     </span>
                                     <div className="flex items-center justify-between mt-2.5 w-full">
                                         <span className="text-[9px] font-medium text-muted-foreground/80">
-                                            {v.transactionDate ? format(new Date(v.transactionDate), "MMM dd, yyyy") : ""}
+                                            {formatManilaDate(v.transactionDate, "")}
                                         </span>
                                         <Badge variant="outline" className={cn(
                                             "text-[8px] px-1.5 py-0 font-bold uppercase",
@@ -263,11 +262,11 @@ export default function PostingSubmodule() {
                                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-muted"></div>
                                     <div
                                         className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-primary transition-all duration-500"
-                                        style={{ width: `${(VOUCHER_STEPS.indexOf(selectedDisbursement.status) / (VOUCHER_STEPS.length - 1)) * 100}%` }}
+                                        style={{ width: `${(getVoucherStepIndex(selectedDisbursement.status) / (VOUCHER_STEPS.length - 1)) * 100}%` }}
                                     ></div>
 
                                     {VOUCHER_STEPS.map((step, idx) => {
-                                        const currentStepIndex = VOUCHER_STEPS.indexOf(selectedDisbursement.status);
+                                        const currentStepIndex = getVoucherStepIndex(selectedDisbursement.status);
                                         const isCompleted = idx < currentStepIndex;
                                         const isCurrent = idx === currentStepIndex;
                                         return (
@@ -305,15 +304,9 @@ export default function PostingSubmodule() {
                                     </div>
                                 </div>
                                 <div className="space-y-2">
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Division</span>
-                                            <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.divisionName || "N/A"}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Department</span>
-                                            <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
-                                        </div>
+                                    <div>
+                                        <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-0.5">Department</span>
+                                        <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
@@ -397,7 +390,7 @@ export default function PostingSubmodule() {
                                                     return (
                                                         <TableRow key={i} className="hover:bg-muted/50 border-border">
                                                             <TableCell className="text-[10px] font-bold uppercase text-muted-foreground">
-                                                                {p.date ? format(new Date(p.date), "MMM dd, yyyy") : "N/A"}
+                                                                {formatManilaDate(p.date)}
                                                             </TableCell>
                                                             <TableCell className="text-xs font-bold uppercase text-foreground">{p.checkNo || "N/A"}</TableCell>
                                                             <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">

@@ -47,6 +47,14 @@ export function DecisionConfirmationDialog({
         if (!open) setEffectiveAt("");
     }, [open]);
 
+    const handleOpenChange = React.useCallback(
+        (nextOpen: boolean) => {
+            if (!nextOpen && loading) return;
+            onOpenChange(nextOpen);
+        },
+        [loading, onOpenChange],
+    );
+
     const handleConfirm = React.useCallback(async () => {
         try {
             await onConfirm(isReject ? null : effectiveAt || null);
@@ -56,7 +64,7 @@ export function DecisionConfirmationDialog({
     }, [effectiveAt, isReject, onConfirm]);
 
     return (
-        <AlertDialog open={open} onOpenChange={onOpenChange}>
+        <AlertDialog open={open} onOpenChange={handleOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>{isReject ? "Confirm Rejection" : "Confirm Approval"}</AlertDialogTitle>
@@ -91,6 +99,13 @@ export function DecisionConfirmationDialog({
                         <p className="text-xs text-muted-foreground">
                             Leave blank to apply immediately, or choose a future time to schedule the change.
                         </p>
+                    </div>
+                ) : null}
+
+                {loading ? (
+                    <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground" role="status" aria-live="polite">
+                        <Loader2 className="size-4 animate-spin" />
+                        {isReject ? "Waiting for rejection to finish..." : "Waiting for approval to finish..."}
                     </div>
                 ) : null}
 

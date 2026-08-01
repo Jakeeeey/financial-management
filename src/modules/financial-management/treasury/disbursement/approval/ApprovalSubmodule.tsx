@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Disbursement } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
-import { formatCurrency, VOUCHER_STEPS } from "../utils/disbursement-utils";
+import { formatCurrency, getVoucherStepIndex, VOUCHER_STEPS } from "../utils/disbursement-utils";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -146,13 +146,11 @@ export default function ApprovalSubmodule() {
 
     // Reset checklists when selecting a different voucher
     useEffect(() => {
-        /* eslint-disable react-hooks/set-state-in-effect */
         setCheckPayee(false);
         setCheckCostCenter(false);
         setCheckGLAccount(false);
         setCheckRemarks(false);
         setCheckAttachments(false);
-        /* eslint-enable react-hooks/set-state-in-effect */
     }, [selectedDisbursement]);
 
     // Force filters to "Submitted" status when loading
@@ -175,15 +173,26 @@ export default function ApprovalSubmodule() {
     }, [selectedDisbursement]);
 
     const isChecklistComplete = checkPayee && checkCostCenter && checkGLAccount && checkRemarks && (selectedDisbursement?.supportingDocumentsUrl ? checkAttachments : true);
+    const [actionLocked, setActionLocked] = useState(false);
+    const actionLockRef = useRef(false);
 
     const handleAction = async (status: string) => {
-        if (!selectedDisbursement) return;
-        const success = await changeStatus(selectedDisbursement.id, status);
-        if (success) {
-            setSelectedDisbursement(null);
-            refresh();
+        if (!selectedDisbursement || actionLoading || actionLockRef.current) return;
+        actionLockRef.current = true;
+        setActionLocked(true);
+        try {
+            const success = await changeStatus(selectedDisbursement.id, status);
+            if (success) {
+                setSelectedDisbursement(null);
+                refresh();
+            }
+        } finally {
+            actionLockRef.current = false;
+            setActionLocked(false);
         }
     };
+
+    const isActionBusy = actionLoading || actionLocked;
 
     return (
         <div className="flex flex-col lg:flex-row gap-6 max-w-[1600px] mx-auto min-h-[calc(100vh-140px)] animate-in fade-in duration-500">
@@ -333,11 +342,11 @@ export default function ApprovalSubmodule() {
                                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-muted"></div>
                                     <div
                                         className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-primary transition-all duration-500"
-                                        style={{ width: `${(VOUCHER_STEPS.indexOf(selectedDisbursement.status) / (VOUCHER_STEPS.length - 1)) * 100}%` }}
+                                        style={{ width: `${(getVoucherStepIndex(selectedDisbursement.status) / (VOUCHER_STEPS.length - 1)) * 100}%` }}
                                     ></div>
 
                                     {VOUCHER_STEPS.map((step, idx) => {
-                                        const currentStepIndex = VOUCHER_STEPS.indexOf(selectedDisbursement.status);
+                                        const currentStepIndex = getVoucherStepIndex(selectedDisbursement.status);
                                         const isCompleted = idx < currentStepIndex;
                                         const isCurrent = idx === currentStepIndex;
                                         return (
@@ -382,15 +391,9 @@ export default function ApprovalSubmodule() {
                                 </div>
 
                                 <div className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-1">Division</span>
-                                            <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.divisionName || "N/A"}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-1">Department</span>
-                                            <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
-                                        </div>
+                                    <div>
+                                        <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block mb-1">Department</span>
+                                        <span className="text-xs font-bold text-foreground uppercase">{selectedDisbursement.departmentName || "N/A"}</span>
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
@@ -583,19 +586,19 @@ export default function ApprovalSubmodule() {
                             <Button 
                                 variant="destructive" 
                                 onClick={() => handleAction("Returned for Revision")} 
-                                disabled={actionLoading}
+                                disabled={isActionBusy}
                                 className="h-11 px-6 text-xs font-black uppercase tracking-widest"
                             >
-                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />}
+                                {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />}
                                 Return for Revision
                             </Button>
 
                             <Button 
                                 onClick={() => handleAction("Approved")} 
-                                disabled={actionLoading || !isChecklistComplete}
+                                disabled={isActionBusy || !isChecklistComplete}
                                 className="h-11 px-10 text-xs font-black uppercase tracking-widest bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/10 disabled:opacity-50"
                             >
-                                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                                {isActionBusy ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
                                 Approve Voucher
                             </Button>
                         </div>

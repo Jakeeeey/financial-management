@@ -1,5 +1,103 @@
+import type { Disbursement } from "../types";
+
 export function formatCurrency(amount: number): string {
     return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
+}
+
+const MANILA_TIME_ZONE = "Asia/Manila";
+
+function manilaCalendarParts(value: Date) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: MANILA_TIME_ZONE,
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+    }).formatToParts(value);
+
+    return {
+        year: Number(parts.find((part) => part.type === "year")?.value),
+        month: Number(parts.find((part) => part.type === "month")?.value),
+        day: Number(parts.find((part) => part.type === "day")?.value),
+    };
+}
+
+function calendarDateInput(value: Date): string {
+    const parts = manilaCalendarParts(value);
+    return `${parts.year.toString().padStart(4, "0")}-${parts.month.toString().padStart(2, "0")}-${parts.day.toString().padStart(2, "0")}`;
+}
+
+function parseDateValue(value: string): Date | null {
+    if (!value) return null;
+
+    const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    const date = dateOnlyMatch
+        ? new Date(`${value}T00:00:00+08:00`)
+        : new Date(value);
+
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function formatManilaDate(value?: string | null, fallback = "N/A"): string {
+    const date = parseDateValue(value || "");
+    if (!date) return fallback;
+
+    return new Intl.DateTimeFormat("en-PH", {
+        timeZone: MANILA_TIME_ZONE,
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+    }).format(date);
+}
+
+export function formatManilaDateTime(value?: string | null, fallback = "N/A"): string {
+    const date = parseDateValue(value || "");
+    if (!date) return fallback;
+
+    return new Intl.DateTimeFormat("en-PH", {
+        timeZone: MANILA_TIME_ZONE,
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+    }).format(date);
+}
+
+export function getManilaDateInput(value = new Date()): string {
+    return calendarDateInput(value);
+}
+
+export function getManilaDateOffsetInput(offset: number, value = new Date()): string {
+    const parts = manilaCalendarParts(value);
+    const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + offset, 12));
+    return calendarDateInput(shifted);
+}
+
+export function getManilaMonthStartInput(monthOffset = 0, value = new Date()): string {
+    const parts = manilaCalendarParts(value);
+    return calendarDateInput(new Date(Date.UTC(parts.year, parts.month - 1 + monthOffset, 1, 12)));
+}
+
+export function getManilaMonthEndInput(monthOffset = 0, value = new Date()): string {
+    const parts = manilaCalendarParts(value);
+    return calendarDateInput(new Date(Date.UTC(parts.year, parts.month + monthOffset, 0, 12)));
+}
+
+export function getManilaQuarterStartInput(value = new Date()): string {
+    const parts = manilaCalendarParts(value);
+    const quarterStartMonth = Math.floor((parts.month - 1) / 3) * 3;
+    return calendarDateInput(new Date(Date.UTC(parts.year, quarterStartMonth, 1, 12)));
+}
+
+export function getManilaYearStartInput(value = new Date()): string {
+    const parts = manilaCalendarParts(value);
+    return calendarDateInput(new Date(Date.UTC(parts.year, 0, 1, 12)));
+}
+
+export function getManilaYearEndInput(yearOffset = 0, value = new Date()): string {
+    const parts = manilaCalendarParts(value);
+    return calendarDateInput(new Date(Date.UTC(parts.year + yearOffset, 11, 31, 12)));
 }
 
 export function getCookie(name: string): string {
@@ -42,6 +140,21 @@ export function getStatusColor(status: string): string {
 }
 
 export const VOUCHER_STEPS = ["Draft", "Submitted", "Approved", "Released", "Posted"];
+
+export function getVoucherStepIndex(status: string): number {
+    const normalizedStatus = status.trim().toUpperCase();
+    if (normalizedStatus === "PARTIALLY RELEASED") return VOUCHER_STEPS.indexOf("Released");
+    return Math.max(0, VOUCHER_STEPS.findIndex((step) => step.toUpperCase() === normalizedStatus));
+}
+
+export function getPaymentStateLabel(state: Disbursement["paymentState"]): string {
+    switch (state) {
+        case "ALLOCATED": return "Allocated";
+        case "PARTIALLY_RELEASED": return "Partially Released";
+        case "RELEASED": return "Paid";
+        default: return "Paid";
+    }
+}
 
 /**
  * Spells out numeric values in standard Philippine Check formats (Pesos and Centavos).

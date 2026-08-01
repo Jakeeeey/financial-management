@@ -12,17 +12,21 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  History,
+  Info,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+import { toast } from "sonner";
 import { ActivityFeed } from "./components/ActivityFeed";
 import DraftListTable from "./components/DraftListTable";
 import FinalHeaderGroupsTable from "./components/FinalHeaderGroupsTable";
 import FinalTopSheetModal from "./components/FinalTopSheetModal";
 import VoteModal from "./components/VoteModal";
 import { useBulkApproval } from "./hooks/useBulkApproval";
+import * as api from "./providers/fetchProvider";
 import type { DraftRow, FinalHeaderGroup } from "./type";
 
 type ApprovalTab = "level-approval" | "final-approval";
@@ -117,6 +121,8 @@ export default function BulkApprovalModule() {
     canDoFinalApproval,
     finalHeaderGroups,
     finalHeaderGroupsLoading,
+    finalHeaderStatus,
+    setFinalHeaderStatus,
     loadFinalHeaderGroups,
     refreshAll,
   } = useBulkApproval();
@@ -125,6 +131,8 @@ export default function BulkApprovalModule() {
   const [selectedTopSheetGroup, setSelectedTopSheetGroup] = React.useState<FinalHeaderGroup | null>(null);
   const [topSheetOpen, setTopSheetOpen] = React.useState(false);
   const [topSheetRedirect, setTopSheetRedirect] = React.useState<TopSheetRedirectState | null>(null);
+  const [showHistory, setShowHistory] = React.useState(false);
+  const [showContexts, setShowContexts] = React.useState(false);
 
   React.useEffect(() => {
     if (canDoNormalApproval) {
@@ -142,9 +150,11 @@ export default function BulkApprovalModule() {
     setTopSheetOpen(true);
   }
 
-  async function handleTopSheetSubmitted() {
-    setTopSheetOpen(false);
-    setSelectedTopSheetGroup(null);
+  async function handleTopSheetSubmitted(shouldClose?: boolean) {
+    if (shouldClose !== false) {
+      setTopSheetOpen(false);
+      setSelectedTopSheetGroup(null);
+    }
     await refreshAll();
   }
 
@@ -175,16 +185,46 @@ export default function BulkApprovalModule() {
         groups = await loadFinalHeaderGroups();
       }
 
-      const matchingGroup =
-        groups.find(
+      let matchingGroup = groups.find(
+        (group) =>
+          group.division_id === draft.division_id &&
+          Array.isArray(group.draft_ids) &&
+          group.draft_ids.includes(draft.id)
+      );
+
+      if (!matchingGroup && draft.transaction_date) {
+        matchingGroup = groups.find(
           (group) =>
             group.division_id === draft.division_id &&
-            Array.isArray(group.draft_ids) &&
-            group.draft_ids.includes(draft.id)
-        ) ?? groups.find((group) => group.division_id === draft.division_id);
+            draft.transaction_date! >= group.period_from &&
+            draft.transaction_date! <= group.period_to
+        );
+      }
+
+      if (!matchingGroup && finalHeaderStatus !== "completed") {
+        const completedGroups = await api.getFinalHeaderGroups("completed");
+        matchingGroup =
+          completedGroups.find(
+            (group) =>
+              group.division_id === draft.division_id &&
+              Array.isArray(group.draft_ids) &&
+              group.draft_ids.includes(draft.id)
+          ) ??
+          completedGroups.find(
+            (group) =>
+              group.division_id === draft.division_id &&
+              draft.transaction_date &&
+              draft.transaction_date >= group.period_from &&
+              draft.transaction_date <= group.period_to
+          );
+      }
 
       if (matchingGroup) {
         openTopSheet(matchingGroup);
+      } else {
+        toast.error(
+          `No Final Top Sheet matrix found for draft ${draft.doc_no} (Period: ${draft.transaction_date || "N/A"}).`
+        );
       }
     } finally {
       setTopSheetRedirect(null);
@@ -245,6 +285,26 @@ export default function BulkApprovalModule() {
               Final Approver
             </Badge>
           )}
+          {approvalContexts.length > 0 && (
+            <Button
+              size="sm"
+              variant={showContexts ? "secondary" : "outline"}
+              className="h-8 rounded-full font-bold tracking-wide shadow-sm transition-all active:scale-95 border-primary/20 hover:bg-primary/5 text-primary hover:text-primary"
+              onClick={() => setShowContexts(!showContexts)}
+            >
+              <Info className="mr-1.5 h-3.5 w-3.5" />
+              {showContexts ? "Hide Contexts" : "View Contexts"}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant={showHistory ? "secondary" : "outline"}
+            className="h-8 rounded-full font-bold tracking-wide shadow-sm transition-all active:scale-95 border-primary/20 hover:bg-primary/5 text-primary hover:text-primary"
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            <History className="mr-1.5 h-3.5 w-3.5" />
+            {showHistory ? "Hide History" : "Show History"}
+          </Button>
           <Button
             size="sm"
             className="h-8 rounded-full font-bold tracking-wide shadow-md shadow-primary/20 transition-all active:scale-95"
@@ -257,8 +317,8 @@ export default function BulkApprovalModule() {
         </div>
       </div>
 
-      {approvalContexts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border dark:border-slate-800 bg-muted/20 dark:bg-slate-900/50 px-4 py-2 text-[10px]">
+      {showContexts && approvalContexts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border dark:border-slate-800 bg-muted/20 dark:bg-slate-900/50 px-4 py-2 text-[10px] animate-in slide-in-from-top-2 fade-in duration-200">
           <span className="font-black uppercase tracking-wider text-muted-foreground">Your contexts</span>
           {approvalContexts.map((context) => (
             <Badge
@@ -334,8 +394,13 @@ export default function BulkApprovalModule() {
               <FinalHeaderGroupsTable
                 groups={finalHeaderGroups}
                 loading={finalHeaderGroupsLoading}
+                statusFilter={finalHeaderStatus}
+                onStatusFilterChange={(status) => {
+                  setFinalHeaderStatus(status);
+                  void loadFinalHeaderGroups(status);
+                }}
                 onOpenTopSheet={openTopSheet}
-                onRefresh={() => void loadFinalHeaderGroups()}
+                onRefresh={() => void loadFinalHeaderGroups(finalHeaderStatus)}
               />
             ) : (
               <DraftListTable
@@ -359,9 +424,11 @@ export default function BulkApprovalModule() {
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-[3] flex-col overflow-hidden rounded-2xl border dark:border-slate-800 bg-card p-6 shadow-sm dark:shadow-none">
-          <ActivityFeed logs={logs} loading={logsLoading} />
-        </div>
+        {showHistory && (
+          <div className="flex min-h-0 flex-[3] flex-col overflow-hidden rounded-2xl border dark:border-slate-800 bg-card p-6 shadow-sm dark:shadow-none animate-in slide-in-from-right-8 fade-in duration-300">
+            <ActivityFeed logs={logs} loading={logsLoading} />
+          </div>
+        )}
       </div>
 
       {topSheetRedirect && <TopSheetRedirectLoader state={topSheetRedirect} />}

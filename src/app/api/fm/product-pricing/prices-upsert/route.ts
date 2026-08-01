@@ -6,6 +6,8 @@ import {
 import { assertValidPriceValue, isInvalidPriceValueError } from "../_pricePrecision";
 import { invalidateGroupIndexCacheOnCatalogChange } from "../_productGroupIndexCache";
 import { batchAsyncOps, CHUNK_SIZE } from "../_supplierFilters";
+import { assertPriceAuditRecord, resolveAuditUserId } from "../_priceAudit";
+import { directusHeaders, readAuditUserId } from "../price-change-batches/_batch";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -34,6 +36,8 @@ type ExistingPriceRow = {
     id?: number | string | null;
     product_id?: number | string | null;
     price_type_id?: number | string | null;
+    created_by?: unknown;
+    updated_by?: unknown;
 };
 
 type PriceRecordPayload = {
@@ -42,6 +46,7 @@ type PriceRecordPayload = {
     price_type_id: number;
     price: number | null;
     updated_by: number;
+    created_by?: number;
 };
 
 type CreatePriceRecordPayload = PriceRecordPayload & {
@@ -53,7 +58,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function fetchDirectus<T>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, { cache: "no-store", ...init });
+    const headers = new Headers(directusHeaders());
+    if (init?.headers) {
+        new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+    }
+    const res = await fetch(url, { cache: "no-store", ...init, headers });
     if (!res.ok) throw new Error(await res.text());
     return (await res.json()) as T;
 }
@@ -95,6 +104,7 @@ export async function POST(req: NextRequest) {
         if (!userId) {
             return NextResponse.json({ error: "Unauthorized (missing/invalid token)" }, { status: 401 });
         }
+        const auditUserId = await resolveAuditUserId(userId);
 
         const body = (await req.json()) as { lines?: UpsertLine[] };
         const lines = Array.isArray(body?.lines) ? body.lines : [];
@@ -151,7 +161,7 @@ export async function POST(req: NextRequest) {
         const productIds = Array.from(new Set(lines.map((line) => Number(line.product_id))));
         const priceTypeIds = Array.from(new Set(lines.map((line) => Number(line.price_type_id))));
 
-        const existingKeyToId = new Map<string, number>();
+        const existingKeyToRow = new Map<string, ExistingPriceRow>();
         const productIdChunks = [];
         for (let i = 0; i < productIds.length; i += CHUNK_SIZE) {
             productIdChunks.push(productIds.slice(i, i + CHUNK_SIZE));
@@ -164,7 +174,7 @@ export async function POST(req: NextRequest) {
             for (const ptidChunk of ptidChunks) {
                 const existingParams = new URLSearchParams();
                 existingParams.set("limit", "-1");
-                existingParams.set("fields", "id,product_id,price_type_id");
+                existingParams.set("fields", "id,product_id,price_type_id,created_by");
                 existingParams.set("filter[product_id][_in]", pidChunk.join(","));
                 existingParams.set("filter[price_type_id][_in]", ptidChunk.join(","));
 
@@ -173,7 +183,7 @@ export async function POST(req: NextRequest) {
 
                 for (const row of existingJson.data ?? []) {
                     const key = `${Number(row.product_id)}:${Number(row.price_type_id)}`;
-                    existingKeyToId.set(key, Number(row.id));
+                    existingKeyToRow.set(key, row);
                 }
             }
         }
@@ -187,20 +197,25 @@ export async function POST(req: NextRequest) {
             const key = `${pid}:${ptid}`;
 
             const payload: PriceRecordPayload = {
-                status: (line.status ?? "draft").trim() || "draft",
+                status: (line.status ?? "approved").trim() || "approved",
                 product_id: pid,
                 price_type_id: ptid,
                 price: line.price === null || line.price === undefined
                     ? null
                     : assertValidPriceValue(line.price, "price"),
-                updated_by: userId,
+                updated_by: auditUserId,
             };
 
-            const existingId = existingKeyToId.get(key);
-            if (existingId) {
-                toUpdate.push({ id: existingId, payload });
+            const existingRow = existingKeyToRow.get(key);
+            const existingId = Number(existingRow?.id);
+            if (Number.isFinite(existingId) && existingId > 0) {
+                const existingCreatedBy = readAuditUserId(existingRow?.created_by);
+                toUpdate.push({
+                    id: existingId,
+                    payload: existingCreatedBy ? payload : { ...payload, created_by: auditUserId },
+                });
             } else {
-                toCreate.push({ ...payload, created_by: userId });
+                toCreate.push({ ...payload, created_by: auditUserId });
             }
         }
 
@@ -208,22 +223,32 @@ export async function POST(req: NextRequest) {
 
         if (toCreate.length) {
             const createUrl = `${DIRECTUS_URL}/items/${PRICES}`;
-            const res = await fetchDirectus<{ data: ExistingPriceRow[] }>(createUrl, {
+            const res = await fetchDirectus<{ data: ExistingPriceRow[] }>(`${createUrl}?fields=id,created_by,updated_by`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(toCreate),
             });
+            for (const row of res.data ?? []) {
+                assertPriceAuditRecord(row, { createdBy: auditUserId, updatedBy: auditUserId });
+            }
             affected += (res.data ?? []).length;
         }
 
         if (toUpdate.length) {
-            await batchAsyncOps(toUpdate, ({ id, payload }) =>
-                fetchDirectus<unknown>(`${DIRECTUS_URL}/items/${PRICES}/${id}`, {
+            await batchAsyncOps(toUpdate, async ({ id, payload }) => {
+                const response = await fetchDirectus<{ data: ExistingPriceRow }>(`${DIRECTUS_URL}/items/${PRICES}/${id}?fields=id,created_by,updated_by`, {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
-                }),
-            );
+                });
+                assertPriceAuditRecord(
+                    response.data,
+                    payload.created_by
+                        ? { createdBy: payload.created_by, updatedBy: auditUserId }
+                        : { updatedBy: auditUserId },
+                );
+                return response;
+            });
             affected += toUpdate.length;
         }
 
