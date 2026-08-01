@@ -13,6 +13,7 @@ import {
     nowManila,
     pickId,
     resolveBatchDecisionUserNames,
+    supplierNameOf,
 } from "./price-change-batches/_batch";
 import {
     COST_DETAILS,
@@ -144,13 +145,6 @@ function detailPriceTypeId(line: DetailRow): number {
     return isRecord(line.price_type_id)
         ? pickId(line.price_type_id.price_type_id) ?? 0
         : pickId(line.price_type_id) ?? 0;
-}
-
-function supplierNameOf(value: unknown): string {
-    if (!isRecord(value)) return "";
-    const shortcut = String(value.supplier_shortcut ?? "").trim();
-    const name = String(value.supplier_name ?? "").trim();
-    return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
 }
 
 function mapPriceLine(line: DetailRow): UnifiedBatchLine {

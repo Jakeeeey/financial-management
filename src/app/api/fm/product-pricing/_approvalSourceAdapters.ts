@@ -20,6 +20,7 @@ import {
     normalizeHeaderId,
     normalizeProductId,
     pickId,
+    supplierNameOf,
 } from "./price-change-batches/_batch";
 import {
     COST_HEADERS,
@@ -338,13 +339,6 @@ export async function addActorNames(rows: UnifiedApprovalRow[]): Promise<Unified
                     : null,
         };
     });
-}
-
-function supplierNameOf(value: unknown): string {
-    if (!isRecord(value)) return "";
-    const shortcut = String(value.supplier_shortcut ?? "").trim();
-    const name = String(value.supplier_name ?? "").trim();
-    return shortcut && name ? `${shortcut} - ${name}` : name || shortcut;
 }
 
 function supplierIdOf(value: unknown): number | null {
@@ -1043,6 +1037,8 @@ export async function fetchPriceBatchesPage(
             "supplier_id.id",
             "supplier_id.supplier_name",
             "supplier_id.supplier_shortcut",
+            "supplier_id.isActive",
+            "supplier_id.nonBuy",
             "reference_no",
             "remarks",
             "status",
@@ -1156,6 +1152,12 @@ export async function fetchCostBatchesPage(
 
     const params = createApprovalListParams({ offset, limit, sort: "-requested_at,-header_id", fields: [
             "header_id",
+            "supplier_id",
+            "supplier_id.id",
+            "supplier_id.supplier_name",
+            "supplier_id.supplier_shortcut",
+            "supplier_id.isActive",
+            "supplier_id.nonBuy",
             "reference_no",
             "remarks",
             "status",
@@ -1204,8 +1206,11 @@ export async function fetchCostBatchesPage(
 
         const batchSupplierInfos = (summary?.productIds ?? [])
             .flatMap((pid) => supplierByProductId.get(pid) ?? []);
-        const batchSupplierNames = uniqueSupplierNamesFromInfos(batchSupplierInfos);
-        const batchSupplierName = resolveSupplierName(batchSupplierInfos);
+        const headerSupplierName = supplierNameOf(row.supplier_id);
+        const batchSupplierNames = headerSupplierName
+            ? [headerSupplierName]
+            : uniqueSupplierNamesFromInfos(batchSupplierInfos);
+        const batchSupplierName = headerSupplierName || resolveSupplierName(batchSupplierInfos);
 
         rows.push({
             row_key: `cost-batch:${headerId}`,

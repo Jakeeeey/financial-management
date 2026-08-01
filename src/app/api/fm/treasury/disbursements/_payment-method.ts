@@ -5,9 +5,10 @@ export type PaymentValidationLine = {
 };
 
 /**
- * Petty Cash and Revolving Fund are cash disbursements, so they do not have
- * a bank account or check number. Unknown account titles intentionally remain
- * bank/check payments so the validation fails closed.
+ * Petty Cash and Revolving Fund do not require a bank account or check number.
+ * A selected cash-account identity may still be retained for audit/display.
+ * Unknown account titles intentionally remain bank/check payments so validation
+ * fails closed.
  */
 export function isPettyCashAccount(accountTitle?: string | null): boolean {
     const normalizedTitle = (accountTitle || "").trim().toLowerCase();

@@ -4,6 +4,8 @@ export interface PayableLine {
     memoId?: number;
     memoType?: number;
     memoNumber?: string;
+    /** UI-only snapshot used to validate edits to an existing memo line. */
+    memoOriginalAmount?: number;
     divisionId?: number;
     divisionName?: string;
     referenceNo: string;

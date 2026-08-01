@@ -92,6 +92,16 @@ export default async function Page() {
                                     <BreadcrumbLink href="#">FM</BreadcrumbLink>
                                 </BreadcrumbItem>
                                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
+                                <BreadcrumbItem className="hidden md:block shrink-0">
+                                    <BreadcrumbLink href="#">Treasury</BreadcrumbLink>
+                                </BreadcrumbItem>
+                                <BreadcrumbSeparator className="hidden md:block shrink-0" />
+                                <BreadcrumbItem className="shrink-0">
+                                    <BreadcrumbLink href="/fm/treasury/cash-issuance/preparation">
+                                        Cash Issuance
+                                    </BreadcrumbLink>
+                                </BreadcrumbItem>
+                                <BreadcrumbSeparator className="shrink-0" />
                                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                                     <BreadcrumbPage className="truncate max-w-[30vw] md:max-w-none">
                                         Voucher Preparation

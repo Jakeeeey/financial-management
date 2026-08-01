@@ -75,7 +75,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         }
         const normalizedPaymentLines = paymentLinesInput.map((line) =>
             isPettyCashAccount(coaMap.get(Number(line.coaId)))
-                ? { ...line, bankId: undefined, checkNo: "" }
+                ? { ...line, checkNo: "" }
                 : line
         );
 

@@ -15,6 +15,8 @@ import {
     pickId,
     resolveBatchDecisionUserNames,
     resolveUserDisplayName,
+    supplierNameOf,
+    type DirectusFlagValue,
 } from "../price-change-batches/_batch";
 
 import type { NormalizedCostBulkItem } from "../cost-change-requests/_bulk";
@@ -59,7 +61,13 @@ type DirectusUserRelation = {
 export type CostHeaderRow = {
     id?: number | string | null;
     header_id?: number | string | null;
-    supplier_id?: number | string | { id?: number | string | null; supplier_name?: string | null; supplier_shortcut?: string | null } | null;
+    supplier_id?: number | string | {
+        id?: number | string | null;
+        supplier_name?: string | null;
+        supplier_shortcut?: string | null;
+        isActive?: DirectusFlagValue;
+        nonBuy?: DirectusFlagValue;
+    } | null;
     reference_no?: string | null;
     remarks?: string | null;
     status?: string | null;
@@ -169,16 +177,11 @@ export function isCostBatchStorageSetupError(error: unknown): error is Error {
 export function mapCostBatchHeaderResponse(row: CostHeaderRow, lineCount = 0) {
     const headerId = normalizeCostHeaderId(row);
     const supplierId = pickId(row.supplier_id);
-    const supplier = isRecord(row.supplier_id) ? row.supplier_id : null;
-    const supplierShortcut = String(supplier?.supplier_shortcut ?? "").trim();
-    const supplierName = String(supplier?.supplier_name ?? "").trim();
     return {
         id: headerId,
         header_id: headerId,
         supplier_id: supplierId,
-        supplier_name: supplierShortcut && supplierName
-            ? `${supplierShortcut} - ${supplierName}`
-            : supplierName || supplierShortcut || null,
+        supplier_name: supplierNameOf(row.supplier_id) || null,
         reference_no: row.reference_no ?? "",
         remarks: row.remarks ?? "",
         status: row.status ?? "PENDING",
@@ -327,6 +330,8 @@ export async function getCostHeader(headerId: number) {
             "supplier_id.id",
             "supplier_id.supplier_name",
             "supplier_id.supplier_shortcut",
+            "supplier_id.isActive",
+            "supplier_id.nonBuy",
             "reference_no",
             "remarks",
             "status",
@@ -552,6 +557,7 @@ export async function rejectCostBatch(headerId: number, userId: number, rejectRe
     }
 
     const details = await getCostDetails(headerId);
+    const rejectedAt = nowManila();
 
     await fetchDirectus(`${mustBase()}/items/${COST_HEADERS}/${headerId}`, {
         method: "PATCH",
@@ -559,7 +565,7 @@ export async function rejectCostBatch(headerId: number, userId: number, rejectRe
         body: JSON.stringify({
             status: "REJECTED",
             rejected_by: userId,
-            rejected_at: nowManila(),
+            rejected_at: rejectedAt,
             reject_reason: rejectReason,
         }),
     });
@@ -574,6 +580,8 @@ export async function rejectCostBatch(headerId: number, userId: number, rejectRe
                     headers: directusHeaders(),
                     body: JSON.stringify({
                         status: "REJECTED",
+                        rejected_by: userId,
+                        rejected_at: rejectedAt,
                         reject_reason: rejectReason,
                     }),
                 }),

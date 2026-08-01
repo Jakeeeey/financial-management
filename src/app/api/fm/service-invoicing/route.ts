@@ -24,6 +24,7 @@ interface DirectusSalesInvoice {
     net_amount?: number;
     transaction_status?: string;
     remarks?: string | null;
+    branch_id?: number | string | { id?: number | string | null } | null;
 }
 
 interface ConsolidatedHistoryResponse {
@@ -61,8 +62,9 @@ class DirectusRequestError extends Error {
         public readonly operation: string,
         public readonly upstreamStatus: number,
         statusText: string,
+        public readonly details = "",
     ) {
-        super(`${operation}: ${statusText || `HTTP ${upstreamStatus}`}`);
+        super(`${operation}: ${details || statusText || `HTTP ${upstreamStatus}`}`);
         this.name = "DirectusRequestError";
     }
 }
@@ -103,18 +105,33 @@ function sanitizeDirectusErrorBody(body: string): string {
     return compact.slice(0, 500);
 }
 
+function normalizeRelationId(value: unknown): number | null {
+    if (value === null || value === undefined || value === "") return null;
+
+    if (typeof value === "object") {
+        if (value === null || !("id" in value)) return null;
+        return normalizeRelationId((value as { id?: unknown }).id);
+    }
+
+    if (typeof value !== "number" && typeof value !== "string") return null;
+
+    const numericValue = Number(value);
+    return Number.isSafeInteger(numericValue) && numericValue > 0 ? numericValue : null;
+}
+
 async function assertDirectusOk(response: Response, operation: string): Promise<void> {
     if (response.ok) return;
 
     const body = await response.text().catch(() => "");
+    const details = sanitizeDirectusErrorBody(body);
     console.error("Service invoicing Directus request failed", {
         operation,
         status: response.status,
         statusText: response.statusText,
-        body: sanitizeDirectusErrorBody(body),
+        body: details,
     });
 
-    throw new DirectusRequestError(operation, response.status, response.statusText);
+    throw new DirectusRequestError(operation, response.status, response.statusText, details);
 }
 
 function directusErrorResponse(error: unknown, fallbackMessage: string) {
@@ -132,6 +149,16 @@ function directusErrorResponse(error: unknown, fallbackMessage: string) {
             return NextResponse.json(
                 { error: "The Directus service is temporarily unavailable. Please retry the service invoicing request." },
                 { status: 502 },
+            );
+        }
+
+        if (error.upstreamStatus >= 400 && error.upstreamStatus < 500) {
+            return NextResponse.json(
+                {
+                    error: error.message,
+                    upstream_status: error.upstreamStatus,
+                },
+                { status: error.upstreamStatus },
             );
         }
     }
@@ -309,9 +336,6 @@ export async function POST(request: NextRequest) {
             gross_amount,
             discount_amount,
             net_amount,
-            sales_type,
-            price_type,
-            payment_terms,
             remarks,
             mappings
         } = payload;
@@ -319,6 +343,29 @@ export async function POST(request: NextRequest) {
         if (!invoice_no || !customer_code || !salesman_id || !invoice_type || !Array.isArray(mappings) || mappings.length === 0) {
             return NextResponse.json({ error: "Missing required fields or empty mappings array." }, { status: 400 });
         }
+
+        const normalizedInvoiceNo = String(invoice_no).trim();
+        const normalizedCustomerCode = String(customer_code).trim();
+        const mappingsAreValid = (mappings as unknown[]).every((mapping) => {
+            if (!mapping || typeof mapping !== "object") return false;
+
+            const record = mapping as Record<string, unknown>;
+            const childInvoiceId = Number(record.child_invoice_id);
+            const amountApplied = Number(record.amount_applied);
+            return Number.isSafeInteger(childInvoiceId)
+                && childInvoiceId > 0
+                && Number.isFinite(amountApplied)
+                && amountApplied >= 0;
+        });
+
+        if (!mappingsAreValid) {
+            return NextResponse.json({ error: "Mappings contain an invalid child invoice or amount." }, { status: 400 });
+        }
+
+        const normalizedMappings = (mappings as Array<Record<string, unknown>>).map((mapping) => ({
+            child_invoice_id: Number(mapping.child_invoice_id),
+            amount_applied: Number(mapping.amount_applied),
+        }));
 
         // Auth check for created_by
         const cookieStore = await cookies();
@@ -328,36 +375,101 @@ export async function POST(request: NextRequest) {
         const createdBy = userIdVal ? Number(userIdVal) : 1;
 
         // 1. Double check uniqueness at save time (Uniqueness Check)
-        const checkUrl = `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_no][_eq]=${encodeURIComponent(invoice_no)}&fields=invoice_id`;
+        const checkUrl = `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_no][_eq]=${encodeURIComponent(normalizedInvoiceNo)}&fields=invoice_id`;
         const checkRes = await fetch(checkUrl, { headers, cache: "no-store" });
-        if (!checkRes.ok) throw new Error(`Directus uniqueness query failed: ${checkRes.statusText}`);
+        await assertDirectusOk(checkRes, "Directus uniqueness query failed");
         const checkData = await checkRes.json();
         if (Array.isArray(checkData.data) && checkData.data.length > 0) {
             return NextResponse.json({ error: "Invoice number already exists." }, { status: 409 });
         }
 
-        // Fetch salesman code to construct order_id
-        const salesmanDetailsUrl = `${DIRECTUS_URL}/items/salesman/${salesman_id}?fields=salesman_code`;
-        const salesmanRes = await fetch(salesmanDetailsUrl, { headers, cache: "no-store" });
-        let salesmanCode = "UNKNOWN";
-        if (salesmanRes.ok) {
-            const smData = await salesmanRes.json();
-            if (smData.data && smData.data.salesman_code) {
-                salesmanCode = smData.data.salesman_code;
+        // Resolve the customer payment-term relation from the authoritative customer record.
+        const customerUrl = `${DIRECTUS_URL}/items/customer?limit=1&filter[customer_code][_eq]=${encodeURIComponent(normalizedCustomerCode)}&fields=customer_code,payment_term`;
+        const customerRes = await fetch(customerUrl, { headers, cache: "no-store" });
+        await assertDirectusOk(customerRes, "Failed to resolve customer payment term");
+        const customerData = await customerRes.json();
+        const customerRecord = Array.isArray(customerData.data) ? customerData.data[0] : null;
+
+        if (!customerRecord) {
+            return NextResponse.json({ error: `Customer ${normalizedCustomerCode} was not found.` }, { status: 400 });
+        }
+
+        const rawPaymentTerm = (customerRecord as { payment_term?: unknown }).payment_term;
+        const paymentTermId = normalizeRelationId(rawPaymentTerm);
+        if (rawPaymentTerm !== null && rawPaymentTerm !== undefined && rawPaymentTerm !== "" && paymentTermId === null) {
+            return NextResponse.json({ error: `Customer ${normalizedCustomerCode} has an invalid payment term.` }, { status: 400 });
+        }
+
+        // Verify that the selected child invoices still exist, belong to the selected customer,
+        // and have a compatible branch before creating the parent invoice.
+        const childInvoiceIds = Array.from(new Set(normalizedMappings.map((mapping) => mapping.child_invoice_id)));
+        const childInvoicesUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&filter[invoice_id][_in]=${encodeURIComponent(childInvoiceIds.join(","))}&fields=invoice_id,customer_code,branch_id`;
+        const childInvoicesRes = await fetch(childInvoicesUrl, { headers, cache: "no-store" });
+        await assertDirectusOk(childInvoicesRes, "Failed to validate selected child invoices");
+        const childInvoicesData = await childInvoicesRes.json();
+        const childInvoicesById = new Map<number, { customer_code?: unknown; branch_id?: unknown }>();
+
+        for (const childInvoice of Array.isArray(childInvoicesData.data) ? childInvoicesData.data : []) {
+            const record = childInvoice as {
+                invoice_id?: unknown;
+                customer_code?: unknown;
+                branch_id?: unknown;
+            };
+            const childInvoiceId = normalizeRelationId(record.invoice_id);
+            if (childInvoiceId !== null) {
+                childInvoicesById.set(childInvoiceId, record);
             }
         }
-        const orderId = `${salesmanCode}-${Date.now()}`;
+
+        if (childInvoicesById.size !== childInvoiceIds.length) {
+            return NextResponse.json({ error: "One or more selected child invoices no longer exist." }, { status: 400 });
+        }
+
+        const hasCustomerMismatch = childInvoiceIds.some((childInvoiceId) => {
+            const childInvoice = childInvoicesById.get(childInvoiceId);
+            return String(childInvoice?.customer_code ?? "").trim() !== normalizedCustomerCode;
+        });
+        if (hasCustomerMismatch) {
+            return NextResponse.json({ error: "All selected child invoices must belong to the selected customer." }, { status: 400 });
+        }
+
+        const branchIds = childInvoiceIds.map((childInvoiceId) =>
+            normalizeRelationId(childInvoicesById.get(childInvoiceId)?.branch_id)
+        );
+        const distinctBranchIds = Array.from(new Set(branchIds.filter((branchId): branchId is number => branchId !== null)));
+        const hasMixedBranchValues = branchIds.some((branchId) => branchId === null) && distinctBranchIds.length > 0;
+        if (distinctBranchIds.length > 1 || hasMixedBranchValues) {
+            return NextResponse.json({ error: "All selected child invoices must belong to the same branch." }, { status: 400 });
+        }
+        const branchId = distinctBranchIds[0] ?? null;
+
+        // Fetch salesman details to construct order_id and preserve relational values.
+        const salesmanDetailsUrl = `${DIRECTUS_URL}/items/salesman/${salesman_id}?fields=salesman_code,operation,price_type`;
+        const salesmanRes = await fetch(salesmanDetailsUrl, { headers, cache: "no-store" });
+        await assertDirectusOk(salesmanRes, "Failed to resolve salesman");
+        const smData = await salesmanRes.json();
+        if (!smData.data) {
+            return NextResponse.json({ error: `Salesman ${salesman_id} was not found.` }, { status: 400 });
+        }
+
+        const salesmanCode = smData.data.salesman_code || "UNKNOWN";
+        const salesmanOperationId = normalizeRelationId(smData.data.operation);
+        const salesmanPriceType = typeof smData.data.price_type === "string" && smData.data.price_type.trim()
+            ? smData.data.price_type.trim()
+            : null;
+        const orderId = `${salesmanCode}${Date.now()}`;
 
         // Calculate total amount based on mappings if net_amount is not passed
-        const calculatedTotal = mappings.reduce((sum: number, m: { child_invoice_id: number; amount_applied: number }) => sum + Number(m.amount_applied || 0), 0);
+        const calculatedTotal = normalizedMappings.reduce((sum, mapping) => sum + mapping.amount_applied, 0);
         const finalNetAmount = typeof net_amount === "number" ? net_amount : calculatedTotal;
         const finalGrossAmount = typeof gross_amount === "number" ? gross_amount : calculatedTotal;
         const finalDiscountAmount = typeof discount_amount === "number" ? discount_amount : 0;
 
         // 3. Create Parent Sales Invoice in Directus
         const parentInvoicePayload = {
-            invoice_no,
-            customer_code,
+            invoice_no: normalizedInvoiceNo,
+            customer_code: normalizedCustomerCode,
+            created_date: new Date().toISOString(),
             salesman_id: Number(salesman_id),
             invoice_type: Number(invoice_type),
             total_amount: finalNetAmount,
@@ -369,13 +481,15 @@ export async function POST(request: NextRequest) {
             dispatch_date: dispatch_date || null,
             transaction_status: "Serviced",
             payment_status: "Unpaid",
-            sales_type: sales_type ? Number(sales_type) : 0,
-            price_type: price_type || "",
-            payment_terms: payment_terms ? Number(payment_terms) : 0,
+            sales_type: salesmanOperationId,
+            price_type: salesmanPriceType,
+            payment_terms: paymentTermId,
+            vat_amount: 0,
             remarks: remarks || null,
             order_id: orderId,
             created_by: createdBy,
-            modified_by: createdBy
+            modified_by: createdBy,
+            ...(branchId !== null ? { branch_id: branchId } : {}),
         };
 
         const createParentUrl = `${DIRECTUS_URL}/items/sales_invoice`;
@@ -395,10 +509,10 @@ export async function POST(request: NextRequest) {
         }
 
         // 4. Create Mappings in bulk in Directus
-        const mappingsPayload = mappings.map((m: { child_invoice_id: number; amount_applied: number }) => ({
+        const mappingsPayload = normalizedMappings.map((mapping) => ({
             parent_invoice_id: parentInvoiceId,
-            child_invoice_id: Number(m.child_invoice_id),
-            amount_applied: Number(m.amount_applied),
+            child_invoice_id: mapping.child_invoice_id,
+            amount_applied: mapping.amount_applied,
             created_by: createdBy
         }));
 
