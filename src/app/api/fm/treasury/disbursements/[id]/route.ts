@@ -5,7 +5,8 @@ import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentI
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
 import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
-import { isPettyCashAccount, validatePaymentLine } from "../_payment-method";
+import { isPettyCashBankAccount, validatePaymentLine } from "../_payment-method";
+import { isPaymentAllocationScope, resolveDisbursementUpdateStatus } from "@/modules/financial-management/treasury/disbursement/utils/update-scope";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,27 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     try {
         const body = await request.json();
+        const isPaymentAllocationUpdate = isPaymentAllocationScope(body.saveScope);
+        if (isPaymentAllocationUpdate) {
+            const unexpectedFields = [
+                "docNo",
+                "transactionTypeId",
+                "payeeId",
+                "remarks",
+                "totalAmount",
+                "transactionDate",
+                "departmentId",
+                "fundSourceId",
+                "supportingDocumentsUrl",
+                "payables",
+            ].filter((field) => Object.prototype.hasOwnProperty.call(body, field));
+            if (unexpectedFields.length > 0) {
+                return NextResponse.json({
+                    message: "Payment allocation updates cannot change voucher header or payable fields.",
+                    detail: `Remove these fields from the payment-only request: ${unexpectedFields.join(", ")}.`,
+                }, { status: 409 });
+            }
+        }
         const requestedTransactionTypeId = body.transactionTypeId == null || body.transactionTypeId === ""
             ? null
             : Number(body.transactionTypeId);
@@ -45,7 +67,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const requestedPayments = hasPaymentPatch && Array.isArray(body.payments)
             ? body.payments as PaymentInput[]
             : [];
-        const missingPrincipalDivisionError = findMissingVatPrincipalDivisionError(requestedPayables);
+        if (isPaymentAllocationUpdate && !hasPaymentPatch) {
+            return NextResponse.json({ message: "Payment allocation lines are required." }, { status: 400 });
+        }
+        const missingPrincipalDivisionError = isPaymentAllocationUpdate
+            ? null
+            : findMissingVatPrincipalDivisionError(requestedPayables);
         if (missingPrincipalDivisionError) {
             return NextResponse.json({ message: missingPrincipalDivisionError }, { status: 400 });
         }
@@ -53,7 +80,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
-        const missingPayableDateError = findMissingPayableDateError(payableLinesInput);
+        const missingPayableDateError = isPaymentAllocationUpdate
+            ? null
+            : findMissingPayableDateError(payableLinesInput);
         if (missingPayableDateError) {
             return NextResponse.json({ message: missingPayableDateError }, { status: 400 });
         }
@@ -62,10 +91,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
                 !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
             )
             : [];
-        const coaMap = await getCoaMap();
+        const [coaMap, bankMap] = await Promise.all([getCoaMap(), getBankMap()]);
         for (let index = 0; index < paymentLinesInput.length; index++) {
             const line = paymentLinesInput[index];
-            const validationError = validatePaymentLine(line, coaMap.get(Number(line.coaId)));
+            const validationError = validatePaymentLine(
+                line,
+                coaMap.get(Number(line.coaId)),
+                bankMap.get(Number(line.bankId)),
+            );
             if (validationError) {
                 return NextResponse.json({
                     message: validationError,
@@ -74,7 +107,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             }
         }
         const normalizedPaymentLines = paymentLinesInput.map((line) =>
-            isPettyCashAccount(coaMap.get(Number(line.coaId)))
+            isPettyCashBankAccount(bankMap.get(Number(line.bankId)))
                 ? { ...line, checkNo: "" }
                 : line
         );
@@ -128,6 +161,116 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
             ? Number(currentDis.payee.id)
             : (typeof currentDis.payee === "number" ? currentDis.payee : Number(currentDis.payee));
         const currentTransactionTypeId = resolveTransactionTypeId(currentDis.transaction_type, currentDis.doc_no);
+
+        if (isPaymentAllocationUpdate) {
+            if (currentDis.status !== "Approved" && currentDis.status !== "Partially Released") {
+                return NextResponse.json({
+                    message: "Payment allocations can only be edited for Approved or Partially Released vouchers.",
+                }, { status: 409 });
+            }
+
+            const effectivePaymentTotal = normalizedPaymentLines.reduce(
+                (sum: number, line: PaymentInput) => sum + (Number(line.amount) || 0),
+                0,
+            );
+            const currentTotalAmount = Number(currentDis.total_amount) || 0;
+            if (effectivePaymentTotal > currentTotalAmount + 0.01) {
+                return NextResponse.json({
+                    message: "Payment total cannot exceed the voucher total.",
+                    detail: `Payments total ${effectivePaymentTotal.toFixed(2)} exceeds voucher total ${currentTotalAmount.toFixed(2)}.`,
+                }, { status: 400 });
+            }
+
+            const paymentIds = currentPayments
+                .map((line) => Number(line.id))
+                .filter((paymentId) => Number.isInteger(paymentId) && paymentId > 0);
+            if (paymentIds.length > 0) {
+                const deletePaymentsRes = await fetch(`${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/items/disbursement_payments`, {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${directusToken}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(paymentIds),
+                });
+                if (!deletePaymentsRes.ok) throw new Error(await deletePaymentsRes.text());
+            }
+
+            const paymentLines = normalizedPaymentLines
+                .filter((line: PaymentInput) =>
+                    !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
+                )
+                .map((line: PaymentInput) => ({
+                    disbursement_id: id,
+                    coa_id: line.coaId ? Number(line.coaId) : null,
+                    bank_id: line.bankId ? Number(line.bankId) : null,
+                    check_no: line.checkNo || "",
+                    date: line.date,
+                    amount: Number(line.amount) || 0,
+                    remarks: line.remarks || "",
+                    ...(line.releasedBy != null && line.releasedBy !== ""
+                        ? { released_by: Number(line.releasedBy) }
+                        : {}),
+                    ...(line.releasedDate != null && line.releasedDate !== ""
+                        ? { released_date: line.releasedDate }
+                        : {}),
+                }));
+
+            if (paymentLines.length > 0) {
+                const paymentInsertRes = await fetch(`${(process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "")}/items/disbursement_payments`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${directusToken}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(paymentLines),
+                });
+                if (!paymentInsertRes.ok) throw new Error(await paymentInsertRes.text());
+            }
+
+            const paymentHeaderRes = await fetch(directusUrl, {
+                method: "PATCH",
+                headers: {
+                    Authorization: `Bearer ${directusToken}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ paid_amount: effectivePaymentTotal }),
+            });
+            if (!paymentHeaderRes.ok) throw new Error(await paymentHeaderRes.text());
+            const persistedPaymentHeader = ((await paymentHeaderRes.json()).data || {}) as Partial<DisbursementRow>;
+
+            const verifiedPaymentItems = await getLineItems([id]);
+            const verifiedPayables = verifiedPaymentItems.payables.get(id) || [];
+            const verifiedPayments = verifiedPaymentItems.payments.get(id) || [];
+            const expectedCanonical = canonicalizeDisbursementPayload({
+                transactionTypeId: currentTransactionTypeId,
+                payeeId: currentPayeeId,
+                remarks: currentDis.remarks,
+                totalAmount: currentDis.total_amount,
+                transactionDate: currentDis.transaction_date,
+                departmentId: relationId(currentDis.department_id, "department_id"),
+                fundSourceId: relationId(currentDis.fund_source_id as RelationValue),
+                supportingDocumentsUrl: currentDis.supporting_documents_url,
+                payables: currentPayables.map((line) => ({
+                    divisionId: relationId(line.division_id, "division_id"),
+                    referenceNo: line.reference_no,
+                    date: line.date,
+                    coaId: relationId(line.coa_id, "coa_id"),
+                    amount: line.amount,
+                    remarks: line.remarks,
+                })),
+                payments: normalizedPaymentLines,
+            });
+            const actualCanonical = canonicalizePersistedDisbursement(
+                currentDis,
+                verifiedPayables,
+                verifiedPayments,
+            );
+            if (actualCanonical !== expectedCanonical) {
+                throw new Error("Payment allocation update failed integrity verification.");
+            }
+
+            return NextResponse.json(await loadNormalizedDisbursement({
+                ...currentDis,
+                ...persistedPaymentHeader,
+                paid_amount: effectivePaymentTotal,
+            }, token));
+        }
+
         const effectivePaymentLines: PaymentInput[] = hasPaymentPatch
             ? normalizedPaymentLines
             : currentPayments.map((line) => ({
@@ -284,14 +427,19 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         let approverId: number | null | undefined = relationId(currentDis.approver_id, "user_id");
         let dateApproved = currentDis.date_approved;
 
-        const isHeaderOrPayableModified = 
-            (body.totalAmount != null && Number(body.totalAmount) !== Number(currentDis.total_amount)) ||
+        const sameMoney = (left: unknown, right: unknown) =>
+            Math.round((Number(left) || 0) * 100) === Math.round((Number(right) || 0) * 100);
+        const isHeaderOrPayableModified =
+            (body.totalAmount != null && !sameMoney(body.totalAmount, currentDis.total_amount)) ||
             (body.payeeId != null && Number(body.payeeId) !== currentPayeeId) ||
             transactionTypeId !== currentTransactionTypeId;
 
-        if (currentDis.status === "Approved" && isHeaderOrPayableModified) {
-            // Any material edit to an approved voucher requires re-approval.
-            newStatus = "Submitted";
+        newStatus = resolveDisbursementUpdateStatus(
+            currentDis.status,
+            body.saveScope,
+            isHeaderOrPayableModified,
+        );
+        if (newStatus === "Submitted" && currentDis.status === "Approved") {
             approverId = null;
             dateApproved = null;
         }
@@ -411,7 +559,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const lineItems = await getLineItems([id]);
 
         const divisionMap = await getDivisionMap();
-        const bankMap = await getBankMap();
 
         // 7. Get fresh, fully-populated header details to normalize and return
         const fields = [

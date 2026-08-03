@@ -1,7 +1,7 @@
 "use client";
 
 import {useState, useCallback, useEffect, useRef} from "react";
-import {Disbursement, DisbursementPayload, DisbursementStatusResult, DisbursementSubmitResult, SupplierDto, DivisionDto, DepartmentDto} from "../types";
+import {Disbursement, DisbursementPayload, DisbursementStatusResult, DisbursementSubmitResult, PaymentLine, SupplierDto, DivisionDto, DepartmentDto} from "../types";
 import {disbursementProvider, DisbursementRequestError} from "../providers/fetchProvider";
 import {toast} from "sonner";
 
@@ -185,6 +185,22 @@ export function useCashIssuance(initialStatusFilter = "All") {
         }
     };
 
+    const updatePaymentAllocation = async (id: number, payments: PaymentLine[]): Promise<DisbursementSubmitResult> => {
+        setActionLoading(true);
+        try {
+            await disbursementProvider.updatePaymentAllocation(id, payments);
+            toast.success("Payment allocation saved successfully");
+            applyFilters();
+            return {success: true};
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : "Payment allocation update failed";
+            toast.error(msg);
+            return {success: false, message: msg};
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
     const changeStatus = async (id: number, status: string): Promise<DisbursementStatusResult> => {
         setActionLoading(true);
         try {
@@ -250,6 +266,7 @@ export function useCashIssuance(initialStatusFilter = "All") {
         refresh: applyFilters,
         create,
         update,
+        updatePaymentAllocation,
         changeStatus
     };
 }

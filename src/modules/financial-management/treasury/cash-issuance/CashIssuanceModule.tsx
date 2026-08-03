@@ -44,7 +44,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
     const {
         data, loading, page, setPage, size, changeSize, totalPages,
         activeType, handleTabChange, refresh,
-        create, update, changeStatus, actionLoading,
+        create, update, updatePaymentAllocation, changeStatus, actionLoading,
         supplierSearch, setSupplierSearch, startDate, setStartDate, endDate, setEndDate,
         statusFilter, setStatusFilter, divisionFilter, setDivisionFilter, departmentFilter, setDepartmentFilter, docNoSearch, setDocNoSearch,
         applyFilters, clearFilters, filterSuppliers, divisions, departments
@@ -453,6 +453,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                 open={isCreateOpen}
                 onOpenChange={setIsCreateOpen}
                 onSubmit={(payload) => formMode === "edit" ? update(selectedDisbursement!.id, payload) : create(payload)}
+                onPaymentAllocationSubmit={updatePaymentAllocation}
                 editData={formMode === "edit" ? selectedDisbursement : null}
                 allowPaymentEditing={subModule === "releasing"}
                 loading={actionLoading}

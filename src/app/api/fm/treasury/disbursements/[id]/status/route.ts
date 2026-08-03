@@ -201,6 +201,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const payables = lineItems.payables.get(id) || [];
         const payments = lineItems.payments.get(id) || [];
         const coaMap = await getCoaMap();
+        const bankMap = await getBankMap();
 
         releaseMemoCapLock = await acquireMemoCapLock(
             payables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
@@ -330,7 +331,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                         coaId: relationId(line.coa_id, "coa_id"),
                         bankId: relationId(line.bank_id as never),
                         checkNo: line.check_no,
-                    }, coaMap.get(relationId(line.coa_id, "coa_id") || 0));
+                    },
+                    coaMap.get(relationId(line.coa_id, "coa_id") || 0),
+                    bankMap.get(relationId(line.bank_id as never) || 0));
                     if (validationError) {
                         return NextResponse.json({
                             message: validationError,
@@ -475,7 +478,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         const userMap = await getUserMap(token, userIdsToFetch);
         const divisionMap = await getDivisionMap();
-        const bankMap = await getBankMap();
         const normalized = normalizeDisbursement(updatedDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap);
 
         return NextResponse.json(normalized);

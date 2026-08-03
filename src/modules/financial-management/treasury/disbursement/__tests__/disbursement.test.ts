@@ -15,6 +15,14 @@ import {
     normalizeDisbursementStatus,
     resolveDisbursementPaymentState,
 } from "@/app/api/fm/treasury/disbursements/route";
+import {
+    RELEASING_PAYMENT_SCOPE,
+    resolveDisbursementUpdateStatus,
+} from "../utils/update-scope";
+import {
+    isPettyCashBankAccount,
+    validatePaymentLine,
+} from "@/app/api/fm/treasury/disbursements/_payment-method";
 
 // 1. Business Logic Code to Test (Usually resides in controllers/utilities)
 export function validateMutation(disbursement: Pick<Disbursement, "isPosted" | "status">) {
@@ -46,6 +54,30 @@ export function evaluateReleasingCondition(totalAmount: number, paidAmount: numb
 describe("Disbursement Module Core Business Rules", () => {
 
     describe("Payment and lifecycle state reconciliation", () => {
+        it("keeps an approved voucher approved after a releasing payment-only save", () => {
+            expect(resolveDisbursementUpdateStatus(
+                "Approved",
+                RELEASING_PAYMENT_SCOPE,
+                true,
+            )).toBe("Approved");
+        });
+
+        it("keeps a partially released voucher in its current lifecycle state after a payment-only save", () => {
+            expect(resolveDisbursementUpdateStatus(
+                "Partially Released",
+                RELEASING_PAYMENT_SCOPE,
+                true,
+            )).toBe("Partially Released");
+        });
+
+        it("returns an approved voucher to approval after a normal material edit", () => {
+            expect(resolveDisbursementUpdateStatus(
+                "Approved",
+                "VOUCHER",
+                true,
+            )).toBe("Submitted");
+        });
+
         it("keeps saved payment allocations distinct from a released status", () => {
             expect(resolveDisbursementPaymentState({
                 status: "Approved",
@@ -75,6 +107,53 @@ describe("Disbursement Module Core Business Rules", () => {
 
         it("normalizes lifecycle status casing for the workflow stepper", () => {
             expect(normalizeDisbursementStatus("partially released")).toBe("Partially Released");
+        });
+    });
+
+    describe("Bank-specific check requirements", () => {
+        const pettyCashBank = {
+            bankName: "Petty Cash for Men2",
+            accountNumber: "001",
+        };
+        const regularBank = {
+            bankName: "QA Bank",
+            accountNumber: "005",
+        };
+
+        it("recognizes petty cash from the selected bank/cash account", () => {
+            expect(isPettyCashBankAccount(pettyCashBank)).toBe(true);
+            expect(isPettyCashBankAccount(regularBank)).toBe(false);
+        });
+
+        it("allows a petty-cash bank payment without a check number", () => {
+            expect(validatePaymentLine(
+                { coaId: 10, bankId: 13, checkNo: "" },
+                "Office Expenses",
+                pettyCashBank,
+            )).toBeNull();
+        });
+
+        it("still requires a check number for a regular bank payment", () => {
+            expect(validatePaymentLine(
+                { coaId: 10, bankId: 5, checkNo: "" },
+                "Office Expenses",
+                regularBank,
+            )).toBe("Please provide a check number.");
+        });
+
+        it("does not use a petty-cash GL title to exempt a regular bank", () => {
+            expect(validatePaymentLine(
+                { coaId: 10, bankId: 5, checkNo: "" },
+                "Petty Cash Fund",
+                regularBank,
+            )).toBe("Please provide a check number.");
+        });
+
+        it("requires the bank/cash account before classifying the payment", () => {
+            expect(validatePaymentLine(
+                { coaId: 10, checkNo: "" },
+                "Office Expenses",
+            )).toBe("Please select a bank account.");
         });
     });
     

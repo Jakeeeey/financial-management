@@ -3,6 +3,7 @@
 import {
     Disbursement,
     DisbursementPayload,
+    PaymentAllocationPayload,
     PaginatedResponse,
     SupplierDto,
     COADto,
@@ -14,6 +15,7 @@ import {
     DisbursementDashboardData,
     DashboardFilters
 } from "../types";
+import { RELEASING_PAYMENT_SCOPE } from "../utils/update-scope";
 
 export class DisbursementRequestError extends Error {
     readonly code?: string;
@@ -133,6 +135,23 @@ export const disbursementProvider = {
         if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
             throw new Error(errData.detail || errData.message || "Failed to update disbursement");
+        }
+        return res.json();
+    },
+
+    updatePaymentAllocation: async (id: number, payments: PaymentAllocationPayload["payments"]): Promise<Disbursement> => {
+        const payload: PaymentAllocationPayload = {
+            saveScope: RELEASING_PAYMENT_SCOPE,
+            payments,
+        };
+        const res = await fetch(`${API_BASE}/${id}`, {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || "Failed to save payment allocation");
         }
         return res.json();
     },
