@@ -23,10 +23,12 @@ import {
     estimateProductGroupBlockHeight,
     estimateProductGroupCardHeight,
 } from "../utils/estimateProductGroupHeight";
+import { getUnitsForRow } from "../utils/rowUnits";
 import { useCardsColumnsPerRow } from "../hooks/useCardsColumnsPerRow";
 
 type VariantProduct = {
     product_id: number | string | null | undefined;
+    unit_of_measurement?: number | string | null;
 };
 
 type MatrixVariant = {
@@ -307,19 +309,12 @@ function ProductBlockPriceTable(props: {
     matrix: PricingMatrixLike;
     row: MatrixRow;
     tiers: ProductTierKey[];
-    usedUnits: Unit[];
+    units: Unit[];
     getSetCellHandler: SetCellHandler;
 }) {
-    const { matrix, row, tiers, usedUnits, getSetCellHandler } = props;
+    const { matrix, row, tiers, units, getSetCellHandler } = props;
     const variantsByUnitId = row.variantsByUnitId ?? {};
-    const fallbackUnits = Object.keys(variantsByUnitId)
-        .map((unitId) => ({
-            unit_id: Number(unitId),
-            unit_name: `Unit ${unitId}`,
-            unit_shortcut: `U${unitId}`,
-        }))
-        .filter((unit) => Number.isFinite(unit.unit_id) && unit.unit_id > 0);
-    const printableUnits = usedUnits.length > 0 ? usedUnits : fallbackUnits;
+    const printableUnits = units;
 
     if (printableUnits.length === 0) {
         return (
@@ -413,6 +408,7 @@ const ProductGroupBlockRow = React.memo(function ProductGroupBlockRow(props: {
     const { matrix, row, tiers, usedUnits, getSetCellHandler } = props;
     const display = row.display ?? {};
     const groupKey = String(row.group_id);
+    const rowUnits = getUnitsForRow(row, usedUnits);
 
     return (
         <article key={`C-${groupKey}`} className="rounded-lg border bg-background p-3 shadow-sm">
@@ -428,7 +424,7 @@ const ProductGroupBlockRow = React.memo(function ProductGroupBlockRow(props: {
                     matrix={matrix}
                     row={row}
                     tiers={tiers}
-                    usedUnits={usedUnits}
+                    units={rowUnits}
                     getSetCellHandler={getSetCellHandler}
                 />
             </div>
@@ -446,6 +442,7 @@ const ProductGroupCardRow = React.memo(function ProductGroupCardRow(props: {
     const { matrix, row, tiers, usedUnits, getSetCellHandler } = props;
     const display = row.display ?? {};
     const groupKey = String(row.group_id);
+    const rowUnits = getUnitsForRow(row, usedUnits);
 
     return (
         <article key={`C-${groupKey}`} className="rounded-lg border bg-background p-3 shadow-sm">
@@ -458,8 +455,8 @@ const ProductGroupCardRow = React.memo(function ProductGroupCardRow(props: {
 
             <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
                 {tiers.flatMap((tier) => {
-                    if (usedUnits.length > 0) {
-                        return usedUnits.map((unit) => {
+                    if (rowUnits.length > 0) {
+                        return rowUnits.map((unit) => {
                             const uomId = Number(unit.unit_id);
                             const variant = row.variantsByUnitId?.[String(uomId)];
                             const cell = cellPropsFor(matrix, getSetCellHandler, variant, tier);
@@ -584,7 +581,6 @@ function PricingCards(props: {
             estimateItemSize={(row) =>
                 estimateProductGroupCardHeight({
                     tierCount: tiers.length,
-                    usedUnits,
                     row,
                 })
             }

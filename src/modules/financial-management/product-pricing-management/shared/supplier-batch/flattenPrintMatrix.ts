@@ -1,4 +1,5 @@
 import type { MatrixRow } from "../../product-pricing/types";
+import { getRegisteredUnitIds, resolveRegisteredUnitId } from "../../product-pricing/utils/rowUnits";
 
 export type PriceTypeRef = {
     price_type_id: number;
@@ -55,8 +56,10 @@ export function flattenPrintMatrixRows(
     const flat: FlatSupplierProductRow[] = [];
 
     for (const row of rows) {
-        for (const variant of Object.values(row.variantsByUnitId)) {
+        for (const [variantUnitId, variant] of Object.entries(row.variantsByUnitId)) {
             const product = variant.product;
+            const unitId = resolveRegisteredUnitId(variantUnitId, variant);
+            if (unitId === null) continue;
             const currentByPriceTypeId = new Map<number, number | null>();
 
             for (const priceType of priceTypes) {
@@ -80,7 +83,7 @@ export function flattenPrintMatrixRows(
                 product_name: product.product_name ?? "",
                 group_id: row.group_id,
                 parent_id: product.parent_id ?? null,
-                unit_id: product.unit_of_measurement ?? null,
+                unit_id: unitId,
                 current_list_cost: Number.isFinite(currentListCost) ? currentListCost : null,
                 currentByPriceTypeId,
             });
@@ -107,13 +110,7 @@ export function productIdsFromMatrixRows(rows: MatrixRow[]): number[] {
 export function buildUnitColumns(rows: MatrixRow[], units: UnitRef[] | undefined): UnitColumn[] {
     const referencedUnitIds = new Set<number>();
     for (const row of rows) {
-        for (const [variantUnitId, variant] of Object.entries(row.variantsByUnitId)) {
-            const productUnitId = Number(variant.product.unit_of_measurement);
-            const unitId = Number.isFinite(productUnitId) && productUnitId > 0
-                ? productUnitId
-                : Number(variantUnitId);
-            if (Number.isFinite(unitId) && unitId >= 0) referencedUnitIds.add(unitId);
-        }
+        for (const unitId of getRegisteredUnitIds(row)) referencedUnitIds.add(unitId);
     }
 
     const unitsById = new Map<number, UnitRef>();
