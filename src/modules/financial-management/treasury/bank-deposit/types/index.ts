@@ -47,6 +47,7 @@ export interface DepositAsset {
     assetType: "CASH" | "CHECK";
     bankName: string;
     checkNo: string;
+    chequeDate: string | null;
     amount: number;
     status: "IN_TRANSIT" | "CLEARED" | "BOUNCED";
 }

@@ -25,6 +25,7 @@ export function useBankDeposit() {
     const [filters, setFilters] = useState<VaultAssetFilters>(DEFAULT_VAULT_FILTERS);
 
     const [isLoading, setIsLoading] = useState(false);
+    const [isBanksLoading, setIsBanksLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +36,7 @@ export function useBankDeposit() {
 
     const filtersRef = useRef(filters);
     const requestIdRef = useRef(0);
+    const bankRequestIdRef = useRef(0);
 
     const updateFilters = useCallback((nextFilters: VaultAssetFilters) => {
         filtersRef.current = nextFilters;
@@ -61,16 +63,12 @@ export function useBankDeposit() {
         setError(null);
 
         try {
-            const [vaultResponse, banksData] = await Promise.all([
-                BankDepositClientService.getVaultAssets(0, pageSize, filtersRef.current),
-                BankDepositClientService.getActiveBanks(),
-            ]);
+            const vaultResponse = await BankDepositClientService.getVaultAssets(0, pageSize, filtersRef.current);
 
             if (requestId !== requestIdRef.current) return;
             if (!vaultResponse) throw new Error("Unable to load vault assets.");
 
             applyVaultResponse(vaultResponse);
-            setActiveBanks(banksData);
         } catch (err: unknown) {
             if (requestId !== requestIdRef.current) return;
             const message = err instanceof Error ? err.message : "Unable to load vault assets.";
@@ -80,6 +78,24 @@ export function useBankDeposit() {
             if (requestId === requestIdRef.current) setIsLoading(false);
         }
     }, [applyVaultResponse]);
+
+    const fetchActiveBanks = useCallback(async () => {
+        const requestId = ++bankRequestIdRef.current;
+        setIsBanksLoading(true);
+
+        try {
+            const banksData = await BankDepositClientService.getActiveBanks();
+
+            if (requestId !== bankRequestIdRef.current) return;
+            setActiveBanks(banksData);
+        } catch (err: unknown) {
+            if (requestId !== bankRequestIdRef.current) return;
+            setActiveBanks([]);
+            setError(err instanceof Error ? err.message : "Unable to load active bank accounts.");
+        } finally {
+            if (requestId === bankRequestIdRef.current) setIsBanksLoading(false);
+        }
+    }, []);
 
     const fetchVaultPage = useCallback(async (
         targetPage: number,
@@ -161,12 +177,14 @@ export function useBankDeposit() {
         updateFilters,
         error,
         isLoading,
+        isBanksLoading,
         isSubmitting,
         page,
         totalPages,
         totalElements,
         pageSize,
         fetchVaultAndBanks,
+        fetchActiveBanks,
         fetchVaultPage,
         fetchHistory,
         prepareDeposit,
