@@ -20,6 +20,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Combobox } from "../ui/Combobox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -96,6 +97,7 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
       notes_or_comments: "",
       agreement_or_contract: "",
       preferred_communication_method: "",
+      nonBuy: true,
     },
   });
 
@@ -537,6 +539,27 @@ export function AddSupplierForm({ onSuccess, onCancel }: AddSupplierFormProps) {
                         />
                       </FormControl>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="nonBuy"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Non-Buy Supplier</FormLabel>
+                        <FormDescription>
+                          Indicate if this supplier is a non-buy supplier
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
                     </FormItem>
                   )}
                 />
