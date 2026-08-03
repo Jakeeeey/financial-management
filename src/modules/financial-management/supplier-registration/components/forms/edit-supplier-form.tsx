@@ -19,6 +19,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Upload, X } from "lucide-react";
@@ -114,6 +115,7 @@ export function EditSupplierForm({
       agreement_or_contract: supplier.agreement_or_contract || "",
       preferred_communication_method:
         supplier.preferred_communication_method || "",
+      nonBuy: supplier.nonBuy !== undefined ? Boolean(supplier.nonBuy) : true,
     },
   });
 
@@ -561,6 +563,27 @@ export function EditSupplierForm({
                         />
                       </FormControl>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="nonBuy"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Non-Buy Supplier</FormLabel>
+                        <FormDescription>
+                          Indicate if this supplier is a non-buy supplier
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
                     </FormItem>
                   )}
                 />
