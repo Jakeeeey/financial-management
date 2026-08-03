@@ -4,6 +4,7 @@
 import {
     Disbursement,
     DisbursementPayload,
+    PaymentAllocationPayload,
     PaginatedResponse,
     SupplierDto,
     COADto,
@@ -147,6 +148,23 @@ export const disbursementProvider = {
         if (!res.ok) {
             const errorData = await res.json().catch(() => ({}));
             throw new Error(errorData.detail || errorData.message || "Failed to update disbursement");
+        }
+        return res.json();
+    },
+
+    updatePaymentAllocation: async (id: number, payments: PaymentAllocationPayload["payments"]): Promise<Disbursement> => {
+        const payload: PaymentAllocationPayload = {
+            saveScope: "RELEASING_PAYMENT",
+            payments,
+        };
+        const res = await fetch(`${API_BASE}/${id}`, {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || "Failed to save payment allocation");
         }
         return res.json();
     },

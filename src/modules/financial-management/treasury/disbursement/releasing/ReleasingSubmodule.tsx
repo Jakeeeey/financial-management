@@ -14,11 +14,11 @@ import {
     Loader2, AlertTriangle, FileText,
     Search, X, Printer, Plus, Trash2, Check, ChevronsUpDown, ArrowUpFromLine
 } from "lucide-react";
-import { Disbursement, BankAccountDto, COADto, PaymentLine, DisbursementPayload } from "../types";
+import { Disbursement, BankAccountDto, COADto, PaymentLine } from "../types";
 import { useDisbursement } from "../hooks/useDisbursement";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { formatCurrency, getManilaDateInput, numberToWords } from "../utils/disbursement-utils";
-import { isPettyCashAccount, validatePaymentLine } from "@/app/api/fm/treasury/disbursements/_payment-method";
+import { isPettyCashBankAccount, validatePaymentLine } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { generateDisbursementPDF, generateCheckLeafPDF } from "../utils/pdfGenerator";
 
 import { formatManilaDate } from "../utils/disbursement-utils";
@@ -84,7 +84,7 @@ function isPartiallyPaid(disbursement: Disbursement, balanceDue: number): boolea
 
 export default function ReleasingSubmodule() {
     const {
-        data, loading, changeStatus, update, actionLoading, refresh,
+        data, loading, changeStatus, updatePaymentAllocation, actionLoading, refresh,
         docNoSearch, setDocNoSearch, applyFilters, clearFilters
     } = useDisbursement();
 
@@ -182,11 +182,16 @@ export default function ReleasingSubmodule() {
     const handlePaymentChange = <K extends keyof PaymentLine>(idx: number, key: K, val: PaymentLine[K]) => {
         const copy = [...payments];
         copy[idx] = { ...copy[idx], [key]: val };
+        if (key === "bankId" && isPettyCashBankAccount(
+            banks.find((bank) => bank.bankId === Number(val)),
+        )) {
+            copy[idx].checkNo = "";
+        }
         setPayments(copy);
         setPaymentValidationErrors(previous => {
             const next = new Set(previous);
             next.delete(`${idx}:${key}`);
-            if (key === "coaId") {
+            if (key === "bankId" || key === "coaId") {
                 next.delete(`${idx}:bankId`);
                 next.delete(`${idx}:checkNo`);
             }
@@ -205,16 +210,17 @@ export default function ReleasingSubmodule() {
             for (let i = 0; i < payments.length; i++) {
                 const p = payments[i];
                 const selectedCoa = coas.find(c => c.coaId === p.coaId);
-                const isPettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+                const selectedBank = banks.find((bank) => bank.bankId === Number(p.bankId));
+                const isPettyCash = isPettyCashBankAccount(selectedBank);
                 if (!p.date) nextErrors.add(`${i}:date`);
                 if (p.amount == null || !Number.isFinite(Number(p.amount)) || Number(p.amount) === 0) {
                     nextErrors.add(`${i}:amount`);
                 }
                 if (!p.coaId) nextErrors.add(`${i}:coaId`);
-                if (!isPettyCash && !p.bankId) nextErrors.add(`${i}:bankId`);
+                if (!p.bankId) nextErrors.add(`${i}:bankId`);
                 if (!isPettyCash && String(p.checkNo ?? "").trim() === "") nextErrors.add(`${i}:checkNo`);
 
-                const validationError = validatePaymentLine(p, selectedCoa?.accountTitle);
+                const validationError = validatePaymentLine(p, selectedCoa?.accountTitle, selectedBank);
                 if (validationError) {
                     validationMessages.push(`${validationError} Payment row ${i + 1}`);
                 }
@@ -225,28 +231,20 @@ export default function ReleasingSubmodule() {
                 return false;
             }
 
-            const payload: DisbursementPayload = {
-                docNo: selectedDisbursement.docNo,
-                transactionTypeId: selectedDisbursement.transactionTypeId,
-                payeeId: selectedDisbursement.payeeId || 0,
-                remarks: selectedDisbursement.remarks,
-                totalAmount: selectedDisbursement.totalAmount,
-                transactionDate: selectedDisbursement.transactionDate,
-                departmentId: selectedDisbursement.departmentId,
-                supportingDocumentsUrl: selectedDisbursement.supportingDocumentsUrl,
-                payables: selectedDisbursement.payables,
-                payments: payments.map(p => {
-                    const pettyCash = isPettyCashAccount(coas.find(c => c.coaId === p.coaId)?.accountTitle);
-                    return {
-                        ...p,
-                        coaId: Number(p.coaId),
-                        bankId: pettyCash ? undefined : Number(p.bankId),
-                        checkNo: pettyCash ? "" : p.checkNo,
-                    };
-                })
-            };
+            const paymentLines = payments.map(p => {
+                const pettyCash = isPettyCashBankAccount(
+                    banks.find((bank) => bank.bankId === Number(p.bankId)),
+                );
+                return {
+                    ...p,
+                    coaId: Number(p.coaId),
+                    bankId: p.bankId ? Number(p.bankId) : undefined,
+                    checkNo: pettyCash ? "" : p.checkNo,
+                };
+            });
 
-            const success = await update(selectedDisbursement.id, payload);
+            const result = await updatePaymentAllocation(selectedDisbursement.id, paymentLines);
+            const success = result.success;
             if (success) {
                 refresh();
                 const updated = data.find(v => v.id === selectedDisbursement.id);
@@ -526,8 +524,9 @@ export default function ReleasingSubmodule() {
                                         </div>
                                     ) : (
                                         payments.map((line, idx) => {
-                                            const selectedCoa = coas.find(c => c.coaId === line.coaId);
-                                            const isPettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+                                            const isPettyCash = isPettyCashBankAccount(
+                                                banks.find((bank) => bank.bankId === Number(line.bankId)),
+                                            );
                                             return (
                                                 <div key={idx} className="relative bg-card border border-border/80 rounded-2xl p-6 shadow-md hover:shadow-lg transition-all space-y-5">
                                                     {/* Top control bar: Header */}
@@ -604,21 +603,19 @@ export default function ReleasingSubmodule() {
                                                     </div>
 
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/60">
-                                                        {!isPettyCash && (
-                                                            <div>
-                                                                <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Draw Bank Account <span className="text-destructive">*</span></label>
-                                                                <SearchSelect<number>
-                                                                    options={banks.map(b => ({
-                                                                        value: b.bankId,
-                                                                        label: `${b.bankName} - ${b.accountNumber}`
-                                                                    }))}
-                                                                    value={line.bankId || ""}
-                                                                    onSelect={val => handlePaymentChange(idx, "bankId", val)}
-                                                                    placeholder="Select Draw Bank Account..."
-                                                                    className={cn("h-9 text-xs font-bold bg-background border-border", paymentValidationErrors.has(`${idx}:bankId`) && "border-rose-500 ring-rose-500/20")}
-                                                                />
-                                                            </div>
-                                                        )}
+                                                        <div>
+                                                            <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">Draw Bank Account <span className="text-destructive">*</span></label>
+                                                            <SearchSelect<number>
+                                                                options={banks.map(b => ({
+                                                                    value: b.bankId,
+                                                                    label: `${b.bankName} - ${b.accountNumber}`
+                                                                }))}
+                                                                value={line.bankId || ""}
+                                                                onSelect={val => handlePaymentChange(idx, "bankId", val)}
+                                                                placeholder="Select Draw Bank Account..."
+                                                                className={cn("h-9 text-xs font-bold bg-background border-border", paymentValidationErrors.has(`${idx}:bankId`) && "border-rose-500 ring-rose-500/20")}
+                                                            />
+                                                        </div>
                                                         <div>
                                                             <label className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block mb-1">GL Account (Credit) <span className="text-destructive">*</span></label>
                                                             <SearchSelect<number>
@@ -628,20 +625,6 @@ export default function ReleasingSubmodule() {
                                                                 }))}
                                                                 value={line.coaId || ""}
                                                                 onSelect={val => {
-                                                                    const nextCoa = coas.find(c => c.coaId === val);
-                                                                    if (isPettyCashAccount(nextCoa?.accountTitle)) {
-                                                                        setPayments(prev => prev.map((payment, paymentIndex) => paymentIndex === idx
-                                                                            ? { ...payment, coaId: val, bankId: undefined, checkNo: "" }
-                                                                            : payment));
-                                                                        setPaymentValidationErrors(previous => {
-                                                                            const next = new Set(previous);
-                                                                            [...next].forEach(key => {
-                                                                                if (key.startsWith(`${idx}:`)) next.delete(key);
-                                                                            });
-                                                                            return next;
-                                                                        });
-                                                                        return;
-                                                                    }
                                                                     handlePaymentChange(idx, "coaId", val);
                                                                 }}
                                                                 placeholder="Select GL Account (Credit)..."

@@ -91,6 +91,11 @@ export interface DisbursementPayload {
     payments?: PaymentLine[];
 }
 
+export interface PaymentAllocationPayload {
+    saveScope: "RELEASING_PAYMENT";
+    payments: PaymentLine[];
+}
+
 export interface DisbursementSubmitResult {
     success: boolean;
     code?: string;

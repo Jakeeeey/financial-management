@@ -25,7 +25,7 @@ import { SearchableDropdown } from "./SearchableDropdown";
 import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
 import { getMemoAvailableAmount } from "@/modules/financial-management/treasury/components/memo-cap";
 import { normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
-import { isPettyCashAccount } from "@/app/api/fm/treasury/disbursements/_payment-method";
+import { isPettyCashBankAccount } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { cn } from "@/lib/utils";
 
 export interface ExtendedDisbursement extends Disbursement {
@@ -37,6 +37,7 @@ interface CashIssuanceCreateDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onSubmit: (payload: DisbursementPayload) => Promise<DisbursementSubmitResult>;
+    onPaymentAllocationSubmit?: (id: number, payments: PaymentLine[]) => Promise<DisbursementSubmitResult>;
     loading: boolean;
     editData?: ExtendedDisbursement | null;
     allowPaymentEditing?: boolean;
@@ -68,6 +69,7 @@ export function CashIssuanceCreateDialog({
     open,
     onOpenChange,
     onSubmit,
+    onPaymentAllocationSubmit,
     loading,
     editData,
     allowPaymentEditing = false,
@@ -101,6 +103,7 @@ export function CashIssuanceCreateDialog({
     const [memoAmounts, setMemoAmounts] = useState<Record<string, string>>({});
     const [loadingMemos, setLoadingMemos] = useState(false);
     const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
+    const [memoSearchQuery, setMemoSearchQuery] = useState("");
 
     const [departmentId, setDepartmentId] = useState<number | "">("");
     const [supportingDocumentsUrl, setSupportingDocumentsUrl] = useState("");
@@ -131,6 +134,22 @@ export function CashIssuanceCreateDialog({
     const totalAmount = useMemo(() => payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payables]);
     const paymentTotal = useMemo(() => payments.reduce((sum, line) => sum + (Number(line.amount) || 0), 0), [payments]);
     const remainingPayment = Number((totalAmount - paymentTotal).toFixed(2));
+    const filteredMemos = useMemo(() => {
+        const query = memoSearchQuery.trim().toLowerCase();
+        if (!query) return memos;
+
+        return memos.filter((memo) => [
+            memo.memo_number,
+            memo.memo_type_name,
+            format(new Date(memo.date), "MMM dd, yyyy"),
+            memo.account_title,
+            memo.reason,
+            memo.amount,
+            memo.amount.toLocaleString("en-US", { minimumFractionDigits: 2 }),
+            memo.remaining_amount ?? memo.amount,
+            (memo.remaining_amount ?? memo.amount).toLocaleString("en-US", { minimumFractionDigits: 2 }),
+        ].filter((value) => value !== null && value !== undefined).join(" ").toLowerCase().includes(query));
+    }, [memos, memoSearchQuery]);
     const memoReferences = useMemo(
         () => new Set(memos.map((memo) => normalizeMemoReference(memo.memo_number)).filter(Boolean)),
         [memos],
@@ -450,6 +469,7 @@ export function CashIssuanceCreateDialog({
 
     const handleOpenMemoModal = async () => {
         if (!payeeId) return toast.error("Please select a Payee first.");
+        setMemoSearchQuery("");
         setLoadingMemos(true);
         setIsMemoModalOpen(true);
         try {
@@ -507,13 +527,20 @@ export function CashIssuanceCreateDialog({
     }, [payments, today, totalAmount]);
 
     const handlePaymentChange = <K extends keyof PaymentLine>(index: number, key: K, value: PaymentLine[K]) => {
-        setPayments((current) => current.map((line, lineIndex) =>
-            lineIndex === index ? { ...line, [key]: value } : line,
-        ));
+        setPayments((current) => current.map((line, lineIndex) => {
+            if (lineIndex !== index) return line;
+            const nextLine = { ...line, [key]: value } as PaymentLine;
+            if (key === "bankId" && isPettyCashBankAccount(
+                banks.find((bank) => bank.bankId === Number(value)),
+            )) {
+                nextLine.checkNo = "";
+            }
+            return nextLine;
+        }));
         setPaymentValidationErrors((current) => {
             const next = new Set(current);
             next.delete(`${index}:${String(key)}`);
-            if (key === "coaId") {
+            if (key === "bankId" || key === "coaId") {
                 next.delete(`${index}:bankId`);
                 next.delete(`${index}:checkNo`);
             }
@@ -532,7 +559,8 @@ export function CashIssuanceCreateDialog({
 
         payments.forEach((line, index) => {
             const selectedCoa = coas.find((coa) => coa.coaId === Number(line.coaId));
-            const pettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+            const selectedBank = banks.find((bank) => bank.bankId === Number(line.bankId));
+            const pettyCash = isPettyCashBankAccount(selectedBank);
             const missingFields: string[] = [];
 
             if (!line.date) {
@@ -547,7 +575,7 @@ export function CashIssuanceCreateDialog({
                 errors.add(`${index}:coaId`);
                 missingFields.push("GL Account");
             }
-            if (!pettyCash && !line.bankId) {
+            if (!line.bankId) {
                 errors.add(`${index}:bankId`);
                 missingFields.push("Bank / Cash Account");
             }
@@ -586,6 +614,16 @@ export function CashIssuanceCreateDialog({
         submitLockRef.current = true;
         setLocalSubmitting(true);
         try {
+            const paymentLines = payments.map((line) => {
+                const selectedBank = banks.find((bank) => bank.bankId === Number(line.bankId));
+                const pettyCash = isPettyCashBankAccount(selectedBank);
+                return {
+                    ...line,
+                    coaId: Number(line.coaId),
+                    bankId: line.bankId ? Number(line.bankId) : undefined,
+                    checkNo: pettyCash ? "" : line.checkNo,
+                };
+            });
             const payload: DisbursementPayload = {
                 docNo: editData ? editData.docNo : (previewDocNo || undefined),
                 transactionTypeId: Number(transactionTypeId),
@@ -601,19 +639,12 @@ export function CashIssuanceCreateDialog({
                     divisionId: p.divisionId ? Number(p.divisionId) : undefined
                 })),
                 ...(isPaymentEditorEnabled ? {
-                    payments: payments.map((line) => {
-                        const selectedCoa = coas.find((coa) => coa.coaId === Number(line.coaId));
-                        const pettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
-                        return {
-                            ...line,
-                            coaId: Number(line.coaId),
-                            bankId: line.bankId ? Number(line.bankId) : undefined,
-                            checkNo: pettyCash ? "" : line.checkNo,
-                        };
-                    }),
+                    payments: paymentLines,
                 } : {}),
             };
-            const result = await onSubmit(payload);
+            const result = editData && isPaymentEditorEnabled && onPaymentAllocationSubmit
+                ? await onPaymentAllocationSubmit(editData.id, paymentLines)
+                : await onSubmit(payload);
             if (result.code === "DOC_NO_CONFLICT") {
                 if (result.nextDocNo) {
                     setPreviewDocNo(result.nextDocNo);
@@ -750,8 +781,8 @@ export function CashIssuanceCreateDialog({
                                                             <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">No payment lines added. Click &quot;Add payment line&quot; to allocate.</TableCell>
                                                         </TableRow>
                                                     ) : payments.map((line, index) => {
-                                                        const selectedCoa = coas.find((coa) => coa.coaId === Number(line.coaId));
-                                                        const pettyCash = isPettyCashAccount(selectedCoa?.accountTitle);
+                                                        const selectedBank = banks.find((bank) => bank.bankId === Number(line.bankId));
+                                                        const pettyCash = isPettyCashBankAccount(selectedBank);
                                                         const isReleasedPaymentLine = Boolean(line.releasedDate || line.releasedBy);
                                                         const isPaymentLineLocked = arePaymentFieldsLocked || isReleasedPaymentLine;
                                                         return (
@@ -779,7 +810,7 @@ export function CashIssuanceCreateDialog({
                                                                         options={banks.map((bank) => ({ value: bank.bankId, label: `${bank.bankName} - ${bank.accountNumber}` }))}
                                                                         value={line.bankId || ""}
                                                                         onSelect={(value) => handlePaymentChange(index, "bankId", value)}
-                                                                        placeholder={pettyCash ? "Optional cash account..." : "Select bank / cash account..."}
+                                                                        placeholder="Select bank / cash account..."
                                                                         disabled={isPaymentLineLocked}
                                                                         className={cn("h-7 w-full bg-transparent border-transparent hover:border-input focus:border-primary focus:bg-background text-xs rounded-sm shadow-none px-2 text-foreground", paymentValidationErrors.has(`${index}:bankId`) && "border-rose-500 bg-rose-50/30")}
                                                                         popoverWidth="w-[360px]"
@@ -790,13 +821,7 @@ export function CashIssuanceCreateDialog({
                                                                         options={paymentCoaOptions}
                                                                         value={line.coaId || ""}
                                                                         onSelect={(value) => {
-                                                                            const nextCoa = coas.find((coa) => coa.coaId === value);
                                                                             handlePaymentChange(index, "coaId", value);
-                                                                            if (isPettyCashAccount(nextCoa?.accountTitle)) {
-                                                                                setPayments((current) => current.map((payment, paymentIndex) => paymentIndex === index
-                                                                                    ? { ...payment, coaId: value, checkNo: "" }
-                                                                                    : payment));
-                                                                            }
                                                                         }}
                                                                         placeholder="Select GL Account (Credit)..."
                                                                         disabled={isPaymentLineLocked}
@@ -1019,7 +1044,10 @@ export function CashIssuanceCreateDialog({
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={isMemoModalOpen} onOpenChange={setIsMemoModalOpen}>
+            <Dialog open={isMemoModalOpen} onOpenChange={(open) => {
+                setIsMemoModalOpen(open);
+                if (!open) setMemoSearchQuery("");
+            }}>
                 <DialogContent className="sm:max-w-[700px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
@@ -1031,6 +1059,18 @@ export function CashIssuanceCreateDialog({
                             Select a Credit or Debit memo to apply to this voucher&apos;s payables.
                         </DialogDescription>
                     </DialogHeader>
+
+                    <div className="relative mt-4">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                            type="search"
+                            aria-label="Search supplier memos"
+                            placeholder="Search memo number, type, date, account, reason, or amount..."
+                            value={memoSearchQuery}
+                            onChange={(event) => setMemoSearchQuery(event.target.value)}
+                            className="pl-9"
+                        />
+                    </div>
 
                     <StickyTableWrapper className="max-h-[400px] overflow-auto border border-border rounded-md mt-4 custom-scrollbar">
                         <Table>
@@ -1060,8 +1100,12 @@ export function CashIssuanceCreateDialog({
                                     <TableRow><TableCell colSpan={5}
                                                          className="h-24 text-center text-sm font-medium text-muted-foreground">No
                                         available memos found for this supplier.</TableCell></TableRow>
+                                ) : filteredMemos.length === 0 ? (
+                                    <TableRow><TableCell colSpan={5}
+                                                         className="h-24 text-center text-sm font-medium text-muted-foreground">No
+                                        supplier memos match your search.</TableCell></TableRow>
                                 ) : (
-                                    memos.map(memo => {
+                                    filteredMemos.map(memo => {
                                         const memoAvailableAmount = getMemoAvailableAmount(
                                             memo.remaining_amount ?? memo.amount,
                                             payables,

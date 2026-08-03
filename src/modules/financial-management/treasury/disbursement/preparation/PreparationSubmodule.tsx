@@ -149,6 +149,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     const [memoAmounts, setMemoAmounts] = useState<Record<string, string>>({});
     const [loadingMemos, setLoadingMemos] = useState(false);
     const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
+    const [memoSearchQuery, setMemoSearchQuery] = useState("");
 
     // Dropdowns / Lookups
     const [suppliers, setSuppliers] = useState<SupplierDto[]>([]);
@@ -419,6 +420,7 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
 
     const handleOpenMemoModal = async () => {
         if (!payeeId) return toast.error("Please select a Payee first.");
+        setMemoSearchQuery("");
         setLoadingMemos(true);
         setIsMemoModalOpen(true);
         try {
@@ -455,6 +457,26 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
     };
 
     // Derived State
+    const availableMemos = useMemo(
+        () => memos.filter((memo) => !payables.some((payable) => payable.referenceNo === memo.memo_number)),
+        [memos, payables],
+    );
+    const filteredMemos = useMemo(() => {
+        const query = memoSearchQuery.trim().toLowerCase();
+        if (!query) return availableMemos;
+
+        return availableMemos.filter((memo) => [
+            memo.memo_number,
+            memo.memo_type_name,
+            format(parseLocalDate(memo.date), "MMM dd, yyyy"),
+            memo.account_title,
+            memo.reason,
+            memo.amount,
+            memo.amount.toLocaleString("en-US", { minimumFractionDigits: 2 }),
+            memo.remaining_amount ?? memo.amount,
+            (memo.remaining_amount ?? memo.amount).toLocaleString("en-US", { minimumFractionDigits: 2 }),
+        ].filter((value) => value !== null && value !== undefined).join(" ").toLowerCase().includes(query));
+    }, [availableMemos, memoSearchQuery]);
     const totalAmount = useMemo(() => {
         return payables.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
     }, [payables]);
@@ -1312,7 +1334,10 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
             </Dialog>
 
             {/* SUPPLIER MEMOs SELECTION MODAL */}
-            <Dialog open={isMemoModalOpen} onOpenChange={setIsMemoModalOpen}>
+            <Dialog open={isMemoModalOpen} onOpenChange={(open) => {
+                setIsMemoModalOpen(open);
+                if (!open) setMemoSearchQuery("");
+            }}>
                 <DialogContent className="sm:max-w-[700px] bg-background border-border">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-black uppercase flex items-center gap-2 text-foreground">
@@ -1323,6 +1348,18 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                             Select a Credit or Debit memo to apply to this voucher&apos;s payables.
                         </DialogDescription>
                     </DialogHeader>
+
+                    <div className="relative mt-4">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                            type="search"
+                            aria-label="Search supplier memos"
+                            placeholder="Search memo number, type, date, account, reason, or amount..."
+                            value={memoSearchQuery}
+                            onChange={(event) => setMemoSearchQuery(event.target.value)}
+                            className="pl-9"
+                        />
+                    </div>
 
                     <StickyTableWrapper className="max-h-[400px] overflow-auto border border-border rounded-md mt-4 custom-scrollbar">
                         <Table>
@@ -1342,14 +1379,20 @@ export default function PreparationSubmodule({ onSuccess, editData }: Preparatio
                                             <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2"/> Fetching Memos...
                                         </TableCell>
                                     </TableRow>
-                                ) : memos.filter(memo => !payables.some(p => p.referenceNo === memo.memo_number)).length === 0 ? (
+                                ) : availableMemos.length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground">
                                             No available memos found for this supplier.
                                         </TableCell>
                                     </TableRow>
+                                ) : filteredMemos.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="h-24 text-center text-sm font-medium text-muted-foreground">
+                                            No supplier memos match your search.
+                                        </TableCell>
+                                    </TableRow>
                                 ) : (
-                                    memos.filter(memo => !payables.some(p => p.referenceNo === memo.memo_number)).map(memo => (
+                                    filteredMemos.map(memo => (
                                         <TableRow key={memo.id} className="hover:bg-muted/50 border-border">
                                             <TableCell className="font-bold text-xs uppercase text-foreground">{memo.memo_number}</TableCell>
                                             <TableCell>

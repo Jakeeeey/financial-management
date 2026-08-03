@@ -4,7 +4,7 @@ import { decodeJwtPayload } from "@/lib/auth-utils";
 import { findUnpostedPurchaseOrderReferences } from "./_purchase-order-eligibility";
 import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "./_payable-split-integrity";
 import { acquireMemoCapLock, validateSupplierMemoCaps } from "./_memo-cap-integrity";
-import { isPettyCashAccount, validatePaymentLine } from "./_payment-method";
+import { isPettyCashBankAccount, validatePaymentLine } from "./_payment-method";
 
 export const runtime = "nodejs";
 
@@ -1118,10 +1118,14 @@ export async function POST(request: NextRequest) {
         const paymentLinesInput = requestedPayments.filter((line: PaymentInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.checkNo != null && String(line.checkNo).trim() !== "")
         );
-        const coaMap = await getCoaMap();
+        const [coaMap, bankMap] = await Promise.all([getCoaMap(), getBankMap()]);
         for (let index = 0; index < paymentLinesInput.length; index++) {
             const line = paymentLinesInput[index];
-            const validationError = validatePaymentLine(line, coaMap.get(Number(line.coaId)));
+            const validationError = validatePaymentLine(
+                line,
+                coaMap.get(Number(line.coaId)),
+                bankMap.get(Number(line.bankId)),
+            );
             if (validationError) {
                 return NextResponse.json({
                     message: validationError,
@@ -1130,7 +1134,7 @@ export async function POST(request: NextRequest) {
             }
         }
         const normalizedPaymentLines = paymentLinesInput.map((line) =>
-            isPettyCashAccount(coaMap.get(Number(line.coaId)))
+            isPettyCashBankAccount(bankMap.get(Number(line.bankId)))
                 ? { ...line, checkNo: "" }
                 : line
         );
