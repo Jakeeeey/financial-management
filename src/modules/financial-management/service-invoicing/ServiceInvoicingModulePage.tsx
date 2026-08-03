@@ -44,6 +44,11 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+function formatInvoiceDate(value: string | null | undefined): string {
+  if (!value) return "N/A";
+  return value.split(/[T ]/)[0] || "N/A";
+}
+
 interface SearchableSelectProps {
   options: { value: string | number; label: string; sublabel?: string }[];
   value: string | number;
@@ -949,7 +954,7 @@ export default function ServiceInvoicingModulePage() {
                                       {inv.invoice_no}
                                     </TableCell>
                                     <TableCell className="p-2 text-[10px] font-bold text-muted-foreground font-mono">
-                                      {inv.invoice_date ? inv.invoice_date.split("T")[0] : "N/A"}
+                                      {formatInvoiceDate(inv.invoice_date)}
                                     </TableCell>
                                     <TableCell className="p-2 text-xs font-black text-right text-foreground">
                                       ₱{Number(inv.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -1130,7 +1135,7 @@ export default function ServiceInvoicingModulePage() {
                         <div className="text-[10px] font-bold text-muted-foreground uppercase flex flex-wrap gap-x-3 gap-y-1">
                           <span className="flex items-center gap-1"><User size={10} /> Salesman: {salesm ? salesm.salesman_name : `ID: ${parent.salesman_id}`}</span>
                           <span className="flex items-center gap-1"><Building2 size={10} /> Customer: {cust ? cust.customer_name : parent.customer_code}</span>
-                          <span className="flex items-center gap-1"><Calendar size={10} /> Consolidated on: {parent.invoice_date ? parent.invoice_date.split("T")[0] : "N/A"}</span>
+                          <span className="flex items-center gap-1"><Calendar size={10} /> Consolidated on: {formatInvoiceDate(parent.invoice_date)}</span>
                         </div>
                         {parent.remarks && (
                           <div className="mt-2 text-[10px] bg-muted/40 p-2 rounded-lg text-muted-foreground italic border border-border/20 max-w-lg">
@@ -1172,7 +1177,7 @@ export default function ServiceInvoicingModulePage() {
                                     {child.child_invoice_no}
                                   </TableCell>
                                   <TableCell className="p-2.5 text-[10px] font-bold text-muted-foreground font-mono">
-                                    {child.child_date ? child.child_date.split("T")[0] : "N/A"}
+                                    {formatInvoiceDate(child.child_date)}
                                   </TableCell>
                                   <TableCell className="p-2.5 text-xs font-bold text-right text-foreground">
                                     ₱{Number(child.child_total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
