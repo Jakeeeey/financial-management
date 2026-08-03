@@ -128,6 +128,14 @@ function proposedListCostHeader(unitLabel: string) {
     return `${COL_PROPOSED_LIST_COST} (${unitLabel})`;
 }
 
+function hasCurrentValue(value: unknown): boolean {
+    return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
+function unavailableProposedValueMessage(currentHeader: string) {
+    return `Cannot enter a proposed value because ${currentHeader} is empty.`;
+}
+
 export async function exportSupplierBatchExcel(args: {
     supplierId: number;
     supplierName: string;
@@ -198,6 +206,32 @@ export async function exportSupplierBatchExcel(args: {
     headerRow.font = { bold: true };
     const dataStartRowNumber = sheet.rowCount + 1;
     const pendingCellIndexes: Array<{ rowNumber: number; columnIndex: number; note?: string }> = [];
+    const editableProposedCellIndexes: Array<{ rowNumber: number; columnIndex: number }> = [];
+    const disabledProposedCellIndexes: Array<{ rowNumber: number; columnIndex: number; note: string }> = [];
+
+    const registerProposedCell = (args: {
+        rowNumber: number;
+        columnIndex: number;
+        currentValue: unknown;
+        currentHeader: string;
+        pending: boolean;
+    }) => {
+        if (!hasCurrentValue(args.currentValue) && !args.pending) {
+            disabledProposedCellIndexes.push({
+                rowNumber: args.rowNumber,
+                columnIndex: args.columnIndex,
+                note: unavailableProposedValueMessage(args.currentHeader),
+            });
+            return;
+        }
+
+        if (hasCurrentValue(args.currentValue) && !args.pending) {
+            editableProposedCellIndexes.push({
+                rowNumber: args.rowNumber,
+                columnIndex: args.columnIndex,
+            });
+        }
+    };
 
     matrixRows.forEach((row, rowIndex) => {
         const rowNumber = dataStartRowNumber + rowIndex;
@@ -217,14 +251,28 @@ export async function exportSupplierBatchExcel(args: {
                 const productId = Number(variant?.product.product_id);
                 const listTier = variant?.tiers.LIST;
                 const current = listTier ?? variant?.product.cost_per_unit ?? null;
-                values.push(variant && current != null ? Number(current) : null);
-                if (includeProposedColumns) values.push(null);
-                if (includeProposedColumns && variant && pendingCostByProductId.has(productId)) {
-                    pendingCellIndexes.push({
+                const currentValue = variant && current != null ? Number(current) : null;
+                values.push(currentValue);
+                if (includeProposedColumns) {
+                    const proposedHeader = proposedListCostHeader(unit.label);
+                    const currentHeader = currentListCostHeader(unit.label);
+                    const proposedColumnIndex = headers.indexOf(proposedHeader) + 1;
+                    const pending = Boolean(variant && pendingCostByProductId.has(productId));
+                    values.push(null);
+                    registerProposedCell({
                         rowNumber,
-                        columnIndex: headers.indexOf(proposedListCostHeader(unit.label)) + 1,
-                        note: pendingNote("List cost", pendingCostByProductId.get(productId)),
+                        columnIndex: proposedColumnIndex,
+                        currentValue,
+                        currentHeader,
+                        pending,
                     });
+                    if (pending) {
+                        pendingCellIndexes.push({
+                            rowNumber,
+                            columnIndex: proposedColumnIndex,
+                            note: pendingNote("List cost", pendingCostByProductId.get(productId)),
+                        });
+                    }
                 }
             }
         }
@@ -234,19 +282,33 @@ export async function exportSupplierBatchExcel(args: {
                 const variant = row.variantsByUnitId[unit.unitId];
                 const productId = Number(variant?.product.product_id);
                 const current = variant?.tiers[String(priceType.price_type_id)] ?? null;
-                values.push(variant ? current : null);
-                if (includeProposedColumns) values.push(null);
-                const key = `${productId}:${priceType.price_type_id}`;
-                if (includeProposedColumns && variant && pendingPriceByKey.has(key)) {
-                    pendingCellIndexes.push({
+                const currentValue = variant && current != null ? Number(current) : null;
+                values.push(currentValue);
+                if (includeProposedColumns) {
+                    const proposedHeader = priceProposedHeader(priceType, unit.label);
+                    const currentHeader = priceCurrentHeader(priceType, unit.label);
+                    const proposedColumnIndex = headers.indexOf(proposedHeader) + 1;
+                    const key = `${productId}:${priceType.price_type_id}`;
+                    const pending = Boolean(variant && pendingPriceByKey.has(key));
+                    values.push(null);
+                    registerProposedCell({
                         rowNumber,
-                        columnIndex: headers.indexOf(priceProposedHeader(priceType, unit.label)) + 1,
-                        note: pendingNote(
-                            `${priceType.price_type_name || `#${priceType.price_type_id}`} price`,
-                            pendingPriceByKey.get(key),
-                            PRICE_MAX_DECIMAL_PLACES,
-                        ),
+                        columnIndex: proposedColumnIndex,
+                        currentValue,
+                        currentHeader,
+                        pending,
                     });
+                    if (pending) {
+                        pendingCellIndexes.push({
+                            rowNumber,
+                            columnIndex: proposedColumnIndex,
+                            note: pendingNote(
+                                `${priceType.price_type_name || `#${priceType.price_type_id}`} price`,
+                                pendingPriceByKey.get(key),
+                                PRICE_MAX_DECIMAL_PLACES,
+                            ),
+                        });
+                    }
                 }
             }
         }
@@ -287,8 +349,28 @@ export async function exportSupplierBatchExcel(args: {
         totalColumns: headers.length,
         dataStartRowNumber,
         proposedColumnIndexes,
+        editableProposedCellIndexes,
+        disabledProposedCellIndexes,
         pendingCellIndexes,
     });
+
+    if (includeProposedColumns) {
+        await sheet.protect("", {
+            selectLockedCells: false,
+            selectUnlockedCells: true,
+            formatCells: false,
+            formatColumns: false,
+            formatRows: false,
+            insertColumns: false,
+            insertRows: false,
+            insertHyperlinks: false,
+            deleteColumns: false,
+            deleteRows: false,
+            sort: false,
+            autoFilter: true,
+            pivotTables: false,
+        });
+    }
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -515,6 +597,14 @@ export async function parseSupplierBatchExcelImport(args: {
                     errors.push(`Row ${rowIndex + 1}: ${column.unitLabel} is not linked to this product group.`);
                     continue;
                 }
+                if (!hasCurrentValue(flat.current_list_cost)) {
+                    errors.push(
+                        `Row ${rowIndex + 1}, ${proposedListCostHeader(column.unitLabel)}: ${unavailableProposedValueMessage(
+                            currentListCostHeader(column.unitLabel),
+                        )}`,
+                    );
+                    continue;
+                }
                 validProposedCount += 1;
                 costChanges.push({
                     product_id: mappedProduct.productId,
@@ -543,6 +633,15 @@ export async function parseSupplierBatchExcelImport(args: {
                     errors.push(`Row ${rowIndex + 1}: ${column.unitLabel} is not linked to this product group.`);
                     continue;
                 }
+                const current = flat.currentByPriceTypeId.get(column.priceType.price_type_id) ?? null;
+                if (!hasCurrentValue(current)) {
+                    const currentHeader = priceCurrentHeader(column.priceType, column.unitLabel);
+                    const proposedHeader = priceProposedHeader(column.priceType, column.unitLabel);
+                    errors.push(
+                        `Row ${rowIndex + 1}, ${proposedHeader}: ${unavailableProposedValueMessage(currentHeader)}`,
+                    );
+                    continue;
+                }
                 validProposedCount += 1;
                 priceChanges.push({
                     product_id: mappedProduct.productId,
@@ -550,7 +649,7 @@ export async function parseSupplierBatchExcelImport(args: {
                     proposed_price: parsed.value,
                     product_name: flat.product_name,
                     product_code: flat.product_code,
-                    current_price: flat.currentByPriceTypeId.get(column.priceType.price_type_id) ?? null,
+                    current_price: current,
                 });
             }
         }
@@ -627,14 +726,20 @@ export async function parseSupplierBatchExcelImport(args: {
             if (parsedCost.error) {
                 errors.push(`Row ${rowIndex + 1}, Proposed List Cost: ${parsedCost.error}`);
             } else if (parsedCost.value !== null) {
-                validProposedCount += 1;
-                costChanges.push({
-                    product_id: productId,
-                    proposed_cost: parsedCost.value,
-                    product_name: flat.product_name,
-                    product_code: flat.product_code,
-                    current_cost: flat.current_list_cost,
-                });
+                if (!hasCurrentValue(flat.current_list_cost)) {
+                    errors.push(
+                        `Row ${rowIndex + 1}, ${COL_PROPOSED_LIST_COST}: ${unavailableProposedValueMessage(COL_CURRENT_LIST_COST)}`,
+                    );
+                } else {
+                    validProposedCount += 1;
+                    costChanges.push({
+                        product_id: productId,
+                        proposed_cost: parsedCost.value,
+                        product_name: flat.product_name,
+                        product_code: flat.product_code,
+                        current_cost: flat.current_list_cost,
+                    });
+                }
             }
         }
 
@@ -648,8 +753,17 @@ export async function parseSupplierBatchExcelImport(args: {
             }
             if (parsed.value === null) continue;
 
-            validProposedCount += 1;
             const current = flat.currentByPriceTypeId.get(priceType.price_type_id) ?? null;
+            if (!hasCurrentValue(current)) {
+                const proposedHeader = `${String(priceType.price_type_name ?? `#${priceType.price_type_id}`).trim()} Proposed`;
+                const currentHeader = `${String(priceType.price_type_name ?? `#${priceType.price_type_id}`).trim()} Current`;
+                errors.push(
+                    `Row ${rowIndex + 1}, ${proposedHeader}: ${unavailableProposedValueMessage(currentHeader)}`,
+                );
+                continue;
+            }
+
+            validProposedCount += 1;
             priceChanges.push({
                 product_id: productId,
                 price_type_id: priceType.price_type_id,
