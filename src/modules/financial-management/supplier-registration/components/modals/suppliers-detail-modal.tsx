@@ -103,6 +103,11 @@ export function SupplierDetailsModal({
                 <Badge variant="secondary" className="rounded-sm">
                   {supplier.supplier_type}
                 </Badge>
+                {supplier.nonBuy ? (
+                  <Badge variant="outline" className="rounded-sm text-amber-600 border-amber-600 bg-amber-50">
+                    Non-Buy
+                  </Badge>
+                ) : null}
                 <div className="flex items-center text-muted-foreground">
                   <Hash className="h-4 w-4" />
                   <span>TIN: {supplier.tin_number}</span>

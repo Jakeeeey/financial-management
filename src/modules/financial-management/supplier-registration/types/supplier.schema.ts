@@ -49,7 +49,7 @@ export const SupplierSchema = z.object({
   notes_or_comments: z.string().optional().default(""),
   agreement_or_contract: z.string().optional().default(""),
   preferred_communication_method: z.string().optional().default(""),
-  nonBuy: z.any().optional(), // Buffer type - ignore for now
+  nonBuy: z.boolean().optional().default(true),
 });
 
 /**
@@ -103,6 +103,7 @@ export const SupplierFormSchema = z.object({
   notes_or_comments: z.string().optional().default(""),
   agreement_or_contract: z.string().optional().default(""),
   preferred_communication_method: z.string().optional().default(""),
+  nonBuy: z.boolean().optional().default(true),
 });
 
 /**
