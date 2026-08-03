@@ -13,14 +13,20 @@ export const fetchProvider = {
             });
 
             if (!response.ok) {
-                const errorMsg = await response.text();
+                const responseText = await response.text();
+                let errorMsg = responseText;
+                try {
+                    const payload = JSON.parse(responseText) as { message?: unknown; error?: unknown };
+                    errorMsg = String(payload.message || payload.error || responseText);
+                } catch {
+                    // Keep the upstream text when it is not JSON.
+                }
                 throw new Error(errorMsg || `GET Error: ${response.status}`);
             }
 
             return await response.json();
         } catch (error) {
-            console.error(`[fetchProvider] GET ${url} failed:`, error);
-            return null;
+            throw error;
         }
     },
 

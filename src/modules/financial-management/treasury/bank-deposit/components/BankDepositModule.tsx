@@ -37,6 +37,10 @@ export function BankDepositModule() {
                     <PrepareDepositTab
                         vaultAssets={hookData.vaultAssets}
                         activeBanks={hookData.activeBanks}
+                        bankOptions={hookData.bankOptions}
+                        filters={hookData.filters}
+                        onFiltersChange={hookData.updateFilters}
+                        error={hookData.error}
                         isLoading={hookData.isLoading}
                         isSubmitting={hookData.isSubmitting}
 
