@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { BankDepositClientService } from "../services/bankDepositClientService";
 import {
     ActiveBankAccount,
+    ClearDepositPayload,
     DepositSlip,
     VaultAsset,
     VaultAssetFilters,
@@ -156,10 +157,10 @@ export function useBankDeposit() {
         }
     };
 
-    const clearDeposit = async (id: number) => {
+    const clearDeposit = async (id: number, payload: ClearDepositPayload) => {
         setIsSubmitting(true);
         try {
-            await BankDepositClientService.clearDeposit(id);
+            await BankDepositClientService.clearDeposit(id, payload);
             await fetchHistory();
         } catch (err: unknown) {
             throw new Error(err instanceof Error ? err.message : "Failed to clear deposit");

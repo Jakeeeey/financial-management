@@ -5,24 +5,33 @@ import { CheckCircle2, Loader2, ChevronDown, ChevronUp, AlertCircle, Banknote, R
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BankDepositClientService } from "../services/bankDepositClientService";
-import { DepositSlip } from "../types";
+import { ClearDepositPayload, DepositSlip } from "../types";
+import { ClearDepositDialog } from "./ClearDepositDialog";
 
 interface Props {
     history: DepositSlip[];
     isLoading: boolean;
     isSubmitting: boolean;
-    onClear: (id: number) => Promise<void>;
+    onClear: (id: number, payload: ClearDepositPayload) => Promise<void>;
     fetchData: () => void;
 }
 
 export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fetchData }: Props) {
     const [expandedId, setExpandedId] = useState<number | null>(null);
+    const [clearSlip, setClearSlip] = useState<DepositSlip | null>(null);
+    const [clearDialogKey, setClearDialogKey] = useState(0);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    const handleClear = async (id: number) => {
-        if (!confirm("Confirm this deposit has cleared the bank?")) return;
-        try { await onClear(id); } catch (err: unknown) { alert(err instanceof Error ? err.message : 'An unknown error occurred'); }
+    const handleClearSubmit = async (payload: ClearDepositPayload) => {
+        if (!clearSlip) return;
+        await onClear(clearSlip.id, payload);
+        setClearSlip(null);
+    };
+
+    const openClearDialog = (slip: DepositSlip) => {
+        setClearDialogKey((key) => key + 1);
+        setClearSlip(slip);
     };
 
     const handleBounce = async (detailId: number, checkNo: string) => {
@@ -80,7 +89,7 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                 <Button
                                     size="sm"
                                     className="bg-emerald-600 hover:bg-emerald-700 font-bold uppercase text-[10px]"
-                                    onClick={(e) => { e.stopPropagation(); handleClear(slip.id); }}
+                                    onClick={(e) => { e.stopPropagation(); openClearDialog(slip); }}
                                     disabled={isSubmitting}
                                 >
                                     <CheckCircle2 size={14} className="mr-2"/> Clear Deposit
@@ -92,6 +101,27 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                     {/* THE EXPANDED LINE ITEMS */}
                     {expandedId === slip.id && (
                         <div className="bg-muted/10 border-t p-4">
+                            <div className="mb-4 grid gap-3 rounded-md border bg-white p-3 sm:grid-cols-2">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Bank Deposit Slip Reference</p>
+                                    <p className="mt-1 font-mono text-sm font-bold">{slip.depositReference || "Not recorded"}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Validation Document</p>
+                                    {slip.validationDocumentFileId ? (
+                                        <a
+                                            className="mt-1 inline-block text-sm font-bold text-primary underline underline-offset-2"
+                                            href={`/api/fm/treasury/bank-deposits/attachments/${encodeURIComponent(slip.validationDocumentFileId)}`}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            View validated deposit slip
+                                        </a>
+                                    ) : (
+                                        <p className="mt-1 text-sm font-bold">Not recorded</p>
+                                    )}
+                                </div>
+                            </div>
                             <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 pl-2">Included Assets</h4>
                             <div className="bg-white rounded-md border shadow-inner overflow-hidden">
                                 <table className="w-full text-sm">
@@ -167,6 +197,15 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                     )}
                 </div>
             ))}
+
+            <ClearDepositDialog
+                key={`${clearSlip?.id ?? "closed"}-${clearDialogKey}`}
+                open={clearSlip !== null}
+                slip={clearSlip}
+                isSubmitting={isSubmitting}
+                onOpenChange={(open) => { if (!open && !isSubmitting) setClearSlip(null); }}
+                onSubmit={handleClearSubmit}
+            />
         </div>
     );
 }
