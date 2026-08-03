@@ -285,7 +285,7 @@ export function CashIssuanceDashboardTab() {
     };
 
     return (
-        <div className="space-y-3.5 animate-in fade-in duration-500">
+        <div className="flex min-h-full min-w-0 flex-col space-y-3.5 animate-in fade-in duration-500">
             {/* 1. PREMIUM FILTER BAR */}
             <Card className="shadow-sm border-border/50 bg-card rounded-2xl overflow-hidden">
                 <CardContent className="p-5 space-y-4 bg-muted/10">
@@ -546,7 +546,7 @@ export function CashIssuanceDashboardTab() {
                 )}
             </Card>
 
-            <div className="grid min-w-0 grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid min-w-0 grid-cols-1 items-stretch gap-6 lg:flex-1 lg:min-h-0 lg:grid-cols-3">
 
                 {/* COLUMN 1: CHARTS AND SUMMARIES */}
                 <div className="min-w-0 lg:col-span-1 space-y-6 flex flex-col">
@@ -765,13 +765,13 @@ export function CashIssuanceDashboardTab() {
                 </div>
 
                 {/* 4. MASTER TABLE */}
-                <Card className="min-w-0 lg:col-span-2 shadow-sm flex flex-col rounded-2xl border-border/50">
-                    <CardHeader className="border-b bg-muted/10 flex flex-row items-center justify-between py-4">
+                <Card className="min-w-0 lg:col-span-2 lg:h-full min-h-0 p-0 shadow-sm flex flex-col gap-0 rounded-2xl border-border/50">
+                    <CardHeader className="shrink-0 border-b bg-muted/10 flex flex-row items-center justify-between py-4">
                         <CardTitle className="text-sm font-black uppercase text-foreground">Outflow Register</CardTitle>
                         <Badge variant="outline" className="font-mono bg-background shadow-sm">{data?.vouchers?.length || 0} Records</Badge>
                     </CardHeader>
-                    <CardContent className="min-w-0 p-0 relative">
-                        <StickyTableWrapper className="w-full max-h-[55vh] md:max-h-[520px] overflow-auto custom-scrollbar">
+                    <CardContent className="min-w-0 min-h-0 flex flex-1 flex-col p-0 relative">
+                        <StickyTableWrapper className="w-full max-h-[55vh] min-h-0 overflow-auto custom-scrollbar lg:flex-1 lg:max-h-none [&>[data-slot=table-container]]:h-full">
                             <Table className="min-w-[720px] table-fixed">
                                 <TableHeader className="bg-muted/80 backdrop-blur-md sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
                                     <TableRow>

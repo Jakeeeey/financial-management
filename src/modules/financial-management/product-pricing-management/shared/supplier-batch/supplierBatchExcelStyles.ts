@@ -8,6 +8,8 @@ const META_LABEL_COLOR = "FF64748B";
 const PROPOSED_HEADER_FILL = "FF047857";
 const PROPOSED_FILL = "FFECFDF5";
 const PROPOSED_ALT_FILL = "FFD1FAE5";
+const DISABLED_PROPOSED_FILL = "FFE5E7EB";
+const DISABLED_PROPOSED_FONT = "FF6B7280";
 const INSTRUCTION_FILL = "FFF8FAFC";
 const PENDING_FILL = "FFFFF3CD";
 const PENDING_FONT = "FF92400E";
@@ -32,7 +34,7 @@ export function addSupplierBatchInstructionRows(
     sheet.addRow(["Instructions"]);
     if (includeProposedColumns) {
         sheet.addRow(["", "Enter changes only in columns containing Proposed; the unit is shown in each price column header."]);
-        sheet.addRow(["", "Leave proposed cells blank when no change is needed. Proposed price cells accept up to 4 decimal places; list cost cells follow standard cost precision."]);
+        sheet.addRow(["", "Leave proposed cells blank when no change is needed. Proposed cells whose current value is empty are locked and cannot receive a value."]);
         sheet.addRow(["", "Yellow Pending cells already have active requests; leave them unchanged."]);
         sheet.addRow(["", "Do not edit product identity columns, current-value columns, supplier metadata, or headers."]);
         sheet.addRow(["", "Save this file and import it through Price Change Requests."]);
@@ -110,6 +112,8 @@ function styleDataRow(
     totalColumns: number,
     productNameColumn: number,
     proposedColumnIndexes: Set<number>,
+    editableProposedCellIndexes: Set<string>,
+    disabledProposedCellIndexes: Map<string, string>,
     striped: boolean,
 ) {
     row.height = 30;
@@ -117,20 +121,30 @@ function styleDataRow(
     for (let col = 1; col <= totalColumns; col += 1) {
         const cell = row.getCell(col);
         const isProposedColumn = proposedColumnIndexes.has(col);
+        const cellKey = `${row.number}:${col}`;
+        const isEditableProposedCell = isProposedColumn && editableProposedCellIndexes.has(cellKey);
+        const disabledNote = disabledProposedCellIndexes.get(cellKey);
         cell.font = { size: 11, name: "Calibri" };
         cell.fill = {
             type: "pattern",
             pattern: "solid",
             fgColor: {
-                argb: isProposedColumn
+                argb: disabledNote
+                    ? DISABLED_PROPOSED_FILL
+                    : isProposedColumn
                     ? striped
                         ? PROPOSED_ALT_FILL
                         : PROPOSED_FILL
-                    : striped
+                : striped
                       ? BODY_ALT_FILL
                       : BODY_FILL,
             },
         };
+        if (disabledNote) {
+            cell.font = { size: 11, color: { argb: DISABLED_PROPOSED_FONT }, name: "Calibri" };
+            cell.note = disabledNote;
+        }
+        cell.protection = { locked: !isEditableProposedCell, hidden: false };
         cell.alignment = {
             vertical: "middle",
             ...(col === productNameColumn ? { wrapText: true } : {}),
@@ -146,6 +160,8 @@ export function styleSupplierBatchWorksheet(args: {
     totalColumns: number;
     dataStartRowNumber: number;
     proposedColumnIndexes?: number[];
+    editableProposedCellIndexes?: Array<{ rowNumber: number; columnIndex: number }>;
+    disabledProposedCellIndexes?: Array<{ rowNumber: number; columnIndex: number; note: string }>;
     pendingCellIndexes?: Array<{ rowNumber: number; columnIndex: number; note?: string }>;
     productNameColumn?: number;
 }) {
@@ -156,6 +172,8 @@ export function styleSupplierBatchWorksheet(args: {
         totalColumns,
         dataStartRowNumber,
         proposedColumnIndexes = [],
+        editableProposedCellIndexes = [],
+        disabledProposedCellIndexes = [],
         pendingCellIndexes = [],
         productNameColumn = 4,
     } = args;
@@ -175,12 +193,24 @@ export function styleSupplierBatchWorksheet(args: {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PROPOSED_HEADER_FILL } };
     }
 
+    const editableProposedCellIndexSet = new Set(
+        editableProposedCellIndexes.map(({ rowNumber, columnIndex }) => `${rowNumber}:${columnIndex}`),
+    );
+    const disabledProposedCellIndexMap = new Map(
+        disabledProposedCellIndexes.map(({ rowNumber, columnIndex, note }) => [
+            `${rowNumber}:${columnIndex}`,
+            note,
+        ]),
+    );
+
     for (let rowNumber = dataStartRowNumber; rowNumber <= sheet.rowCount; rowNumber += 1) {
         styleDataRow(
             sheet.getRow(rowNumber),
             totalColumns,
             productNameColumn,
             proposedColumnIndexSet,
+            editableProposedCellIndexSet,
+            disabledProposedCellIndexMap,
             (rowNumber - dataStartRowNumber) % 2 === 1,
         );
     }

@@ -82,7 +82,7 @@ export interface HistoryChildInvoice {
 export interface ConsolidatedInvoiceHistory {
   invoice_id: number;
   invoice_no: string;
-  invoice_date: string;
+  invoice_date: string | null;
   due_date?: string;
   dispatch_date?: string | null;
   customer_code: string;
