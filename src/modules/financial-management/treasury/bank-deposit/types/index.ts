@@ -43,6 +43,7 @@ export interface ActiveBankAccount {
 
 export interface DepositAsset {
     detailId: number;
+    documentNumber?: string | null;
     assetType: "CASH" | "CHECK";
     bankName: string;
     checkNo: string;
@@ -60,6 +61,7 @@ export interface DepositSlip {
     id: number;
     depositNo: string;
     depositDate: string;
+    targetBankAccount?: string | null;
     status: "PREPARED" | "CLEARED" | "CANCELLED";
     preparedBy: string;
     datePrepared: string;
