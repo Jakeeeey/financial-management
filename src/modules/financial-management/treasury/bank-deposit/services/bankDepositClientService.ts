@@ -1,10 +1,34 @@
 import { fetchProvider } from "../providers/fetchProvider";
-import { VaultAsset, ActiveBankAccount, DepositSlip, PrepareDepositPayload, PaginatedResponse } from "../types";
+import {
+    VaultAsset,
+    ActiveBankAccount,
+    DepositSlip,
+    PrepareDepositPayload,
+    PaginatedResponse,
+    VaultAssetFilters,
+} from "../types";
 
 export const BankDepositClientService = {
 
-    getVaultAssets: async (page: number = 0, size: number = 50, search: string = ""): Promise<PaginatedResponse<VaultAsset> | null> => {
-        return await fetchProvider.get<PaginatedResponse<VaultAsset>>(`/api/fm/treasury/bank-deposits/vault?page=${page}&size=${size}&search=${encodeURIComponent(search)}`);
+    getVaultAssets: async (
+        page: number = 0,
+        size: number = 50,
+        filters?: Partial<VaultAssetFilters>,
+    ): Promise<PaginatedResponse<VaultAsset> | null> => {
+        const params = new URLSearchParams({
+            page: String(page),
+            size: String(size),
+        });
+
+        if (filters?.type && filters.type !== "ALL") params.set("type", filters.type);
+        if (filters?.documentNumber?.trim()) params.set("documentNumber", filters.documentNumber.trim());
+        if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
+        if (filters?.dateTo) params.set("dateTo", filters.dateTo);
+        if (filters?.bankName) params.set("bankName", filters.bankName);
+
+        return await fetchProvider.get<PaginatedResponse<VaultAsset>>(
+            `/api/fm/treasury/bank-deposits/vault?${params.toString()}`,
+        );
     },
 
     getActiveBanks: async (): Promise<ActiveBankAccount[]> => {

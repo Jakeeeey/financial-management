@@ -4,16 +4,30 @@ export interface PaginatedResponse<T> {
     totalElements: number;
     size: number;
     number: number;
+    bankOptions?: string[];
+}
+
+export type VaultAssetFilterType = "ALL" | "CASH" | "CHECK";
+
+export interface VaultAssetFilters {
+    type: VaultAssetFilterType;
+    documentNumber: string;
+    dateFrom: string;
+    dateTo: string;
+    bankName: string;
 }
 
 export interface VaultAsset {
     detailId: number;
+    documentNumber: string;
+    collectionReference: string;
     sourcePouchNo: string;
     assetType: "CASH" | "CHECK";
     bankName: string;
+    bankReferenceValid: boolean;
     checkNo: string;
     amount: number;
-    collectionDate: string;
+    collectionDate: string | null;
     chequeDate: string | null;
 }
 

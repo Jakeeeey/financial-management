@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
     ArrowRightCircle,
     FileText,
@@ -10,7 +10,8 @@ import {
     ChevronsUpDown,
     Hash,
     ChevronLeft,
-    ChevronRight
+    ChevronRight,
+    RotateCcw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,12 +22,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { VaultAsset, ActiveBankAccount } from "../types";
+import { VaultAsset, ActiveBankAccount, VaultAssetFilters } from "../types";
 import { cn } from "@/lib/utils";
 
 interface Props {
     vaultAssets: VaultAsset[];
     activeBanks: ActiveBankAccount[];
+    bankOptions: string[];
+    filters: VaultAssetFilters;
+    onFiltersChange: (filters: VaultAssetFilters) => void;
+    error: string | null;
     isLoading: boolean;
     isSubmitting: boolean;
     page: number;
@@ -35,12 +40,24 @@ interface Props {
     pageSize: number;
     onPrepare: (assetIds: number[], targetBankId: number, remarks: string) => Promise<{ depositNo: string }>;
     fetchData: () => void;
-    fetchPage: (page: number, search?: string) => void; // 🚀 Updated to accept search
+    fetchPage: (page: number, filters?: VaultAssetFilters) => void;
 }
+
+const DEFAULT_FILTERS: VaultAssetFilters = {
+    type: "ALL",
+    documentNumber: "",
+    dateFrom: "",
+    dateTo: "",
+    bankName: "",
+};
 
 export function PrepareDepositTab({
                                       vaultAssets,
                                       activeBanks,
+                                      bankOptions,
+                                      filters,
+                                      onFiltersChange,
+                                      error,
                                       isLoading,
                                       isSubmitting,
                                       page,
@@ -55,32 +72,60 @@ export function PrepareDepositTab({
     const [targetBankId, setTargetBankId] = useState<string>("");
     const [remarks, setRemarks] = useState("");
 
-    const [searchQuery, setSearchQuery] = useState("");
     const [openBankBox, setOpenBankBox] = useState(false);
+    const skipInitialFilterFetch = useRef(true);
 
     // Initial Load
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
-    // 🚀 FIXED: Closed the useEffect properly and added the cleanup function
     useEffect(() => {
+        if (skipInitialFilterFetch.current) {
+            skipInitialFilterFetch.current = false;
+            return;
+        }
+
         const handler = setTimeout(() => {
-            fetchPage(0, searchQuery);
-        }, 500);
+            fetchPage(0, filters);
+        }, 350);
 
         return () => clearTimeout(handler);
-    }, [searchQuery, fetchPage]);
+    }, [filters, fetchPage]);
+
+    const updateFilter = <K extends keyof VaultAssetFilters>(key: K, value: VaultAssetFilters[K]) => {
+        onFiltersChange({ ...filters, [key]: value });
+    };
+
+    const clearFilters = () => onFiltersChange(DEFAULT_FILTERS);
+    const hasFilters = filters.type !== "ALL"
+        || Boolean(filters.documentNumber)
+        || Boolean(filters.dateFrom)
+        || Boolean(filters.dateTo)
+        || Boolean(filters.bankName);
 
     const toggleSelection = (asset: VaultAsset) => {
+        if (asset.assetType === "CHECK" && !asset.bankReferenceValid) return;
+
         setSelectedAssets(prev =>
             prev.some(a => a.detailId === asset.detailId)
                 ? prev.filter(a => a.detailId !== asset.detailId)
-                : [...prev, asset]
+            : [...prev, asset]
         );
     };
 
-    // 🚀 FIXED: Removed filteredAssets completely. The backend handles filtering now!
+    const setSelection = (asset: VaultAsset, selected: boolean) => {
+        if (asset.assetType === "CHECK" && !asset.bankReferenceValid) return;
+
+        setSelectedAssets(prev => {
+            const alreadySelected = prev.some(a => a.detailId === asset.detailId);
+            if (selected === alreadySelected) return prev;
+
+            return selected
+                ? [...prev, asset]
+                : prev.filter(a => a.detailId !== asset.detailId);
+        });
+    };
 
     const summary = useMemo(() => {
         let totalCash = 0, totalChecks = 0, checkCount = 0;
@@ -116,18 +161,102 @@ export function PrepareDepositTab({
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
             <Card className="xl:col-span-2 shadow-sm border-border/50 flex flex-col min-h-0">
                 <CardHeader className="bg-muted/30 border-b pb-4 shrink-0">
-                    <div className="flex justify-between items-center">
-                        <div>
+                    <div className="space-y-4">
+                        <div className="flex flex-wrap justify-between items-center gap-3">
                             <CardTitle className="text-lg font-black uppercase flex items-center gap-2">
                                 <Wallet size={18} className="text-emerald-600" /> Office Vault
                             </CardTitle>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={clearFilters}
+                                disabled={!hasFilters || isLoading}
+                                className="h-8 text-[10px] font-black uppercase tracking-widest"
+                            >
+                                <RotateCcw size={13} className="mr-2" /> Clear Filters
+                            </Button>
                         </div>
-                        <Input
-                            placeholder="Search server assets..."
-                            className="w-64 h-9 text-xs"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                            <label className="space-y-1.5">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Type</span>
+                                <select
+                                    aria-label="Filter by type"
+                                    value={filters.type}
+                                    onChange={(event) => updateFilter("type", event.target.value as VaultAssetFilters["type"])}
+                                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs font-bold uppercase"
+                                >
+                                    <option value="ALL">All Types</option>
+                                    <option value="CASH">Cash</option>
+                                    <option value="CHECK">Check</option>
+                                </select>
+                            </label>
+
+                            <label className="space-y-1.5">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Document Number</span>
+                                <Input
+                                    aria-label="Filter by document number"
+                                    placeholder="Document, collection, or check no."
+                                    className="h-9 text-xs"
+                                    value={filters.documentNumber}
+                                    onChange={(event) => updateFilter("documentNumber", event.target.value)}
+                                />
+                            </label>
+
+                            <label className="space-y-1.5">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Date From</span>
+                                <Input
+                                    aria-label="Filter from collection date"
+                                    type="date"
+                                    className="h-9 text-xs"
+                                    value={filters.dateFrom}
+                                    onChange={(event) => updateFilter("dateFrom", event.target.value)}
+                                />
+                            </label>
+
+                            <label className="space-y-1.5">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Date To</span>
+                                <Input
+                                    aria-label="Filter to collection date"
+                                    type="date"
+                                    className="h-9 text-xs"
+                                    value={filters.dateTo}
+                                    onChange={(event) => updateFilter("dateTo", event.target.value)}
+                                />
+                            </label>
+
+                            <label className="space-y-1.5">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Banks</span>
+                                <select
+                                    aria-label="Filter by bank"
+                                    value={filters.bankName}
+                                    onChange={(event) => updateFilter("bankName", event.target.value)}
+                                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs font-bold uppercase"
+                                >
+                                    <option value="">All Banks</option>
+                                    {bankOptions.map((bankName) => (
+                                        <option key={bankName} value={bankName}>{bankName}</option>
+                                    ))}
+                                </select>
+                            </label>
+                        </div>
+
+                        {error && (
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                                <span className="font-bold">{error}</span>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => fetchPage(0, filters)}
+                                    disabled={isLoading}
+                                    className="h-7 border-destructive/30 text-[10px] font-black uppercase"
+                                >
+                                    Retry
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </CardHeader>
                 <CardContent className="p-0 overflow-auto min-h-[500px] flex flex-col justify-between">
@@ -139,21 +268,39 @@ export function PrepareDepositTab({
                                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Type</TableHead>
                                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Bank & Ref</TableHead>
                                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Check Date</TableHead>
+                                    <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Document Number</TableHead>
                                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Collection Ref</TableHead>
                                     <TableHead className="text-right text-[10px] font-black uppercase tracking-widest text-muted-foreground">Amount</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {isLoading ? (
-                                    <TableRow><TableCell colSpan={6} className="h-48 text-center"><Loader2 className="animate-spin mx-auto mb-2 text-primary/50" /></TableCell></TableRow>
-                                    // 🚀 FIXED: Now using vaultAssets instead of filteredAssets
+                                    <TableRow><TableCell colSpan={7} className="h-48 text-center"><Loader2 className="animate-spin mx-auto mb-2 text-primary/50" /></TableCell></TableRow>
                                 ) : vaultAssets.length === 0 ? (
-                                    <TableRow><TableCell colSpan={6} className="h-32 text-center text-xs font-bold text-muted-foreground uppercase tracking-widest">No vault assets found.</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={7} className="h-32 text-center text-xs font-bold text-muted-foreground uppercase tracking-widest">No vault assets found.</TableCell></TableRow>
                                 ) : vaultAssets.map((asset) => {
                                     const isSelected = selectedAssets.some(a => a.detailId === asset.detailId);
+                                    const isUnmappedCheck = asset.assetType === "CHECK" && !asset.bankReferenceValid;
                                     return (
-                                        <TableRow key={asset.detailId} onClick={() => toggleSelection(asset)} className="cursor-pointer hover:bg-muted/50 transition-colors">
-                                            <TableCell><Checkbox checked={isSelected} onCheckedChange={() => toggleSelection(asset)} /></TableCell>
+                                        <TableRow
+                                            key={asset.detailId}
+                                            onClick={() => toggleSelection(asset)}
+                                            title={isUnmappedCheck ? "This check cannot be prepared until its source bank is repaired." : undefined}
+                                            className={cn(
+                                                "transition-colors",
+                                                isUnmappedCheck
+                                                    ? "cursor-not-allowed opacity-60"
+                                                    : "cursor-pointer hover:bg-muted/50",
+                                            )}
+                                        >
+                                            <TableCell>
+                                                <Checkbox
+                                                    checked={isSelected}
+                                                    disabled={isUnmappedCheck}
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    onCheckedChange={(checked) => setSelection(asset, checked === true)}
+                                                />
+                                            </TableCell>
                                             <TableCell>
                                                 <Badge variant="outline" className={cn("text-[9px] uppercase font-bold", asset.assetType === 'CASH' ? 'border-emerald-500/50 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' : 'border-blue-500/50 text-blue-600 bg-blue-50 dark:bg-blue-900/20')}>
                                                     {asset.assetType}
@@ -175,7 +322,12 @@ export function PrepareDepositTab({
                                             <TableCell>
                                                 <div className="flex items-center gap-1.5">
                                                     <Hash className="w-3 h-3 text-muted-foreground/50" />
-                                                    <span className="font-mono font-bold text-xs text-primary">{asset.sourcePouchNo}</span>
+                                                    <span className="font-mono font-bold text-xs text-primary">{asset.documentNumber || "—"}</span>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="font-mono font-bold text-xs text-foreground">{asset.collectionReference || "—"}</span>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-right font-black text-sm text-foreground tracking-tight">
@@ -197,18 +349,17 @@ export function PrepareDepositTab({
                                 Page {totalPages === 0 ? 0 : page + 1} of {totalPages}
                             </span>
                             <div className="flex items-center gap-1">
-                                {/* 🚀 FIXED: Passed searchQuery to fetchPage so search state is kept across pages */}
                                 <Button
                                     variant="outline" size="sm" className="h-8 w-8 p-0"
                                     disabled={page === 0 || isLoading}
-                                    onClick={() => fetchPage(page - 1, searchQuery)}
+                                    onClick={() => fetchPage(page - 1, filters)}
                                 >
                                     <ChevronLeft size={16} />
                                 </Button>
                                 <Button
                                     variant="outline" size="sm" className="h-8 w-8 p-0"
                                     disabled={page >= totalPages - 1 || isLoading}
-                                    onClick={() => fetchPage(page + 1, searchQuery)}
+                                    onClick={() => fetchPage(page + 1, filters)}
                                 >
                                     <ChevronRight size={16} />
                                 </Button>
