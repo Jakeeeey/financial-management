@@ -12,7 +12,8 @@ interface DirectusMapping {
 interface DirectusSalesInvoice {
     invoice_id: number;
     invoice_no: string;
-    invoice_date?: string;
+    invoice_date?: string | null;
+    created_date?: string;
     total_amount?: number;
     due_date?: string;
     dispatch_date?: string | null;
@@ -30,7 +31,7 @@ interface DirectusSalesInvoice {
 interface ConsolidatedHistoryResponse {
     invoice_id: number;
     invoice_no: string;
-    invoice_date?: string;
+    invoice_date: string | null;
     due_date?: string;
     dispatch_date: string | null;
     customer_code?: string;
@@ -244,7 +245,7 @@ export async function GET(request: NextRequest) {
 
             for (const chunk of idChunks) {
                 const filterString = `filter[invoice_id][_in]=${chunk.join(",")}`;
-                const invoicesUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&${filterString}&fields=invoice_id,invoice_no,customer_code,salesman_id,invoice_type,total_amount,due_date,dispatch_date,gross_amount,discount_amount,net_amount,transaction_status,remarks`;
+                const invoicesUrl = `${DIRECTUS_URL}/items/sales_invoice?limit=-1&${filterString}&fields=invoice_id,invoice_no,customer_code,salesman_id,invoice_type,total_amount,invoice_date,created_date,due_date,dispatch_date,gross_amount,discount_amount,net_amount,transaction_status,remarks`;
                 const res = await fetch(invoicesUrl, { headers, cache: "no-store" });
                 await assertDirectusOk(res, "Invoices details query failed");
                 const data = await res.json();
@@ -266,10 +267,13 @@ export async function GET(request: NextRequest) {
             });
 
             const result: ConsolidatedHistoryResponse[] = [];
+            const parentCreatedDates = new Map<number, string | undefined>();
             Object.entries(parentGroups).forEach(([parentStrId, maps]) => {
                 const parentId = Number(parentStrId);
                 const parentInv = invoicesMap.get(parentId);
                 if (!parentInv) return;
+
+                parentCreatedDates.set(parentId, parentInv.created_date);
 
                 const childMappings = maps.map((m: DirectusMapping) => {
                     const childId = Number(m.child_invoice_id);
@@ -287,7 +291,7 @@ export async function GET(request: NextRequest) {
                 result.push({
                     invoice_id: parentId,
                     invoice_no: parentInv.invoice_no,
-                    invoice_date: parentInv.invoice_date,
+                    invoice_date: parentInv.invoice_date ?? null,
                     due_date: parentInv.due_date,
                     dispatch_date: parentInv.dispatch_date || null,
                     customer_code: parentInv.customer_code,
@@ -304,9 +308,11 @@ export async function GET(request: NextRequest) {
             });
 
             result.sort((a, b) => {
-                const dateA = a.invoice_date ? new Date(a.invoice_date).getTime() : 0;
-                const dateB = b.invoice_date ? new Date(b.invoice_date).getTime() : 0;
-                return dateB - dateA;
+                const dateAValue = parentCreatedDates.get(a.invoice_id) || a.invoice_date;
+                const dateBValue = parentCreatedDates.get(b.invoice_id) || b.invoice_date;
+                const dateA = dateAValue ? new Date(dateAValue).getTime() : 0;
+                const dateB = dateBValue ? new Date(dateBValue).getTime() : 0;
+                return dateB - dateA || b.invoice_id - a.invoice_id;
             });
 
             return NextResponse.json(result);
@@ -464,12 +470,13 @@ export async function POST(request: NextRequest) {
         const finalNetAmount = typeof net_amount === "number" ? net_amount : calculatedTotal;
         const finalGrossAmount = typeof gross_amount === "number" ? gross_amount : calculatedTotal;
         const finalDiscountAmount = typeof discount_amount === "number" ? discount_amount : 0;
+        const now = new Date().toISOString();
 
         // 3. Create Parent Sales Invoice in Directus
         const parentInvoicePayload = {
             invoice_no: normalizedInvoiceNo,
             customer_code: normalizedCustomerCode,
-            created_date: new Date().toISOString(),
+            created_date: now,
             salesman_id: Number(salesman_id),
             invoice_type: Number(invoice_type),
             total_amount: finalNetAmount,
@@ -489,6 +496,7 @@ export async function POST(request: NextRequest) {
             order_id: orderId,
             created_by: createdBy,
             modified_by: createdBy,
+            modified_date: now,
             ...(branchId !== null ? { branch_id: branchId } : {}),
         };
 
