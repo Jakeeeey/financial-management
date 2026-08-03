@@ -100,6 +100,7 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                         <th className="py-2 px-4 text-left">Type</th>
                                         <th className="py-2 px-4 text-left">Document Number (CP# / PP#)</th>
                                         <th className="py-2 px-4 text-left">Bank / Check No</th>
+                                        <th className="py-2 px-4 text-left">Check Date</th>
                                         <th className="py-2 px-4 text-right">Amount</th>
                                         <th className="py-2 px-4 text-center">Status</th>
                                         <th className="py-2 px-4 text-right">Action</th>
@@ -124,6 +125,13 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                                     <span className="font-bold text-xs">{asset.bankName}</span>
                                                     {asset.assetType === "CHECK" && <span className="text-[10px] font-mono text-muted-foreground">{asset.checkNo}</span>}
                                                 </div>
+                                            </td>
+                                            <td className="py-2 px-4 text-left">
+                                                <span className="font-mono text-xs">
+                                                    {asset.assetType === "CHECK" && asset.chequeDate
+                                                        ? asset.chequeDate.slice(0, 10)
+                                                        : "N/A"}
+                                                </span>
                                             </td>
                                             <td className="py-2 px-4 text-right font-mono font-bold">
                                                 ₱{asset.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
