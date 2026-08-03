@@ -51,6 +51,11 @@ const DEFAULT_FILTERS: VaultAssetFilters = {
     bankName: "",
 };
 
+const formatActiveBankLabel = (bank: ActiveBankAccount) =>
+    bank.displayName?.trim()
+    || [bank.bankName?.trim(), bank.accountNumber?.trim()].filter(Boolean).join(" - ")
+    || `Bank ID: ${bank.bankId}`;
+
 export function PrepareDepositTab({
                                       vaultAssets,
                                       activeBanks,
@@ -399,7 +404,10 @@ export function PrepareDepositTab({
                                     )}
                                 >
                                     {targetBankId
-                                        ? activeBanks.find((b) => b.bankId.toString() === targetBankId)?.displayName
+                                        ? (() => {
+                                            const selectedBank = activeBanks.find((b) => b.bankId.toString() === targetBankId);
+                                            return selectedBank ? formatActiveBankLabel(selectedBank) : "Select receiving account...";
+                                        })()
                                         : "Select receiving account..."}
                                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                 </Button>
@@ -415,7 +423,7 @@ export function PrepareDepositTab({
                                             {activeBanks.map((b) => (
                                                 <CommandItem
                                                     key={b.bankId}
-                                                    value={b.displayName}
+                                                    value={formatActiveBankLabel(b)}
                                                     onSelect={() => {
                                                         setTargetBankId(b.bankId.toString());
                                                         setOpenBankBox(false);
@@ -428,7 +436,7 @@ export function PrepareDepositTab({
                                                             targetBankId === b.bankId.toString() ? "opacity-100" : "opacity-0"
                                                         )}
                                                     />
-                                                    {b.displayName}
+                                                    {formatActiveBankLabel(b)}
                                                 </CommandItem>
                                             ))}
                                         </CommandGroup>
