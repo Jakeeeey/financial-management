@@ -32,11 +32,14 @@ export async function GET() {
         }
 
         const json = await directusRes.json();
-        const normalized = (json.data || []).map((b: { bank_id?: unknown; bank_name?: unknown; account_number?: unknown }) => ({
-            bankId: b.bank_id ? Number(b.bank_id) : 0,
-            bankName: b.bank_name ? String(b.bank_name) : "",
-            accountNumber: b.account_number ? String(b.account_number) : ""
-        })).filter((b: { bankId: number }) => b.bankId > 0);
+        const normalized = (json.data || []).map((b: { bank_id?: unknown; bank_name?: unknown; account_number?: unknown }) => {
+            const bankId = Number(b.bank_id);
+            const bankName = String(b.bank_name ?? "").trim();
+            const accountNumber = String(b.account_number ?? "").trim();
+            const displayName = [bankName, accountNumber].filter(Boolean).join(" - ") || `Bank ID: ${bankId}`;
+
+            return { bankId, bankName, accountNumber, displayName };
+        }).filter((b: { bankId: number }) => Number.isFinite(b.bankId) && b.bankId > 0);
 
         return NextResponse.json(normalized);
     } catch (err: unknown) {

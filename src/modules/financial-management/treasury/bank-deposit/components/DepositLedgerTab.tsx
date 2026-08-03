@@ -63,7 +63,14 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                             </p>
                         </div>
 
-                        <div className="text-right flex items-center gap-8">
+                        <div className="text-right flex flex-wrap items-center justify-end gap-6">
+                            <div className="max-w-[280px]">
+                                <p className="text-[10px] font-black uppercase text-muted-foreground">Destination / Receiving Bank Account</p>
+                                <p className="font-bold text-xs break-words">
+                                    {slip.targetBankAccount || "UNMAPPED RECEIVING ACCOUNT"}
+                                </p>
+                            </div>
+
                             <div className="text-right">
                                 <p className="text-[10px] font-black uppercase text-muted-foreground">Grand Total</p>
                                 <p className="font-black text-xl text-primary">₱{slip.grandTotal.toLocaleString(undefined, {minimumFractionDigits:2})}</p>
@@ -91,6 +98,7 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                     <thead className="bg-muted/50 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                                     <tr>
                                         <th className="py-2 px-4 text-left">Type</th>
+                                        <th className="py-2 px-4 text-left">Document Number (CP# / PP#)</th>
                                         <th className="py-2 px-4 text-left">Bank / Check No</th>
                                         <th className="py-2 px-4 text-right">Amount</th>
                                         <th className="py-2 px-4 text-center">Status</th>
@@ -105,6 +113,11 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                                     {asset.assetType === "CASH" ? <Banknote size={10} className="mr-1"/> : <Receipt size={10} className="mr-1"/>}
                                                     {asset.assetType}
                                                 </Badge>
+                                            </td>
+                                            <td className="py-2 px-4">
+                                                <span className="font-mono font-bold text-xs text-primary">
+                                                    {asset.documentNumber || "—"}
+                                                </span>
                                             </td>
                                             <td className="py-2 px-4">
                                                 <div className="flex flex-col">
