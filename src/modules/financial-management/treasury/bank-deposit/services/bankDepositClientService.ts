@@ -4,6 +4,7 @@ import {
     ActiveBankAccount,
     DepositSlip,
     ClearDepositPayload,
+    ClearDepositResponse,
     PrepareDepositPayload,
     PaginatedResponse,
     VaultAssetFilters,
@@ -49,7 +50,7 @@ export const BankDepositClientService = {
     },
 
     // 🚀 FIXED: Changed /api/v1/ to /api/fm/
-    clearDeposit: async (id: number, payload: ClearDepositPayload): Promise<{ message: string } | null> => {
+    clearDeposit: async (id: number, payload: ClearDepositPayload): Promise<ClearDepositResponse | null> => {
         const formData = new FormData();
         const depositReference = payload.depositReference.trim();
 
@@ -60,7 +61,7 @@ export const BankDepositClientService = {
             formData.append("validationDocument", payload.validationDocument, payload.validationDocument.name);
         }
 
-        return await fetchProvider.postForm<{ message: string }>(
+        return await fetchProvider.postForm<ClearDepositResponse>(
             `/api/fm/treasury/bank-deposits/${id}/clear`,
             formData,
         );
