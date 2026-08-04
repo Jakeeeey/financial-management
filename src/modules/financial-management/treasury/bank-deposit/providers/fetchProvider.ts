@@ -66,6 +66,46 @@ export const fetchProvider = {
     },
 
     /**
+     * Multipart POST Request
+     * The browser sets the multipart boundary when a FormData body is used.
+     */
+    async postForm<T>(url: string, body: FormData): Promise<T | null> {
+        try {
+            const response = await fetch(url, {
+                method: "POST",
+                body,
+            });
+
+            if (!response.ok) {
+                const responseText = await response.text();
+                let errorMsg = responseText;
+                try {
+                    const payload = JSON.parse(responseText) as {
+                        message?: unknown;
+                        error?: unknown;
+                        detail?: unknown;
+                    };
+                    errorMsg = String(payload.message || payload.detail || payload.error || responseText);
+                } catch {
+                    // Keep the upstream text when it is not JSON.
+                }
+                throw new Error(errorMsg || `POST Error: ${response.status}`);
+            }
+
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+                return await response.json();
+            }
+
+            const textData = await response.text();
+            return textData as unknown as T;
+        } catch (error) {
+            console.error(`[fetchProvider] Multipart POST ${url} failed:`, error);
+            throw error;
+        }
+    },
+
+    /**
      * PUT Request
      */
     async put<T>(url: string, body: unknown): Promise<T | null> {

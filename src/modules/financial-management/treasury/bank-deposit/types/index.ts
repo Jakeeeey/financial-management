@@ -63,6 +63,8 @@ export interface DepositSlip {
     depositNo: string;
     depositDate: string;
     targetBankAccount?: string | null;
+    depositReference?: string | null;
+    validationDocumentFileId?: string | null;
     status: "PREPARED" | "CLEARED" | "CANCELLED";
     preparedBy: string;
     datePrepared: string;
@@ -77,4 +79,9 @@ export interface PrepareDepositPayload {
     assetIds: number[];
     targetBankId: number;
     remarks: string;
+}
+
+export interface ClearDepositPayload {
+    depositReference: string;
+    validationDocument: File | null;
 }
