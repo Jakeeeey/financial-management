@@ -68,6 +68,7 @@ export interface DepositSlip {
     status: "PREPARED" | "CLEARED" | "CANCELLED";
     preparedBy: string;
     datePrepared: string;
+    clearedAt?: string | null;
     totalCash: number;
     totalChecks: number;
     grandTotal: number;
@@ -84,4 +85,11 @@ export interface PrepareDepositPayload {
 export interface ClearDepositPayload {
     depositReference: string;
     validationDocument: File | null;
+}
+
+export interface ClearDepositResponse {
+    message: string;
+    clearedAt?: string | null;
+    depositReference?: string | null;
+    validationDocumentFileId?: string | null;
 }
