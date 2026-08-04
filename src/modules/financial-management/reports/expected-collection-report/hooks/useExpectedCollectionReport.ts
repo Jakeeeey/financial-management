@@ -2,12 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addDays,
-  currentManilaWeek,
-  formatDateOnly,
-  parseDateOnly,
-  weekFromDate,
-  weekFromStart,
+  currentManilaDateOnly,
+  dateRangeForPeriod,
+  datesInRange,
+  shiftReferenceDate,
   weekdayLabel,
 } from "../utils/date";
 import {
@@ -16,8 +14,9 @@ import {
   type ExpectedCollectionRecord,
   type ExpectedCollectionResponse,
   type FilterOptions,
+  type DateRange,
+  type ReportPeriod,
   type SalesmanCollectionGroup,
-  type WeekRange,
 } from "../types";
 
 const REPORT_ENDPOINT = "/api/fm/reports/expected-collection-report";
@@ -54,7 +53,7 @@ function filterRecords(
   });
 }
 
-function buildGroups(records: ExpectedCollectionRecord[], range: WeekRange | null): SalesmanCollectionGroup[] {
+function buildGroups(records: ExpectedCollectionRecord[], range: DateRange | null): SalesmanCollectionGroup[] {
   const grouped = new Map<string, ExpectedCollectionRecord[]>();
 
   records.forEach((record) => {
@@ -67,8 +66,7 @@ function buildGroups(records: ExpectedCollectionRecord[], range: WeekRange | nul
   return Array.from(grouped.entries())
     .map(([name, groupRecords]) => {
       const dailyOutstanding = range
-        ? Array.from({ length: 7 }, (_, index) => {
-          const date = formatDateOnly(addDays(parseDateOnly(range.startDate)!, index));
+        ? datesInRange(range).map((date) => {
           return {
             date,
             label: weekdayLabel(date),
@@ -93,18 +91,18 @@ function buildGroups(records: ExpectedCollectionRecord[], range: WeekRange | nul
 }
 
 export function useExpectedCollectionReport() {
-  const [range, setRange] = useState<WeekRange | null>(null);
+  const [range, setRange] = useState<DateRange | null>(null);
+  const [period, setPeriod] = useState<ReportPeriod>("weekly");
+  const [referenceDate, setReferenceDate] = useState(currentManilaDateOnly);
   const [records, setRecords] = useState<ExpectedCollectionRecord[]>([]);
   const [filters, setFilters] = useState<ExpectedCollectionFilters>(EMPTY_FILTERS);
-  const [showAllInvoices, setShowAllInvoices] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
 
   const load = useCallback(async (
-    requestedRange?: WeekRange,
-    allInvoices = false,
+    requestedRange?: DateRange,
     resetFilters = true,
   ) => {
     abortRef.current?.abort();
@@ -114,12 +112,9 @@ export function useExpectedCollectionReport() {
 
     setLoading(true);
     setError(null);
-    setShowAllInvoices(allInvoices);
     if (resetFilters) setFilters(EMPTY_FILTERS);
 
-    const params = allInvoices
-      ? "?all=true"
-      : requestedRange
+    const params = requestedRange
       ? `?startDate=${encodeURIComponent(requestedRange.startDate)}&endDate=${encodeURIComponent(requestedRange.endDate)}`
       : "";
 
@@ -143,7 +138,6 @@ export function useExpectedCollectionReport() {
 
       if (requestId !== requestIdRef.current) return;
       setRange(payload.range);
-      setShowAllInvoices(payload.allInvoices);
       setRecords(payload.records);
     } catch (requestError) {
       if (isAbortError(requestError) || requestId !== requestIdRef.current) return;
@@ -174,45 +168,42 @@ export function useExpectedCollectionReport() {
     filters.division || filters.salesman || filters.customerName.trim() || filters.invoiceNo.trim(),
   );
 
-  const navigateToWeek = useCallback((nextStartDate: string) => {
-    const nextRange = weekFromStart(nextStartDate);
-    if (nextRange) void load(nextRange, false);
+  const loadPeriod = useCallback((nextPeriod: ReportPeriod, nextReferenceDate: string, resetFilters = true) => {
+    const nextRange = dateRangeForPeriod(nextPeriod, nextReferenceDate);
+    if (nextRange) void load(nextRange, resetFilters);
   }, [load]);
 
-  const previousWeek = useCallback(() => {
-    if (!range || showAllInvoices) return;
-    const start = parseDateOnly(range.startDate);
-    if (start) navigateToWeek(formatDateOnly(addDays(start, -7)));
-  }, [navigateToWeek, range, showAllInvoices]);
+  const selectPeriod = useCallback((nextPeriod: ReportPeriod) => {
+    setPeriod(nextPeriod);
+    loadPeriod(nextPeriod, referenceDate);
+  }, [loadPeriod, referenceDate]);
 
-  const nextWeek = useCallback(() => {
-    if (!range || showAllInvoices) return;
-    const start = parseDateOnly(range.startDate);
-    if (start) navigateToWeek(formatDateOnly(addDays(start, 7)));
-  }, [navigateToWeek, range, showAllInvoices]);
+  const selectReferenceDate = useCallback((nextReferenceDate: string) => {
+    setReferenceDate(nextReferenceDate);
+    loadPeriod(period, nextReferenceDate);
+  }, [loadPeriod, period]);
 
-  const selectDate = useCallback((value: string) => {
-    const date = parseDateOnly(value);
-    if (date) navigateToWeek(weekFromDate(date).startDate);
-  }, [navigateToWeek]);
+  const navigatePeriod = useCallback((amount: number) => {
+    const nextReferenceDate = shiftReferenceDate(referenceDate, period, amount);
+    if (!nextReferenceDate) return;
 
-  const selectEndDate = useCallback((value: string) => {
-    const date = parseDateOnly(value);
-    if (date) navigateToWeek(weekFromDate(date).startDate);
-  }, [navigateToWeek]);
+    setReferenceDate(nextReferenceDate);
+    loadPeriod(period, nextReferenceDate);
+  }, [loadPeriod, period, referenceDate]);
 
-  const resetToCurrentWeek = useCallback(() => {
-    void load(currentManilaWeek(), false, false);
-  }, [load]);
+  const previousPeriod = useCallback(() => navigatePeriod(-1), [navigatePeriod]);
+  const nextPeriod = useCallback(() => navigatePeriod(1), [navigatePeriod]);
 
-  const toggleAllInvoices = useCallback((value: boolean) => {
-    if (value) void load(undefined, true, false);
-    else void load(currentManilaWeek(), false, false);
-  }, [load]);
+  const resetToCurrentPeriod = useCallback(() => {
+    const nextReferenceDate = currentManilaDateOnly();
+    setReferenceDate(nextReferenceDate);
+    loadPeriod(period, nextReferenceDate, false);
+  }, [loadPeriod, period]);
 
   return {
     range,
-    showAllInvoices,
+    period,
+    referenceDate,
     records,
     filteredRecords,
     filters,
@@ -222,12 +213,12 @@ export function useExpectedCollectionReport() {
     hasActiveFilters,
     loading,
     error,
-    previousWeek,
-    nextWeek,
-    selectDate,
-    selectEndDate,
-    resetToCurrentWeek,
-    toggleAllInvoices,
+    previousPeriod,
+    nextPeriod,
+    selectPeriod,
+    selectStartDate: selectReferenceDate,
+    selectEndDate: selectReferenceDate,
+    resetToCurrentPeriod,
     clearFilters: () => setFilters(EMPTY_FILTERS),
   };
 }

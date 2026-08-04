@@ -23,10 +23,9 @@ interface SalesmanTabProps {
   groups: SalesmanCollectionGroup[];
   loading: boolean;
   hasActiveFilters: boolean;
-  allInvoices: boolean;
 }
 
-function SalesmanGroupCard({ group, allInvoices }: { group: SalesmanCollectionGroup; allInvoices: boolean }) {
+function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
   const [open, setOpen] = useState(false);
   const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
 
@@ -60,16 +59,16 @@ function SalesmanGroupCard({ group, allInvoices }: { group: SalesmanCollectionGr
 
         <CardContent>
           <CollapsibleContent className="space-y-3">
-            {allInvoices ? (
-              <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-                The weekly outstanding-balance graph is unavailable when all invoice due dates are selected.
-              </p>
-            ) : (
-            <div className="h-[210px] w-full">
+            <div className="h-[210px] w-full overflow-x-auto">
+              <div className="h-full" style={{ minWidth: `${Math.max(720, group.dailyOutstanding.length * 42)}px` }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={group.dailyOutstanding} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="label" fontSize={12} />
+                  <XAxis
+                    dataKey="label"
+                    fontSize={12}
+                    interval={group.dailyOutstanding.length > 31 ? Math.ceil(group.dailyOutstanding.length / 12) - 1 : 0}
+                  />
                   <YAxis
                     width={84}
                     fontSize={10}
@@ -81,9 +80,9 @@ function SalesmanGroupCard({ group, allInvoices }: { group: SalesmanCollectionGr
                   />
                   <Bar dataKey="amount" name="Outstanding" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={42} />
                 </BarChart>
-              </ResponsiveContainer>
+                </ResponsiveContainer>
+              </div>
             </div>
-            )}
 
             <Table>
               <TableHeader>
@@ -158,7 +157,7 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function SalesmanTab({ groups, loading, hasActiveFilters, allInvoices }: SalesmanTabProps) {
+export function SalesmanTab({ groups, loading, hasActiveFilters }: SalesmanTabProps) {
   const [pageIndex, setPageIndex] = useState(0);
 
   if (loading) {
@@ -192,7 +191,7 @@ export function SalesmanTab({ groups, loading, hasActiveFilters, allInvoices }: 
 
   return (
     <div className="space-y-4">
-      {pageGroups.map((group) => <SalesmanGroupCard key={group.name} group={group} allInvoices={allInvoices} />)}
+      {pageGroups.map((group) => <SalesmanGroupCard key={group.name} group={group} />)}
       {pageCount > 1 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
           <span className="text-sm text-muted-foreground">

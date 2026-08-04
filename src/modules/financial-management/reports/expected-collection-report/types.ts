@@ -23,12 +23,13 @@ export interface ExpectedCollectionRecord {
 }
 
 export interface ExpectedCollectionResponse {
-  range: WeekRange | null;
-  allInvoices: boolean;
+  range: DateRange | null;
   records: ExpectedCollectionRecord[];
 }
 
-export interface WeekRange {
+export type ReportPeriod = "daily" | "weekly" | "monthly" | "yearly";
+
+export interface DateRange {
   startDate: string;
   endDate: string;
 }

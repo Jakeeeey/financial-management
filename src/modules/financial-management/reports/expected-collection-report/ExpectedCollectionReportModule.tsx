@@ -7,11 +7,13 @@ import { ExpectedCollectionControls } from "./components/ExpectedCollectionContr
 import { InvoicesTab } from "./components/InvoicesTab";
 import { SalesmanTab } from "./components/SalesmanTab";
 import { useExpectedCollectionReport } from "./hooks/useExpectedCollectionReport";
-import { currentManilaWeek } from "./utils/date";
+import { currentManilaWeek, dateRangeForPeriod } from "./utils/date";
 
 export default function ExpectedCollectionReportModule() {
   const report = useExpectedCollectionReport();
-  const fallbackRange = report.range || currentManilaWeek();
+  const fallbackRange = report.range
+    || dateRangeForPeriod(report.period, report.referenceDate)
+    || currentManilaWeek();
 
   return (
     <div className="space-y-4">
@@ -24,17 +26,17 @@ export default function ExpectedCollectionReportModule() {
 
       <ExpectedCollectionControls
         range={fallbackRange}
-        showAllInvoices={report.showAllInvoices}
+        period={report.period}
         filters={report.filters}
         filterOptions={report.filterOptions}
         loading={report.loading}
         hasActiveFilters={report.hasActiveFilters}
         onFiltersChange={report.setFilters}
-        onPreviousWeek={report.previousWeek}
-        onNextWeek={report.nextWeek}
-        onCurrentWeek={report.resetToCurrentWeek}
-        onShowAllInvoicesChange={report.toggleAllInvoices}
-        onDateChange={report.selectDate}
+        onPreviousPeriod={report.previousPeriod}
+        onNextPeriod={report.nextPeriod}
+        onCurrentPeriod={report.resetToCurrentPeriod}
+        onPeriodChange={report.selectPeriod}
+        onStartDateChange={report.selectStartDate}
         onEndDateChange={report.selectEndDate}
         onClearFilters={report.clearFilters}
       />
@@ -71,7 +73,6 @@ export default function ExpectedCollectionReportModule() {
             groups={report.salesmanGroups}
             loading={report.loading}
             hasActiveFilters={report.hasActiveFilters}
-            allInvoices={report.showAllInvoices}
           />
         </TabsContent>
       </Tabs>

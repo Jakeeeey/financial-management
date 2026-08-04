@@ -3,73 +3,106 @@
 import { CalendarDays, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import type { ExpectedCollectionFilters, FilterOptions, WeekRange } from "../types";
-import { formatReportDate } from "../utils/date";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { DateRange, ExpectedCollectionFilters, FilterOptions, ReportPeriod } from "../types";
+import { formatPeriodRange, periodLabel } from "../utils/date";
+
+const PERIOD_OPTIONS: Array<{ value: ReportPeriod; label: string }> = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+];
 
 interface ExpectedCollectionControlsProps {
-  range: WeekRange;
-  showAllInvoices: boolean;
+  range: DateRange;
+  period: ReportPeriod;
   filters: ExpectedCollectionFilters;
   filterOptions: FilterOptions;
   loading: boolean;
   hasActiveFilters: boolean;
   onFiltersChange: (filters: ExpectedCollectionFilters) => void;
-  onPreviousWeek: () => void;
-  onNextWeek: () => void;
-  onCurrentWeek: () => void;
-  onShowAllInvoicesChange: (value: boolean) => void;
-  onDateChange: (value: string) => void;
+  onPreviousPeriod: () => void;
+  onNextPeriod: () => void;
+  onCurrentPeriod: () => void;
+  onPeriodChange: (value: ReportPeriod) => void;
+  onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
   onClearFilters: () => void;
 }
 
 export function ExpectedCollectionControls({
   range,
-  showAllInvoices,
+  period,
   filters,
   filterOptions,
   loading,
   hasActiveFilters,
   onFiltersChange,
-  onPreviousWeek,
-  onNextWeek,
-  onCurrentWeek,
-  onShowAllInvoicesChange,
-  onDateChange,
+  onPreviousPeriod,
+  onNextPeriod,
+  onCurrentPeriod,
+  onPeriodChange,
+  onStartDateChange,
   onEndDateChange,
   onClearFilters,
 }: ExpectedCollectionControlsProps) {
+  const selectedPeriodLabel = periodLabel(period);
+
   return (
     <Card>
       <CardContent className="space-y-4 pt-2">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 text-sm font-medium">
             <CalendarDays className="size-4 text-muted-foreground" />
-            <span>{showAllInvoices ? "All invoice due dates" : `Week of ${formatReportDate(range.startDate)} – ${formatReportDate(range.endDate)}`}</span>
+            <span>{formatPeriodRange(period, range)}</span>
           </div>
+
           <div className="flex items-center gap-2">
-            <Checkbox
-              id="expected-collection-all-invoices"
-              checked={showAllInvoices}
-              onCheckedChange={(value) => onShowAllInvoicesChange(value === true)}
+            <Label htmlFor="expected-collection-period" className="text-sm font-normal">Period</Label>
+            <Select
+              value={period}
+              onValueChange={(value) => onPeriodChange(value as ReportPeriod)}
               disabled={loading}
-            />
-            <Label htmlFor="expected-collection-all-invoices" className="text-sm font-normal">
-              Show all invoices
-            </Label>
+            >
+              <SelectTrigger id="expected-collection-period" className="w-[130px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PERIOD_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+
           <div className="ml-auto flex items-center gap-1">
-            <Button type="button" variant="outline" size="icon" onClick={onPreviousWeek} disabled={loading || showAllInvoices} aria-label="Previous week">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={onPreviousPeriod}
+              disabled={loading}
+              aria-label={`Previous ${selectedPeriodLabel}`}
+            >
               <ChevronLeft className="size-4" />
             </Button>
-            <Button type="button" variant="outline" onClick={onCurrentWeek} disabled={loading}>
-              Current week
+            <Button type="button" variant="outline" onClick={onCurrentPeriod} disabled={loading}>
+              Current {selectedPeriodLabel}
             </Button>
-            <Button type="button" variant="outline" size="icon" onClick={onNextWeek} disabled={loading || showAllInvoices} aria-label="Next week">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={onNextPeriod}
+              disabled={loading}
+              aria-label={`Next ${selectedPeriodLabel}`}
+            >
               <ChevronRight className="size-4" />
             </Button>
           </div>
@@ -127,24 +160,24 @@ export function ExpectedCollectionControls({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="expected-collection-week">Week starting</Label>
+            <Label htmlFor="expected-collection-start-date">Start date</Label>
             <Input
-              id="expected-collection-week"
+              id="expected-collection-start-date"
               type="date"
               value={range.startDate}
-              onChange={(event) => onDateChange(event.target.value)}
-              disabled={loading || showAllInvoices}
+              onChange={(event) => onStartDateChange(event.target.value)}
+              disabled={loading}
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="expected-collection-week-ending">Week ending</Label>
+            <Label htmlFor="expected-collection-end-date">End date</Label>
             <Input
-              id="expected-collection-week-ending"
+              id="expected-collection-end-date"
               type="date"
               value={range.endDate}
               onChange={(event) => onEndDateChange(event.target.value)}
-              disabled={loading || showAllInvoices}
+              disabled={loading}
             />
           </div>
         </div>

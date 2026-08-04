@@ -6,8 +6,6 @@ export const dynamic = "force-dynamic";
 
 const MANILA_TIME_ZONE = "Asia/Manila";
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const ALL_INVOICE_START_DATE = "1000-01-01";
-const ALL_INVOICE_END_DATE = "9999-12-31";
 
 interface UpstreamRecord {
   invoiceId?: unknown;
@@ -171,12 +169,11 @@ function copySetCookies(source: NextResponse, target: NextResponse) {
 }
 
 export async function GET(request: NextRequest) {
-  const allInvoices = request.nextUrl.searchParams.get("all") === "true";
   const queryStart = request.nextUrl.searchParams.get("startDate");
   const queryEnd = request.nextUrl.searchParams.get("endDate");
   const defaults = currentManilaWeek();
-  const startDate = allInvoices ? ALL_INVOICE_START_DATE : queryStart || defaults.startDate;
-  const endDate = allInvoices ? ALL_INVOICE_END_DATE : queryEnd || defaults.endDate;
+  const startDate = queryStart || defaults.startDate;
+  const endDate = queryEnd || defaults.endDate;
   const start = parseDateOnly(startDate);
   const end = parseDateOnly(endDate);
 
@@ -212,8 +209,7 @@ export async function GET(request: NextRequest) {
   }
 
   const response = NextResponse.json({
-    range: allInvoices ? null : { startDate, endDate },
-    allInvoices,
+    range: { startDate, endDate },
     records,
   });
   copySetCookies(springResponse, response);
