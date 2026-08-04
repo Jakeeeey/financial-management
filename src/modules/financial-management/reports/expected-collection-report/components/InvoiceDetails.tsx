@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import type { ExpectedCollectionRecord } from "../types";
 import { formatReportDate } from "../utils/date";
+import {
+  invoiceDetailsStatusClasses,
+  invoiceRowStatusAccentClasses,
+  type InvoiceRowStatus,
+} from "../utils/invoiceUrgency";
 import { HighlightedText } from "./HighlightedText";
 
 const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
@@ -39,17 +44,19 @@ function DetailSection({ title, children }: { title: string; children: ReactNode
 
 export function InvoiceDetails({
   record,
+  urgencyStatus,
   invoiceQuery = "",
   customerQuery = "",
 }: {
   record: ExpectedCollectionRecord;
+  urgencyStatus: InvoiceRowStatus;
   invoiceQuery?: string;
   customerQuery?: string;
 }) {
   const postedStatus = record.isPosted === null ? "N/A" : record.isPosted > 0 ? "Posted" : "Unposted";
 
   return (
-    <div className="rounded-md border bg-background p-4">
+    <div className={`rounded-md border p-4 ${invoiceDetailsStatusClasses[urgencyStatus]} ${invoiceRowStatusAccentClasses[urgencyStatus]}`}>
       <h3 className="text-sm font-semibold">Invoice details</h3>
       <div className="mt-4 grid gap-3 xl:grid-cols-2">
         <DetailSection title="Invoice identity">

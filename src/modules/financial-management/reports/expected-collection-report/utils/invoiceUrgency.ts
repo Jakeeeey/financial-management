@@ -14,6 +14,14 @@ export const invoiceRowStatusClasses: Record<InvoiceRowStatus, string> = {
   mellow: "bg-yellow-50/50 hover:bg-yellow-100/70 dark:bg-yellow-950/15 dark:hover:bg-yellow-950/25",
 };
 
+export const invoiceDetailsStatusClasses: Record<InvoiceRowStatus, string> = {
+  settled: "bg-emerald-50/80 dark:bg-emerald-950/30",
+  overdue: "bg-red-50/80 dark:bg-red-950/30",
+  critical: "bg-orange-50/70 dark:bg-orange-950/25",
+  elevated: "bg-amber-50/70 dark:bg-amber-950/25",
+  mellow: "bg-yellow-50/50 dark:bg-yellow-950/15",
+};
+
 export const invoiceRowStatusAccentClasses: Record<InvoiceRowStatus, string> = {
   settled: "border-l-4 border-l-emerald-500",
   overdue: "border-l-4 border-l-red-500",

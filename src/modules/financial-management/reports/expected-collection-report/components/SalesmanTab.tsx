@@ -52,6 +52,8 @@ function SalesmanGroupCard({
   const currentInvoicePage = Math.min(invoicePageIndex, Math.max(invoicePageCount - 1, 0));
   const pageRecords = group.records.slice(currentInvoicePage * PAGE_SIZE, (currentInvoicePage + 1) * PAGE_SIZE);
   const today = currentManilaDateOnly();
+  const settledInvoiceCount = group.records.filter((record) => record.outstandingBalance === 0).length;
+  const outstandingInvoiceCount = group.records.filter((record) => record.outstandingBalance > 0).length;
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} asChild>
@@ -73,11 +75,12 @@ function SalesmanGroupCard({
             </CollapsibleTrigger>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-4">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
             <SummaryMetric label="Invoices" value={String(group.invoiceCount)} />
             <SummaryMetric label="Customers" value={String(group.customerCount)} />
-            <SummaryMetric label="Divisions" value={String(group.divisions.length)} />
-            <SummaryMetric label="Outstanding" value={formatPeso(group.outstandingBalance)} />
+            <SummaryMetric label="Settled Invoices" value={String(settledInvoiceCount)} />
+            <SummaryMetric label="Outstanding Invoices" value={String(outstandingInvoiceCount)} />
+            <SummaryMetric label="Total Outstanding" value={formatPeso(group.outstandingBalance)} />
           </div>
         </CardHeader>
 
@@ -127,11 +130,7 @@ function SalesmanGroupCard({
 
                   return (
                     <Fragment key={invoiceKey}>
-                      <TableRow
-                        data-state={isExpanded ? "selected" : undefined}
-                        data-status={rowStatus}
-                        className={invoiceRowStatusClasses[rowStatus]}
-                      >
+                      <TableRow data-status={rowStatus} className={invoiceRowStatusClasses[rowStatus]}>
                         <TableCell className={`${invoiceRowStatusAccentClasses[rowStatus]} font-medium`}>
                           <HighlightedText value={record.invoiceNo} query={invoiceQuery} />
                         </TableCell>
@@ -170,9 +169,14 @@ function SalesmanGroupCard({
                         </TableCell>
                       </TableRow>
                       {isExpanded && (
-                        <TableRow id={detailsId}>
+                        <TableRow id={detailsId} className="hover:bg-transparent">
                           <TableCell colSpan={6} className="bg-muted/20 p-4">
-                            <InvoiceDetails record={record} invoiceQuery={invoiceQuery} customerQuery={customerQuery} />
+                            <InvoiceDetails
+                              record={record}
+                              urgencyStatus={rowStatus}
+                              invoiceQuery={invoiceQuery}
+                              customerQuery={customerQuery}
+                            />
                           </TableCell>
                         </TableRow>
                       )}
@@ -274,19 +278,23 @@ export function SalesmanTab({
   const pageCount = Math.ceil(groups.length / PAGE_SIZE);
   const currentPageIndex = Math.min(pageIndex, Math.max(pageCount - 1, 0));
   const pageGroups = groups.slice(currentPageIndex * PAGE_SIZE, (currentPageIndex + 1) * PAGE_SIZE);
+  const allRecords = groups.flatMap((group) => group.records);
   const totalInvoices = groups.reduce((sum, group) => sum + group.invoiceCount, 0);
   const totalCustomers = new Set(groups.flatMap((group) => (
     group.records.map((record) => record.customerCode || record.customerName)
   ))).size;
+  const settledInvoiceCount = allRecords.filter((record) => record.outstandingBalance === 0).length;
+  const outstandingInvoiceCount = allRecords.filter((record) => record.outstandingBalance > 0).length;
   const totalOutstanding = groups.reduce((sum, group) => sum + group.outstandingBalance, 0);
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-label="Salesman collection summary">
-        <SummaryMetric label="Salesmen" value={String(groups.length)} />
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5" aria-label="Salesman collection summary">
         <SummaryMetric label="Invoices" value={String(totalInvoices)} />
         <SummaryMetric label="Customers" value={String(totalCustomers)} />
-        <SummaryMetric label="Outstanding" value={formatPeso(totalOutstanding)} />
+        <SummaryMetric label="Settled Invoices" value={String(settledInvoiceCount)} />
+        <SummaryMetric label="Outstanding Invoices" value={String(outstandingInvoiceCount)} />
+        <SummaryMetric label="Total Outstanding" value={formatPeso(totalOutstanding)} />
       </div>
       {pageGroups.map((group) => (
         <SalesmanGroupCard

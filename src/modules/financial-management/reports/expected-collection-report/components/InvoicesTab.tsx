@@ -95,15 +95,8 @@ export function InvoicesTab({ records, loading, hasActiveFilters, range, invoice
   });
   const totalOutstanding = sortedRecords.reduce((sum, record) => sum + record.outstandingBalance, 0);
   const customerCount = new Set(sortedRecords.map((record) => record.customerCode || record.customerName)).size;
-  const overdueAmount = sortedRecords.reduce((sum, record) => {
-    return getInvoiceUrgency(record, today).status === "overdue" ? sum + record.outstandingBalance : sum;
-  }, 0);
-  const dueSoonAmount = sortedRecords.reduce((sum, record) => {
-    const urgency = getInvoiceUrgency(record, today);
-    return urgency.daysUntilDue !== null && urgency.daysUntilDue >= 0 && urgency.daysUntilDue <= 7
-      ? sum + record.outstandingBalance
-      : sum;
-  }, 0);
+  const settledInvoiceCount = sortedRecords.filter((record) => record.outstandingBalance === 0).length;
+  const outstandingInvoiceCount = sortedRecords.filter((record) => record.outstandingBalance > 0).length;
   const pageCount = Math.ceil(sortedRecords.length / PAGE_SIZE);
   const currentPageIndex = Math.min(pageIndex, Math.max(pageCount - 1, 0));
   const pageRecords = sortedRecords.slice(currentPageIndex * PAGE_SIZE, (currentPageIndex + 1) * PAGE_SIZE);
@@ -139,9 +132,9 @@ export function InvoicesTab({ records, loading, hasActiveFilters, range, invoice
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5" aria-label="Expected collection summary">
           <SummaryMetric label="Invoices" value={String(sortedRecords.length)} />
           <SummaryMetric label="Customers" value={String(customerCount)} />
-          <SummaryMetric label="Total outstanding" value={formatPeso(totalOutstanding)} />
-          <SummaryMetric label="Overdue amount" value={formatPeso(overdueAmount)} />
-          <SummaryMetric label="Due within 7 days" value={formatPeso(dueSoonAmount)} />
+          <SummaryMetric label="Settled Invoices" value={String(settledInvoiceCount)} />
+          <SummaryMetric label="Outstanding Invoices" value={String(outstandingInvoiceCount)} />
+          <SummaryMetric label="Total Outstanding" value={formatPeso(totalOutstanding)} />
         </div>
         <Table>
           <TableHeader>
@@ -166,7 +159,7 @@ export function InvoicesTab({ records, loading, hasActiveFilters, range, invoice
 
               return (
                 <Fragment key={invoiceKey}>
-                  <TableRow data-state={isExpanded ? "selected" : undefined} data-status={rowStatus} className={invoiceRowStatusClasses[rowStatus]}>
+                  <TableRow data-status={rowStatus} className={invoiceRowStatusClasses[rowStatus]}>
                     <TableCell className={`${invoiceRowStatusAccentClasses[rowStatus]} font-medium`}>
                       <HighlightedText value={record.invoiceNo} query={invoiceQuery} />
                     </TableCell>
@@ -209,9 +202,14 @@ export function InvoicesTab({ records, loading, hasActiveFilters, range, invoice
                     </TableCell>
                   </TableRow>
                   {isExpanded && (
-                    <TableRow id={detailsId}>
+                    <TableRow id={detailsId} className="hover:bg-transparent">
                       <TableCell colSpan={8} className="bg-muted/20 p-4">
-                        <InvoiceDetails record={record} invoiceQuery={invoiceQuery} customerQuery={customerQuery} />
+                            <InvoiceDetails
+                              record={record}
+                              urgencyStatus={rowStatus}
+                              invoiceQuery={invoiceQuery}
+                              customerQuery={customerQuery}
+                            />
                       </TableCell>
                     </TableRow>
                   )}
