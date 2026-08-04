@@ -16,6 +16,18 @@ interface Props {
     fetchData: () => void;
 }
 
+function formatTimestamp(value: string | null | undefined): string {
+    if (!value) return "Not recorded";
+
+    const timestamp = new Date(value);
+    if (Number.isNaN(timestamp.getTime())) return "Not recorded";
+
+    return timestamp.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+    });
+}
+
 export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fetchData }: Props) {
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [clearSlip, setClearSlip] = useState<DepositSlip | null>(null);
@@ -68,8 +80,13 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                 </Badge>
                             </div>
                             <p className="text-[10px] text-muted-foreground uppercase font-bold ml-7">
-                                Prepared by {slip.preparedBy} on {new Date(slip.datePrepared).toLocaleDateString()}
+                                Prepared by {slip.preparedBy} on {formatTimestamp(slip.datePrepared)}
                             </p>
+                            {slip.status === "CLEARED" && (
+                                <p className="text-[10px] text-emerald-700 uppercase font-bold ml-7">
+                                    Cleared at/on {formatTimestamp(slip.clearedAt)}
+                                </p>
+                            )}
                         </div>
 
                         <div className="text-right flex flex-wrap items-center justify-end gap-6">
@@ -103,11 +120,11 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                         <div className="bg-muted/10 border-t p-4">
                             <div className="mb-4 grid gap-3 rounded-md border bg-white p-3 sm:grid-cols-2">
                                 <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Bank Deposit Slip Reference</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Bank Reference / Machine Validation No.</p>
                                     <p className="mt-1 font-mono text-sm font-bold">{slip.depositReference || "Not recorded"}</p>
                                 </div>
-                                <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Validation Document</p>
+                                <div className="min-w-0">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Validated Deposit Slip</p>
                                     {slip.validationDocumentFileId ? (
                                         <a
                                             className="mt-1 inline-block text-sm font-bold text-primary underline underline-offset-2"
@@ -118,7 +135,7 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                             View validated deposit slip
                                         </a>
                                     ) : (
-                                        <p className="mt-1 text-sm font-bold">Not recorded</p>
+                                        <p className="mt-1 text-sm font-bold">Unavailable</p>
                                     )}
                                 </div>
                             </div>
