@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { ExpectedCollectionRecord } from "../types";
 import { formatReportDate } from "../utils/date";
+import { HighlightedText } from "./HighlightedText";
 
 const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
 
@@ -16,7 +17,7 @@ function formatText(value: string | null): string {
   return value || "N/A";
 }
 
-function InvoiceDetailField({ label, value }: { label: string; value: string }) {
+function InvoiceDetailField({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>
@@ -36,7 +37,15 @@ function DetailSection({ title, children }: { title: string; children: ReactNode
   );
 }
 
-export function InvoiceDetails({ record }: { record: ExpectedCollectionRecord }) {
+export function InvoiceDetails({
+  record,
+  invoiceQuery = "",
+  customerQuery = "",
+}: {
+  record: ExpectedCollectionRecord;
+  invoiceQuery?: string;
+  customerQuery?: string;
+}) {
   const postedStatus = record.isPosted === null ? "N/A" : record.isPosted > 0 ? "Posted" : "Unposted";
 
   return (
@@ -45,10 +54,10 @@ export function InvoiceDetails({ record }: { record: ExpectedCollectionRecord })
       <div className="mt-4 grid gap-3 xl:grid-cols-2">
         <DetailSection title="Invoice identity">
           <InvoiceDetailField label="Invoice ID" value={String(record.invoiceId || "N/A")} />
-          <InvoiceDetailField label="Invoice number" value={formatText(record.invoiceNo)} />
+          <InvoiceDetailField label="Invoice number" value={<HighlightedText value={record.invoiceNo} query={invoiceQuery} />} />
           <InvoiceDetailField label="Order ID" value={formatText(record.orderId)} />
-          <InvoiceDetailField label="Customer" value={formatText(record.customerName)} />
-          <InvoiceDetailField label="Customer code" value={formatText(record.customerCode)} />
+          <InvoiceDetailField label="Customer" value={<HighlightedText value={record.customerName} query={customerQuery} />} />
+          <InvoiceDetailField label="Customer code" value={<HighlightedText value={record.customerCode} query={customerQuery} />} />
         </DetailSection>
 
         <DetailSection title="Ownership and status">

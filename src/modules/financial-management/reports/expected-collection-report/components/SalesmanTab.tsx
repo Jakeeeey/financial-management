@@ -16,6 +16,7 @@ import {
   invoiceRowStatusAccentClasses,
   invoiceRowStatusClasses,
 } from "../utils/invoiceUrgency";
+import { HighlightedText } from "./HighlightedText";
 import { InvoiceDetails } from "./InvoiceDetails";
 
 const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
@@ -30,10 +31,20 @@ interface SalesmanTabProps {
   loading: boolean;
   hasActiveFilters: boolean;
   range: DateRange;
+  invoiceQuery: string;
+  customerQuery: string;
   onClearFilters: () => void;
 }
 
-function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
+function SalesmanGroupCard({
+  group,
+  invoiceQuery,
+  customerQuery,
+}: {
+  group: SalesmanCollectionGroup;
+  invoiceQuery: string;
+  customerQuery: string;
+}) {
   const [open, setOpen] = useState(false);
   const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
   const [invoicePageIndex, setInvoicePageIndex] = useState(0);
@@ -122,11 +133,15 @@ function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
                         className={invoiceRowStatusClasses[rowStatus]}
                       >
                         <TableCell className={`${invoiceRowStatusAccentClasses[rowStatus]} font-medium`}>
-                          {record.invoiceNo || "N/A"}
+                          <HighlightedText value={record.invoiceNo} query={invoiceQuery} />
                         </TableCell>
                         <TableCell>
-                          <div>{record.customerName || "N/A"}</div>
-                          {record.customerCode && <div className="text-xs text-muted-foreground">{record.customerCode}</div>}
+                          <div><HighlightedText value={record.customerName} query={customerQuery} /></div>
+                          {record.customerCode && (
+                            <div className="text-xs text-muted-foreground">
+                              <HighlightedText value={record.customerCode} query={customerQuery} />
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell>{formatReportDate(record.dueDate)}</TableCell>
                         <TableCell>
@@ -157,7 +172,7 @@ function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
                       {isExpanded && (
                         <TableRow id={detailsId}>
                           <TableCell colSpan={6} className="bg-muted/20 p-4">
-                            <InvoiceDetails record={record} />
+                            <InvoiceDetails record={record} invoiceQuery={invoiceQuery} customerQuery={customerQuery} />
                           </TableCell>
                         </TableRow>
                       )}
@@ -210,7 +225,15 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function SalesmanTab({ groups, loading, hasActiveFilters, range, onClearFilters }: SalesmanTabProps) {
+export function SalesmanTab({
+  groups,
+  loading,
+  hasActiveFilters,
+  range,
+  invoiceQuery,
+  customerQuery,
+  onClearFilters,
+}: SalesmanTabProps) {
   const [pageIndex, setPageIndex] = useState(0);
 
   if (loading) {
@@ -265,7 +288,14 @@ export function SalesmanTab({ groups, loading, hasActiveFilters, range, onClearF
         <SummaryMetric label="Customers" value={String(totalCustomers)} />
         <SummaryMetric label="Outstanding" value={formatPeso(totalOutstanding)} />
       </div>
-      {pageGroups.map((group) => <SalesmanGroupCard key={group.name} group={group} />)}
+      {pageGroups.map((group) => (
+        <SalesmanGroupCard
+          key={group.name}
+          group={group}
+          invoiceQuery={invoiceQuery}
+          customerQuery={customerQuery}
+        />
+      ))}
       {pageCount > 1 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4" aria-live="polite">
           <span className="text-sm text-muted-foreground">

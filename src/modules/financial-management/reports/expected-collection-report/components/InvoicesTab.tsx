@@ -15,6 +15,7 @@ import {
   invoiceRowStatusAccentClasses,
   invoiceRowStatusClasses,
 } from "../utils/invoiceUrgency";
+import { HighlightedText } from "./HighlightedText";
 import { InvoiceDetails } from "./InvoiceDetails";
 
 const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
@@ -31,10 +32,12 @@ interface InvoicesTabProps {
   loading: boolean;
   hasActiveFilters: boolean;
   range: DateRange;
+  invoiceQuery: string;
+  customerQuery: string;
   onClearFilters: () => void;
 }
 
-export function InvoicesTab({ records, loading, hasActiveFilters, range, onClearFilters }: InvoicesTabProps) {
+export function InvoicesTab({ records, loading, hasActiveFilters, range, invoiceQuery, customerQuery, onClearFilters }: InvoicesTabProps) {
   const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
   const [pageIndex, setPageIndex] = useState(0);
   const [sortBy, setSortBy] = useState<InvoiceSort>("due-date");
@@ -164,10 +167,16 @@ export function InvoicesTab({ records, loading, hasActiveFilters, range, onClear
               return (
                 <Fragment key={invoiceKey}>
                   <TableRow data-state={isExpanded ? "selected" : undefined} data-status={rowStatus} className={invoiceRowStatusClasses[rowStatus]}>
-                    <TableCell className={`${invoiceRowStatusAccentClasses[rowStatus]} font-medium`}>{record.invoiceNo || "N/A"}</TableCell>
+                    <TableCell className={`${invoiceRowStatusAccentClasses[rowStatus]} font-medium`}>
+                      <HighlightedText value={record.invoiceNo} query={invoiceQuery} />
+                    </TableCell>
                     <TableCell>
-                      <div>{record.customerName || "N/A"}</div>
-                      {record.customerCode && <div className="text-xs text-muted-foreground">{record.customerCode}</div>}
+                      <div><HighlightedText value={record.customerName} query={customerQuery} /></div>
+                      {record.customerCode && (
+                        <div className="text-xs text-muted-foreground">
+                          <HighlightedText value={record.customerCode} query={customerQuery} />
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">{record.salesman || "Unassigned Salesman"}</TableCell>
                     <TableCell className="hidden lg:table-cell">{record.division || "Unassigned Division"}</TableCell>
@@ -202,7 +211,7 @@ export function InvoicesTab({ records, loading, hasActiveFilters, range, onClear
                   {isExpanded && (
                     <TableRow id={detailsId}>
                       <TableCell colSpan={8} className="bg-muted/20 p-4">
-                        <InvoiceDetails record={record} />
+                        <InvoiceDetails record={record} invoiceQuery={invoiceQuery} customerQuery={customerQuery} />
                       </TableCell>
                     </TableRow>
                   )}

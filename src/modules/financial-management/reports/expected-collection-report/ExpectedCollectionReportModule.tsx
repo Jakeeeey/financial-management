@@ -94,6 +94,8 @@ export default function ExpectedCollectionReportModule() {
             loading={report.initialLoading}
             hasActiveFilters={report.hasActiveFilters}
             range={fallbackRange}
+            invoiceQuery={report.filters.invoiceNo}
+            customerQuery={report.filters.customerName}
             onClearFilters={report.clearFilters}
           />
         </TabsContent>
@@ -104,6 +106,8 @@ export default function ExpectedCollectionReportModule() {
             loading={report.initialLoading}
             hasActiveFilters={report.hasActiveFilters}
             range={fallbackRange}
+            invoiceQuery={report.filters.invoiceNo}
+            customerQuery={report.filters.customerName}
             onClearFilters={report.clearFilters}
           />
         </TabsContent>

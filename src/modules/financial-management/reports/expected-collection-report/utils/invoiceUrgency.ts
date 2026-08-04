@@ -30,6 +30,10 @@ export interface InvoiceUrgency {
   badgeVariant: InvoiceUrgencyBadgeVariant;
 }
 
+function formatDayCount(days: number): string {
+  return `${days} ${days === 1 ? "day" : "days"}`;
+}
+
 export function getInvoiceUrgency(record: ExpectedCollectionRecord, today: string): InvoiceUrgency {
   if (record.outstandingBalance === 0) {
     return {
@@ -76,7 +80,7 @@ export function getInvoiceUrgency(record: ExpectedCollectionRecord, today: strin
   if (daysUntilDue <= 3) {
     return {
       status: "critical",
-      label: `Due in ${daysUntilDue} days`,
+      label: `Due in ${formatDayCount(daysUntilDue)}`,
       rank: 4,
       daysUntilDue,
       badgeVariant: "outline",
@@ -85,7 +89,7 @@ export function getInvoiceUrgency(record: ExpectedCollectionRecord, today: strin
   if (daysUntilDue <= 7) {
     return {
       status: "elevated",
-      label: `Due in ${daysUntilDue} days`,
+      label: `Due in ${formatDayCount(daysUntilDue)}`,
       rank: 3,
       daysUntilDue,
       badgeVariant: "outline",
@@ -93,7 +97,7 @@ export function getInvoiceUrgency(record: ExpectedCollectionRecord, today: strin
   }
   return {
     status: "mellow",
-    label: `Due in ${daysUntilDue} days`,
+    label: `Due in ${formatDayCount(daysUntilDue)}`,
     rank: 2,
     daysUntilDue,
     badgeVariant: "outline",
