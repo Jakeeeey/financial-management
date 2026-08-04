@@ -65,10 +65,11 @@ export interface DepositSlip {
     targetBankAccount?: string | null;
     depositReference?: string | null;
     validationDocumentFileId?: string | null;
-    status: "PREPARED" | "CLEARED" | "CANCELLED";
+    status: "PREPARED" | "PARTIALLY_BOUNCED" | "BOUNCED" | "CLEARED" | "CANCELLED";
     preparedBy: string;
     datePrepared: string;
     clearedAt?: string | null;
+    clearedBy?: string | null;
     totalCash: number;
     totalChecks: number;
     grandTotal: number;
