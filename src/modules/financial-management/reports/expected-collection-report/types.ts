@@ -27,7 +27,7 @@ export interface ExpectedCollectionResponse {
   records: ExpectedCollectionRecord[];
 }
 
-export type ReportPeriod = "daily" | "weekly" | "monthly" | "yearly";
+export type ReportPeriod = "daily" | "weekly" | "monthly" | "yearly" | "custom";
 
 export interface DateRange {
   startDate: string;

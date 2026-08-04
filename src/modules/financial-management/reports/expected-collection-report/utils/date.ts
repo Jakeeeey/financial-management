@@ -64,6 +64,7 @@ export function weekFromStart(startDate: string): DateRange | null {
 export function dateRangeForPeriod(period: ReportPeriod, referenceDate: string): DateRange | null {
   const date = parseDateOnly(referenceDate);
   if (!date) return null;
+  if (period === "custom") return null;
 
   if (period === "daily") {
     const value = formatDateOnly(date);
@@ -85,7 +86,7 @@ export function dateRangeForPeriod(period: ReportPeriod, referenceDate: string):
 
 export function shiftReferenceDate(referenceDate: string, period: ReportPeriod, amount: number): string | null {
   const date = parseDateOnly(referenceDate);
-  if (!date) return null;
+  if (!date || period === "custom") return null;
 
   if (period === "daily") return formatDateOnly(addDays(date, amount));
   if (period === "weekly") return formatDateOnly(addDays(date, amount * 7));
@@ -103,10 +104,14 @@ export function periodLabel(period: ReportPeriod): string {
     weekly: "week",
     monthly: "month",
     yearly: "year",
+    custom: "range",
   }[period];
 }
 
 export function formatPeriodRange(period: ReportPeriod, range: DateRange): string {
+  if (period === "custom") {
+    return `${formatReportDate(range.startDate)} - ${formatReportDate(range.endDate)}`;
+  }
   if (period === "daily") return `Day of ${formatReportDate(range.startDate)}`;
   if (period === "weekly") return `Week of ${formatReportDate(range.startDate)} - ${formatReportDate(range.endDate)}`;
 

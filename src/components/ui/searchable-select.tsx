@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/popover";
 
 export interface SearchableSelectProps {
+    id?: string;
+    "aria-label"?: string;
     options: { value: string; label: string }[];
     value?: string;
     onValueChange: (value: string) => void;
@@ -29,6 +31,8 @@ export interface SearchableSelectProps {
 }
 
 export function SearchableSelect({
+    id,
+    "aria-label": ariaLabel,
     options,
     value,
     onValueChange,
@@ -47,9 +51,12 @@ export function SearchableSelect({
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
                 <Button
+                    id={id}
+                    type="button"
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
+                    aria-label={ariaLabel}
                     className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
                     disabled={disabled}
                 >

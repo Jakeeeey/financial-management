@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "@/components/shared/app-sidebar/nav-user";
@@ -26,9 +26,9 @@ export default async function Page() {
           <Separator orientation="vertical" className="mr-2 hidden h-4 sm:block" />
           <Breadcrumb>
             <BreadcrumbList>
-              <BreadcrumbItem className="hidden md:block"><BreadcrumbLink href="#">FM</BreadcrumbLink></BreadcrumbItem>
+              <BreadcrumbItem className="hidden text-muted-foreground md:block">FM</BreadcrumbItem>
               <BreadcrumbSeparator className="hidden md:block" />
-              <BreadcrumbItem className="hidden md:block"><BreadcrumbLink href="#">Reports</BreadcrumbLink></BreadcrumbItem>
+              <BreadcrumbItem className="hidden text-muted-foreground md:block">Reports</BreadcrumbItem>
               <BreadcrumbSeparator className="hidden md:block" />
               <BreadcrumbItem><BreadcrumbPage>Expected Collection Report</BreadcrumbPage></BreadcrumbItem>
             </BreadcrumbList>

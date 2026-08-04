@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +16,7 @@ const PERIOD_OPTIONS: Array<{ value: ReportPeriod; label: string }> = [
   { value: "weekly", label: "Weekly" },
   { value: "monthly", label: "Monthly" },
   { value: "yearly", label: "Yearly" },
+  { value: "custom", label: "Custom range" },
 ];
 
 interface ExpectedCollectionControlsProps {
@@ -29,8 +31,7 @@ interface ExpectedCollectionControlsProps {
   onNextPeriod: () => void;
   onCurrentPeriod: () => void;
   onPeriodChange: (value: ReportPeriod) => void;
-  onStartDateChange: (value: string) => void;
-  onEndDateChange: (value: string) => void;
+  onApplyCustomRange: (range: DateRange) => void;
   onClearFilters: () => void;
 }
 
@@ -46,11 +47,17 @@ export function ExpectedCollectionControls({
   onNextPeriod,
   onCurrentPeriod,
   onPeriodChange,
-  onStartDateChange,
-  onEndDateChange,
+  onApplyCustomRange,
   onClearFilters,
 }: ExpectedCollectionControlsProps) {
   const selectedPeriodLabel = periodLabel(period);
+  const [draftRange, setDraftRange] = useState(range);
+  const rangeError = !draftRange.startDate || !draftRange.endDate
+    ? "Select both a start date and an end date."
+    : draftRange.startDate > draftRange.endDate
+      ? "Start date must be on or before end date."
+      : null;
+  const rangeChanged = draftRange.startDate !== range.startDate || draftRange.endDate !== range.endDate;
 
   return (
     <Card>
@@ -68,7 +75,7 @@ export function ExpectedCollectionControls({
               onValueChange={(value) => onPeriodChange(value as ReportPeriod)}
               disabled={loading}
             >
-              <SelectTrigger id="expected-collection-period" className="w-[130px]">
+              <SelectTrigger id="expected-collection-period" className="w-[160px] whitespace-nowrap">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -87,12 +94,12 @@ export function ExpectedCollectionControls({
               variant="outline"
               size="icon"
               onClick={onPreviousPeriod}
-              disabled={loading}
+              disabled={loading || period === "custom"}
               aria-label={`Previous ${selectedPeriodLabel}`}
             >
               <ChevronLeft className="size-4" />
             </Button>
-            <Button type="button" variant="outline" onClick={onCurrentPeriod} disabled={loading}>
+            <Button type="button" variant="outline" onClick={onCurrentPeriod} disabled={loading || period === "custom"}>
               Current {selectedPeriodLabel}
             </Button>
             <Button
@@ -100,7 +107,7 @@ export function ExpectedCollectionControls({
               variant="outline"
               size="icon"
               onClick={onNextPeriod}
-              disabled={loading}
+              disabled={loading || period === "custom"}
               aria-label={`Next ${selectedPeriodLabel}`}
             >
               <ChevronRight className="size-4" />
@@ -108,7 +115,7 @@ export function ExpectedCollectionControls({
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
           <div className="space-y-1.5">
             <Label htmlFor="expected-collection-invoice">Invoice Number</Label>
             <Input
@@ -132,8 +139,9 @@ export function ExpectedCollectionControls({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Salesman</Label>
+            <Label htmlFor="expected-collection-salesman">Salesman</Label>
             <SearchableSelect
+              id="expected-collection-salesman"
               options={[
                 { value: "", label: "All salesmen" },
                 ...filterOptions.salesmen.map((salesman) => ({ value: salesman, label: salesman })),
@@ -146,8 +154,9 @@ export function ExpectedCollectionControls({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Division</Label>
+            <Label htmlFor="expected-collection-division">Division</Label>
             <SearchableSelect
+              id="expected-collection-division"
               options={[
                 { value: "", label: "All divisions" },
                 ...filterOptions.divisions.map((division) => ({ value: division, label: division })),
@@ -164,9 +173,11 @@ export function ExpectedCollectionControls({
             <Input
               id="expected-collection-start-date"
               type="date"
-              value={range.startDate}
-              onChange={(event) => onStartDateChange(event.target.value)}
+              value={draftRange.startDate}
+              onChange={(event) => setDraftRange((current) => ({ ...current, startDate: event.target.value }))}
               disabled={loading}
+              aria-invalid={Boolean(rangeError)}
+              aria-describedby={rangeError ? "expected-collection-range-error" : undefined}
             />
           </div>
 
@@ -175,12 +186,31 @@ export function ExpectedCollectionControls({
             <Input
               id="expected-collection-end-date"
               type="date"
-              value={range.endDate}
-              onChange={(event) => onEndDateChange(event.target.value)}
+              value={draftRange.endDate}
+              onChange={(event) => setDraftRange((current) => ({ ...current, endDate: event.target.value }))}
               disabled={loading}
+              aria-invalid={Boolean(rangeError)}
+              aria-describedby={rangeError ? "expected-collection-range-error" : undefined}
             />
           </div>
+
+          <div className="flex items-end">
+            <Button
+              type="button"
+              className="w-full"
+              onClick={() => onApplyCustomRange(draftRange)}
+              disabled={loading || Boolean(rangeError) || !rangeChanged}
+            >
+              Apply range
+            </Button>
+          </div>
         </div>
+
+        {rangeError && (
+          <p id="expected-collection-range-error" className="text-sm text-destructive" role="alert">
+            {rangeError}
+          </p>
+        )}
 
         {hasActiveFilters && (
           <Button type="button" variant="ghost" size="sm" onClick={onClearFilters} disabled={loading}>

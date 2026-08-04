@@ -5,6 +5,8 @@ import {
   currentManilaDateOnly,
   dateRangeForPeriod,
   datesInRange,
+  formatDateOnly,
+  parseDateOnly,
   shiftReferenceDate,
   weekdayLabel,
 } from "../utils/date";
@@ -53,7 +55,79 @@ function filterRecords(
   });
 }
 
-function buildGroups(records: ExpectedCollectionRecord[], range: DateRange | null): SalesmanCollectionGroup[] {
+function buildChartPoints(
+  records: ExpectedCollectionRecord[],
+  range: DateRange | null,
+  period: ReportPeriod,
+) {
+  if (!range) return [];
+
+  const start = parseDateOnly(range.startDate);
+  const end = parseDateOnly(range.endDate);
+  if (!start || !end) return [];
+
+  const rangeDays = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+  const amountByDate = new Map<string, number>();
+  records.forEach((record) => {
+    amountByDate.set(record.dueDate, (amountByDate.get(record.dueDate) || 0) + record.outstandingBalance);
+  });
+
+  if (period === "yearly" || rangeDays > 62) {
+    const amountByMonth = new Map<string, number>();
+    records.forEach((record) => {
+      const key = record.dueDate.slice(0, 7);
+      amountByMonth.set(key, (amountByMonth.get(key) || 0) + record.outstandingBalance);
+    });
+
+    const points = [];
+    for (
+      let cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+      cursor.getTime() <= end.getTime();
+      cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1))
+    ) {
+      const date = formatDateOnly(cursor);
+      const key = date.slice(0, 7);
+      points.push({
+        date,
+        label: new Intl.DateTimeFormat("en-US", {
+          timeZone: "UTC",
+          month: "short",
+          year: start.getUTCFullYear() === end.getUTCFullYear() ? undefined : "2-digit",
+        }).format(cursor),
+        amount: amountByMonth.get(key) || 0,
+      });
+    }
+    return points;
+  }
+
+  const dates = datesInRange(range);
+  if (period === "monthly" || rangeDays > 14) {
+    const points = [];
+    for (let index = 0; index < dates.length; index += 7) {
+      const bucket = dates.slice(index, index + 7);
+      const first = bucket[0];
+      const last = bucket[bucket.length - 1];
+      points.push({
+        date: first,
+        label: `${first.slice(5)}–${last.slice(5)}`,
+        amount: bucket.reduce((sum, date) => sum + (amountByDate.get(date) || 0), 0),
+      });
+    }
+    return points;
+  }
+
+  return dates.map((date) => ({
+    date,
+    label: weekdayLabel(date),
+    amount: amountByDate.get(date) || 0,
+  }));
+}
+
+function buildGroups(
+  records: ExpectedCollectionRecord[],
+  range: DateRange | null,
+  period: ReportPeriod,
+): SalesmanCollectionGroup[] {
   const grouped = new Map<string, ExpectedCollectionRecord[]>();
 
   records.forEach((record) => {
@@ -65,17 +139,7 @@ function buildGroups(records: ExpectedCollectionRecord[], range: DateRange | nul
 
   return Array.from(grouped.entries())
     .map(([name, groupRecords]) => {
-      const dailyOutstanding = range
-        ? datesInRange(range).map((date) => {
-          return {
-            date,
-            label: weekdayLabel(date),
-            amount: groupRecords
-              .filter((record) => record.dueDate === date)
-              .reduce((sum, record) => sum + record.outstandingBalance, 0),
-          };
-        })
-        : [];
+      const dailyOutstanding = buildChartPoints(groupRecords, range, period);
 
       return {
         name,
@@ -90,6 +154,11 @@ function buildGroups(records: ExpectedCollectionRecord[], range: DateRange | nul
     .sort((left, right) => right.outstandingBalance - left.outstandingBalance || left.name.localeCompare(right.name));
 }
 
+interface ReportSelection {
+  period: ReportPeriod;
+  referenceDate: string;
+}
+
 export function useExpectedCollectionReport() {
   const [range, setRange] = useState<DateRange | null>(null);
   const [period, setPeriod] = useState<ReportPeriod>("weekly");
@@ -98,21 +167,23 @@ export function useExpectedCollectionReport() {
   const [filters, setFilters] = useState<ExpectedCollectionFilters>(EMPTY_FILTERS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [resultVersion, setResultVersion] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
+  const lastRequestRef = useRef<{ range?: DateRange; selection?: ReportSelection }>({});
 
   const load = useCallback(async (
     requestedRange?: DateRange,
-    resetFilters = true,
+    selection?: ReportSelection,
   ) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     const requestId = ++requestIdRef.current;
+    lastRequestRef.current = { range: requestedRange, selection };
 
     setLoading(true);
     setError(null);
-    if (resetFilters) setFilters(EMPTY_FILTERS);
 
     const params = requestedRange
       ? `?startDate=${encodeURIComponent(requestedRange.startDate)}&endDate=${encodeURIComponent(requestedRange.endDate)}`
@@ -139,6 +210,11 @@ export function useExpectedCollectionReport() {
       if (requestId !== requestIdRef.current) return;
       setRange(payload.range);
       setRecords(payload.records);
+      setResultVersion((current) => current + 1);
+      if (selection) {
+        setPeriod(selection.period);
+        setReferenceDate(selection.referenceDate);
+      }
     } catch (requestError) {
       if (isAbortError(requestError) || requestId !== requestIdRef.current) return;
       setError(requestError instanceof Error ? requestError.message : "Unable to load the report.");
@@ -160,34 +236,42 @@ export function useExpectedCollectionReport() {
   }), [records]);
 
   const salesmanGroups = useMemo(
-    () => buildGroups(filteredRecords, range),
-    [filteredRecords, range],
+    () => buildGroups(filteredRecords, range, period),
+    [filteredRecords, period, range],
   );
 
   const hasActiveFilters = Boolean(
     filters.division || filters.salesman || filters.customerName.trim() || filters.invoiceNo.trim(),
   );
 
-  const loadPeriod = useCallback((nextPeriod: ReportPeriod, nextReferenceDate: string, resetFilters = true) => {
+  const loadPeriod = useCallback((nextPeriod: ReportPeriod, nextReferenceDate: string) => {
     const nextRange = dateRangeForPeriod(nextPeriod, nextReferenceDate);
-    if (nextRange) void load(nextRange, resetFilters);
+    if (nextRange) {
+      void load(nextRange, { period: nextPeriod, referenceDate: nextReferenceDate });
+    }
   }, [load]);
 
   const selectPeriod = useCallback((nextPeriod: ReportPeriod) => {
-    setPeriod(nextPeriod);
+    if (nextPeriod === "custom") {
+      setPeriod("custom");
+      return;
+    }
     loadPeriod(nextPeriod, referenceDate);
   }, [loadPeriod, referenceDate]);
 
-  const selectReferenceDate = useCallback((nextReferenceDate: string) => {
-    setReferenceDate(nextReferenceDate);
-    loadPeriod(period, nextReferenceDate);
-  }, [loadPeriod, period]);
+  const applyCustomRange = useCallback((nextRange: DateRange) => {
+    const start = parseDateOnly(nextRange.startDate);
+    const end = parseDateOnly(nextRange.endDate);
+    if (!start || !end || start.getTime() > end.getTime()) return;
+
+    void load(nextRange, { period: "custom", referenceDate: nextRange.startDate });
+  }, [load]);
 
   const navigatePeriod = useCallback((amount: number) => {
+    if (period === "custom") return;
     const nextReferenceDate = shiftReferenceDate(referenceDate, period, amount);
     if (!nextReferenceDate) return;
 
-    setReferenceDate(nextReferenceDate);
     loadPeriod(period, nextReferenceDate);
   }, [loadPeriod, period, referenceDate]);
 
@@ -195,10 +279,15 @@ export function useExpectedCollectionReport() {
   const nextPeriod = useCallback(() => navigatePeriod(1), [navigatePeriod]);
 
   const resetToCurrentPeriod = useCallback(() => {
+    if (period === "custom") return;
     const nextReferenceDate = currentManilaDateOnly();
-    setReferenceDate(nextReferenceDate);
-    loadPeriod(period, nextReferenceDate, false);
+    loadPeriod(period, nextReferenceDate);
   }, [loadPeriod, period]);
+
+  const retry = useCallback(() => {
+    const lastRequest = lastRequestRef.current;
+    void load(lastRequest.range, lastRequest.selection);
+  }, [load]);
 
   return {
     range,
@@ -210,14 +299,17 @@ export function useExpectedCollectionReport() {
     setFilters,
     filterOptions,
     salesmanGroups,
+    resultVersion,
     hasActiveFilters,
     loading,
+    initialLoading: loading && range === null,
+    refreshing: loading && range !== null,
     error,
+    retry,
     previousPeriod,
     nextPeriod,
     selectPeriod,
-    selectStartDate: selectReferenceDate,
-    selectEndDate: selectReferenceDate,
+    applyCustomRange,
     resetToCurrentPeriod,
     clearFilters: () => setFilters(EMPTY_FILTERS),
   };

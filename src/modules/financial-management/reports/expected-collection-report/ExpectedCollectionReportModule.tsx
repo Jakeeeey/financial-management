@@ -2,6 +2,7 @@
 
 import { AlertCircle, FileText, Users } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExpectedCollectionControls } from "./components/ExpectedCollectionControls";
 import { InvoicesTab } from "./components/InvoicesTab";
@@ -14,17 +15,25 @@ export default function ExpectedCollectionReportModule() {
   const fallbackRange = report.range
     || dateRangeForPeriod(report.period, report.referenceDate)
     || currentManilaWeek();
+  const resultKey = [
+    report.resultVersion,
+    report.filters.division,
+    report.filters.salesman,
+    report.filters.customerName,
+    report.filters.invoiceNo,
+  ].join("|");
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Expected Collection Report</h1>
         <p className="text-sm text-muted-foreground">
-          Review invoices due this week and expected collections by salesman.
+          Review due invoices and prioritize expected collections by salesman.
         </p>
       </div>
 
       <ExpectedCollectionControls
+        key={`${fallbackRange.startDate}-${fallbackRange.endDate}`}
         range={fallbackRange}
         period={report.period}
         filters={report.filters}
@@ -36,8 +45,7 @@ export default function ExpectedCollectionReportModule() {
         onNextPeriod={report.nextPeriod}
         onCurrentPeriod={report.resetToCurrentPeriod}
         onPeriodChange={report.selectPeriod}
-        onStartDateChange={report.selectStartDate}
-        onEndDateChange={report.selectEndDate}
+        onApplyCustomRange={report.applyCustomRange}
         onClearFilters={report.clearFilters}
       />
 
@@ -45,11 +53,29 @@ export default function ExpectedCollectionReportModule() {
         <Alert variant="destructive">
           <AlertCircle className="size-4" />
           <AlertTitle>Unable to load expected collections</AlertTitle>
-          <AlertDescription>{report.error}</AlertDescription>
+          <AlertDescription className="space-y-2">
+            <p>{report.error}</p>
+            {report.range && <p>The previous successful range remains displayed below.</p>}
+            <Button type="button" variant="outline" size="sm" onClick={report.retry} disabled={report.loading}>
+              Retry
+            </Button>
+          </AlertDescription>
         </Alert>
       )}
 
-      <Tabs defaultValue="invoices">
+      {report.refreshing && (
+        <p className="text-sm text-muted-foreground" role="status">
+          Refreshing the report. Results from the previous successful range remain visible.
+        </p>
+      )}
+
+      <div className="sr-only" role="status" aria-live="polite">
+        {report.loading
+          ? report.refreshing ? "Refreshing expected collections." : "Loading expected collections."
+          : `Loaded ${report.filteredRecords.length} expected collection records.`}
+      </div>
+
+      {(report.initialLoading || report.range) && <Tabs defaultValue="invoices">
         <TabsList aria-label="Expected collection report views">
           <TabsTrigger value="invoices">
             <FileText className="size-4" />
@@ -63,19 +89,25 @@ export default function ExpectedCollectionReportModule() {
 
         <TabsContent value="invoices" className="mt-4">
           <InvoicesTab
+            key={`invoices-${resultKey}`}
             records={report.filteredRecords}
-            loading={report.loading}
+            loading={report.initialLoading}
             hasActiveFilters={report.hasActiveFilters}
+            range={fallbackRange}
+            onClearFilters={report.clearFilters}
           />
         </TabsContent>
         <TabsContent value="salesmen" className="mt-4">
           <SalesmanTab
+            key={`salesmen-${resultKey}`}
             groups={report.salesmanGroups}
-            loading={report.loading}
+            loading={report.initialLoading}
             hasActiveFilters={report.hasActiveFilters}
+            range={fallbackRange}
+            onClearFilters={report.clearFilters}
           />
         </TabsContent>
-      </Tabs>
+      </Tabs>}
     </div>
   );
 }

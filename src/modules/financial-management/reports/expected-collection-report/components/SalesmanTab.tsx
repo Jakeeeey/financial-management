@@ -3,13 +3,19 @@
 import { Fragment, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChevronDown, ChevronLeft, ChevronRight, Users } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import type { SalesmanCollectionGroup } from "../types";
-import { formatReportDate } from "../utils/date";
+import type { DateRange, SalesmanCollectionGroup } from "../types";
+import { currentManilaDateOnly, formatReportDate } from "../utils/date";
+import {
+  getInvoiceUrgency,
+  invoiceRowStatusAccentClasses,
+  invoiceRowStatusClasses,
+} from "../utils/invoiceUrgency";
 import { InvoiceDetails } from "./InvoiceDetails";
 
 const pesoFormatter = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
@@ -23,11 +29,18 @@ interface SalesmanTabProps {
   groups: SalesmanCollectionGroup[];
   loading: boolean;
   hasActiveFilters: boolean;
+  range: DateRange;
+  onClearFilters: () => void;
 }
 
 function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
   const [open, setOpen] = useState(false);
   const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
+  const [invoicePageIndex, setInvoicePageIndex] = useState(0);
+  const invoicePageCount = Math.ceil(group.records.length / PAGE_SIZE);
+  const currentInvoicePage = Math.min(invoicePageIndex, Math.max(invoicePageCount - 1, 0));
+  const pageRecords = group.records.slice(currentInvoicePage * PAGE_SIZE, (currentInvoicePage + 1) * PAGE_SIZE);
+  const today = currentManilaDateOnly();
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} asChild>
@@ -59,15 +72,14 @@ function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
 
         <CardContent>
           <CollapsibleContent className="space-y-3">
-            <div className="h-[210px] w-full overflow-x-auto">
-              <div className="h-full" style={{ minWidth: `${Math.max(720, group.dailyOutstanding.length * 42)}px` }}>
+            <div className="h-[240px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={group.dailyOutstanding} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis
                     dataKey="label"
                     fontSize={12}
-                    interval={group.dailyOutstanding.length > 31 ? Math.ceil(group.dailyOutstanding.length / 12) - 1 : 0}
+                    interval={group.dailyOutstanding.length > 12 ? Math.ceil(group.dailyOutstanding.length / 12) - 1 : 0}
                   />
                   <YAxis
                     width={84}
@@ -80,8 +92,7 @@ function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
                   />
                   <Bar dataKey="amount" name="Outstanding" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={42} />
                 </BarChart>
-                </ResponsiveContainer>
-              </div>
+              </ResponsiveContainer>
             </div>
 
             <Table>
@@ -90,24 +101,37 @@ function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
                   <TableHead>Invoice number</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Due date</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Outstanding balance</TableHead>
                   <TableHead>Details</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {group.records.map((record) => {
-                  const invoiceKey = `${record.invoiceId}-${record.invoiceNo}`;
+                {pageRecords.map((record) => {
+                  const invoiceKey = [record.invoiceId, record.invoiceNo, record.orderId, record.dueDate].join("-");
+                  const detailsId = `salesman-${group.name}-${invoiceKey}-details`.replace(/[^a-zA-Z0-9_-]/g, "-");
                   const isExpanded = expandedInvoices.has(invoiceKey);
+                  const urgency = getInvoiceUrgency(record, today);
+                  const rowStatus = urgency.status;
 
                   return (
                     <Fragment key={invoiceKey}>
-                      <TableRow data-state={isExpanded ? "selected" : undefined}>
-                        <TableCell className="font-medium">{record.invoiceNo || "N/A"}</TableCell>
+                      <TableRow
+                        data-state={isExpanded ? "selected" : undefined}
+                        data-status={rowStatus}
+                        className={invoiceRowStatusClasses[rowStatus]}
+                      >
+                        <TableCell className={`${invoiceRowStatusAccentClasses[rowStatus]} font-medium`}>
+                          {record.invoiceNo || "N/A"}
+                        </TableCell>
                         <TableCell>
                           <div>{record.customerName || "N/A"}</div>
                           {record.customerCode && <div className="text-xs text-muted-foreground">{record.customerCode}</div>}
                         </TableCell>
                         <TableCell>{formatReportDate(record.dueDate)}</TableCell>
+                        <TableCell>
+                          <Badge variant={urgency.badgeVariant}>{urgency.label}</Badge>
+                        </TableCell>
                         <TableCell className="text-right font-medium">{formatPeso(record.outstandingBalance)}</TableCell>
                         <TableCell>
                           <Button
@@ -115,6 +139,7 @@ function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
                             variant="ghost"
                             size="sm"
                             aria-expanded={isExpanded}
+                            aria-controls={detailsId}
                             onClick={() => {
                               setExpandedInvoices((current) => {
                                 const next = new Set(current);
@@ -130,8 +155,8 @@ function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
                         </TableCell>
                       </TableRow>
                       {isExpanded && (
-                        <TableRow>
-                          <TableCell colSpan={5} className="bg-muted/20 p-4">
+                        <TableRow id={detailsId}>
+                          <TableCell colSpan={6} className="bg-muted/20 p-4">
                             <InvoiceDetails record={record} />
                           </TableCell>
                         </TableRow>
@@ -141,6 +166,34 @@ function SalesmanGroupCard({ group }: { group: SalesmanCollectionGroup }) {
                 })}
               </TableBody>
             </Table>
+            {invoicePageCount > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3" aria-live="polite">
+                <span className="text-xs text-muted-foreground">
+                  Showing {currentInvoicePage * PAGE_SIZE + 1}–
+                  {Math.min((currentInvoicePage + 1) * PAGE_SIZE, group.records.length)} of {group.records.length} invoices
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setInvoicePageIndex((current) => Math.max(current - 1, 0))}
+                    disabled={currentInvoicePage === 0}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setInvoicePageIndex((current) => Math.min(current + 1, invoicePageCount - 1))}
+                    disabled={currentInvoicePage === invoicePageCount - 1}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CollapsibleContent>
         </CardContent>
       </Card>
@@ -157,12 +210,13 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function SalesmanTab({ groups, loading, hasActiveFilters }: SalesmanTabProps) {
+export function SalesmanTab({ groups, loading, hasActiveFilters, range, onClearFilters }: SalesmanTabProps) {
   const [pageIndex, setPageIndex] = useState(0);
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4" role="status" aria-live="polite">
+        <span className="sr-only">Loading expected collections by salesman.</span>
         {Array.from({ length: 2 }, (_, index) => (
           <Card key={index}>
             <CardContent className="space-y-4 pt-6">
@@ -178,8 +232,17 @@ export function SalesmanTab({ groups, loading, hasActiveFilters }: SalesmanTabPr
   if (groups.length === 0) {
     return (
       <Card>
-        <CardContent className="py-12 text-center text-sm text-muted-foreground">
-          {hasActiveFilters ? "No salesman groups match the selected filters." : "No salesman collection data is available for this week."}
+        <CardContent className="space-y-3 py-12 text-center text-sm text-muted-foreground">
+          <p>
+            {hasActiveFilters
+              ? "No salesman groups match the selected filters."
+              : `No salesman collection data is available from ${formatReportDate(range.startDate)} to ${formatReportDate(range.endDate)}.`}
+          </p>
+          {hasActiveFilters && (
+            <Button type="button" variant="outline" size="sm" onClick={onClearFilters}>
+              Clear filters
+            </Button>
+          )}
         </CardContent>
       </Card>
     );
@@ -188,12 +251,23 @@ export function SalesmanTab({ groups, loading, hasActiveFilters }: SalesmanTabPr
   const pageCount = Math.ceil(groups.length / PAGE_SIZE);
   const currentPageIndex = Math.min(pageIndex, Math.max(pageCount - 1, 0));
   const pageGroups = groups.slice(currentPageIndex * PAGE_SIZE, (currentPageIndex + 1) * PAGE_SIZE);
+  const totalInvoices = groups.reduce((sum, group) => sum + group.invoiceCount, 0);
+  const totalCustomers = new Set(groups.flatMap((group) => (
+    group.records.map((record) => record.customerCode || record.customerName)
+  ))).size;
+  const totalOutstanding = groups.reduce((sum, group) => sum + group.outstandingBalance, 0);
 
   return (
     <div className="space-y-4">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-label="Salesman collection summary">
+        <SummaryMetric label="Salesmen" value={String(groups.length)} />
+        <SummaryMetric label="Invoices" value={String(totalInvoices)} />
+        <SummaryMetric label="Customers" value={String(totalCustomers)} />
+        <SummaryMetric label="Outstanding" value={formatPeso(totalOutstanding)} />
+      </div>
       {pageGroups.map((group) => <SalesmanGroupCard key={group.name} group={group} />)}
       {pageCount > 1 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4" aria-live="polite">
           <span className="text-sm text-muted-foreground">
             Showing {currentPageIndex * PAGE_SIZE + 1}–{Math.min((currentPageIndex + 1) * PAGE_SIZE, groups.length)} of {groups.length} salesmen
           </span>

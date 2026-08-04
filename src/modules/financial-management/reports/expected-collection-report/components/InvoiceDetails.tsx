@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ExpectedCollectionRecord } from "../types";
 import { formatReportDate } from "../utils/date";
 
@@ -24,35 +25,57 @@ function InvoiceDetailField({ label, value }: { label: string; value: string }) 
   );
 }
 
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-md border bg-muted/10 p-3">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h4>
+      <dl className="mt-3 grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+        {children}
+      </dl>
+    </section>
+  );
+}
+
 export function InvoiceDetails({ record }: { record: ExpectedCollectionRecord }) {
   const postedStatus = record.isPosted === null ? "N/A" : record.isPosted > 0 ? "Posted" : "Unposted";
 
   return (
     <div className="rounded-md border bg-background p-4">
       <h3 className="text-sm font-semibold">Invoice details</h3>
-      <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
-        <InvoiceDetailField label="Invoice ID" value={String(record.invoiceId || "N/A")} />
-        <InvoiceDetailField label="Invoice number" value={formatText(record.invoiceNo)} />
-        <InvoiceDetailField label="Order ID" value={formatText(record.orderId)} />
-        <InvoiceDetailField label="Invoice date" value={formatReportDate(record.invoiceDate)} />
-        <InvoiceDetailField label="Due date" value={formatReportDate(record.dueDate)} />
-        <InvoiceDetailField label="Customer" value={formatText(record.customerName)} />
-        <InvoiceDetailField label="Customer code" value={formatText(record.customerCode)} />
-        <InvoiceDetailField label="Salesman" value={record.salesman || "Unassigned Salesman"} />
-        <InvoiceDetailField label="Division" value={record.division || "Unassigned Division"} />
-        <InvoiceDetailField label="Branch" value={formatText(record.branch)} />
-        <InvoiceDetailField label="Posting status" value={postedStatus} />
-        <InvoiceDetailField label="Days overdue" value={record.daysOverdue === null ? "N/A" : String(record.daysOverdue)} />
-        <InvoiceDetailField label="Gross amount" value={formatNullablePeso(record.grossAmount)} />
-        <InvoiceDetailField label="Discount amount" value={formatNullablePeso(record.discountAmount)} />
-        <InvoiceDetailField label="Return amount" value={formatNullablePeso(record.returnAmount)} />
-        <InvoiceDetailField label="Net receivable" value={formatNullablePeso(record.netReceivable)} />
-        <InvoiceDetailField label="Unfulfilled amount" value={formatNullablePeso(record.unfulfilledAmount)} />
-        <InvoiceDetailField label="Applied credit memos" value={formatNullablePeso(record.appliedCreditMemos)} />
-        <InvoiceDetailField label="Applied debit memos" value={formatNullablePeso(record.appliedDebitMemos)} />
-        <InvoiceDetailField label="Total paid" value={formatNullablePeso(record.totalPaid)} />
-        <InvoiceDetailField label="Outstanding balance" value={formatPeso(record.outstandingBalance)} />
-      </dl>
+      <div className="mt-4 grid gap-3 xl:grid-cols-2">
+        <DetailSection title="Invoice identity">
+          <InvoiceDetailField label="Invoice ID" value={String(record.invoiceId || "N/A")} />
+          <InvoiceDetailField label="Invoice number" value={formatText(record.invoiceNo)} />
+          <InvoiceDetailField label="Order ID" value={formatText(record.orderId)} />
+          <InvoiceDetailField label="Customer" value={formatText(record.customerName)} />
+          <InvoiceDetailField label="Customer code" value={formatText(record.customerCode)} />
+        </DetailSection>
+
+        <DetailSection title="Ownership and status">
+          <InvoiceDetailField label="Salesman" value={record.salesman || "Unassigned Salesman"} />
+          <InvoiceDetailField label="Division" value={record.division || "Unassigned Division"} />
+          <InvoiceDetailField label="Branch" value={formatText(record.branch)} />
+          <InvoiceDetailField label="Posting status" value={postedStatus} />
+          <InvoiceDetailField label="Days overdue" value={record.daysOverdue === null ? "N/A" : String(record.daysOverdue)} />
+        </DetailSection>
+
+        <DetailSection title="Dates">
+          <InvoiceDetailField label="Invoice date" value={formatReportDate(record.invoiceDate)} />
+          <InvoiceDetailField label="Due date" value={formatReportDate(record.dueDate)} />
+        </DetailSection>
+
+        <DetailSection title="Financial breakdown">
+          <InvoiceDetailField label="Gross amount" value={formatNullablePeso(record.grossAmount)} />
+          <InvoiceDetailField label="Discount amount" value={formatNullablePeso(record.discountAmount)} />
+          <InvoiceDetailField label="Return amount" value={formatNullablePeso(record.returnAmount)} />
+          <InvoiceDetailField label="Net receivable" value={formatNullablePeso(record.netReceivable)} />
+          <InvoiceDetailField label="Unfulfilled amount" value={formatNullablePeso(record.unfulfilledAmount)} />
+          <InvoiceDetailField label="Applied credit memos" value={formatNullablePeso(record.appliedCreditMemos)} />
+          <InvoiceDetailField label="Applied debit memos" value={formatNullablePeso(record.appliedDebitMemos)} />
+          <InvoiceDetailField label="Total paid" value={formatNullablePeso(record.totalPaid)} />
+          <InvoiceDetailField label="Outstanding balance" value={formatPeso(record.outstandingBalance)} />
+        </DetailSection>
+      </div>
     </div>
   );
 }
