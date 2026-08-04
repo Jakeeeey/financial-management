@@ -5,7 +5,7 @@ import { AlertCircle, Banknote, CheckCircle2, ChevronDown, ChevronUp, Loader2, R
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BankDepositClientService } from "../services/bankDepositClientService";
-import { ClearDepositPayload, DepositSlip } from "../types";
+import { ClearDepositPayload, DepositAsset, DepositSlip } from "../types";
 import { ClearDepositDialog } from "./ClearDepositDialog";
 
 interface Props {
@@ -34,6 +34,19 @@ function currency(value: number): string {
 
 function formatStatus(status: string): string {
     return status.replace(/_/g, " ");
+}
+
+function isBouncedAssetStatus(status: DepositAsset["status"]): boolean {
+    return status === "BOUNCED" || status === "BOUNCED CHECK";
+}
+
+function effectiveStatus(slip: DepositSlip): DepositSlip["status"] {
+    const assets = slip.depositedAssets ?? [];
+    const bouncedCount = assets.filter((asset) => isBouncedAssetStatus(asset.status)).length;
+
+    if (bouncedCount === assets.length && bouncedCount > 0) return "BOUNCED";
+    if (bouncedCount > 0) return "PARTIALLY_BOUNCED";
+    return slip.status;
 }
 
 export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fetchData }: Props) {
@@ -67,8 +80,12 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
         }
     };
 
-    const isClearable = (status: DepositSlip["status"]) =>
-        status === "PREPARED" || status === "PARTIALLY_BOUNCED";
+    const hasInTransitAsset = (slip: DepositSlip) =>
+        slip.depositedAssets?.some((asset) => asset.status === "IN_TRANSIT") ?? false;
+
+    const isClearable = (slip: DepositSlip) =>
+        (effectiveStatus(slip) === "PREPARED" || effectiveStatus(slip) === "PARTIALLY_BOUNCED")
+        && hasInTransitAsset(slip);
 
     const badgeClassName = (status: DepositSlip["status"]) => {
         if (status === "CLEARED") return "bg-emerald-600";
@@ -81,7 +98,10 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
 
     return (
         <div className="mx-auto max-w-[1200px] space-y-4">
-            {history.map((slip) => (
+            {history.map((slip) => {
+                const status = effectiveStatus(slip);
+
+                return (
                 <div key={slip.id} className="overflow-hidden rounded-lg border bg-card shadow-sm transition-all duration-200">
                     <div
                         className="cursor-pointer space-y-3 p-4 hover:bg-muted/30"
@@ -95,10 +115,10 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                         : <ChevronDown size={18} className="text-muted-foreground" />}
                                     <span className="font-mono text-lg font-black">{slip.depositNo}</span>
                                     <Badge
-                                        variant={slip.status === "PREPARED" ? "outline" : "default"}
-                                        className={badgeClassName(slip.status)}
+                                        variant={status === "PREPARED" ? "outline" : "default"}
+                                        className={badgeClassName(status)}
                                     >
-                                        {formatStatus(slip.status)}
+                                        {formatStatus(status)}
                                     </Badge>
                                 </div>
                                 <p className="ml-7 text-[10px] font-bold uppercase text-muted-foreground">
@@ -120,7 +140,7 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                 </p>
                                 <p className="ml-7 text-[10px] font-bold uppercase text-muted-foreground">
                                     PREPARED BY {slip.preparedBy || "Not recorded"} ON {formatTimestamp(slip.datePrepared)}
-                                    {slip.status === "CLEARED" && (
+                                    {status === "CLEARED" && (
                                         <> | CLEARED BY {slip.clearedBy || "Not recorded"} ON {formatTimestamp(slip.clearedAt)}</>
                                     )}
                                 </p>
@@ -131,7 +151,7 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                     <p className="text-[10px] font-black uppercase text-muted-foreground">Grand Total</p>
                                     <p className="text-xl font-black text-primary">{currency(slip.grandTotal)}</p>
                                 </div>
-                                {isClearable(slip.status) && (
+                                {isClearable(slip) && (
                                     <Button
                                         size="sm"
                                         className="bg-emerald-600 font-bold uppercase text-[10px] hover:bg-emerald-700"
@@ -203,12 +223,12 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                                                 <div className="flex flex-col items-center gap-2">
                                                     <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${
                                                         asset.status === "CLEARED" ? "bg-emerald-100 text-emerald-700" :
-                                                            asset.status === "BOUNCED" ? "bg-red-100 text-red-700" :
+                                                            isBouncedAssetStatus(asset.status) ? "bg-red-100 text-red-700" :
                                                                 "bg-amber-100 text-amber-700"
                                                     }`}>
                                                         {asset.status.replace("_", " ")}
                                                     </span>
-                                                    {asset.assetType === "CHECK" && asset.status === "IN_TRANSIT" && isClearable(slip.status) && (
+                                                    {asset.assetType === "CHECK" && asset.status === "IN_TRANSIT" && isClearable(slip) && (
                                                         <Button
                                                             variant="destructive"
                                                             size="sm"
@@ -228,7 +248,8 @@ export function DepositLedgerTab({ history, isLoading, isSubmitting, onClear, fe
                         </div>
                     )}
                 </div>
-            ))}
+                );
+            })}
 
             <ClearDepositDialog
                 key={`${clearSlip?.id ?? "closed"}-${clearDialogKey}`}

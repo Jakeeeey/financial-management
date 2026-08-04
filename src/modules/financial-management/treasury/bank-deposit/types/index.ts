@@ -49,7 +49,7 @@ export interface DepositAsset {
     checkNo: string;
     chequeDate: string | null;
     amount: number;
-    status: "IN_TRANSIT" | "CLEARED" | "BOUNCED";
+    status: "IN_TRANSIT" | "CLEARED" | "BOUNCED" | "BOUNCED CHECK";
 }
 
 export interface CheckBreakdown {
