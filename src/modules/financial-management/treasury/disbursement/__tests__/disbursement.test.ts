@@ -8,13 +8,31 @@ import { Disbursement, PaymentLine } from "../types";
 import { sumLineAmounts } from "../../utils/line-amounts";
 import {
     isFullyPostedPurchaseOrder,
+    isPurchaseOrderReferenceTagged,
     isPostedReceivingAmount,
     postedReceivingRowsByPurchaseOrder,
+    purchaseOrderReferenceKeyFromParts,
 } from "@/app/api/fm/treasury/disbursements/_purchase-order-eligibility";
 import {
     normalizeDisbursementStatus,
     resolveDisbursementPaymentState,
 } from "@/app/api/fm/treasury/disbursements/route";
+import {
+    RELEASING_PAYMENT_SCOPE,
+    resolveDisbursementUpdateStatus,
+} from "../utils/update-scope";
+import {
+    isPettyCashBankAccount,
+    validatePaymentLine,
+} from "@/app/api/fm/treasury/disbursements/_payment-method";
+import {
+    findMissingPayableDivisionError,
+    normalizeVatSplitDivisions,
+} from "@/app/api/fm/treasury/disbursements/_payable-split-integrity";
+import {
+    isMemoLockingDisbursementStatus,
+    shouldExposeSupplierMemo,
+} from "@/app/api/fm/treasury/disbursements/_memo-cap-integrity";
 
 // 1. Business Logic Code to Test (Usually resides in controllers/utilities)
 export function validateMutation(disbursement: Pick<Disbursement, "isPosted" | "status">) {
@@ -46,6 +64,30 @@ export function evaluateReleasingCondition(totalAmount: number, paidAmount: numb
 describe("Disbursement Module Core Business Rules", () => {
 
     describe("Payment and lifecycle state reconciliation", () => {
+        it("keeps an approved voucher approved after a releasing payment-only save", () => {
+            expect(resolveDisbursementUpdateStatus(
+                "Approved",
+                RELEASING_PAYMENT_SCOPE,
+                true,
+            )).toBe("Approved");
+        });
+
+        it("keeps a partially released voucher in its current lifecycle state after a payment-only save", () => {
+            expect(resolveDisbursementUpdateStatus(
+                "Partially Released",
+                RELEASING_PAYMENT_SCOPE,
+                true,
+            )).toBe("Partially Released");
+        });
+
+        it("returns an approved voucher to approval after a normal material edit", () => {
+            expect(resolveDisbursementUpdateStatus(
+                "Approved",
+                "VOUCHER",
+                true,
+            )).toBe("Submitted");
+        });
+
         it("keeps saved payment allocations distinct from a released status", () => {
             expect(resolveDisbursementPaymentState({
                 status: "Approved",
@@ -75,6 +117,83 @@ describe("Disbursement Module Core Business Rules", () => {
 
         it("normalizes lifecycle status casing for the workflow stepper", () => {
             expect(normalizeDisbursementStatus("partially released")).toBe("Partially Released");
+        });
+    });
+
+    describe("Bank-specific check requirements", () => {
+        const pettyCashBank = {
+            bankName: "Petty Cash for Men2",
+            accountNumber: "001",
+        };
+        const regularBank = {
+            bankName: "QA Bank",
+            accountNumber: "005",
+        };
+
+        it("recognizes petty cash from the selected bank/cash account", () => {
+            expect(isPettyCashBankAccount(pettyCashBank)).toBe(true);
+            expect(isPettyCashBankAccount(regularBank)).toBe(false);
+        });
+
+        it("allows a petty-cash bank payment without a check number", () => {
+            expect(validatePaymentLine(
+                { coaId: 10, bankId: 13, checkNo: "" },
+                "Office Expenses",
+                pettyCashBank,
+            )).toBeNull();
+        });
+
+        it("still requires a check number for a regular bank payment", () => {
+            expect(validatePaymentLine(
+                { coaId: 10, bankId: 5, checkNo: "" },
+                "Office Expenses",
+                regularBank,
+            )).toBe("Please provide a check number.");
+        });
+
+        it("does not use a petty-cash GL title to exempt a regular bank", () => {
+            expect(validatePaymentLine(
+                { coaId: 10, bankId: 5, checkNo: "" },
+                "Petty Cash Fund",
+                regularBank,
+            )).toBe("Please provide a check number.");
+        });
+
+        it("requires the bank/cash account before classifying the payment", () => {
+            expect(validatePaymentLine(
+                { coaId: 10, checkNo: "" },
+                "Office Expenses",
+            )).toBe("Please select a bank account.");
+        });
+    });
+
+    describe("Payable cost division requirements", () => {
+        it("rejects a populated payable line without a Division", () => {
+            expect(findMissingPayableDivisionError([
+                { referenceNo: "INV-001", remarks: "Office supplies" },
+            ])).toBe("Cost Division is required on payable row 1.");
+        });
+
+        it("rejects zero, negative, and non-integer Division IDs", () => {
+            expect(findMissingPayableDivisionError([{ divisionId: 0 }])).toBe("Cost Division is required on payable row 1.");
+            expect(findMissingPayableDivisionError([{ divisionId: -2 }])).toBe("Cost Division is required on payable row 1.");
+            expect(findMissingPayableDivisionError([{ divisionId: 1.5 }])).toBe("Cost Division is required on payable row 1.");
+        });
+
+        it("accepts a positive integer Division ID", () => {
+            expect(findMissingPayableDivisionError([{ divisionId: 4 }])).toBeNull();
+        });
+
+        it("accepts VAT split rows after the principal Division cascades", () => {
+            const normalizedLines = normalizeVatSplitDivisions([
+                { referenceNo: "INV-002", remarks: "Principal Net of VAT", divisionId: 4 },
+                { referenceNo: "INV-002", remarks: "Input VAT (12%)" },
+                { referenceNo: "INV-002", remarks: "EWT Deduction (1%)" },
+            ]);
+
+            expect(normalizedLines[1].divisionId).toBe(4);
+            expect(normalizedLines[2].divisionId).toBe(4);
+            expect(findMissingPayableDivisionError(normalizedLines)).toBeNull();
         });
     });
     
@@ -212,6 +331,34 @@ describe("Disbursement Module Core Business Rules", () => {
                 { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
                 { isPosted: 1, is_posted_amounts: 1, is_reverted: 0 },
             ])).toBe(true);
+        });
+
+        it("matches an already-tagged PO reference regardless of separator spacing or case", () => {
+            const taggedReferences = new Set([
+                purchaseOrderReferenceKeyFromParts("PO-100", "RCV-01"),
+            ]);
+
+            expect(isPurchaseOrderReferenceTagged(" po-100 / rcv-01 ", taggedReferences)).toBe(true);
+            expect(isPurchaseOrderReferenceTagged("PO-100 / RCV-02", taggedReferences)).toBe(false);
+            expect(isPurchaseOrderReferenceTagged("Supplier memo 100", taggedReferences)).toBe(false);
+        });
+    });
+
+    describe("Supplier memo locks", () => {
+        it("locks every unposted TR workflow status", () => {
+            expect(["Draft", "Submitted", "Returned for Revision", "Approved", "Released", "Partially Released"]
+                .every(isMemoLockingDisbursementStatus)).toBe(true);
+        });
+
+        it("does not lock a memo after its TR is Posted", () => {
+            expect(isMemoLockingDisbursementStatus("Posted")).toBe(false);
+            expect(isMemoLockingDisbursementStatus("Deleted")).toBe(false);
+        });
+
+        it("keeps a fully allocated memo visible while an unposted TR holds it", () => {
+            expect(shouldExposeSupplierMemo({ remainingAmount: 0, isLocked: true })).toBe(true);
+            expect(shouldExposeSupplierMemo({ remainingAmount: 0, isLocked: false })).toBe(false);
+            expect(shouldExposeSupplierMemo({ remainingAmount: 50, isLocked: false })).toBe(true);
         });
     });
 

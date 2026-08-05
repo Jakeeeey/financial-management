@@ -4,6 +4,7 @@ import type { MatrixRow, PriceType, Unit, Supplier } from "../types";
 import { PdfEngine } from "@/components/pdf-layout-design/PdfEngine";
 import { PdfTemplate } from "@/components/pdf-layout-design/services/pdf-template";
 import { PdfData } from "@/components/pdf-layout-design/types";
+import { PRICE_MAX_DECIMAL_PLACES } from "../../shared/pricePrecision";
 
 type MatrixOptions = {
     paper?: string;
@@ -63,7 +64,7 @@ function money(v: unknown): string {
     if (!Number.isFinite(n)) return "";
     return `PHP ${n.toLocaleString("en-PH", {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 4,
+        maximumFractionDigits: PRICE_MAX_DECIMAL_PLACES,
     })}`;
 }
 

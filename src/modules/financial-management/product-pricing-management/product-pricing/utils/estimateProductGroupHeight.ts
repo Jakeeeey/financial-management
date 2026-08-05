@@ -1,4 +1,4 @@
-import type { Unit } from "../types";
+import { getRegisteredUnitIds, type RowWithVariants } from "./rowUnits";
 
 const BASE_HEADER = 88;
 const TABLE_HEADER = 36;
@@ -6,9 +6,7 @@ const TIER_ROW = 52;
 const CARD_CELL_ROW = 56;
 const PADDING = 12;
 
-type RowLike = {
-    variantsByUnitId?: Record<string, unknown>;
-};
+type RowLike = RowWithVariants;
 
 export function estimateProductGroupBlockHeight(tierCount: number): number {
     const tiers = Math.max(1, tierCount);
@@ -17,17 +15,12 @@ export function estimateProductGroupBlockHeight(tierCount: number): number {
 
 export function estimateProductGroupCardHeight(args: {
     tierCount: number;
-    usedUnits: Unit[];
     row?: RowLike;
     gridCols?: number;
 }): number {
-    const { tierCount, usedUnits, row, gridCols = 2 } = args;
+    const { tierCount, row, gridCols = 2 } = args;
 
-    const unitCount = (() => {
-        if (usedUnits.length > 0) return usedUnits.length;
-        const variantKeys = Object.keys(row?.variantsByUnitId ?? {});
-        return Math.max(1, variantKeys.length);
-    })();
+    const unitCount = Math.max(1, row ? getRegisteredUnitIds(row).length : 0);
 
     const cellCount = Math.max(1, tierCount) * unitCount;
     const gridRows = Math.ceil(cellCount / Math.max(1, gridCols));
@@ -37,14 +30,13 @@ export function estimateProductGroupCardHeight(args: {
 export function estimateProductGroupCardRowHeight(args: {
     rows: RowLike[];
     tierCount: number;
-    usedUnits: Unit[];
 }): number {
-    const { rows, tierCount, usedUnits } = args;
+    const { rows, tierCount } = args;
     if (rows.length === 0) return BASE_HEADER + PADDING;
 
     return Math.max(
         ...rows.map((row) =>
-            estimateProductGroupCardHeight({ tierCount, usedUnits, row, gridCols: 2 }),
+            estimateProductGroupCardHeight({ tierCount, row, gridCols: 2 }),
         ),
         BASE_HEADER + PADDING,
     );

@@ -4,6 +4,11 @@ import {
     directusErrorResponse,
     rejectPriceChangeBatch,
 } from "../../_batch";
+import {
+    isUnifiedBatchDetectionError,
+    rejectUnifiedBatch,
+    resolveUnifiedBatchKind,
+} from "../../../_unifiedBatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,8 +34,22 @@ export async function POST(req: NextRequest, context: RouteContext) {
             return NextResponse.json({ error: "reject_reason is required" }, { status: 400 });
         }
 
+        const batchKind = await resolveUnifiedBatchKind(headerId);
+        if (batchKind === "mixed") {
+            const result = await rejectUnifiedBatch(headerId, userId, rejectReason);
+            if ("status" in result) return NextResponse.json({ error: result.error }, { status: result.status });
+            return NextResponse.json(result);
+        }
+
         return rejectPriceChangeBatch(headerId, userId, rejectReason);
     } catch (error: unknown) {
+        if (isUnifiedBatchDetectionError(error)) {
+            console.error("[priceChangeBatchReject] Mixed-batch detection failed", error.originalError);
+            return NextResponse.json(
+                { error: error.message, code: error.code, retryable: error.retryable },
+                { status: error.status },
+            );
+        }
         return directusErrorResponse(error);
     }
 }

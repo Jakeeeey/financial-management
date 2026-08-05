@@ -18,7 +18,7 @@ export interface FormValues {
   invoice_date: string;
   dispatch_date: string;
   due_date: string;
-  gross_amount: number;
+  gross_amount: number | "";
   discount_amount: number;
   discount_type_id: string;
 }
@@ -65,14 +65,14 @@ export default function SalesOnboardingForm({
       invoice_date: todayStr,
       dispatch_date: todayStr,
       due_date: todayStr,
-      gross_amount: 0,
+      gross_amount: "",
       discount_amount: 0,
       discount_type_id: "",
     },
   });
 
   // Watch fields for reactive calculation
-  const gross = useWatch({ control, name: "gross_amount", defaultValue: 0 });
+  const gross = useWatch({ control, name: "gross_amount", defaultValue: "" });
   const discount = useWatch({ control, name: "discount_amount", defaultValue: 0 });
   const selectedSalesmanId = useWatch({ control, name: "salesman_id", defaultValue: "" });
   const selectedCustomerCode = useWatch({ control, name: "customer_code", defaultValue: "" });
@@ -237,7 +237,7 @@ export default function SalesOnboardingForm({
         invoice_date: todayStr,
         dispatch_date: todayStr,
         due_date: todayStr,
-        gross_amount: 0,
+        gross_amount: "",
         discount_amount: 0,
         discount_type_id: "",
       });
@@ -367,7 +367,7 @@ export default function SalesOnboardingForm({
               {/* Gross Amount */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                  <DollarSign size={12} /> Gross Amount (PHP)
+                  <DollarSign size={12} /> Gross Amount (PHP) <span className="text-red-500">*</span>
                 </label>
                 <Input
                   type="number"
@@ -375,10 +375,20 @@ export default function SalesOnboardingForm({
                   placeholder="0.00"
                   {...register("gross_amount", {
                     required: "Gross amount is required",
-                    min: { value: 0, message: "Must be positive" },
-                    valueAsNumber: true
+                    setValueAs: (value) => value === "" ? "" : Number(value),
+                    validate: (value) => {
+                      const numericValue = Number(value);
+                      return Number.isFinite(numericValue) && numericValue > 0
+                        ? true
+                        : "Gross amount must be greater than zero";
+                    },
                   })}
-                  className="h-10 text-xs rounded-xl font-medium border-border/60"
+                  aria-required="true"
+                  className={`h-10 text-xs rounded-xl font-medium ${
+                    errors.gross_amount
+                      ? "border-red-500 focus-visible:ring-red-500/20"
+                      : "border-border/60"
+                  }`}
                 />
                 {errors.gross_amount && (
                   <p className="text-[10px] font-bold text-red-500">{errors.gross_amount.message}</p>

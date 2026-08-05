@@ -4,6 +4,8 @@ export interface PayableLine {
     memoId?: number;
     memoType?: number;
     memoNumber?: string;
+    /** UI-only supplier snapshot used to flag memo lines after a payee change. */
+    memoSupplierId?: number;
     divisionId?: number;
     divisionName?: string;
     referenceNo: string;
@@ -97,6 +99,11 @@ export interface DisbursementPayload {
     payments?: PaymentLine[];
 }
 
+export interface PaymentAllocationPayload {
+    saveScope: "RELEASING_PAYMENT";
+    payments: PaymentLine[];
+}
+
 export interface DisbursementSubmitResult {
     success: boolean;
     code?: string;
@@ -157,12 +164,17 @@ export interface UnpaidPoDto {
 export interface MemoDto {
     id: number;
     memo_number: string;
+    supplier_id?: number;
     type: number;
     memo_type_name: string;
     date: string;
     amount: number;
     applied_amount?: number;
     remaining_amount?: number;
+    is_locked?: boolean;
+    locking_tr_doc_no?: string | null;
+    locking_tr_status?: string | null;
+    locking_tr_count?: number;
     reason: string | null;
     coa_id: number;
     account_title: string;

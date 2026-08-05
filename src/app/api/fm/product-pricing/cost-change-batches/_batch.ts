@@ -15,6 +15,8 @@ import {
     pickId,
     resolveBatchDecisionUserNames,
     resolveUserDisplayName,
+    supplierNameOf,
+    type DirectusFlagValue,
 } from "../price-change-batches/_batch";
 
 import type { NormalizedCostBulkItem } from "../cost-change-requests/_bulk";
@@ -23,6 +25,7 @@ import {
     assertValidProposedCost,
     isInvalidProposedCostError,
 } from "../cost-change-requests/_costValidation";
+import { resolveBatchReferenceNo } from "../_batchReference";
 
 export {
     decodeUserIdFromJwtCookie,
@@ -58,6 +61,13 @@ type DirectusUserRelation = {
 export type CostHeaderRow = {
     id?: number | string | null;
     header_id?: number | string | null;
+    supplier_id?: number | string | {
+        id?: number | string | null;
+        supplier_name?: string | null;
+        supplier_shortcut?: string | null;
+        isActive?: DirectusFlagValue;
+        nonBuy?: DirectusFlagValue;
+    } | null;
     reference_no?: string | null;
     remarks?: string | null;
     status?: string | null;
@@ -166,9 +176,12 @@ export function isCostBatchStorageSetupError(error: unknown): error is Error {
 
 export function mapCostBatchHeaderResponse(row: CostHeaderRow, lineCount = 0) {
     const headerId = normalizeCostHeaderId(row);
+    const supplierId = pickId(row.supplier_id);
     return {
         id: headerId,
         header_id: headerId,
+        supplier_id: supplierId,
+        supplier_name: supplierNameOf(row.supplier_id) || null,
         reference_no: row.reference_no ?? "",
         remarks: row.remarks ?? "",
         status: row.status ?? "PENDING",
@@ -187,15 +200,15 @@ export function mapCostBatchHeaderResponse(row: CostHeaderRow, lineCount = 0) {
     };
 }
 
-export async function createPendingCostBatch(args: {
+export async function createCostBatchDetails(args: {
     userId: number;
+    headerId: number;
     itemsToCreate: NormalizedCostBulkItem[];
-    referenceNo?: string;
-    remarks?: string;
+    requestedAt?: string;
 }) {
-    const { userId, itemsToCreate } = args;
+    const { userId, headerId, itemsToCreate } = args;
     if (itemsToCreate.length === 0) {
-        return { created: 0, headerId: 0, headerRow: null as CostHeaderRow | null, detailRows: [] as CostDetailRow[] };
+        return { created: 0, detailRows: [] as CostDetailRow[] };
     }
 
     const validatedItems = itemsToCreate.map((item, index) => ({
@@ -206,26 +219,7 @@ export async function createPendingCostBatch(args: {
         ),
     }));
 
-    await assertCostBatchStorageReady();
-
-    const requestedAt = nowManila();
-    const headerPayload = {
-        reference_no: args.referenceNo?.trim() || null,
-        remarks: args.remarks?.trim() || "List cost change request",
-        status: "PENDING",
-        requested_by: userId,
-        requested_at: requestedAt,
-    };
-
-    const header = await fetchDirectus<DirectusSingle<CostHeaderRow>>(`${mustBase()}/items/${COST_HEADERS}`, {
-        method: "POST",
-        headers: directusHeaders(),
-        body: JSON.stringify(headerPayload),
-    });
-
-    const headerId = header.data ? normalizeCostHeaderId(header.data) : 0;
-    if (!headerId) throw new Error("Cost change header was created without an id");
-
+    const requestedAt = args.requestedAt ?? nowManila();
     const detailPayload = validatedItems.map((item) => ({
         header_id: headerId,
         product_id: item.product_id,
@@ -261,17 +255,68 @@ export async function createPendingCostBatch(args: {
     }
 
     const linkedDetails = await getCostDetails(headerId);
-    if (linkedDetails.length === 0) {
+    if (linkedDetails.length !== detailPayload.length) {
         throw new Error(
-            "List cost batch header was created, but Directus did not save cost_change_requests.header_id. Confirm cost_change_requests.header_id exists and is writable.",
+            "List cost batch detail creation was incomplete. Confirm cost_change_requests.header_id exists and is writable.",
         );
     }
 
     return {
-        headerId,
         created: linkedDetails.length,
-        headerRow: header.data ?? { header_id: headerId },
         detailRows: linkedDetails,
+    };
+}
+
+export async function createPendingCostBatch(args: {
+    userId: number;
+    itemsToCreate: NormalizedCostBulkItem[];
+    supplierId?: number | null;
+    referenceNo?: string;
+    remarks?: string;
+}) {
+    const { userId, itemsToCreate } = args;
+    if (itemsToCreate.length === 0) {
+        return { created: 0, headerId: 0, headerRow: null as CostHeaderRow | null, detailRows: [] as CostDetailRow[] };
+    }
+
+    await assertCostBatchStorageReady();
+
+    const requestedAt = nowManila();
+    const referenceNo = resolveBatchReferenceNo(args.referenceNo, requestedAt);
+    const headerPayload = {
+        ...(args.supplierId ? { supplier_id: args.supplierId } : {}),
+        reference_no: referenceNo,
+        remarks: args.remarks?.trim() || "List cost change request",
+        status: "PENDING",
+        requested_by: userId,
+        requested_at: requestedAt,
+    };
+
+    const header = await fetchDirectus<DirectusSingle<CostHeaderRow>>(`${mustBase()}/items/${COST_HEADERS}`, {
+        method: "POST",
+        headers: directusHeaders(),
+        body: JSON.stringify(headerPayload),
+    });
+
+    const headerId = header.data ? normalizeCostHeaderId(header.data) : 0;
+    if (!headerId) throw new Error("Cost change header was created without an id");
+
+    const details = await createCostBatchDetails({
+        userId,
+        headerId,
+        itemsToCreate,
+        requestedAt,
+    });
+
+    return {
+        headerId,
+        created: details.created,
+        headerRow: {
+            ...(header.data ?? {}),
+            header_id: headerId,
+            reference_no: header.data?.reference_no?.trim() || referenceNo,
+        },
+        detailRows: details.detailRows,
     };
 }
 
@@ -281,6 +326,12 @@ export async function getCostHeader(headerId: number) {
         "fields",
         [
             "header_id",
+            "supplier_id",
+            "supplier_id.id",
+            "supplier_id.supplier_name",
+            "supplier_id.supplier_shortcut",
+            "supplier_id.isActive",
+            "supplier_id.nonBuy",
             "reference_no",
             "remarks",
             "status",
@@ -411,7 +462,13 @@ export async function approveCostBatch(headerId: number, userId: number, effecti
         }
     }
 
-    const { executeClaimedApplication, refreshBatchApplicationStatus, stageBatchApproval } =
+    const {
+        executeClaimedApplication,
+        fallbackApplicationStatus,
+        postCommitApplicationNotice,
+        refreshBatchApplicationStatus,
+        stageBatchApproval,
+    } =
         await import("../_applicationEngine");
     const staged = await stageBatchApproval({ detailCollection: COST_DETAILS, headerId, userId, effectiveAt });
     if (!staged) {
@@ -420,43 +477,76 @@ export async function approveCostBatch(headerId: number, userId: number, effecti
 
     let applied = 0;
     let failed = 0;
+    let warning: string | null = null;
+    let retryable = false;
     if (!staged.scheduled) {
-        const stagedDetails = await getCostDetails(headerId);
-        for (const row of stagedDetails) {
-            const outcome = await executeClaimedApplication({
-                collection: COST_DETAILS,
-                row,
-                userId,
-                apply: async (claimed) => {
-                    const product_id = normalizeCostProductId(claimed);
-                    const proposed_cost = Number(claimed.proposed_cost);
-                    if (!product_id || !Number.isFinite(proposed_cost)) {
-                        throw new Error("Cost batch contains an invalid detail line.");
-                    }
-                    await patchProductCostField({ product_id, proposed_cost, userId });
-                },
-            });
-            if (outcome.state === "applied") applied += 1;
-            if (outcome.state === "failed") failed += 1;
+        try {
+            const stagedDetails = await getCostDetails(headerId);
+            for (const row of stagedDetails) {
+                const outcome = await executeClaimedApplication({
+                    collection: COST_DETAILS,
+                    row,
+                    userId,
+                    apply: async (claimed) => {
+                        const product_id = normalizeCostProductId(claimed);
+                        const proposed_cost = Number(claimed.proposed_cost);
+                        if (!product_id || !Number.isFinite(proposed_cost)) {
+                            throw new Error("Cost batch contains an invalid detail line.");
+                        }
+                        await patchProductCostField({ product_id, proposed_cost, userId });
+                    },
+                });
+                if (outcome.state === "applied") applied += 1;
+                if (outcome.state === "failed") failed += 1;
+            }
+        } catch (error: unknown) {
+            const notice = postCommitApplicationNotice(error, "list cost application");
+            warning = notice.warning;
+            retryable = notice.retryable;
         }
     }
 
-    const applicationStatus = await refreshBatchApplicationStatus({
-        detailCollection: COST_DETAILS,
-        headerId,
-        userId,
-    });
-    if (applied > 0) invalidateGroupIndexCacheOnCatalogChange();
+    let applicationStatus: string | null = null;
+    try {
+        applicationStatus = await refreshBatchApplicationStatus({
+            detailCollection: COST_DETAILS,
+            headerId,
+            userId,
+        });
+    } catch (error: unknown) {
+        const notice = postCommitApplicationNotice(error, "application status reconciliation");
+        warning = warning ?? notice.warning;
+        retryable = notice.retryable;
+    }
+    if (failed > 0) {
+        warning = warning ?? "Approval was saved, but one or more list cost lines failed to apply. Retry application from the batch details.";
+        retryable = true;
+    }
+    if (applied > 0) {
+        try {
+            invalidateGroupIndexCacheOnCatalogChange();
+        } catch (error: unknown) {
+            const notice = postCommitApplicationNotice(error, "pricing cache refresh");
+            warning = warning ?? notice.warning;
+            retryable = notice.retryable;
+        }
+    }
+
+    const affected = normalized.length;
 
     return NextResponse.json({
         ok: true,
+        committed: true,
         header_id: headerId,
-        affected: normalized.length,
+        affected,
         applied,
         failed,
-        application_status: applicationStatus ?? "SCHEDULED",
+        scheduled: staged.scheduled,
+        application_status: applicationStatus ?? fallbackApplicationStatus({ scheduled: staged.scheduled, applied, failed, affected }),
         effective_at: staged.effectiveAt,
-    }, { status: failed > 0 ? 202 : 200 });
+        warning,
+        retryable,
+    }, { status: failed > 0 || retryable ? 202 : 200 });
 }
 
 export async function rejectCostBatch(headerId: number, userId: number, rejectReason: string) {
@@ -467,6 +557,7 @@ export async function rejectCostBatch(headerId: number, userId: number, rejectRe
     }
 
     const details = await getCostDetails(headerId);
+    const rejectedAt = nowManila();
 
     await fetchDirectus(`${mustBase()}/items/${COST_HEADERS}/${headerId}`, {
         method: "PATCH",
@@ -474,7 +565,7 @@ export async function rejectCostBatch(headerId: number, userId: number, rejectRe
         body: JSON.stringify({
             status: "REJECTED",
             rejected_by: userId,
-            rejected_at: nowManila(),
+            rejected_at: rejectedAt,
             reject_reason: rejectReason,
         }),
     });
@@ -489,6 +580,8 @@ export async function rejectCostBatch(headerId: number, userId: number, rejectRe
                     headers: directusHeaders(),
                     body: JSON.stringify({
                         status: "REJECTED",
+                        rejected_by: userId,
+                        rejected_at: rejectedAt,
                         reject_reason: rejectReason,
                     }),
                 }),

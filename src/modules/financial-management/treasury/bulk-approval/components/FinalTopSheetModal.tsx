@@ -439,16 +439,6 @@ export default function FinalTopSheetModal({
     [stagedDecisions]
   );
   const stagedDecisionCount = stagedDecisionEntries.length;
-  const stagedDecisionSummary = React.useMemo(() => {
-    return stagedDecisionEntries.reduce(
-      (summary, item) => ({
-        approved: summary.approved + (item.status === "Approved" ? 1 : 0),
-        concern: summary.concern + (item.status === "With Concern" ? 1 : 0),
-        rejected: summary.rejected + (item.status === "Rejected" ? 1 : 0),
-      }),
-      { approved: 0, concern: 0, rejected: 0 }
-    );
-  }, [stagedDecisionEntries]);
 
   const stagedApprovedStats = React.useMemo(() => {
     if (!data) return { count: 0, amount: 0 };
@@ -473,6 +463,18 @@ export default function FinalTopSheetModal({
       amount: totalAmount,
     };
   }, [stagedDecisionEntries, data]);
+
+  const existingConcernDetails = React.useMemo(() => {
+    return (data?.details ?? []).filter(
+      (detail) => (detail.status ?? "").toLowerCase() === "with concern"
+    );
+  }, [data?.details]);
+
+  const stagedConcernCount = React.useMemo(() => {
+    return stagedDecisionEntries.filter((item) => item.status === "With Concern").length;
+  }, [stagedDecisionEntries]);
+
+  const totalConcernCount = existingConcernDetails.length + stagedConcernCount;
 
   const isRejectedHistory = !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s.toLowerCase() === "rejected")) && !canSubmitFinalAction;
   const isApprovedHistory = !isRejectedHistory && !!((data?.group?.draft_statuses?.length ?? 0) > 0 && data?.group?.draft_statuses?.every((s) => s === "Approved" || s === "Rejected" || s === "Posted")) && !canSubmitFinalAction;
@@ -836,20 +838,41 @@ export default function FinalTopSheetModal({
       setSubmitting(true);
 
       for (const item of stagedDecisionEntries) {
-        if (requiresLineRemarks(item.status) && data) {
+        // "With Concern" items are automatically rejected upon final posting
+        const targetStatus = item.status === "With Concern" ? "Rejected" : item.status;
+
+        if (requiresLineRemarks(targetStatus) && data) {
           const affectedDetails = getDetailsForTarget(data.details, item.target);
           for (const detail of affectedDetails) {
             await submitSingleDecisionRequest({
-              status: item.status,
+              status: targetStatus,
               target: { scope: "expense_ids", expense_ids: [detail.expense_id] },
               decisionRemarks: getLineRemark(lineRemarks, detail.expense_id) || remarks.trim(),
             });
           }
         } else {
           await submitSingleDecisionRequest({
-            status: item.status,
+            status: targetStatus,
             target: item.target,
             decisionRemarks: remarks.trim(),
+          });
+        }
+      }
+
+      // Automatically reject any existing "With Concern" details that were not explicitly staged
+      for (const concernDetail of existingConcernDetails) {
+        const isAlreadyStaged = stagedDecisionEntries.some((entry) => {
+          const affected = getDetailsForTarget(data?.details ?? [], entry.target);
+          return affected.some((d) => d.expense_id === concernDetail.expense_id);
+        });
+
+        if (!isAlreadyStaged) {
+          await submitSingleDecisionRequest({
+            status: "Rejected",
+            target: { scope: "expense_ids", expense_ids: [concernDetail.expense_id] },
+            decisionRemarks:
+              getLineRemark(lineRemarks, concernDetail.expense_id) ||
+              `Automatically rejected due to unresolved concern upon final top sheet submission: ${remarks.trim()}`,
           });
         }
       }
@@ -934,14 +957,6 @@ export default function FinalTopSheetModal({
                     </Badge>
                   </div>
                 )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-xl text-slate-400 dark:text-white/40 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <XCircle className="h-4 w-4" />
-                </Button>
               </div>
             </div>
           </div>
@@ -1121,64 +1136,24 @@ export default function FinalTopSheetModal({
             )}
           </div>
 
-          {!isApprovedHistory && !isRejectedHistory && (
-            <div className="shrink-0 border-t dark:border-slate-800 bg-white dark:bg-slate-950 px-6 py-4 shadow-[0_-10px_40px_-20px_rgba(0,0,0,0.1)] dark:shadow-none">
-              <div className="flex items-center justify-between gap-6 max-w-7xl mx-auto">
-                <div className="flex items-center gap-5">
-                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Consolidated Value</span>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xl font-black text-slate-900 dark:text-slate-100 tabular-nums">{formatCurrency(data?.grand_total ?? 0)}</span>
-                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{data?.details.length ?? 0} Lines</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 pl-6 border-l border-slate-100 dark:border-slate-800">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">COA Actions:</span>
-                    <div className="flex items-center gap-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 p-1 border dark:border-slate-800">
-                      <span className="rounded-lg bg-white dark:bg-slate-800 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 shadow-sm dark:shadow-none">
-                        Approved {stagedDecisionSummary.approved}
-                      </span>
-                      <span className="rounded-lg bg-white dark:bg-slate-800 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400 shadow-sm dark:shadow-none">
-                        Concern {stagedDecisionSummary.concern}
-                      </span>
-                      <span className="rounded-lg bg-white dark:bg-slate-800 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400 shadow-sm dark:shadow-none">
-                        Rejected {stagedDecisionSummary.rejected}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <button 
-                    className="text-[9px] font-black uppercase tracking-widest text-slate-300 hover:text-slate-500 transition-colors px-2" 
-                    onClick={() => onOpenChange(false)}
-                  >
-                    Cancel Review
-                  </button>
-                  <div className="h-8 w-px bg-slate-100 dark:bg-slate-800" />
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-11 rounded-xl bg-slate-900 dark:bg-slate-100 px-8 text-[10px] font-black uppercase tracking-[0.15em] text-white dark:text-slate-900 shadow-lg dark:shadow-none transition-all hover:bg-primary active:scale-[0.98] gap-2 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:shadow-none"
-                    onClick={handleInitiateFinalSubmit}
-                    disabled={submitting || loading || !data || !canSubmitFinalAction || stagedDecisionCount === 0}
-                  >
-                    {submitting ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <ShieldCheck size={16} />
-                    )}
-                    <span>
-                      {stagedDecisionCount > 0 
-                        ? `Submit ${stagedDecisionCount} Decisions` 
-                        : "Submit Audit"}
-                    </span>
-                  </Button>
-                </div>
+          {/* Bottom footer with close action */}
+          <div className="shrink-0 border-t dark:border-slate-800 bg-white dark:bg-slate-950 px-6 py-3">
+            <div className="flex items-center justify-between gap-4 max-w-7xl mx-auto">
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 dark:text-slate-500 font-bold">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                Audit Consensus Engine — Immutable Trail
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 rounded-xl border-slate-200 dark:border-slate-700 px-6 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                onClick={() => onOpenChange(false)}
+              >
+                Close Review
+              </Button>
             </div>
-          )}
+          </div>
 
           {(isApprovedHistory || isRejectedHistory) && (
             <div className="shrink-0 border-t dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-6 py-4">
@@ -1423,6 +1398,20 @@ export default function FinalTopSheetModal({
                   <p className="text-[10px] font-black uppercase tracking-widest text-amber-900 dark:text-amber-400 leading-none">Irreversible Posting Action</p>
                   <p className="text-[11px] text-amber-700 dark:text-amber-500 font-medium leading-relaxed">
                     This audit will <strong>permanently post</strong> approved staged items to the live Disbursement table. Items marked &quot;With Concern&quot; or &quot;Rejected&quot; will be excluded from posting.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {totalConcernCount > 0 && (
+              <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 rounded-2xl p-4 flex items-start gap-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
+                <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-900 dark:text-rose-300 leading-none">
+                    Automatic Rejection Warning ({totalConcernCount} Item{totalConcernCount > 1 ? "s" : ""} With Concern)
+                  </p>
+                  <p className="text-[11px] text-rose-700 dark:text-rose-400 font-medium leading-relaxed">
+                    There {totalConcernCount === 1 ? "is 1 item" : `are ${totalConcernCount} items`} currently marked <strong>&quot;With Concern&quot;</strong>. Submitting this Final Top Sheet to disbursement will <strong>automatically reject all items with concern</strong> so that only clean, verified expenses are posted.
                   </p>
                 </div>
               </div>

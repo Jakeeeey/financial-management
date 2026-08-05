@@ -361,6 +361,8 @@ export async function POST(req: NextRequest) {
             product_id: number;
             proposed_cost: number;
             current_cost?: number;
+            reference_no?: string;
+            remarks?: string;
         }>;
 
         const product_id = Number(body.product_id);
@@ -386,13 +388,15 @@ export async function POST(req: NextRequest) {
         const created = await createPendingCostRequests({
             userId,
             itemsToCreate: plan.itemsToCreate,
-            remarks: "List cost change request",
+            referenceNo: body.reference_no,
+            remarks: body.remarks || "List cost change request",
         });
 
         return NextResponse.json(
             {
                 created: created.created,
                 header_id: created.headerId,
+                reference_no: created.headerRow?.reference_no ?? null,
                 data: created.detailRows[0] ?? null,
                 skipped_duplicates: plan.skippedDuplicates,
                 skipped_existing_pending: plan.skippedExistingPending,

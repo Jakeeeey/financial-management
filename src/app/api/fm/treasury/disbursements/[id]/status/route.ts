@@ -201,6 +201,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const payables = lineItems.payables.get(id) || [];
         const payments = lineItems.payments.get(id) || [];
         const coaMap = await getCoaMap();
+        const bankMap = await getBankMap();
 
         releaseMemoCapLock = await acquireMemoCapLock(
             payables.map((line) => ({ referenceNo: line.reference_no, amount: line.amount })),
@@ -218,13 +219,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             : null;
         if (memoCapError) {
             return NextResponse.json({
-                message: "Supplier memo amount exceeds its authorized cap.",
+                message: memoCapError.isLocked
+                    ? "Supplier memo is currently locked by an unposted TR."
+                    : "Supplier memo amount exceeds its authorized cap.",
                 detail: memoCapError.message,
                 memoNumber: memoCapError.memoNumber,
                 authorizedAmount: memoCapError.authorizedAmount,
                 appliedAmount: memoCapError.appliedAmount,
                 requestedAmount: memoCapError.requestedAmount,
                 remainingAmount: memoCapError.remainingAmount,
+                isLocked: memoCapError.isLocked || false,
+                lockingTrDocNo: memoCapError.lockingTrDocNo || null,
+                lockingTrStatus: memoCapError.lockingTrStatus || null,
+                lockingTrCount: memoCapError.lockingTrCount || 0,
             }, { status: 409 });
         }
 
@@ -330,7 +337,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                         coaId: relationId(line.coa_id, "coa_id"),
                         bankId: relationId(line.bank_id as never),
                         checkNo: line.check_no,
-                    }, coaMap.get(relationId(line.coa_id, "coa_id") || 0));
+                    },
+                    coaMap.get(relationId(line.coa_id, "coa_id") || 0),
+                    bankMap.get(relationId(line.bank_id as never) || 0));
                     if (validationError) {
                         return NextResponse.json({
                             message: validationError,
@@ -349,6 +358,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
                 // Dynamically determine status based on total paid amount vs total voucher amount
                 const totalVoucherAmount = Number(currentDis.total_amount) || 0;
+                if (totalPaidPayments > totalVoucherAmount + 0.01) {
+                    return NextResponse.json({
+                        message: "Payment total cannot exceed the voucher total.",
+                        detail: `Payments total ${totalPaidPayments.toFixed(2)} exceeds voucher total ${totalVoucherAmount.toFixed(2)}.`,
+                    }, { status: 400 });
+                }
                 if (Math.abs(totalVoucherAmount - totalPaidPayments) < 0.01) {
                     newStatus = "Released";
                 } else {
@@ -401,8 +416,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 isPosted = 1;
                 postedBy = currentUserId;
                 datePosted = new Date().toISOString();
-                // Lock applied memos
-                await lockAppliedMemos(payables, currentPayeeId);
                 // Sync PO statuses
                 await syncPurchaseOrderStatuses(currentDis, payables);
                 break;
@@ -447,7 +460,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (!patchRes.ok) throw new Error(await patchRes.text());
         const updatedDis = (await patchRes.json()).data;
 
-        if (status === "Returned for Revision") {
+        if (status === "Posted" || status === "Returned for Revision") {
             await lockAppliedMemos(payables, currentPayeeId);
         }
 
@@ -469,7 +482,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         const userMap = await getUserMap(token, userIdsToFetch);
         const divisionMap = await getDivisionMap();
-        const bankMap = await getBankMap();
         const normalized = normalizeDisbursement(updatedDis, lineItems.payables, lineItems.payments, userMap, coaMap, divisionMap, bankMap);
 
         return NextResponse.json(normalized);

@@ -13,7 +13,7 @@ import { assertValidProposedCost } from "./_costValidation";
 export const CCR = "cost_change_requests";
 const PRODUCTS = "products";
 
-const CCR_FIELDS = "request_id,product_id,current_cost,proposed_cost,status,effective_at,application_status,applied_at,applied_by,application_lock_id,application_started_at,application_attempts,application_error,requested_by";
+const CCR_FIELDS = "request_id,product_id,current_cost,proposed_cost,status,effective_at,application_status,applied_at,applied_by,approved_by,application_lock_id,application_started_at,application_attempts,application_error,requested_by";
 
 export type CcrRow = {
     request_id?: number | string | null;
@@ -26,6 +26,7 @@ export type CcrRow = {
     application_status?: string | null;
     applied_at?: string | null;
     applied_by?: number | string | null;
+    approved_by?: number | string | null;
     application_lock_id?: string | null;
     application_started_at?: string | null;
     application_attempts?: number | string | null;

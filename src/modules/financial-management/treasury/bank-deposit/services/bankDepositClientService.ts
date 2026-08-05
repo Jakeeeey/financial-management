@@ -1,10 +1,36 @@
 import { fetchProvider } from "../providers/fetchProvider";
-import { VaultAsset, ActiveBankAccount, DepositSlip, PrepareDepositPayload, PaginatedResponse } from "../types";
+import {
+    VaultAsset,
+    ActiveBankAccount,
+    DepositSlip,
+    ClearDepositPayload,
+    ClearDepositResponse,
+    PrepareDepositPayload,
+    PaginatedResponse,
+    VaultAssetFilters,
+} from "../types";
 
 export const BankDepositClientService = {
 
-    getVaultAssets: async (page: number = 0, size: number = 50, search: string = ""): Promise<PaginatedResponse<VaultAsset> | null> => {
-        return await fetchProvider.get<PaginatedResponse<VaultAsset>>(`/api/fm/treasury/bank-deposits/vault?page=${page}&size=${size}&search=${encodeURIComponent(search)}`);
+    getVaultAssets: async (
+        page: number = 0,
+        size: number = 50,
+        filters?: Partial<VaultAssetFilters>,
+    ): Promise<PaginatedResponse<VaultAsset> | null> => {
+        const params = new URLSearchParams({
+            page: String(page),
+            size: String(size),
+        });
+
+        if (filters?.type && filters.type !== "ALL") params.set("type", filters.type);
+        if (filters?.documentNumber?.trim()) params.set("documentNumber", filters.documentNumber.trim());
+        if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
+        if (filters?.dateTo) params.set("dateTo", filters.dateTo);
+        if (filters?.bankName) params.set("bankName", filters.bankName);
+
+        return await fetchProvider.get<PaginatedResponse<VaultAsset>>(
+            `/api/fm/treasury/bank-deposits/vault?${params.toString()}`,
+        );
     },
 
     getActiveBanks: async (): Promise<ActiveBankAccount[]> => {
@@ -24,8 +50,21 @@ export const BankDepositClientService = {
     },
 
     // 🚀 FIXED: Changed /api/v1/ to /api/fm/
-    clearDeposit: async (id: number): Promise<{ message: string } | null> => {
-        return await fetchProvider.post<{ message: string }>(`/api/fm/treasury/bank-deposits/${id}/clear`, {});
+    clearDeposit: async (id: number, payload: ClearDepositPayload): Promise<ClearDepositResponse | null> => {
+        const formData = new FormData();
+        const depositReference = payload.depositReference.trim();
+
+        if (depositReference) {
+            formData.append("depositReference", depositReference);
+        }
+        if (payload.validationDocument) {
+            formData.append("validationDocument", payload.validationDocument, payload.validationDocument.name);
+        }
+
+        return await fetchProvider.postForm<ClearDepositResponse>(
+            `/api/fm/treasury/bank-deposits/${id}/clear`,
+            formData,
+        );
     },
 
     // 🚀 FIXED: Changed /api/v1/ to /api/fm/

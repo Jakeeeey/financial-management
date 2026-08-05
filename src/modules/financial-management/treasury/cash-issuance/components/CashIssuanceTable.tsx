@@ -61,18 +61,20 @@ export function CashIssuanceTable({ data, loading, onView }: CashIssuanceTablePr
                                 </TableCell>
                                 <TableCell className="align-top py-4">
                                     <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-1.5 text-foreground/80">
-                                            <Building2 className="w-3 h-3 opacity-50" />
-                                            <span className="text-[10px] font-bold uppercase truncate">{d.divisionName || "No Division"}</span>
-                                        </div>
-                                        <span className="text-[9px] font-bold text-muted-foreground uppercase ml-4.5 truncate">{d.departmentName || "No Department"}</span>
+                                        {d.divisionName && (
+                                            <div className="flex items-center gap-1.5 text-foreground/80">
+                                                <Building2 className="w-3 h-3 opacity-50" />
+                                                <span className="text-[10px] font-bold uppercase truncate">{d.divisionName}</span>
+                                            </div>
+                                        )}
+                                        <span className={`text-[9px] font-bold text-muted-foreground uppercase ${d.divisionName ? "ml-4.5" : ""} truncate`}>{d.departmentName || "No Department"}</span>
                                     </div>
                                 </TableCell>
                                 <TableCell className="align-top py-4 text-right">
                                     <div className="flex flex-col gap-1 items-end">
                                         <span className="text-xs font-black text-foreground">{formatCurrency(d.totalAmount)}</span>
                                         <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-500">
-                                            <Wallet className="w-3 h-3" /> {getPaymentStateLabel(d.paymentState)}: {formatCurrency(d.paidAmount || 0)}
+                                            <Wallet className="w-3 h-3" /> {getPaymentStateLabel(d.paymentState, d.paidAmount)}: {formatCurrency(d.paidAmount || 0)}
                                         </div>
                                     </div>
                                 </TableCell>

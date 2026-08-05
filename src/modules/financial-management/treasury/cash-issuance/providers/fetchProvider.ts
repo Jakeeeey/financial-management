@@ -4,6 +4,7 @@
 import {
     Disbursement,
     DisbursementPayload,
+    PaymentAllocationPayload,
     PaginatedResponse,
     SupplierDto,
     COADto,
@@ -21,13 +22,17 @@ const SUPPLIER_API_BASE = "/api/fm/treasury/suppliers";
 
 export class DisbursementRequestError extends Error {
     readonly code?: string;
+    readonly detail?: string;
     readonly nextDocNo?: string;
+    readonly statusCode?: number;
 
-    constructor(message: string, code?: string, nextDocNo?: string) {
+    constructor(message: string, code?: string, nextDocNo?: string, detail?: string, statusCode?: number) {
         super(message);
         this.name = "DisbursementRequestError";
         this.code = code;
+        this.detail = detail;
         this.nextDocNo = nextDocNo;
+        this.statusCode = statusCode;
     }
 }
 
@@ -76,9 +81,15 @@ export const disbursementProvider = {
             method: "PATCH",
         });
         if (!res.ok) {
-            // 🚀 Catch the BFF/Spring Boot error payload!
             const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.detail || errData.message || errData.error || "Failed to update status");
+            const message = typeof errData.message === "string"
+                ? errData.message
+                : typeof errData.error === "string"
+                    ? errData.error
+                    : "Failed to update status";
+            const detail = typeof errData.detail === "string" ? errData.detail : undefined;
+
+            throw new DisbursementRequestError(message, undefined, undefined, detail, res.status);
         }
         return res.json();
     },
@@ -134,7 +145,27 @@ export const disbursementProvider = {
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error("Failed to update disbursement");
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || "Failed to update disbursement");
+        }
+        return res.json();
+    },
+
+    updatePaymentAllocation: async (id: number, payments: PaymentAllocationPayload["payments"]): Promise<Disbursement> => {
+        const payload: PaymentAllocationPayload = {
+            saveScope: "RELEASING_PAYMENT",
+            payments,
+        };
+        const res = await fetch(`${API_BASE}/${id}`, {
+            method: "PUT",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || "Failed to save payment allocation");
+        }
         return res.json();
     },
 
@@ -151,10 +182,12 @@ export const disbursementProvider = {
         return data as UnpaidPoDto[];
     },
 
-    getSupplierMemos: async (supplierId: number): Promise<MemoDto[]> => {
-        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`);
-        if (!res.ok) throw new Error("Failed to fetch supplier memos");
-        return res.json();
+    getSupplierMemos: async (supplierId: number, signal?: AbortSignal): Promise<MemoDto[]> => {
+        const res = await fetch(`/api/fm/treasury/disbursements/memos/${supplierId}`, { signal });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.detail || data?.message || "Failed to fetch supplier memos");
+        if (!Array.isArray(data)) throw new Error("Supplier memos returned an invalid response");
+        return (data as MemoDto[]).filter((memo) => Number(memo.supplier_id) === Number(supplierId));
     },
 
     getDivisions: async (): Promise<DivisionDto[]> => {

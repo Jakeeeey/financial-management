@@ -14,7 +14,7 @@ function normalizedReference(referenceNo: unknown) {
 function normalizedDivisionId(divisionId: unknown) {
     if (divisionId == null || divisionId === "") return undefined;
     const parsed = Number(divisionId);
-    return Number.isFinite(parsed) ? parsed : undefined;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function isVatPrincipalLine(line: PayableSplitInput) {
@@ -65,6 +65,13 @@ export function findMissingVatPrincipalDivisionError(lines: PayableSplitInput[])
     }
 
     return null;
+}
+
+export function findMissingPayableDivisionError(lines: PayableSplitInput[]) {
+    const invalidIndex = lines.findIndex((line) => normalizedDivisionId(line.divisionId) === undefined);
+    return invalidIndex >= 0
+        ? `Cost Division is required on payable row ${invalidIndex + 1}.`
+        : null;
 }
 
 export function findVatSplitDivisionError(lines: PayableSplitInput[]) {

@@ -9,6 +9,7 @@ import { CashIssuanceViewDialog } from "./components/CashIssuanceViewDialog";
 import { CashIssuanceDashboardTab } from "./components/CashIssuanceDashboardTab";
 import { Disbursement } from "./types";
 import { disbursementProvider } from "./providers/fetchProvider";
+import { SearchableDropdown } from "./components/SearchableDropdown";
 import { AddPayeeModal } from "@/modules/financial-management/payee-registration/components/modals/add-payee-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,7 @@ type CashIssuanceSubModule = "preparation" | "approval" | "releasing" | "posting
 const SUBMODULE_STATUS_FILTERS: Record<CashIssuanceSubModule, string> = {
     preparation: "Draft,Submitted,Returned for Revision",
     approval: "Submitted",
-    releasing: "Approved",
+    releasing: "Approved,Partially Released",
     posting: "Released",
     all: "All",
     dashboard: "All",
@@ -44,7 +45,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
     const {
         data, loading, page, setPage, size, changeSize, totalPages,
         activeType, handleTabChange, refresh,
-        create, update, changeStatus, actionLoading,
+        create, update, updatePaymentAllocation, changeStatus, actionLoading,
         supplierSearch, setSupplierSearch, startDate, setStartDate, endDate, setEndDate,
         statusFilter, setStatusFilter, divisionFilter, setDivisionFilter, departmentFilter, setDepartmentFilter, docNoSearch, setDocNoSearch,
         applyFilters, clearFilters, filterSuppliers, divisions, departments
@@ -333,6 +334,7 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                                 <option value="Draft">Draft</option>
                                                 <option value="Submitted">Submitted</option>
                                                 <option value="Approved">Approved</option>
+                                                <option value="Partially Released">Partially Released</option>
                                                 <option value="Released">Released</option>
                                                 <option value="Posted">Posted</option>
                                                 <option value="Returned for Revision">Returned</option>
@@ -343,14 +345,20 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                                     {/* Division */}
                                     <div className="space-y-2">
                                         <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Cost Division</Label>
-                                        <select className="h-9 w-full rounded-lg border border-border/50 bg-background px-3 text-xs font-bold uppercase text-foreground shadow-sm focus:ring-1 focus:ring-primary/30 transition-all outline-none" value={divisionFilter} onChange={e => setDivisionFilter(e.target.value)}>
-                                            <option value="">All Divisions</option>
-                                            {divisions.map((d, idx) => (
-                                                <option key={`f-div-${d.divisionId|| idx}`} value={d.divisionId}>
-                                                    {d.divisionName}
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <SearchableDropdown<string>
+                                            options={[
+                                                { value: "", label: "All Divisions" },
+                                                ...divisions.map((d, idx) => ({
+                                                    value: String(d.divisionId),
+                                                    label: d.divisionName || `Division-${d.divisionId || idx}`,
+                                                })),
+                                            ]}
+                                            value={divisionFilter}
+                                            onSelect={setDivisionFilter}
+                                            placeholder="All Divisions"
+                                            className="h-9 w-full rounded-lg border border-border/50 bg-background px-3 text-xs font-bold uppercase text-foreground shadow-sm focus:ring-1 focus:ring-primary/30 transition-all outline-none"
+                                            popoverWidth="w-[280px]"
+                                        />
                                     </div>
 
                                     {/* Department */}
@@ -452,7 +460,9 @@ export default function CashIssuanceModule({ initialSubModule = "preparation" }:
                 open={isCreateOpen}
                 onOpenChange={setIsCreateOpen}
                 onSubmit={(payload) => formMode === "edit" ? update(selectedDisbursement!.id, payload) : create(payload)}
+                onPaymentAllocationSubmit={updatePaymentAllocation}
                 editData={formMode === "edit" ? selectedDisbursement : null}
+                allowPaymentEditing={subModule === "releasing"}
                 loading={actionLoading}
             />
 

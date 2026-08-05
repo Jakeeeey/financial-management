@@ -4,14 +4,12 @@
 import * as React from "react";
 import {
   AlertTriangle,
-  CheckCircle2,
   LockKeyhole,
   MousePointerClick,
   XCircle,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -24,7 +22,6 @@ import {
 import type {
   FinalDecisionTarget,
   FinalHeaderDecisionStatus,
-  FinalTopSheetCellResponse,
   FinalTopSheetResponse,
 } from "../type";
 import { formatCurrency } from "../utils/format";
@@ -43,14 +40,7 @@ type Props = {
   onSubmitStaged: () => void | Promise<void>;
 };
 
-type ActionButtonSetProps = {
-  disabled: boolean;
-  label: string;
-  activeStatus: FinalHeaderDecisionStatus | null;
-  onToggle: (status: FinalHeaderDecisionStatus) => void;
-};
-
-function getCell(cells: FinalTopSheetCellResponse[], employeeId: number, headerId?: number) {
+function getCell(cells: FinalTopSheetResponse["coa_rows"][number]["cells"], employeeId: number, headerId?: number) {
   return cells.find((cell) => {
     if (cell.employee_id !== employeeId) return false;
     if (headerId !== undefined && cell.header_id !== undefined && cell.header_id !== headerId) return false;
@@ -78,50 +68,14 @@ function buildEncoderTotals(data: FinalTopSheetResponse) {
   return totals;
 }
 
-function ActionButtonSet({
-  disabled,
-  label,
-  activeStatus,
-  onToggle,
-}: ActionButtonSetProps) {
-  return (
-    <div
-      className="flex items-center justify-end gap-1"
-      aria-label={label}
-      onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
-    >
-      <Button
-        type="button"
-        size="icon"
-        variant="outline"
-        className={`h-7 w-7 rounded-lg transition-all ${
-          activeStatus === "Rejected"
-            ? "bg-rose-500 text-white border-rose-500 shadow-sm"
-            : "border-rose-200 text-rose-600 hover:bg-rose-50"
-        }`}
-        disabled={disabled}
-        onClick={() => onToggle("Rejected")}
-        title={`Stage Rejection for ${label}`}
-      >
-        <XCircle className="h-3.5 w-3.5" />
-      </Button>
-    </div>
-  );
-}
-
 export default function FinalTopSheetMatrix({
   data,
-  submitting,
   canAct,
   readOnlyReason,
   stagedDecisions,
   onOpenAuditeeDetails,
-  onToggleDecision,
-  onSubmitStaged,
 }: Props) {
   const encoderTotals = React.useMemo(() => buildEncoderTotals(data), [data]);
-  const stagedCount = Object.keys(stagedDecisions).length;
 
   const [activeTab, setActiveTab] = React.useState<"pending" | "archived">("pending");
 
@@ -145,6 +99,13 @@ export default function FinalTopSheetMatrix({
 
     return { pendingSalesmen: pending, archivedSalesmen: archived };
   }, [data]);
+
+  // Auto-switch to archived tab when all records are finalized/decided
+  React.useEffect(() => {
+    if (pendingSalesmen.length === 0 && archivedSalesmen.length > 0) {
+      setActiveTab("archived");
+    }
+  }, [pendingSalesmen.length, archivedSalesmen.length]);
 
   const visibleSalesmen = activeTab === "pending" ? pendingSalesmen : archivedSalesmen;
 
@@ -194,21 +155,7 @@ export default function FinalTopSheetMatrix({
               </button>
             </div>
 
-            {stagedCount > 0 && (
-              <div className="flex items-center gap-2 animate-in slide-in-from-left-2 duration-300">
-                <div className="h-4 w-px bg-slate-200 dark:bg-slate-800" />
-                <Button
-                  size="sm"
-                  className="h-8 rounded-xl bg-slate-900 px-4 text-[10px] font-black uppercase tracking-widest text-white shadow-lg shadow-slate-900/20 hover:bg-primary transition-all active:scale-95"
-                  onClick={onSubmitStaged}
-                  disabled={submitting}
-                >
-                  <CheckCircle2 className="mr-2 h-3.5 w-3.5 text-emerald-400" />
-                  Submit {stagedCount} Staged Decision
-                  {stagedCount !== 1 ? "s" : ""}
-                </Button>
-              </div>
-            )}
+            {/* Submit staged decisions button removed — use Submit to Disbursement inside the auditee detail modal */}
           </div>
           <div className="flex items-center gap-2">
             {!canAct ? (
@@ -269,16 +216,16 @@ export default function FinalTopSheetMatrix({
               <TableHead className="sticky right-0 z-40 w-[80px] bg-slate-50 dark:bg-slate-950 px-2 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
                 Total
               </TableHead>
-              <TableHead className="sticky right-0 z-40 w-[100px] bg-slate-50 dark:bg-slate-950 px-3 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
+              {/* <TableHead className="sticky right-0 z-40 w-[100px] bg-slate-50 dark:bg-slate-950 px-3 py-2 border-b dark:border-slate-800 text-right text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 dark:text-white/40">
                 Audit
-              </TableHead>
+              </TableHead> */}
             </TableRow>
           </TableHeader>
           <TableBody>
             {visibleSalesmen.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={data.coa_rows.length + 2}
+                  colSpan={data.coa_rows.length + 1}
                   className="h-[400px] text-center"
                 >
                   <div className="flex flex-col items-center justify-center gap-4 opacity-20">
@@ -407,7 +354,7 @@ export default function FinalTopSheetMatrix({
                       </p>
                     </TableCell>
  
-                    <TableCell
+                    {/* <TableCell
                       className={`sticky right-0 z-20 backdrop-blur-sm px-3 py-1.5 border-b dark:border-slate-800 transition-all ${
                         stagedDecisions[
                           salesman.header_id
@@ -448,7 +395,7 @@ export default function FinalTopSheetMatrix({
                           })
                         }
                       />
-                    </TableCell>
+                    </TableCell> */}
                   </TableRow>
                 );
               })

@@ -1377,7 +1377,13 @@ export async function GET(req: NextRequest) {
         })
       );
 
-      const data = [...realRows, ...virtualRows].sort((a, b) => {
+      const data = [...realRows, ...virtualRows]
+        .filter((row) => {
+          if ((row as { requires_final_top_sheet?: boolean }).requires_final_top_sheet) return false;
+          if (row.my_vote !== null) return false;
+          return true;
+        })
+        .sort((a, b) => {
         const aDate = a.transaction_date ?? "";
         const bDate = b.transaction_date ?? "";
         return bDate.localeCompare(aDate);

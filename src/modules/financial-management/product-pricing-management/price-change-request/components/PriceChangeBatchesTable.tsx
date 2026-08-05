@@ -105,7 +105,7 @@ export function PriceChangeBatchesTable({
                     ) : (
                         rows.map((row) => {
                             const isPending = row.status === "PENDING";
-                            const displayStatus = displayPcrStatus(row.status, row.application_status);
+                            const displayStatus = displayPcrStatus(row.status, row.application_status, row.effective_at);
                             const headerId = Number(row.header_id || row.id);
 
                             return (

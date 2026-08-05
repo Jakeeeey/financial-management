@@ -36,10 +36,23 @@ type DirectusUserRelation = {
     user_email?: string | null;
 };
 
+export type DirectusFlagValue =
+    | number
+    | string
+    | boolean
+    | { type?: string | null; data?: unknown[] | null }
+    | null;
+
 export type BatchHeaderRow = {
     id?: number | string | null;
     header_id?: number | string | null;
-    supplier_id?: number | string | { id?: number | string | null; supplier_name?: string | null; supplier_shortcut?: string | null } | null;
+    supplier_id?: number | string | {
+        id?: number | string | null;
+        supplier_name?: string | null;
+        supplier_shortcut?: string | null;
+        isActive?: DirectusFlagValue;
+        nonBuy?: DirectusFlagValue;
+    } | null;
     reference_no?: string | null;
     remarks?: string | null;
     status?: string | null;
@@ -94,6 +107,9 @@ export type BatchDetailRow = {
     applied_by?: number | string | DirectusUserRelation | null;
     requested_by?: number | string | DirectusUserRelation | null;
     requested_at?: string | null;
+    rejected_by?: number | string | DirectusUserRelation | null;
+    rejected_at?: string | null;
+    reject_reason?: string | null;
 };
 
 type DirectusSingle<T> = { data?: T };
@@ -101,6 +117,20 @@ type DirectusList<T> = { data?: T[]; meta?: { total_count?: number } | null };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
+}
+
+export function readAuditUserId(value: unknown): number | null {
+    if (typeof value === "number") {
+        return Number.isFinite(value) && value > 0 ? value : null;
+    }
+    if (typeof value === "string") {
+        const id = Number(value);
+        return Number.isFinite(id) && id > 0 ? id : null;
+    }
+    if (isRecord(value)) {
+        return readAuditUserId(value.user_id ?? value.id);
+    }
+    return null;
 }
 
 export function mustBase() {
@@ -491,7 +521,31 @@ function supplierIdOf(value: unknown): number | null {
     return null;
 }
 
-function supplierNameOf(value: unknown): string {
+function supplierFlag(value: unknown): number | null {
+    if (value === true) return 1;
+    if (value === false) return 0;
+    if (isRecord(value)) {
+        if (value.type !== "Buffer" || !Array.isArray(value.data) || value.data.length === 0) return null;
+        return supplierFlag(value.data[0]);
+    }
+    if (typeof value !== "number" && typeof value !== "string") return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const numeric = Number(text);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+function isEligibleSupplier(value: unknown): boolean {
+    if (!isRecord(value)) return false;
+    return supplierFlag(value.isActive) === 1 && supplierFlag(value.nonBuy) === 0;
+}
+
+export function supplierNameOf(value: unknown): string {
+    if (!isRecord(value) || !isEligibleSupplier(value)) return "";
+    return supplierLabelOf(value);
+}
+
+export function supplierLabelOf(value: unknown): string {
     if (!isRecord(value)) return "";
     const shortcut = String(value.supplier_shortcut ?? "").trim();
     const name = String(value.supplier_name ?? "").trim();
@@ -599,31 +653,18 @@ export async function normalizeBatchCreateLines(rawLines: BatchCreateLineInput[]
     };
 }
 
-export async function createPendingPriceBatch(args: {
+export async function createPriceBatchHeader(args: {
     userId: number;
     supplierId: number;
     referenceNo: string;
     remarks: string;
-    linesToCreate: NormalizedBatchCreateLine[];
 }) {
-    const { userId, supplierId, referenceNo, remarks, linesToCreate } = args;
-
-    if (linesToCreate.length === 0) {
-        throw new Error("linesToCreate must be non-empty");
-    }
-
-    const liveSnapshots = await fetchLivePriceSnapshots(linesToCreate);
-    const snapshottedLines = linesToCreate.map((line) => ({
-        ...line,
-        current_price: liveSnapshots.get(batchLineKey(line.product_id, line.price_type_id)) ?? null,
-    }));
-
     const headerPayload = {
-        supplier_id: supplierId,
-        reference_no: referenceNo || null,
-        remarks,
+        supplier_id: args.supplierId,
+        reference_no: args.referenceNo || null,
+        remarks: args.remarks,
         status: "PENDING",
-        requested_by: userId,
+        requested_by: args.userId,
         requested_at: nowManila(),
     };
 
@@ -638,6 +679,31 @@ export async function createPendingPriceBatch(args: {
         throw new Error("Batch header was created without an id");
     }
 
+    return {
+        headerId,
+        headerRow: header.data ?? { header_id: headerId },
+        requestedAt: headerPayload.requested_at,
+    };
+}
+
+export async function createPriceBatchDetails(args: {
+    userId: number;
+    headerId: number;
+    linesToCreate: NormalizedBatchCreateLine[];
+    requestedAt?: string;
+}) {
+    const { userId, headerId, linesToCreate } = args;
+    if (linesToCreate.length === 0) {
+        return { created: 0, detailRows: [] as BatchDetailRow[] };
+    }
+
+    const liveSnapshots = await fetchLivePriceSnapshots(linesToCreate);
+    const snapshottedLines = linesToCreate.map((line) => ({
+        ...line,
+        current_price: liveSnapshots.get(batchLineKey(line.product_id, line.price_type_id)) ?? null,
+    }));
+
+    const requestedAt = args.requestedAt ?? nowManila();
     const detailPayload = snapshottedLines.map((line) => ({
         header_id: headerId,
         product_id: line.product_id,
@@ -646,7 +712,7 @@ export async function createPendingPriceBatch(args: {
         proposed_price: line.proposed_price,
         status: "PENDING",
         requested_by: userId,
-        requested_at: nowManila(),
+        requested_at: requestedAt,
     }));
 
     const details = await fetchDirectus<DirectusList<BatchDetailRow>>(`${mustBase()}/items/${DETAILS}`, {
@@ -656,11 +722,41 @@ export async function createPendingPriceBatch(args: {
     });
 
     const created = details.data?.length ?? detailPayload.length;
+    if (created !== detailPayload.length) {
+        throw new Error("Price batch detail creation was incomplete.");
+    }
 
     return {
-        headerId,
         created,
-        headerRow: header.data ?? { header_id: headerId },
+        detailRows: details.data ?? [],
+    };
+}
+
+export async function createPendingPriceBatch(args: {
+    userId: number;
+    supplierId: number;
+    referenceNo: string;
+    remarks: string;
+    linesToCreate: NormalizedBatchCreateLine[];
+}) {
+    const { userId, supplierId, referenceNo, remarks, linesToCreate } = args;
+
+    if (linesToCreate.length === 0) {
+        throw new Error("linesToCreate must be non-empty");
+    }
+
+    const header = await createPriceBatchHeader({ userId, supplierId, referenceNo, remarks });
+    const details = await createPriceBatchDetails({
+        userId,
+        headerId: header.headerId,
+        linesToCreate,
+        requestedAt: header.requestedAt,
+    });
+
+    return {
+        headerId: header.headerId,
+        created: details.created,
+        headerRow: header.headerRow,
     };
 }
 
@@ -674,6 +770,8 @@ export async function getHeader(headerId: number) {
             "supplier_id.id",
             "supplier_id.supplier_name",
             "supplier_id.supplier_shortcut",
+            "supplier_id.isActive",
+            "supplier_id.nonBuy",
             "reference_no",
             "remarks",
             "status",
@@ -769,6 +867,16 @@ export async function getDetails(headerId: number) {
         "requested_by.nickname",
         "requested_by.user_email",
         "requested_at",
+        "rejected_by",
+        "rejected_by.user_id",
+        "rejected_by.user_fname",
+        "rejected_by.user_mname",
+        "rejected_by.user_lname",
+        "rejected_by.suffix_name",
+        "rejected_by.nickname",
+        "rejected_by.user_email",
+        "rejected_at",
+        "reject_reason",
     ].join(",");
 
     return fetchAllPagesLocal<BatchDetailRow>(DETAILS, () => {
@@ -780,7 +888,12 @@ export async function getDetails(headerId: number) {
     });
 }
 
-export async function cancelPendingBatch(headerId: number, userId: number, reason: string) {
+export async function cancelPendingBatch(
+    headerId: number,
+    userId: number,
+    reason: string,
+    detailCollections: string[] = [DETAILS],
+) {
     const header = await getHeader(headerId);
     if (!header) return;
 
@@ -798,18 +911,30 @@ export async function cancelPendingBatch(headerId: number, userId: number, reaso
         }),
     });
 
-    const details = await getDetails(headerId);
     await Promise.all(
-        details
-            .map((line) => pickId(line.request_id))
-            .filter((lineId): lineId is number => Boolean(lineId))
-            .map((lineId) =>
-                fetchDirectus(`${mustBase()}/items/${DETAILS}/${lineId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders(),
-                    body: JSON.stringify({ status: "CANCELLED" }),
-                }),
-            ),
+        Array.from(new Set(detailCollections.filter(Boolean))).map(async (collection) => {
+            const params = new URLSearchParams();
+            params.set("limit", "-1");
+            params.set("fields", "request_id");
+            params.set("filter[header_id][_eq]", String(headerId));
+            const rows = await fetchDirectus<DirectusList<{ request_id?: number | string | null }>>(
+                `${mustBase()}/items/${collection}?${params.toString()}`,
+                { headers: directusHeaders() },
+            );
+
+            await Promise.all(
+                (rows.data ?? [])
+                    .map((line) => pickId(line.request_id))
+                    .filter((lineId): lineId is number => Boolean(lineId))
+                    .map((lineId) =>
+                        fetchDirectus(`${mustBase()}/items/${collection}/${lineId}`, {
+                            method: "PATCH",
+                            headers: directusHeaders(),
+                            body: JSON.stringify({ status: "CANCELLED" }),
+                        }),
+                    ),
+            );
+        }),
     );
 }
 
@@ -820,18 +945,22 @@ export async function rejectPriceChangeBatch(headerId: number, userId: number, r
         return NextResponse.json({ error: "Only PENDING batches can be rejected." }, { status: 400 });
     }
 
+    const normalizedReason = rejectReason.trim();
+    const rejectedAt = nowManila();
+    const rejectionPatch = {
+        status: "REJECTED",
+        rejected_by: userId,
+        rejected_at: rejectedAt,
+        reject_reason: normalizedReason,
+    };
+
+    const details = await getDetails(headerId);
     await fetchDirectus(`${mustBase()}/items/${HEADERS}/${headerId}`, {
         method: "PATCH",
         headers: directusHeaders(),
-        body: JSON.stringify({
-            status: "REJECTED",
-            rejected_by: userId,
-            rejected_at: nowManila(),
-            reject_reason: rejectReason,
-        }),
+        body: JSON.stringify(rejectionPatch),
     });
 
-    const details = await getDetails(headerId);
     await Promise.all(
         details
             .map((line) => pickId(line.request_id))
@@ -840,10 +969,32 @@ export async function rejectPriceChangeBatch(headerId: number, userId: number, r
                 fetchDirectus(`${mustBase()}/items/${DETAILS}/${lineId}`, {
                     method: "PATCH",
                     headers: directusHeaders(),
-                    body: JSON.stringify({ status: "REJECTED" }),
+                    body: JSON.stringify(rejectionPatch),
                 }),
             ),
     );
+
+    const persistedHeader = await getHeader(headerId);
+    const persistedDetails = await getDetails(headerId);
+    const hasPersistedRejection = (row: {
+        status?: unknown;
+        rejected_by?: unknown;
+        rejected_at?: unknown;
+        reject_reason?: unknown;
+    }) =>
+        String(row.status ?? "").toUpperCase() === "REJECTED" &&
+        readAuditUserId(row.rejected_by) === userId &&
+        Boolean(row.rejected_at) &&
+        String(row.reject_reason ?? "") === normalizedReason;
+
+    if (
+        !persistedHeader ||
+        !hasPersistedRejection(persistedHeader) ||
+        persistedDetails.length !== details.length ||
+        persistedDetails.some((detail) => !hasPersistedRejection(detail))
+    ) {
+        throw new Error("Directus did not persist batch rejection metadata.");
+    }
 
     return NextResponse.json({ ok: true, header_id: headerId, rejected: details.length });
 }
@@ -897,7 +1048,13 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
         );
     }
 
-    const { executeClaimedApplication, refreshBatchApplicationStatus, stageBatchApproval } =
+    const {
+        executeClaimedApplication,
+        fallbackApplicationStatus,
+        postCommitApplicationNotice,
+        refreshBatchApplicationStatus,
+        stageBatchApproval,
+    } =
         await import("../_applicationEngine");
     const staged = await stageBatchApproval({ detailCollection: DETAILS, headerId, userId, effectiveAt });
     if (!staged) {
@@ -906,48 +1063,82 @@ export async function applyApprovedBatch(headerId: number, userId: number, effec
 
     let applied = 0;
     let failed = 0;
+    let warning: string | null = null;
+    let retryable = false;
     if (!staged.scheduled) {
-        const { applyProposedPrice } = await import("../price-change-requests/_actions");
-        const stagedDetails = await getDetails(headerId);
-        for (const row of stagedDetails) {
-            const outcome = await executeClaimedApplication({
-                collection: DETAILS,
-                row,
-                userId,
-                claimFields: ["current_price"],
-                apply: async (claimed) => {
-                    const productId = normalizeProductId(claimed);
-                    const priceTypeId = normalizePriceTypeId(claimed);
-                    if (!productId || !priceTypeId) {
-                        throw new Error("Batch contains an invalid detail line.");
-                    }
-                    const proposedPrice = assertValidPriceValue(claimed.proposed_price, "proposed_price");
-                    await applyProposedPrice({
-                        userId,
-                        productId,
-                        priceTypeId,
-                        currentPrice: claimed.current_price,
-                        proposedPrice,
-                    });
-                },
-            });
-            if (outcome.state === "applied") applied += 1;
-            if (outcome.state === "failed") failed += 1;
+        try {
+            const { applyProposedPrice } = await import("../price-change-requests/_actions");
+            const stagedDetails = await getDetails(headerId);
+            for (const row of stagedDetails) {
+                const outcome = await executeClaimedApplication({
+                    collection: DETAILS,
+                    row,
+                    userId,
+                    claimFields: ["current_price"],
+                    apply: async (claimed) => {
+                        const productId = normalizeProductId(claimed);
+                        const priceTypeId = normalizePriceTypeId(claimed);
+                        if (!productId || !priceTypeId) {
+                            throw new Error("Batch contains an invalid detail line.");
+                        }
+                        const proposedPrice = assertValidPriceValue(claimed.proposed_price, "proposed_price");
+                        await applyProposedPrice({
+                            userId,
+                            createdBy: readAuditUserId(claimed.requested_by),
+                            productId,
+                            priceTypeId,
+                            currentPrice: claimed.current_price,
+                            proposedPrice,
+                        });
+                    },
+                });
+                if (outcome.state === "applied") applied += 1;
+                if (outcome.state === "failed") failed += 1;
+            }
+        } catch (error: unknown) {
+            const notice = postCommitApplicationNotice(error, "pricing application");
+            warning = notice.warning;
+            retryable = notice.retryable;
         }
     }
 
-    const applicationStatus = await refreshBatchApplicationStatus({ detailCollection: DETAILS, headerId, userId });
-    if (applied > 0) invalidateGroupIndexCacheOnCatalogChange();
+    let applicationStatus: string | null = null;
+    try {
+        applicationStatus = await refreshBatchApplicationStatus({ detailCollection: DETAILS, headerId, userId });
+    } catch (error: unknown) {
+        const notice = postCommitApplicationNotice(error, "application status reconciliation");
+        warning = warning ?? notice.warning;
+        retryable = notice.retryable;
+    }
+    if (failed > 0) {
+        warning = warning ?? "Approval was saved, but one or more pricing lines failed to apply. Retry application from the batch details.";
+        retryable = true;
+    }
+    if (applied > 0) {
+        try {
+            invalidateGroupIndexCacheOnCatalogChange();
+        } catch (error: unknown) {
+            const notice = postCommitApplicationNotice(error, "pricing cache refresh");
+            warning = warning ?? notice.warning;
+            retryable = notice.retryable;
+        }
+    }
+
+    const affected = normalizedDetails.length;
 
     return NextResponse.json({
         ok: true,
+        committed: true,
         header_id: headerId,
-        affected: normalizedDetails.length,
+        affected,
         applied,
         failed,
-        application_status: applicationStatus ?? "SCHEDULED",
+        scheduled: staged.scheduled,
+        application_status: applicationStatus ?? fallbackApplicationStatus({ scheduled: staged.scheduled, applied, failed, affected }),
         effective_at: staged.effectiveAt,
-    }, { status: failed > 0 ? 202 : 200 });
+        warning,
+        retryable,
+    }, { status: failed > 0 || retryable ? 202 : 200 });
 }
 
 type DirectusProductRow = {
@@ -1026,8 +1217,13 @@ export async function getSupplierNameListsByProductId(productIds: number[]): Pro
         const chunk = allProductIds.slice(i, i + 200);
         const p = new URLSearchParams();
         p.set("limit", "-1");
-        p.set("fields", "product_id,supplier_id,supplier_id.id,supplier_id.supplier_name,supplier_id.supplier_shortcut");
+        p.set(
+            "fields",
+            "product_id,supplier_id,supplier_id.id,supplier_id.supplier_name,supplier_id.supplier_shortcut,supplier_id.isActive,supplier_id.nonBuy",
+        );
         p.set("filter[product_id][_in]", chunk.join(","));
+        p.set("filter[supplier_id][isActive][_eq]", "1");
+        p.set("filter[supplier_id][nonBuy][_eq]", "0");
         const url = `${mustBase()}/items/product_per_supplier?${p.toString()}`;
         const json = await fetchDirectus<DirectusList<Record<string, unknown>>>(url, { headers: directusHeaders() });
 
@@ -1203,18 +1399,28 @@ export function resolveUserDisplayName(
 }
 
 export async function resolveBatchDecisionUserNames(header: {
+    requested_by?: number | string | DirectusUserRelation | null;
     approved_by?: number | string | DirectusUserRelation | null;
     rejected_by?: number | string | DirectusUserRelation | null;
-}): Promise<{ approved_by_name: string | null; rejected_by_name: string | null }> {
+}): Promise<{
+    requested_by_name: string | null;
+    approved_by_name: string | null;
+    rejected_by_name: string | null;
+}> {
+    const requestedFromRelation = userNameFromRelationValue(header.requested_by);
     const approvedFromRelation = userNameFromRelationValue(header.approved_by);
     const rejectedFromRelation = userNameFromRelationValue(header.rejected_by);
 
     const namesById = await fetchUserNamesById([
+        normalizeStoredUserId(header.requested_by),
         normalizeStoredUserId(header.approved_by),
         normalizeStoredUserId(header.rejected_by),
     ]);
 
     return {
+        requested_by_name:
+            requestedFromRelation ??
+            resolveUserDisplayName(normalizeStoredUserId(header.requested_by), namesById),
         approved_by_name:
             approvedFromRelation ??
             resolveUserDisplayName(normalizeStoredUserId(header.approved_by), namesById),

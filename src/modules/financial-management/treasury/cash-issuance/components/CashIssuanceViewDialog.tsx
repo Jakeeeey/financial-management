@@ -11,7 +11,7 @@ import {
     CheckCircle2, CircleDashed, X, ArrowDownToLine, ArrowUpFromLine,
     Paperclip, ExternalLink
 } from "lucide-react";
-import { Disbursement, BankAccountDto, COADto } from "../types";
+import { Disbursement, BankAccountDto, COADto, DisbursementStatusResult } from "../types";
 import { disbursementProvider } from "../providers/fetchProvider";
 import { format } from "date-fns";
 import { generateDisbursementPDF } from "../utils/pdfGenerator";
@@ -23,7 +23,7 @@ interface CashIssuanceViewDialogProps {
     disbursement: Disbursement | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onUpdateStatus: (id: number, status: string) => Promise<boolean>;
+    onUpdateStatus: (id: number, status: string) => Promise<DisbursementStatusResult>;
     onEdit?: (d: Disbursement) => void;
     loading: boolean;
     subModule?: "preparation" | "approval" | "releasing" | "posting" | "all" | "dashboard";
@@ -31,17 +31,22 @@ interface CashIssuanceViewDialogProps {
 
 function AttachmentPreview({ docUrl }: { docUrl: string }) {
     const [contentType, setContentType] = useState<string>("");
-    const cleanBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/+$/, "");
-    const viewUrl = docUrl.startsWith("http") ? docUrl : `${cleanBase}/assets/${docUrl}`;
+    const fileId = docUrl.split(/[/?#]/).filter(Boolean).pop() || "";
+    const viewUrl = `/api/fm/treasury/disbursements/attachments/${encodeURIComponent(fileId)}`;
 
     useEffect(() => {
         if (!viewUrl) return;
-        fetch(viewUrl, { method: "HEAD" })
+        const controller = new AbortController();
+        fetch(viewUrl, { method: "HEAD", signal: controller.signal })
             .then((res) => {
+                if (!res.ok) return;
                 const type = res.headers.get("content-type");
                 if (type) setContentType(type.toLowerCase());
             })
-            .catch((err) => console.warn("Failed to fetch document headers:", err));
+            .catch(() => {
+                if (!controller.signal.aborted) setContentType("");
+            });
+        return () => controller.abort();
     }, [viewUrl]);
 
     const isPdf = docUrl.toLowerCase().endsWith(".pdf") || viewUrl.toLowerCase().endsWith(".pdf") || contentType.includes("pdf");
@@ -104,6 +109,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
     const [showPrintOptions, setShowPrintOptions] = useState(false);
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
+    const [statusError, setStatusError] = useState<{disbursementId: number; message: string; detail?: string} | null>(null);
 
     useEffect(() => {
         if (open) {
@@ -125,8 +131,19 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
     const isEncoder = disbursement.encoderId != null && currentUserId != null && String(disbursement.encoderId) === String(currentUserId);
 
     const handleAction = async (status: string) => {
-        const success = await onUpdateStatus(disbursement.id, status);
-        if (success) onOpenChange(false);
+        setStatusError(null);
+        const result = await onUpdateStatus(disbursement.id, status);
+        if (result.success) {
+            setStatusError(null);
+            onOpenChange(false);
+            return;
+        }
+
+        setStatusError({
+            disbursementId: disbursement.id,
+            message: result.message || `Failed to update status to ${status}.`,
+            detail: result.detail,
+        });
     };
 
     const handlePrint = (size: "A4" | "58mm") => {
@@ -141,7 +158,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
 
     const currentStepIndex = getVoucherStepIndex(disbursement.status);
     return (
-        <Sheet open={open} onOpenChange={(val) => { onOpenChange(val); setShowPrintOptions(false); }}>
+        <Sheet open={open} onOpenChange={(val) => { onOpenChange(val); setShowPrintOptions(false); if (!val) setStatusError(null); }}>
             <SheetContent className="sm:max-w-[1000px] w-full p-0 flex flex-col bg-background border-l border-border overflow-hidden shadow-2xl">
 
                 <SheetHeader className="p-6 border-b border-border bg-card shrink-0 shadow-sm relative z-10">
@@ -162,7 +179,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                             {disbursement.status}
                         </Badge>
                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
-                            Payment: {getPaymentStateLabel(disbursement.paymentState)}
+                            Payment: {getPaymentStateLabel(disbursement.paymentState, disbursement.paidAmount)}
                         </span>
                     </div>
 
@@ -199,6 +216,34 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                 </SheetHeader>
 
                 <div className="flex-1 overflow-y-auto p-6 scrollbar-thin bg-muted/10 space-y-6">
+                    {statusError?.disbursementId === disbursement.id && (
+                        <div
+                            role="alert"
+                            aria-live="assertive"
+                            className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-destructive shadow-sm"
+                        >
+                            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                                <p className="text-xs font-black uppercase tracking-widest">{statusError.message}</p>
+                                {statusError.detail && (
+                                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide">
+                                        {statusError.detail}
+                                    </p>
+                                )}
+                            </div>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Dismiss status error"
+                                onClick={() => setStatusError(null)}
+                                className="h-7 w-7 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    )}
+
                     {/* Approver Action Banner */}
                     {disbursement.status === "Submitted" && subModule === "approval" && (
                         <div className="space-y-3">
@@ -335,7 +380,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                         </div>
 
                         {/* PAYMENTS SECTION */}
-                        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
+                        {subModule !== "preparation" && <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
                             <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between">
                                 <div className="flex items-center gap-2 text-foreground font-black uppercase tracking-widest text-[11px]">
                                     <ArrowUpFromLine className="w-4 h-4 text-emerald-500"/> Bank Checks (Credits)
@@ -359,7 +404,9 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                                             const matchedBank = banks.find(b => b.bankId === p.bankId);
                                             const displayBank = matchedBank
                                                 ? `${matchedBank.bankName} - ${matchedBank.accountNumber}`
-                                                : (p.bankId ? `Bank ID: ${p.bankId}` : "No Bank Selected");
+                                                : p.bankName
+                                                    ? `${p.bankName}${p.bankAccountNumber ? ` - ${p.bankAccountNumber}` : ""}`
+                                                    : (p.bankId ? `Bank ID: ${p.bankId}` : "No Bank Selected");
 
                                             const matchedCoa = coas.find(c => c.coaId === p.coaId);
                                             const displayCoa = matchedCoa
@@ -400,7 +447,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                                 <span className="text-muted-foreground">Total Credits</span>
                                 <span className="text-emerald-600 dark:text-emerald-500">{formatCurrency(totalCredit)}</span>
                             </div>
-                        </div>
+                        </div>}
 
                     </div>
                 </div>
@@ -433,10 +480,10 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                             disbursement.status === "Draft" || 
                             disbursement.status === "Returned for Revision"
                           )) || 
-                          (disbursement.status === "Approved" && subModule === "releasing")) && onEdit) && (
+                          ((disbursement.status === "Approved" || disbursement.status === "Partially Released") && subModule === "releasing")) && onEdit) && (
                             <Button variant="outline" onClick={() => onEdit(disbursement)} className="text-[10px] font-black uppercase tracking-widest h-10 px-4 sm:px-6 text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/30">
                                 <Pencil className="w-4 h-4 sm:mr-2" />
-                                <span className="hidden sm:inline">{disbursement.status !== "Approved" ? "Edit Voucher" : "Add/Edit Checks"}</span>
+                                <span className="hidden sm:inline">{disbursement.status === "Approved" || disbursement.status === "Partially Released" ? "Add/Edit Checks" : "Edit Voucher"}</span>
                             </Button>
                         )}
 
@@ -471,7 +518,7 @@ export function CashIssuanceViewDialog({ disbursement, open, onOpenChange, onUpd
                             </Button>
                         )}
 
-                        {disbursement.status === "Approved" && subModule === "releasing" && (
+                        {(disbursement.status === "Approved" || disbursement.status === "Partially Released") && subModule === "releasing" && (
                             <Button
                                 onClick={() => handleAction("Released")}
                                 disabled={loading || !disbursement.payments || disbursement.payments.length === 0}

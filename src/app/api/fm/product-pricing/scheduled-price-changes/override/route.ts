@@ -23,16 +23,18 @@ import {
     normalizeProductId,
     nowManila,
     pickId,
+    readAuditUserId,
 } from "../../price-change-batches/_batch";
 import { assertValidPriceValue } from "../../_pricePrecision";
 import { applyProposedPrice, getPriceRequest, type PcrRow } from "../../price-change-requests/_actions";
 import { CCR, getCostRequest, patchProductCostField, type CcrRow } from "../../cost-change-requests/_actions";
 import { COST_DETAILS, getCostDetails, getCostHeader } from "../../cost-change-batches/_batch";
+import { applyNowUnifiedBatch, retryUnifiedBatch } from "../../_unifiedBatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type OverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch";
+type OverrideKind = "price_request" | "price_batch" | "cost_request" | "cost_batch" | "mixed_batch";
 type OverrideAction = "reschedule" | "apply_now" | "cancel_schedule" | "reject_schedule" | "retry_application";
 
 type OverrideBody = Partial<{
@@ -186,6 +188,7 @@ async function applyPriceNow(row: PcrRow, userId: number, effectiveAt = nowManil
             }
             await applyProposedPrice({
                 userId,
+                createdBy: readAuditUserId(claimed.requested_by),
                 productId,
                 priceTypeId,
                 currentPrice: claimed.current_price,
@@ -358,13 +361,36 @@ export async function POST(req: NextRequest) {
         const action = body.action;
         const id = Number(body.id);
 
-        if (!kind || !["price_request", "price_batch", "cost_request", "cost_batch"].includes(kind)) {
+        if (!kind || !["price_request", "price_batch", "cost_request", "cost_batch", "mixed_batch"].includes(kind)) {
             return NextResponse.json({ error: "Unsupported kind" }, { status: 400 });
         }
         if (!action || !["reschedule", "apply_now", "cancel_schedule", "reject_schedule", "retry_application"].includes(action)) {
             return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
         }
         if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: "id is required" }, { status: 400 });
+
+        if (kind === "mixed_batch") {
+            if (action !== "apply_now" && action !== "retry_application") {
+                return NextResponse.json({ error: "Mixed batches only support apply_now or retry_application from this route." }, { status: 400 });
+            }
+
+            const result = action === "apply_now"
+                ? await applyNowUnifiedBatch(id, userId)
+                : await retryUnifiedBatch(id, userId);
+            if ("status" in result) {
+                return failedApplyResponse({
+                    kind,
+                    action,
+                    id,
+                    status: result.status === 409 ? 409 : 502,
+                    message: result.error ?? "Mixed batch retry failed.",
+                    extra: "retryable" in result ? { retryable: result.retryable } : undefined,
+                });
+            }
+            return NextResponse.json({ kind, action, id, ...result }, {
+                status: result.failed > 0 || result.retryable ? 202 : 200,
+            });
+        }
 
         const retry = action === "retry_application";
         if (kind === "price_request") {
