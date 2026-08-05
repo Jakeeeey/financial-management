@@ -25,6 +25,7 @@ import { SearchableDropdown } from "./SearchableDropdown";
 import { replaceEmptyPayablePlaceholders } from "@/modules/financial-management/treasury/components/payable-line-state";
 import { getMemoAvailableAmount } from "@/modules/financial-management/treasury/components/memo-cap";
 import { normalizeMemoReference, stripMemoLineMetadata } from "@/modules/financial-management/treasury/components/memo-payable-line";
+import { updateVatSplitDivision } from "@/modules/financial-management/treasury/components/payable-line-splits";
 import { isPettyCashBankAccount } from "@/app/api/fm/treasury/disbursements/_payment-method";
 import { cn } from "@/lib/utils";
 
@@ -65,6 +66,17 @@ function getMemoAmountError(requestedAmount: number, availableAmount: number) {
     return null;
 }
 
+function isPopulatedPayableLine(line: PayableLine) {
+    return !!line.coaId
+        || (Number.isFinite(Number(line.amount)) && Number(line.amount) !== 0)
+        || Boolean(line.referenceNo?.trim());
+}
+
+function isValidDivisionId(value: unknown) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0;
+}
+
 export function CashIssuanceCreateDialog({
     open,
     onOpenChange,
@@ -85,6 +97,7 @@ export function CashIssuanceCreateDialog({
     const [payments, setPayments] = useState<PaymentLine[]>([]);
     const [banks, setBanks] = useState<BankAccountDto[]>([]);
     const [paymentValidationErrors, setPaymentValidationErrors] = useState<Set<string>>(new Set());
+    const [payableValidationErrors, setPayableValidationErrors] = useState<Set<string>>(new Set());
 
     const [suppliers, setSuppliers] = useState<SupplierDto[]>([]);
     const [coas, setCoas] = useState<COADto[]>([]);
@@ -261,6 +274,7 @@ export function CashIssuanceCreateDialog({
                     releasedBy: p.releasedBy,
                 })));
                 setPaymentValidationErrors(new Set());
+                setPayableValidationErrors(new Set());
 
             } else {
                 setTransactionTypeId(1);
@@ -272,6 +286,7 @@ export function CashIssuanceCreateDialog({
                 setPayables([{referenceNo: "", date: today, amount: 0, remarks: "", divisionId: undefined}]);
                 setPayments([]);
                 setPaymentValidationErrors(new Set());
+                setPayableValidationErrors(new Set());
                 setTransactionDate(today);
             }
         }
@@ -312,6 +327,34 @@ export function CashIssuanceCreateDialog({
     }, [open, payeeId]);
 
     const handleAddPayable = useCallback(() => setPayables((prev) => [...prev, {referenceNo: "", date: today, amount: 0, remarks: "", divisionId: undefined}]), [today]);
+
+    const handleDivisionSelect = useCallback((index: number, divisionId?: number) => {
+        const nextPayables = updateVatSplitDivision(payables, index, divisionId);
+        setPayables(nextPayables);
+        setPayableValidationErrors((current) => {
+            const next = new Set(current);
+            nextPayables.forEach((line, lineIndex) => {
+                const key = `${lineIndex}:divisionId`;
+                if (isValidDivisionId(line.divisionId)) next.delete(key);
+                else if (current.size > 0 && isPopulatedPayableLine(line)) next.add(key);
+            });
+            return next;
+        });
+    }, [payables]);
+
+    const handleRemovePayable = useCallback((index: number) => {
+        setPayables((current) => current.filter((_, lineIndex) => lineIndex !== index));
+        setPayableValidationErrors((current) => {
+            const next = new Set<string>();
+            current.forEach((key) => {
+                const [indexText, field] = key.split(":");
+                const errorIndex = Number(indexText);
+                if (!Number.isInteger(errorIndex) || errorIndex === index) return;
+                next.add(`${errorIndex > index ? errorIndex - 1 : errorIndex}:${field}`);
+            });
+            return next;
+        });
+    }, []);
 
     const handleAmountChange = useCallback((index: number, rawValue: string) => {
         const parsedAmount = rawValue.trim() === "" ? 0 : Number(rawValue);
@@ -597,6 +640,24 @@ export function CashIssuanceCreateDialog({
         return true;
     };
 
+    const validatePayables = () => {
+        const errors = new Set<string>();
+        const invalidRows: number[] = [];
+
+        payables.forEach((line, index) => {
+            if (!isPopulatedPayableLine(line) || isValidDivisionId(line.divisionId)) return;
+            errors.add(`${index}:divisionId`);
+            invalidRows.push(index + 1);
+        });
+
+        setPayableValidationErrors(errors);
+        if (invalidRows.length > 0) {
+            toast.error(`Cost Division is required on payable row${invalidRows.length === 1 ? "" : "s"} ${invalidRows.join(", ")}.`);
+            return false;
+        }
+        return true;
+    };
+
     const handleSubmit = async () => {
         if (loading || isReadOnly || submitLockRef.current) return;
         const isPartialReleasePaymentEdit = isPaymentEditorEnabled && editData?.status === "Partially Released";
@@ -607,6 +668,7 @@ export function CashIssuanceCreateDialog({
         if (!payeeId) return toast.error("Please select a Payee.");
         if (!departmentId && !isPartialReleasePaymentEdit) return toast.error("Department is required.");
         if (totalAmount <= 0) return toast.error("Voucher total must be greater than 0.");
+        if (!isPaymentEditorEnabled && !validatePayables()) return;
         const memoAmountError = Object.values(memoAmountErrors)[0];
         if (memoAmountError) return toast.error(memoAmountError);
         if (isPaymentEditorEnabled && !validatePayments()) return;
@@ -662,6 +724,7 @@ export function CashIssuanceCreateDialog({
                 setPayables([]);
                 setPayments([]);
                 setPaymentValidationErrors(new Set());
+                setPayableValidationErrors(new Set());
                 onOpenChange(false);
             }
         } finally {
@@ -745,11 +808,13 @@ export function CashIssuanceCreateDialog({
                                     payeeId={payeeId}
                                     handleAddPayable={handleAddPayable}
                                     handleOpenMemoModal={handleOpenMemoModal}
-                                    handleRemovePayable={(idx) => setPayables(payables.filter((_, i) => i !== idx))}
+                                    handleRemovePayable={handleRemovePayable}
                                     handleAmountChange={handleAmountChange}
                                     formatMoney={formatCurrency}
                                     memoReferences={memoReferences}
                                     memoAmountErrors={memoAmountErrors}
+                                    divisionValidationErrors={payableValidationErrors}
+                                    onDivisionSelect={handleDivisionSelect}
                                     disabled={isPayablesLocked}
                                     isAddDisabled={!departmentId}
                                     fillHeight={!isPaymentEditorEnabled}

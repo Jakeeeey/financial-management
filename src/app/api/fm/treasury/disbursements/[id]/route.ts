@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { decodeJwtPayload } from "@/lib/auth-utils";
 import { normalizeDisbursement, getLineItems, getUserMap, PayableInput, PaymentInput, RelationValue, resolveEncoderId, cleanSupportingDocsUrl, getCoaMap, getDivisionMap, getBankMap, relationId, canonicalizeDisbursementPayload, canonicalizePersistedDisbursement, loadNormalizedDisbursement, DisbursementRow, findMissingPayableDateError, resolveTransactionTypeId } from "../route";
 import { findUnpostedPurchaseOrderReferences } from "../_purchase-order-eligibility";
-import { findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
+import { findMissingPayableDivisionError, findMissingVatPrincipalDivisionError, normalizeVatSplitDivisions } from "../_payable-split-integrity";
 import { acquireMemoCapLock, refreshSupplierMemoStatuses, validateSupplierMemoCaps } from "../_memo-cap-integrity";
 import { isPettyCashBankAccount, validatePaymentLine } from "../_payment-method";
 import { isPaymentAllocationScope, resolveDisbursementUpdateStatus } from "@/modules/financial-management/treasury/disbursement/utils/update-scope";
@@ -80,6 +80,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const payableLinesInput = normalizedPayables.filter((line: PayableInput) =>
             !!line.coaId || (line.amount != null && Number(line.amount) !== 0) || (line.referenceNo && line.referenceNo.trim() !== "")
         );
+        const missingPayableDivisionError = isPaymentAllocationUpdate
+            ? null
+            : findMissingPayableDivisionError(payableLinesInput);
+        if (missingPayableDivisionError) {
+            return NextResponse.json({ message: missingPayableDivisionError }, { status: 400 });
+        }
         const missingPayableDateError = isPaymentAllocationUpdate
             ? null
             : findMissingPayableDateError(payableLinesInput);
